@@ -2397,6 +2397,43 @@ export abstract class TournamentManagerBase {
   private consolidationDeclared = false;
 
   /**
+   * A HELD LEVEL ON A SPREAD FIELD ASKS FOR ITS BALANCE PASS (2026-09-29).
+   *
+   * The consolidation lane is declared by the balance stage, so a field has
+   * to reach that stage once through the general queue before it is served
+   * promptly. After the 06:06 UTC restart on 2026-09-29 that first pass was
+   * the whole wait: general sweeps took about 20 s each against a contended
+   * database, 471 managers were queued, and Morning Free Buy 6a18ddaa (10
+   * players on 7 tables) and $100 Freeroll c65c414d (13 on 13) sat behind
+   * the entire platform for their first balance pass after the thaw.
+   *
+   * The held level is the witness that this tournament deals nothing, and
+   * the dealers it owns can say why without a database read: when two or
+   * more of them hold fewer than two players, no table can deal until the
+   * balancer merges them. That is consolidation work, so this manager moves
+   * to the lane and asks for one pass; the balance stage then keeps or clears
+   * the mark on what it reads. Checked on the held level's own 15 s recheck,
+   * which already runs; it adds no timer and no query.
+   */
+  protected askForConsolidationIfSpread(): void {
+    if (this.consolidationDeclared) return;
+    let loneTables = 0;
+    for (const engine of this.tableEngines.values()) {
+      let seated: number;
+      try {
+        seated = engine.getOccupiedSeatNumbers().length;
+      } catch {
+        return;
+      }
+      if (seated >= 2) return;
+      loneTables++;
+    }
+    if (loneTables < 2) return;
+    this.declareConsolidationOutstanding(true);
+    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+  }
+
+  /**
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
    */
@@ -8873,6 +8910,7 @@ export abstract class TournamentManagerBase {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due with no hand dealt since it began - holding it until this tournament deals again`
           );
         }
+        this.askForConsolidationIfSpread();
         deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
         return;
       }

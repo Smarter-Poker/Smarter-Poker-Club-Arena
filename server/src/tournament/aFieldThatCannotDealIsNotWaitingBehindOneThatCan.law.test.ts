@@ -389,3 +389,61 @@ describe('the balance stage declares the lane', () => {
     expect(setConsolidating).not.toHaveBeenCalled();
   });
 });
+
+describe('a held level on a spread field asks for its balance pass', () => {
+  const tournamentId = '00000000-0000-4000-8000-0000000000bb';
+  const engine = (seated: number) => ({
+    getOccupiedSeatNumbers: () => Array.from({ length: seated }, (_, i) => i + 1),
+  });
+
+  function heldManager(seats: number[]) {
+    const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    Object.assign(manager, {
+      tournamentId,
+      consolidationDeclared: false,
+      tableEngines: new Map(seats.map((n, i) => [`table-${i}`, engine(n)])),
+      requestEliminationSweep: vi.fn(),
+    });
+    return manager;
+  }
+
+  it('twelve one-player tables move to the lane and ask for one pass', () => {
+    const setConsolidating = vi
+      .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+      .mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = heldManager(Array(12).fill(1));
+    manager.askForConsolidationIfSpread();
+    expect(setConsolidating).toHaveBeenCalledWith(tournamentId, true);
+    expect(manager.requestEliminationSweep).toHaveBeenCalledWith('spread_field_cannot_deal');
+    // Declared once; the 15 s recheck does not ask again.
+    manager.askForConsolidationIfSpread();
+    expect(setConsolidating).toHaveBeenCalledTimes(1);
+    expect(manager.requestEliminationSweep).toHaveBeenCalledTimes(1);
+  });
+
+  it('a table that can deal, a single table, or an unregistered manager asks for nothing', () => {
+    const setConsolidating = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating');
+    for (const seats of [[1, 1, 2], [1], []]) {
+      const manager = heldManager(seats);
+      manager.askForConsolidationIfSpread();
+      expect(manager.requestEliminationSweep).not.toHaveBeenCalled();
+    }
+    expect(setConsolidating).not.toHaveBeenCalled();
+
+    setConsolidating.mockReturnValue(false);
+    const unregistered = heldManager([1, 1]);
+    unregistered.askForConsolidationIfSpread();
+    expect(unregistered.requestEliminationSweep).not.toHaveBeenCalled();
+  });
+
+  it('the held-level branch is what asks', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('./TournamentManagerBase.ts', import.meta.url), 'utf8');
+    const held = source.slice(
+      source.indexOf('came due with no hand dealt since it began'),
+      source.indexOf('deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;')
+    );
+    expect(held).toContain('this.askForConsolidationIfSpread();');
+  });
+});

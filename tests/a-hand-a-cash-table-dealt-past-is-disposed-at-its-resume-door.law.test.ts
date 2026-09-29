@@ -27,7 +27,10 @@ import { describe, expect, it } from 'vitest';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const FILE = readFileSync(
-  join(MIGRATIONS, '20260929031904_a_hand_a_cash_table_dealt_past_is_disposed_at_its_resume_doo.sql'),
+  join(
+    MIGRATIONS,
+    '20260929031904_a_hand_a_cash_table_dealt_past_is_disposed_at_its_resume_doo.sql'
+  ),
   'utf8'
 );
 
@@ -65,11 +68,11 @@ describe('the migration asserts exactly what it replaces', () => {
 
   it('refuses unless the live door is the exact pre-image, and proves the post-image', () => {
     expect(FILE).toContain(`AND md5(p.prosrc) = '${PRE_MD5}'`);
-    expect(FILE).toContain(`AND md5(pg_get_functiondef(p.oid)) = 'eb795bb2248234e90c8b1a5e646354b5'`);
-    expect(FILE).toContain(`AND md5(p.prosrc) = '${POST_MD5}'`);
     expect(FILE).toContain(
-      "AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'"
+      `AND md5(pg_get_functiondef(p.oid)) = 'eb795bb2248234e90c8b1a5e646354b5'`
     );
+    expect(FILE).toContain(`AND md5(p.prosrc) = '${POST_MD5}'`);
+    expect(FILE).toContain("AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'");
     expect(FILE).toContain(`@live-proof: (SELECT md5(prosrc)='${POST_MD5}'`);
   });
 

@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/cowork-claude-league-0927/fix/league-says-when-it-refuses-to-measure. Applied to production as migrations 20260927220437 (horse_league_results.status + refusal_reason, four constraints, inert backfill, partial index), 20260927220532 (fn_audit_nightly_job_health raises league_matchup_refused and league_refusal_went_silent) and 20260927221228 (that function's grants restated in-branch).",
+  "tables": [],
+  "functions": ["fn_audit_nightly_job_health"],
+  "columns": { "horse_league_results": ["status", "refusal_reason"] }
+}

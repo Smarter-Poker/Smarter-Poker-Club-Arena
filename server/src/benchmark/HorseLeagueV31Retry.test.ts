@@ -27,7 +27,13 @@ describe('Horse League certified V31 retry contract', () => {
         order: vi.fn(() => query),
         limit: vi.fn(async () => ({ data: [], error: null })),
       };
-      return { select: vi.fn(() => query) };
+      // The run writes its refusal rows (UNMEASURABLE_MATCHUPS) before it
+      // deals a hand, so the stub has to answer an upsert or this test
+      // measures writeRefusedMatchups failing rather than the retry contract.
+      return {
+        select: vi.fn(() => query),
+        upsert: vi.fn(async () => ({ data: null, error: null })),
+      };
     });
   });
 

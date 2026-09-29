@@ -99,6 +99,23 @@ while IFS= read -r T; do
       DIRTY=$(git -C "$T" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
       BRANCH=$(git -C "$T" rev-parse --abbrev-ref HEAD 2>/dev/null)
       AHEAD=$(git -C "$T" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+      # A local .env is ignored, so it is not in the untracked tar and must
+      # never be copied into a shared archive either. Nearly every tree holds
+      # one and nearly every one is a byte-for-byte copy of the canonical
+      # clone's - regenerable, so removing the tree loses nothing. A tree whose
+      # .env DIFFERS is somebody's own configuration: it is reported and left
+      # exactly where it is. (2026-09-29: 210 of 442 trees were kept by this.)
+      ENV_DIFFERS=0
+      for E in "$T"/.env*; do
+        [ -f "$E" ] || continue
+        BASE=$(basename "$E")
+        if [ -f "$CLONE/$BASE" ] && cmp -s "$E" "$CLONE/$BASE"; then continue; fi
+        ENV_DIFFERS=1; break
+      done
+      if [ "$ENV_DIFFERS" = 1 ]; then
+        say "  KEEP (its own local $BASE)  $T"
+        continue
+      fi
       if [ "${DIRTY:-0}" != "0" ] || [ "${AHEAD:-0}" != "0" ]; then
         NAME=$(basename "$T"); DEST="$ARCHIVE_ROOT/$(date +%Y%m%d)-$NAME"
         if [ "$APPLY" = 1 ]; then

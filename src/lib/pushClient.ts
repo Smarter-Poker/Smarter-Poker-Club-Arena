@@ -83,7 +83,7 @@
  */
 
 import { readLocalSession } from './authUtils';
-import { isNativePlatform } from './appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from './appBase';
 
 /* ═══════════════════════════════════════════════════════════════════════
    TIMEOUTS
@@ -158,9 +158,10 @@ export type PushPermission = NotificationPermission | 'unsupported';
 let nativePermission: NotificationPermission = 'default';
 
 export async function primeNativePushState(): Promise<void> {
-  if (!isNativePlatform()) return;
-  const { nativeNotificationPermission } = await import('./native/push');
-  nativePermission = await nativeNotificationPermission();
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
+    const { nativeNotificationPermission } = await import('./native/push');
+    nativePermission = await nativeNotificationPermission();
+  }
 }
 
 export function notificationPermission(): PushPermission {
@@ -501,7 +502,7 @@ export interface PushResult {
  * may not await anything before this.
  */
 export async function enablePush(): Promise<PushResult> {
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     const { enableNativePush } = await import('./native/push');
     const result = await enableNativePush();
     if (result.permission) nativePermission = result.permission;
@@ -619,7 +620,7 @@ export async function disablePush(): Promise<PushResult> {
   // Record the choice even if the unsubscribe below fails — the user asked for
   // off, and the repair loop must honour that regardless.
   setOptOut();
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     const { disableNativePush } = await import('./native/push');
     return disableNativePush();
   }
@@ -733,7 +734,7 @@ export async function sendTestPush(): Promise<TestPushResult> {
  * subscription was ever created or persisted.
  */
 export async function hasLocalSubscription(): Promise<boolean> {
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     const { hasNativeSubscription } = await import('./native/push');
     return hasNativeSubscription();
   }

@@ -28,7 +28,7 @@
  * fourth one can only be added by going through this file.
  */
 
-import { isNativePlatform } from '../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 
 const SETTINGS_KEY = 'vibrationsEnabled'; // Settings / HamburgerMenu
 const IN_TABLE_KEY = 'ca_vibration_enabled'; // in-table toggle (useTableSound)
@@ -365,7 +365,7 @@ export function fireVibration(pattern: number | number[]): boolean {
      before the fallback below could be reached. Both switches are still
      honoured, and either being off still silences everything. */
   if (!isVibrationPreferred()) return false;
-  const inApp = isNativePlatform();
+  const inApp = IS_NATIVE_BUILD && isNativePlatform();
   const canNative = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
   if (!inApp && !canNative && !isIosHapticSupported()) return false;
 
@@ -382,7 +382,7 @@ export function fireVibration(pattern: number | number[]): boolean {
     // THE APP (2026-09-08): the phone's own haptic engine, through the plugin
     // in src/lib/native/haptics.ts. Fire-and-forget; the coalescing above has
     // already decided this buzz is owed.
-    if (inApp) {
+    if (IS_NATIVE_BUILD && inApp) {
       void import('../lib/native/haptics')
         .then(({ nativeHaptic }) => nativeHaptic(pattern))
         .catch(() => {});
@@ -412,7 +412,7 @@ export function fireVibration(pattern: number | number[]): boolean {
  */
 export function fireTestVibration(pattern: number | number[]): boolean {
   try {
-    if (isNativePlatform()) {
+    if (IS_NATIVE_BUILD && isNativePlatform()) {
       void import('../lib/native/haptics')
         .then(({ nativeHaptic }) => nativeHaptic(pattern))
         .catch(() => {});

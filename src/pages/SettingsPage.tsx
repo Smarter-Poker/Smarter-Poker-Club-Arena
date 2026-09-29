@@ -542,7 +542,7 @@ export default function SettingsPage() {
       const exportName = `club-arena-export-${new Date().toISOString().split('T')[0]}.json`;
       // THE APP (2026-09-08): a webview honours no <a download>; the share
       // sheet on the written file (src/lib/native/share.ts).
-      if (isNativePlatform()) {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
         const { nativeShareBlob } = await import('../lib/native/share');
         await nativeShareBlob(blob, exportName, 'Club Arena Data Export');
         toast.success('Data exported successfully!');

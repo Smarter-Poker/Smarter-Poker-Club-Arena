@@ -2277,6 +2277,9 @@ export abstract class TournamentManagerBase {
     const lifecycle = this.lifecycleEpoch.current();
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
+    // A fresh scheduler entry starts in the general lanes; the next balance
+    // stage declares consolidation again if the field still needs it.
+    this.consolidationDeclared = false;
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       diagnostics: Object.freeze({
@@ -2379,7 +2382,36 @@ export abstract class TournamentManagerBase {
 
   /** A delayed correctness retry that outranks the routine safety backlog. */
   protected requestUrgentEliminationSweepAfter(delayMs: number): void {
+    this.urgentRedrivesRequested++;
     tournamentEliminationScheduler.wakeUrgentAfter(this.tournamentId, delayMs);
+  }
+
+  /**
+   * Every delayed correctness retry this manager has asked for. The balance
+   * stage compares it across its own work: a retry asked for there is a
+   * table break or seat move that is not finished yet. See
+   * DEFAULT_CONSOLIDATION_SLOTS in TournamentEliminationScheduler.ts.
+   */
+  protected urgentRedrivesRequested = 0;
+  /** What this manager last told the scheduler about its consolidation work. */
+  private consolidationDeclared = false;
+
+  /**
+   * A field with a break or seat move outstanding is served from the
+   * scheduler's consolidation lane until a balance stage finishes clean.
+   */
+  protected declareConsolidationOutstanding(outstanding: boolean): void {
+    if (this.consolidationDeclared === outstanding) return;
+    if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
+      this.consolidationDeclared = outstanding;
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${
+          outstanding
+            ? 'consolidation outstanding - sweeps move to the consolidation lane'
+            : 'consolidation finished - sweeps return to the general lanes'
+        }`
+      );
+    }
   }
 
   /** Keep one add-on retry due while its persisted offer window is open. */

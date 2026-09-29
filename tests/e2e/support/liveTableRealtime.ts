@@ -272,6 +272,20 @@ export class EngineSocketJournal {
     return this.matchingFrames(query).at(-1)!;
   }
 
+  /** Received EVENT frames of one named engine payload type, replayed or not. */
+  countReceivedEvents(tableId: string, eventType: string, since: number): number {
+    return this.matchingFrames({ direction: 'received', tableId, type: 'EVENT', since }).filter(
+      (frame) => eventPayload(frame.message)?.type === eventType
+    ).length;
+  }
+
+  /** The payload type of the newest live (non-replayed) gameplay event, or null. */
+  lastGameplayEventType(tableId: string, since: number): string | null {
+    const last = this.gameplayEvents(tableId, since).at(-1);
+    const type = last ? eventPayload(last.message)?.type : null;
+    return typeof type === 'string' ? type : null;
+  }
+
   gameplayEvents(tableId: string, since: number): EngineFrame[] {
     const unique = new Map<string, EngineFrame>();
     for (const frame of this.matchingFrames({ direction: 'received', tableId, since })) {

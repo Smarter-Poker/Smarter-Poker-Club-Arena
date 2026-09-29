@@ -20,10 +20,10 @@ same loop.
 - `smarter_private.f06_operations`: break `e487977d` for cb8f2dd1, source
   table `b6af1747`, state `park_requested`, revision 1, custody `50b3eacb`
   claimed by generation `83b3ec21`, created 00:51:54Z.
-- Engine log: 01:14:07Z `lease generation 83b3ec21 expired before it was
-  renewed`; 01:14:26Z the lost-lease stop and the drained transfer were
-  refused (`originals_not_drained`); 01:14:39Z the manager's lease release was
-  confirmed. The first `f06_retirement_custody_held` for cb8f2dd1 is
+- Engine log: at 01:14:07Z lease generation 83b3ec21 "expired before it was
+  renewed"; at 01:14:26Z the lost-lease stop and the drained transfer were
+  refused (`originals_not_drained`); at 01:14:39Z the manager's lease release
+  was confirmed. The first `f06_retirement_custody_held` for cb8f2dd1 is
   01:15:43Z.
 - `TournamentRetirementCustody.withCustody` keeps a reservation it could not
   acknowledge (`held` + `pending`, keyed by the generation's identity) so the

@@ -687,10 +687,16 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.tournamentId,
       this,
       async (reservation) => {
-        if (!this.lifecycleIsCurrent(lifecycle) || this.getTournamentLeaseGeneration() !== generation)
+        if (
+          !this.lifecycleIsCurrent(lifecycle) ||
+          this.getTournamentLeaseGeneration() !== generation
+        )
           return false;
         const state = await this.tableBreakRpc().reconcile(reservation.breakId);
-        if (!this.lifecycleIsCurrent(lifecycle) || this.getTournamentLeaseGeneration() !== generation)
+        if (
+          !this.lifecycleIsCurrent(lifecycle) ||
+          this.getTournamentLeaseGeneration() !== generation
+        )
           return false;
         if (
           state.ok !== true ||

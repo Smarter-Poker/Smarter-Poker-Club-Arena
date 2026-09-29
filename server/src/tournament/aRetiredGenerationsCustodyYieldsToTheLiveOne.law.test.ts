@@ -194,9 +194,7 @@ describe("a retired generation's retirement reservation yields to the live one",
       const { gate, manager, token } = await world(row);
       await manager.adoptAbandonedRetirementCustody(token);
       expect(gate.admissionAllowed(source)).toBe(false);
-      expect(() => manager.createManagedTableEngine(source)).toThrow(
-        'f06_retirement_custody_held'
-      );
+      expect(() => manager.createManagedTableEngine(source)).toThrow('f06_retirement_custody_held');
       vi.restoreAllMocks();
     }
   });

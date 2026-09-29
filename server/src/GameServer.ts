@@ -10374,7 +10374,13 @@ export class GameServer {
         !this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration)
       )
         continue;
-      if (this.tournamentRetirementCustody.yieldAbandoned(reservation, liveGeneration, this.tableEngines))
+      if (
+        this.tournamentRetirementCustody.yieldAbandoned(
+          reservation,
+          liveGeneration,
+          this.tableEngines
+        )
+      )
         yielded.push(reservation);
     }
     return yielded;

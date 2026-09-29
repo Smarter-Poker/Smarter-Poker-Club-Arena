@@ -8,7 +8,12 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
 -- exercised on. Added when fn_cash_earning_club was finally declared in a
 -- migration and joined the authoritative closure, bringing its caller guard
 -- with it.
-CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
+-- CREATE OR REPLACE, not CREATE: test_rebuy_receipts.py re-runs this whole
+-- fixture against an already-bootstrapped database, neutralising only
+-- 'CREATE SCHEMA auth;' and 'CREATE FUNCTION auth.uid()' by string
+-- replacement. A plain CREATE here collides on that second pass with
+-- 42723 function "role" already exists.
+CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
 CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(), performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric CHECK(amount>0),category text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,description text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,idempotency_key text UNIQUE,metadata jsonb,created_at timestamptz DEFAULT now());
 -- Read by fn_lock_cash_bank_accounting_week, which atomic_distribute_rake
 -- reaches once this branch's rewrite of it lands. Empty is the honest state

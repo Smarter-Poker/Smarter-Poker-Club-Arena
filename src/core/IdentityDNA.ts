@@ -12,7 +12,7 @@
  * NO DEMO DATA - All operations are real.
  */
 
-import { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { Session, AuthChangeEvent, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
 import { readLocalSession as readLocalSessionShared, SPA_AUTH_BREADCRUMB } from '../lib/authUtils';
@@ -471,10 +471,21 @@ class IdentityDNACore {
 
   /**
    * Perform secure logout
+   *
+   * A sign-out the server already made is finished here, not reported: when
+   * the session is gone on the server (the account was closed, or it was
+   * signed out elsewhere) supabase-js 2.90 answers AuthSessionMissingError
+   * and keeps the local copy. See src/lib/forgetEndedSession.ts.
    */
   async logout(): Promise<void> {
     try {
       const { error } = await supabase.auth.signOut();
+      if (error && isAuthSessionMissingError(error)) {
+        // Rare, so loaded when needed rather than in first paint.
+        const { forgetEndedSession } = await import('../lib/forgetEndedSession');
+        await forgetEndedSession(supabase.auth);
+        return;
+      }
       if (error) {
         reportError(error, 'IdentityDNA.Error');
         throw error;

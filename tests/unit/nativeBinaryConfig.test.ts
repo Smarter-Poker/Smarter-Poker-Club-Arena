@@ -116,5 +116,10 @@ describe('one command per store build', () => {
     // Java 25 is the Mac default and Gradle refuses it
     expect(android).toContain('17');
     expect(android).toContain('21');
+    // No Firebase config, no store bundle: without it the app CRASHES when a
+    // player taps Enable on the notifications sheet (2026-09-29, emulator).
+    expect(android).toMatch(
+      /if \[ ! -s android\/app\/google-services\.json \]; then[\s\S]*?exit 1\s*\nfi/
+    );
   });
 });

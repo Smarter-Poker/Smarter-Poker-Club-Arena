@@ -48,6 +48,9 @@ vi.mock('./ServerTableEngine.js', () => ({
     getStartupPolicyRefusal() {
       return this.policy;
     }
+    getStartupRetainedHandRefusal() {
+      return null;
+    }
   },
 }));
 
@@ -382,6 +385,7 @@ describe('closed Diamond cash admission', () => {
       hasReleasedProcessOwnership: () => false,
       getEngineLeaseAuthority: () => ({ scope: 'cash', verified: true, generation: GENERATION }),
       getStartupPolicyRefusal: () => ({ code: 'diamond_cash_disabled' }),
+      getStartupRetainedHandRefusal: () => null,
     };
     const replacement = {};
     server.tableEngines.set(TABLE, old);

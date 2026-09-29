@@ -121,6 +121,7 @@ import {
   completeHandSnapshot,
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
+  RetainedHandSubmissionRefusedError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
   loadPresenceFromPark,
@@ -285,6 +286,16 @@ export abstract class ServerTableEngineBase {
 
   getStartupPolicyRefusal(): Readonly<CashTablePolicyRefusal> | null {
     return this.startupPolicyRefusal;
+  }
+  /**
+   * The retained-hand door refused this cash table's start from durable
+   * state (RETAINED_HAND_STANDING_REFUSALS). Published before ready=false so
+   * the owner holds the table instead of rebuilding it into the same answer.
+   */
+  private startupRetainedHandRefusal: Readonly<{ code: string; tableId: string }> | null = null;
+
+  getStartupRetainedHandRefusal(): Readonly<{ code: string; tableId: string }> | null {
+    return this.startupRetainedHandRefusal;
   }
   /** Passive first fence only; never used to authorize or schedule work. */
   private firstTerminalObservation: ReturnType<typeof leavePendingTerminalReason> | null = null;
@@ -3835,6 +3846,20 @@ export abstract class ServerTableEngineBase {
           arenaId: err.arenaId,
         });
         this.fenceTerminalEngine('startup_policy_closed', false);
+        throw err;
+      }
+      if (
+        err instanceof RetainedHandSubmissionRefusedError &&
+        err.tableId === this.tableId &&
+        this.engineLeaseScope === 'cash'
+      ) {
+        // A STANDING REFUSAL IS NOT A CRASH (2026-09-29). The door answered
+        // from rows a rebuilt engine would read again; a watchdog kill here
+        // was a rebuild every five seconds into the same answer. Fence this
+        // generation without a watchdog record and let the owner hold the
+        // table and say so once (GameServer.holdRetainedHandRefusal).
+        this.startupRetainedHandRefusal = Object.freeze({ code: err.code, tableId: err.tableId });
+        this.fenceTerminalEngine('startup_retained_hand_refused', false);
         throw err;
       }
       this.settleReady(false);

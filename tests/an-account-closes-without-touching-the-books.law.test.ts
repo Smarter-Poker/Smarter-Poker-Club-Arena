@@ -30,6 +30,14 @@
  *      money ('system', registered above the CREATE).
  *   5. Its refusal reasons are exactly the ones the World Hub endpoint has an
  *      instruction for (pinned there by delete-account-closes-the-account).
+ *   6. The person's pictures go with them (added 2026-09-29, migration
+ *      20260929070440): the profile's picture links are cleared, and the
+ *      avatar record (a custom avatar's image link and the words that
+ *      described them) and the profile editor's media library are deleted.
+ *      All three tables reference auth.users ON DELETE CASCADE - they were
+ *      meant to go with the person - and the soft delete never cascades. The
+ *      World Hub endpoint removes the files through the Storage API
+ *      (pinned there by delete-account-closes-the-account).
  *
  * Registry: docs/laws.d/an-account-closes-without-touching-the-books.md
  */
@@ -181,6 +189,22 @@ describe(`${FN} (in force: ${MIGRATION})`, () => {
       'the money guard refuses a balance-reading function it has not been told about'
     ).toBeGreaterThan(-1);
     expect(registry).toBeLessThan(SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${FN}(`));
+  });
+
+  it("takes the person's pictures with them: the links, the avatar record and the media library", () => {
+    const scrub = CODE.search(/UPDATE public\.profiles SET/);
+    expect(scrub, `${FN} no longer scrubs the profile`).toBeGreaterThan(-1);
+    const scrubStatement = CODE.slice(scrub, CODE.indexOf(';', scrub));
+    for (const column of ['avatar_url', 'cover_photo_url', 'arena_avatar_url']) {
+      expect(scrubStatement, `${FN} no longer clears profiles.${column}`).toMatch(
+        new RegExp(`\\b${column} = NULL`)
+      );
+    }
+    for (const table of ['user_avatars', 'user_media', 'user_albums']) {
+      expect(CODE, `${FN} no longer deletes the person's ${table} rows`).toMatch(
+        new RegExp(`DELETE FROM public\\.${table} \\w+ WHERE \\w+\\.user_id = p_user_id;`)
+      );
+    }
   });
 
   it('refuses with exactly the reasons the World Hub has an instruction for', () => {

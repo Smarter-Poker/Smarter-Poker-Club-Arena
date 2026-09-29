@@ -16,3 +16,10 @@ deleted and no balance column or journal is ever written; clubs are left
 through the lifecycle door and the membership rows are kept; only service_role
 may call it and the money guard knows it moves no money; and its refusal
 reasons are exactly the ones the World Hub answers with an instruction.
+
+Added the same day: closing had cleared the links to the person's pictures but
+left the avatar record, the profile editor's media library and the files
+themselves, and anyone could list the uploaded profile photos by id. The law
+now also holds that the profile's three picture links are cleared and the
+user_avatars, user_media and user_albums rows are deleted; the World Hub
+removes the files through the Storage API.

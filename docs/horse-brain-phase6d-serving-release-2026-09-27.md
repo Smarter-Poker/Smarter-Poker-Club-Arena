@@ -363,3 +363,60 @@ G1, G2, G3, G4, G7, G9 and G10 are unchanged. The 6B route proof of the same win
 
 - The target is a release containing #5541 whose own population shows complete five-link chains and capture continuity with no producer drops (`phase15_journal_queue_capacity` and `phase15_journal_lock_retry` near zero at load comparable to 13:00Z to 15:00Z). That is verified in a later section once such a release serves, not here.
 - Nothing above changes a decision, a route or a payout; the correction is to what this document said about capture and about what could be replayed.
+
+## 2026-09-29: capture health on the serving release fa480b9b stops the evidence run, and the cause is fixed
+
+Release `fa480b9bb99132938aabc7788810e5df5b0bf056` (container started 2026-09-28T21:06:27Z; contains #5541, #5505, #5480, #5530, #5490 and #5513). Aggregate only; no hand key, player or table id, card or record content.
+
+### Capture health first (the rule that stopped the evidence run)
+
+Read 2026-09-29T03:08Z from `public.horse_brain_flush_receipts` (`source_release like 'fa480b9b%'`, fires per feature, collected 21:06Z onward, 15-minute bins). Aggregate only: `docs/evidence/phase6d/capture-health-2026-09-29-fa480b9b.json`.
+
+| Bin start (UTC) | enqueued | queue_capacity | lock_retry | capture_unavailable |
+| --- | ---: | ---: | ---: | ---: |
+| 21:15 | 153,462 | 12,923 | 0 | 8,067 |
+| 21:30 | 133,889 | 13,141 | 0 | 16,163 |
+| 21:45 | 77,266 | 16,772 | 0 | 4,562 |
+| 22:00 | 125,659 | 18,579 | 0 | 2 |
+| 22:15 | 146,119 | 0 | 0 | 0 |
+| 22:30 | 165,018 | 18,121 | 0 | 1 |
+| 22:45 | 102,869 | 7,526 | 0 | 0 |
+| 23:00 | 146,125 | 5,974 | 0 | 2 |
+| 23:15 | 144,745 | 7,934 | 0 | 2,259 |
+| 23:30 | 100,246 | 19,746 | 0 | 2,964 |
+| 23:45 | 79,751 | 22,926 | 0 | 3,923 |
+| 00:00 | 114,371 | 16,239 | 0 | 2 |
+| 00:15 | 144,547 | 6,139 | 0 | 627 |
+| 00:30 | 148,724 | 20,256 | 0 | 895 |
+| 00:45 | 76,654 | 6,903 | 0 | 8,701 |
+| 01:00 | 106,431 | 10,320 | 0 | 4,540 |
+| 01:15 | 148,671 | 14,545 | 0 | 1 |
+| 01:30 | 179,325 | 27,439 | 0 | 0 |
+| 01:45 | 104,046 | 18,923 | 0 | 0 |
+| 02:00 | 131,874 | 27,830 | 0 | 0 |
+| 02:15 | 102,550 | 12,357 | 0 | 4,843 |
+| 02:30 | 170,215 | 11,706 | 0 | 0 |
+| 02:45 | 87,090 | 223 | 0 | 2 |
+
+The 21:00 bin (partial, 164 refused of 15,799 offered) and the 03:00 bin (5 minutes, 0 refused) are in the JSON. Over the whole read: 2,907,785 enqueued, 316,686 refused at the queue (9.8% of offered, 22.3% in the worst bin), lock_retry 0 in every bin, capture_unavailable 57,554. #5541 removed the lock contention and the shed remained.
+
+### Root cause and fix
+
+The assignment says that when queue_capacity is still material, the evidence work stops and the cause is fixed. Three causes were read from the running host or reproduced, and are fixed in this branch (details, measurements and pins in `docs/changelog/2026-09-29-horse-journal-capture-cost.md`): the writer validated each segment five times (15 canonical serialisations per record, about 20 ms of writer CPU per 16-record batch on the host); both writer threads inherited nice 10 from their decision workers (about 100 records a second of ceiling against about 120 offered per shard); and the 16 MiB queue held about 1,800 records of 9 KB, fifteen seconds of a shard's traffic. The review tools also read shard 0 only; they now read every shard, pinned by a two-shard law test.
+
+Neither the population, the replay nor the route proof was run on fa480b9b: no declaration was committed and no record was read, because their capture gates cannot be verified on this journal. The fix is delivered to main; the same runs are owed on the first release that contains it and whose own receipts show queue_capacity near zero. Not claimed: any change to a decision, a route or a payout, and any effect of the fix on a serving release.
+
+### Gate status, 6A and 6D on fa480b9b
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| G1 Domain | implemented but unverified | No population was walked on fa480b9b; 64 cells observed on 763e4cec is historical only |
+| G2 Inputs | implemented but unverified | Request-link and v2 context-receipt presence not read on fa480b9b; 137 of 137 on 763e4cec is historical only |
+| G3 Computation | implemented but unverified | Calculation link and independent qualification not read on fa480b9b; 106 of 106 (763e4cec) is historical only |
+| G4 Immutable authority | implemented but unverified | No declaration committed for fa480b9b because no record was read; the 763e4cec declaration (committed 15:14:03Z, first read 15:16:55.718Z) is historical only |
+| G5 Reachability | defective | queue_capacity refused 316,686 of 3,224,471 offered records (9.8%) on fa480b9b, non-zero in 23 of 25 bins; five-link chains cannot be completed on a shedding journal |
+| G6 Outcome receipts | defective | Same cause: the completed-hand and execution records that outcome receipts join to are refused at the producer queue |
+| G7 Independent correctness | verified now | `TournamentBrainContextCache.test.ts`, `TournamentBlindSnapshot.test.ts`, `HorsePhase6Tournament.test.ts` rerun 2026-09-29 on a tree whose `server/src/engine` and `server/src/services` equal fa480b9b: 3 files, 91 of 91 passed |
+| G8 Performance and replay | implemented but unverified | Replay not run on fa480b9b (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only |
+| G9 Learning and promotion | not applicable with reason | Phase 6 activates no learned or promoted candidate |
+| G10 Publication and use | implemented but unverified | fa480b9b serves (its receipts run 21:13Z to 03:05Z); its own archive was not read by its own image, so publication and use are not shown |

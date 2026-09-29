@@ -1,0 +1,242 @@
+{
+  "version": "phase6d-capture-health-v1",
+  "release": "fa480b9bb99132938aabc7788810e5df5b0bf056",
+  "containerStartedAt": "2026-09-28T21:06:27Z",
+  "source": "public.horse_brain_flush_receipts, source_release like 'fa480b9b%', collected_at >= 2026-09-28T21:06Z, fires feature counts, 15-minute bins from 2026-09-28T21:00Z; read at 2026-09-29T03:08Z",
+  "note": "Aggregate only. shedFractionOfOffered = queueCapacity / (enqueued + queueCapacity). The 21:00 bin starts at the container start; the 03:00 bin is 5 minutes long.",
+  "totals": {
+    "enqueued": 2907785,
+    "queueCapacity": 316686,
+    "shedFractionOfOffered": 0.0982,
+    "lockRetry": 0,
+    "captureUnavailable": 57554
+  },
+  "buckets": [
+    {
+      "bucketStartUtc": "21:00",
+      "enqueued": 15635,
+      "recorded": 12155,
+      "queueCapacity": 164,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.0104
+    },
+    {
+      "bucketStartUtc": "21:15",
+      "enqueued": 153462,
+      "recorded": 153408,
+      "queueCapacity": 12923,
+      "lockRetry": 0,
+      "captureUnavailable": 8067,
+      "shedFractionOfOffered": 0.0777
+    },
+    {
+      "bucketStartUtc": "21:30",
+      "enqueued": 133889,
+      "recorded": 133904,
+      "queueCapacity": 13141,
+      "lockRetry": 0,
+      "captureUnavailable": 16163,
+      "shedFractionOfOffered": 0.0894
+    },
+    {
+      "bucketStartUtc": "21:45",
+      "enqueued": 77266,
+      "recorded": 80785,
+      "queueCapacity": 16772,
+      "lockRetry": 0,
+      "captureUnavailable": 4562,
+      "shedFractionOfOffered": 0.1784
+    },
+    {
+      "bucketStartUtc": "22:00",
+      "enqueued": 125659,
+      "recorded": 124057,
+      "queueCapacity": 18579,
+      "lockRetry": 0,
+      "captureUnavailable": 2,
+      "shedFractionOfOffered": 0.1288
+    },
+    {
+      "bucketStartUtc": "22:15",
+      "enqueued": 146119,
+      "recorded": 147716,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.0
+    },
+    {
+      "bucketStartUtc": "22:30",
+      "enqueued": 165018,
+      "recorded": 161948,
+      "queueCapacity": 18121,
+      "lockRetry": 0,
+      "captureUnavailable": 1,
+      "shedFractionOfOffered": 0.0989
+    },
+    {
+      "bucketStartUtc": "22:45",
+      "enqueued": 102869,
+      "recorded": 105944,
+      "queueCapacity": 7526,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.0682
+    },
+    {
+      "bucketStartUtc": "23:00",
+      "enqueued": 146125,
+      "recorded": 144392,
+      "queueCapacity": 5974,
+      "lockRetry": 0,
+      "captureUnavailable": 2,
+      "shedFractionOfOffered": 0.0393
+    },
+    {
+      "bucketStartUtc": "23:15",
+      "enqueued": 144745,
+      "recorded": 143470,
+      "queueCapacity": 7934,
+      "lockRetry": 0,
+      "captureUnavailable": 2259,
+      "shedFractionOfOffered": 0.052
+    },
+    {
+      "bucketStartUtc": "23:30",
+      "enqueued": 100246,
+      "recorded": 99416,
+      "queueCapacity": 19746,
+      "lockRetry": 0,
+      "captureUnavailable": 2964,
+      "shedFractionOfOffered": 0.1646
+    },
+    {
+      "bucketStartUtc": "23:45",
+      "enqueued": 79751,
+      "recorded": 83589,
+      "queueCapacity": 22926,
+      "lockRetry": 0,
+      "captureUnavailable": 3923,
+      "shedFractionOfOffered": 0.2233
+    },
+    {
+      "bucketStartUtc": "00:00",
+      "enqueued": 114371,
+      "recorded": 113487,
+      "queueCapacity": 16239,
+      "lockRetry": 0,
+      "captureUnavailable": 2,
+      "shedFractionOfOffered": 0.1243
+    },
+    {
+      "bucketStartUtc": "00:15",
+      "enqueued": 144547,
+      "recorded": 141670,
+      "queueCapacity": 6139,
+      "lockRetry": 0,
+      "captureUnavailable": 627,
+      "shedFractionOfOffered": 0.0407
+    },
+    {
+      "bucketStartUtc": "00:30",
+      "enqueued": 148724,
+      "recorded": 149735,
+      "queueCapacity": 20256,
+      "lockRetry": 0,
+      "captureUnavailable": 895,
+      "shedFractionOfOffered": 0.1199
+    },
+    {
+      "bucketStartUtc": "00:45",
+      "enqueued": 76654,
+      "recorded": 79404,
+      "queueCapacity": 6903,
+      "lockRetry": 0,
+      "captureUnavailable": 8701,
+      "shedFractionOfOffered": 0.0826
+    },
+    {
+      "bucketStartUtc": "01:00",
+      "enqueued": 106431,
+      "recorded": 106429,
+      "queueCapacity": 10320,
+      "lockRetry": 0,
+      "captureUnavailable": 4540,
+      "shedFractionOfOffered": 0.0884
+    },
+    {
+      "bucketStartUtc": "01:15",
+      "enqueued": 148671,
+      "recorded": 144559,
+      "queueCapacity": 14545,
+      "lockRetry": 0,
+      "captureUnavailable": 1,
+      "shedFractionOfOffered": 0.0891
+    },
+    {
+      "bucketStartUtc": "01:30",
+      "enqueued": 179325,
+      "recorded": 179600,
+      "queueCapacity": 27439,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.1327
+    },
+    {
+      "bucketStartUtc": "01:45",
+      "enqueued": 104046,
+      "recorded": 107885,
+      "queueCapacity": 18923,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.1539
+    },
+    {
+      "bucketStartUtc": "02:00",
+      "enqueued": 131874,
+      "recorded": 128172,
+      "queueCapacity": 27830,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.1743
+    },
+    {
+      "bucketStartUtc": "02:15",
+      "enqueued": 102550,
+      "recorded": 106200,
+      "queueCapacity": 12357,
+      "lockRetry": 0,
+      "captureUnavailable": 4843,
+      "shedFractionOfOffered": 0.1075
+    },
+    {
+      "bucketStartUtc": "02:30",
+      "enqueued": 170215,
+      "recorded": 169142,
+      "queueCapacity": 11706,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.0643
+    },
+    {
+      "bucketStartUtc": "02:45",
+      "enqueued": 87090,
+      "recorded": 88215,
+      "queueCapacity": 223,
+      "lockRetry": 0,
+      "captureUnavailable": 2,
+      "shedFractionOfOffered": 0.0026
+    },
+    {
+      "bucketStartUtc": "03:00",
+      "enqueued": 2503,
+      "recorded": 2503,
+      "queueCapacity": 0,
+      "lockRetry": 0,
+      "captureUnavailable": 0,
+      "shedFractionOfOffered": 0.0
+    }
+  ],
+  "verdict": "queue_capacity is material in 23 of 25 bins and lock_retry is zero in every bin; capture gates cannot be verified on this release"
+}

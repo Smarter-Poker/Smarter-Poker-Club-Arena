@@ -440,8 +440,8 @@ UPDATE public.tournaments SET started_at=NULL
 -- Prize-pool conservation, capped exposure, rounding and cancellation
 -- recovery, across every tournament format the Diamond create door admits
 -- today. ADDING A FORMAT IS ADDING A ROW to fixture_formats: cases 9 to 12
--- loop over the table, and the lifecycle law refuses a table that leaves out a
--- format the captured create door admits.
+-- loop over the table, and the check after case 9 refuses a table that leaves
+-- out a format the captured create door admits.
 --
 -- WHAT A CLOSED ARENA CAN PROVE IS PROVED HERE: the price each format's door
 -- writes and how it rounds at the Diamond unit, that every bank refuses to pay
@@ -450,10 +450,11 @@ UPDATE public.tournaments SET started_at=NULL
 -- installed ladder arithmetic at both units (case 13). WHAT ONLY A FUNDED EVENT
 -- CAN PROVE - entries taken, knockouts paid, a terminal settled, a started event
 -- refusing cancellation with every Diamond still in custody - needs
--- tournaments_enabled, which this fixture never opens. That half was proved on
--- 2026-09-21 through the same installed doors by a rolled-back production
--- rehearsal, recorded with its numbers in
--- docs/changelog/2026-09-21-diamond-phase-9-cross-format-conservation.md.
+-- tournaments_enabled, which this fixture never opens, and doors this fixture
+-- does not capture yet (the launch, the knockout collectors and the terminal).
+-- That half is NOT proved here;
+-- docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md says
+-- exactly what it waits on.
 --
 -- NO NUMBER HERE IS INVENTED. Each row is one of the estate's own committed
 -- configurations:
@@ -528,6 +529,24 @@ BEGIN
   PERFORM fixture_assert((SELECT count(*) = 6 FROM fixture_formats WHERE tournament_id IS NOT NULL),
     'every format in the table was created through the door');
 END $case9$;
+
+-- The table is held to the door: every tournament type the estate names is
+-- either a row above or refused by the create door by name. Satellites and
+-- spins are refused today; the day the captured door admits one, this fails
+-- until its row is added, so no format can join the arena untested.
+DO $case9b$
+DECLARE v_type text;
+BEGIN
+  FOREACH v_type IN ARRAY ARRAY['mtt','sng','bounty','progressive_bounty','mystery_bounty','satellite','spin'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM fixture_formats WHERE config->>'type' = v_type) THEN
+      PERFORM fixture_refuses(format($q$SELECT fixture_create(fixture_mtt_config()||jsonb_build_object('type',%L))$q$, v_type),
+        'diamond_tournament_format_not_open');
+    END IF;
+  END LOOP;
+  PERFORM fixture_assert(NOT EXISTS (SELECT 1 FROM fixture_formats WHERE config->>'type' NOT IN
+      ('mtt','sng','bounty','progressive_bounty','mystery_bounty','satellite','spin')),
+    'formats: every format the create door admits has a row in the table, and every other one is refused by name');
+END $case9b$;
 
 -- ===========================================================================
 -- CASE 10: CAPPED EXPOSURE - NO BANK OF ANY FORMAT PAYS PAST WHAT IT HOLDS
@@ -656,13 +675,17 @@ END $case12$;
 --
 -- NOT ASSERTED HERE, BECAUSE IT FAILS: that version 1 never pays a lower place
 -- more than a higher one at the Diamond unit. On ladders fn_ca_payout_structure
--- generates, it does - a field of 21 paid at 20 percent with a 27-Diamond prize
--- bank pays 10/6/4/3/4 - because each place is rounded to the nearest whole
--- Diamond and the accumulated residue lands on the last paid place. At unit 1
--- the same ladders never invert, and version 2 (largest remainder) never
--- inverts at either unit; both are asserted below. The defect is written up in
--- the changelog named in case 9. This suite has no expected-failure
--- convention, so the failing assertion is kept out of it rather than marked.
+-- generates it does, at every payout percent the create door accepts: a field
+-- of 21 paid at 20 percent with a 27-Diamond prize bank pays 10/6/4/3/4, and a
+-- field of 51 at the default 10 percent with a 55-Diamond bank pays sixth place
+-- 6 and fifth place 5. Each place above the last is rounded to the nearest
+-- whole Diamond and the accumulated residue lands on the last paid place. Of
+-- the 7,500 generated ladders case 13b prices, 108 invert at the Diamond unit
+-- under version 1; none inverts at unit 1, and none under version 2 (largest
+-- remainder) at either unit - those three are asserted below. The defect is
+-- written up in the changelog named in case 9. This suite has no
+-- expected-failure convention, so the failing assertion is kept out of it
+-- rather than marked.
 -- ===========================================================================
 CREATE TABLE fixture_ladder_structures(name text PRIMARY KEY, entries jsonb NOT NULL);
 INSERT INTO fixture_ladder_structures VALUES
@@ -751,25 +774,28 @@ BEGIN
                        JOIN jsonb_array_elements(g.structure) WITH ORDINALITY b(e,i) ON b.i = a.i + 1
                       WHERE (b.e->>'percentage')::numeric > (a.e->>'percentage')::numeric)),
     'rounding: every committed ladder the final field generates (fields 1 to 40, at 10, 15 and 20 percent) totals exactly 100.00 in whole hundredths, never rises and pays the places its percent names');
-  -- Priced at the Diamond unit on every prize bank from one to four Diamonds an
-  -- entrant: both versions spend the bank exactly in whole Diamonds, and version
-  -- 2 never pays a lower place more than a higher one.
-  SELECT count(DISTINCT (g.field, g.pct, p.pool, v.ver)) AS ladders,
+  -- Priced on every prize bank from one to four Diamonds an entrant, at unit 1
+  -- and at the Diamond unit, under both versions: every bank is spent exactly
+  -- in whole units; a lower place is never paid more than a higher one under
+  -- version 2 at either unit, nor under version 1 at unit 1. (Version 1 at the
+  -- Diamond unit is the defect named above, deliberately not asserted.)
+  SELECT count(DISTINCT (g.field, g.pct, p.pool, v.ver, u.unit)) AS ladders,
          bool_and(t.total = p.pool*100) AS exact, bool_and(t.whole) AS whole,
-         bool_and(v.ver = 1 OR t.monotone) AS v2_monotone
+         bool_and((v.ver = 1 AND u.unit = 100) OR t.monotone) AS monotone
     INTO r
     FROM fixture_generated g
     CROSS JOIN LATERAL generate_series(g.field, g.field*4) p(pool)
     CROSS JOIN (VALUES (1),(2)) v(ver)
+    CROSS JOIN (VALUES (1),(100)) u(unit)
     CROSS JOIN LATERAL (
-      SELECT sum(l.cents) AS total, bool_and(l.cents % 100 = 0) AS whole,
+      SELECT sum(l.cents) AS total, bool_and(l.cents % u.unit = 0) AS whole,
              bool_and(l.cents <= COALESCE(l.above, l.cents)) AS monotone
         FROM (SELECT x.place, x.cents, lag(x.cents) OVER (ORDER BY x.place) AS above
                 FROM public.fn_ca_prize_ladder_versioned((p.pool*100)::bigint,
                        (SELECT jsonb_agg(jsonb_build_object('place',(e->>'place')::int,'bp',round((e->>'percentage')::numeric*100)::int))
-                          FROM jsonb_array_elements(g.structure) e), 100, v.ver) x) l) t;
-  PERFORM fixture_assert(r.ladders > 5000 AND r.exact AND r.whole AND r.v2_monotone,
-    format('rounding: %s generated ladders priced at the Diamond unit spend every bank exactly in whole Diamonds, and under version 2 a lower place is never paid more than a higher one',
+                          FROM jsonb_array_elements(g.structure) e), u.unit, v.ver) x) l) t;
+  PERFORM fixture_assert(r.ladders = 30000 AND r.exact AND r.whole AND r.monotone,
+    format('rounding: %s generated ladders (both versions, both units) spend every bank exactly in whole units, and a lower place is never paid more than a higher one under version 2 at either unit or under version 1 at unit 1',
            r.ladders));
 END $case13b$;
 

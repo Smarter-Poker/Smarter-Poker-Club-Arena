@@ -1,0 +1,49 @@
+-- A UNION CLOSE READS NARROW PROJECTIONS, NOT WIDE ROWS (2026-09-29).
+--
+-- Deep Stack Society's first weekly close succeeded 2026-09-29 02:30 UTC.
+-- Midway Union's (fade0000-...-0001) book 2026-09-21 07:00 .. 09-28 07:00 is
+-- fully evidence-resolved, but its report cannot finish without starving live
+-- play: measured read-only on production 2026-09-29 (disk ~12.5 MB/s, ~2.5 ms
+-- a cold random page), its statements fetch wide rows scattered over GBs:
+--  * touched registrations: 364,686 tournament_players events of the week,
+--    ~one 8 KB heap page each (avg row 727 B, interleaved with table_seats in
+--    the 11 GB union_pnl_inventory_events), then every tournaments event of
+--    each touched tournament for its Union: 19-25+ minutes, PostgREST 8 s
+--    timeouts en masse while it ran.
+--  * the award test: the Union filter reads tournament_snapshot, TOASTed on
+--    every one of the 75k tournament_accounting_credit_receipts (~1.6 TOAST
+--    page reads a row, sampled 12.7 ms a row cold), before the week filter.
+--  * the hands: 375k Midway hands of the week read in full (avg 1.1 KB inline
+--    evidence plus TOAST, ~0.9 ms a hand cold) by the refusal count (planned
+--    through the full-week index, not the partial one) and again by the P&L.
+--  * both boundaries (> 45 s each): per open registration the row-typed
+--    fn_union_pnl_tournament_entry_club(r) forms a whole-row value, which
+--    detoasts all four TOASTed snapshots of the receipt (measured 1.3 extra
+--    page reads a receipt) for a test of six inline columns; the same call in
+--    the report's entry and award tests.
+--
+-- The fix is structural. Three narrow, immutable projections, each written by
+-- an AFTER INSERT trigger in the statement that inserts its source row (so
+-- both commit or roll back together): union_pnl_inventory_touches (the
+-- tournament_players and tournaments events' keys, with the frame's
+-- observed_at), union_pnl_cash_outcome_touches (Union, week, the refusal shape
+-- flag, the rake and each participant's three keys) and
+-- union_pnl_credit_touches (the snapshot's Union and the frame's observed_at).
+-- A one-time, throttled, resumable, idempotent build over the rows that
+-- predate the writers, as CREATE INDEX builds an index over existing rows
+-- (fn_union_pnl_projection_build_step: a TID range of at most N source pages
+-- in physical order; sp_union_pnl_projection_build: steps with COMMIT and a
+-- duty-cycled pause, one runner at a time). It repairs nothing (no outcome
+-- was wrong; the projections are new) and schedules nothing. The build
+-- covers every row committed before the writers existed: the sources' sizes
+-- are read here while the triggers' SHARE ROW EXCLUSIVE locks are held, so nothing committed earlier lies above them. The report reads a
+-- projection only once its build is complete; until then it reads the
+-- original wide rows through the same statements as before. Either way every
+-- value, issue and refusal is identical (native qualification below). The
+-- whole-row entry test becomes fn_union_pnl_tournament_entry_club_of (the
+-- same CASE, column for column). No projected source, frame or ledger changes;
+-- no balance is written; none of the three sources is a declared money table.
+--
+-- Native qualification: scripts/dev/test-union-pnl-narrow-reads.sh (randomized
+-- books, before/after the build and capture-time paths, red controls, IO book).
+-- Apply procedure and build throttle: the PR description.

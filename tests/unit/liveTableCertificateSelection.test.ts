@@ -77,7 +77,9 @@ describe('an MTT table is selected only if its tournament can yield an eligible 
     // Past the look-ahead the later read is a fresh selection problem.
     const far = running.blind_structure.map((entry) => ({ ...entry }));
     far.push(level(5, { isBreak: true }) as never);
-    expect(selectableHudClock({ ...running, current_level: 2, blind_structure: far }, now)).not.toBeNull();
+    expect(
+      selectableHudClock({ ...running, current_level: 2, blind_structure: far }, now)
+    ).not.toBeNull();
   });
 
   it('refuses a look-ahead level longer than the certifiable cap', () => {

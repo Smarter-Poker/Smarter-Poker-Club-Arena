@@ -356,10 +356,9 @@ async function proveTableProgressedBeforeNavigation(
         // bound as the socket proof applies to the group, not to one table.
         timeout: budget,
         intervals: [2_000, 3_000, 5_000, 5_000],
-        message:
-          `none of ${contenders.length} occupied cash table(s) (${contenders
-            .map((contender) => contender.candidate.id)
-            .join(', ')}) started their next hand inside ${budget}ms`,
+        message: `none of ${contenders.length} occupied cash table(s) (${contenders
+          .map((contender) => contender.candidate.id)
+          .join(', ')}) started their next hand inside ${budget}ms`,
       }
     )
     .toBe(true);

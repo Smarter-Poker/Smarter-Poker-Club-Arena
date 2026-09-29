@@ -31,16 +31,24 @@
 --      custody accounts. Players, house and register do not move; custody
 --      only changes hands. That is fn_poker_diamond_tournament_seat_transfer,
 --      a new owner-only door, which both authorities call in place of the
---      chip legs, after the target roster row is written.
+--      chip legs, after the target roster row is written and before any
+--      chair is taken: the cohort authority deals a qualifier into a RUNNING
+--      target through fn_seat_late_registrant (20260925205909), and a Diamond
+--      tournament chair is admitted only against an active funded entry
+--      (fn_poker_bind_diamond_seat, P0810).
 --   2. WHERE THE UNIT DIVIDES: NOWHERE. A Diamond ledger part is a whole
 --      number of Diamonds, so the prize bank is whole; the ticket is the
 --      target's whole buy-in plus its whole fee (the creation door floors the
 --      fee to the unit and the contract freezes at the first funded entry);
 --      so seats x ticket is whole and the remainder is whole. Its flooring
 --      residue - the remainder less its floor at the unit - is identically
---      zero and lands nowhere: both authorities assert it by name
+--      zero, so it lands nowhere and the identity has nothing to account
+--      for: every Diamond of the prize bank leaves it as a seat (custody to
+--      custody) or as whole Diamonds to a wallet, and the bank closes at
+--      zero. Both authorities assert it by name
 --      (diamond_satellite_does_not_divide_into_whole_diamonds) before any
---      Diamond moves. The remainder itself is paid to the bubble in whole
+--      Diamond moves, so a residue could never be left behind or rounded
+--      away. The remainder itself is paid to the single bubble in whole
 --      Diamonds through the pay door the chip path already reaches
 --      (fn_credit_and_log -> fn_poker_diamond_tournament_pay).
 --   3. DUPLICATE QUALIFICATION is the chip rule, unchanged: a qualifier who
@@ -73,7 +81,9 @@
 --      Diamond ledger rows and custody row, and a Diamond satellite's fee by
 --      its fee bank; the award capture trigger captures no chip refund
 --      entitlement for a Diamond seat, whose refund path is its custody row
---      through the Diamond refund authority.
+--      through the Diamond refund authority (which returns an entry custody
+--      row whole to its holder). A satellite-funded registration is held by
+--      the provenance guard exactly as a chip one is.
 --   6. A DIAMOND SATELLITE PROMISES NO SEAT. The readiness contract every
 --      start passes through (fn_tournament_management_readiness_for_row)
 --      asks a satellite to advertise at least one seat, and an advertised
@@ -92,20 +102,21 @@
 -- from every client role and watched. tournaments_enabled stays false.
 -- Nothing is priced: the ticket is the target's price, the seat count is the
 -- bank's, and a promised seat count (a guarantee) is refused at the door.
--- Applied once to kuklfnapbkmacvwxktbh by the lead. Never reapply.
+-- Applied once to kuklfnapbkmacvwxktbh through the swarm's apply helper,
+-- recorded under its filename version. Never reapply.
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)):
---   fn_poker_diamond_create_tournament                  6d82bede82370a9cc15d71b5ce1699f5
---   fn_ca_guard_new_satellite_target                    69247df72bfb68c7148c1a7f9ea4cfd7
---   fn_settle_satellite_tournament_pre_money_path_gate  9c5dd58bbae1d4ad4c1f5c808948da4d
---   fn_ca_settle_satellite_cohort                       6e9822dd8367827cf2ba31f2c41b4771
---   fn_ca_satellite_settlement_receipt                  5288fd960eac2c85d955b8c8150f9f93
---   fn_ca_satellite_cohort_receipt                      3207bb2d0d632688e10889bb7ef8ed08
---   fn_ca_capture_satellite_seat_entitlement            43bd57fdb0a21738e5b1e5d833c94a57
---   fn_award_satellite_seat                             92ab8b6d14cecd75bb945bbe2e6bc12b
+--   fn_poker_diamond_create_tournament                         6d82bede82370a9cc15d71b5ce1699f5
+--   fn_ca_guard_new_satellite_target                           69247df72bfb68c7148c1a7f9ea4cfd7
+--   fn_tournament_management_readiness_for_row                 0b9fecc5c10bdcf459510bbb19a3268a
+--   fn_settle_satellite_tournament_pre_money_path_gate         9c5dd58bbae1d4ad4c1f5c808948da4d
+--   fn_ca_settle_satellite_cohort                              6e9822dd8367827cf2ba31f2c41b4771
+--   fn_ca_satellite_settlement_receipt                         5288fd960eac2c85d955b8c8150f9f93
+--   fn_ca_satellite_cohort_receipt                             3207bb2d0d632688e10889bb7ef8ed08
+--   fn_ca_capture_satellite_seat_entitlement                   43bd57fdb0a21738e5b1e5d833c94a57
+--   fn_award_satellite_seat                                    92ab8b6d14cecd75bb945bbe2e6bc12b
 --   fn_settle_satellite_finish_atomic_before_maintenance_gate  399bdb8716ec24166880d3df7e017280
---   fn_ca_guard_watchlist                               92ee208d0887728444bda396d0b4d442
---   fn_tournament_management_readiness_for_row          0b9fecc5c10bdcf459510bbb19a3268a
+--   fn_ca_guard_watchlist                                      92ee208d0887728444bda396d0b4d442
 -- ============================================================================
 
 DO $m$

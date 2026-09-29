@@ -1,0 +1,6 @@
+{
+  "_owner": "claude/alerts-owner-inbox-operational-rows-cleanup",
+  "_comment": "20260928000622 is HELD: this table is PROMISED until it is installed (after 20260927235053, outside :50-:03 UTC). The nightly refresh goes red if it is merged and never installed, which is the right alarm.",
+  "tables": ["owner_inbox_operational_removals"],
+  "functions": []
+}

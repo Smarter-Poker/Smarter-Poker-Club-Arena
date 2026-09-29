@@ -16,10 +16,14 @@
 -- the defect the smarter-poker-workers writers had until 2026-09-26.
 --
 -- Read-only on production at 2026-09-28T15:31Z: md5(pg_get_functiondef) of
--- the installed body is 37d724277900f53d00db14fb3c5cd04d, position of
--- 'target_task_id' in it is 0, and no row under source
--- 'owner-accounting-notifications' exists yet. So this closes no row; it stops
--- the first one landing unaddressed.
+-- the installed body is 37d724277900f53d00db14fb3c5cd04d and position of
+-- 'target_task_id' in it is 0. At 2026-09-29T10:51Z both still hold, and the
+-- first row under source 'owner-accounting-notifications' has landed
+-- unaddressed: id 176726, the hour 2026-09-29T02 (UTC), delivery_count 1,
+-- which the fleet has set to 'investigating'. One more can land for every UTC
+-- hour in which the owner account's accounting copies are issued until this
+-- is applied. This closes none of them: it keeps each exactly as recorded
+-- (item 2) and stops every later one landing unaddressed.
 --
 -- THREE THINGS, ONE TRANSACTION.
 --
@@ -57,19 +61,71 @@
 --      It is the precedent operational_notification_destinations.target_task_id
 --      already set (NOT NULL CHECK (target_task_id = the fleet id)).
 --    - Validated inside this transaction, so it holds ACCESS EXCLUSIVE on the
---      table for one sequential scan: measured 65-89 ms warm and 852 ms with
---      the OS cache dropped, on a PostgreSQL 16 copy of 140,254 rows with a
---      219 MiB heap; production has 140,254 rows, a 231 MiB heap and about 890
---      inserts an hour (read-only, 15:31Z). The rule only reads payload for
+--      table for one sequential scan. On a PostgreSQL 16 copy of production's
+--      state of 2026-09-29 (155,285 rows, a 249 MiB heap, row 176726 in its
+--      recorded shape; production: 155,922 rows, a 251 MiB heap, 469 inserts
+--      in the hour to 10:55Z) the lock is held 115-215 ms warm and 550-880 ms
+--      with the OS and buffer caches dropped. The rule only reads payload for
 --      rows under this source, so the scan does not detoast. NOT VALID plus
 --      VALIDATE would not shorten the lock here: the ADD's lock is held to
---      COMMIT, and one change is one transaction. The ALTER runs last, so the
---      lock is held for the scan and the post-checks only. lock_timeout 3s
---      bounds the wait for the lock; a writer inside the owner-accounting
---      branch that times out waiting is caught by that branch's handler.
---    - The guard below refuses to validate over a row that is already
---      unaddressed (0 today). If the pre-image writes one before this runs,
---      this migration refuses whole and must be rebuilt with a held cleanup.
+--      COMMIT, and one change is one transaction. The table is locked after
+--      the function is replaced, so the lock is held for the list below, the
+--      scan and the post-checks only. lock_timeout 3s bounds the wait for the
+--      lock; a writer inside the owner-accounting branch that times out
+--      waiting on a lock_timeout of its own is caught by that branch's
+--      handler, but a statement_timeout is not (WHEN OTHERS does not catch
+--      query_canceled) and rolls its whole transaction back. Owner-account
+--      copies keep no schedule to wait for (read-only, the 35 days to
+--      2026-09-29: 113 copies in 13 distinct UTC hours, on Monday, Tuesday,
+--      Thursday, Saturday and Sunday, in hours from 00 to 21 UTC; the only
+--      weekly club statement was stamped Tuesday 02:09:44Z in a batch of 415
+--      documents, and its owner copy was recorded at 02:30:50Z). So this is
+--      applied outside the :50-:03 break window, at a moment pg_stat_activity
+--      shows no long-running transaction (no accounting batch in flight).
+--    - Rows stored before this runs are kept exactly as recorded, and only
+--      they are. The table is locked before anything is read from it, in the
+--      ACCESS EXCLUSIVE mode the ADD takes anyway (so there is no lock upgrade
+--      to deadlock on); then every row under the source without the address
+--      is listed as id::text||':'||md5(payload::text), and the rule's third
+--      disjunct is written with that list as a literal (EXECUTE format, %L).
+--      No such row is rewritten or deleted, and each stays updatable: the
+--      fleet's investigation_status/investigation update and the writer's ON
+--      CONFLICT bump of last_received_at and delivery_count leave payload
+--      alone, so the new row version passes. (PostgreSQL judges the row an
+--      INSERT proposes before it looks for the conflict, so the bump runs for
+--      a call proposing an addressed payload, as the fixed sender's always
+--      does; a call proposing an unaddressed one is refused, kept key or not.)
+--      Every other unaddressed row under the source is refused, as before: a
+--      new one from any writer, another source's row moved under this one, a
+--      row given its id with OVERRIDING SYSTEM VALUE, and a kept row whose
+--      payload is rewritten.
+--      Not "id <= the highest such id": that would also let every older row
+--      of any other source be moved under this one unaddressed, and any free
+--      id below the bound be inserted. Not NOT VALID: PostgreSQL checks a NOT
+--      VALID rule on every new row version, so the fleet's update and the
+--      writer's bump of a kept row would be refused, and the live proof below
+--      asks for a validated rule.
+--      Race-free. The pre-image records from the document's deferred trigger,
+--      at its COMMIT. A row it committed before the lock is granted is listed:
+--      the list is read after the lock, with a new snapshot (READ COMMITTED).
+--      A write still open holds ROW EXCLUSIVE, so the lock waits for it to
+--      end (lock_timeout 3s, then this refuses whole). A write that waited
+--      behind the lock reopens the table after COMMIT and meets the rule: it
+--      is refused, and the pre-image's handler catches that (a WARNING; the
+--      document commits). Under a stricter isolation level the list could miss
+--      a row committed after the transaction's snapshot; the validation scan
+--      reads the latest snapshot, so the ALTER would then refuse whole. No
+--      path lets a later unaddressed row through.
+--      What the kept list does not cover, by design. It is keyed on (id,
+--      payload digest) only, so a privileged INSERT with OVERRIDING SYSTEM
+--      VALUE that re-creates a deleted kept row's id with the same payload
+--      bytes is accepted. It is taken as found at install time, so any stray
+--      unaddressed row under the source is kept too. Production's rule text
+--      carries production's own kept ids. And if the unfixed body stored a
+--      row for the hour in which this is installed, the fixed sender's owner
+--      copies later in that hour bump that kept row (it stays unaddressed),
+--      so the live detector, which reads the last two hours by
+--      last_received_at, flags it once; the fleet closes it with the others.
 --
 -- 3. A refused recording reaches the fleet. The recorder runs inside a
 --    BEGIN/EXCEPTION that only raised a WARNING, which nobody reads. Its
@@ -128,9 +184,6 @@ SET LOCAL statement_timeout='45s';
 DO $guard$ BEGIN
  IF md5(pg_get_functiondef('public.fn_mirror_notification_to_push_outbox()'::regprocedure))<>'37d724277900f53d00db14fb3c5cd04d'
  THEN RAISE EXCEPTION 'push outbox mirror changed since review'; END IF;
- IF EXISTS(SELECT 1 FROM public.operational_alert_events WHERE source='owner-accounting-notifications'
-   AND (payload->>'target_task_id') IS DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca')
- THEN RAISE EXCEPTION 'an unaddressed owner-accounting-notifications row already exists; rebuild this with a held cleanup'; END IF;
 END $guard$;
 
 CREATE OR REPLACE FUNCTION public.fn_mirror_notification_to_push_outbox() RETURNS trigger
@@ -272,13 +325,30 @@ BEGIN
  RETURN NEW;
 END $function$;
 
-ALTER TABLE public.operational_alert_events
+-- Item 2: lock, list the unaddressed rows already stored, and add the rule
+-- with that list written into it.
+LOCK TABLE public.operational_alert_events IN ACCESS EXCLUSIVE MODE;
+
+DO $store$
+DECLARE kept text[];
+BEGIN
+ SELECT COALESCE(array_agg(e.id::text||':'||md5(e.payload::text) ORDER BY e.id),'{}') INTO kept
+ FROM public.operational_alert_events e WHERE e.source='owner-accounting-notifications'
+  AND (e.payload->>'target_task_id') IS DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca';
+ EXECUTE format($ddl$ALTER TABLE public.operational_alert_events
  ADD CONSTRAINT operational_alert_events_owner_accounting_addressed
  CHECK (source<>'owner-accounting-notifications'
-  OR (payload->>'target_task_id') IS NOT DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca');
+  OR (payload->>'target_task_id') IS NOT DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca'
+  OR (id::text||':'||md5(payload::text))=ANY(%L::text[]))$ddl$,kept);
+ RAISE NOTICE 'owner-accounting-notifications rows kept as recorded, unaddressed: % (ids %)',
+  cardinality(kept),(SELECT COALESCE(string_agg(split_part(k,':',1),','),'none') FROM unnest(kept) k);
+END $store$;
 
+-- The rule's expected text below is PostgreSQL's deparse of it with the list
+-- read again; production (17.6) deparses this expression exactly as 16 does
+-- (read-only EXPLAIN of the same filter, 2026-09-29).
 DO $post$
-DECLARE def text:=pg_get_functiondef('public.fn_mirror_notification_to_push_outbox()'::regprocedure); con record;
+DECLARE def text:=pg_get_functiondef('public.fn_mirror_notification_to_push_outbox()'::regprocedure); con record; kept text[];
 BEGIN
  IF def NOT LIKE '%jsonb_build_object(''target_task_id'',''01a09b86-5ba8-7290-8657-1041f13dd3ca'',''first_notification_id''%'
   OR def NOT LIKE '%jsonb_build_object(''target_task_id'',''01a09b86-5ba8-7290-8657-1041f13dd3ca'',''unstored_event_key''%'
@@ -288,10 +358,13 @@ BEGIN
  THEN RAISE EXCEPTION 'owner accounting routing or its cashier post-check changed'; END IF;
  IF md5(def)<>'c0d5fe55644a793450a6ea08828181ce'
  THEN RAISE EXCEPTION 'push outbox mirror postimage does not match the reviewed body'; END IF;
+ SELECT COALESCE(array_agg(e.id::text||':'||md5(e.payload::text) ORDER BY e.id),'{}') INTO kept
+ FROM public.operational_alert_events e WHERE e.source='owner-accounting-notifications'
+  AND (e.payload->>'target_task_id') IS DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca';
  SELECT c.convalidated,c.condeferrable,pg_get_constraintdef(c.oid) AS definition INTO con FROM pg_constraint c
  WHERE c.conrelid='public.operational_alert_events'::regclass AND c.conname='operational_alert_events_owner_accounting_addressed' AND c.contype='c';
  IF NOT FOUND OR NOT con.convalidated OR con.condeferrable
-  OR con.definition IS DISTINCT FROM 'CHECK (((source <> ''owner-accounting-notifications''::text) OR (NOT ((payload ->> ''target_task_id''::text) IS DISTINCT FROM ''01a09b86-5ba8-7290-8657-1041f13dd3ca''::text))))'
+  OR con.definition IS DISTINCT FROM format('CHECK (((source <> ''owner-accounting-notifications''::text) OR (NOT ((payload ->> ''target_task_id''::text) IS DISTINCT FROM ''01a09b86-5ba8-7290-8657-1041f13dd3ca''::text)) OR ((((id)::text || '':''::text) || md5((payload)::text)) = ANY (%L::text[]))))',kept)
  THEN RAISE EXCEPTION 'the store does not refuse an unaddressed owner accounting row'; END IF;
 END $post$;
 

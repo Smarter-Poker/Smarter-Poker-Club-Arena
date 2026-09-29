@@ -737,7 +737,7 @@ export function audit(files, { eachFileOnItsOwn = false, corpus = files } = {}) 
       const all = parse(f).definitions;
       for (const def of all) {
         if (excluded(def) || !names.has(def.name)) continue;
-        latest.set(eachFileOnItsOwn ? `${f.file}\u0000${keyOf(def)}` : keyOf(def), { def, file: f.file, all });
+        latest.set(eachFileOnItsOwn ? `${f.file}\x00${keyOf(def)}` : keyOf(def), { def, file: f.file, all });
       }
     }
   }

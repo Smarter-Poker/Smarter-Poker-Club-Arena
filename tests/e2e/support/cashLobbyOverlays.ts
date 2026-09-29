@@ -110,7 +110,9 @@ async function describeFrameClock(control: Locator): Promise<string> {
           requestAnimationFrame(step);
         })
     )
-    .catch((error: unknown) => `frame clock unreadable (${(error as Error).message.split('\n')[0]})`);
+    .catch(
+      (error: unknown) => `frame clock unreadable (${(error as Error).message.split('\n')[0]})`
+    );
   const timeout = new Promise<string>((resolve) =>
     setTimeout(
       () => resolve(`no answer from the page within ${STALL_PROBE_MS}ms (main thread blocked)`),

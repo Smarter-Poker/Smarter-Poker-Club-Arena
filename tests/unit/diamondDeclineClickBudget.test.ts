@@ -66,7 +66,9 @@ describe('the Diamond Spins Not Now click waits for the page, and says what the 
 
   it('names a page that gives no answer at all instead of hanging the report', async () => {
     vi.useFakeTimers();
-    const { page, notNow, handlers } = fixture(new Error('locator.click: Timeout 30000ms exceeded'));
+    const { page, notNow, handlers } = fixture(
+      new Error('locator.click: Timeout 30000ms exceeded')
+    );
     notNow.evaluate.mockResolvedValueOnce(null).mockReturnValueOnce(new Promise(() => undefined));
     const failures: unknown[] = [];
     await registerDiamondInvitationDismissal(page, { onFailure: (e) => failures.push(e) });

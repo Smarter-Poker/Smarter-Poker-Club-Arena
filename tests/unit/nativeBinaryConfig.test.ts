@@ -107,6 +107,18 @@ describe('one command per store build', () => {
     // Xcode missing is the common case on this Mac: say so, do not half-run
     expect(ios).toContain('Xcode is not installed');
 
+    // iOS push: @capacitor/push-notifications only learns the token through
+    // these two notifications, so without them register() never completes
+    // (2026-09-29). Firebase is used only when linked AND configured, so the
+    // app neither fails to compile nor traps at launch without it.
+    const appDelegate = read('ios/App/App/AppDelegate.swift');
+    expect(appDelegate).toContain('didRegisterForRemoteNotificationsWithDeviceToken');
+    expect(appDelegate).toContain('.capacitorDidRegisterForRemoteNotifications');
+    expect(appDelegate).toContain('didFailToRegisterForRemoteNotificationsWithError');
+    expect(appDelegate).toContain('.capacitorDidFailToRegisterForRemoteNotifications');
+    expect(appDelegate).toContain('#if canImport(FirebaseCore) && canImport(FirebaseMessaging)');
+    expect(appDelegate).toContain('forResource: "GoogleService-Info", ofType: "plist"');
+
     const android = read('scripts/native/android-bundle.sh');
     expect(android).toContain('npm run build:native');
     expect(android).toContain('bundleRelease');

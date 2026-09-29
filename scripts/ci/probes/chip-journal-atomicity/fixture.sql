@@ -10,6 +10,12 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
 -- with it.
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
 CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(), performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric CHECK(amount>0),category text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,description text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,idempotency_key text UNIQUE,metadata jsonb,created_at timestamptz DEFAULT now());
+-- Read by fn_lock_cash_bank_accounting_week, which atomic_distribute_rake
+-- reaches once this branch's rewrite of it lands. Empty is the honest state
+-- for this probe: no agreement change has been captured for the fixture's
+-- club, which is the ordinary case, and this probe is about the chip journal
+-- surviving failure and replay rather than about agreement terms.
+CREATE TABLE accounting_agreement_history(id bigint, entity_type text, entity_key text, club_id uuid, subject_user_id uuid, event_type text, observed_at timestamptz, transaction_id bigint, actor_id uuid, before_terms jsonb, after_terms jsonb, union_id uuid);
 CREATE TABLE ca_ledger_write_failures(club_id uuid,user_id uuid,delta numeric,sqlstate text,message text);
 CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz,asset text NOT NULL DEFAULT 'chips');
 CREATE TABLE bbj_pools(id uuid PRIMARY KEY,club_id uuid,main_balance numeric DEFAULT 100,backup_balance numeric DEFAULT 10,promo_balance numeric DEFAULT 5);

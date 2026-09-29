@@ -363,9 +363,11 @@ describe('TournamentManager source move ownership', () => {
     manager.tableBreakRpc = () => ({ discover });
     await expect(manager.discoverTournamentBreaks()).resolves.toBeNull();
     await expect(manager.discoverTournamentBreaks()).resolves.toEqual([]);
+    // The manager asks for the whole page and still visits one operation per
+    // unit; see aBalancerIsNotStarvedByBreakDiscovery.law.test.ts.
     expect(discover.mock.calls).toEqual([
-      ['0', 1],
-      ['9007199254740993', 1],
+      ['0', 32],
+      ['9007199254740993', 32],
     ]);
   });
 

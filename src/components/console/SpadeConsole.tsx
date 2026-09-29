@@ -59,7 +59,13 @@ interface Zone {
 
 /** Zones on the 1000-wide master. The head zones are relative to top.png. */
 export const SPADE_CONSOLE_ZONES = {
-  eyebrow: { x: 100, y: 128, width: 540, height: 34 },
+  /* THE EYEBROW STOPS AT THE CREST'S HOUSING (2026-09-21). This band was 540
+     wide, running to x 640 - but the chrome that holds the spade reaches down
+     into these rows and its first inked column is x 441 (measured on top.png:
+     the eyebrow rows are quiet glass, max 67 of 255, out to x 419, and jump
+     to 188-254 from x 440 to x 559). A long eyebrow printed over it. The
+     title band below is clear to x 619, which is why only this one moves. */
+  eyebrow: { x: 100, y: 128, width: 320, height: 34 },
   title: { x: 100, y: 166, width: 540, height: 86 },
   /* A long title beside a pill: it stops with air before the pill's slot
      rather than running up against its rim (ANNOUNCEMENTS did). */
@@ -186,6 +192,9 @@ const FAMILY = {
     FOOT_H: SPADE_CONSOLE_PLATES_H,
     zones: SPADE_CONSOLE_ZONES,
     plates: 2,
+    /* 381 of 1000 - the longest label the spade's plates carry still fits
+       this face on one line, so they never wrap. */
+    plateWrapBelow: undefined,
   },
   shark: {
     W: SHARK_CONSOLE_W,
@@ -193,6 +202,8 @@ const FAMILY = {
     FOOT_H: SHARK_CONSOLE_FOOT_H,
     zones: SHARK_CONSOLE_ZONES,
     plates: 1,
+    /* One plate across 512 of 733: the roomiest face in the kit. */
+    plateWrapBelow: undefined,
   },
   riveted: {
     W: RIVETED_CONSOLE_W,
@@ -200,6 +211,13 @@ const FAMILY = {
     FOOT_H: RIVETED_CONSOLE_FOOT_H,
     zones: RIVETED_CONSOLE_ZONES,
     plates: 2,
+    /* THE MONEY PLATES WRAP (2026-09-14). Two plates across 729, the narrower
+       of them 235 wide, carrying labels the ledger law will not let anyone
+       shorten ("Request Cashout", "Buy In With Diamonds", "Play It Out"). On
+       one line at 375px those hit the floor at half size and still lost their
+       last letters to the rim; below 0.72 of the designed face the plate
+       takes two lines instead. */
+    plateWrapBelow: 0.72,
   },
 } as const;
 
@@ -344,6 +362,7 @@ export function ZoneText({
   id,
   minRatio = 0.5,
   headroom = 1,
+  wrapBelow,
   style,
 }: {
   text: string;
@@ -370,9 +389,17 @@ export function ZoneText({
    * this only makes the line smaller than its zone allows.
    */
   headroom?: number;
+  /**
+   * Let this zone's text take a second line rather than shrink below this
+   * ratio. See useFitText's FitTextOptions: a zone that opts in has to say in
+   * its stylesheet what a wrapped line looks like (the hook marks the span
+   * `data-fit-wrap`). Leave it unset and the zone stays one line, which is
+   * what almost every painted zone is.
+   */
+  wrapBelow?: number;
   style?: CSSProperties;
 }) {
-  const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio);
+  const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio, { wrapBelow });
   return (
     <Tag className={`sc-zone ${className}`.trim()} id={id} style={style}>
       {/* A ZONE'S TEXT ENDS ON A WORD BOUNDARY (2026-09-23).
@@ -531,6 +558,7 @@ export function SpadeConsole({
             zone={SHARK_CONSOLE_ZONES.plate}
             canvasW={W}
             canvasH={F.FOOT_H}
+            wrapBelow={F.plateWrapBelow}
             {...plates.primary}
           />
         )}
@@ -539,6 +567,7 @@ export function SpadeConsole({
             zone={(Z as typeof SPADE_CONSOLE_ZONES).plateSecondary}
             canvasW={W}
             canvasH={F.FOOT_H}
+            wrapBelow={F.plateWrapBelow}
             {...plates.secondary}
           />
         )}
@@ -547,6 +576,7 @@ export function SpadeConsole({
             zone={(Z as typeof SPADE_CONSOLE_ZONES).platePrimary}
             canvasW={W}
             canvasH={F.FOOT_H}
+            wrapBelow={F.plateWrapBelow}
             {...plates.primary}
           />
         )}
@@ -595,6 +625,7 @@ export function PlateButton({
   zone,
   canvasW = SPADE_CONSOLE_W,
   canvasH,
+  wrapBelow,
   label,
   ink = 'silver',
   buttonRef,
@@ -607,8 +638,14 @@ export function PlateButton({
   zone: Zone;
   canvasW?: number;
   canvasH: number;
+  /**
+   * The frame decides whether its plates may wrap, not the caller: this comes
+   * from the family row below, so every plate on one master behaves the same
+   * way. See FAMILY.plateWrapBelow and useFitText's FitTextOptions.
+   */
+  wrapBelow?: number;
 } & PlateButtonProps) {
-  const ref = useFitText<HTMLSpanElement>(label, 1, 0.5);
+  const ref = useFitText<HTMLSpanElement>(label, 1, 0.5, { wrapBelow });
   const plateStyle = { ...zonePct(zone, canvasW, canvasH), ...style };
   const face = (
     <span className="sc-plate__well">

@@ -1,282 +1,413 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TICKER MANAGEMENT - its own page on the shark family (2026-09-20)
+
+   The panel draws its own frame now (SpadeConsole family="shark"): a thinner
+   chamfered chassis than the Game Board's spade console, with ONE painted
+   plate for the page's one action. Everything below prints on that frame's
+   black glass: lit blue caps for labels, engraved silver for headings, rows
+   divided by the engraved rule (a black line over an 8% light), and the kit's
+   own tick well for every switch. Sizes are cqw against the console, so a
+   375px phone and the 733px desktop ceiling get the same picture. Nothing
+   here draws a card, a pill or a rounded box.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .panel {
-  display: grid;
-  gap: 18px;
   color: #e4e7ec;
 }
-.heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgb(100 121 139 / 35%);
-}
-.heading > div > span {
-  color: #45adff;
+
+.sectionLabel {
+  display: block;
   font:
-    800 10px/1 'Roboto Condensed',
+    700 2.7cqw/1.2 'Roboto Condensed',
     sans-serif;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-.heading h2 {
-  margin: 4px 0;
-  color: #eef2f6;
-  font:
-    800 clamp(20px, 3cqw, 30px)/1 'Roboto Condensed',
-    sans-serif;
-  text-transform: uppercase;
-}
-.heading p,
-.messages > p,
-.footer > span {
-  margin: 0;
-  color: #8795a3;
-  font-size: 12px;
-}
-.master {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  color: #e4e7ec;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-.master input,
-.sourceGrid input {
-  width: 18px;
-  height: 18px;
-  accent-color: #45adff;
-}
-.editor {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.editor:disabled {
-  opacity: 0.62;
-}
-.safetyNotice {
+
+/* ── The on-air monitor ─────────────────────────────────────────────────
+   The preview wears the operator's own colours inline: it is a picture of
+   the live rail, so those three values are the whole point of it. */
+.monitor {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding-block: 12px;
-  border-block: 1px solid #a9752e;
-  color: #ffd28b;
+  gap: 1.6cqw;
 }
-.safetyNotice span {
-  color: #c8b99f;
-  font-size: 12px;
-}
-.safetyNotice button,
-.messageComposer button,
-.messages li button,
-.footer button {
-  appearance: none;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  border-bottom: 1px solid currentColor;
-  color: #45adff;
-  background: transparent;
-  font:
-    800 11px/1 'Roboto Condensed',
-    sans-serif;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
+
 .preview {
   display: flex;
   align-items: stretch;
-  height: 40px;
-  margin: 18px 0;
+  height: max(40px, 9cqw);
   overflow: hidden;
   border-block: 1px solid;
 }
+
 .preview strong {
   display: grid;
   place-items: center;
-  padding: 0 14px;
+  padding: 0 2.4cqw;
   border-right: 1px solid currentColor;
-  font-size: 10px;
+  font-size: max(10px, 2.4cqw);
   letter-spacing: 0.1em;
   white-space: nowrap;
 }
+
 .preview div {
   display: flex;
   align-items: center;
   flex: 1;
   overflow: hidden;
 }
+
 .preview div span {
   display: inline-block;
   padding-left: 100%;
+  font-size: max(12px, 3cqw);
   white-space: nowrap;
   animation: tickerPreview linear infinite;
 }
+
 @keyframes tickerPreview {
   to {
     transform: translateX(-100%);
   }
 }
-.sourceGrid {
+
+/* ── Intro and the master switch ─────────────────────────────────────── */
+.heading {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3cqw;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
-.sourceGrid label {
-  display: flex;
-  gap: 9px;
-  min-height: 82px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgb(92 110 126 / 30%);
-}
-.sourceGrid .sourceOn {
-  border-bottom-color: #45adff;
-}
-.sourceGrid span {
-  display: grid;
-  align-content: start;
-  gap: 5px;
-}
-.sourceGrid strong {
-  color: #dce3ea;
-  font-size: 12px;
-}
-.sourceGrid small {
-  color: #71808d;
-  font-size: 10px;
-  line-height: 1.35;
-}
-.customizer {
-  display: grid;
-  grid-template-columns: 2fr repeat(3, 1fr) 1.5fr;
-  gap: 12px;
-  margin-top: 18px;
-}
-.customizer label {
-  display: grid;
-  gap: 6px;
-  color: #8f9eab;
-  font-size: 10px;
-  font-weight: 800;
+
+.heading h3 {
+  margin: 0 0 1cqw;
+  font:
+    800 4.4cqw/1.1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.customizer label span {
-  color: #45adff;
+
+.heading p {
+  font-size: 3.1cqw;
 }
+
+.master {
+  min-height: 44px;
+  font:
+    800 3.2cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* The native control keeps the semantics and the label binding; the kit's
+   engraved well is what it looks like. */
+.master input,
+.source input {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* ── Notices: an engraved row with a gold heading, never a coloured box ── */
+.safetyNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2.4cqw;
+  padding-block: 2.2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.safetyNotice strong {
+  color: #ffd700;
+  font:
+    800 3cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 0 1cqw rgb(255 215 0 / 45%);
+}
+
+.safetyNotice span {
+  color: #9aa5b3;
+  font:
+    500 2.9cqw/1.4 Inter,
+    sans-serif;
+}
+
+/* Lit words: the controls this page has no plate for. */
+.safetyNotice button,
+.messageComposer button,
+.messages li button {
+  appearance: none;
+  min-height: 44px;
+  padding: 0 2.4cqw;
+  border: 0;
+  color: #45adff;
+  background: transparent;
+  font:
+    800 3cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0 1cqw rgb(49 168 255 / 60%);
+  cursor: pointer;
+}
+
+.messages li .remove {
+  color: #ff5b6e;
+  text-shadow: 0 0 1cqw rgb(240 40 73 / 55%);
+}
+
+.safetyNotice button:active,
+.messageComposer button:active,
+.messages li button:active {
+  filter: brightness(1.25);
+}
+
+/* ── The editor ───────────────────────────────────────────────────────── */
+.editor {
+  display: grid;
+  gap: 2.6cqw;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.editor:disabled {
+  opacity: 0.62;
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 5cqw;
+}
+
+.source {
+  align-items: flex-start;
+  padding-block: 2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  cursor: pointer;
+}
+
+.source > span {
+  display: grid;
+  gap: 0.8cqw;
+  min-width: 0;
+}
+
+.source strong {
+  color: #e4e7ec;
+  font:
+    700 3.1cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.source small {
+  color: #9aa5b3;
+  font:
+    500 2.7cqw/1.4 Inter,
+    sans-serif;
+}
+
+.customizer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2.4cqw;
+}
+
+.customizer label {
+  display: grid;
+  gap: 1.2cqw;
+  color: #45adff;
+  font:
+    700 2.6cqw/1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.customizer label span {
+  color: #e4e7ec;
+}
+
+.customizer .speed {
+  grid-column: 1 / -1;
+}
+
+.customizer label:last-child {
+  grid-column: 1 / -1;
+}
+
+/* Fields are cut into the glass like the kit's tick well: a groove, no box. */
 .customizer input,
 .customizer select,
 .messageComposer input {
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
-  padding: 7px 9px;
-  border: 1px solid rgb(94 116 134 / 48%);
+  padding: 1.4cqw 2cqw;
+  border: 0;
   color: #f4f7fb;
-  background: #05080c;
+  background: #05070b;
+  font:
+    500 max(16px, 3.2cqw) / 1.2 Inter,
+    sans-serif;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 0 0 1px rgb(0 0 0 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 4%);
 }
+
+.customizer input[type='range'] {
+  padding-inline: 0;
+  background: transparent;
+  box-shadow: none;
+  accent-color: #45adff;
+}
+
 .customizer input[type='color'] {
-  padding: 4px;
+  padding: 1cqw;
 }
+
+/* ── Rotations ────────────────────────────────────────────────────────── */
 .messages {
   display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid rgb(92 110 126 / 30%);
+  gap: 2cqw;
 }
+
 .messages h3 {
   margin: 0;
-  color: #dce3ea;
+  padding-top: 2.4cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e4e7ec;
   font:
-    800 15px/1 'Roboto Condensed',
+    800 3.6cqw/1.1 'Roboto Condensed',
     sans-serif;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
 }
-.messages h3:not(:first-child) {
-  margin-top: 12px;
-  padding-top: 18px;
-  border-top: 1px solid rgb(92 110 126 / 30%);
+
+.messages > p {
+  margin: 0;
+  color: #9aa5b3;
+  font:
+    500 2.8cqw/1.4 Inter,
+    sans-serif;
 }
+
 .messageComposer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 2cqw;
 }
+
 .characterCount {
-  color: #73818f;
+  color: #9aa5b3;
+  font:
+    600 2.5cqw/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.06em;
   text-align: right;
+  text-transform: uppercase;
 }
+
 .messages ul {
   display: grid;
-  gap: 7px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+
 .messages li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding-block: 8px;
-  border-bottom: 1px solid rgb(92 110 126 / 25%);
-  color: #cbd4dc;
+  gap: 2cqw;
+  padding-block: 1.2cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #d7dee7;
+  font:
+    500 3cqw/1.4 Inter,
+    sans-serif;
+  overflow-wrap: anywhere;
 }
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgb(92 110 126 / 30%);
+
+/* The last row on the glass, directly above the painted plate. */
+.status {
+  margin: 0;
+  font:
+    600 2.8cqw/1.3 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.05em;
+  text-align: center;
+  text-transform: uppercase;
 }
+
 .panel :is(button, input, select):focus-visible {
   outline: 3px solid #8fd4ff;
   outline-offset: 2px;
 }
-.panel button:disabled {
+
+.panel :is(.safetyNotice, .messageComposer, .messages) button:disabled {
   color: #59636d;
+  text-shadow: none;
   cursor: not-allowed;
 }
-@media (max-width: 820px) {
+
+/* Two columns of sources once the frame is wide enough to carry them. */
+@container (min-width: 560px) {
   .sourceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .customizer {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
+
 @media (max-width: 560px) {
   .heading,
-  .footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .sourceGrid,
-  .customizer {
-    grid-template-columns: 1fr;
-  }
+  .safetyNotice,
   .messageComposer,
-  .messages li,
-  .safetyNotice {
-    grid-template-columns: 1fr;
+  .messages li {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .footer button {
-    width: 100%;
+
+  .customizer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
 @media (forced-colors: active) {
-  .sourceGrid label,
   .preview,
-  .messages,
-  .footer {
+  .heading,
+  .safetyNotice,
+  .source,
+  .messages h3,
+  .messages li {
     border-color: CanvasText;
+  }
+
+  .customizer input,
+  .customizer select,
+  .messageComposer input {
+    border: 1px solid CanvasText;
   }
 }
 

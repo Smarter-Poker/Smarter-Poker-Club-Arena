@@ -197,6 +197,38 @@
       "owner": "postgres",
       "grants": "owner only",
       "bytes_from": "scripts/ci/fixtures/mtt-format-activation/funding-frame-dependencies-20260918.json"
+    },
+    {
+      "identity": "fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)",
+      "md5": "55d6a74569415d5d51ffac0d5704361f",
+      "len": 2618,
+      "owner": "postgres",
+      "grants": "owner only",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)",
+      "md5": "6a5ce2617cee7606b2151aea29d865c0",
+      "len": 2911,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)",
+      "md5": "cb73955cbc90b47b36fd818631691303",
+      "len": 668,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_payout_structure(p_entrants integer, p_percent integer)",
+      "md5": "320527cd5203efab28b465d2b56ca567",
+      "len": 1594,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
     }
   ]
 }

@@ -293,7 +293,9 @@ export default function VIPPage() {
            read instead of presenting an empty history as fact. */
         const { data: ledgerData, error: ledgerError } = await supabase
           .from('diamond_transactions')
-          .select('id, type, transaction_type, amount, description, balance_after, created_at')
+          .select(
+            'id, type, transaction_type, amount, description, player_line, balance_after, created_at'
+          )
           .eq('user_id', requestedUserId)
           .order('created_at', { ascending: false })
           .limit(10);
@@ -313,8 +315,12 @@ export default function VIPPage() {
               id: entry.id,
               date: new Date(entry.created_at),
               action: amount > 0 ? 'earned' : 'spent',
+              // Phase 6: the ledger's own player line (player_line), never the
+              // raw description an operator wrote.
               description:
-                entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
+                (typeof entry.player_line === 'string' && entry.player_line) ||
+                kind ||
+                (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
               diamonds: Math.abs(amount),
               balanceAfter: Number(entry.balance_after ?? 0),
             } as DiamondActivity;

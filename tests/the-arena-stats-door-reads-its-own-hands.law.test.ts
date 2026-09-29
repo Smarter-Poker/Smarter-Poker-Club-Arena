@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';
+import { sliceCall } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -56,8 +57,7 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
         new RegExp(`<${tab}\\s+scope=\\{statsScope\\}`)
       );
     }
-    const hands = PAGE.slice(PAGE.indexOf(".rpc('ca_player_hands_v2'"));
-    expect(hands.slice(0, 200)).toContain('...statsScopeArgs(statsScope)');
+    expect(sliceCall(PAGE, ".rpc('ca_player_hands_v2'")).toContain('...statsScopeArgs(statsScope)');
   });
 
   it('neither asset can be served from the other one’s cache', () => {

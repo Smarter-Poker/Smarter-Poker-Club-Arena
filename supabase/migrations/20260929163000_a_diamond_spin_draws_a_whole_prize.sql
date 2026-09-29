@@ -92,7 +92,7 @@
 -- is authorized.
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)):
---   fn_poker_diamond_create_tournament                    55c2176b75c5bb1499960f7bb846d3aa
+--   fn_poker_diamond_create_tournament                    77c664dae1085cb1d222e17e12de8355
 --   fn_poker_diamond_tournament_escrow                    850410a45ed7eefe785d3f17a2403247
 --   fn_poker_diamond_tournament_open_shadow               15beba292789e7f1e665c7caa9530304
 --   fn_poker_diamond_tournament_drain                     abaf068c32e192f08a1c01c02b089523
@@ -159,7 +159,11 @@ END $function$;
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_spin_contract_is_immutable() FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TABLE public.poker_diamond_spin_contracts (
-  tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id) ON DELETE RESTRICT,
+  -- No foreign key: adding one takes a lock that stops every tournament write
+  -- for the length of this migration. The creation door writes the contract
+  -- in the same transaction as its tournament, and a tournament is never
+  -- deleted.
+  tournament_id uuid PRIMARY KEY,
   buy_in bigint NOT NULL CHECK (buy_in >= 1 AND buy_in <= 2147483647),
   starting_chips integer NOT NULL CHECK (starting_chips >= 1),
   rake_rate numeric NOT NULL CHECK (rake_rate >= 0 AND rake_rate < 1),
@@ -427,9 +431,11 @@ BEGIN
      OR (p_config ? 'tableSize' AND (p_config->>'tableSize') IS DISTINCT FROM '3') THEN
     RAISE EXCEPTION 'diamond_spin_is_three_handed' USING ERRCODE='22023';
   END IF;
+  -- A Spin runs only on NLH, PLO4, PLO5 or PLO6: the chip creation door's rule
+  -- (unsupported_spin_variant) and the creation forms' (tournamentCreationRules).
   v_game := upper(btrim(COALESCE(p_config->>'gameVariant','NLH')));
-  IF v_game NOT IN ('NLH','PLO4','PLO5','PLO6','PLO8','SHORT_DECK','FLH','FLO8') THEN
-    RAISE EXCEPTION 'diamond_tournament_requires_a_supported_game' USING ERRCODE='22023';
+  IF v_game NOT IN ('NLH','PLO4','PLO5','PLO6') THEN
+    RAISE EXCEPTION 'diamond_spin_unsupported_variant' USING ERRCODE='22023';
   END IF;
   -- The buy-in is the whole charge; no fee rides on top. The table's
   -- expectation is where the edge lives (E[m] = 3 x (1 - rake)).
@@ -542,7 +548,7 @@ DO $m$
 DECLARE v_md5 text;
 BEGIN
   SELECT md5(pg_get_functiondef('public.fn_poker_diamond_create_tournament(jsonb)'::regprocedure)) INTO v_md5;
-  IF v_md5 <> '55c2176b75c5bb1499960f7bb846d3aa' THEN
+  IF v_md5 <> '77c664dae1085cb1d222e17e12de8355' THEN
     RAISE EXCEPTION 'fn_poker_diamond_create_tournament is not the pinned text (md5 %)', v_md5;
   END IF;
 END $m$;
@@ -575,6 +581,21 @@ BEGIN
   IF v_arena IS NULL THEN RAISE EXCEPTION 'diamond_arena_not_found' USING ERRCODE='P0002'; END IF;
   IF p_config IS NULL OR jsonb_typeof(p_config)<>'object' THEN
     RAISE EXCEPTION 'diamond_tournament_requires_a_configuration' USING ERRCODE='22023';
+  END IF;
+  -- DIAMOND PHASE 9, STEP 0 (the_chip_legs_refuse_a_diamond_row): the estate's builder
+  -- (TournamentService.buildRpcConfig) sends these money keys, and this door reads
+  -- guarantee, rebuy, reentry, addOn and addonCost instead. A value in one of them
+  -- would be dropped and the event created without it, so it is refused by name.
+  -- The builder's own default (0, false or null) means what the door does without
+  -- the key, and is admitted.
+  IF EXISTS (SELECT 1 FROM jsonb_each(p_config) k
+              WHERE k.key IN ('guaranteedPrize','isRebuy','isReentry','addOnAvailable','addOnCost','addOnFromStart')
+                AND k.value NOT IN ('0'::jsonb, 'false'::jsonb, 'null'::jsonb)) THEN
+    RAISE EXCEPTION 'diamond_tournament_money_key_not_read: %', (
+      SELECT string_agg(k.key, ', ' ORDER BY k.key) FROM jsonb_each(p_config) k
+       WHERE k.key IN ('guaranteedPrize','isRebuy','isReentry','addOnAvailable','addOnCost','addOnFromStart')
+         AND k.value NOT IN ('0'::jsonb, 'false'::jsonb, 'null'::jsonb))
+      USING ERRCODE = '22023';
   END IF;
 
   v_type := lower(COALESCE(p_config->>'type','mtt'));
@@ -1715,7 +1736,7 @@ DECLARE r record; v_bad text; v_txt text; v_n numeric; v_f numeric;
 BEGIN
   -- every Diamond door redefinition landed exactly as generated
   FOR r IN SELECT * FROM (VALUES
-      ('public.fn_poker_diamond_create_tournament(jsonb)', 'e6c37c7077addfeeef5cb41cdda6407a'),
+      ('public.fn_poker_diamond_create_tournament(jsonb)', '11cd470d16bc4cd343e3e38b70caff76'),
       ('public.fn_poker_diamond_tournament_escrow(uuid)', 'd31432344bd1e28904416f5924b75670'),
       ('public.fn_poker_diamond_tournament_open_shadow(uuid)', 'a48dc93434b566767bf9baa0f63abee4'),
       ('public.fn_poker_diamond_tournament_drain(uuid, text, bigint, text, text, uuid)', 'ceffb36777bfa7067c4fac90c51d5858'),

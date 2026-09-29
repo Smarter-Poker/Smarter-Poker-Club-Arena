@@ -35,8 +35,11 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 
-const { TournamentEliminationScheduler, DEFAULT_CONSOLIDATION_SLOTS, tournamentEliminationScheduler } =
-  await import('./TournamentEliminationScheduler.js');
+const {
+  TournamentEliminationScheduler,
+  DEFAULT_CONSOLIDATION_SLOTS,
+  tournamentEliminationScheduler,
+} = await import('./TournamentEliminationScheduler.js');
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
 const { TournamentSweepWorkCursor } = await import('./TournamentSweepWorkCursor.js');
 
@@ -69,7 +72,17 @@ function held() {
       releases.set(id, list);
     });
   const release = (id: string) => releases.get(id)?.shift()?.();
-  return { run, release, started, get active() { return active; }, get maxActive() { return maxActive; } };
+  return {
+    run,
+    release,
+    started,
+    get active() {
+      return active;
+    },
+    get maxActive() {
+      return maxActive;
+    },
+  };
 }
 
 afterEach(() => {
@@ -198,7 +211,8 @@ describe('the consolidation lane', () => {
       scheduler.setConsolidating('spread', true);
       h.release('spread');
       scheduler.register({ tournamentId: 'hog', run: h.run('hog') });
-      for (let i = 0; i < 5; i++) scheduler.register({ tournamentId: `p-${i}`, run: h.run(`p-${i}`) });
+      for (let i = 0; i < 5; i++)
+        scheduler.register({ tournamentId: `p-${i}`, run: h.run(`p-${i}`) });
       await vi.advanceTimersByTimeAsync(1);
       expect(h.started).toEqual(['spread', 'hog']);
 

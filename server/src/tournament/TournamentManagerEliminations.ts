@@ -1450,14 +1450,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
         // engines has proved the platform thawed.
+        // A retry asked for inside the balancer is a break or a seat move
+        // that is not finished. While one is outstanding, every sweep this
+        // manager is owed comes from the scheduler's consolidation lane,
+        // because a field spread one player to a table cannot deal until
+        // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
+        const redrivesBeforeBalance = this.urgentRedrivesRequested;
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
-          // A retry asked for inside the balancer is a break or a seat move
-          // that is not finished. While one is outstanding, every sweep this
-          // manager is owed comes from the scheduler's consolidation lane,
-          // because a field spread one player to a table cannot deal until
-          // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
-          const redrivesBeforeBalance = this.urgentRedrivesRequested;
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;

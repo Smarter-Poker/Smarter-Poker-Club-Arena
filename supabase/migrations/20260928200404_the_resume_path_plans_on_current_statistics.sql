@@ -1,3 +1,8 @@
+-- @live-proof: (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+--   WHERE (n.nspname, c.relname) IN (('public','hand_atomic_commits'), ('public','hand_history'),
+--           ('public','ca_hand_player_idx'), ('smarter_private','f06_hand_permits'))
+--     AND array_to_string(c.reloptions,',') LIKE '%autovacuum_analyze_scale_factor=0%'
+--     AND array_to_string(c.reloptions,',') LIKE '%autovacuum_analyze_threshold=%') = 4
 -- THE RESUME PATH PLANS ON CURRENT STATISTICS (2026-09-28)
 --
 -- fn_ca_resume_hand_submission picks its candidate with one query (line 8). On

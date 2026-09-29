@@ -13,6 +13,7 @@
 -- the classification, so no flow already proven changes kind or owner.
 --
 -- Applied to production as version 20260929093858. Preimage-guarded.
+-- @live-proof: position('te.refund_ent_club' in pg_get_functiondef('public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)'::regprocedure)) > 0
 DO $mig$
 DECLARE
  v_sig regprocedure := 'public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)'::regprocedure;

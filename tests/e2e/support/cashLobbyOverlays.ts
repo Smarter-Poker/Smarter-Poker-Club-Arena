@@ -79,13 +79,20 @@ export async function layerCovering(control: Locator): Promise<CoveringLayer | n
  * the offer opened over a freshly loaded 466-game lobby on a shared CI runner
  * (its chunks were still arriving in 2-5s responses). A stability check cannot
  * finish faster than the page gives out frames, so a wait shorter than two of
- * those stalls is a wait for the runner, not a finding about the card. The
- * wait is sized to that measured stall, not removed: the click
- * is still the player's own control, still actionability-checked (visible,
- * enabled, stable, receiving pointer events), and still fails with its own
- * error when the control never settles.
+ * those stalls is a wait for the runner, not a finding about the card.
+ *
+ * TWO STAGES, BECAUSE A COVERED PLATE MUST STILL BE REPORTED FAST. The first
+ * stage is the unchanged 10s: a layer that intercepts the pointer is named by
+ * Playwright's own call log inside it, and is reported as before (the
+ * "unowned layer" case in mobile-lobby-chrome.spec.ts pins that latency).
+ * Only a click that ended WITHOUT an interception, which is a control that
+ * was never given a settled frame to be judged on, gets the extension. It is
+ * still the player's own control, still actionability-checked (visible,
+ * enabled, stable, receiving pointer events), never forced, and still fails
+ * with its own error when the control never settles.
  */
-export const DIAMOND_DECLINE_CLICK_TIMEOUT_MS = 30_000;
+export const DIAMOND_DECLINE_CLICK_TIMEOUT_MS = 10_000;
+export const DIAMOND_DECLINE_STALL_EXTENSION_MS = 20_000;
 /** How long the failure report may spend asking a struggling page one question. */
 const STALL_PROBE_MS = 3_000;
 
@@ -126,17 +133,32 @@ async function describeFrameClock(control: Locator): Promise<string> {
 async function declineDiamondInvitation(page: Page): Promise<void> {
   const prompt = diamondInvitation(page);
   const notNow = prompt.getByRole('button', { name: 'Not Now', exact: true });
-  try {
-    await notNow.click({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
-  } catch (error) {
+  const fail = async (error: unknown, waitedMs: number, frameClock: boolean): Promise<never> => {
     // Say what the page was doing, so the next report separates "the card kept
     // moving" from "the page stopped giving out frames" instead of guessing.
+    // A covering layer is already named by Playwright's own call log, and its
+    // report must not be delayed by a question to the page.
+    const clock = frameClock ? ` [${await describeFrameClock(notNow)}]` : '';
     throw new Error(
-      `The Diamond Spins Not Now click failed after ${DIAMOND_DECLINE_CLICK_TIMEOUT_MS}ms: ${
-        (error as Error).message.split('\n')[0]
-      } [${await describeFrameClock(notNow)}]`,
+      `The Diamond Spins Not Now click failed after ${waitedMs}ms: ${(error as Error).message}${clock}`,
       { cause: error }
     );
+  };
+  try {
+    await notNow.click({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
+  } catch (first) {
+    if (/intercepts pointer events/.test((first as Error).message)) {
+      await fail(first, DIAMOND_DECLINE_CLICK_TIMEOUT_MS, false);
+    }
+    try {
+      await notNow.click({ timeout: DIAMOND_DECLINE_STALL_EXTENSION_MS });
+    } catch (second) {
+      await fail(
+        second,
+        DIAMOND_DECLINE_CLICK_TIMEOUT_MS + DIAMOND_DECLINE_STALL_EXTENSION_MS,
+        !/intercepts pointer events/.test((second as Error).message)
+      );
+    }
   }
   await expect(prompt, 'the Diamond Spins invitation stayed open after Not Now').toBeHidden({
     timeout: 8_000,

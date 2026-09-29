@@ -34,21 +34,31 @@ Chromium evidence plus the WebKit trace, not a WebKit reproduction.
 
 `tests/e2e/support/cashLobbyOverlays.ts`
 
-- The real `Not Now` click keeps every actionability check (visible, enabled,
-  stable, receives pointer events) and now waits `DIAMOND_DECLINE_CLICK_TIMEOUT_MS`
-  = 30s. It is not forced, skipped or retried by the run.
-- When the click still fails, the error now names the click budget and reports
-  the page's frame clock (animation frames in one second and the plate
+- Two stages, because a covered plate must still be reported fast. Stage one is
+  the unchanged 10s real click. A layer that intercepts the pointer is named by
+  Playwright's own call log inside it and is reported exactly as before, with
+  no second wait and no extra question to the page. The first version of this
+  change simply raised the click to 30s; CSS Beat E2E on PR 5597 caught that
+  it made the "unowned layer over the invitation" case (a 12s tab click that
+  must see the handler's report) report nothing in time, on Chromium and WebKit.
+- Only a click that ended without an interception, meaning the control was
+  never given a settled frame to be judged on, gets stage two: a second real
+  click with `DIAMOND_DECLINE_STALL_EXTENSION_MS` = 20s (30s in all). It keeps
+  every actionability check (visible, enabled, stable, receives pointer
+  events) and is never forced or skipped.
+- When it still fails, the error carries Playwright's full message and reports
+  the page's frame clock (animation frames in one second, and the plate
   rectangle before and after) or that the page gave no answer within 3s. The
   next failure separates a card that keeps moving from a page that stopped
   giving out frames.
 - The invitation must still be hidden 8s after the click, and a greeting stacked
   above it is still yielded to, unchanged.
 
-`tests/unit/diamondDeclineClickBudget.test.ts` pins the budget (past two
-measured stalls plus the hidden check), the exact click arguments, the frame
-clock report, and the no-answer report. With the old 10s literal the first
-assertion fails.
+`tests/unit/diamondDeclineClickBudget.test.ts` pins the 10s covered-plate
+budget, the 20s extension (past two measured 5s stalls), the exact click
+arguments in order, the frame clock report, the covered path taking one click
+with no frame-clock question, and the no-answer report. A single 10s click (the
+old behaviour) fails the stall case.
 
 ## Not changed, and why
 

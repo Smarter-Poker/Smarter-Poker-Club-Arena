@@ -12,11 +12,11 @@
     },
     {
       "identity": "fn_active_maintenance_release_boundary()",
-      "md5": "0d9548e27105b7172d83be4f7d10ea47",
-      "len": 2542,
+      "md5": "05b537b57c9f51a5164e20a1cd0e67e0",
+      "len": 2761,
       "owner": "postgres",
       "grants": "anon,authenticated,service_role",
-      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/functions.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_ca_declare_ledger(p_category text, p_counterparty text, p_counterparty_entity uuid, p_settlement_id uuid, p_idempotency_key text, p_autoskip_tables text[])",
@@ -76,11 +76,11 @@
     },
     {
       "identity": "fn_ca_guard_watchlist()",
-      "md5": "92ee208d0887728444bda396d0b4d442",
-      "len": 2772,
+      "md5": "dec63eaa83b89411f3cd4a6fa36f5729",
+      "len": 2976,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/accounting-delivery/diamond-games/wheel-guard-dependencies.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_ca_is_new_mtt(p_row jsonb)",
@@ -180,19 +180,19 @@
     },
     {
       "identity": "fn_ca_tournament_escrow(p_tournament_id uuid)",
-      "md5": "707b4cbeb6f4906c2216cefea6635ca8",
-      "len": 711,
+      "md5": "9d06895cfcd2d9902d343e54b633bad0",
+      "len": 1476,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_ca_tournament_escrow_chips(p_tournament_id uuid)",
-      "md5": "bf70fec2d07ab459fe1da245bfb59ee7",
-      "len": 7796,
+      "md5": "0a2f5a27ed0e25e22b9d006f29b3b942",
+      "len": 8482,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_ca_tournament_fee_ratio(p_buy_in numeric, p_buy_in_fee numeric)",
@@ -332,11 +332,11 @@
     },
     {
       "identity": "fn_poker_diamond_create_tournament(p_config jsonb)",
-      "md5": "6d82bede82370a9cc15d71b5ce1699f5",
-      "len": 12306,
+      "md5": "11cd470d16bc4cd343e3e38b70caff76",
+      "len": 16981,
       "owner": "postgres",
       "grants": "authenticated,service_role",
-      "bytes_from": "transported"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_entry_custody_is_the_entry()",
@@ -364,11 +364,11 @@
     },
     {
       "identity": "fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)",
-      "md5": "a1ccc4bc9a5c6d8d17308e93943a9413",
-      "len": 6069,
+      "md5": "cf2150429728d8d796711e9bdbb22f51",
+      "len": 7350,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_seat_keeps_custody()",
@@ -436,27 +436,27 @@
     },
     {
       "identity": "fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)",
-      "md5": "abaf068c32e192f08a1c01c02b089523",
-      "len": 5510,
+      "md5": "ceffb36777bfa7067c4fac90c51d5858",
+      "len": 5993,
       "owner": "postgres",
       "grants": "NONE",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_tournament_escrow(p_tournament_id uuid)",
-      "md5": "850410a45ed7eefe785d3f17a2403247",
-      "len": 1803,
+      "md5": "d31432344bd1e28904416f5924b75670",
+      "len": 2096,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)",
-      "md5": "15beba292789e7f1e665c7caa9530304",
-      "len": 2853,
+      "md5": "a48dc93434b566767bf9baa0f63abee4",
+      "len": 3361,
       "owner": "postgres",
       "grants": "NONE",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)",
@@ -468,11 +468,11 @@
     },
     {
       "identity": "fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)",
-      "md5": "4dcc2e8556323bf831de3863e218f97a",
-      "len": 5977,
+      "md5": "a1b8b3b5bd4d7d50af063a3534f6372b",
+      "len": 6793,
       "owner": "postgres",
       "grants": "NONE",
-      "bytes_from": "tests/fixtures/full-weekly-accounting/schema.sql"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_tournament_settle_fee(p_tournament_id uuid, p_source text)",
@@ -612,11 +612,11 @@
     },
     {
       "identity": "fn_tournament_late_registration_open(p_tournament_id uuid)",
-      "md5": "0a189819d8064f393f5de5b12a2c51f4",
-      "len": 1257,
+      "md5": "bb86a28cb32e74e49014c627b8633b1e",
+      "len": 1560,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "tests/fixtures/tournament-accounting-provenance/captured-dependencies.json#definition"
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_unregister_from_tournament(p_tournament_id uuid)",
@@ -634,5 +634,6 @@
       "grants": "authenticated,service_role",
       "bytes_from": "supabase/migrations/20260914024241_a_diamond_tournament_entry_is_custody.sql"
     }
-  ]
+  ],
+  "refreshed_at": "2026-09-29T18:44Z: eleven doors that production had changed since the capture (the create door by the fences, satellite and Spin migrations; the reserve, escrow, drain, open-shadow, refund, chip-escrow, late-registration, maintenance-boundary and guard-watchlist doors) re-read read-only and re-pinned; every pin re-checked against production"
 }

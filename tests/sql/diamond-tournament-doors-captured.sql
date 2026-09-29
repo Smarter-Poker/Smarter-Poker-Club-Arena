@@ -176,7 +176,7 @@ GRANT EXECUTE ON FUNCTION public.atomic_deduct_wallet_and_log(p_user_id uuid, p_
 -- @@END atomic_deduct_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid)
 
 -- @@DOOR fn_active_maintenance_release_boundary()
--- @@PIN md5=0d9548e27105b7172d83be4f7d10ea47 len=2542 owner=postgres
+-- @@PIN md5=05b537b57c9f51a5164e20a1cd0e67e0 len=2761 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary()
  RETURNS timestamp with time zone
  LANGUAGE plpgsql
@@ -200,6 +200,9 @@ BEGIN
   -- wallet trigger raised 42501 here (signup_errors id 9318).
   SELECT session_user IN ('postgres', 'supabase_admin', 'service_role', 'supabase_auth_admin')
          OR COALESCE(r.rolsuper, false)
+         -- Supabase CLI session roles may SET ROLE postgres. Trust that
+         -- catalog privilege, never a login-name prefix or a JWT workaround.
+         OR pg_catalog.pg_has_role(session_user, 'postgres', 'SET')
     INTO v_trusted_database_actor
     FROM (SELECT session_user AS role_name) s
     LEFT JOIN pg_catalog.pg_roles r ON r.rolname = s.role_name;
@@ -819,7 +822,7 @@ REVOKE ALL ON FUNCTION public.fn_ca_find_tournament_entry_ticket_for(p_tournamen
 -- @@END fn_ca_find_tournament_entry_ticket_for(p_tournament_id uuid, p_beneficiary_id uuid)
 
 -- @@DOOR fn_ca_guard_watchlist()
--- @@PIN md5=92ee208d0887728444bda396d0b4d442 len=2772 owner=postgres
+-- @@PIN md5=dec63eaa83b89411f3cd4a6fa36f5729 len=2976 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()
  RETURNS text[]
  LANGUAGE sql
@@ -864,6 +867,9 @@ AS $function$
       -- and profiles.diamonds.
       'fn_guard_profile_privileged_columns','fn_poker_guard_arena_structure',
       'fn_ca_escrow_can_pay','fn_ca_tournament_escrow',
+      -- The Diamond satellite seat door (Phase 9, 2026-09-21): a satellite
+      -- seat moved custody to custody, out of one prize bank into an entry.
+      'fn_poker_diamond_tournament_seat_transfer',
       -- And the list itself.
       'fn_ca_guard_watchlist'
     ]) x)
@@ -1730,14 +1736,24 @@ REVOKE ALL ON FUNCTION public.fn_ca_tournament_cancellation_receipt(p_tournament
 -- @@END fn_ca_tournament_cancellation_receipt(p_tournament_id uuid, p_observed_actor_id uuid)
 
 -- @@DOOR fn_ca_tournament_escrow(p_tournament_id uuid)
--- @@PIN md5=707b4cbeb6f4906c2216cefea6635ca8 len=711 owner=postgres
+-- @@PIN md5=9d06895cfcd2d9902d343e54b633bad0 len=1476 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_ca_tournament_escrow(p_tournament_id uuid)
  RETURNS TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)
  LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  SELECT * FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id)
+  -- DIAMOND PHASE 9: the chip shadow convention - prize_balance without a
+  -- Spin's reserve legs, which the escrow row carries as reserve_in and
+  -- reserve_out and fn_ca_escrow_balance_drift adds back.
+  SELECT e.prize_in, e.bounty_in, e.fee_in, e.overlay_in, e.satellite_in, e.prize_out, e.bounty_out,
+         e.fee_out, e.refund_out, e.prize_balance - r.spin_underwrite + r.spin_surplus,
+         e.bounty_balance, e.fee_balance
+    FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e
+   CROSS JOIN LATERAL (
+     SELECT COALESCE(sum(l.amount) FILTER (WHERE l.kind = 'spin_underwrite'), 0)::numeric AS spin_underwrite,
+            COALESCE(sum(l.amount) FILTER (WHERE l.kind = 'spin_surplus'), 0)::numeric AS spin_surplus
+       FROM public.poker_diamond_tournament_ledger l WHERE l.tournament_id = p_tournament_id) r
    WHERE public.fn_poker_diamond_tournament(p_tournament_id)
   UNION ALL
   SELECT * FROM public.fn_ca_tournament_escrow_chips(p_tournament_id)
@@ -1749,7 +1765,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_escrow(p_tournament_id uuid) T
 -- @@END fn_ca_tournament_escrow(p_tournament_id uuid)
 
 -- @@DOOR fn_ca_tournament_escrow_chips(p_tournament_id uuid)
--- @@PIN md5=bf70fec2d07ab459fe1da245bfb59ee7 len=7796 owner=postgres
+-- @@PIN md5=0a2f5a27ed0e25e22b9d006f29b3b942 len=8482 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_ca_tournament_escrow_chips(p_tournament_id uuid)
  RETURNS TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)
  LANGUAGE sql
@@ -1808,7 +1824,16 @@ WITH t AS (
     AND NOT (rake_amount<0 AND source IN (
       'atomic_cancel_tournament','fn_unregister_from_tournament'))
 ), ov AS (
-  SELECT COALESCE(sum(a.amount),0) AS ledger_overlay
+  /* A REVIEWED VOID RETURNS ITS OVERLAY (2026-09-27). The void of a retired
+     event (smarter_private.f06_void_retired_mixed_custody_event) sends the
+     guarantee overlay back to its funder as one 'reversal' leg out of
+     prize_liability, and takes it out of the maintained escrow. The shadow
+     nets it too, or it reads the returned overlay as money still in the pool. */
+  SELECT COALESCE(sum(a.amount),0) AS ledger_overlay,
+         (SELECT COALESCE(sum(r.amount),0) FROM public.chip_ledger r
+     WHERE r.tournament_id=p_tournament_id AND r.category='reversal'
+       AND r.from_type='prize_liability' AND r.from_entity_id=p_tournament_id
+       AND r.metadata->>'kind'='reviewed_void_overlay_return') AS returned
     FROM public.chip_ledger a
    WHERE a.to_entity_id=p_tournament_id
      AND a.to_type='prize_liability'
@@ -1874,7 +1899,7 @@ WITH t AS (
     round(rr.fee_in-rr.fee_sat,2) AS fee_entries,
     round(direct_bounty.amount+stl.split_bounty,2) AS bounty_in,
     round(CASE WHEN ov.ledger_overlay>0 THEN ov.ledger_overlay
-      ELSE tgo.tgo_amount END,2) AS overlay_in,
+      ELSE tgo.tgo_amount END-ov.returned,2) AS overlay_in,
     round(stl.moved-stl.split_moved-rr.fee_sat+rr.fee_sat_split,2)
       AS satellite_in,
     round(w.prize_out+sat.funded_awards_out,2) AS prize_out,
@@ -3327,7 +3352,7 @@ GRANT EXECUTE ON FUNCTION public.fn_poker_bind_diamond_seat() TO service_role;
 -- @@END fn_poker_bind_diamond_seat()
 
 -- @@DOOR fn_poker_diamond_create_tournament(p_config jsonb)
--- @@PIN md5=6d82bede82370a9cc15d71b5ce1699f5 len=12306 owner=postgres
+-- @@PIN md5=11cd470d16bc4cd343e3e38b70caff76 len=16981 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_create_tournament(p_config jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -3345,6 +3370,7 @@ DECLARE
   v_mystery boolean; v_mb_activation text; v_mb_profile text; v_mb_value numeric; v_mb_top numeric;
   v_mb_pool numeric; v_mb_regular numeric; v_mb_min_mult numeric; v_mb_max_mult numeric;
   v_unlimited boolean;
+  v_satellite boolean; v_target_text text; v_target_id uuid; v_target public.tournaments%ROWTYPE;
 BEGIN
   IF v_actor IS NULL THEN RAISE EXCEPTION 'authentication required' USING ERRCODE='28000'; END IF;
   IF NOT public.fn_is_platform_admin() THEN
@@ -3356,15 +3382,76 @@ BEGIN
   IF p_config IS NULL OR jsonb_typeof(p_config)<>'object' THEN
     RAISE EXCEPTION 'diamond_tournament_requires_a_configuration' USING ERRCODE='22023';
   END IF;
+  -- DIAMOND PHASE 9, STEP 0 (the_chip_legs_refuse_a_diamond_row): the estate's builder
+  -- (TournamentService.buildRpcConfig) sends these money keys, and this door reads
+  -- guarantee, rebuy, reentry, addOn and addonCost instead. A value in one of them
+  -- would be dropped and the event created without it, so it is refused by name.
+  -- The builder's own default (0, false or null) means what the door does without
+  -- the key, and is admitted.
+  IF EXISTS (SELECT 1 FROM jsonb_each(p_config) k
+              WHERE k.key IN ('guaranteedPrize','isRebuy','isReentry','addOnAvailable','addOnCost','addOnFromStart')
+                AND k.value NOT IN ('0'::jsonb, 'false'::jsonb, 'null'::jsonb)) THEN
+    RAISE EXCEPTION 'diamond_tournament_money_key_not_read: %', (
+      SELECT string_agg(k.key, ', ' ORDER BY k.key) FROM jsonb_each(p_config) k
+       WHERE k.key IN ('guaranteedPrize','isRebuy','isReentry','addOnAvailable','addOnCost','addOnFromStart')
+         AND k.value NOT IN ('0'::jsonb, 'false'::jsonb, 'null'::jsonb))
+      USING ERRCODE = '22023';
+  END IF;
 
   v_type := lower(COALESCE(p_config->>'type','mtt'));
-  IF v_type NOT IN ('mtt','sng','bounty','progressive_bounty','mystery_bounty') THEN
-    -- satellite, spin: later Phase 9 pieces.
+  -- DIAMOND PHASE 9: A SPIN IS ADMITTED BY ITS OWN BRANCH, under the chip
+  -- seat-first configuration door's rules (fn_poker_diamond_create_spin:
+  -- three seats, no fee, a multiplier that is drawn and never configured, a
+  -- multiplier table held to the draw authority's rules and to whole Diamonds
+  -- at its buy-in). A Spin's configuration on any other format is refused.
+  IF v_type = 'spin' THEN
+    RETURN public.fn_poker_diamond_create_spin(p_config, v_arena);
+  END IF;
+  IF p_config ?| ARRAY['spinTiers','spinMultiplier','spinLockedTiers','spin_multiplier','spin_locked_tiers'] THEN
+    RAISE EXCEPTION 'diamond_tournament_spin_requires_a_spin_format' USING ERRCODE='22023';
+  END IF;
+  IF v_type NOT IN ('mtt','sng','bounty','progressive_bounty','mystery_bounty','satellite') THEN
+    -- spin is admitted above, by fn_poker_diamond_create_spin.
     RAISE EXCEPTION 'diamond_tournament_format_not_open' USING ERRCODE='55000';
   END IF;
-  IF COALESCE((p_config->>'guarantee')::numeric,0)<>0 OR COALESCE((p_config->>'satelliteTargetId')::text,'')<>''
+  IF COALESCE((p_config->>'guarantee')::numeric,0)<>0
      OR COALESCE((p_config->>'freeBuy')::boolean,false) THEN
     RAISE EXCEPTION 'diamond_tournament_format_not_open' USING ERRCODE='55000';
+  END IF;
+  -- A satellite is a format, not a flag: its target rides on a 'satellite'
+  -- event and on nothing else, and a satellite has exactly one target.
+  v_satellite := v_type = 'satellite';
+  v_target_text := NULLIF(btrim(COALESCE(p_config->>'satelliteTargetId','')),'');
+  IF v_target_text IS NOT NULL AND NOT v_satellite THEN
+    RAISE EXCEPTION 'diamond_tournament_target_requires_a_satellite_format' USING ERRCODE='22023';
+  END IF;
+  IF v_satellite THEN
+    IF v_target_text IS NULL
+       OR v_target_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      RAISE EXCEPTION 'diamond_satellite_requires_a_target' USING ERRCODE='22023';
+    END IF;
+    v_target_id := v_target_text::uuid;
+    -- ASSETS NEVER CROSS: a Diamond satellite seats a Diamond target only.
+    IF NOT public.fn_poker_diamond_tournament(v_target_id) THEN
+      RAISE EXCEPTION 'diamond_satellite_target_must_be_a_diamond_tournament' USING ERRCODE='22023';
+    END IF;
+    IF NOT public.fn_ca_diamond_satellite_target_accepts_new_feeder(v_target_id) THEN
+      RAISE EXCEPTION 'diamond_satellite_target_cannot_take_a_satellite' USING ERRCODE='22023';
+    END IF;
+    SELECT * INTO v_target FROM public.tournaments t WHERE t.id=v_target_id;
+    IF upper(COALESCE(v_target.status,'')) NOT IN ('ANNOUNCED','REGISTERING')
+       OR COALESCE(v_target.prize_pool_finalized,false) THEN
+      RAISE EXCEPTION 'diamond_satellite_target_is_not_open' USING ERRCODE='55000';
+    END IF;
+    -- A seat count promised in advance is a guarantee: reserved to the owner.
+    IF COALESCE(NULLIF(p_config->>'satelliteSeats','')::numeric,0)<>0 THEN
+      RAISE EXCEPTION 'diamond_satellite_seat_guarantee_not_open' USING ERRCODE='55000';
+    END IF;
+    -- The chip scheduled satellite is a freezeout; so is this one.
+    IF COALESCE((p_config->>'rebuy')::boolean,false) OR COALESCE((p_config->>'reentry')::boolean,false)
+       OR COALESCE((p_config->>'addOn')::boolean,false) THEN
+      RAISE EXCEPTION 'diamond_satellite_is_a_freezeout' USING ERRCODE='22023';
+    END IF;
   END IF;
   -- A knockout bounty is a format, not a flag: the flat bounty rides on a
   -- 'bounty', 'progressive_bounty' or 'mystery_bounty' event and on nothing else.
@@ -3386,7 +3473,8 @@ BEGIN
   IF (p_config->>'buyIn')::numeric IS DISTINCT FROM v_total::numeric OR v_total<1 OR v_total>2147483647 THEN
     RAISE EXCEPTION 'diamond_tournament_requires_a_whole_positive_buy_in' USING ERRCODE='22023';
   END IF;
-  v_unlimited:=public.fn_ca_new_tournament_is_unlimited(jsonb_build_object('tournament_type',CASE WHEN v_type='sng' THEN 'SNG' ELSE 'MTT' END));
+  v_unlimited:=public.fn_ca_new_tournament_is_unlimited(jsonb_build_object('tournament_type',
+    CASE WHEN v_type='sng' THEN 'SNG' WHEN v_satellite THEN 'SATELLITE' ELSE 'MTT' END));
   v_max := CASE WHEN v_unlimited THEN NULL ELSE COALESCE((p_config->>'maxPlayers')::int,0) END;
   IF NOT v_unlimited AND (v_max<2 OR v_max>10000) THEN RAISE EXCEPTION 'diamond_tournament_requires_a_real_field' USING ERRCODE='22023'; END IF;
   v_min := GREATEST(COALESCE((p_config->>'minPlayers')::int,3),CASE WHEN v_unlimited THEN 3 ELSE 2 END);
@@ -3457,6 +3545,10 @@ BEGIN
   IF abs(v_pct-100)>1 THEN RAISE EXCEPTION 'payouts_must_total_100' USING ERRCODE='22023'; END IF;
   IF NOT v_unlimited AND jsonb_array_length(v_payouts)>v_max THEN RAISE EXCEPTION 'more_paid_places_than_players' USING ERRCODE='22023'; END IF;
   v_start := COALESCE((p_config->>'startTime')::timestamptz, now()+interval '1 minute');
+  -- A satellite plays before its target, as the chip scheduled satellite does.
+  IF v_satellite AND (v_target.start_time IS NULL OR v_start >= v_target.start_time) THEN
+    RAISE EXCEPTION 'diamond_satellite_must_start_before_its_target' USING ERRCODE='22023';
+  END IF;
   v_rebuy := COALESCE((p_config->>'rebuy')::boolean,false);
   v_reentry := COALESCE((p_config->>'reentry')::boolean,v_rebuy);
   v_addon := COALESCE((p_config->>'addOn')::boolean,false);
@@ -3472,7 +3564,8 @@ BEGIN
   v_name := COALESCE(NULLIF(btrim(p_config->>'name'),''),'Diamond Tournament');
   v_variant := CASE v_type WHEN 'sng' THEN 'sng' WHEN 'bounty' THEN 'bounty'
                            WHEN 'progressive_bounty' THEN 'progressive_bounty'
-                           WHEN 'mystery_bounty' THEN 'mystery_bounty' ELSE 'freezeout' END;
+                           WHEN 'mystery_bounty' THEN 'mystery_bounty'
+                           WHEN 'satellite' THEN 'satellite' ELSE 'freezeout' END;
 
   INSERT INTO public.tournaments (
     club_id, union_id, name, game_type, variant, tournament_type,
@@ -3484,12 +3577,15 @@ BEGIN
     mystery_bounty_top_percent, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent,
     is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, max_rebuys, max_reentries,
     add_on_available, addon_cost, addon_chips, addon_levels,
-    payout_percent, free_buy, is_private, action_time_seconds)
+    payout_percent, free_buy, is_private, action_time_seconds,
+    satellite_target_id, satellite_seats)
   VALUES (
-    v_arena, NULL, v_name, v_game, v_variant, CASE WHEN v_type='sng' THEN 'SNG' ELSE 'MTT' END,
+    v_arena, NULL, v_name, v_game, v_variant,
+    CASE WHEN v_type='sng' THEN 'SNG' WHEN v_satellite THEN 'SATELLITE' ELSE 'MTT' END,
     v_buy_in, v_fee, 0, v_chips, v_max, CASE WHEN v_unlimited THEN LEAST(9,GREATEST(2,COALESCE((p_config->>'tableSize')::int,9))) ELSE LEAST(9,GREATEST(2,v_max)) END, v_min,
     0, 'REGISTERING', v_blinds::text, v_payouts::text, v_start,
-    COALESCE((p_config->>'lateRegLevels')::int, CASE WHEN v_type='sng' THEN 0 ELSE 8 END), 8,
+    CASE WHEN v_satellite THEN 0 ELSE COALESCE((p_config->>'lateRegLevels')::int, CASE WHEN v_type='sng' THEN 0 ELSE 8 END) END,
+    CASE WHEN v_satellite THEN 0 ELSE 8 END,
     v_is_bounty, v_type='progressive_bounty', v_mystery, v_bounty,
     CASE WHEN v_mystery THEN trunc(v_bounty * v_mb_min_mult) ELSE 0 END,
     CASE WHEN v_mystery THEN trunc(v_bounty * v_mb_max_mult) ELSE 0 END,
@@ -3503,7 +3599,8 @@ BEGIN
     CASE WHEN v_reentry THEN COALESCE((p_config->>'maxReentries')::int,1) ELSE 0 END,
     v_addon, CASE WHEN v_addon THEN v_addon_cost ELSE 0 END, CASE WHEN v_addon THEN v_chips ELSE 0 END, 1,
     CASE WHEN (p_config->>'payoutPercent')::int IN (10,15,20) THEN (p_config->>'payoutPercent')::smallint ELSE 10 END,
-    false, false, 15)
+    false, false, 15,
+    CASE WHEN v_satellite THEN v_target_id END, CASE WHEN v_satellite THEN 0 END)
   RETURNING id INTO v_id;
 
   -- The row this door wrote must be one the money path will price: whole
@@ -3512,7 +3609,9 @@ BEGIN
     RAISE EXCEPTION 'diamond_tournament_would_not_be_recognised' USING ERRCODE='23514';
   END IF;
   RETURN jsonb_build_object('success',true,'tournamentId',v_id,'id',v_id,'buy_in_amount',v_buy_in,'buy_in_fee',v_fee,
-    'total',v_total,'bounty_amount',v_bounty,'is_mystery_bounty',v_mystery,'asset','diamonds');
+    'total',v_total,'bounty_amount',v_bounty,'is_mystery_bounty',v_mystery,'asset','diamonds',
+    'satellite_target_id',v_target_id,'satellite_ticket',
+    CASE WHEN v_satellite THEN v_target.buy_in_amount + COALESCE(v_target.buy_in_fee,0) END);
 END $function$;
 ALTER FUNCTION public.fn_poker_diamond_create_tournament(p_config jsonb) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_create_tournament(p_config jsonb) FROM PUBLIC, anon, authenticated, service_role;
@@ -3759,7 +3858,7 @@ GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_release(p_custody_id uuid, p_r
 -- @@END fn_poker_diamond_release(p_custody_id uuid, p_request_id uuid)
 
 -- @@DOOR fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)
--- @@PIN md5=a1ccc4bc9a5c6d8d17308e93943a9413 len=6069 owner=postgres
+-- @@PIN md5=cf2150429728d8d796711e9bdbb22f51 len=7350 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -3823,7 +3922,24 @@ BEGIN
  SELECT COALESCE(sum(GREATEST(issued-consumed-refunded-arena_reserved,0)),0) INTO v_locked
  FROM public.diamond_purchase_lots WHERE user_id=p_user_id
  AND (frozen_at IS NOT NULL OR created_at>now()-make_interval(days=>v_days));
- IF v_wallet IS NULL OR v_wallet-v_locked<p_amount THEN RAISE EXCEPTION 'insufficient_settled_diamonds'; END IF;
+ IF v_wallet IS NULL OR v_wallet-v_locked<p_amount THEN
+   -- RULING 14 / DR16. A lot frozen or younger than the settlement window is not depositable,
+   -- and this door has refused it by this name since Phase 3. The rule mode is READ here so
+   -- DR16 has a consumer and a flip means something (the DR15 shape, 20260908041432). The
+   -- refusal stands in both modes: the lot reservation below draws only on settled lots, so
+   -- an unsettled lot admitted here would sit in custody with nothing for a chargeback to
+   -- find. Armed, the same refusal is raised under the rule's own code with the numbers in
+   -- its DETAIL; a raise cannot file an incident that survives it (20260906102549), so the
+   -- evidence rides in the error, where the Postgres log counts it. The leading token is
+   -- what the engine and the client match on and does not change.
+   IF v_locked>0 AND v_wallet IS NOT NULL AND v_wallet>=p_amount
+      AND public.fn_ca_diamond_rule_mode('DR16:deposit_inside_settlement_window')='refuse' THEN
+     RAISE EXCEPTION 'insufficient_settled_diamonds' USING ERRCODE='P0416',
+       DETAIL=format('DR16:deposit_inside_settlement_window refused %s: %s purchased diamond(s) frozen or inside the %s-day settlement window; %s settled',
+                     p_amount, v_locked, v_days, v_wallet-v_locked);
+   END IF;
+   RAISE EXCEPTION 'insufficient_settled_diamonds';
+ END IF;
  INSERT INTO public.poker_diamond_custody(user_id,arena_id,purpose,target_id,entry_key,balance)
  VALUES(p_user_id,v_arena,p_purpose,p_target_id,p_entry_key,p_amount) RETURNING id INTO v_custody;
  v_left:=p_amount;
@@ -4562,7 +4678,7 @@ REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_custody_add(p_custody_
 -- @@END fn_poker_diamond_tournament_custody_add(p_custody_id uuid, p_amount numeric, p_request_id uuid)
 
 -- @@DOOR fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)
--- @@PIN md5=abaf068c32e192f08a1c01c02b089523 len=5510 owner=postgres
+-- @@PIN md5=ceffb36777bfa7067c4fac90c51d5858 len=5993 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -4588,7 +4704,7 @@ BEGIN
                                      WHEN p_bank='bounty' THEN l.bounty_part
                                      ELSE l.fee_part END),0)
               FROM public.poker_diamond_tournament_ledger l
-             WHERE l.custody_id=c.id AND l.kind IN ('entry','rebuy','reentry','addon'))
+             WHERE l.custody_id=c.id AND l.kind IN ('entry','rebuy','reentry','addon','spin_underwrite'))
          - (SELECT COALESCE(sum(m.amount),0) FROM public.poker_diamond_movements m
              WHERE m.custody_id=c.id AND m.action='release'
                AND m.request->>'action'='tournament_drain' AND m.request->>'bank'=p_bank) AS held
@@ -4630,8 +4746,15 @@ BEGIN
       SELECT COALESCE(diamonds,0) INTO v_wallet FROM public.profiles WHERE id=v_c.user_id;
       INSERT INTO public.diamond_transactions(user_id,type,transaction_type,amount,balance_after,
         reference_id,description,source,issuance_class,counterparty,metadata)
-      VALUES (v_c.user_id,'tournament_fee','tournament_fee',-v_take::integer,v_wallet,
-        p_reason||':'||v_c.id::text,'Tournament entry fee: '||COALESCE(v_name,'tournament')||' (from custody to the house)',
+      -- DIAMOND PHASE 9: only a Spin's surplus leaves the prize bank for the
+      -- house; it is named as what it is, not as a fee.
+      VALUES (v_c.user_id,
+        CASE WHEN p_bank='prize' THEN 'arena_spin_surplus' ELSE 'tournament_fee' END,
+        CASE WHEN p_bank='prize' THEN 'arena_spin_surplus' ELSE 'tournament_fee' END,-v_take::integer,v_wallet,
+        p_reason||':'||v_c.id::text,
+        CASE WHEN p_bank='prize'
+             THEN 'Diamond Spin surplus: '||COALESCE(v_name,'spin')||' drew a prize pool below its entries (from custody to the house)'
+             ELSE 'Tournament entry fee: '||COALESCE(v_name,'tournament')||' (from custody to the house)' END,
         'poker_arena','spend','house',
         jsonb_build_object('custody_id',v_c.id,'tournament_id',p_tournament_id,'reason',p_reason,'destination','house'))
       RETURNING id INTO v_journal;
@@ -4661,7 +4784,7 @@ REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_drain(p_tournament_id 
 -- @@END fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)
 
 -- @@DOOR fn_poker_diamond_tournament_escrow(p_tournament_id uuid)
--- @@PIN md5=850410a45ed7eefe785d3f17a2403247 len=1803 owner=postgres
+-- @@PIN md5=d31432344bd1e28904416f5924b75670 len=2096 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_escrow(p_tournament_id uuid)
  RETURNS TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)
  LANGUAGE sql
@@ -4679,11 +4802,14 @@ AS $function$
       COALESCE(sum(amount)      FILTER (WHERE kind = 'refund'),0) AS refund_out,
       COALESCE(sum(prize_part)  FILTER (WHERE kind = 'refund'),0) AS refund_prize,
       COALESCE(sum(bounty_part) FILTER (WHERE kind = 'refund'),0) AS refund_bounty,
-      COALESCE(sum(fee_part)    FILTER (WHERE kind = 'refund'),0) AS refund_fee
+      COALESCE(sum(fee_part)    FILTER (WHERE kind = 'refund'),0) AS refund_fee,
+      -- DIAMOND PHASE 9: a Spin's reserve legs move its prize bank, whole.
+      COALESCE(sum(amount)      FILTER (WHERE kind = 'spin_underwrite'),0) AS spin_underwrite,
+      COALESCE(sum(amount)      FILTER (WHERE kind = 'spin_surplus'),0) AS spin_surplus
     FROM public.poker_diamond_tournament_ledger WHERE tournament_id = p_tournament_id)
   SELECT prize_in::numeric, bounty_in::numeric, fee_in::numeric, 0::numeric, 0::numeric,
          prize_out::numeric, bounty_out::numeric, fee_out::numeric, refund_out::numeric,
-         (prize_in - prize_out - refund_prize)::numeric,
+         (prize_in + spin_underwrite - spin_surplus - prize_out - refund_prize)::numeric,
          (bounty_in - bounty_out - refund_bounty)::numeric,
          (fee_in - fee_out - refund_fee)::numeric
   FROM l;
@@ -4694,7 +4820,7 @@ GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_tournament_escrow(p_tournament
 -- @@END fn_poker_diamond_tournament_escrow(p_tournament_id uuid)
 
 -- @@DOOR fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)
--- @@PIN md5=15beba292789e7f1e665c7caa9530304 len=2853 owner=postgres
+-- @@PIN md5=a48dc93434b566767bf9baa0f63abee4 len=3361 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -4715,7 +4841,10 @@ BEGIN
     COALESCE(sum(amount)      FILTER (WHERE kind = 'fee'),0)    AS fee_out,
     COALESCE(sum(prize_part)  FILTER (WHERE kind = 'refund'),0) AS refund_prize,
     COALESCE(sum(bounty_part) FILTER (WHERE kind = 'refund'),0) AS refund_bounty,
-    COALESCE(sum(fee_part)    FILTER (WHERE kind = 'refund'),0) AS refund_fee
+    COALESCE(sum(fee_part)    FILTER (WHERE kind = 'refund'),0) AS refund_fee,
+    -- DIAMOND PHASE 9: a Spin's reserve legs, the chip escrow's reserve_in and reserve_out.
+    COALESCE(sum(amount)      FILTER (WHERE kind = 'spin_underwrite'),0) AS spin_underwrite,
+    COALESCE(sum(amount)      FILTER (WHERE kind = 'spin_surplus'),0) AS spin_surplus
     INTO l
     FROM public.poker_diamond_tournament_ledger WHERE tournament_id = p_tournament_id;
   INSERT INTO public.tournament_escrow
@@ -4724,12 +4853,14 @@ BEGIN
      prize_balance, bounty_balance, fee_balance, opened_from)
   VALUES
     (p_tournament_id, true, l.prize_in + l.bounty_in + l.fee_in, l.fee_in, 0, l.bounty_in, 0, 0,
-     l.prize_out, l.bounty_out, l.fee_out, l.refund_prize, l.refund_bounty, l.refund_fee, 0, 0,
-     l.prize_in - l.prize_out - l.refund_prize, l.bounty_in - l.bounty_out - l.refund_bounty,
+     l.prize_out, l.bounty_out, l.fee_out, l.refund_prize, l.refund_bounty, l.refund_fee, l.spin_surplus, l.spin_underwrite,
+     l.prize_in - l.prize_out - l.refund_prize - l.spin_surplus + l.spin_underwrite, l.bounty_in - l.bounty_out - l.refund_bounty,
      l.fee_in - l.fee_out - l.refund_fee, 'diamond terminal shadow (from the Diamond ledger)')
   ON CONFLICT (tournament_id) DO NOTHING;
   SELECT x.* INTO v_x FROM public.tournament_escrow x WHERE x.tournament_id = p_tournament_id;
-  IF v_x.prize_balance IS DISTINCT FROM (l.prize_in - l.prize_out - l.refund_prize)::numeric
+  IF v_x.prize_balance IS DISTINCT FROM (l.prize_in - l.prize_out - l.refund_prize - l.spin_surplus + l.spin_underwrite)::numeric
+     OR v_x.reserve_in IS DISTINCT FROM l.spin_underwrite::numeric
+     OR v_x.reserve_out IS DISTINCT FROM l.spin_surplus::numeric
      OR v_x.bounty_balance IS DISTINCT FROM (l.bounty_in - l.bounty_out - l.refund_bounty)::numeric
      OR v_x.fee_balance IS DISTINCT FROM (l.fee_in - l.fee_out - l.refund_fee)::numeric
      OR v_x.prize_balance + v_x.bounty_balance + v_x.fee_balance
@@ -4830,7 +4961,7 @@ REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_pay(p_user_id uuid, p_
 -- @@END fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)
 
 -- @@DOOR fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)
--- @@PIN md5=4dcc2e8556323bf831de3863e218f97a len=5977 owner=postgres
+-- @@PIN md5=a1b8b3b5bd4d7d50af063a3534f6372b len=6793 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -4856,6 +4987,18 @@ BEGIN
     RETURN jsonb_build_object('ok',true,'idempotent',true,'fully_settled',true,'remaining',0,
       'paid',v_existing.amount,'refund_prize',v_existing.prize_part,'refund_bounty',v_existing.bounty_part,
       'refund_fee',v_existing.fee_part,'custody_id',v_existing.custody_id,'ledger_id',v_existing.id);
+  END IF;
+
+  -- DIAMOND PHASE 9: A DRAWN SPIN IS NOT REFUNDED. Once a Diamond Spin's draw
+  -- has written its receipt (and moved its reserve legs), its entries are its
+  -- prize pool: every exit - a withdrawal, a seat exit, a cancellation - comes
+  -- through this door and is refused here by name, as the chip unregistration
+  -- refuses a booked Spin (spin_entry_already_booked). A 3x draw moves no leg,
+  -- so the receipt, not the ledger, is what decides.
+  IF EXISTS (SELECT 1 FROM public.spin_draw_receipts r WHERE r.tournament_id=p_tournament_id)
+     OR EXISTS (SELECT 1 FROM public.poker_diamond_tournament_ledger l
+                 WHERE l.tournament_id=p_tournament_id AND l.kind IN ('spin_underwrite','spin_surplus')) THEN
+    RAISE EXCEPTION 'diamond_spin_entry_already_booked' USING ERRCODE='55000';
   END IF;
 
   -- The roster decides whether this Diamond can go home: before the event
@@ -6615,7 +6758,7 @@ GRANT EXECUTE ON FUNCTION public.fn_tournament_entry_split(p_buy_in numeric, p_f
 -- @@END fn_tournament_entry_split(p_buy_in numeric, p_fee numeric, p_bounty numeric, p_is_bounty boolean)
 
 -- @@DOOR fn_tournament_late_registration_open(p_tournament_id uuid)
--- @@PIN md5=0a189819d8064f393f5de5b12a2c51f4 len=1257 owner=postgres
+-- @@PIN md5=bb86a28cb32e74e49014c627b8633b1e len=1560 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_tournament_late_registration_open(p_tournament_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -6629,17 +6772,26 @@ AS $function$
        AND COALESCE(t.late_reg_levels,0)>=0
        AND COALESCE(t.rebuy_levels,0)>=0
        AND COALESCE(t.late_reg_mins,0)>=0
+       -- A window must be configured at all.
        AND (
-         CASE
-           WHEN COALESCE(t.late_reg_levels,t.rebuy_levels,0)>0
-             THEN COALESCE(t.current_level,0)
-                    <COALESCE(t.late_reg_levels,t.rebuy_levels,0)
-           WHEN COALESCE(t.late_reg_mins,0)>0
-             THEN t.started_at IS NOT NULL
-              AND clock_timestamp()
-                    <t.started_at+make_interval(mins=>t.late_reg_mins)
-           ELSE false
-         END
+         COALESCE(t.late_reg_levels,t.rebuy_levels,0)>0
+         OR COALESCE(t.late_reg_mins,0)>0
+       )
+       -- The level window, when one is configured.
+       AND (
+         COALESCE(t.late_reg_levels,t.rebuy_levels,0)<=0
+         OR COALESCE(t.current_level,0)
+              <COALESCE(t.late_reg_levels,t.rebuy_levels,0)
+       )
+       -- AND the clock window, when one is configured: whichever deadline
+       -- passes first closes late registration.
+       AND (
+         COALESCE(t.late_reg_mins,0)<=0
+         OR (
+           t.started_at IS NOT NULL
+           AND clock_timestamp()
+                 <t.started_at+make_interval(mins=>t.late_reg_mins)
+         )
        )
        AND (
          public.fn_ca_tournament_is_unlimited(t.id)
@@ -6734,7 +6886,7 @@ DECLARE r record; v_oid oid; v_bad integer := 0; v_seen integer := 0;
 BEGIN
   FOR r IN SELECT t.ident::text AS ident, t.want::text AS want FROM (VALUES
     ('atomic_deduct_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid)','ab3d8e4c0baac59e7194319ffceba71e'),
-    ('fn_active_maintenance_release_boundary()','0d9548e27105b7172d83be4f7d10ea47'),
+    ('fn_active_maintenance_release_boundary()','05b537b57c9f51a5164e20a1cd0e67e0'),
     ('fn_ca_declare_ledger(p_category text, p_counterparty text, p_counterparty_entity uuid, p_settlement_id uuid, p_idempotency_key text, p_autoskip_tables text[])','1991d9f52317f33a4b9cf560d6fc91d5'),
     ('fn_ca_diamond_journal_is_transfer(p_type text, p_transaction_type text, p_source text, p_issuance_class text)','918b4dccaf2255fe90a7153cc600890d'),
     ('fn_ca_diamond_journal_origin(p_type text, p_transaction_type text, p_source text, p_issuance_class text, p_amount numeric)','ba8e79dfa3ce176381524eb5fb90f3fa'),
@@ -6742,7 +6894,7 @@ BEGIN
     ('fn_ca_escrow_apply(p_tournament_id uuid, p_what text, p_gross_in numeric, p_fee_entries_in numeric, p_satellite_fee_in numeric, p_bounty_in numeric, p_overlay_in numeric, p_satellite_in numeric, p_prize_out numeric, p_bounty_out numeric, p_fee_out numeric, p_refund numeric, p_reserve_out numeric, p_reserve_in numeric)','c6c26c25ab8a8b1222d375c7d6df0d2f'),
     ('fn_ca_escrow_can_pay(p_tournament_id uuid, p_kind text, p_amount numeric)','44534508da577df94a34d2055e99b1d6'),
     ('fn_ca_find_tournament_entry_ticket_for(p_tournament_id uuid, p_beneficiary_id uuid)','bc9acd00e516e3336b339349063b380d'),
-    ('fn_ca_guard_watchlist()','92ee208d0887728444bda396d0b4d442'),
+    ('fn_ca_guard_watchlist()','dec63eaa83b89411f3cd4a6fa36f5729'),
     ('fn_ca_is_new_mtt(p_row jsonb)','dff4202458ea4b5b940e78050e6de91c'),
     ('fn_ca_lock_mtt_admission_contract()','10644d522bb50245f76942ecce735cbc'),
     ('fn_ca_lock_settlement_lane_for_finish(p_tournament_id uuid)','76e4c6b5291bab20f0cfc65dd060022b'),
@@ -6755,8 +6907,8 @@ BEGIN
     ('fn_ca_recovery_fee_cents(p_gross_cents bigint, p_ratio numeric, p_unit_cents integer)','3960a8bc558ead330e1e47e7a38e31c4'),
     ('fn_ca_register_diamond_journal_row(p_tx_id uuid)','0f64c74772d556971760abc3962e7a6a'),
     ('fn_ca_tournament_cancellation_receipt(p_tournament_id uuid, p_observed_actor_id uuid)','cf0bf7f56e2e50376626c37b59cfaca8'),
-    ('fn_ca_tournament_escrow(p_tournament_id uuid)','707b4cbeb6f4906c2216cefea6635ca8'),
-    ('fn_ca_tournament_escrow_chips(p_tournament_id uuid)','bf70fec2d07ab459fe1da245bfb59ee7'),
+    ('fn_ca_tournament_escrow(p_tournament_id uuid)','9d06895cfcd2d9902d343e54b633bad0'),
+    ('fn_ca_tournament_escrow_chips(p_tournament_id uuid)','0a2f5a27ed0e25e22b9d006f29b3b942'),
     ('fn_ca_tournament_fee_ratio(p_buy_in numeric, p_buy_in_fee numeric)','858c3f3cda609a0b427f294d1c9edf36'),
     ('fn_ca_tournament_is_unlimited(p_tournament_id uuid)','fd66c28075f1d7c63b9d763632592471'),
     ('fn_ca_tournament_recorded_format(p_tournament_id uuid)','a7357dd1366f930eba6cd7f404090bbd'),
@@ -6774,11 +6926,11 @@ BEGIN
     ('fn_player_home_club(p_user_id uuid, p_club_hint uuid)','bdced39339da2e5ec46404177bab7dc2'),
     ('fn_poker_arena_context(p_club_key text)','6c85536da97db301d7beb4aae885e69c'),
     ('fn_poker_bind_diamond_seat()','c14b4bbfaa71a58210f8de5726040a8c'),
-    ('fn_poker_diamond_create_tournament(p_config jsonb)','6d82bede82370a9cc15d71b5ce1699f5'),
+    ('fn_poker_diamond_create_tournament(p_config jsonb)','11cd470d16bc4cd343e3e38b70caff76'),
     ('fn_poker_diamond_entry_custody_is_the_entry()','a5d21188b37bb0566c2fb82abeeb29a2'),
     ('fn_poker_diamond_play_state_columns(p_table text)','f53dea87eb2d45bcc1c6fdcee2cf9407'),
     ('fn_poker_diamond_release(p_custody_id uuid, p_request_id uuid)','d525cb1e20d6fb05e5b5e51497b127e7'),
-    ('fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)','a1ccc4bc9a5c6d8d17308e93943a9413'),
+    ('fn_poker_diamond_reserve(p_user_id uuid, p_purpose text, p_target_id uuid, p_entry_key text, p_amount numeric, p_request_id uuid)','cf2150429728d8d796711e9bdbb22f51'),
     ('fn_poker_diamond_seat_keeps_custody()','d80aed613a97e567268cb2bf6fdfd094'),
     ('fn_poker_diamond_tournament(p_tournament_id uuid)','c91028508fecc2d02e9003f2bdc2e38d'),
     ('fn_poker_diamond_tournament_cancel(p_tournament_id uuid, p_actor_id uuid)','ee91eac08d166e096ca5faa8c52ff296'),
@@ -6787,11 +6939,11 @@ BEGIN
     ('fn_poker_diamond_tournament_close_custody(p_tournament_id uuid)','2c1ca86d949cc689fe1f19c98e08b9db'),
     ('fn_poker_diamond_tournament_custody(p_tournament_id uuid)','b2a879b0e870447f2734b6179fe5fac3'),
     ('fn_poker_diamond_tournament_custody_add(p_custody_id uuid, p_amount numeric, p_request_id uuid)','25af87faee3db07b6dec956278eaa6bc'),
-    ('fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)','abaf068c32e192f08a1c01c02b089523'),
-    ('fn_poker_diamond_tournament_escrow(p_tournament_id uuid)','850410a45ed7eefe785d3f17a2403247'),
-    ('fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)','15beba292789e7f1e665c7caa9530304'),
+    ('fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)','ceffb36777bfa7067c4fac90c51d5858'),
+    ('fn_poker_diamond_tournament_escrow(p_tournament_id uuid)','d31432344bd1e28904416f5924b75670'),
+    ('fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)','a48dc93434b566767bf9baa0f63abee4'),
     ('fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)','e246c03b5a6d2aff690d227912ff7e82'),
-    ('fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)','4dcc2e8556323bf831de3863e218f97a'),
+    ('fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)','a1b8b3b5bd4d7d50af063a3534f6372b'),
     ('fn_poker_diamond_tournament_settle_fee(p_tournament_id uuid, p_source text)','4e947c948d953098fb63c26d14decde8'),
     ('fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)','39f95b499619cab7a1eb65ff583aa638'),
     ('fn_poker_guard_chip_seat()','3326766760c7b9c9bfe12daca34ebd0f'),
@@ -6809,7 +6961,7 @@ BEGIN
     ('fn_tournament_current_blinds(p_tournament_id uuid)','be0a708cb57fad978515b48f533d5322'),
     ('fn_tournament_entry_cap_reached(p_tournament_id uuid)','9a34a1460abf1c71f24d88bce182e488'),
     ('fn_tournament_entry_split(p_buy_in numeric, p_fee numeric, p_bounty numeric, p_is_bounty boolean)','89cc73d13fe8fbe6905233c8f9f74848'),
-    ('fn_tournament_late_registration_open(p_tournament_id uuid)','0a189819d8064f393f5de5b12a2c51f4'),
+    ('fn_tournament_late_registration_open(p_tournament_id uuid)','bb86a28cb32e74e49014c627b8633b1e'),
     ('fn_unregister_from_tournament(p_tournament_id uuid)','b883532da31ca40919b4f3ef5c925513'),
     ('fn_unregister_from_tournament(p_tournament_id uuid, p_request_id uuid)','c39310bcf1158d66bd0aced7bc0f9c73')
   ) AS t(ident, want)

@@ -33,7 +33,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
 import { journalHash, makeHorseJournalRecord, type HorseJournalRecord } from './record.js';
-import { HorseDecisionJournalStore, forgetValidatedHorseSegments } from './store.js';
+import * as storeModule from './store.js';
+import { HorseDecisionJournalStore } from './store.js';
+
+/** The store's test seam. Optional so that this file fails on the counts, not
+ * on a missing export, when it is run against a store that has no such cache
+ * (that store validates every segment every time, which is the defect). */
+const forgetValidatedHorseSegments = (): void =>
+  (storeModule as { forgetValidatedHorseSegments?: () => void }).forgetValidatedHorseSegments?.();
 
 const counts = vi.hoisted(() => ({ validate: 0, json: 0 }));
 vi.mock('./record.js', async (importOriginal) => {

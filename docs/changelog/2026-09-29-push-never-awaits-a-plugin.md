@@ -53,3 +53,16 @@ crashes the app for every player who taps it.
 `scripts/native/android-bundle.sh` used to WARN when the file was missing. It
 now refuses to build the store bundle without it (pinned in
 `tests/unit/nativeBinaryConfig.test.ts`). Debug builds are unaffected.
+
+## And then it crashed at launch
+
+After Allow, the permission stays granted, and every launch registers for push
+again - so the same Firebase-less `register()` now crashed the app AT LAUNCH,
+every launch, not only on the button (seen on the emulator: the app would not
+stay open until the permission was revoked with `adb shell pm revoke`). The
+script guard is not enough for that: Android Studio's own "Generate Signed
+Bundle" never runs the script. So `android/app/build.gradle` now refuses any
+RELEASE task when `google-services.json` is missing
+(`gradle.taskGraph.whenReady`), with the reason in the message. Checked:
+`./gradlew bundleRelease --dry-run` fails with it; `./gradlew assembleDebug
+--dry-run` still passes, so debug builds for testing are unaffected.

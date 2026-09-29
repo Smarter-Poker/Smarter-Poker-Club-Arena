@@ -121,5 +121,12 @@ describe('one command per store build', () => {
     expect(android).toMatch(
       /if \[ ! -s android\/app\/google-services\.json \]; then[\s\S]*?exit 1\s*\nfi/
     );
+    // ...and Gradle itself refuses ANY release task without it (Android
+    // Studio's signed-bundle wizard never runs the script): with notifications
+    // allowed, a Firebase-less release crashes at every launch.
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain('gradle.taskGraph.whenReady');
+    expect(gradle).toMatch(/releasing && !file\('google-services\.json'\)\.exists\(\)/);
+    expect(gradle).toContain('throw new GradleException');
   });
 });

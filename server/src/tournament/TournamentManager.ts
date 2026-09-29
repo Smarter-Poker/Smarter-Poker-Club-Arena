@@ -431,6 +431,13 @@ export class TournamentManager extends TournamentManagerEliminations {
   }
 
   private static readonly MOVE_BOUNDARY_PROBE_MS = 1_000;
+  /**
+   * `fn_f06_discover_breaks` accepts 1..32 and raises F06_PAGE_SIZE outside it.
+   * Ask for all of it: the page is what the manager SEES, never what it works
+   * on, and a short page is what made the completeness claim cost one admitted
+   * sweep per pending operation. See `discoverTournamentBreaks`.
+   */
+  private static readonly BREAK_DISCOVERY_PAGE = 32;
   /** Exact manager generation that owns every live-source move fence it arms. */
   private readonly tournamentMoveBoundaryOwner = randomUUID();
   /** Ambiguous replies retain the exact UUID and source fence until replay resolves. */
@@ -780,9 +787,51 @@ export class TournamentManager extends TournamentManagerEliminations {
     this.tournamentBreakArrivalWakes.set(breakId, arrivals);
   }
 
-  /** Discovery advances the server-owned cursor even when earlier entries refuse. */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  SEEING EVERY OPERATION IS ONE READ, NOT ONE ADMISSION EACH (2026-09-29)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The second half of the same 2026-09-29 freeze. `a break the sweep starts
+   * is finished` (above) fixed the VISIT: a discovered operation is now worked
+   * to the end once started. This is about the CLAIM the balancer waits on.
+   *
+   * `checkTableBalance` will not plan a move until
+   * `tournamentBreakDiscoveryComplete` is true - a correct guard, because a
+   * balancer that has not seen every pending break can plan onto a table a
+   * break already owns. Asking for a page of ONE made that claim cost a walk of
+   * the whole durable cursor TWICE: ~2*(N+1) discovery calls for an event with
+   * N pending operations. The flag lives only in this process and the engine
+   * restarts every hour, so above a handful of operations it could not be
+   * re-earned within one restart cycle at all - and a balancer that never runs
+   * is what leaves a field one funded player to a table, which is what opens
+   * the breaks in the first place. A ratchet.
+   *
+   * Production 2026-09-29: 87a68e55 ("$100 Freeroll 6:00 AM") and cb8f2dd1
+   * ("$100 Freeroll 6:00 PM") held seven and five pending operations, so 16 and
+   * 12 calls. Between 04:44 and 05:10Z their durable cursors advanced once and
+   * twice - the scheduler had 381 of 408 managers queued on four slots with an
+   * oldest wait of 478 s - so the claim needed hours and expired every 60
+   * minutes. 38 players on 38 tables and 48 on 41, no table able to deal to
+   * itself, for hours, while their level clocks reached 25 and 16 and the
+   * average stack fell under one big blind.
+   *
+   * Seeing an operation and working on it are different questions, and only the
+   * second needs rationing. The page is now the SQL's own maximum, so the
+   * complete pending set - and the exclusion set every balancer board is built
+   * from - arrives in one or two calls whatever N is. A wrap is the server
+   * proving nothing is left beyond the cursor; it resets the cursor to zero and
+   * pages from the beginning in the same statement, so a wrapped page that did
+   * not FILL is already that complete set and no second traversal can add to
+   * it. `visitTournamentBreakPage` keeps the rationing exactly where #5583 put
+   * it: one operation per unit, budget re-asked between units. The page is what
+   * the manager SEES; it is never what one unit works on.
+   */
   protected async discoverTournamentBreaks(): Promise<TournamentTableBreakState[] | null> {
-    const page = await this.tableBreakRpc().discover(this.tournamentBreakCursorRevision, 1);
+    const page = await this.tableBreakRpc().discover(
+      this.tournamentBreakCursorRevision,
+      TournamentManager.BREAK_DISCOVERY_PAGE
+    );
     // Receipt bookkeeping is safe after budget expiry; it grants no new authority.
     this.tournamentBreakCursorRevision = page.cursor_revision;
     if (!page.ok) {
@@ -790,7 +839,15 @@ export class TournamentManager extends TournamentManagerEliminations {
       return null;
     }
     if (page.wrapped) {
-      if (this.tournamentBreakTraversalStarted) this.tournamentBreakDiscoveryComplete = true;
+      // A wrapped page that did not FILL started at ordinal zero and was not
+      // truncated, so it IS the event's whole non-terminal set: proven, in one
+      // call. Only a filled page may have been cut at the limit, and that is
+      // the one case still owed the second wrap.
+      if (
+        this.tournamentBreakTraversalStarted ||
+        page.operations.length < TournamentManager.BREAK_DISCOVERY_PAGE
+      )
+        this.tournamentBreakDiscoveryComplete = true;
       this.tournamentBreakTraversalStarted = true;
     }
     if (this.tournamentBreakTraversalStarted && page.operations.length < 1)
@@ -1309,30 +1366,45 @@ export class TournamentManager extends TournamentManagerEliminations {
   ): Promise<boolean> {
     const visited = new Set<string>();
     let pages = 0;
+    // The page is the whole pending set now (see `discoverTournamentBreaks`),
+    // so it is HELD across units and re-read only once it has been worked
+    // through: the server cursor advances once per traversal instead of once
+    // per operation, which is what the balancer's completeness claim waits on.
+    let held: TournamentTableBreakState[] = [];
     for (;;) {
       if (!this.eliminationMutationAllowed()) return pages > 0;
       if (pages > 0 && this.eliminationWorkBudgetExpired()) return true;
       this.tournamentBreakVisitOpen = true;
       let fresh = 0;
       try {
-        let page = await this.discoverTournamentBreaks();
-        // The conflict carried the cursor's revision; ask once more with it.
-        if (page === null && this.eliminationMutationAllowed())
-          page = await this.discoverTournamentBreaks();
-        if (page === null) {
-          this.noteBreakDiscoveryRefusal('cursor_revision_conflict_twice');
-          return pages > 0;
+        if (!held.some((op) => !visited.has(op.break_id))) {
+          let page = await this.discoverTournamentBreaks();
+          // The conflict carried the cursor's revision; ask once more with it.
+          if (page === null && this.eliminationMutationAllowed())
+            page = await this.discoverTournamentBreaks();
+          if (page === null) {
+            this.noteBreakDiscoveryRefusal('cursor_revision_conflict_twice');
+            return pages > 0;
+          }
+          this.noteBreakDiscoveryRefusal(null);
+          pages += 1;
+          held = page;
         }
-        this.noteBreakDiscoveryRefusal(null);
-        pages += 1;
-        const unseen = page.filter((op) => !visited.has(op.break_id));
+        const unseen = held.filter((op) => !visited.has(op.break_id));
         fresh = unseen.length;
-        if (!(await this.visitTournamentBreakWork(unseen, pages === 1, visit, visited)))
+        // ONE operation per unit, always. The window opened above suspends the
+        // work budget for everything inside it, so a unit that took a whole
+        // page would let one admission run as long as the page is deep - the
+        // bounded unit is the entire point of it.
+        if (
+          fresh > 0 &&
+          !(await this.visitTournamentBreakWork(unseen.slice(0, 1), pages === 1, visit, visited))
+        )
           return pages > 1;
       } finally {
         this.tournamentBreakVisitOpen = false;
       }
-      // An empty page, or a wrap back to an operation already visited in this
+      // An empty page, or a wrap back to operations already visited in this
       // pass, means every open operation has had its visit.
       if (fresh === 0) return true;
     }
@@ -1344,10 +1416,10 @@ export class TournamentManager extends TournamentManagerEliminations {
     visit: (state: TournamentTableBreakState) => Promise<void>,
     visited: Set<string>
   ): Promise<boolean> {
-    // One durable page item per discovery prevents a slow first item from
-    // forever hiding the rest of a pre-advanced page. Alternate retained ACK
-    // cleanup with discovery so a committed/lost ACK can release its local
-    // reservation.
+    // One operation per unit prevents a slow first item from forever hiding the
+    // rest of a pre-advanced page - the caller hands exactly one, and asks the
+    // clock again between units. Alternate retained ACK cleanup with discovery
+    // so a committed/lost ACK can release its local reservation.
     const retainedId = includeRetained
       ? [...this.pendingTournamentCleanupKinds.keys()].find(
           (id) => !page.some((op) => op.break_id === id)

@@ -7,6 +7,7 @@
  * what the OTA job would push to every installed copy of the app.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   assertNativeBackend,
@@ -38,28 +39,33 @@ describe('a native bundle needs its backend', () => {
     expect(() => assertNativeBackend({})).toThrow(/cannot reach its backend/);
   });
 
-  it('vite itself refuses a native build with no backend, before building anything', () => {
-    // Explicitly empty values outrank any .env on the machine, exactly as
-    // they do for Vite, so this cannot start a real build.
-    const run = spawnSync(
-      process.execPath,
-      ['node_modules/vite/bin/vite.js', 'build', '--logLevel', 'error'],
-      {
-        env: {
-          ...process.env,
-          VITE_NATIVE: '1',
-          CA_DIST: 'dist-native-guard-test',
-          CA_PUBLIC_BASE: '/',
-          VITE_SUPABASE_URL: '',
-          VITE_SUPABASE_ANON_KEY: '',
-        },
-        encoding: 'utf8',
-        timeout: 60_000,
-      }
-    );
-    expect(run.status).not.toBe(0);
-    expect(`${run.stdout}${run.stderr}`).toMatch(
-      /Refusing to build an app bundle that cannot reach its backend/
-    );
-  }, 70_000);
+  const guard = (env: Record<string, string>) =>
+    spawnSync(process.execPath, ['scripts/native/require-native-backend.mjs'], {
+      // Explicitly empty values outrank any .env on the machine, exactly as
+      // they do for Vite, so this never depends on the workstation.
+      env: { ...process.env, ...env },
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+
+  it('the build:native script refuses before building anything when the backend is missing', () => {
+    const run = guard({ VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/Refusing to build an app bundle that cannot reach its backend/);
+    expect(run.stderr).toMatch(/VITE_SUPABASE_URL is empty; VITE_SUPABASE_ANON_KEY is empty/);
+  }, 40_000);
+
+  it('and lets a build with its backend through', () => {
+    const run = guard(GOOD);
+    expect(run.status, run.stderr).toBe(0);
+  }, 40_000);
+
+  it('runs FIRST in build:native, which every installable bundle goes through', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(
+      pkg.scripts['build:native'].startsWith('node scripts/native/require-native-backend.mjs && ')
+    ).toBe(true);
+  });
 });

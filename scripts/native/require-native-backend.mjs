@@ -16,9 +16,17 @@
  * checks. The native bundle is only ever built to be installed, so there is
  * no case in which building one without its backend is what anyone wanted.
  *
- * vite.config.ts calls assertNativeBackend() when VITE_NATIVE=1, with the
- * same variables Vite itself will read (.env files, then the environment).
+ * `npm run build:native` runs this file FIRST (package.json), so every path
+ * to an installable bundle passes through it: build:native itself,
+ * android:bundle, ios:archive and the Capgo OTA job. It reads the same
+ * variables Vite will (.env files, then the environment, which wins).
+ *
+ * Deliberately not in vite.config.ts: tests load that config with
+ * VITE_NATIVE=1 to inspect it (tests/unit/hiddenSourceMaps.test.ts), and a
+ * config that throws without a backend would fail them for no reason. The
+ * guard belongs on the path that produces a bundle, not on reading a config.
  */
+import { pathToFileURL } from 'node:url';
 
 export const NATIVE_BACKEND_KEYS = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'];
 
@@ -49,4 +57,16 @@ export function assertNativeBackend(env) {
       'The app would open to "Loading Failed" on every phone it reaches. Build from a checkout with a .env ' +
       '(a git worktree does not copy it: cp <main checkout>/.env .), or export the variables first.'
   );
+}
+
+/* Run directly: `node scripts/native/require-native-backend.mjs`. */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { loadEnv } = await import('vite');
+  try {
+    assertNativeBackend({ ...loadEnv('production', process.cwd(), 'VITE_'), ...process.env });
+    console.log('[build:native] backend settings present');
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }

@@ -20,6 +20,8 @@
 -- Otherwise the calculator runs exactly as before. Rounds 2 and 3 still
 -- verify every certificate against accounting_payable_earning_sources and
 -- refuse any mismatch, so a reused receipt can never pay a stale figure.
+--
+-- @live-proof: position('proven current (20260928233000)' in pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz)'::regprocedure)) > 0
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

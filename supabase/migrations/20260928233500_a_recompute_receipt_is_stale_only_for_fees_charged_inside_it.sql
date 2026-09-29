@@ -8,6 +8,8 @@
 -- charged before that week ended, so the test now also requires
 -- charged_at < p_to. Conservative: any fee charged before the week's end and
 -- recorded after the receipt still forces the recompute.
+--
+-- @live-proof: position('f.charged_at<p_to' in pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz)'::regprocedure)) > 0
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

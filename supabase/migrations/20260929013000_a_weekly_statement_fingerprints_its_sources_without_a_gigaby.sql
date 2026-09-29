@@ -14,6 +14,8 @@
 -- from 32 bytes per source instead of the full row text. The report key is
 -- renamed source_fingerprint_v2 so the two formats can never be compared by
 -- mistake. Everything else is unchanged.
+--
+-- @live-proof: position('string_agg(md5(jsonb_build_array(s.source_type' in pg_get_functiondef('public.fn_club_weekly_accounting_summary(uuid)'::regprocedure)) > 0
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

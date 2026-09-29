@@ -15,6 +15,8 @@
 -- ever changes here, and every balance writer takes FOR NO KEY UPDATE (plain
 -- UPDATE does). FOR NO KEY UPDATE therefore serializes exactly the same
 -- writers while letting foreign-key checks through. Nothing else changes.
+--
+-- @live-proof: (SELECT bool_and(pg_get_functiondef(s::regprocedure) !~ '(ORDER BY c\.id|ORDER BY id|cm\.user_id) FOR UPDATE' AND position('FOR NO KEY UPDATE' in pg_get_functiondef(s::regprocedure)) > 0) FROM unnest(ARRAY['public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)','public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz)','public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)']) s)
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';

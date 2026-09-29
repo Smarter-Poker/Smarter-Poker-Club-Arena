@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from '@playwright/test';
 import { remainingObservationMs } from './observationDeadline';
+import type { TournamentBoardFacts } from './tournamentBoardEnding';
 
 type Row = Record<string, unknown>;
 export type HudClock = {
@@ -185,6 +186,59 @@ export async function createHudClockReader() {
         if (clock) clocks.set(table.id, clock);
       }
       return clocks;
+    },
+    /**
+     * Read-only facts about the boards under certification, from tables that
+     * public RLS already exposes to this reserved account: the tournament
+     * row, the table row and the seated stacks. A board with no readable
+     * tournament comes back with null fields (classified `unknown`), never
+     * with invented ones.
+     */
+    async boardFacts(tableIds: string[]): Promise<Map<string, TournamentBoardFacts>> {
+      const facts = new Map<string, TournamentBoardFacts>();
+      if (!tableIds.length) return facts;
+      const tables = await client
+        .from('tables')
+        .select('id,tournament_id,status')
+        .in('id', tableIds);
+      if (tables.error) throw tables.error;
+      const tournamentIds = [
+        ...new Set((tables.data || []).map((row) => row.tournament_id).filter(Boolean)),
+      ];
+      const tournaments = tournamentIds.length
+        ? await client
+            .from('tournaments')
+            .select('id,status,current_players,ended_at,blind_level_state')
+            .in('id', tournamentIds)
+        : { data: [], error: null };
+      if (tournaments.error) throw tournaments.error;
+      const seats = await client
+        .from('table_seats')
+        .select('table_id,stack,left_at')
+        .in('table_id', tableIds)
+        .is('left_at', null);
+      if (seats.error) throw seats.error;
+      for (const table of tables.data || []) {
+        const tournament = tournaments.data?.find((row) => row.id === table.tournament_id);
+        const level = tournament?.blind_level_state as { big_blind?: unknown } | null | undefined;
+        const bigBlind = Number(level?.big_blind);
+        facts.set(table.id, {
+          tableId: table.id,
+          tournamentId: (table.tournament_id as string | null) ?? null,
+          tournamentStatus: tournament ? String(tournament.status) : null,
+          currentPlayers: Number.isSafeInteger(tournament?.current_players)
+            ? Number(tournament?.current_players)
+            : null,
+          tableStatus: table.status ? String(table.status) : null,
+          endedAt: tournament?.ended_at ? String(tournament.ended_at) : null,
+          bigBlind: Number.isFinite(bigBlind) && bigBlind > 0 ? bigBlind : null,
+          seatStacks: (seats.data || [])
+            .filter((seat) => seat.table_id === table.id)
+            .map((seat) => Number(seat.stack))
+            .filter((stack) => Number.isFinite(stack)),
+        });
+      }
+      return facts;
     },
     async close() {
       const result = await client.auth.signOut({ scope: 'local' });

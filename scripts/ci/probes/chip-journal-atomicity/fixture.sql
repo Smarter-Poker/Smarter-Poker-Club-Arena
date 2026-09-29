@@ -104,9 +104,13 @@ CREATE OR REPLACE FUNCTION public.fn_ca_escrow_apply(p_tournament_id uuid, p_wha
 AS $function$ BEGIN RETURN; END; $function$;
 
 -- The cash-rake bank receipt, the attribution rows and the credit allocator.
--- (financial_alerts is NOT added here: test_satellite.py and
---  satellite-split-fixture.sql each create their own inside their own
---  transaction, and a permanent one in this fixture collides with them.)
+-- Two tables are deliberately NOT added here, because other probes
+-- concatenate this fixture with their own DDL and a duplicate CREATE
+-- aborts them: financial_alerts (test_satellite.py and
+-- satellite-split-fixture.sql each create their own) and
+-- rake_attributions (tests/fixtures/cash-participant-funding/bootstrap.sql
+-- creates it, and scripts/dev/probe-cash-participant-funding.py loads that
+-- straight after this file).
 -- These are NOT boundary stubs. atomic_distribute_rake writes all three inside
 -- the same transaction as the chip-journal leg, so they are part of what this
 -- probe proves: if the receipt insert fails, the ledger write must roll back
@@ -123,24 +127,6 @@ CREATE TABLE public.accounting_cash_bank_receipts(
   amount numeric
 );
 
-CREATE TABLE public.rake_attributions(
-  id uuid DEFAULT gen_random_uuid(),
-  hand_id uuid,
-  player_id uuid,
-  rake_amount numeric,
-  agent_id uuid,
-  created_at timestamptz DEFAULT now(),
-  rake_record_id uuid,
-  table_id uuid,
-  club_id uuid,
-  gross_contribution numeric,
-  returned_uncalled numeric,
-  eligible_contribution numeric,
-  contribution_weight numeric,
-  weighted_rake_credit numeric,
-  bbj_attributed_contribution numeric,
-  rake_method text
-);
 
 
 -- The credit allocator, carried VERBATIM from production rather than stubbed.

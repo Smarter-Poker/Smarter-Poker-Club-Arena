@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from 'react';
-import { isNativePlatform } from '../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -76,7 +76,7 @@ async function requestSharedWakeLock(): Promise<void> {
   // THE APP (2026-09-08): WKWebView never got navigator.wakeLock, so on iOS
   // the felt slept mid-hand. The plugin holds the OS idle timer instead.
   // Same holder count, same last-table-out release.
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     if (wakeLockHolders === 0) return;
     void import('../lib/native/keepAwake')
       .then(({ nativeKeepAwake }) => nativeKeepAwake(true))
@@ -125,7 +125,7 @@ function acquireWakeLock(): () => void {
     // screen dim on the three still dealing.
     if (wakeLockHolders > 0) return;
     document.removeEventListener('visibilitychange', onWakeLockVisibilityChange);
-    if (isNativePlatform()) {
+    if (IS_NATIVE_BUILD && isNativePlatform()) {
       void import('../lib/native/keepAwake')
         .then(({ nativeKeepAwake }) => nativeKeepAwake(false))
         .catch(() => {});

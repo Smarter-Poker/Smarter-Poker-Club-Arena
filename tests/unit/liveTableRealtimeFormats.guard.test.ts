@@ -93,7 +93,7 @@ describe('the production realtime certificate covers every live-game lane', () =
   it('runs MTT, Spin and Sit & Go through the same read-only WebKit contract', () => {
     expect(spec).toContain("const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const");
     expect(spec).toContain('certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat)');
-    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat, testInfo)');
+    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat, testInfo, {');
     expect(spec).toContain('journal.waitForCausalHandCycle(');
     expect(spec).toContain('expectNextHandPresentation(page, cycle');
     expect(spec).toContain('whileConnectionBannerStaysHidden(');
@@ -118,7 +118,9 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('waitForSharedNaturalLevel(');
     expect(tournamentHelper).toContain('reader.clocks([candidate.id])');
     const recovered = tournamentHelper.indexOf('did not recover exactly one multiplexed transport');
-    const clock = tournamentHelper.indexOf('await createHudClockReader()');
+    // The SNG board witness signs in earlier, for selection; the MTT HUD clock
+    // is the reader created AFTER recovery.
+    const clock = tournamentHelper.indexOf('await createHudClockReader()', recovered);
     const sized = tournamentHelper.indexOf('mttCaseTimeoutMs(');
     const level = tournamentHelper.indexOf('await waitForSharedNaturalLevel(');
     expect(recovered).toBeGreaterThan(-1);

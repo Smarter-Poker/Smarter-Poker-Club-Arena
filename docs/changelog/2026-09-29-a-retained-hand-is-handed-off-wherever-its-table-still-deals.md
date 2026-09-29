@@ -88,7 +88,25 @@ They settle through the platform's own door, the handoff, the next time the
 engine starts each table after the migration is applied. Nothing here writes a
 chip.
 
+## What actually landed in the database (follow-up, 03:20 UTC)
+
+A second session fixed the same two refusals in parallel: #5559, migration
+`20260929022629_a_retained_hand_settles_past_an_undealt_chair_and_on_a_closi`,
+merged just before #5561 and installed at 03:16 UTC (door prosrc
+`1949cf2d`). It admits a `breaking` cash table and an undealt chair the hand
+never names (plus a zero-inflow condition). On 2026-09-29 03:18:11 UTC the
+successor handoff committed 6c9ee4b6's hand 13637742 through it.
+
+That made `20260929023040` (this file's first migration, pinned to the older
+`32cfcc98` body) impossible to apply, so the follow-up retires it and carries
+only what `20260929022629` does not: the live-path disposal. Migration
+`20260929031904_a_hand_a_cash_table_dealt_past_is_disposed_at_its_resume_doo`
+applies the single `disposal` edit above to the `1949cf2d` body (post-image
+`4cc9df92`) and installs the helper unchanged. The _admission_ and
+_dealt_roster_ edits described above were superseded by #5559's equivalents
+and never installed.
+
 ## Pins
 
-- `tests/a-retained-hand-is-handed-off-wherever-its-table-still-deals.law.test.ts`
+- `tests/a-hand-a-cash-table-dealt-past-is-disposed-at-its-resume-door.law.test.ts`
 - `server/src/engine/aStandingRetainedHandRefusalHoldsTheTable.law.test.ts`

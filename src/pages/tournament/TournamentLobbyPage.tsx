@@ -45,6 +45,9 @@ import { SpadeConsole } from '../../components/console/SpadeConsole';
 import { useTournamentStageViews } from '../../hooks/useTournamentStageView';
 import { dayCompleteLabel, nextDayStartsLabel } from '../../utils/multiDaySchedule';
 import { tournamentLobbyTimeGroup } from '../../utils/tournamentLobbyTimeGroup';
+import { TOURNAMENT_ARENA_EMBED } from '../../services/TournamentService';
+import { withDiamondSpinCeilings } from '../../services/diamondSpinCeilings';
+import type { TournamentArenaEmbed } from '../../components/tournament/details/types';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -88,6 +91,10 @@ interface Tournament extends TournamentEntryWindowRow {
   isNew: boolean;
   isVipOnly: boolean;
   isAllInOrFold: boolean;
+  /* DIAMOND PHASE 9: the event's arena, and a Diamond Spin's own ceiling
+     (withDiamondSpinCeilings), for the card's "Win Up To". */
+  arena?: TournamentArenaEmbed['arena'];
+  diamond_spin_ceiling?: number | null;
 }
 
 export default function TournamentLobbyPage() {
@@ -387,7 +394,8 @@ export default function TournamentLobbyPage() {
                     all_in_or_fold,
                     hide_club_name,
                     blind_structure,
-                    clubs!club_id(name)
+                    clubs!club_id(name),
+                    ${TOURNAMENT_ARENA_EMBED}
                 `;
 
       // 72-hour display window: only show tournaments starting within 72h (or already running)
@@ -563,6 +571,9 @@ export default function TournamentLobbyPage() {
           }
         }
 
+        /* A Diamond Spin advertises the top of the table its creation
+           pinned; a board with no Diamond Spin on it asks nothing. */
+        data = await withDiamondSpinCeilings(data);
         if (!isMounted.current) return;
 
         const mapped: Tournament[] = data.map((t: any) => ({
@@ -614,6 +625,8 @@ export default function TournamentLobbyPage() {
           isNew: t.label_as_new || false,
           isVipOnly: t.is_vip_only || false,
           isAllInOrFold: t.all_in_or_fold || false,
+          arena: t.arena,
+          diamond_spin_ceiling: t.diamond_spin_ceiling ?? null,
         }));
 
         setTournaments(mapped);
@@ -1015,6 +1028,8 @@ export default function TournamentLobbyPage() {
                       variant: tournament.variant,
                       tournament_type: tournament.tournamentType,
                       spin_multiplier: tournament.spinMultiplier,
+                      arena: tournament.arena,
+                      diamond_spin_ceiling: tournament.diamond_spin_ceiling,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,

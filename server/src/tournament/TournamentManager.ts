@@ -48,6 +48,7 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import type { TournamentLifecycleToken } from './TournamentLifecycleEpoch.js';
 import type { AbandonedRetirement } from '../services/TournamentRetirementCustody.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
+import { compareBreakSourceRoster, type BreakSourceRegistration } from './breakSourceRoster.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import {
   moveTournamentPlayerAtomically,
@@ -1161,6 +1162,32 @@ export class TournamentManager extends TournamentManagerEliminations {
       )
     )
       return refuse('source_seat_unfunded_or_unbound');
+    // The door counts registrations as well as seats (breakSourceRoster.ts).
+    // Ask the same question before proposing, and name whoever differs.
+    const { data: registrationData, error: registrationError } = await supabase
+      .from('tournament_players')
+      .select('user_id, status, chips, seat_number')
+      .eq('tournament_id', this.tournamentId)
+      .eq('table_id', state.source_table_id)
+      .in('status', ['playing', 'registered']);
+    if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
+    if (registrationError || !registrationData)
+      return refuse(
+        `source_registrations_unread:${registrationError?.message ?? 'no data'}`
+      );
+    const disagreement = compareBreakSourceRoster(
+      rows,
+      registrationData as BreakSourceRegistration[]
+    );
+    if (disagreement) {
+      // A bust not yet recorded is the bust stage's work, and this break
+      // cannot begin until it is done: give that stage the next admission.
+      if (disagreement.unrecordedBusts.length > 0) this.bustAwaitsItsStage();
+      this.requestUrgentEliminationSweepAfter(
+        disagreement.unrecordedBusts.length > 0 ? 0 : TournamentManagerBase.BALANCE_REDRIVE_MS
+      );
+      return refuse(disagreement.reason);
+    }
     const others = await this.eligibleBreakDestinations(state.source_table_id, state.break_id);
     if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
     if (!others) return refuse(`destinations_unread:${this.destinationReadRefusal}`);

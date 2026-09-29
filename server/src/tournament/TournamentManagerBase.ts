@@ -2362,6 +2362,12 @@ export abstract class TournamentManagerBase {
     return this.eliminationMutationBatchOpen;
   }
 
+  /**
+   * A hand just left a player at zero. The elimination manager gives its bust
+   * stage the next admission even if a later stage holds the continuation.
+   */
+  protected bustAwaitsItsStage(): void {}
+
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
@@ -2496,6 +2502,7 @@ export abstract class TournamentManagerBase {
           // release the boundary. Other hands may finish; none may start.
           this.holdSatelliteQualifierBoundary();
         }
+        this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }
     });

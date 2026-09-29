@@ -97,6 +97,16 @@ function parkedSource(m: any, seats: () => ReturnType<typeof inputMember>[]) {
       })),
       error: null,
     }),
+    // The registrations the door also counts agree with the seats.
+    in: async () => ({
+      data: seats().map((s) => ({
+        user_id: s.user_id,
+        status: 'playing',
+        chips: 100,
+        seat_number: s.source_seat_number,
+      })),
+      error: null,
+    }),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(query);
   return engine;

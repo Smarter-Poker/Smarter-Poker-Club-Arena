@@ -45,6 +45,8 @@ import {
   type TournamentBalanceProgress,
 } from './TournamentManagerEliminations.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
+import type { TournamentLifecycleToken } from './TournamentLifecycleEpoch.js';
+import type { AbandonedRetirement } from '../services/TournamentRetirementCustody.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import {
@@ -88,6 +90,14 @@ interface BreakRetirementHost {
     work: (custody: BreakRetirementCustody) => Promise<T>,
     prepare: () => Promise<void>
   ): Promise<T>;
+}
+
+interface AbandonedRetirementHost {
+  yieldAbandonedRetirementCustody(
+    tournamentId: string,
+    manager: TournamentManager,
+    confirm: (reservation: AbandonedRetirement) => Promise<boolean>
+  ): Promise<AbandonedRetirement[]>;
 }
 
 interface LateRegistrationCapacityResult {
@@ -656,6 +666,70 @@ export class TournamentManager extends TournamentManagerEliminations {
    * until the break is acknowledged or withdrawn, and wake discovery so the
    * break is claimed. No hand is admitted and nothing is retried here.
    */
+  /**
+   * THE LIVE GENERATION TAKES OVER A RETIRED GENERATION'S RESERVATION
+   * (2026-09-29). The receipt is `fn_f06_break_state` read under THIS lease:
+   * it is lease-fenced (`f06_authority`) and locks the break row, so a
+   * generation that no longer holds the lease cannot change the row and its
+   * unknown close/ACK outcome is now whatever the row says. The row must name
+   * the reservation's break, table and lifecycle. The break itself stays
+   * open and keeps the table source-excluded in SQL; this generation claims
+   * its custody (revision CAS) through the ordinary retirement path.
+   */
+  protected override async adoptAbandonedRetirementCustody(
+    lifecycle: TournamentLifecycleToken
+  ): Promise<void> {
+    const generation = this.getTournamentLeaseGeneration();
+    const host = this.gameServer as typeof this.gameServer & Partial<AbandonedRetirementHost>;
+    if (!generation || !host.yieldAbandonedRetirementCustody) return;
+    const receipts = new Map<string, TournamentTableBreakState>();
+    const yielded = await host.yieldAbandonedRetirementCustody(
+      this.tournamentId,
+      this,
+      async (reservation) => {
+        if (
+          !this.lifecycleIsCurrent(lifecycle) ||
+          this.getTournamentLeaseGeneration() !== generation
+        )
+          return false;
+        const state = await this.tableBreakRpc().reconcile(reservation.breakId);
+        if (
+          !this.lifecycleIsCurrent(lifecycle) ||
+          this.getTournamentLeaseGeneration() !== generation
+        )
+          return false;
+        if (
+          state.ok !== true ||
+          state.tournament_id !== this.tournamentId ||
+          state.break_id !== reservation.breakId ||
+          state.source_table_id !== reservation.tableId ||
+          state.lifecycle !== reservation.tableIncarnation
+        )
+          return false;
+        receipts.set(reservation.breakId, state);
+        return true;
+      }
+    );
+    for (const reservation of yielded) {
+      const state = receipts.get(reservation.breakId);
+      if (state) this.rememberTournamentBreak(state);
+      console.warn(
+        '[f06-abandoned-retirement-yielded]',
+        JSON.stringify({
+          tournamentId: this.tournamentId,
+          tableId: reservation.tableId,
+          breakId: reservation.breakId,
+          fromGeneration: reservation.leaseGeneration,
+          toGeneration: generation,
+          durableState: state?.state ?? null,
+          durableRevision: state?.revision ?? null,
+          durableCustodyGeneration: state?.custody_generation ?? null,
+        })
+      );
+    }
+    if (yielded.length) this.requestEliminationSweep('f06_abandoned_retirement_yielded');
+  }
+
   protected override holdSourceForItsBreak(tableId: string, engine: ServerTableEngine): void {
     if (
       !this.running ||

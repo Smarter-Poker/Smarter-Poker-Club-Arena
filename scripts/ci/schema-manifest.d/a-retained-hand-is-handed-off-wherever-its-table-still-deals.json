@@ -1,6 +1,6 @@
 {
-  "_owner": "agent/claude-startloop/fix/a-retained-hand-is-handed-off-where-the-table-deals",
-  "_comment": "Promised by migration 20260929023040_a_retained_hand_is_handed_off_wherever_its_table_still_deals, which is installed only after merge through apply-merged-migration.yml. smarter_private.hand_submission_disposals is not new here: it was read in production on 2026-09-29 (installed by 20260928001934, recorded in supabase_migrations.schema_migrations; its repo file is on the unmerged #5516) and is listed so this migration's reference to it is not phantom while the nightly manifest has not yet absorbed it.",
+  "_owner": "agent/claude-startloop/fix/a-dealt-past-hand-is-disposed-at-the-resume-door",
+  "_comment": "Promised by migration 20260929031904_a_hand_a_cash_table_dealt_past_is_disposed_at_its_resume_doo, installed only after merge through apply-merged-migration.yml (it replaces 20260929023040, which could never apply after 20260929022629 changed the door first). smarter_private.hand_submission_disposals is not new here: it was read in production on 2026-09-29 (installed by 20260928001934, recorded in supabase_migrations.schema_migrations; its repo file is on the unmerged #5516) and is listed so this migration's reference to it is not phantom while the nightly manifest has not yet absorbed it.",
   "tables": ["smarter_private.hand_submission_disposals"],
   "functions": ["smarter_private.hand_submission_dispose_dealt_past"]
 }

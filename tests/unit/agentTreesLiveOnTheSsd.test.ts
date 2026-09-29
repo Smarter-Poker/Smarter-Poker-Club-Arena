@@ -64,6 +64,17 @@ describe('the tree janitor only removes what can be made again', () => {
     expect(janitor).toContain('untracked.tgz');
   });
 
+  it('never removes a tree holding a local env file of its own', () => {
+    // The tar archives untracked files only, and an ignored .env is not in it,
+    // so a tree whose .env is not a copy of the clone's must stay on disk.
+    expect(janitor).toContain('ENV_DIFFERS');
+    expect(janitor).toContain('cmp -s "$E" "$CLONE/$BASE"');
+    const guardAt = janitor.indexOf('ENV_DIFFERS=1; break');
+    const removeAt = janitor.indexOf('git worktree remove --force');
+    expect(guardAt).toBeGreaterThan(0);
+    expect(guardAt).toBeLessThan(removeAt);
+  });
+
   it('reports by default and only sweeps when told to', () => {
     expect(janitor).toContain('APPLY=0');
     expect(janitor).toMatch(/--apply\) APPLY=1/);

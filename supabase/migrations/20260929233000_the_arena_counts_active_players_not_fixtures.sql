@@ -30,9 +30,11 @@
 --    diamonds answers from (1). The chip count below the branch is byte for
 --    byte what it was, and a chip club never reaches the branch. The function
 --    stays SECURITY INVOKER with its grants and comment as they were. A caller
---    without an account asking about the arena is refused (the new reader is
---    not granted to anon), as the arena's counts reader refuses one; nothing
---    asks for the arena's figure signed out.
+--    without an account is refused, as before: the tables policy this count
+--    reads through calls fn_union_oversees_club, which anon may not execute,
+--    so the count already failed for a visitor on every club, and for the
+--    arena it now fails one step earlier, at the new reader, which is not
+--    granted to anon (the arena's counts reader refuses a visitor too).
 --
 -- The client does not change: the home card (HomePage) and the lobby rail
 -- (ClubHomePage, first read and realtime refresh) already ask

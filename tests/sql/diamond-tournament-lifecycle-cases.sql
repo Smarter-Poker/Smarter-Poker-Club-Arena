@@ -590,8 +590,8 @@ BEGIN
   END LOOP;
   PERFORM fixture_assert((SELECT count(*) = 0 FROM public.poker_diamond_custody)
     AND (SELECT count(*) = 0 FROM public.poker_diamond_tournament_ledger)
-    AND NOT EXISTS (SELECT 1 FROM public.tournaments t JOIN fixture_formats f ON f.tournament_id = t.id
-                     WHERE t.entry_contract_locked),
+    AND NOT EXISTS (SELECT 1 FROM public.tournaments tt JOIN fixture_formats ff ON ff.tournament_id = tt.id
+                     WHERE tt.entry_contract_locked),
     'the closed switch: an exactly priced entry into every format is refused and locks no entry contract');
 END $case11$;
 
@@ -638,7 +638,7 @@ BEGIN
   END LOOP;
   PERFORM fixture_assert((SELECT count(*) = 0 FROM public.poker_diamond_tournament_ledger)
     AND (SELECT count(*) = 0 FROM public.poker_diamond_movements)
-    AND (SELECT count(*) = 6 FROM public.tournament_cancellation_receipts r JOIN fixture_formats f USING (tournament_id)),
+    AND (SELECT count(*) = 6 FROM public.tournament_cancellation_receipts r JOIN fixture_formats ff USING (tournament_id)),
     'cancellation: six cancellations, six replays and twelve zero fee settlements wrote exactly six receipts and no money line');
 END $case12$;
 

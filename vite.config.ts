@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { writeFileSync } from 'fs';
 import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
+import { nativeBundleRoots } from './scripts/native/bundle-roots.mjs';
 
 /**
  * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
@@ -205,6 +206,16 @@ export default defineConfig({
   define: {
     // Prevent process errors in browser
     'process.env': {},
+    // Native only: the bundle's own top-level entries, so the picture shim
+    // (src/lib/native/hubPictureShim.ts) loads every OTHER root-relative
+    // picture from the World Hub. The web build defines nothing new.
+    ...(NATIVE
+      ? {
+          __NATIVE_BUNDLE_ROOTS__: JSON.stringify(
+            nativeBundleRoots(path.resolve(__dirname, 'public'))
+          ),
+        }
+      : {}),
   },
   // Strip console.log/debug/debugger in production builds.
   // console.warn and console.error are preserved for operational diagnostics.

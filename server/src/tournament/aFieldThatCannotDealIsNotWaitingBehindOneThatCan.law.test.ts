@@ -40,8 +40,14 @@ const { TournamentEliminationScheduler, DEFAULT_CONSOLIDATION_SLOTS, tournamentE
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
 const { TournamentSweepWorkCursor } = await import('./TournamentSweepWorkCursor.js');
 
-const flush = async (): Promise<void> => {
+const microtasks = async (): Promise<void> => {
   for (let i = 0; i < 6; i++) await Promise.resolve();
+};
+/** Settle promise chains and the scheduler's zero-delay wake timer (real timers). */
+const flush = async (): Promise<void> => {
+  await microtasks();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  await microtasks();
 };
 
 /** A run that stays in flight until the test releases it. */
@@ -186,14 +192,14 @@ describe('the consolidation lane', () => {
     const h = held();
     try {
       scheduler.register({ tournamentId: 'spread', run: h.run('spread') });
-      await flush();
+      await vi.advanceTimersByTimeAsync(1);
       // Inside its pass: the balancer re-arms, then the stage declares.
       scheduler.wakeUrgentAfter('spread', 5_000);
       scheduler.setConsolidating('spread', true);
       h.release('spread');
       scheduler.register({ tournamentId: 'hog', run: h.run('hog') });
       for (let i = 0; i < 5; i++) scheduler.register({ tournamentId: `p-${i}`, run: h.run(`p-${i}`) });
-      await flush();
+      await vi.advanceTimersByTimeAsync(1);
       expect(h.started).toEqual(['spread', 'hog']);
 
       await vi.advanceTimersByTimeAsync(5_000);

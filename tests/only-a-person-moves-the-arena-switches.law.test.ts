@@ -43,6 +43,24 @@ const writesASwitch = (sql: string): boolean => {
   return /\bnew\s*\.\s*(?:cash_games_enabled|tournaments_enabled)\s*:=/i.test(s);
 };
 
+/** The dollar-quote tag that opens at `i` ($$, $f$, $m$), if one does. */
+const dollarTagAt = (src: string, i: number): string | null => {
+  const tag = /\$[A-Za-z_]*\$/y;
+  tag.lastIndex = i;
+  return tag.exec(src)?.[0] ?? null;
+};
+
+/** Is the word before `i` the keyword DO, so the quoted text after it is a DO block's code? */
+const precededByDo = (src: string, i: number): boolean => {
+  let k = i - 1;
+  while (k >= 0 && /\s/.test(src[k])) k -= 1;
+  return (
+    (src[k] ?? '').toLowerCase() === 'o' &&
+    (src[k - 1] ?? '').toLowerCase() === 'd' &&
+    !/\w/.test(src[k - 2] ?? '')
+  );
+};
+
 /**
  * Every part of a migration that can run later: each function body and each
  * string literal, at any depth. A migration's own code - top level, or the
@@ -66,7 +84,7 @@ const laterCode = (sql: string): string[] => {
         let text = '';
         while (j < src.length) {
           if (escapes && src[j] === '\\') {
-            text += src.slice(j, j + 2);
+            text += src[j] + (src[j + 1] ?? '');
             j += 2;
           } else if (src[j] === "'" && src[j + 1] === "'") {
             text += "'";
@@ -80,12 +98,12 @@ const laterCode = (sql: string): string[] => {
         }
         out.push(text);
         i = j + 1;
-      } else if (c === '$' && /^\$[A-Za-z_]*\$/.test(src.slice(i, i + 64))) {
-        const tag = /^\$[A-Za-z_]*\$/.exec(src.slice(i, i + 64))![0];
+      } else if (c === '$' && dollarTagAt(src, i)) {
+        const tag = dollarTagAt(src, i)!;
         const start = i + tag.length;
         const end = src.indexOf(tag, start);
         const body = end < 0 ? src.slice(start) : src.slice(start, end);
-        if (/\bdo\s*$/i.test(src.slice(Math.max(0, i - 16), i))) scan(body);
+        if (precededByDo(src, i)) scan(body);
         else out.push(body);
         i = end < 0 ? src.length : end + tag.length;
       } else {

@@ -34,11 +34,15 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
     expect(stats?.to).toBe('/stats?club=diamond-arena');
   });
 
-  it('the page takes its asset from the arena it was opened from', () => {
+  it('the page takes its asset from the arena it was opened from', async () => {
+    const { statsScopeForSearch } = await import('../src/pages/stats/arenaStatsScope');
+    expect(statsScopeForSearch('?club=diamond-arena')).toBe('diamonds');
+    expect(statsScopeForSearch('?club=002c2d27-9584-4e52-835a-bb2be148fc81')).toBe('diamonds');
+    expect(statsScopeForSearch('?club=deep-stack-society')).toBe('chips');
+    expect(statsScopeForSearch('')).toBe('chips');
     expect(PAGE).toContain(
-      'const statsScope: StatsScope = isDiamondArenaClubKey(readClubContextParam(location.search))'
+      'const { scope: statsScope, scopedKey, eyebrow: statsEyebrow } = useArenaStatsScope();'
     );
-    expect(PAGE).toMatch(/\?\s*DIAMOND_STATS\s*:\s*CHIP_STATS;/);
   });
 
   it('every read on the page names that asset, and none names chips by hand', () => {

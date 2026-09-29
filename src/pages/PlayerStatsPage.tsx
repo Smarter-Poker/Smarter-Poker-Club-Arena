@@ -24,7 +24,7 @@ import {
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 // The two caches sign-out has to be able to reach. They live in a leaf module
 // so clearUserCaches can purge them without importing this page - that import
@@ -79,9 +79,8 @@ import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
-import { CHIP_STATS, DIAMOND_STATS, statsScopeArgs, type StatsScope } from '../services/statsScope';
-import { readClubContextParam } from '../utils/clubScopedPath';
-import { isDiamondArenaClubKey } from '../lib/constants';
+import { CHIP_STATS, statsScopeArgs } from '../services/statsScope';
+import { useArenaStatsScope } from './stats/arenaStatsScope';
 import { normalizeStatsContractMetadata } from '../services/statsContract';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
@@ -468,25 +467,7 @@ export default function PlayerStatsPage() {
   const { userId } = useParams();
   const { user } = useAuthUser();
   const navigate = useNavigate();
-  const location = useLocation();
-  /* THE ARENA YOU CAME FROM IS THE ASSET YOU ARE SHOWN (Phase 10, line 1).
-     The Diamond Arena's footer opens this page as /stats?club=diamond-arena;
-     every other door opens it without a club or with a chip club. Every read
-     below names this asset, so a player in the arena sees the hands they
-     played in Diamonds and never their chip figures under the Diamond
-     footer. The caches are keyed by it too, so neither asset can be served
-     from the other's cache. */
-  const statsScope: StatsScope = isDiamondArenaClubKey(readClubContextParam(location.search))
-    ? DIAMOND_STATS
-    : CHIP_STATS;
-  const scopedKey = useCallback(
-    (key: string) => (statsScope === CHIP_STATS ? key : `${statsScope}:${key}`),
-    [statsScope]
-  );
-  const statsEyebrow =
-    statsScope === DIAMOND_STATS
-      ? 'Diamond Arena // Player Analytics In Diamonds'
-      : 'Club Arena // Player Analytics';
+  const { scope: statsScope, scopedKey, eyebrow: statsEyebrow } = useArenaStatsScope(); // Diamonds in the arena
 
   const targetUserId = userId || user?.id;
   const isOwnProfile = !userId || userId === user?.id;
@@ -684,8 +665,7 @@ export default function PlayerStatsPage() {
 
   useEffect(() => {
     setAgentRolesError(false);
-    /* The Diamond Arena is one open club with no agents (ruling 16): a
-       downline's rake is a chip-club book and has no place on its page. */
+    // The Diamond Arena has no agents (ruling 16): no downline on its page.
     if (!isOwnProfile || !user?.id || statsScope !== CHIP_STATS) {
       setAgentRoles([]);
       return;
@@ -882,10 +862,7 @@ export default function PlayerStatsPage() {
           () =>
             supabase
               .rpc('ca_player_stats_overview_v2', {
-                /* SCOPED (2026-09-20, answered 2026-09-29). The RPC reads
-                   one asset (p_asset): chips, or Diamonds when the page was
-                   opened from the Diamond Arena. A chip figure and a Diamond
-                   figure are never summed. See src/services/statsScope.ts. */
+                // One asset per read, never summed (src/services/statsScope.ts).
                 ...statsScopeArgs(statsScope),
                 p_user: targetUserId,
                 p_days: windowDays,

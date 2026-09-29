@@ -78,6 +78,7 @@ import {
   supabase,
   startHandProjectionWorker,
   stopHandProjectionWorker,
+  RetainedHandSubmissionRefusedError,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
@@ -369,8 +370,19 @@ type DirectTableAdmission =
   | 'ready'
   | 'not_wakeable'
   | 'policy_closed'
+  | 'retained_hand_refused'
   | 'owned_elsewhere'
   | 'retryable_failure';
+
+/**
+ * How long a cash table whose retained hand the door refused from durable
+ * state is held before it is asked again. The answer changes only when a row
+ * changes (a chair leaves, a migration lands, an operator disposes the hand),
+ * and nothing announces that, so the table is asked again on this clock -
+ * once per ten minutes instead of once per five seconds - and every hourly
+ * engine restart asks afresh. 2026-09-29.
+ */
+const RETAINED_HAND_REFUSAL_RECHECK_MS = 10 * 60_000;
 /**
  * `stage_resume` (multi-day, 2026-09-24): a BAGGED event whose next stage is
  * due. The manager claims the stage resume receipt, seats every entitlement,
@@ -512,6 +524,12 @@ export class GameServer {
   /** One causal retry timer per table after a classified transient failure. */
   private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /**
+   * Cash tables held because the retained-hand door refused their start from
+   * durable state: the refusal code and when the table may be asked again.
+   * Optional so a bare test server needs no setup; created on first hold.
+   */
+  private retainedHandHolds?: Map<string, { code: string; until: number }>;
   /** One caller-selected protocol-2 generation reused by one causal admission retry. */
   private directTableAdmissionLeaseGenerations = new Map<string, string>();
   /** Exact acquired generations whose local proof expired before admission. */
@@ -1633,6 +1651,48 @@ export class GameServer {
   }
 
   /**
+   * A STANDING REFUSAL IS SAID ONCE AND HELD, NOT REBUILT EVERY FIVE SECONDS
+   * (2026-09-29). The retained-hand door refused this cash table's start from
+   * durable state. Record the hold, and report only when the refusal is new
+   * or its code changed; an unchanged answer on recheck extends the hold in
+   * silence.
+   */
+  private holdRetainedHandRefusal(tableId: string, code: string): void {
+    const holds = (this.retainedHandHolds ??= new Map());
+    const previous = holds.get(tableId);
+    holds.set(tableId, { code, until: Date.now() + RETAINED_HAND_REFUSAL_RECHECK_MS });
+    if (previous?.code === code) return;
+    reportError(
+      new Error(
+        `Retained hand refused this cash table's start: ${code}. The table is held, ` +
+          `not rebuilt, and asked again every ${RETAINED_HAND_REFUSAL_RECHECK_MS / 60_000} minutes.`
+      ),
+      'GameServer.retained_hand_refusal_holds_table',
+      { tableId, code, previousCode: previous?.code ?? null }
+    );
+  }
+
+  /** The table started: its hold ends, and if it had been reported, so does that. */
+  private releaseRetainedHandHold(tableId: string): void {
+    const previous = this.retainedHandHolds?.get(tableId);
+    if (!previous) return;
+    this.retainedHandHolds!.delete(tableId);
+    console.log(
+      `[GameServer] Cash table ${tableId} started; its retained-hand hold (${previous.code}) is released.`
+    );
+  }
+
+  private retainedHandHeld(tableId: string): boolean {
+    const hold = this.retainedHandHolds?.get(tableId);
+    return hold !== undefined && Date.now() < hold.until;
+  }
+
+  /** Read-only view for /health and tests. */
+  getRetainedHandHolds(): ReadonlyMap<string, { code: string; until: number }> {
+    return this.retainedHandHolds ?? new Map();
+  }
+
+  /**
    * Preserve one exact table's recovery obligation after a transient admission
    * failure. This is not a fleet scan: it is armed only by the failed causal
    * operation, names one durable table id, and disarms on success, closure, a
@@ -1695,7 +1755,28 @@ export class GameServer {
     engine: ServerTableEngine
   ): Promise<DirectTableAdmission> {
     const outcome = engine.ready.then<DirectTableAdmission>(async (ready) => {
-      if (ready) return 'ready';
+      if (ready) {
+        this.releaseRetainedHandHold(tableId);
+        return 'ready';
+      }
+      if (engine.getStartupRetainedHandRefusal()) {
+        try {
+          // Exact teardown and lease release first, exactly as for a closed
+          // policy; the hold was recorded when start() rejected.
+          await this.recoverDirectTableEngine(
+            tableId,
+            engine,
+            'startup_retained_hand_refused',
+            true
+          );
+          return 'retained_hand_refused';
+        } catch (cleanupError) {
+          reportError(cleanupError, 'GameServer.retained_hand_refused_cleanup_unconfirmed', {
+            tableId,
+          });
+          return 'retryable_failure';
+        }
+      }
       if (!engine.getStartupPolicyRefusal()) return 'retryable_failure';
       try {
         // Boolean readiness is already false. Keep the classified admission
@@ -1817,9 +1898,10 @@ export class GameServer {
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
-    if (engine.getStartupPolicyRefusal()) {
-      // Closure is not a crash. Cleanup and exact lease release above still
-      // apply; an unavailable cleanup result must never reach this branch.
+    if (engine.getStartupPolicyRefusal() || engine.getStartupRetainedHandRefusal()) {
+      // Closure is not a crash, and neither is a standing retained-hand
+      // refusal. Cleanup and exact lease release above still apply; an
+      // unavailable cleanup result must never reach this branch.
       this.clearDirectTableRecovery(tableId);
       return;
     }
@@ -6781,6 +6863,9 @@ export class GameServer {
 
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
+          // Held on a standing retained-hand refusal: not a start, not a
+          // spent budget slot, not a log line (2026-09-29).
+          if (this.retainedHandHeld(row.table_id)) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
           startedThisSweep++;
@@ -10619,6 +10704,9 @@ export class GameServer {
 
     await this.awaitDirectTableLeaseRelease(tableId);
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
+    // A table the retained-hand door refused is held, not rebuilt: no read,
+    // no lease, no engine and no log until its recheck is due.
+    if (this.retainedHandHeld(tableId)) return 'retained_hand_refused';
 
     let table: CashTablePlayRow | null;
     let error: { message: string } | null = null;
@@ -10775,7 +10863,13 @@ export class GameServer {
     void engine
       .start()
       .catch(async (startError) => {
-        if (
+        const retainedRefusal =
+          startError instanceof RetainedHandSubmissionRefusedError
+            ? engine.getStartupRetainedHandRefusal()
+            : null;
+        if (retainedRefusal) {
+          this.holdRetainedHandRefusal(tableId, retainedRefusal.code);
+        } else if (
           !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
         ) {
           this.engineStartFailures++;

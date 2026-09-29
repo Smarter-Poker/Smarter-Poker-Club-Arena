@@ -37,6 +37,13 @@
 -- PINNED LIVE md5(pg_get_functiondef(oid)), read 2026-09-29:
 --   ca_player_hands                9f93e2b8ace2ee6eb2ebc5d0d6a81d02
 --   ca_player_hands_v2             21843b8f7f595e236f5693c4ffb1895d
+--
+-- The two proofs below were added to this file after the apply, for
+-- tests/a-merged-migration-must-be-live.law.test.ts (the file creates its
+-- functions through EXECUTE, which that check cannot see). The text recorded
+-- in schema_migrations is this file without this note and the two proofs.
+-- @live-proof: (SELECT position('AND s.asset = p_asset' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'ca_player_hands')
+-- @live-proof: (SELECT position('ca_player_hands(p_user, p_mode, p_limit, p_asset)' in p.prosrc) > 0 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'ca_player_hands_v2')
 
 BEGIN;
 SET LOCAL lock_timeout = '2s';

@@ -8,7 +8,7 @@ The Diamond footer's Stats door opens `/stats?club=diamond-arena`. The stats pag
 
 ## The Database
 
-Migration `the_arena_stats_door_reads_its_own_hands` (applied as `20260929213851`; stored text byte-identical to the repo file, md5 `8f8eb0e1b0545a0696143e8f92fd9d7e`): `ca_player_hands` and `ca_player_hands_v2` take `p_asset` (default `chips`, anything else refused) and list only that asset's hands. Asserted substitutions with the live md5 pinned and the reverse proved; old signatures dropped first; grants restated as they were (the inner reader to the service role only).
+Migration `the_arena_stats_door_reads_its_own_hands` (applied as `20260929213851` from the file with md5 `8f8eb0e1b0545a0696143e8f92fd9d7e`; two `@live-proof` lines and their note were added to the file after the apply for the liveness law, so the stored text is the file without them): `ca_player_hands` and `ca_player_hands_v2` take `p_asset` (default `chips`, anything else refused) and list only that asset's hands. Asserted substitutions with the live md5 pinned and the reverse proved; old signatures dropped first; grants restated as they were (the inner reader to the service role only).
 
 Rehearsal, one rolled-back transaction: one real player's hands list read in chips (recent, biggest won, biggest lost); one Diamond hand dealt through the real post-commit projection; the chip lists identical afterwards, default and explicit; the Diamond list exactly that hand; an unknown asset, another player's list and the service-only reader refused.
 

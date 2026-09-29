@@ -903,7 +903,8 @@ export default function PlayerWalletPage() {
   const describeRow = useCallback(
     (row: DiamondLedgerRow, verb: 'Sent To' | 'Received From') => {
       const name = row.counterpartyId ? friendNameById.get(row.counterpartyId) : undefined;
-      return name ? `${verb} ${name}` : formatPopupText(row.description || row.label);
+      // Phase 6: the ledger's own player line, never the raw description.
+      return name ? `${verb} ${name}` : formatPopupText(row.line || row.label);
     },
     [friendNameById]
   );

@@ -49,7 +49,7 @@ vi.mock('./record.js', async (importOriginal) => {
     ...actual,
     validateHorseJournalRecord: (raw: unknown) => {
       counts.validate++;
-      actual.validateHorseJournalRecord(raw);
+      (actual.validateHorseJournalRecord as (value: unknown) => void)(raw);
     },
     horseJournalJson: (value: unknown) => {
       counts.json++;

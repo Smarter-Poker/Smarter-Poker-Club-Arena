@@ -37,8 +37,10 @@ import { remainingInitialTableReadinessMs } from './support/initialTableReadines
 import {
   createHudClockReader,
   hudEventObservationMs,
+  MTT_HUD_LEVEL_CAP_MS,
   mttCaseTimeoutMs,
   observeHudLevels,
+  selectableHudClock,
   sharedNaturalLevel,
   waitForSharedNaturalLevel,
   type HudClock,
@@ -55,6 +57,10 @@ const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
+/** Cash only: named failures must fire before the case's own timeout can. */
+const CASH_CASE_TAIL_MS = 15_000;
+/** Cash tables raced for the pre-navigation "next hand started" proof. */
+const CASH_PROGRESS_CANDIDATES = 8;
 const PRESENTATION_DEADLINE_MS = 3_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
 
@@ -244,10 +250,24 @@ async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCan
   return candidates.map((candidate) => ({ ...candidate, gameFormat: 'cash' }));
 }
 
-async function selectOccupiedRunningCashTable(
+interface OccupiedCashTable {
+  candidate: RunningTableCandidate;
+  table: EngineTableLiveness;
+}
+
+/**
+ * Every occupied, running cash table the first productive lobby tab exposes
+ * (at most CASH_PROGRESS_CANDIDATES), each with the liveness it had when it
+ * was chosen. A cash hand is not short: measured 2026-09-29 over 20,488 hands
+ * in three hours, p50 30s, p90 87s, p99 149s, max 300s. One table chosen alone
+ * and asked to deal its NEXT hand inside 90s is in a long hand a large share of
+ * the time through nobody's fault; tournaments already race several tables and
+ * keep whichever deals first, and cash now does the same.
+ */
+async function selectOccupiedRunningCashTables(
   page: Page,
   request: APIRequestContext
-): Promise<{ candidate: RunningTableCandidate; health: EngineHealth; table: EngineTableLiveness }> {
+): Promise<{ tables: OccupiedCashTable[]; health: EngineHealth }> {
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
     throw new Error('Production redirected to auth despite the required authenticated state');
@@ -280,14 +300,19 @@ async function selectOccupiedRunningCashTable(
     }
     const candidates = await visibleRunningCashCandidates(page);
     if (candidates.length === 0) continue;
+    const tables: OccupiedCashTable[] = [];
+    let lastHealth: EngineHealth | null = null;
     for (let offset = 0; offset < candidates.length; offset += 32) {
       const batch = candidates.slice(offset, offset + 32);
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
+      lastHealth = health;
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table) return { candidate, health, table };
+        if (table && tables.length < CASH_PROGRESS_CANDIDATES) tables.push({ candidate, table });
       }
+      if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
     }
+    if (tables.length > 0 && lastHealth) return { tables, health: lastHealth };
   }
 
   throw new Error(
@@ -297,38 +322,56 @@ async function selectOccupiedRunningCashTable(
 
 async function proveTableProgressedBeforeNavigation(
   request: APIRequestContext,
-  candidate: RunningTableCandidate,
+  contenders: readonly OccupiedCashTable[],
   before: EngineHealth,
-  beforeTable: EngineTableLiveness
-): Promise<PreNavigationEngineEvidence> {
+  deadline: number
+): Promise<PreNavigationEngineEvidence & { selected: OccupiedCashTable }> {
   let after = before;
-  let afterTable = beforeTable;
+  let winner: { contender: OccupiedCashTable; table: EngineTableLiveness } | null = null;
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
+  const budget = Math.min(CAUSAL_HAND_TIMEOUT_MS, remainingObservationMs(deadline));
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request, { tableIds: [candidate.id] });
-        if (
-          !continuouslyActive(after.tableLiveness.find((table) => table.tableId === candidate.id))
-        )
-          return -1;
-        const current = healthyRunningTable(after, candidate.id, candidate.gameFormat);
-        if (!current) return -1;
-        afterTable = current;
-        return current.handCount;
+        after = await readEngineHealth(request, {
+          tableIds: contenders.map((contender) => contender.candidate.id),
+        });
+        for (const contender of contenders) {
+          const id = contender.candidate.id;
+          // A table that ever sat silent past the limit is excluded for good,
+          // exactly as a tournament baseline is; it can never be the witness.
+          if (!continuouslyActive(after.tableLiveness.find((table) => table.tableId === id)))
+            continue;
+          const current = healthyRunningTable(after, id, contender.candidate.gameFormat);
+          if (current && current.handCount > contender.table.handCount) {
+            winner = { contender, table: current };
+            return true;
+          }
+        }
+        return false;
       },
       {
-        // A live hand can keep progressing beyond the 45s inactivity limit.
-        // Wait for the next deal using the same full-hand bound as the socket proof.
-        timeout: CAUSAL_HAND_TIMEOUT_MS,
+        // The first of several occupied tables to deal its next hand wins. A
+        // live hand can outlast the 45s inactivity limit; the same full-hand
+        // bound as the socket proof applies to the group, not to one table.
+        timeout: budget,
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
-          `table ${candidate.name} (${candidate.id}) existed before observation but did not start its next hand ` +
-          `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+          `none of ${contenders.length} occupied cash table(s) (${contenders
+            .map((contender) => contender.candidate.id)
+            .join(', ')}) started their next hand inside ${budget}ms`,
       }
     )
-    .toBeGreaterThan(beforeTable.handCount);
-  return { before, after, beforeTable, afterTable };
+    .toBe(true);
+  const picked = winner as { contender: OccupiedCashTable; table: EngineTableLiveness } | null;
+  if (!picked) throw new Error('cash progress poll completed without table evidence');
+  return {
+    before,
+    after,
+    beforeTable: picked.contender.table,
+    afterTable: picked.table,
+    selected: picked.contender,
+  };
 }
 
 /**
@@ -344,6 +387,13 @@ async function selectProgressingTournamentTable(
   options: {
     /** Read-only database witness; present only where a board can end while watched (SNG). */
     boardReader?: BoardReader;
+    /**
+     * Read-only clock witness; present only for the MTT. A table is selectable
+     * only if its tournament can yield the eligible natural HUD clock the case
+     * needs after recovery (see selectableHudClock), so the case never chooses
+     * a field that is in its add-on period, on a break or about to break.
+     */
+    hudReader?: BoardReader;
     /** Boards this case already watched to a natural ending. */
     excludeTableIds?: readonly string[];
     /** The case's one fixed deadline; selection may spend only what remains of it. */
@@ -362,6 +412,14 @@ async function selectProgressingTournamentTable(
      while the browser is watching. Read the rows; never guess. */
   const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
     const fresh = tables.filter((table) => !excluded.has(table.tableId));
+    if (options.hudReader && fresh.length > 0) {
+      const clocks = await options.hudReader.clocks(
+        fresh.map((table) => table.tableId),
+        MTT_HUD_LEVEL_CAP_MS,
+        selectableHudClock
+      );
+      return fresh.filter((table) => clocks.has(table.tableId));
+    }
     if (!options.boardReader || fresh.length === 0) return fresh;
     const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
     return orderByEndurance(
@@ -409,8 +467,12 @@ async function selectProgressingTournamentTable(
             intervals: [2_000, 3_000, 5_000, 5_000],
             message:
               `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
-              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID} ` +
-              `inside ${CAUSAL_HAND_TIMEOUT_MS}ms` +
+              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID}` +
+              (options.hudReader
+                ? ' whose tournament can yield an eligible natural HUD clock (running, not on a break, ' +
+                  'not in its add-on period, not accelerated, next levels playable)'
+                : '') +
+              ` inside ${CAUSAL_HAND_TIMEOUT_MS}ms` +
               (excluded.size
                 ? ` (${excluded.size} board(s) already ended naturally this case)`
                 : ''),
@@ -605,6 +667,9 @@ async function certifyReadOnlyTournamentFormat(
      it, and then it is COMPLETED, not broken. Only that format reads the rows
      that prove it. Every other failure keeps its own message and evidence. */
   const boardReader = gameFormat === 'sng' ? await createHudClockReader() : undefined;
+  /* The MTT alone needs a natural blind-level clock after recovery, so it alone
+     qualifies its table by that clock at selection instead of by seat count. */
+  const hudReader = gameFormat === 'mtt' ? await createHudClockReader() : undefined;
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
@@ -617,6 +682,7 @@ async function certifyReadOnlyTournamentFormat(
           caseStartedAt,
           observationDeadline,
           boardReader,
+          hudReader,
           watched,
           tag: attempt === 0 ? gameFormat : `${gameFormat}-attempt-${attempt + 1}`,
         });
@@ -649,6 +715,7 @@ async function certifyReadOnlyTournamentFormat(
         contentType: 'application/json',
       });
     if (boardReader) await boardReader.close().catch(() => {});
+    if (hudReader) await hudReader.close().catch(() => {});
   }
 }
 
@@ -661,19 +728,26 @@ async function observeTournamentBoard(
     caseStartedAt: number;
     observationDeadline: number;
     boardReader: BoardReader | undefined;
+    hudReader: BoardReader | undefined;
     watched: string[];
     tag: string;
   }
 ): Promise<void> {
-  const { caseStartedAt, observationDeadline, boardReader, watched, tag } = clock;
+  const { caseStartedAt, observationDeadline, boardReader, hudReader, watched, tag } = clock;
   let hudClock: HudClock | undefined;
   const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo, {
     boardReader,
+    hudReader,
     excludeTableIds: watched,
     deadline: observationDeadline,
   });
   const { candidate, evidence } = selected;
   watched.push(candidate.id);
+  if (hudReader)
+    await testInfo.attach(`${tag}-mtt-hud-selection-qualification`, {
+      body: Buffer.from(JSON.stringify(hudReader.qualifications.slice(-32), null, 2)),
+      contentType: 'application/json',
+    });
   await testInfo.attach(`${tag}-engine-before-navigation`, {
     body: Buffer.from(
       JSON.stringify(
@@ -1237,18 +1311,28 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     context,
     request,
   }, testInfo) => {
+    /* Cash hands are long (p90 87s, p99 149s over 20,488 hands, measured
+       2026-09-29) and both causal cycles begin mid-hand, so like every
+       tournament case this one gets the base case budget PLUS one full-hand
+       bound for pre-navigation readiness, one fixed deadline, and a reserved
+       tail so a named failure fires before the case's own timeout can. */
+    testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
+    const caseStartedAt = Date.now();
+    const observationDeadline = caseStartedAt + testInfo.timeout - CASH_CASE_TAIL_MS;
     const journal = new EngineSocketJournal(page);
-    const selected = await selectOccupiedRunningCashTable(page, request);
-    const { candidate } = selected;
-    // Keep the exact table identity even when the next-hand proof times out.
+    const selected = await selectOccupiedRunningCashTables(page, request);
+    // Keep the exact table identities even when the next-hand proof times out.
     await testInfo.attach('cash-selected-before-progress', {
       body: Buffer.from(
         JSON.stringify(
           {
             selectedAt: new Date().toISOString(),
             expectedVersion: EXPECTED_ENGINE_SHA,
-            candidate,
-            health: compactHealthEvidence(selected.health, selected.table),
+            candidates: selected.tables.map((entry) => ({
+              candidate: entry.candidate,
+              table: entry.table,
+            })),
+            health: compactHealthEvidence(selected.health, selected.tables[0].table),
           },
           null,
           2
@@ -1258,10 +1342,11 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     });
     const engineBeforeNavigation = await proveTableProgressedBeforeNavigation(
       request,
-      candidate,
+      selected.tables,
       selected.health,
-      selected.table
+      observationDeadline
     );
+    const { candidate } = engineBeforeNavigation.selected;
     await testInfo.attach('engine-before-navigation', {
       body: Buffer.from(
         JSON.stringify(
@@ -1384,7 +1469,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         journal.waitForCausalHandCycle(
           tableId,
           initialProgressStartedAt,
-          CAUSAL_HAND_TIMEOUT_MS,
+          remainingObservationMs(observationDeadline),
           MAX_GAMEPLAY_SILENCE_MS,
           'the connected table did not progress through a hand and automatically start the next'
         ),
@@ -1447,7 +1532,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           journal.waitForCausalHandCycle(
             tableId,
             recoveredProgressStartedAt,
-            CAUSAL_HAND_TIMEOUT_MS,
+            remainingObservationMs(observationDeadline),
             MAX_GAMEPLAY_SILENCE_MS,
             'the restored table did not progress through a hand and automatically start the next'
           ),

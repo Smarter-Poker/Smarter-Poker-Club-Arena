@@ -1,6 +1,14 @@
 
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
+-- Engine-path stub, the twin of auth.uid() above. fn_caller_is_engine reads
+-- COALESCE(auth.role(),'service_role')='service_role', so NULL here is the
+-- no-PostgREST-request context this probe runs in: psql, pg_cron, a
+-- migration - the engine path, which is the path these money functions are
+-- exercised on. Added when fn_cash_earning_club was finally declared in a
+-- migration and joined the authoritative closure, bringing its caller guard
+-- with it.
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
 CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(), performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric CHECK(amount>0),category text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,description text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,idempotency_key text UNIQUE,metadata jsonb,created_at timestamptz DEFAULT now());
 CREATE TABLE ca_ledger_write_failures(club_id uuid,user_id uuid,delta numeric,sqlstate text,message text);
 CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz,asset text NOT NULL DEFAULT 'chips');

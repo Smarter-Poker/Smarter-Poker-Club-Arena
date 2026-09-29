@@ -358,13 +358,39 @@ describe('journaled model receipt boundary', () => {
       completed: 0,
       cycles: 6,
       modelsRecorded: 1,
-      modelsRefused: 2,
+      modelsRefused: 1,
+      modelsCapacityFull: 1,
       modelUncertain: 2,
       lastModel: 'capacity_full',
       lastModelAt: Date.now(),
     });
     expect(JSON.stringify(service.status())).not.toMatch(/private-actor|cards|actorKey/);
   });
+  // 2026-09-22..27: fn_finish_horse_journaled_model could only reclaim a slot
+  // by 30-day age, so once the store hit its row cap every finish returned
+  // capacity_full and the layer admitted nothing for five days. Health showed
+  // only modelsRefused climbing, which is what an ordinary budget refusal
+  // looks like, so nothing distinguished a wedged store from a working one.
+  // A full store now carries its own counter.
+  it('counts a full store apart from an ordinary refusal so a wedged store is visible', () => {
+    service.start();
+    ready(children[0]);
+    for (const model of ['capacity_full', 'capacity_full', 'capacity_full', 'refused']) {
+      children[0].emit('message', { type: 'CYCLE_STARTED' });
+      children[0].emit('message', {
+        type: 'CYCLE_COMPLETED',
+        work: 'skipped',
+        retention: 'skipped',
+        model,
+      });
+    }
+    const status = service.status();
+    expect(status.modelsCapacityFull).toBe(3);
+    expect(status.modelsRefused).toBe(1);
+    expect(status.modelsRecorded).toBe(0);
+    expect(status.lastModel).toBe('refused');
+  });
+
   it.each([['recorded'], { status: 'recorded' }, 'invented'])(
     'refuses malformed model status %s',
     (model) => {

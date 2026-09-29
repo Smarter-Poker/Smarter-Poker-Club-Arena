@@ -49,6 +49,10 @@ export type JournalWorkerStatus = Readonly<{
   lastCommitmentAt: number | null;
   modelsRecorded: number;
   modelsRefused: number;
+  /** A full store is its own outcome. Folded into modelsRefused it was
+   * indistinguishable from an ordinary budget refusal, which is how a store
+   * that admitted nothing for five days kept looking like normal traffic. */
+  modelsCapacityFull: number;
   modelUncertain: number;
   lastModel: string | null;
   lastModelAt: number | null;
@@ -120,6 +124,7 @@ export class HorseAdaptiveJournalWorker {
     lastCommitmentAt: null,
     modelsRecorded: 0,
     modelsRefused: 0,
+    modelsCapacityFull: 0,
     modelUncertain: 0,
     lastModel: null,
     lastModelAt: null,
@@ -341,9 +346,9 @@ export class HorseAdaptiveJournalWorker {
         captureGaps: this.summary.captureGaps + (r.acquisition === 'gap' ? 1 : 0),
         lastCapture: typeof r.acquisition === 'string' ? r.acquisition : this.summary.lastCapture,
         modelsRecorded: this.summary.modelsRecorded + (r.model === 'recorded' ? 1 : 0),
-        modelsRefused:
-          this.summary.modelsRefused +
-          (r.model === 'refused' || r.model === 'capacity_full' ? 1 : 0),
+        modelsRefused: this.summary.modelsRefused + (r.model === 'refused' ? 1 : 0),
+        modelsCapacityFull:
+          this.summary.modelsCapacityFull + (r.model === 'capacity_full' ? 1 : 0),
         modelUncertain:
           this.summary.modelUncertain + (r.model === 'unknown' || r.model === 'lease_lost' ? 1 : 0),
         lastModel: typeof r.model === 'string' ? r.model : this.summary.lastModel,

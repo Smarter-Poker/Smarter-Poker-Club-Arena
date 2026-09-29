@@ -22,8 +22,14 @@ import { readFileSync } from 'node:fs';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Worker as RealWorker } from 'node:worker_threads';
+import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The module mocked below replaces the ES import of node:worker_threads only;
+// a CommonJS require still returns the real one, which pin 1 needs.
+const RealWorker = (
+  createRequire(import.meta.url)('node:worker_threads') as typeof import('node:worker_threads')
+).Worker;
 
 const spawned = vi.hoisted(() => ({
   workers: [] as Array<{ terminated: boolean; data: unknown }>,

@@ -158,6 +158,8 @@ const RETAINED: Record<string, string> = {
     'tested retired browser API: tests/unit/SettlementCronService.test.ts tests/unit/ServiceBootstrap.test.ts',
   'src/services/ClubMessagingPermissions.ts':
     'read by path: tests/promotion-assigns-the-rate.law.test.ts tests/unit/ClubMessagingPermissions.test.ts',
+  'src/services/DiamondIncidentReviewService.ts':
+    'read by path: tests/unit/diamondIncidentReviewService.test.ts. The typed client of the four incident review doors (migration 20260929211500), built without its screen by instruction; the Phase 10 staff surface (audit item 8) imports it and deletes this line',
   'src/styles/design-system.css': 'documentation anchor: 47 live stylesheets cite it in comments',
   'src/utils/clubThemeEngine.ts': 'read by path: tests/unit/clubThemeEngine.test.ts',
   'src/utils/formatTimeAgo.ts': 'read by path: tests/unit/formatTimeAgo.test.ts',

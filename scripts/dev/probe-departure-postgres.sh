@@ -20,6 +20,9 @@ test -x "$PGBIN/psql"
 # Exercise the real join/cancel race in its own disposable database. This is
 # part of the existing accounting check, not a separate release workflow.
 PGBIN="$PGBIN" python3 "$repo/scripts/dev/probe-cash-game-admission-lock.py"
+# A tournament start's bank lock does not drain foreign-key writers
+# (2026-09-29): same disposable-database pattern, same accounting check.
+PGBIN="$PGBIN" python3 "$repo/scripts/dev/probe-start-readiness-lock.py"
 # Homebrew may place support files inside the keg rather than the compiled path.
 departure_share="$("$PGBIN/pg_config" --sharedir)"
 if [[ ! -f "$departure_share/postgres.bki" && -f "$PGBIN/../share/postgresql/postgres.bki" ]]; then

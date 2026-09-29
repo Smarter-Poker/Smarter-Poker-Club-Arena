@@ -1475,6 +1475,56 @@ export abstract class TournamentManagerBase {
     return true;
   }
 
+  /**
+   * A PAUSE THIS MANAGER ARMED IS THIS MANAGER'S TO GIVE BACK (2026-09-28).
+   *
+   * `prepareManagedTableEngineForPlay` arms an absolute `untilResumed` hold
+   * from `onBreak`/`stageEndPause`, and the one thing that lifts it is the
+   * loop in `resumeFromBreak()`. That loop runs ONCE, over `this.tableEngines`
+   * as it stands at that instant, and the same call writes `onBreak = false` -
+   * which makes `resumeFromBreak()` early-return for the rest of the event.
+   * So the release is a single sweep at a single instant, and a dealer that is
+   * not in the map at that instant is never offered it at all.
+   *
+   * There is a real window. `performManagedTableEngineRecovery` arms the
+   * replacement BEFORE `await this.gameServer.replaceTableEngine(...)` - the
+   * order `TournamentEngineRecovery.guard.test.ts` pins, because the dealer
+   * must inherit the hold before it can be published - and joins it to
+   * `tableEngines` only after that await returns. `resumeFromBreak()` has
+   * awaits of its own (the durable clear, the `break_ended` broadcast), so it
+   * can complete the whole release between the arm and the join and leave the
+   * replacement holding a break that is over, with no caller left anywhere in
+   * this manager that would look at it again.
+   *
+   * The release is therefore offered at the table's own park edge rather than
+   * at the break's end instant: `onPauseReady` fires from inside
+   * `awaitPauseGate()` the moment a dealer is physically parked waiting for
+   * someone to lift its pause, it is wired on EVERY managed engine
+   * (`wireEliminationWake`), and it is republished on every park. Not a timer
+   * and not a sweep - the same causal edge `advanceHandForHandBarrier` and the
+   * stage-end barrier already answer.
+   *
+   * `requiresExplicitPauseResume()` is the exact question, not an
+   * approximation: the engine raises it only for the `untilResumed` shape only
+   * this manager arms, and `resumeDealing()` lowers it on the way out, so it
+   * reads true precisely while this manager still owes this table a release.
+   */
+  protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
+    if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    // Every authority that may still own this hold, in the order the arm
+    // considered them. While one of these is true the pause has a living
+    // owner and a release here would deal through it.
+    if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
+    if (this.addOnBreakActive && this.addOnBreakOwnsPause) return;
+    try {
+      engine.resumeDealing();
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.managed_table_pause_release_failed', {
+        tournamentId: this.tournamentId,
+      });
+    }
+  }
+
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
@@ -2227,6 +2277,9 @@ export abstract class TournamentManagerBase {
     const lifecycle = this.lifecycleEpoch.current();
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
+    // A fresh scheduler entry starts in the general lanes; the next balance
+    // stage declares consolidation again if the field still needs it.
+    this.consolidationDeclared = false;
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       diagnostics: Object.freeze({
@@ -2309,6 +2362,12 @@ export abstract class TournamentManagerBase {
     return this.eliminationMutationBatchOpen;
   }
 
+  /**
+   * A hand just left a player at zero. The elimination manager gives its bust
+   * stage the next admission even if a later stage holds the continuation.
+   */
+  protected bustAwaitsItsStage(): void {}
+
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
@@ -2329,7 +2388,73 @@ export abstract class TournamentManagerBase {
 
   /** A delayed correctness retry that outranks the routine safety backlog. */
   protected requestUrgentEliminationSweepAfter(delayMs: number): void {
+    this.urgentRedrivesRequested++;
     tournamentEliminationScheduler.wakeUrgentAfter(this.tournamentId, delayMs);
+  }
+
+  /**
+   * Every delayed correctness retry this manager has asked for. The balance
+   * stage compares it across its own work: a retry asked for there is a
+   * table break or seat move that is not finished yet. See
+   * DEFAULT_CONSOLIDATION_SLOTS in TournamentEliminationScheduler.ts.
+   */
+  protected urgentRedrivesRequested = 0;
+  /** What this manager last told the scheduler about its consolidation work. */
+  private consolidationDeclared = false;
+
+  /**
+   * A HELD LEVEL ON A SPREAD FIELD ASKS FOR ITS BALANCE PASS (2026-09-29).
+   *
+   * The consolidation lane is declared by the balance stage, so a field has
+   * to reach that stage once through the general queue before it is served
+   * promptly. After the 06:06 UTC restart on 2026-09-29 that first pass was
+   * the whole wait: general sweeps took about 20 s each against a contended
+   * database, 471 managers were queued, and Morning Free Buy 6a18ddaa (10
+   * players on 7 tables) and $100 Freeroll c65c414d (13 on 13) sat behind
+   * the entire platform for their first balance pass after the thaw.
+   *
+   * The held level is the witness that this tournament deals nothing, and
+   * the dealers it owns can say why without a database read: when two or
+   * more of them hold fewer than two players, no table can deal until the
+   * balancer merges them. That is consolidation work, so this manager moves
+   * to the lane and asks for one pass; the balance stage then keeps or clears
+   * the mark on what it reads. Checked on the held level's own 15 s recheck,
+   * which already runs; it adds no timer and no query.
+   */
+  protected askForConsolidationIfSpread(): void {
+    if (this.consolidationDeclared) return;
+    let loneTables = 0;
+    for (const engine of this.tableEngines.values()) {
+      let seated: number;
+      try {
+        seated = engine.getOccupiedSeatNumbers().length;
+      } catch {
+        return;
+      }
+      if (seated >= 2) return;
+      loneTables++;
+    }
+    if (loneTables < 2) return;
+    this.declareConsolidationOutstanding(true);
+    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+  }
+
+  /**
+   * A field with a break or seat move outstanding is served from the
+   * scheduler's consolidation lane until a balance stage finishes clean.
+   */
+  protected declareConsolidationOutstanding(outstanding: boolean): void {
+    if (this.consolidationDeclared === outstanding) return;
+    if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
+      this.consolidationDeclared = outstanding;
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${
+          outstanding
+            ? 'consolidation outstanding - sweeps move to the consolidation lane'
+            : 'consolidation finished - sweeps return to the general lanes'
+        }`
+      );
+    }
   }
 
   /** Keep one add-on retry due while its persisted offer window is open. */
@@ -2377,10 +2502,14 @@ export abstract class TournamentManagerBase {
           // release the boundary. Other hands may finish; none may start.
           this.holdSatelliteQualifierBoundary();
         }
+        this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }
     });
     engine.onPauseReady(() => {
+      // A dealer parked on a hold this manager armed and no longer owns is
+      // released here, by the authority that armed it. See the method.
+      this.releaseManagedTablePauseIfUnowned(engine);
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
@@ -8788,6 +8917,7 @@ export abstract class TournamentManagerBase {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due with no hand dealt since it began - holding it until this tournament deals again`
           );
         }
+        this.askForConsolidationIfSpread();
         deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
         return;
       }

@@ -382,7 +382,10 @@ describe('new-format satellite completion at the actual full-ticket boundary', (
     expect(fixture.rpc.mock.calls.some(([name]) => name === 'fn_settle_satellite_qualifiers')).toBe(
       false
     );
-    expect(f.manager.eliminationSweepCursor.nextStage).toBe(0);
+    // The bust this hand left takes the next admission before the finish stage
+    // (aBustIsRecordedBeforeTheBreakItBlocks.law.test.ts): recovery ran, the
+    // bust stage is next, and the finish stage was not entered.
+    expect(f.manager.eliminationSweepCursor.nextStage).toBe(1);
     // The real accepted writer's completion allows the same owning operation.
     f.e.terminalBoundaryPendingGenerations.clear();
     f.manager.eliminationSweepCursor.advanceTo(2);

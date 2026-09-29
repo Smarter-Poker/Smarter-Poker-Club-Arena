@@ -165,6 +165,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
+
+  /**
+   * A BUST IS RECORDED BEFORE THE BREAK IT BLOCKS IS RETRIED (2026-09-29).
+   *
+   * A busted player keeps a `playing` registration with 0 chips and no live
+   * seat until the bust stage (1) records the elimination. The table break
+   * door counts that registration, so no break of that player's last table can
+   * begin until then. The recovery stage (0) settles earlier bounty
+   * obligations before any bust is admitted, so the rewind is to 0. The
+   * cursor applies it at the next admission and never twice in a row (see
+   * TournamentSweepWorkCursor), so the balance stage keeps its turn too.
+   */
+  protected override bustAwaitsItsStage(): void {
+    this.eliminationSweepCursor.rewindTo(0);
+  }
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -463,6 +478,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (this.isProcessingEliminations) return;
 
     this.isProcessingEliminations = true;
+    // A bust that arrived while a later stage held the continuation takes its
+    // turn here, before that stage is admitted again (see bustAwaitsItsStage).
+    this.eliminationSweepCursor.beginAdmission();
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
     // The bust batch window is opened by the assignment pass alone and closed
@@ -1450,19 +1468,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
         // engines has proved the platform thawed.
+        // A retry asked for inside the balancer is a break or a seat move
+        // that is not finished. While one is outstanding, every sweep this
+        // manager is owed comes from the scheduler's consolidation lane,
+        // because a field spread one player to a table cannot deal until
+        // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
+        const redrivesBeforeBalance = this.urgentRedrivesRequested;
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) return;
+            if (this.eliminationWorkBudgetExpired()) {
+              this.declareConsolidationOutstanding(true);
+              return;
+            }
             // Only a fully receipted retirement permits another fresh plan
             // inside this admission. Unknown/blocked work returns through the
             // remaining stages, so the next sweep can process new busts and
             // release their reserved roster chairs. Each success removes one
             // table; the existing deadline bounds even a changing field.
           } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
+          this.declareConsolidationOutstanding(
+            this.urgentRedrivesRequested !== redrivesBeforeBalance ||
+              progress?.kind === 'table-retired'
+          );
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second

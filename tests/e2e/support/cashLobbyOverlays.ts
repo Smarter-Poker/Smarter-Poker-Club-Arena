@@ -63,10 +63,103 @@ export async function layerCovering(control: Locator): Promise<CoveringLayer | n
   });
 }
 
+/**
+ * HOW LONG THE REAL NOT NOW CLICK MAY WAIT FOR THE PAGE TO HOLD STILL.
+ *
+ * Playwright's click waits for the control to be stable, which it measures on
+ * the page's own animation frames. Production run 36533736673 (WebKit, cash
+ * case, 2026-09-29): the Not Now plate's first stability check took 5.0s to
+ * answer and the retry took the rest of the old 10s budget, so the click died
+ * on "element is not stable" without ever being refused by the card.
+ *
+ * The card itself is not slow. The real Modal and SpadeConsole (crest diamond,
+ * 390x664) settle in 409ms in isolation, and again with the main thread held
+ * 180ms of every 200ms; the entrance is one 350ms keyframe run and nothing
+ * else moves a plate. What took 5s per check was the page's frame clock while
+ * the offer opened over a freshly loaded 466-game lobby on a shared CI runner
+ * (its chunks were still arriving in 2-5s responses). A stability check cannot
+ * finish faster than the page gives out frames, so a wait shorter than two of
+ * those stalls is a wait for the runner, not a finding about the card.
+ *
+ * TWO STAGES, BECAUSE A COVERED PLATE MUST STILL BE REPORTED FAST. The first
+ * stage is the unchanged 10s: a layer that intercepts the pointer is named by
+ * Playwright's own call log inside it, and is reported as before (the
+ * "unowned layer" case in mobile-lobby-chrome.spec.ts pins that latency).
+ * Only a click that ended WITHOUT an interception, which is a control that
+ * was never given a settled frame to be judged on, gets the extension. It is
+ * still the player's own control, still actionability-checked (visible,
+ * enabled, stable, receiving pointer events), never forced, and still fails
+ * with its own error when the control never settles.
+ */
+export const DIAMOND_DECLINE_CLICK_TIMEOUT_MS = 10_000;
+export const DIAMOND_DECLINE_STALL_EXTENSION_MS = 20_000;
+/** How long the failure report may spend asking a struggling page one question. */
+const STALL_PROBE_MS = 3_000;
+
+/** What the page's frame clock did for one second, or why it could not say. */
+async function describeFrameClock(control: Locator): Promise<string> {
+  const probe = control
+    .evaluate(
+      (el) =>
+        new Promise<string>((resolve) => {
+          let frames = 0;
+          const started = performance.now();
+          const rect = () => {
+            const box = el.getBoundingClientRect();
+            return `${box.left.toFixed(1)},${box.top.toFixed(1)} ${box.width.toFixed(1)}x${box.height.toFixed(1)}`;
+          };
+          const first = rect();
+          const step = () => {
+            frames += 1;
+            if (performance.now() - started < 1_000) requestAnimationFrame(step);
+            else resolve(`${frames} animation frames in 1s, plate ${first} -> ${rect()}`);
+          };
+          requestAnimationFrame(step);
+        })
+    )
+    .catch(
+      (error: unknown) => `frame clock unreadable (${(error as Error).message.split('\n')[0]})`
+    );
+  const timeout = new Promise<string>((resolve) =>
+    setTimeout(
+      () => resolve(`no answer from the page within ${STALL_PROBE_MS}ms (main thread blocked)`),
+      STALL_PROBE_MS
+    )
+  );
+  return Promise.race([probe, timeout]);
+}
+
 /** Take the invitation's real Not Now door and prove it closed. */
 async function declineDiamondInvitation(page: Page): Promise<void> {
   const prompt = diamondInvitation(page);
-  await prompt.getByRole('button', { name: 'Not Now', exact: true }).click({ timeout: 10_000 });
+  const notNow = prompt.getByRole('button', { name: 'Not Now', exact: true });
+  const fail = async (error: unknown, waitedMs: number, frameClock: boolean): Promise<never> => {
+    // Say what the page was doing, so the next report separates "the card kept
+    // moving" from "the page stopped giving out frames" instead of guessing.
+    // A covering layer is already named by Playwright's own call log, and its
+    // report must not be delayed by a question to the page.
+    const clock = frameClock ? ` [${await describeFrameClock(notNow)}]` : '';
+    throw new Error(
+      `The Diamond Spins Not Now click failed after ${waitedMs}ms: ${(error as Error).message}${clock}`,
+      { cause: error }
+    );
+  };
+  try {
+    await notNow.click({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
+  } catch (first) {
+    if (/intercepts pointer events/.test((first as Error).message)) {
+      await fail(first, DIAMOND_DECLINE_CLICK_TIMEOUT_MS, false);
+    }
+    try {
+      await notNow.click({ timeout: DIAMOND_DECLINE_STALL_EXTENSION_MS });
+    } catch (second) {
+      await fail(
+        second,
+        DIAMOND_DECLINE_CLICK_TIMEOUT_MS + DIAMOND_DECLINE_STALL_EXTENSION_MS,
+        !/intercepts pointer events/.test((second as Error).message)
+      );
+    }
+  }
   await expect(prompt, 'the Diamond Spins invitation stayed open after Not Now').toBeHidden({
     timeout: 8_000,
   });

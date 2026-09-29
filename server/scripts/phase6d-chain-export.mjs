@@ -18,6 +18,10 @@
  * selection cutoff landed differently on re-walk) is reported as not_found
  * and is not exported; nothing is filled, inferred or substituted for it.
  *
+ * The walk covers every archive shard (one catalog per decision-shard writer
+ * since #5541), shard 0 first, each with its own handsPerStratum, exactly as the
+ * population observer does.
+ *
  * Usage
  *   node server/scripts/phase6d-chain-export.mjs run --declaration <json> --population <json> --out <ndjson> [--report <json>] [--ssh-target root@host] [--ssh-key path]
  *   node server/scripts/phase6d-chain-export.mjs export <base64 payload>   (runs inside the observer container only)
@@ -29,6 +33,21 @@ import { basename, dirname, resolve } from 'node:path';
 
 const sha256 = (v) => createHash('sha256').update(v).digest('hex');
 const HOUR_MS = 3_600_000;
+
+/* THE ARCHIVE IS ONE CATALOG PER DECISION SHARD (2026-09-29). This file is sent
+   whole to the observer container, so it cannot import the population tool's
+   copy of these helpers; tests/phase6ReviewToolsReadEveryShard pins that the
+   two agree. Shard 0 is 'archive', later shards 'archive-shard-N', and the
+   names come from the journal's own directory listing. */
+export function archiveShardNames(config, directory) {
+  const names = config.horseJournalArchiveDirectoryNames(directory);
+  if (!Array.isArray(names) || !names.length) throw Error('archive_custody_unavailable');
+  return names;
+}
+export const shardCatalogPath = (directory, shardName) =>
+  directory + '/' + shardName + '/horse-journal-archive.sqlite';
+export const shardSegmentPath = (directory, shardName, sha) =>
+  directory + '/' + shardName + '/segments/' + sha + '.ndjson.gz';
 
 function parseArgs(argv) {
   const out = { _: [] };
@@ -68,92 +87,112 @@ async function runExport(payloadB64) {
     import('/app/dist/services/horseDecisionJournal/config.js'),
     import('/app/dist/services/horseDecisionJournal/record.js'),
   ]);
-  const journal = new store.HorseDecisionJournalStore(
-    directory,
-    config.readonlyHorseJournalStoreOptions(directory)
-  );
-  const catalog = new DatabaseSync(directory + '/archive/horse-journal-archive.sqlite', {
-    readOnly: true,
-    allowExtension: false,
-  });
-  catalog.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
-  const maxRowid = catalog
-    .prepare('SELECT COALESCE(max(rowid),0) AS rowid FROM archive_events')
-    .get().rowid;
-  const minRowid = catalog
-    .prepare('SELECT COALESCE(min(rowid),0) AS rowid FROM archive_events')
-    .get().rowid;
-  const existingAtOrAfter = catalog.prepare(
-    'SELECT rowid FROM archive_events WHERE rowid >= ? ORDER BY rowid LIMIT 1'
-  );
-  const rowMeta = catalog.prepare(
-    `SELECT e.hand_key, e.ordinal, s.sha, s.compressed_sha
-     FROM archive_events e JOIN archive_segments s ON s.sha = e.segment_sha WHERE e.rowid = ?`
-  );
-  const segmentCache = new Map();
-  const atMsOf = (rowid) => {
-    const row = rowMeta.get(rowid);
-    if (!row) throw Error('rowid_unavailable');
-    let lines = segmentCache.get(row.sha);
-    if (!lines) {
-      const compressed = readFile(directory + '/archive/segments/' + row.sha + '.ndjson.gz');
-      if (record.journalHash(compressed) !== row.compressed_sha) throw Error('segment_digest');
-      const decoded = gunzipSync(compressed, { maxOutputLength: 4 * 1024 * 1024 + 65536 });
-      if (record.journalHash(decoded) !== row.sha) throw Error('segment_digest');
-      lines = decoded.toString('utf8').slice(0, -1).split('\n');
-      if (segmentCache.size > 128) segmentCache.clear();
-      segmentCache.set(row.sha, lines);
-    }
-    const parsed = JSON.parse(lines[Number(row.ordinal)]);
-    record.validateHorseJournalRecord(parsed);
-    return parsed.atMs;
-  };
-  const lowerBound = (t) => {
-    let lo = Math.max(1, Number(minRowid)),
-      hi = maxRowid + 1;
-    while (lo < hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      const row = Number(existingAtOrAfter.get(mid).rowid);
-      if (atMsOf(row) < t) lo = row + 1;
-      else hi = mid;
-    }
-    return lo;
-  };
-  const handRows = catalog.prepare(
-    'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
-  );
-  const strataCount = Math.ceil((declaration.window.endMs - declaration.window.startMs) / HOUR_MS);
-  const windowEnd = declaration.window.endMs;
+  // Every archive shard, exactly as the population observer walks them
+  // (phase6d-population.mjs, archiveShardNames): a decision the population
+  // admitted from any shard must be found here in that shard.
+  const shardNames = archiveShardNames(config, directory);
   const found = new Map();
   let handsTotal = 0;
-  outer: for (let h = 0; h < strataCount; h++) {
-    const startMs = declaration.window.startMs + h * HOUR_MS;
-    const endMs = Math.min(startMs + HOUR_MS, windowEnd);
-    const firstRowid = lowerBound(startMs);
-    const nextRowid = lowerBound(endMs);
-    const seen = new Set();
-    let cursor = firstRowid;
-    while (seen.size < declaration.selection.handsPerStratum && cursor < nextRowid) {
-      const rows = handRows.all(cursor, nextRowid);
-      if (!rows.length) break;
-      for (const row of rows) {
-        cursor = Number(row.rowid) + 1;
-        if (seen.has(row.hand_key)) continue;
-        if (seen.size >= declaration.selection.handsPerStratum) break;
-        seen.add(row.hand_key);
-        if (++handsTotal > declaration.selection.bounds.maxHandsInspected) break outer;
-        if (found.size >= wanted.size) break outer;
-        let records;
-        try {
-          records = journal.readHand(row.hand_key);
-        } catch {
-          continue;
+  const strataCount = Math.ceil((declaration.window.endMs - declaration.window.startMs) / HOUR_MS);
+  const windowEnd = declaration.window.endMs;
+  shards: for (const shardName of shardNames) {
+    const journal = new store.HorseDecisionJournalStore(
+      directory,
+      config.readonlyHorseJournalStoreOptions(directory, shardName)
+    );
+    const catalog = new DatabaseSync(shardCatalogPath(directory, shardName), {
+      readOnly: true,
+      allowExtension: false,
+    });
+    try {
+      catalog.exec('PRAGMA busy_timeout=250; PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');
+      const maxRowid = catalog
+        .prepare('SELECT COALESCE(max(rowid),0) AS rowid FROM archive_events')
+        .get().rowid;
+      const minRowid = catalog
+        .prepare('SELECT COALESCE(min(rowid),0) AS rowid FROM archive_events')
+        .get().rowid;
+      if (!maxRowid) continue;
+      const existingAtOrAfter = catalog.prepare(
+        'SELECT rowid FROM archive_events WHERE rowid >= ? ORDER BY rowid LIMIT 1'
+      );
+      const rowMeta = catalog.prepare(
+        `SELECT e.hand_key, e.ordinal, s.sha, s.compressed_sha
+         FROM archive_events e JOIN archive_segments s ON s.sha = e.segment_sha WHERE e.rowid = ?`
+      );
+      const segmentCache = new Map();
+      const atMsOf = (rowid) => {
+        const row = rowMeta.get(rowid);
+        if (!row) throw Error('rowid_unavailable');
+        let lines = segmentCache.get(row.sha);
+        if (!lines) {
+          const compressed = readFile(shardSegmentPath(directory, shardName, row.sha));
+          if (record.journalHash(compressed) !== row.compressed_sha) throw Error('segment_digest');
+          const decoded = gunzipSync(compressed, { maxOutputLength: 4 * 1024 * 1024 + 65536 });
+          if (record.journalHash(decoded) !== row.sha) throw Error('segment_digest');
+          lines = decoded.toString('utf8').slice(0, -1).split('\n');
+          if (segmentCache.size > 128) segmentCache.clear();
+          segmentCache.set(row.sha, lines);
         }
-        for (const r of records) {
-          if (r.kind === 'decision' && wanted.has(r.eventId) && !found.has(r.eventId)) {
-            found.set(r.eventId, r);
+        const parsed = JSON.parse(lines[Number(row.ordinal)]);
+        record.validateHorseJournalRecord(parsed);
+        return parsed.atMs;
+      };
+      const lowerBound = (t) => {
+        let lo = Math.max(1, Number(minRowid)),
+          hi = maxRowid + 1;
+        while (lo < hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          const row = Number(existingAtOrAfter.get(mid).rowid);
+          if (atMsOf(row) < t) lo = row + 1;
+          else hi = mid;
+        }
+        return lo;
+      };
+      const handRows = catalog.prepare(
+        'SELECT rowid, hand_key FROM archive_events WHERE rowid >= ? AND rowid < ? ORDER BY rowid LIMIT 4096'
+      );
+      outer: for (let h = 0; h < strataCount; h++) {
+        const startMs = declaration.window.startMs + h * HOUR_MS;
+        const endMs = Math.min(startMs + HOUR_MS, windowEnd);
+        const firstRowid = lowerBound(startMs);
+        const nextRowid = lowerBound(endMs);
+        const seen = new Set();
+        let cursor = firstRowid;
+        while (seen.size < declaration.selection.handsPerStratum && cursor < nextRowid) {
+          const rows = handRows.all(cursor, nextRowid);
+          if (!rows.length) break;
+          for (const row of rows) {
+            cursor = Number(row.rowid) + 1;
+            if (seen.has(row.hand_key)) continue;
+            if (seen.size >= declaration.selection.handsPerStratum) break;
+            seen.add(row.hand_key);
+            if (++handsTotal > declaration.selection.bounds.maxHandsInspected) break shards;
+            if (found.size >= wanted.size) break shards;
+            let records;
+            try {
+              records = journal.readHand(row.hand_key);
+            } catch {
+              continue;
+            }
+            for (const r of records) {
+              if (r.kind === 'decision' && wanted.has(r.eventId) && !found.has(r.eventId)) {
+                found.set(r.eventId, r);
+              }
+            }
           }
         }
+      }
+    } finally {
+      try {
+        catalog.close();
+      } catch {
+        /* read-only connection cleanup */
+      }
+      try {
+        journal.close();
+      } catch {
+        /* read-only connection cleanup */
       }
     }
   }
@@ -164,6 +203,7 @@ async function runExport(payloadB64) {
       wanted: wanted.size,
       found: found.size,
       handsWalked: handsTotal,
+      shardsRead: shardNames.length,
       records: [...found.values()],
     })
   );

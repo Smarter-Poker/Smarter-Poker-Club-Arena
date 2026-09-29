@@ -1,6 +1,7 @@
 import LegalDocumentLayout, {
   type LegalDocumentSection,
 } from '../../components/legal/LegalDocumentLayout';
+import { PRIVACY_LAST_UPDATED } from '../../components/legal/legalDates';
 
 const SECTIONS: LegalDocumentSection[] = [
   {
@@ -269,7 +270,7 @@ export default function PrivacyPolicyPage() {
       eyebrow="Data Stewardship"
       title="Privacy Policy"
       summary="How Club Arena Collects, Uses, Protects, Retains, And Gives You Control Over Information."
-      lastUpdated="January 29, 2026"
+      lastUpdated={PRIVACY_LAST_UPDATED}
       sections={SECTIONS}
     />
   );

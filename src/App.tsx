@@ -153,7 +153,7 @@ const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'))
 const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
-const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
+const ClubPlayersDoor = lazyWithRetry(() => import('./pages/ClubPlayersDoor'));
 const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
@@ -1506,7 +1506,7 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
-                          <ClubMembersPage />
+                          <ClubPlayersDoor />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

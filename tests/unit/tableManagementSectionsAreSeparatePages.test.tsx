@@ -17,7 +17,7 @@
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     | null
     | (() => Promise<{ allowed: boolean; unionId: string | null; reason: string }>),
   confirm: vi.fn(async () => true),
+  list: null as null | (() => Promise<unknown>),
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -68,22 +69,25 @@ vi.mock('../../src/components/common/Toast', () => ({
 vi.mock('../../src/components/common/confirmDialog', () => ({ confirmDialog: mocks.confirm }));
 vi.mock('../../src/services/GameManagementService', () => ({
   gameManagementService: {
-    list: async () => ({
-      items: [
-        {
-          id: 'tbl-live',
-          kind: 'table',
-          name: 'Friday Deep Stack',
-          status: 'running',
-          club_id: 'club-uuid-1',
-          players: 6,
-          max_players: 9,
-          bucket: 0,
-        },
-      ],
-      counts: { total: 1, live: 1, scheduled: 0, closed: 0, closedWithinHorizon: 0 },
-      nextCursor: null,
-    }),
+    list: async () =>
+      mocks.list
+        ? mocks.list()
+        : {
+            items: [
+              {
+                id: 'tbl-live',
+                kind: 'table',
+                name: 'Friday Deep Stack',
+                status: 'running',
+                club_id: 'club-uuid-1',
+                players: 6,
+                max_players: 9,
+                bucket: 0,
+              },
+            ],
+            counts: { total: 1, live: 1, scheduled: 0, closed: 0, closedWithinHorizon: 0 },
+            nextCursor: null,
+          },
     getHealth: async () => ({
       latestEventSequence: 0,
       lastEventAt: null,
@@ -178,6 +182,7 @@ const familyOf = (frame: HTMLElement) =>
 describe('each Table Management section is its own page on its own frame', () => {
   beforeEach(() => {
     mocks.access = null;
+    mocks.list = null;
     mocks.confirm.mockReset();
     mocks.confirm.mockResolvedValue(true);
   });
@@ -221,7 +226,7 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(drawn[0].classList).toContain('sc--family-riveted');
     expect(drawn[0].contains(heading)).toBe(true);
     expect(document.getElementById('table-management-title')).toBeNull();
-    expect(within(drawn[0]).getByRole('button', { name: 'Save Club Messages' })).toBeTruthy();
+    expect(within(drawn[0]).getByRole('button', { name: 'Save Identity' })).toBeTruthy();
   });
 
   it('gives the three principal sections three different frame families', async () => {
@@ -410,5 +415,36 @@ describe('an in-app navigation asks the page holding a draft', () => {
     expect(page).toMatch(
       /if \(!surfaceDirty\) return;\s*return holdInAppNavigation\(\(\) =>\s*window\.confirm\('Leave Table Management And Discard Your Unsaved Changes\?'\)/
     );
+  });
+});
+
+/* The error state is one of the states Dan sees: the board used to print the
+   raw "TypeError: Failed to fetch", and because the health read rode in the
+   same wave as the failed board read, the rail said "Reading Management
+   Health" for ever. */
+describe('the Game Board error state speaks plainly', () => {
+  beforeEach(() => {
+    mocks.access = null;
+    mocks.list = () => Promise.reject(new TypeError('Failed to fetch'));
+  });
+  afterEach(() => {
+    mocks.list = null;
+    vi.unstubAllEnvs();
+  });
+
+  it('prints a plain sentence, never the raw fetch error', async () => {
+    vi.stubEnv('DEV', false);
+    renderAt(BASE);
+    expect(
+      await screen.findByText('Connection Problem. Please Check Your Internet And Try Again.')
+    ).toBeTruthy();
+    expect(screen.queryByText(/TypeError|Failed to fetch/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
+  });
+
+  it('stops reading management health when the board read fails', async () => {
+    renderAt(BASE);
+    expect(await screen.findByText('Management Health Unavailable')).toBeTruthy();
+    expect(screen.queryByText('Reading Management Health')).toBeNull();
   });
 });

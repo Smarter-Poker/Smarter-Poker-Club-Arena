@@ -38,6 +38,8 @@ import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { titleCase } from '../utils/titleCase';
 import { holdInAppNavigation } from '../lib/navigationGuard';
 import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
 import TableConfigPage from './TableConfigPage';
@@ -312,7 +314,7 @@ export function ScheduleCloseDialog({
               label: busy ? 'Scheduling…' : 'Schedule Close',
               type: 'submit',
               disabled: busy || !executeAt,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
@@ -489,7 +491,7 @@ export function EditGameDialog({
               label: busy ? 'Saving…' : 'Save Changes',
               type: 'submit',
               disabled: busy,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
@@ -1014,7 +1016,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
-        setLoadError(error instanceof Error ? error.message : 'Could not load games.');
+        /* The board prints a plain Title Case sentence, never "TypeError:
+           Failed to fetch" (safeErrorMessage keeps the raw text in dev, and the
+           report above keeps it for us). The health read rode in the same wave
+           and never landed, so the rail says Unavailable instead of reading
+           forever. */
+        setLoadError(titleCase(safeErrorMessage(error, 'Games Could Not Be Loaded.')));
+        setHealthFailed(true);
       } finally {
         loadInFlightRef.current = false;
         // Unconditional. The in-flight guard means the load that reaches this
@@ -1499,8 +1507,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
           title="Table Management"
           titleId="table-management-title"
-          subtitle={`${scopeName} · Governed Live Operations`}
-          pill={`${reachableTotal} Games`}
+          /* The club or union name alone: with a suffix, a long union name
+             fitted down to seven pixels. The line under it says the rest. */
+          subtitle={scopeName}
+          /* A board that has not read yet, or could not, does not claim to
+             hold zero games. */
+          pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
           className={styles.boardConsole}
           aria-labelledby="table-management-title"
         >

@@ -125,7 +125,6 @@
   min-height: 44px;
   padding: 8px 12px;
   border: 0;
-  border-inline-end: 1px solid rgb(94 116 134 / 28%);
   color: #a9b4bf;
   background: transparent;
   font:
@@ -135,6 +134,14 @@
   text-transform: uppercase;
   text-decoration: none;
   cursor: pointer;
+}
+
+/* The divider belongs BETWEEN the columns of the strip and the filter row.
+   On the shared rule above it also printed after the last column and around
+   every button that stands alone, which drew three-sided boxes. */
+.surfaceNav button:not(:last-child),
+.filters button:not(:last-child) {
+  border-inline-end: 1px solid rgb(94 116 134 / 28%);
 }
 
 .surfaceNav button {
@@ -391,6 +398,19 @@
 .dialog > :global(.sc--family-spade) {
   --sc-max: 760px;
 }
+
+/* THE SPADE GLASS IS CLEAR. Its mid slice is transparent between the rails,
+   which is right on a black page and wrong over a dimmed board: the board's
+   lit text read straight through a dialog's own copy. The rails sit between
+   1.7% and 7.6% of the master, so a black backing inset 3% closes the glass
+   and draws nothing outside the frame. */
+.dialog > :global(.sc--family-spade) > :global(.sc__body)::before {
+  content: '';
+  position: absolute;
+  inset: 0 3%;
+  z-index: -1;
+  background: #000;
+}
 .contractDialog {
   width: min(100%, 760px);
 }
@@ -404,6 +424,12 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+/* A disabled field is not an editable one: same groove, quieter ink. */
+.dialog input:disabled {
+  color: #9aa5b3;
+  cursor: not-allowed;
+}
+
 .dialog input {
   width: 100%;
   min-height: 44px;

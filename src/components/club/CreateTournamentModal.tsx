@@ -1127,7 +1127,11 @@ export default function CreateTournamentModal({
             title={unionId ? 'Create Union Tournament' : 'Create Tournament'}
             subtitle="Configure, Validate, Then Publish"
             pill={format === 'spin' ? 'Spins' : format === 'sng' ? 'Sit N Go' : 'Event'}
-            crest="club"
+            /* THE RIVETED FAMILY (Dan 2026-09-20): a tournament puts money on
+               the line, so its creator is cut from the riveted master - bolted
+               corners and a heavier base carrying its own two plates - not
+               from the spade console the Game Board wears. */
+            family="riveted"
             className={styles.consoleShell}
             plates={{
               secondary: {
@@ -1137,10 +1141,10 @@ export default function CreateTournamentModal({
                 disabled: isSubmitting,
               },
               primary: {
-                label: isSubmitting ? 'Creating...' : 'Create Tournament',
+                label: isSubmitting ? 'Creating…' : 'Create Tournament',
                 type: 'submit',
                 disabled: !canSubmit,
-                ink: 'blue',
+                ink: 'white',
               },
             }}
           >

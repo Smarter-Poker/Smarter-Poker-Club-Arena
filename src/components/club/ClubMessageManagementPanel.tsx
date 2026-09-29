@@ -10,6 +10,8 @@ import { useToast } from '../common/Toast';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { isManagementContentConflict } from '../../services/ManagementContentError';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { titleCase } from '../../utils/titleCase';
 import styles from './ClubMessageManagementPanel.module.css';
 
 const EMPTY_IDENTITY: ClubIdentityMessages = { tagline: '', lobbyMessage: '', description: '' };
@@ -106,7 +108,8 @@ export default function ClubMessageManagementPanel({
       dirtyRef.current = false;
     } catch (error) {
       if (!isCurrent()) return;
-      const message = error instanceof Error ? error.message : 'Could not load club messages.';
+      // A plain Title Case sentence on the glass, never the raw error text.
+      const message = titleCase(safeErrorMessage(error, 'Could Not Load Club Messages.'));
       setLoadError(message);
       setIdentityRevision(null);
       toast.error(message);
@@ -252,7 +255,7 @@ export default function ClubMessageManagementPanel({
       aria-labelledby="club-message-management-title"
       plates={{
         secondary: {
-          label: savingIdentity ? 'Saving…' : 'Save Club Messages',
+          label: savingIdentity ? 'Saving…' : 'Save Identity',
           type: 'button',
           onClick: () => void saveIdentity(),
           disabled:
@@ -263,11 +266,7 @@ export default function ClubMessageManagementPanel({
             !identityDirty,
         },
         primary: {
-          label: announcementBusy
-            ? 'Saving…'
-            : editingId
-              ? 'Update Announcement'
-              : 'Publish Announcement',
+          label: announcementBusy ? 'Saving…' : editingId ? 'Update Banner' : 'Publish Banner',
           type: 'button',
           onClick: () => void saveAnnouncement(),
           disabled:
@@ -311,6 +310,11 @@ export default function ClubMessageManagementPanel({
           </button>
         </div>
       )}
+
+      <div className={styles.sectionHeading}>
+        <span>Club Identity</span>
+        <h3>Identity Copy</h3>
+      </div>
 
       <div className={styles.identityGrid} aria-busy={loading}>
         <div className={styles.fields}>

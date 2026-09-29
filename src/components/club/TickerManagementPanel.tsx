@@ -11,6 +11,8 @@ import { useToast } from '../common/Toast';
 import { isManagementContentConflict } from '../../services/ManagementContentError';
 import { confirmDialog } from '../common/confirmDialog';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { titleCase } from '../../utils/titleCase';
 import styles from './TickerManagementPanel.module.css';
 
 const SOURCE_OPTIONS: Array<{ key: TickerSource; label: string; detail: string }> = [
@@ -137,8 +139,9 @@ export default function TickerManagementPanel({
       dirtyRef.current = false;
     } catch (error) {
       if (!isCurrent()) return;
+      // A plain Title Case sentence on the glass, never the raw error text.
       setLoadError(
-        error instanceof Error ? error.message : 'Could not load the authoritative ticker settings.'
+        titleCase(safeErrorMessage(error, 'Could Not Load The Authoritative Ticker Settings.'))
       );
       setRevision(null);
     } finally {

@@ -1196,10 +1196,8 @@ export default function TableConfigPage({
 
   const content = (
     <div className="table-config-page">
-      {/* Header */}
-      <div className="config-header">
-        <h1 className="config-title">{gameInfo.name}</h1>
-      </div>
+      {/* No header row: the form's name is its console's engraved title
+          ("NLH Setup"), so the glass does not print it a second time. */}
 
       {/* Game Mode Tabs.
           The SNG and MTT tabs only appear for game types the tournament engine
@@ -2124,19 +2122,28 @@ export default function TableConfigPage({
     </div>
   );
 
-  if (embedded) return content;
-
-  return (
-    <main className="table-config-page__standalone">
-      <SpadeConsole
-        eyebrow="Table Management"
-        title={`${gameInfo.name} Setup`}
-        subtitle="Configure, Validate, Then Publish"
-        pill="Creator"
-        crest="club"
-      >
-        {content}
-      </SpadeConsole>
-    </main>
+  /* ITS OWN FRAME (Dan 2026-09-20: "DO NOT ATTACH EVERYTHING TOGETHER WITH
+     THE SAME DISPLAY WINDOWS"). The form never prints inside another surface's
+     console: embedded in Table Management, where it replaces the Game Board,
+     or on its own route, it draws its own spade-family frame with the flat
+     head. It carries no plates - the form's own footer holds Save and Start -
+     so the frame closes on the flat cap. */
+  const frame = (
+    <SpadeConsole
+      eyebrow={embedded ? 'Add Table' : 'Table Management'}
+      title={`${gameInfo.name} Setup`}
+      titleId="table-config-title"
+      subtitle="Configure, Validate, Then Publish"
+      pill="Creator"
+      crest="flat"
+      foot="foot"
+      aria-labelledby="table-config-title"
+    >
+      {content}
+    </SpadeConsole>
   );
+
+  if (embedded) return frame;
+
+  return <main className="table-config-page__standalone">{frame}</main>;
 }

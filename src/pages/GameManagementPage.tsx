@@ -38,6 +38,9 @@ import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { titleCase } from '../utils/titleCase';
+import { holdInAppNavigation } from '../lib/navigationGuard';
 import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
 import TableConfigPage from './TableConfigPage';
 import { SpadeConsole } from '../components/console/SpadeConsole';
@@ -58,6 +61,26 @@ import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 type Scope = 'club' | 'union';
 type View = 'all' | 'running' | 'scheduled' | 'closed';
 type ManagementSurface = 'games' | 'ticker' | 'messages';
+
+/**
+ * EACH SECTION IS ITS OWN PAGE (Dan 2026-09-20): "IT DOESN'T NEED TO BE A ONE
+ * TO ONE CLONE WITH EVERYTHING CONNECTED... JUST THE SAME LOOK AND FEEL!! DO
+ * NOT ATTACH EVERYTHING TOGETHER WITH THE SAME DISPLAY WINDOWS."
+ *
+ * The Game Board, Ticker Management and Club Messages used to be three
+ * interchangeable screens inside ONE console whose title changed. They are
+ * three addresses now - /table-management, ?section=ticker and
+ * ?section=messages - and each one is drawn on its own approved frame family.
+ * One route keeps this component mounted across all three, so the realtime
+ * feed, access state and draft guard below are shared while the pictures are
+ * not. A query rather than a path segment on purpose: the club and union
+ * routes, their guards and every law that reads them stay exactly as they are.
+ */
+function surfaceFromSection(section: string | null): ManagementSurface {
+  if (section === 'ticker') return 'ticker';
+  if (section === 'messages') return 'messages';
+  return 'games';
+}
 
 interface HostClub {
   id: string;
@@ -284,14 +307,14 @@ export function ScheduleCloseDialog({
           subtitle="Occupied Or Registered Games Stay Locked"
           pill="Guarded"
           pillInk="gold"
-          crest="club"
+          crest="flat"
           plates={{
             secondary: { label: 'Cancel', type: 'button', onClick: onClose, disabled: busy },
             primary: {
               label: busy ? 'Scheduling…' : 'Schedule Close',
               type: 'submit',
               disabled: busy || !executeAt,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
@@ -461,14 +484,14 @@ export function EditGameDialog({
           titleId="edit-game-title"
           subtitle="Structural Changes Lock When Play Begins"
           pill={game.kind === 'table' ? 'Table' : 'Event'}
-          crest="club"
+          family="riveted"
           plates={{
             secondary: { label: 'Cancel', type: 'button', onClick: requestClose, disabled: busy },
             primary: {
               label: busy ? 'Saving…' : 'Save Changes',
               type: 'submit',
               disabled: busy,
-              ink: 'blue',
+              ink: 'white',
             },
           }}
         >
@@ -611,7 +634,7 @@ export function ContractHistoryDialog({
           titleId="contract-title"
           subtitle="Hashed, Versioned, Append-Only"
           pill={`V${game.contract?.version || versions[0]?.version || 0}`}
-          crest="diamond"
+          family="shark"
           plates={{ primary: { label: 'Close', type: 'button', onClick: onClose } }}
         >
           <p className="sc-copy sc-copy--center">
@@ -720,7 +743,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('all');
-  const [surface, setSurface] = useState<ManagementSurface>('games');
+  // The section is read from the address, never held as a private tab.
+  const surface = surfaceFromSection(searchParams.get('section'));
   const [surfaceDirty, setSurfaceDirty] = useState(false);
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [scheduling, setScheduling] = useState<ManagedGame | null>(null);
@@ -786,7 +810,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     setBusyKeys(new Set(busyKeysRef.current));
   }, []);
 
-  const clearCreate = () => setSearchParams({}, { replace: true });
+  // Closing a creator keeps the operator on the section they are on.
+  const clearCreate = () =>
+    setSearchParams(surface === 'games' ? {} : { section: surface }, { replace: true });
   const openTableSelector = () => setSearchParams({ create: 'table' }, { replace: true });
   const openTableConfig = (gameTypeId: string) =>
     setSearchParams({ create: 'table', game: gameTypeId }, { replace: true });
@@ -990,7 +1016,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
-        setLoadError(error instanceof Error ? error.message : 'Could not load games.');
+        /* The board prints a plain Title Case sentence, never "TypeError:
+           Failed to fetch" (safeErrorMessage keeps the raw text in dev, and the
+           report above keeps it for us). The health read rode in the same wave
+           and never landed, so the rail says Unavailable instead of reading
+           forever. */
+        setLoadError(titleCase(safeErrorMessage(error, 'Games Could Not Be Loaded.')));
+        setHealthFailed(true);
       } finally {
         loadInFlightRef.current = false;
         // Unconditional. The in-flight guard means the load that reaches this
@@ -1059,8 +1091,17 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     void load();
   }, [load]);
 
+  // The hamburger menu navigates with buttons, not links, so the click guard
+  // below never sees it. It asks this question before it leaves instead.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    return holdInAppNavigation(() =>
+      window.confirm('Leave Table Management And Discard Your Unsaved Changes?')
+    );
+  }, [surfaceDirty]);
+
   // BrowserRouter links do not fire beforeunload. Protect drafts when an
-  // operator leaves through the hamburger menu or any other in-app link.
+  // operator leaves through any in-app link.
   useEffect(() => {
     if (!surfaceDirty) return;
     const onClickCapture = (event: MouseEvent) => {
@@ -1308,7 +1349,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     )
       return false;
     setSurfaceDirty(false);
-    setSurface(nextSurface);
+    // Replace, not push: Back still leaves Table Management exactly as it did
+    // when the section was a tab, so no new history step can strand a draft.
+    setSearchParams(nextSurface === 'games' ? {} : { section: nextSurface }, { replace: true });
     return true;
   };
 
@@ -1374,7 +1417,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           title="Table Management"
           subtitle="Verifying Game-Management Access"
           pill="Checking"
-          crest="club"
+          crest="flat"
+          className={styles.stateConsole}
         >
           <section className={styles.empty}>Verifying Game-Management Access…</section>
         </SpadeConsole>
@@ -1391,7 +1435,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           subtitle="Game Creation And Management Are Restricted"
           pill="Locked"
           pillInk="red"
-          crest="club"
+          family="shark"
+          className={styles.stateConsole}
           plates={{
             primary: {
               label: 'Return',
@@ -1412,171 +1457,153 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     );
   }
 
+  /* A creator is its own page composition. It replaces the Game Board on
+     screen instead of printing inside the board's console, and the board's
+     console is never drawn around it. */
+  const creatorStage: 'selector' | 'config' | null =
+    surface === 'games' && requestedCreate === 'table' && hostClubId
+      ? requestedGameType
+        ? 'config'
+        : 'selector'
+      : null;
+
   return (
-    <main className={styles.page}>
-      <SpadeConsole
-        eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
-        title={
-          surface === 'games'
-            ? 'Table Management'
-            : surface === 'ticker'
-              ? 'Ticker Management'
-              : 'Club Messages'
-        }
-        titleId="table-management-title"
-        subtitle={`${scopeName} · Governed Live Operations`}
-        pill={`${reachableTotal} Games`}
-        crest="club"
-        className={styles.managementConsole}
-        aria-labelledby="table-management-title"
-      >
-        <header className={styles.commandHeader}>
-          <div className={styles.heroCopy}>
-            <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
-          </div>
-          <div className={styles.headerRight}>
-            <div className={styles.countRail}>
-              <span
-                className={realtimeStatus === 'current' ? styles.healthGood : styles.healthWarn}
-                role="status"
-                aria-live="polite"
-              >
-                <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
-                Automatically
-              </span>
-              <span>
-                <strong>{liveCount}</strong> Live
-              </span>
-              <span>
-                <strong>{scheduledCount}</strong> Scheduled
-              </span>
-              <span
-                title={
-                  archivedBeyondHorizon
-                    ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                    : countsAreKnown
-                      ? 'Every Game In This Scope Is On The Board'
-                      : undefined
-                }
-              >
-                <strong>{reachableTotal}</strong> Total
-              </span>
+    <main className={styles.page} data-management-surface={surface}>
+      <nav className={styles.surfaceNav} aria-label="Management Sections">
+        {(
+          [
+            ['games', 'Game Board', 'Running & Scheduled'],
+            ['ticker', 'Ticker Management', 'Live Message Rail'],
+            ['messages', 'Club Messages', 'Identity & Announcements'],
+          ] as Array<[ManagementSurface, string, string]>
+        ).map(([key, label, detail], index) => (
+          <button
+            key={key}
+            type="button"
+            className={surface === key ? styles.surfaceActive : ''}
+            aria-current={surface === key ? 'page' : undefined}
+            onClick={() => {
+              // A creator page REPLACES the board rather than sitting inside
+              // it, so the Game Board button is also its way back.
+              if (key === 'games' && surface === 'games' && requestedCreate) {
+                clearCreate();
+                return;
+              }
+              void changeSurface(key);
+            }}
+            title={
+              surfaceDirty && surface !== key ? 'Unsaved Changes Will Need Confirmation' : undefined
+            }
+          >
+            <span>0{index + 1}</span>
+            <strong>{label}</strong>
+            <small>{detail}</small>
+          </button>
+        ))}
+      </nav>
+
+      {surface === 'games' && !creatorStage && (
+        <SpadeConsole
+          eyebrow={scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
+          title="Table Management"
+          titleId="table-management-title"
+          /* The club or union name alone: with a suffix, a long union name
+             fitted down to seven pixels. The line under it says the rest. */
+          subtitle={scopeName}
+          /* A board that has not read yet, or could not, does not claim to
+             hold zero games. */
+          pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
+          className={styles.boardConsole}
+          aria-labelledby="table-management-title"
+        >
+          <header className={styles.commandHeader}>
+            <div className={styles.heroCopy}>
+              <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
             </div>
-            <div className={styles.healthRail} aria-label="Management Health">
-              {/*
+            <div className={styles.headerRight}>
+              <div className={styles.countRail}>
+                <span
+                  className={realtimeStatus === 'current' ? styles.healthGood : styles.healthWarn}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
+                  Automatically
+                </span>
+                <span>
+                  <strong>{liveCount}</strong> Live
+                </span>
+                <span>
+                  <strong>{scheduledCount}</strong> Scheduled
+                </span>
+                <span
+                  title={
+                    archivedBeyondHorizon
+                      ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                      : countsAreKnown
+                        ? 'Every Game In This Scope Is On The Board'
+                        : undefined
+                  }
+                >
+                  <strong>{reachableTotal}</strong> Total
+                </span>
+              </div>
+              <div className={styles.healthRail} aria-label="Management Health">
+                {/*
               A health read that FAILED must not render as zeros. `?? 0` used to
               paint "0 Integrity Alerts" whether the answer was zero or whether
               nobody could be asked - and the operator has no way to tell those
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-              {healthFailed ? (
-                <span className={styles.healthAlert}>Management Health Unavailable</span>
-              ) : health === null ? (
-                /* Still in flight. Not an alarm, and not a row of zeros either. */
-                <span>Reading Management Health</span>
-              ) : (
-                <>
-                  <span>{health.commandsLast24h} Commands / 24h</span>
-                  <span>{health.rejectedLast24h} Rejected</span>
-                  <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
-                    {health.integrityAlerts} Integrity Alerts
-                  </span>
-                  <span>{health.scheduledPending} Pending Schedules</span>
-                  <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
-                    {health.scheduledRejected24h} Schedule Rejects
-                  </span>
-                  <span title={formatEventClock(health.lastEventAt)}>
-                    {health.eventsLastHour} Events / Hour
-                  </span>
-                  <span title={`${health.retentionDays}-Day Realtime Retention`}>
-                    {health.eventRows} Realtime Events
-                  </span>
-                </>
-              )}
+                {healthFailed ? (
+                  <span className={styles.healthAlert}>Management Health Unavailable</span>
+                ) : health === null ? (
+                  /* Still in flight. Not an alarm, and not a row of zeros either. */
+                  <span>Reading Management Health</span>
+                ) : (
+                  <>
+                    <span>{health.commandsLast24h} Commands / 24h</span>
+                    <span>{health.rejectedLast24h} Rejected</span>
+                    <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                      {health.integrityAlerts} Integrity Alerts
+                    </span>
+                    <span>{health.scheduledPending} Pending Schedules</span>
+                    <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                      {health.scheduledRejected24h} Schedule Rejects
+                    </span>
+                    <span title={formatEventClock(health.lastEventAt)}>
+                      {health.eventsLastHour} Events / Hour
+                    </span>
+                    <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                      {health.eventRows} Realtime Events
+                    </span>
+                  </>
+                )}
+              </div>
+              <GameCreationActions
+                managementPath={managementPath}
+                onNavigate={(path) => void openCreationFromHeader(path)}
+              />
             </div>
-            <GameCreationActions
-              managementPath={managementPath}
-              onNavigate={(path) => void openCreationFromHeader(path)}
-            />
-          </div>
-        </header>
+          </header>
 
-        <nav className={styles.surfaceNav} aria-label="Management Sections">
-          {(
-            [
-              ['games', 'Game Board', 'Running & Scheduled'],
-              ['ticker', 'Ticker Management', 'Live Message Rail'],
-              ['messages', 'Club Messages', 'Identity & Announcements'],
-            ] as Array<[ManagementSurface, string, string]>
-          ).map(([key, label, detail], index) => (
-            <button
-              key={key}
-              type="button"
-              className={surface === key ? styles.surfaceActive : ''}
-              aria-current={surface === key ? 'page' : undefined}
-              onClick={() => void changeSurface(key)}
-              title={
-                surfaceDirty && surface !== key
-                  ? 'Unsaved Changes Will Need Confirmation'
-                  : undefined
-              }
-            >
-              <span>0{index + 1}</span>
-              <strong>{label}</strong>
-              <small>{detail}</small>
-            </button>
-          ))}
-        </nav>
-
-        {scope === 'union' && hostClubId && (
-          /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
+          {scope === 'union' && hostClubId && (
+            /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
            must be only for the page you opened it in, you can't jump from club
            to club." The host is the union itself, stated, not selectable. */
-          <p className={styles.hostPicker} aria-label="Host">
-            Host
-            <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
-          </p>
-        )}
+            <p className={styles.hostPicker} aria-label="Host">
+              Host
+              <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
+            </p>
+          )}
 
-        {surface === 'games' && requestedCreate === 'table' && hostClubId && !requestedGameType && (
-          <section className={styles.creatorDeck} aria-label="Create Table">
-            <CreateTablePage
-              clubIdOverride={hostClubId}
-              onBack={clearCreate}
-              onSelectGameType={openTableConfig}
-            />
-          </section>
-        )}
-        {surface === 'games' && requestedGameType && hostClubId && (
-          <section className={styles.creatorDeck} aria-label="Table Config">
-            <button
-              type="button"
-              className={styles.creatorBack}
-              onClick={openTableSelector}
-              aria-label="Back To Game Types"
-            >
-              ‹‹
-            </button>
-            <TableConfigPage
-              key={`${hostClubId}:${requestedGameType}`}
-              clubIdOverride={hostClubId}
-              gameTypeOverride={requestedGameType}
-              embedded
-              onExit={(exit) => {
-                clearCreate();
-                if (exit !== 'denied') void load();
-              }}
-            />
-          </section>
-        )}
-        {scope === 'union' && hosts.length === 0 && !loading && allowed && (
-          <section className={styles.empty}>
-            This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
-          </section>
-        )}
+          {scope === 'union' && hosts.length === 0 && !loading && allowed && (
+            <section className={styles.empty}>
+              This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
+            </section>
+          )}
 
-        {surface === 'games' && (
           <nav className={styles.filters} aria-label="Game Status">
             {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
               <button
@@ -1588,16 +1615,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 {item}
               </button>
             ))}
-            {requestedCreate && (
-              <button className={styles.dismissCreator} onClick={clearCreate}>
-                Close Creator
-              </button>
-            )}
           </nav>
-        )}
 
-        {surface === 'games' &&
-          (loadError ? (
+          {loadError ? (
             <section className={styles.empty}>
               <p>{loadError}</p>
               <button onClick={() => void load()}>Try Again</button>
@@ -1885,20 +1905,58 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 </button>
               )}
             </section>
-          ))}
+          )}
+        </SpadeConsole>
+      )}
 
-        {surface === 'ticker' && allowed && scopeId && (
-          <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
-        )}
-
-        {surface === 'messages' && allowed && hostClubId && (
-          <ClubMessageManagementPanel
-            clubId={hostClubId}
-            clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
-            onDirtyChange={setSurfaceDirty}
+      {creatorStage === 'selector' && (
+        <section className={styles.creatorStage} aria-label="Create Table">
+          <CreateTablePage
+            clubIdOverride={hostClubId}
+            onBack={clearCreate}
+            onSelectGameType={openTableConfig}
           />
-        )}
-      </SpadeConsole>
+        </section>
+      )}
+      {creatorStage === 'config' && requestedGameType && (
+        <section className={styles.creatorStage} aria-label="Table Config">
+          <button
+            type="button"
+            className={styles.creatorBack}
+            onClick={openTableSelector}
+            aria-label="Back To Game Types"
+          >
+            ‹‹
+          </button>
+          <TableConfigPage
+            key={`${hostClubId}:${requestedGameType}`}
+            clubIdOverride={hostClubId}
+            gameTypeOverride={requestedGameType}
+            embedded
+            onExit={(exit) => {
+              clearCreate();
+              if (exit !== 'denied') void load();
+            }}
+          />
+        </section>
+      )}
+
+      {surface === 'ticker' && allowed && scopeId && (
+        <TickerManagementPanel
+          scope={scope}
+          scopeId={scopeId}
+          scopeName={scopeName}
+          onDirtyChange={setSurfaceDirty}
+        />
+      )}
+
+      {surface === 'messages' && allowed && hostClubId && (
+        <ClubMessageManagementPanel
+          clubId={hostClubId}
+          clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+          onDirtyChange={setSurfaceDirty}
+        />
+      )}
 
       {tournamentModalOpen && hostClubId && (
         <CreateTournamentModal

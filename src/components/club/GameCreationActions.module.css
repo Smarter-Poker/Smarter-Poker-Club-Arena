@@ -1,14 +1,25 @@
 /* One continuous, purpose-built four-bay render. The buttons paint no frame of
-   their own; they are semantic hit targets over the bays in the master art. */
+   their own; they are semantic hit targets over the bays in the master art.
+
+   THE INSETS ARE FRACTIONS OF THE RAIL, NOT OF ITS PARENT (2026-09-20).
+   Percentage padding resolves against the CONTAINING block, so with the rail
+   capped at 680px inside a wider console body every inset grew by
+   body/rail and the hit targets drifted off the painted bays - the
+   #ClubArenaConsole 3.3 trap. The rail's own width lives in one property and
+   every inset is derived from it, so the bays and the buttons agree at every
+   width. The ratio is the served file's own (the media cap stores it at
+   1280 x 427). */
 .actions {
+  --rail-width: min(100%, 680px);
   position: relative;
   container-type: inline-size;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  width: min(100%, 680px);
-  aspect-ratio: 2172 / 724;
+  width: var(--rail-width);
+  aspect-ratio: 1280 / 427;
   margin-inline-start: auto;
-  padding: 9.5% 5.2% 10%;
+  padding: calc(var(--rail-width) * 0.095) calc(var(--rail-width) * 0.052)
+    calc(var(--rail-width) * 0.1);
   box-sizing: border-box;
   background: url('/assets/club-buttons/table-management/command-rail-v1/chassis.png') center / 100%
     100% no-repeat;
@@ -66,7 +77,28 @@
 }
 
 .compact {
-  width: min(100%, 560px);
+  --rail-width: min(100%, 560px);
+}
+
+/* ONE ACTION IS NOT A FOUR-BAY RAIL. The club lobby asks for the single
+   creation that belongs to the tab on show; printed on the four-bay chassis it
+   left three painted bays empty, which reads as broken. One action prints as a
+   lit word instead - the #ClubArenaConsole way out for a lone control. */
+.single {
+  display: flex;
+  justify-content: flex-end;
+  width: auto;
+  aspect-ratio: auto;
+  padding: 0;
+  background: none;
+}
+
+.single button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .compact button {
@@ -88,9 +120,9 @@
 
 @media (max-width: 520px) {
   .actions {
-    width: 100%;
+    --rail-width: 100%;
     margin-inline: auto;
-    padding-inline: 4.7%;
+    padding-inline: calc(var(--rail-width) * 0.047);
   }
 
   .actions button {

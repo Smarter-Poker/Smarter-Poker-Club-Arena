@@ -23,8 +23,11 @@
   }
 }
 
+/* The riveted master is 729px wide and its console never grows past it, so
+   the dialog stops at the riveted width too: a wide screen gets black margin,
+   never an empty band around the frame. */
 .modal {
-  width: min(100%, 1000px);
+  width: min(100%, 760px);
   min-width: 0;
   margin: auto;
   padding: 0 !important;

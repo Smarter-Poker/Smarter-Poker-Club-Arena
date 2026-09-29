@@ -57,9 +57,11 @@ export const SPINS_PREMIUM_ZONES = {
 const C = SPINS_PREMIUM_CANVAS;
 
 function payoutParts(value?: string) {
-  const normalized = value || 'Win Up To 100x';
-  const match = normalized.match(/^(.*?)(\d+(?:\.\d+)?x)$/i);
-  return match ? { lead: match[1].trim(), hero: match[2] } : { lead: '', hero: normalized };
+  /* No value is a Spin whose ceiling has not been read (a Diamond Spin draws
+     from its own table): no figure, never the chip ladder's (Diamond Phase 9). */
+  if (!value) return { lead: 'Win Up To', hero: '-' };
+  const match = value.match(/^(.*?)(\d+(?:\.\d+)?x)$/i);
+  return match ? { lead: match[1].trim(), hero: match[2] } : { lead: '', hero: value };
 }
 
 function prizeParts(value?: string) {

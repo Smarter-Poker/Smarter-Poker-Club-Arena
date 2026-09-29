@@ -58,6 +58,7 @@ results = {'scope': 'the rake path must not hold the club settings row across th
 # expensive in production; here it only has to be the SHARED row, one per club.
 FIXTURE = """
 CREATE TABLE clubs (id int PRIMARY KEY, total_rake numeric NOT NULL DEFAULT 0,
+                    table_count int NOT NULL DEFAULT 0,
                     updated_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE club_wallets (club_id int PRIMARY KEY,
                     lifetime_rake_collected numeric NOT NULL DEFAULT 0);
@@ -65,6 +66,7 @@ CREATE TABLE rake_distribution_legs (leg_key uuid, leg text, club_id int,
                     amount numeric, PRIMARY KEY (leg_key, leg));
 CREATE TABLE rake_records (hand_id uuid PRIMARY KEY, table_id int,
                     club_id int, rake_amount numeric);
+CREATE TABLE tables (id int PRIMARY KEY, club_id int, status text);
 INSERT INTO clubs (id) VALUES (1);
 INSERT INTO club_wallets (club_id) VALUES (1);
 
@@ -87,6 +89,33 @@ BEGIN
      WHERE id = p_club;
   END IF;
 END $$;
+
+-- The live table count, and the trigger that maintains it on the club row, in
+-- the two shapes. fn_live_table_count counts every status that is not a closed
+-- one, so a table cycling waiting <-> running does not move it.
+CREATE FUNCTION live_table_count(p_club int) RETURNS int LANGUAGE sql STABLE AS $$
+  SELECT count(*)::int FROM tables t
+   WHERE t.club_id = p_club AND t.status NOT IN ('closed','deleted');
+$$;
+
+CREATE FUNCTION sync_counts_unconditional() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE clubs SET table_count = live_table_count(id) WHERE id = NEW.club_id;
+  RETURN NULL;
+END $$;
+
+CREATE FUNCTION sync_counts_guarded() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE clubs c SET table_count = v.n
+    FROM (SELECT t.id, live_table_count(t.id) AS n FROM clubs t WHERE t.id = NEW.club_id) v
+   WHERE c.id = v.id AND c.table_count IS DISTINCT FROM v.n;
+  RETURN NULL;
+END $$;
+
+INSERT INTO tables (id, club_id, status) VALUES (1,1,'waiting'),(2,1,'waiting');
+UPDATE clubs SET table_count = live_table_count(1) WHERE id = 1;
 """
 
 
@@ -218,6 +247,55 @@ try:
         "DO $$BEGIN PERFORM rake_tail(1, 9, gen_random_uuid(), 2.50, false); END$$;"
         " SELECT (SELECT lifetime_rake_collected FROM club_wallets WHERE club_id=1)"
         " = (SELECT sum(rake_amount) FROM rake_records);", 't')
+
+    # ------------------------------------------------------------------
+    # The second writer of the same row: the table_count trigger. The engine
+    # cycles a live table between 'waiting' and 'running' all day, and the count
+    # does not move, so an unconditional recompute writes the row for nothing.
+    # ------------------------------------------------------------------
+    def status_flip_writes_the_club_row(which):
+        run('bind-' + which, "DROP TRIGGER IF EXISTS sync ON tables;"
+                             " CREATE TRIGGER sync AFTER UPDATE OF status ON tables"
+                             " FOR EACH ROW WHEN (new.status IS DISTINCT FROM old.status)"
+                             " EXECUTE FUNCTION " + which + "();")
+        before = run('xmin-before-' + which, 'SELECT xmin::text FROM clubs WHERE id=1;')
+        run('flip-' + which, "UPDATE tables SET status='running' WHERE id=1;")
+        after = run('xmin-after-' + which, 'SELECT xmin::text FROM clubs WHERE id=1;')
+        run('reset-' + which, "UPDATE tables SET status='waiting' WHERE id=1;")
+        return before != after
+
+    wrote_unconditional = status_flip_writes_the_club_row('sync_counts_unconditional')
+    results['cases'].append({'name': 'before-a-status-flip-rewrites-the-club-row',
+                             'passed': wrote_unconditional})
+    require(wrote_unconditional,
+            'BEFORE arm did not reproduce the no-op write: a status flip left the club '
+            'row untouched even unconditionally, so this test proves nothing.')
+
+    wrote_guarded = status_flip_writes_the_club_row('sync_counts_guarded')
+    results['cases'].append({'name': 'after-a-status-flip-does-not-touch-the-club-row',
+                             'passed': not wrote_guarded})
+    require(not wrote_guarded, 'AFTER arm still rewrote the club row on a status flip')
+
+    # ...and the count is still exactly right, including when it really changes.
+    run('the-count-is-still-maintained-when-it-really-changes',
+        "UPDATE tables SET status='closed' WHERE id=1;"
+        " SELECT table_count = live_table_count(1) AND table_count = 1 FROM clubs WHERE id=1;", 't')
+    run('and-again-when-a-table-comes-back',
+        "UPDATE tables SET status='waiting' WHERE id=1;"
+        " SELECT table_count = live_table_count(1) AND table_count = 2 FROM clubs WHERE id=1;", 't')
+
+    counts = sorted((ROOT / 'supabase/migrations').glob(
+        '*_a_count_that_has_not_changed_is_not_a_write.sql'))
+    require(len(counts) == 1, 'expected exactly one table-count migration, found ' + str(len(counts)))
+    counts_body = counts[0].read_text()
+    # Count inside the function body only: the postimage check quotes the same
+    # phrase, and the header explains it.
+    fn_body = counts_body.split('AS $function$')[1].split('$function$')[0]
+    guarded = (fn_body.count('table_count IS DISTINCT FROM') == 2
+               and fn_body.count('UPDATE clubs c') == 2)
+    results['cases'].append({'name': 'shipped-count-migration-guards-both-writes',
+                             'passed': guarded})
+    require(guarded, 'the shipped table-count migration does not guard both writes')
 
     # The shipped migration must not reintroduce the write.
     shipped = sorted((ROOT / 'supabase/migrations').glob(

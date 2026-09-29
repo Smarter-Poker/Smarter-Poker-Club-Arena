@@ -365,6 +365,18 @@ class IdentityDNACore {
     setTimeout(async () => {
       try {
         const profile = await this.loadUserProfile(userId);
+        if (profile && (profile as { status?: string | null }).status === 'deleted') {
+          /* THIS ACCOUNT WAS CLOSED (2026-09-29) - here, or on another device.
+             Closing it removed its sessions but not the access token this
+             device holds, which outlives the closure by days; the app kept
+             going as the scrubbed account, lobby and all (measured on the
+             Android emulator). The session is over: finish signing out rather
+             than show the tombstone. */
+          void this.logout().catch((err) =>
+            reportError(err, 'IdentityDNA.Closed_account_sign_out')
+          );
+          return;
+        }
         if (profile) {
           useUserStore.getState().setUser({
             id: profile.id,
@@ -417,9 +429,10 @@ class IdentityDNACore {
          never drift apart again. All eight are granted to `authenticated` -
          verified against the live schema, and it matters: per the note above,
          ONE ungranted column 403s the whole statement and the profile then
-         silently never loads. */
+         silently never loads. `status` (granted, checked 2026-09-29) is how a
+         closed account is recognised: 'deleted'. */
       .select(
-        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number`
+        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number, status`
       )
       .eq('id', userId)
       .maybeSingle();
@@ -441,7 +454,8 @@ class IdentityDNACore {
     }
 
     if (!data) return null;
-    return data as UserProfile;
+    // `status` rides along for the closed-account check in loadProfileInBackground.
+    return data as unknown as UserProfile;
   }
 
   /**

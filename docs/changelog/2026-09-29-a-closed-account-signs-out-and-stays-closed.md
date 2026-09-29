@@ -29,6 +29,15 @@ against a server answering the way GoTrue did: its first case pins the library
 behaviour (when an upgrade fixes it, that case fails and the workaround can
 go), the rest hold `logout()` to it.
 
+## And on every other device
+
+A device that was signed in when the account was closed - on this device or
+another - still holds an access token that outlives the closure by days.
+Measured on the emulator: relaunched after the closure, the app went on as the
+scrubbed account, lobby and all. IdentityDNA now reads the profile's `status`
+with the rest of the profile (granted to `authenticated`, checked), and a
+profile that says `deleted` finishes the sign-out instead of being shown.
+
 ## Why the database needed a guard too
 
 Closing an account does not end the access tokens already issued: PostgREST

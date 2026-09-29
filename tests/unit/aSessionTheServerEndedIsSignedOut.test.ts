@@ -128,6 +128,7 @@ const h = vi.hoisted(() => ({
   signOut: vi.fn(),
   removeSession: vi.fn(async () => {}),
   reportError: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -138,7 +139,7 @@ vi.mock('../../src/lib/supabase', () => ({
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
     },
-    from: vi.fn(),
+    from: h.from,
     rpc: vi.fn(),
     channel: vi.fn(),
   },
@@ -179,5 +180,55 @@ describe('IdentityDNA.logout()', () => {
     const { identityDNA } = await import('../../src/core/IdentityDNA');
     await expect(identityDNA.logout()).resolves.toBeUndefined();
     expect(h.removeSession).not.toHaveBeenCalled();
+  });
+
+  /* A device that was signed in when the account was closed - on this device
+     or another - still holds an access token that outlives the closure by
+     days. Measured on the Android emulator: relaunched, the app went on as the
+     scrubbed account, lobby and all. Its profile says 'deleted'; that ends it. */
+  it('signs a closed account out when its profile says so, and never shows the tombstone', async () => {
+    vi.useFakeTimers();
+    try {
+      h.signOut.mockResolvedValue({ error: new AuthSessionMissingError() });
+      const tombstone = { id: USER_ID, username: 'deleted-4344d850bcd6', status: 'deleted' };
+      h.from.mockReturnValue({
+        select: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: tombstone, error: null }) }),
+        }),
+      });
+      const { identityDNA } = await import('../../src/core/IdentityDNA');
+      const { useUserStore } = await import('../../src/stores/useUserStore');
+      const shown = vi.spyOn(useUserStore.getState(), 'setUser');
+      (
+        identityDNA as unknown as { loadProfileInBackground(id: string): void }
+      ).loadProfileInBackground(USER_ID);
+      await vi.runAllTimersAsync();
+      expect(h.signOut).toHaveBeenCalledTimes(1);
+      expect(h.removeSession).toHaveBeenCalledTimes(1);
+      expect(shown).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows an open account as it always did', async () => {
+    vi.useFakeTimers();
+    try {
+      const open = { id: USER_ID, username: 'a-player', status: 'active' };
+      h.from.mockReturnValue({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: open, error: null }) }) }),
+      });
+      const { identityDNA } = await import('../../src/core/IdentityDNA');
+      const { useUserStore } = await import('../../src/stores/useUserStore');
+      const shown = vi.spyOn(useUserStore.getState(), 'setUser');
+      (
+        identityDNA as unknown as { loadProfileInBackground(id: string): void }
+      ).loadProfileInBackground(USER_ID);
+      await vi.runAllTimersAsync();
+      expect(h.signOut).not.toHaveBeenCalled();
+      expect(shown).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

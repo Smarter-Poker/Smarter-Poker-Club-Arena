@@ -114,13 +114,17 @@ function fixture(operations: Op[], options: { spend?: Partial<Record<string, num
   const spend = (step: string) => {
     clock += options.spend?.[step] ?? 0;
   };
-  // The server cursor: ordinals in array order, one operation per page.
+  // The server cursor: ordinals in array order, up to `limit` operations per
+  // page, as `fn_f06_discover_breaks` pages them (see
+  // aBalancerIsNotStarvedByBreakDiscovery.law.test.ts - the manager asks for
+  // the whole page and still visits one operation per unit).
   const order = operations.map((row) => row.break_id);
   let cursor = { revision: 0, index: -1 };
   const api: any = {
     discover: vi.fn(async (expected: string, limit: number) => {
       spend('discover');
-      if (limit !== 1) throw new Error('page size changed');
+      if (!Number.isInteger(limit) || limit < 1 || limit > 32)
+        throw new Error('page size out of range');
       if (String(cursor.revision) !== expected)
         return {
           ok: false,
@@ -137,12 +141,22 @@ function fixture(operations: Op[], options: { spend?: Partial<Record<string, num
         wrapped = true;
         next = order.findIndex((breakId) => open.includes(breakId));
       }
-      cursor = { revision: cursor.revision + 1, index: next };
+      const page =
+        next < 0
+          ? []
+          : order
+              .slice(next)
+              .filter((breakId) => open.includes(breakId))
+              .slice(0, limit);
+      cursor = {
+        revision: cursor.revision + 1,
+        index: page.length ? order.lastIndexOf(page[page.length - 1]) : next,
+      };
       return {
         ok: true,
         cursor_revision: String(cursor.revision),
         wrapped,
-        operations: next < 0 ? [] : [{ ...durable.get(order[next])! }],
+        operations: page.map((breakId) => ({ ...durable.get(breakId)! })),
       };
     }),
     reconcile: vi.fn(async (breakId: string) => {
@@ -266,12 +280,14 @@ describe('a break the sweep starts is finished (2026-09-29)', () => {
       op(1, { state: 'close_confirmed', revision: '3', custody_generation: DEAD }),
     ]);
     // An earlier generation already advanced the durable cursor.
-    await f.api.discover('0', 1);
+    await f.api.discover('0', 32);
     f.api.discover.mockClear();
     await expect(f.visitAll()).resolves.toBe(true);
+    // The manager asks for the whole page and still visits one operation per
+    // unit; see aBalancerIsNotStarvedByBreakDiscovery.law.test.ts.
     expect(f.api.discover.mock.calls.slice(0, 2)).toEqual([
-      ['0', 1],
-      ['1', 1],
+      ['0', 32],
+      ['1', 32],
     ]);
     expect(f.durable.get(id(101))!.state).toBe('acknowledged');
   });

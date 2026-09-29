@@ -178,8 +178,17 @@ describe('the existing certification waits only for its engine maintenance bound
     // plus its unchanged 60s reserve. mttCaseTimeoutMs can only grow a case's
     // timeout, never shrink it below that shared 390s floor.
     const mttWorstCaseMs = caseMs + handMs + MTT_HUD_LEVEL_CAP_MS + HUD_RESERVE_MS;
+    // The cash case now starts at the same 300s + 90s as every tournament case
+    // (cash hands are long: p90 87s, p99 149s over 20,488 hands, 2026-09-29).
+    expect(suite).toMatch(
+      /test\('an already-running table stays live[\s\S]*?testInfo\.setTimeout\(testInfo\.timeout \+ CAUSAL_HAND_TIMEOUT_MS\)/
+    );
     expect(
-      jobMs - GAMEPLAY_WAIT_MS - (tournamentCount - 1) * (caseMs + handMs) - mttWorstCaseMs - caseMs
+      jobMs -
+        GAMEPLAY_WAIT_MS -
+        (tournamentCount - 1) * (caseMs + handMs) -
+        mttWorstCaseMs -
+        (caseMs + handMs)
     ).toBeGreaterThanOrEqual(5 * 60_000);
   });
 

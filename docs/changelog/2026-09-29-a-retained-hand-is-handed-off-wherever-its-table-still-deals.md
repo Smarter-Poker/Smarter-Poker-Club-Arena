@@ -4,12 +4,12 @@
 
 Fifteen minutes of engine log, 2026-09-29 02:10-02:25 UTC (engine fa480b9b):
 
-| Error | Count | Table |
-| --- | --- | --- |
-| `retained_hand_submission_readback_failed: HAND_SUBMISSION_TABLE_NOT_ADMITTED` | 113 starts | 499aa67a "NLH 1/2 Classic Feeder" |
-| `retained_hand_submission_readback_failed: HAND_SUBMISSION_HANDOFF_STATE_CHANGED` | 110 starts | 6c9ee4b6 "NLH 1/2 Madness Feeder" |
-| `watchdog_kill: start_failed:start_load_table` | 223 | the two above |
-| `HAND_SUBMISSION_PLATFORM_FROZEN` | 0 | (the :55 break; not in this window) |
+| Error                                                                             | Count      | Table                               |
+| --------------------------------------------------------------------------------- | ---------- | ----------------------------------- |
+| `retained_hand_submission_readback_failed: HAND_SUBMISSION_TABLE_NOT_ADMITTED`    | 113 starts | 499aa67a "NLH 1/2 Classic Feeder"   |
+| `retained_hand_submission_readback_failed: HAND_SUBMISSION_HANDOFF_STATE_CHANGED` | 110 starts | 6c9ee4b6 "NLH 1/2 Madness Feeder"   |
+| `watchdog_kill: start_failed:start_load_table`                                    | 223        | the two above                       |
+| `HAND_SUBMISSION_PLATFORM_FROZEN`                                                 | 0          | (the :55 break; not in this window) |
 
 (Each start logs twice, `failed_to_start` and `direct_table_start_failed`, so the
 raw line counts are 226 and 220.) Every rebuild also wrote a recovery row and
@@ -48,12 +48,12 @@ kill and a rebuild into the same answer.
 `fn_ca_resume_hand_submission`, under exact pre-image (`32cfcc98...`) and
 post-image (`e0046c68...`) assertions:
 
-- *admission*: a cash table is admitted in every lifecycle but `closed`;
+- _admission_: a cash table is admitted in every lifecycle but `closed`;
   tournament tables unchanged.
-- *dealt_roster*: the hand's players roster must equal its stack rows; an
+- _dealt_roster_: the hand's players roster must equal its stack rows; an
   unnamed chair is admitted whenever it sat down, and still refuses if its
   player is a hand player or it sits in a dealt seat.
-- *disposal*: when the lowest unfinished request lies below a committed hand
+- _disposal_: when the lowest unfinished request lies below a committed hand
   on a cash table, the door itself writes the receipted zero-credit disposal
   (new `smarter_private.hand_submission_dispose_dealt_past`, the proofs of
   `fn_ca_dispose_superseded_hand_submissions`) and reads the next request. A

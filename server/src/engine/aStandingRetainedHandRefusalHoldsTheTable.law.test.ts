@@ -143,7 +143,10 @@ describe('start() fences a standing refusal instead of killing for restart', () 
     await expect(engine.start()).rejects.toBe(refusal);
     const observed = await seen;
     expect(observed.value).toBe(false);
-    expect(observed.refusal).toEqual({ code: 'HAND_SUBMISSION_TABLE_NOT_ADMITTED', tableId: TABLE });
+    expect(observed.refusal).toEqual({
+      code: 'HAND_SUBMISSION_TABLE_NOT_ADMITTED',
+      tableId: TABLE,
+    });
     expect(Object.isFrozen(observed.refusal)).toBe(true);
     expect(killed).toEqual([]);
     expect(engine.recordRecoveryEvent).not.toHaveBeenCalled();
@@ -279,9 +282,14 @@ describe('GameServer holds a refused cash table and says so once', () => {
     expect(server.directTableRecoveryTimers.size).toBe(0);
     expect(server.engineStartFailures).toBe(0);
     expect(reports()).toHaveLength(1);
-    expect(reports()[0][2]).toMatchObject({ tableId: TABLE, code: 'HAND_SUBMISSION_TABLE_NOT_ADMITTED' });
+    expect(reports()[0][2]).toMatchObject({
+      tableId: TABLE,
+      code: 'HAND_SUBMISSION_TABLE_NOT_ADMITTED',
+    });
     expect(
-      vi.mocked(errors.reportError).mock.calls.some(([, w]) => w === 'GameServer.direct_table_start_failed')
+      vi
+        .mocked(errors.reportError)
+        .mock.calls.some(([, w]) => w === 'GameServer.direct_table_start_failed')
     ).toBe(false);
 
     // Held: no read, no lease, no engine, no report until the recheck is due.

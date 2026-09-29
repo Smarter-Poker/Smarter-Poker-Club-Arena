@@ -47,13 +47,11 @@ const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
 
 /** Every v_old/v_new pair the patch block applies, in order. */
 function edits(): Array<{ name: string; old: string; next: string }> {
-  const block = FILE.slice(
-    FILE.indexOf('DO $retained_patch$'),
-    FILE.indexOf('$retained_patch$;')
-  );
+  const block = FILE.slice(FILE.indexOf('DO $retained_patch$'), FILE.indexOf('$retained_patch$;'));
   const out: Array<{ name: string; old: string; next: string }> = [];
   const re = /-- (\w+)\n {2}v_old := \$a\$([\s\S]*?)\$a\$;\n {2}v_new := \$b\$([\s\S]*?)\$b\$;/g;
-  for (let m = re.exec(block); m; m = re.exec(block)) out.push({ name: m[1], old: m[2], next: m[3] });
+  for (let m = re.exec(block); m; m = re.exec(block))
+    out.push({ name: m[1], old: m[2], next: m[3] });
   return out;
 }
 
@@ -76,9 +74,7 @@ describe('the migration asserts exactly what it replaces and what it leaves', ()
   it('refuses unless the live door is the exact pre-image, and proves the post-image', () => {
     expect(FILE).toContain(`AND md5(p.prosrc) = '${PRE_MD5}'`);
     expect(FILE).toContain(`AND md5(p.prosrc) = '${POST_MD5}'`);
-    expect(FILE).toContain(
-      "AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'"
-    );
+    expect(FILE).toContain("AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'");
     expect(FILE).toContain("AND p.proconfig = ARRAY['search_path=pg_catalog, public']");
     expect(FILE).toContain(`@live-proof: (SELECT md5(prosrc)='${POST_MD5}'`);
   });
@@ -101,7 +97,9 @@ describe('admission: a cash table is admitted wherever it deals', () => {
   const e = () => edits().find((x) => x.name === 'admission')!;
 
   it('the old rule admitted a cash table only while live', () => {
-    expect(e().old).toContain("AND (lifecycle='live' OR (tour IS NOT NULL AND lifecycle IS NULL)))");
+    expect(e().old).toContain(
+      "AND (lifecycle='live' OR (tour IS NOT NULL AND lifecycle IS NULL)))"
+    );
   });
 
   it("the new rule admits every cash lifecycle but 'closed' and leaves tournaments unchanged", () => {
@@ -135,7 +133,9 @@ describe('dealt_roster: who was dealt in is read from the hand', () => {
     expect(next).toContain(
       "AND (late.user_id IN (SELECT (x->>'user_id')::uuid FROM jsonb_array_elements(q->'p_stacks') x)"
     );
-    expect(next).toContain("OR late.seat_number::text IN (SELECT x->>'seat' FROM jsonb_array_elements(");
+    expect(next).toContain(
+      "OR late.seat_number::text IN (SELECT x->>'seat' FROM jsonb_array_elements("
+    );
   });
 });
 
@@ -184,9 +184,13 @@ describe('the money path is untouched', () => {
       for (const text of [old, next]) {
         expect(text).not.toContain('fn_ca_commit_hand_settlement');
         expect(text).not.toContain('hand_submission_handoffs(');
-        expect(text).not.toMatch(/UPDATE public\.table_seats|INSERT INTO public\.(chip_ledger|club_members)/);
+        expect(text).not.toMatch(
+          /UPDATE public\.table_seats|INSERT INTO public\.(chip_ledger|club_members)/
+        );
       }
     }
-    expect(FILE).not.toMatch(/UPDATE public\.table_seats|INSERT INTO public\.(chip_ledger|club_members)/);
+    expect(FILE).not.toMatch(
+      /UPDATE public\.table_seats|INSERT INTO public\.(chip_ledger|club_members)/
+    );
   });
 });

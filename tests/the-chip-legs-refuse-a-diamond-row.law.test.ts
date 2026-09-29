@@ -244,6 +244,12 @@ describe('LAW: the chip legs refuse a Diamond row', () => {
       'INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note)'
     );
     expect(offenders(TABLES)).toEqual([]);
+    // the ten locks are taken together and never queued for, before the first trigger
+    expect(TRIGGERS).toContain('IN SHARE ROW EXCLUSIVE MODE NOWAIT;');
+    expect(TRIGGERS).toContain('EXCEPTION WHEN lock_not_available THEN');
+    expect(TRIGGERS.indexOf('IN SHARE ROW EXCLUSIVE MODE NOWAIT;')).toBeLessThan(
+      TRIGGERS.indexOf('CREATE TRIGGER aa_poker_arena_no_chip_money')
+    );
     expect(code(TABLES)).not.toContain('tournament_rake_settlements');
     expect(TABLES.indexOf('-- 3. THE ESTATE IS AS IT WAS')).toBeLessThan(
       TABLES.indexOf('CREATE TRIGGER aa_poker_arena_no_chip_money')

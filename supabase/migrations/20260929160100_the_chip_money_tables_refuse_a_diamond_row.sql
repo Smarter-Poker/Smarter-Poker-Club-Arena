@@ -28,7 +28,10 @@
 -- A migration of its own: CREATE TRIGGER takes SHARE ROW EXCLUSIVE on each of
 -- these tables, which stops every writer to them until the transaction ends.
 -- The triggers are therefore created last, after every slow proof, and the
--- rehearsal around them is a fraction of a second.
+-- rehearsal around them is a fraction of a second. The ten locks are taken
+-- together and never queued for (NOWAIT, retried for up to a minute): a
+-- settlement already holding one of these tables is never made to wait
+-- behind this migration, and no new writer queues behind a pending request.
 -- ============================================================================
 
 BEGIN;
@@ -178,6 +181,33 @@ END $m$;
 -- An UPDATE can make a row the arena's only by changing a column that names
 -- it, so only those columns wake the fence on UPDATE; a balance or a stamp
 -- written to a chip row pays nothing for it.
+--
+-- The ten tables are locked first, all at once and without queueing: an
+-- attempt that meets a busy table is refused on the spot (NOWAIT) and gives
+-- back whatever it took; the next follows 50 ms later. Production writes to
+-- these tables in transactions that last seconds, and a queued request would
+-- stall every settlement behind it for as long as it waited.
+DO $m$
+DECLARE
+  v_deadline timestamptz := clock_timestamp() + interval '60 seconds';
+BEGIN
+  LOOP
+    BEGIN
+      LOCK TABLE public.chip_ledger, public.rake_records, public.rake_attributions, public.bbj_contributions,
+                 public.accounting_cash_rake_sources, public.club_wallets, public.bbj_pools,
+                 public.tournament_tickets, public.tournament_guarantee_overlays,
+                 public.accounting_tournament_fee_sources
+        IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      IF clock_timestamp() >= v_deadline THEN
+        RAISE EXCEPTION 'the chip money tables stayed busy for a minute; nothing was changed' USING ERRCODE = '55P03';
+      END IF;
+      PERFORM pg_sleep(0.05);
+    END;
+  END LOOP;
+END $m$;
+
 CREATE TRIGGER aa_poker_arena_no_chip_money BEFORE INSERT OR UPDATE OF club_id, table_id, tournament_id ON public.chip_ledger
   FOR EACH ROW EXECUTE FUNCTION public.fn_poker_reject_diamond_chip_money();
 CREATE TRIGGER aa_poker_arena_no_chip_money BEFORE INSERT OR UPDATE OF club_id, table_id, tournament_id ON public.rake_records

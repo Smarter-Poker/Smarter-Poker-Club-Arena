@@ -1475,6 +1475,56 @@ export abstract class TournamentManagerBase {
     return true;
   }
 
+  /**
+   * A PAUSE THIS MANAGER ARMED IS THIS MANAGER'S TO GIVE BACK (2026-09-28).
+   *
+   * `prepareManagedTableEngineForPlay` arms an absolute `untilResumed` hold
+   * from `onBreak`/`stageEndPause`, and the one thing that lifts it is the
+   * loop in `resumeFromBreak()`. That loop runs ONCE, over `this.tableEngines`
+   * as it stands at that instant, and the same call writes `onBreak = false` -
+   * which makes `resumeFromBreak()` early-return for the rest of the event.
+   * So the release is a single sweep at a single instant, and a dealer that is
+   * not in the map at that instant is never offered it at all.
+   *
+   * There is a real window. `performManagedTableEngineRecovery` arms the
+   * replacement BEFORE `await this.gameServer.replaceTableEngine(...)` - the
+   * order `TournamentEngineRecovery.guard.test.ts` pins, because the dealer
+   * must inherit the hold before it can be published - and joins it to
+   * `tableEngines` only after that await returns. `resumeFromBreak()` has
+   * awaits of its own (the durable clear, the `break_ended` broadcast), so it
+   * can complete the whole release between the arm and the join and leave the
+   * replacement holding a break that is over, with no caller left anywhere in
+   * this manager that would look at it again.
+   *
+   * The release is therefore offered at the table's own park edge rather than
+   * at the break's end instant: `onPauseReady` fires from inside
+   * `awaitPauseGate()` the moment a dealer is physically parked waiting for
+   * someone to lift its pause, it is wired on EVERY managed engine
+   * (`wireEliminationWake`), and it is republished on every park. Not a timer
+   * and not a sweep - the same causal edge `advanceHandForHandBarrier` and the
+   * stage-end barrier already answer.
+   *
+   * `requiresExplicitPauseResume()` is the exact question, not an
+   * approximation: the engine raises it only for the `untilResumed` shape only
+   * this manager arms, and `resumeDealing()` lowers it on the way out, so it
+   * reads true precisely while this manager still owes this table a release.
+   */
+  protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
+    if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    // Every authority that may still own this hold, in the order the arm
+    // considered them. While one of these is true the pause has a living
+    // owner and a release here would deal through it.
+    if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
+    if (this.addOnBreakActive && this.addOnBreakOwnsPause) return;
+    try {
+      engine.resumeDealing();
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.managed_table_pause_release_failed', {
+        tournamentId: this.tournamentId,
+      });
+    }
+  }
+
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
@@ -2381,6 +2431,9 @@ export abstract class TournamentManagerBase {
       }
     });
     engine.onPauseReady(() => {
+      // A dealer parked on a hold this manager armed and no longer owns is
+      // released here, by the authority that armed it. See the method.
+      this.releaseManagedTablePauseIfUnowned(engine);
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();

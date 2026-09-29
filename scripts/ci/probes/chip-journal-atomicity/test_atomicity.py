@@ -576,7 +576,23 @@ if mode=="fixed":
   "player_wallet":"(SELECT chip_balance FROM club_members)=95",
   "post_leg":"(SELECT chip_treasury FROM clubs)=105",
   "treasury_credit":"(SELECT chip_treasury FROM clubs)=105",
-  "rake_distribution":"(SELECT chip_treasury FROM clubs)=105 AND (SELECT period_rake_collected FROM club_wallets)=5",
+  # A standalone club's cash rake is RETIRED, not credited to its treasury.
+  # This expectation used to read chip_treasury=105. That was the behaviour
+  # main's migration history replays to, and it has not been production's
+  # behaviour for some time: the live atomic_distribute_rake contains no
+  # 'club_chip_treasury' at all, and accounting_cash_bank_receipts shows
+  # standalone burn receipts running continuously at 600-1550/hour through
+  # 2026-09-28 22:00 to 2026-09-29 12:00 UTC, with no step change at the
+  # 04:04 UTC application of 20260929040413. The drift was invisible while
+  # no migration file recorded the live body; mirroring it byte-exact is
+  # what surfaced this. The treasury is asserted UNCHANGED, and the rake is
+  # asserted to land in the club wallet and in a retirement leg, so the
+  # money is still proved to arrive somewhere rather than simply not
+  # arriving in the treasury.
+  "rake_distribution":"(SELECT chip_treasury FROM clubs)=100"
+    " AND (SELECT period_rake_collected FROM club_wallets)=5"
+    " AND EXISTS(SELECT 1 FROM chip_ledger WHERE to_type='chip_retirement' AND category='burn' AND amount=5)"
+    " AND EXISTS(SELECT 1 FROM accounting_cash_bank_receipts WHERE club_ledger_id IS NOT NULL AND amount=5)",
   "seat_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
   "reload_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
  }

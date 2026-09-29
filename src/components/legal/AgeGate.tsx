@@ -41,6 +41,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import { reportError } from '../../utils/errorReporter';
+import { useHoldPromptLane } from '../../lib/promptLane';
 import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../../lib/age';
 import './TOSAcceptanceModal.css';
 import './AgeGate.css';
@@ -72,6 +73,16 @@ export default function AgeGate() {
   const [state, setState] = useState<GateState>('checking');
   const [refused, setRefused] = useState(false);
   const enabled = IS_NATIVE_BUILD || AGE_GATE_ON_WEB;
+
+  /* The gate holds the prompt lane (src/lib/promptLane.ts) for as long as the
+     answer is OWED - while it is still being looked up, while the question is
+     up (on every route, the legal pages included), and while a refusal is on
+     screen - so no other sheet rises underneath it or lands the moment it
+     closes. */
+  useHoldPromptLane(
+    'age',
+    enabled && (refused || (!isHydrating && Boolean(user?.id) && state !== 'verified'))
+  );
 
   /* THE GATE ASKS THE SERVER, AND FAILS CLOSED (2026-09-29).
      This used to read `birthday, age_verified` off the player's own profile.

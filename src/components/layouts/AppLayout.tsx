@@ -24,6 +24,7 @@ import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProf
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { useHoldPromptLane } from '../../lib/promptLane';
 
 // The Daily Club Arena Bonus sheet is not first-paint material: the entry
 // chunk stays as it was and the sheet, its service and the club-buttons kit
@@ -62,6 +63,12 @@ function AppLayoutContent() {
     profileStatus,
     finishProfile,
   } = useCompleteProfile(user);
+
+  // The first-run welcome and the profile gate hold the prompt lane while
+  // they are up, so the analytics and notifications sheets wait behind them
+  // (src/lib/promptLane.ts). The daily bonus already waits via `suspended`.
+  useHoldPromptLane('welcome', isReady && !!user && showWelcome);
+  useHoldPromptLane('profile', profileReady && showProfileModal);
 
   // Hide global header on table and tournament play pages
   const isTablePage =

@@ -30,6 +30,15 @@
  * marking it done forever would mean the real permission prompt never runs
  * either.
  *
+ * ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). The twenty-second
+ * timer used to start at sign-in whatever else was on screen, so on the
+ * first device run this sheet rose while the terms were still up, sat under
+ * the age gate, stacked with the analytics question once the gate closed,
+ * and stayed on the sign-in form after an under-18 refusal signed the
+ * account out. Now it is LAST in the soft-ask order, its delay counts only
+ * while the lane is clear, it shows only while it holds the turn, and a
+ * sign-out or a different account starts it over.
+ *
  * Copy is Title Case with no em dashes, per CLAUDE.md section 5.7.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -43,6 +52,7 @@ import {
   notificationPermission,
 } from '../../lib/pushClient';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { usePromptTurn } from '../../lib/promptLane';
 import './FirstRunPushPrompt.css';
 
 /**
@@ -127,6 +137,8 @@ export default function FirstRunPushPrompt() {
   const [pending, setPending] = useState<PendingAsk>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const turn = usePromptTurn('push', Boolean(userId) && state !== null);
+  const laneClear = turn.clear;
   const mounted = useRef(true);
   /** The eligibility check is one-shot: it reads storage and the subscription. */
   const decided = useRef(false);
@@ -147,6 +159,17 @@ export default function FirstRunPushPrompt() {
     } catch {
       /* private mode */
     }
+  }, [userId]);
+
+  /* A different account, or none, starts over: nothing decided for the last
+     one carries across a sign-out. Declared before the decision below so a
+     new account is reset first and then decided. */
+  useEffect(() => {
+    decided.current = false;
+    answered.current = false;
+    setPending(null);
+    setState(null);
+    setError(null);
   }, [userId]);
 
   /* ── Decide WHAT to ask. Runs once, and never on the route. ──────────── */
@@ -205,12 +228,14 @@ export default function FirstRunPushPrompt() {
     // `suppressed` is a dependency, so leaving the felt re-runs this and starts
     // a fresh delay. Nothing is consumed while the player is on a bad screen:
     // the timer is simply never armed there.
-    if (!pending || state || suppressed) return undefined;
+    // `laneClear` joins it for the same reason: nothing is spent while a gate
+    // or another sheet is up, and the delay starts over once they are gone.
+    if (!pending || state || suppressed || !laneClear) return undefined;
     const t = setTimeout(() => {
       if (mounted.current) setState(pending);
     }, SHOW_DELAY_MS);
     return () => clearTimeout(t);
-  }, [pending, state, suppressed]);
+  }, [pending, state, suppressed, laneClear]);
 
   const handleEnable = async () => {
     if (busy) return;
@@ -276,7 +301,7 @@ export default function FirstRunPushPrompt() {
     setState(null);
   };
 
-  if (!state) return null;
+  if (!state || !userId || !turn.onScreen) return null;
 
   return (
     <div

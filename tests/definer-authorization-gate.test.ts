@@ -26,9 +26,16 @@ type Verdict = (sql: string, allowlist?: Set<string>, grantSql?: string) => stri
 let unauthorisedWriters: Verdict;
 let anonReadableDefiners: Verdict;
 let unrevokedClones: Verdict;
-let unscopedRosterDefiners: Verdict;
+type AggregateReview = Map<string, { declarationSha256: string; reason: string }>;
+let unscopedRosterDefiners: (
+  sql: string,
+  allowlist?: Set<string>,
+  grantSql?: string,
+  authenticatedAggregates?: AggregateReview
+) => string[];
 let clonedFunctions: (sql: string) => string[];
 let stripComments: (sql: string) => string;
+let droppedFunctions: (sql: string) => Set<string>;
 let effectiveGrants: (
   sql: string,
   name: string
@@ -50,6 +57,7 @@ beforeAll(async () => {
   clonedFunctions = mod.clonedFunctions;
   effectiveGrants = mod.effectiveGrants;
   stripComments = mod.stripComments;
+  droppedFunctions = mod.droppedFunctions;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -296,11 +304,10 @@ describe('the allowlist stays small and reasoned', () => {
     )
   );
 
-  it('holds only the two functions that were read line by line', () => {
-    expect(Object.keys(allow.reviewedExceptions).sort()).toEqual([
-      'get_current_settlement_period',
-      'recalculate_leaderboard_ranks',
-    ]);
+  it('holds only the one function still exposed, read line by line', () => {
+    // get_current_settlement_period left on 2026-09-22: no browser role can
+    // execute either overload, so its exception was forgiving nothing.
+    expect(Object.keys(allow.reviewedExceptions).sort()).toEqual(['recalculate_leaderboard_ranks']);
   });
 
   it('gives every entry a reason long enough to be a reason', () => {
@@ -691,5 +698,130 @@ AS $function$ SELECT * FROM bbj_unclaimed_shares WHERE paid_at IS NULL; $functio
     // A genuinely public list - a leaderboard, a lobby - is allowed, once
     // somebody writes down why every row in it is safe for anyone to read.
     expect(unscopedRosterDefiners(SHIPPED, new Set(['fn_bbj_unclaimed_shares']))).toEqual([]);
+  });
+});
+
+describe('an authenticated aggregate is an exact reviewed declaration', () => {
+  const name = 'fn_smarter_poker_pulse_cron_counts';
+  const sql = readFileSync(
+    resolve(
+      __dirname,
+      '../supabase/migrations/20260927041025_pulse_cron_aggregates_preserve_caller_product_privacy.sql'
+    ),
+    'utf8'
+  );
+  const manifest = JSON.parse(
+    readFileSync(resolve(__dirname, '../scripts/ci/definer-authorization.allowlist.json'), 'utf8')
+  );
+  const reviews: AggregateReview = new Map(Object.entries(manifest.authenticatedAggregates));
+  const verdict = (candidate: string, grants = candidate, review = reviews) =>
+    unscopedRosterDefiners(candidate, new Set(), grants, review);
+
+  it('reproduces the generic roster false positive without reviewed evidence', () => {
+    expect(unscopedRosterDefiners(sql)).toEqual([name]);
+    expect(verdict(sql)).toEqual([]);
+    expect(unauthorisedWriters(sql)).toEqual([]);
+    expect(anonReadableDefiners(sql)).toEqual([]);
+    expect(unrevokedClones(sql)).toEqual([]);
+    expect(manifest.anonPublicSurface).not.toHaveProperty(name);
+  });
+
+  it.each([
+    sql.replace('count(*)::numeric', 'd.jobid::numeric'),
+    sql.replace("interval '24 hours'", "interval '25 hours'"),
+    sql.replace("SET search_path TO ''", 'SET search_path TO public'),
+    sql.replace('RETURNS TABLE(cron_jobs_active bigint', 'RETURNS TABLE(job_id bigint'),
+    sql.replaceAll(name, 'fn_other_aggregate'),
+  ])('refuses a changed body, header or function identity', (candidate) => {
+    expect(verdict(candidate)).toHaveLength(1);
+  });
+
+  it.each(['PUBLIC', 'anon'])('refuses a later %s grant in the branch', (role) => {
+    const grants = sql + `\nGRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`;
+    expect(verdict(sql, grants)).toEqual([name]);
+    expect(anonReadableDefiners(sql, new Set(), grants)).toEqual([name]);
+  });
+
+  it.each(['PUBLIC', 'anon'])('refuses standalone %s grants without a declaration', (role) => {
+    const grant = `GRANT EXECUTE ON FUNCTION public.${name}() TO ${role};`;
+    expect(verdict(grant)).toEqual([name]);
+    const closed = grant + `\nREVOKE EXECUTE ON FUNCTION public.${name}() FROM ${role};`;
+    expect(verdict(closed)).toEqual([]);
+  });
+
+  it('preserves standalone authenticated and service grants without inventing anonymous access', () => {
+    expect(
+      verdict(`GRANT EXECUTE ON FUNCTION public.${name}() TO authenticated,service_role;`)
+    ).toEqual([]);
+  });
+
+  it('refuses missing hash or review and retains writer checks', () => {
+    expect(
+      verdict(sql, sql, new Map([[name, { declarationSha256: '', reason: 'name only' }]]))
+    ).toEqual([name]);
+    expect(verdict(sql, sql, new Map([[name, { ...reviews.get(name)!, reason: '' }]]))).toEqual([
+      name,
+    ]);
+    const write = sql.replace('  SELECT\n', '  DELETE FROM public.profiles; SELECT\n');
+    expect(unauthorisedWriters(write)).toEqual([name]);
+    expect(verdict(write)).toEqual([name]);
+  });
+});
+
+/**
+ * A FUNCTION THE BRANCH DROPS CANNOT BE REACHED BY ANYBODY (2026-09-21).
+ *
+ * Grants are already read across the whole branch, because a branch is applied
+ * as a unit. A DROP is the same fact carried one step further. This arose when
+ * 20260921023309 declared fn_ca_reconcile_treasury_positions and
+ * 20260921024924 renamed and dropped it - an applied, byte-exactly recorded
+ * migration cannot be edited, so a rename MUST ship as declare-in-one-file,
+ * drop-in-the-next, and the gate went on reporting a function that no longer
+ * exists. check-no-new-band-aids.mjs has read drops branch-wide since
+ * 2026-09-07 for exactly this reason.
+ *
+ * The danger in a rule like this is that it becomes a way through, so these
+ * pin the narrowness as hard as the behaviour.
+ */
+describe('a dropped function is not a finding, and the drop has to be real', () => {
+  const DROPPED_LATER = `
+DROP FUNCTION IF EXISTS public.increment_member_count(uuid, integer);
+`;
+
+  it('reads a DROP out of SQL, with or without IF EXISTS and public.', () => {
+    expect([...droppedFunctions('DROP FUNCTION public.fn_a();')]).toEqual(['fn_a']);
+    expect([...droppedFunctions('drop function if exists fn_b(text, uuid);')]).toEqual(['fn_b']);
+    expect([...droppedFunctions('DROP FUNCTION IF EXISTS public."fn_c"();')]).toEqual(['fn_c']);
+  });
+
+  it('does NOT read a DROP written in prose - a comment proves nothing', () => {
+    // Every one of these migrations quotes what it is about in its header. If a
+    // sentence could retire a function from this gate, the header would be the
+    // exploit.
+    expect([
+      ...droppedFunctions('-- DROP FUNCTION public.fn_a(); is what we will do later'),
+    ]).toEqual([]);
+    expect([...droppedFunctions('/* DROP FUNCTION public.fn_a(); */')]).toEqual([]);
+  });
+
+  it('still reports the open writer when nothing drops it', () => {
+    // The guard rail on the guard rail: without the DROP this is exactly the
+    // shape that shipped nineteen times.
+    expect(unauthorisedWriters(OPEN_WRITER)).toEqual(['increment_member_count']);
+    expect(droppedFunctions(OPEN_WRITER).has('increment_member_count')).toBe(false);
+  });
+
+  it('a DROP elsewhere in the branch retires it from every rule', () => {
+    // The rules themselves are unchanged - main() filters their output by the
+    // branch-wide drop set - so what is asserted here is that the drop is
+    // visible in the concatenated branch text the filter is built from.
+    const branch = OPEN_WRITER + DROPPED_LATER;
+    expect(droppedFunctions(branch).has('increment_member_count')).toBe(true);
+  });
+
+  it('a function that merely stops being CALLED is untouched', () => {
+    const branch = OPEN_WRITER + '\n-- nothing calls increment_member_count any more\n';
+    expect(droppedFunctions(branch).has('increment_member_count')).toBe(false);
+    expect(unauthorisedWriters(branch)).toEqual(['increment_member_count']);
   });
 });

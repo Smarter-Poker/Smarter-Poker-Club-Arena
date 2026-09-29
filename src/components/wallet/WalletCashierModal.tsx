@@ -93,7 +93,8 @@ import { useRecentRecipients } from '../../hooks/useRecentRecipients';
 import { fuzzyMatch } from '../../utils/fuzzyMatch';
 
 import { reportError } from '../../utils/errorReporter';
-import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
+import { readCashierBalances } from '../../services/cashierBalanceRead';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { roleLabel, normaliseRole, roleRank } from '../../types/clubRoles';
 import { canMintInClubBank, canHoldAgentWallet } from './walletRows';
 import {
@@ -118,6 +119,7 @@ import {
 } from './cashierModes';
 import { cashierRecipientBlock } from '../../lib/cashierRoster';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 import { downloadBlob } from '../../utils/downloadCsv';
@@ -234,25 +236,31 @@ interface WalletCashierModalProps {
   walletType?: CashierWalletType;
 }
 
+/**
+ * A chip figure on the glass. Dan: "NEVER USE DECIMAL POINTS ON ANY FORWARD
+ * FACING PAGE", so a whole balance prints 12,500 and not 12,500.00 (the
+ * render showed ".00" on the Club Bank and on every member row). A cashier
+ * never misstates the ledger, so a figure that really carries cents keeps
+ * them. No test pins two-decimal DISPLAY on this surface: the two-decimal law
+ * is about what is stored and sent, and every amount this cashier sends is a
+ * whole chip already (amountIsWhole).
+ *
+ * Unknown is "...", and a value that is not a number is "Unavailable" - it
+ * used to print a confident 0.00, which is an invented balance.
+ */
 const fmt = (n?: number | null) =>
   n === undefined || n === null
     ? '...'
-    : (Number.isFinite(n) ? n : 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+    : Number.isFinite(n)
+      ? n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      : 'Unavailable';
 
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** "Club Bank Send" from "club_bank_send". Popup and label casing law. */
-function titleCase(raw: string): string {
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
+/* "Club Bank Send" from "club_bank_send" is `enumToTitleCase`, the house
+   transform in src/utils/titleCase.ts. A local copy lived here and lower-cased
+   the tail of every word, so an initialism printed as "Bbj Promo Sweep". Names
+   and notes that come out of a row go through `titleCase` where they print. */
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -421,106 +429,44 @@ export default function WalletCashierModal({
     if (coerceToAgentWallet && destination !== 'agent_wallet') setDestination('agent_wallet');
   }, [coerceToAgentWallet, destination]);
 
-  // ── Club + bank balance ───────────────────────────────────────────────────
-  const loadClub = useCallback(async () => {
-    if (!clubId) {
-      /* Returning before setClubLoading(false) left `clubLoading` true
-         forever, which SUPPRESSES the "That Club Could Not Be Resolved" note
-         below and shows "..." where the balance belongs, permanently. */
-      setClubUuid(null);
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubLoading(true);
-    setBank(null);
-    // resolveClubUUID NEVER returns null - on a failed lookup it hands back
-    // whatever it was given, so `|| clubId` catches nothing. A 6-digit club
-    // CODE reaching a uuid RPC argument is a raw postgres error at the worst
-    // moment, so the failure is caught here instead.
-    const uuid = await resolveClubUUID(clubId);
-    if (!isMounted.current) return;
-    if (!isUUID(uuid)) {
-      setClubUuid(null);
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubUuid(uuid);
-    const { data: club, error: clubReadError } = await supabase
-      .from('clubs')
-      .select('id, name, union_id, chip_treasury, promo_balance')
-      .eq('id', uuid)
-      .maybeSingle();
-    if (!isMounted.current) return;
-    /* A READ THAT FAILED IS NOT A TREASURY OF ZERO. Every balance below used
-       to be `Number(undefined) || 0`, so an RLS refusal or a dropped
-       connection printed a confident 0.00 as the Club Bank - and `cap` became
-       0, so every send was refused with "The Wallet Only Holds 0 Chips". Left
-       null, the header renders "..." and the note says it could not be read. */
-    if (clubReadError) {
-      reportError(clubReadError, 'WalletCashierModal.loadClub');
-      setBank(null);
-      setClubLoading(false);
-      return;
-    }
-    setClubUuid(uuid);
-    setClubName((club?.name as string) || 'Club');
-    setInUnion(club ? Boolean(club.union_id) : null);
+  const balanceScopeRef = useRef(0);
 
-    if (walletType === 'promo_wallet') {
-      /* BOTH promo accounts are read, every time. The pot came off the club
-         row above; the float is the viewer's own agents row. `bank` - the
-         figure this cashier spends against - is derived from whichever source
-         is selected, below, so a source switch never waits on a refetch. A
-         bank role with no agents row has no float: null, never 0.00. */
-      setPromoPot(
-        club?.promo_balance !== undefined && club?.promo_balance !== null
-          ? Number(club?.promo_balance)
-          : null
-      );
-      const { data: agent, error: agentReadError } = await supabase
-        .from('agents')
-        .select('promo_wallet_balance')
-        .eq('club_id', uuid)
-        .eq('user_id', user?.id)
-        .maybeSingle();
-      if (agentReadError) {
-        reportError(agentReadError, 'WalletCashierModal.loadClub_promo_wallet');
-        setPromoFloat(null);
-      } else {
-        setPromoFloat(
-          agent?.promo_wallet_balance !== undefined && agent?.promo_wallet_balance !== null
-            ? Number(agent?.promo_wallet_balance)
-            : null
-        );
-      }
-    } else if (walletType === 'agent_wallet') {
-      const { data: agent, error: agentReadError } = await supabase
-        .from('agents')
-        .select('agent_wallet_balance')
-        .eq('club_id', uuid)
-        .eq('user_id', user?.id)
-        .maybeSingle();
-      if (agentReadError) {
-        reportError(agentReadError, 'WalletCashierModal.loadClub_agent_wallet');
-        setBank(null);
-      } else {
-        setBank(
-          agent?.agent_wallet_balance !== undefined && agent?.agent_wallet_balance !== null
-            ? Number(agent?.agent_wallet_balance)
-            : null
-        );
-      }
-    } else {
-      setBank(
-        club?.chip_treasury !== undefined && club?.chip_treasury !== null
-          ? Number(club?.chip_treasury)
-          : null
-      );
-    }
-    setClubLoading(false);
-  }, [clubId, walletType, user?.id, isMounted]);
+  // clubs and agents are deliberately excluded from Realtime publication.
+  // Read only while this cashier is open and visible, rather than publishing
+  // every hand's treasury/agent updates across the platform. Money commands
+  // still authorize and lock the actual balance inside their transaction.
+  const loadClub = useVisibleRead({
+    scopeKey: `${clubId}:${user?.id}:${walletType}`,
+    enabled: isOpen && allowed && Boolean(clubId && user?.id),
+    read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
+    onReset: () => {
+      balanceScopeRef.current++;
+      setClubUuid(null);
+      setBank(null);
+      setPromoPot(null);
+      setPromoFloat(null);
+      setInUnion(null);
+      setClubLoading(isOpen && allowed && Boolean(clubId && user?.id));
+    },
+    onData: (snapshot) => {
+      setClubUuid(snapshot.clubId);
+      setClubName(snapshot.name);
+      setInUnion(snapshot.inUnion);
+      if (walletType !== 'promo_wallet') setBank(snapshot.bank);
+      setPromoPot(snapshot.promoPot);
+      setPromoFloat(snapshot.promoFloat);
+      setClubLoading(false);
+    },
+    onError: (error) => {
+      reportError(error, 'WalletCashierModal.loadClub');
+      // An unread balance is unavailable, never zero or permission to spend.
+      setBank(null);
+      setPromoPot(null);
+      setPromoFloat(null);
+      setInUnion(null);
+      setClubLoading(false);
+    },
+  });
 
   /**
    * ── Who this cashier may transact with ────────────────────────────────────
@@ -541,11 +487,12 @@ export default function WalletCashierModal({
    */
   const loadMembers = useCallback(
     async (uuid: string) => {
+      const scope = balanceScopeRef.current;
       setMembersLoading(true);
       const { data, error } = await supabase.rpc('fn_club_cashier_members', {
         p_club_id: uuid,
       });
-      if (!isMounted.current) return;
+      if (!isMounted.current || scope !== balanceScopeRef.current) return;
       if (error) {
         /* A read that failed is not an empty club. Leaving the roster empty and
            saying so is honest; pretending the club has nobody in it would let a
@@ -583,11 +530,12 @@ export default function WalletCashierModal({
    */
   const loadReversible = useCallback(
     async (uuid: string) => {
+      const scope = balanceScopeRef.current;
       setReversibleLoading(true);
       const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
         p_club_id: uuid,
       });
-      if (!isMounted.current) return;
+      if (!isMounted.current || scope !== balanceScopeRef.current) return;
       if (error) {
         reportError(error, 'WalletCashierModal.loadReversible');
         setReversible([]);
@@ -615,7 +563,9 @@ export default function WalletCashierModal({
   const loadLedger = useCallback(
     async (uuid: string, offset: number, types: string | null) => {
       const seq = ++ledgerSeqRef.current;
-      const current = () => isMounted.current && seq === ledgerSeqRef.current;
+      const scope = balanceScopeRef.current;
+      const current = () =>
+        isMounted.current && seq === ledgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -664,7 +614,9 @@ export default function WalletCashierModal({
   const loadPromoLedger = useCallback(
     async (uuid: string, offset: number, source: PromoSource) => {
       const seq = ++promoLedgerSeqRef.current;
-      const current = () => isMounted.current && seq === promoLedgerSeqRef.current;
+      const scope = balanceScopeRef.current;
+      const current = () =>
+        isMounted.current && seq === promoLedgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
       try {
@@ -740,8 +692,7 @@ export default function WalletCashierModal({
     setClaimingId(null);
     opIdRef.current = newOpId();
     busyRef.current = false;
-    loadClub();
-  }, [isOpen, user?.id, loadClub, walletType, role]);
+  }, [isOpen, clubId, user?.id, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
   // expects of a modal and neither was here.
@@ -861,48 +812,6 @@ export default function WalletCashierModal({
       cancelled = true;
     };
   }, [tab, destination, recipient, clubUuid, isMounted]);
-
-  // ── Realtime: the bank balance is live while the cashier is open ──────────
-  // Two people funding agents at once is the normal case in a busy club, and a
-  // balance that is only correct at open time is how one of them authorises a
-  // send against money the other already moved.
-  useEffect(() => {
-    if (!isOpen || !clubUuid || !allowed) return;
-    const channel = supabase
-      .channel(`club-bank-cashier-${clubUuid}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${clubUuid}` },
-        (p) => {
-          if (!isMounted.current) return;
-          if (walletType === 'club_bank' && p.new?.chip_treasury !== undefined)
-            setBank(p.new.chip_treasury !== null ? Number(p.new.chip_treasury) : null);
-          // The club promo pot is live too: a union promo send lands while
-          // the cashier is open and the header moves without a reopen.
-          if (walletType === 'promo_wallet' && p.new?.promo_balance !== undefined)
-            setPromoPot(p.new.promo_balance !== null ? Number(p.new.promo_balance) : null);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user?.id}` },
-        (p) => {
-          if (!isMounted.current || p.new?.club_id !== clubUuid) return;
-          if (walletType === 'promo_wallet' && p.new?.promo_wallet_balance !== undefined)
-            setPromoFloat(
-              p.new.promo_wallet_balance !== null ? Number(p.new.promo_wallet_balance) : null
-            );
-          if (walletType === 'agent_wallet' && p.new?.agent_wallet_balance !== undefined)
-            setBank(
-              p.new.agent_wallet_balance !== null ? Number(p.new.agent_wallet_balance) : null
-            );
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isOpen, clubUuid, allowed, isMounted, walletType, user?.id]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
@@ -1373,11 +1282,9 @@ export default function WalletCashierModal({
         aria-label="Club Bank Cashier"
         onClick={onClose}
       >
-        <div
-          className="cbc-panel cbc-panel--denied wcm ac-popup"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
+            onClose={onClose}
             as="div"
             eyebrow={clubName || 'Club Arena'}
             title={cashierTitle}
@@ -1416,6 +1323,7 @@ export default function WalletCashierModal({
       >
         <div className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
           <SpadeConsole
+            onClose={onClose}
             as="div"
             /* The club in the header well's eyebrow, the account engraved
                beneath it, and the viewer's own standing in the well's painted
@@ -1465,7 +1373,9 @@ export default function WalletCashierModal({
                     ? 'Agent Wallet Balance'
                     : 'Club Bank Balance'}
               </span>
-              <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
+              <strong aria-live="polite">
+                {bank === null ? (clubLoading ? '...' : 'Unavailable') : fmt(bank)}
+              </strong>
               {walletType === 'promo_wallet' && clubName && (
                 <em className="cbc-bank-sub">
                   {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
@@ -1492,7 +1402,9 @@ export default function WalletCashierModal({
                     }}
                   >
                     <span>Club Promo Wallet</span>
-                    <strong>{promoPot === null ? '...' : fmt(promoPot)}</strong>
+                    <strong>
+                      {promoPot === null ? (clubLoading ? '...' : 'Unavailable') : fmt(promoPot)}
+                    </strong>
                   </button>
                   <button
                     role="radio"
@@ -1565,11 +1477,11 @@ export default function WalletCashierModal({
                     return (
                       <div key={row.transaction_id} className="cbc-tx">
                         <div className="cbc-tx-top">
-                          <span className="cbc-tx-type">{row.to_name}</span>
+                          <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
                           <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
                         </div>
                         <div className="cbc-tx-mid">
-                          <span>Into {titleCase(row.destination)}</span>
+                          <span>Into {enumToTitleCase(row.destination)}</span>
                           <span className="cbc-tx-when">
                             {Math.floor(left / 60)}m {left % 60}s Left
                           </span>
@@ -1669,13 +1581,20 @@ export default function WalletCashierModal({
                             aria-disabled={block ? true : undefined}
                             title={block ? block.reason : undefined}
                           >
-                            <div
-                              className="cbc-member-avatar"
-                              style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
-                            />
+                            {/* A photograph when there is one; no grey placeholder
+                                square when there is not - the name identifies
+                                the member. */}
+                            {m.avatar_url && (
+                              <img
+                                className="cbc-member-avatar"
+                                src={m.avatar_url}
+                                alt=""
+                                loading="lazy"
+                              />
+                            )}
                             <div className="cbc-member-info">
                               <span className="cbc-member-name">
-                                {m.name}
+                                {titleCase(m.name)}
                                 {m.user_id === user?.id && ' (You)'}
                               </span>
                               <span className="cbc-member-id">#{m.short_id}</span>
@@ -1721,7 +1640,7 @@ export default function WalletCashierModal({
                       <div className="cbc-blurb">
                         {holderHeld === null
                           ? 'Reading That Wallet...'
-                          : `${recipient.name} Holds ${fmt(holderHeld)} In That Wallet.`}
+                          : `${titleCase(recipient.name)} Holds ${fmt(holderHeld)} In That Wallet.`}
                       </div>
                     )}
                     {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
@@ -1765,8 +1684,8 @@ export default function WalletCashierModal({
                   {confirming && recipient && (
                     <div className="cbc-confirmbox" role="alert">
                       {tab === 'claim'
-                        ? `Claim ${fmt(amt)} Chips From ${recipient.name} Back Into The Club Bank?`
-                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${recipient.name}?`}
+                        ? `Claim ${fmt(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
+                        : `That Is ${Math.round((amt / (bank || 1)) * 100)} Percent Of The Club Bank. Send ${fmt(amt)} Chips To ${titleCase(recipient.name)}?`}
                     </div>
                   )}
 
@@ -1823,14 +1742,14 @@ export default function WalletCashierModal({
                     promoLedger.map((row) => {
                       const inbound = row.direction === 'in';
                       const other =
-                        row.counterparty_name ||
-                        (row.counterparty_type ? titleCase(row.counterparty_type) : 'Ledger');
+                        titleCase(row.counterparty_name) ||
+                        (row.counterparty_type ? enumToTitleCase(row.counterparty_type) : 'Ledger');
                       const note =
                         row.notes && !row.notes.startsWith('auto-ledgered') ? row.notes : null;
                       return (
-                        <div key={row.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                        <div key={row.id} className="cbc-tx">
                           <div className="cbc-tx-top">
-                            <span className="cbc-tx-type">{titleCase(row.category)}</span>
+                            <span className="cbc-tx-type">{enumToTitleCase(row.category)}</span>
                             <span
                               className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
                             >
@@ -1850,8 +1769,8 @@ export default function WalletCashierModal({
                             </span>
                           </div>
                           <div className="cbc-tx-foot">
-                            {note && <span>{note}</span>}
-                            {row.actor_name && <span>By {row.actor_name}</span>}
+                            {note && <span>{titleCase(note)}</span>}
+                            {row.actor_name && <span>By {titleCase(row.actor_name)}</span>}
                             {row.balance_after !== null && row.balance_after !== undefined && (
                               <span>Wallet After {fmt(Number(row.balance_after))}</span>
                             )}
@@ -1908,7 +1827,7 @@ export default function WalletCashierModal({
                     <div className="cbc-ledger-head">
                       <span>
                         {ledgerTotal.toLocaleString('en-US')}{' '}
-                        {typeFilter ? `${titleCase(typeFilter)} Entries` : 'Entries'}
+                        {typeFilter ? `${enumToTitleCase(typeFilter)} Entries` : 'Entries'}
                       </span>
                       <button
                         className="cbc-export"
@@ -1934,7 +1853,7 @@ export default function WalletCashierModal({
                           className={typeFilter === t ? 'cbc-chip cbc-chip--on' : 'cbc-chip'}
                           onClick={() => setTypeFilter(t)}
                         >
-                          {titleCase(t)}
+                          {enumToTitleCase(t)}
                         </button>
                       ))}
                     </div>
@@ -1950,16 +1869,19 @@ export default function WalletCashierModal({
                           className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
                         >
                           <div className="cbc-tx-top">
-                            <span className="cbc-tx-type">{titleCase(row.transaction_type)}</span>
+                            <span className="cbc-tx-type">
+                              {enumToTitleCase(row.transaction_type)}
+                            </span>
                             <span className="cbc-tx-amount">{fmt(row.amount)}</span>
                           </div>
                           <div className="cbc-tx-mid">
                             <span>
-                              {row.from_name || 'Club Bank'}
+                              {titleCase(row.from_name) || 'Club Bank'}
                               {' → '}
                               {row.transaction_type === 'club_bank_claim'
                                 ? 'Club Bank'
-                                : row.to_name || (dest ? titleCase(dest) : 'Club Bank')}
+                                : titleCase(row.to_name) ||
+                                  (dest ? enumToTitleCase(dest) : 'Club Bank')}
                             </span>
                             <span className="cbc-tx-when">
                               {new Date(row.created_at).toLocaleString('en-US', {
@@ -1971,10 +1893,10 @@ export default function WalletCashierModal({
                             </span>
                           </div>
                           <div className="cbc-tx-foot">
-                            {row.notes && <span>{row.notes}</span>}
-                            {dest && <span>Into {titleCase(dest)}</span>}
+                            {row.notes && <span>{titleCase(row.notes)}</span>}
+                            {dest && <span>Into {enumToTitleCase(dest)}</span>}
                             {src && row.transaction_type === 'club_bank_claim' && (
-                              <span>From {titleCase(src)}</span>
+                              <span>From {enumToTitleCase(src)}</span>
                             )}
                             {row.balance_after !== null && (
                               <span>Bank After {fmt(Number(row.balance_after))}</span>

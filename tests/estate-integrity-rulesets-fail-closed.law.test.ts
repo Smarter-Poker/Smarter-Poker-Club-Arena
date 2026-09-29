@@ -14,6 +14,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '..');
 const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
+const REAL_SHASUM = spawnSync('sh', ['-c', 'command -v shasum'], {
+  encoding: 'utf8',
+}).stdout.trim();
 const sandboxes: string[] = [];
 
 type FixtureMode =
@@ -22,14 +25,27 @@ type FixtureMode =
   | 'unreadable'
   | 'empty'
   | 'malformed'
-  | 'permission_blind';
+  | 'permission_blind'
+  | 'divergent'
+  | 'hash_failure';
 
 function runAudit(mode: FixtureMode) {
   const sandbox = mkdtempSync(join(tmpdir(), 'estate-integrity-rulesets-'));
   sandboxes.push(sandbox);
   const bin = join(sandbox, 'bin');
   const summary = join(sandbox, 'summary.md');
+  const hashCount = join(sandbox, 'hash-count');
   mkdirSync(bin);
+  const countedHasher = join(bin, 'shasum');
+  writeFileSync(
+    countedHasher,
+    `#!/usr/bin/env bash
+printf 'hash\\n' >> "\${ESTATE_HASH_COUNT:?}"
+[ "\${ESTATE_FIXTURE_MODE:?}" != hash_failure ] || exit 74
+exec "\${ESTATE_REAL_SHASUM:?}" "$@"
+`
+  );
+  chmodSync(countedHasher, 0o755);
 
   const fakeGh = join(bin, 'gh');
   writeFileSync(
@@ -60,10 +76,24 @@ case "\${1:-}" in
           malformed) printf '{"id":102,"target":"branch","rules":"not-an-array"}\\n' ;;
           permission_blind) printf '{"id":102,"target":"branch","enforcement":"active"}\\n' ;;
           forbidden) valid_detail 102 '[{"context":"Stage B Release Freeze"}]' ;;
-          absent) valid_detail 102 '[{"context":"Another Check"}]' ;;
+          absent|divergent|hash_failure) valid_detail 102 '[{"context":"Another Check"}]' ;;
         esac
         ;;
+      repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-autopilot.yml|repos/Smarter-Poker/Smarter-Poker-Diamond-Arena/contents/.github/workflows/agent-open-pr.yml)
+        # Recorded in estate-integrity.sh's RETIRED_PATHS: that repo's own
+        # PR #64 (d70fcbcd1928, 2026-09-18) deleted both and added a test
+        # there to keep them retired. gh prints the 404 body on STDOUT and
+        # exits 1, which is the shape this fixture has to reproduce - the
+        # audit reported those paths as zero-byte files for five days by
+        # decoding that error as if it were content.
+        printf '{"message":"Not Found","status":"404"}\\n'
+        exit 1
+        ;;
       repos/Smarter-Poker/*/contents/*)
+        if [ "\${ESTATE_FIXTURE_MODE:?}" = divergent ] && [ "$endpoint" = repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/AGENT-PLAYBOOK.md ]; then
+          printf 'ZGlmZmVyZW50Cg==\\n'
+          exit 0
+        fi
         printf 'Z3VhcmQK\\n'
         ;;
       repos/Smarter-Poker/*/git/trees/*)
@@ -95,6 +125,8 @@ esac
     env: {
       ...process.env,
       ESTATE_FIXTURE_MODE: mode,
+      ESTATE_REAL_SHASUM: REAL_SHASUM,
+      ESTATE_HASH_COUNT: hashCount,
       GH_TOKEN: 'fixture-read-token',
       GH_TOKEN_ISSUES: 'fixture-issue-token',
       GITHUB_REPOSITORY: 'Smarter-Poker/Smarter-Poker-Club-Arena',
@@ -104,7 +136,10 @@ esac
   });
 
   const report = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
-  return { result, report, combined: `${result.stdout}\n${result.stderr}\n${report}` };
+  const hashes = existsSync(hashCount)
+    ? readFileSync(hashCount, 'utf8').trim().split('\n').length
+    : 0;
+  return { result, report, hashes, combined: `${result.stdout}\n${result.stderr}\n${report}` };
 }
 
 afterEach(() => {
@@ -160,10 +195,28 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
   }, 15_000);
 
   it('does not raise a forbidden-context alarm when every detail is valid and absent', () => {
-    const { result, combined } = runAudit('absent');
+    const { result, combined, hashes } = runAudit('absent');
 
     expect(result.status).toBe(0);
     expect(combined).not.toContain('unauthorized required context');
     expect(combined).toContain('estate-integrity: 0 problem(s).');
+    expect(hashes).toBe(14);
+  }, 15_000);
+
+  it('rehashes different same-path bytes without hiding the divergent repository', () => {
+    const { result, combined, hashes } = runAudit('divergent');
+    expect(result.status).toBe(1);
+    expect(combined).toContain('AGENT-PLAYBOOK.md');
+    expect(combined).toContain('2 different versions');
+    expect(combined).toContain('Smarter-Poker-World-Hub');
+    expect(hashes).toBe(16);
+  }, 15_000);
+
+  it('refuses failed hashing and never reuses it as a successful digest', () => {
+    const { result, combined, hashes } = runAudit('hash_failure');
+    expect(result.status).toBe(1);
+    expect(combined).toContain('could not decode or hash');
+    expect(combined).not.toContain('estate-integrity: 0 problem(s).');
+    expect(hashes).toBe(96);
   }, 15_000);
 });

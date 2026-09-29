@@ -398,6 +398,7 @@ PY
   -f "$root/tests/fixtures/pnl-evidence/hooks-seed.sql" \
   -f "$root/supabase/migrations/20260921023420_the_squareup_quotes_the_recorded_eco_and_the_rake_leg_names_.sql" \
   -f "$root/supabase/migrations/20260921065613_the_tournament_rake_leg_names_the_club_it_was_earned_in.sql" \
+  -f "$root/supabase/migrations/20260925145748_the_union_send_door_credits_one_owner_and_the_squareup_check.sql" \
   -f "$root/tests/fixtures/pnl-evidence/hooks-regression.sql" 2>&1 | tee "$fixture/pnl-hooks.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$root/tests/fixtures/rakeback-write-authority/regression.sql" 2>&1 | tee "$fixture/period-authority.log"

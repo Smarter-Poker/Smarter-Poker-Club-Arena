@@ -19,7 +19,12 @@ export const settleDelay = (attempt: number) =>
  * `settle` resolves true when it ran and false when the page was busy with
  * something else; a skipped turn is retried shortly rather than counted as a
  * failure. `attempts` is the page's own failure count, bumped by the page on
- * every replay that neither settled nor was refused. */
+ * every replay that neither settled nor was refused.
+ *
+ * A background tab replays nothing (2026-09-22). While `document.hidden` the
+ * wait is held; when the tab is visible again the same wait finishes (at once,
+ * if it fell due meanwhile) rather than starting over, so switching tabs can
+ * neither skip the backoff nor stretch it. Each wait fires at most once. */
 export function useAutoSettle(pending: boolean, attempts: number, settle: () => Promise<boolean>) {
   const latest = useRef(settle);
   latest.current = settle;
@@ -33,17 +38,25 @@ export function useAutoSettle(pending: boolean, attempts: number, settle: () => 
   useEffect(() => {
     if (!pending) return;
     let cancelled = false;
-    const timer = setTimeout(
-      () => {
-        void latest.current().then((ran) => {
-          if (!cancelled && !ran) setSkipped((count) => count + 1);
-        });
-      },
-      skipped ? 400 : settleDelay(attempts)
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wait = skipped ? 400 : settleDelay(attempts);
+    const due = performance.now() + wait;
+    function run() {
+      document.removeEventListener('visibilitychange', visibility);
+      void latest.current().then((ran) => {
+        if (!cancelled && !ran) setSkipped((count) => count + 1);
+      });
+    }
+    function visibility() {
+      clearTimeout(timer);
+      timer = document.hidden ? undefined : setTimeout(run, Math.max(0, due - performance.now()));
+    }
+    document.addEventListener('visibilitychange', visibility);
+    if (!document.hidden) timer = setTimeout(run, wait);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      document.removeEventListener('visibilitychange', visibility);
     };
   }, [pending, attempts, skipped]);
 }

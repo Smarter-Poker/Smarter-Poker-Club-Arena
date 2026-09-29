@@ -194,20 +194,23 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     }
     if (structure !== 'fixed_limit') return { betting_structure: structure };
     const stage = state.stage ?? 'preflop';
+    // KILL POT (kill-v1): the HAND's effective small bet, never the table
+    // row's big blind - on a kill hand those differ, and the client must draw
+    // the same bet the controller will accept.
+    const streetBet = fixedLimitBetSize(
+      this.handController?.getFixedLimitSmallBet?.() ?? this.tableInfo?.big_blind ?? 2,
+      stage
+    );
     return {
       betting_structure: structure,
-      fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+      fixed_bet_size: streetBet,
       fixed_raise_size: fixedLimitStreetBounds(
         state.actionHistory ?? [],
         stage,
-        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+        streetBet,
         state.currentBet
       ).raiseSize,
-      wagers_capped: isFixedLimitCapped(
-        state.actionHistory ?? [],
-        stage,
-        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage)
-      ),
+      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage, streetBet),
     };
   }
 
@@ -280,6 +283,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: countdown + timed due timestamp
       // now come from the scheduler (all trigger modes), not raw arithmetic.
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
       // The money moved every hand (HandController posts it and the pot
       // showed it) but no field said so, so the felt could not print it.
@@ -512,6 +517,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: scheduler-derived, all modes,
       // plus bomb_pot_next_at (epoch ms) for the timed mode's clock.
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
       // The money moved every hand (HandController posts it and the pot
       // showed it) but no field said so, so the felt could not print it.
@@ -614,6 +621,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // client stops asking them — without it the overlay returns on the very
       // next snapshot, and on every reload, which is the complaint itself.
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
+      // 2026-09-24: the third entry state. A player released from the wait
+      // to post their own live big blind on the NEXT deal is in neither list
+      // above (postBBToEnter deletes them from both), so between the tap and
+      // the deal every client read "not waiting, not agreed" and painted
+      // whatever the seat's status said - SITTING OUT, for the one case Dan
+      // named. Published so the seat can say they are posting.
+      posting_bb_user_ids: Array.from(this.postingBBToEnter),
       // Bible V8 §2.4: Side pot information for multi-way all-ins
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
@@ -772,6 +786,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards3: [],
       hand_variant: this.activeHandVariant(),
       ...this.bombPotSnapshotFields(),
+      // KILL POTS (kill-v1): this hand's kill and the next hand's pending kill.
+      ...this.killPotSnapshotFields(),
       ...this.anteSnapshotFields(),
       current_bet: 0,
       current_player: null,
@@ -819,6 +835,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
+      posting_bb_user_ids: Array.from(this.postingBBToEnter),
       pots: [],
       action_history: [],
       players: (this.seatedPlayers ?? []).map((p) => ({

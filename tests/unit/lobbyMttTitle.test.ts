@@ -160,7 +160,11 @@ describe('lateRegEndMs — when does the door actually close', () => {
     expect(lateRegEndMs(t)).toBe(NOW - 60000 + 3 * 60000);
   });
 
-  it('uses the level window when both windows are configured', () => {
+  /* Replaced 2026-09-26 (20260926035534): this pin read "uses the level
+     window when both windows are configured" and expected the LATER level
+     close. fn_tournament_late_registration_open now closes at whichever
+     deadline passes first, so the countdown shows the earlier one. */
+  it('uses whichever window closes first when both are configured', () => {
     const t = tournamentRow({
       status: 'RUNNING',
       started_at: iso(-9 * 60000),
@@ -174,9 +178,25 @@ describe('lateRegEndMs — when does the door actually close', () => {
       ]),
     });
     const end = lateRegEndMs(t);
-    // The remainder of index 1 — level 2, four minutes — starting now.
-    expect(end).toBe(NOW + 4 * 60000); // levels keep it open longer
-    expect(end!).toBeGreaterThan(NOW + 60000); // the minutes-only close
+    // Level 2 would run four more minutes; the ten-minute clock ends in one.
+    expect(end).toBe(NOW + 60000);
+    expect(end!).toBeLessThan(NOW + 4 * 60000); // the level window's later close
+  });
+
+  it('uses the level window when it closes before the clock', () => {
+    const t = tournamentRow({
+      status: 'RUNNING',
+      started_at: iso(-9 * 60000),
+      late_reg_mins: 60,
+      late_reg_levels: 2,
+      current_level: 1,
+      level_started_at: iso(0),
+      blind_structure: JSON.stringify([
+        { level: 1, durationMinutes: 4 },
+        { level: 2, durationMinutes: 4 },
+      ]),
+    });
+    expect(lateRegEndMs(t)).toBe(NOW + 4 * 60000);
   });
 
   it('returns null when the row proves nothing', () => {

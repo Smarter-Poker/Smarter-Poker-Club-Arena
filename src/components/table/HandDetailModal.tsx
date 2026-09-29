@@ -613,6 +613,7 @@ export function HandDetailModal({
         >
           {headerStrip}
           <SpadeConsole
+            onClose={onClose}
             as="div"
             className="hdm-console"
             eyebrow="This Table"
@@ -663,6 +664,7 @@ export function HandDetailModal({
       >
         {headerStrip}
         <SpadeConsole
+          onClose={onClose}
           as="div"
           className="hdm-console"
           eyebrow={hand.tableName || 'This Table'}

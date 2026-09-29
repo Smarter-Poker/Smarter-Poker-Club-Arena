@@ -4,6 +4,18 @@ import { supabase } from '../../lib/supabase';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { reportError } from '../../utils/errorReporter';
 
+/** The base agreement that gates play, unchanged since 2026-09-14. */
+export const DIAMOND_SPINS_TERMS_VERSION = 'diamond-spins-2026-09-14-v1';
+/** The daily settlement and profit burn addendum (owner ruling 2026-09-21, R14). */
+export const DIAMOND_SPINS_ADDENDUM_VERSION = 'diamond-spins-2026-09-21-v2';
+
+interface Addendum {
+  version: string;
+  text: string;
+  accepted: boolean;
+  accepted_at: string | null;
+  profit_burn_bps: number;
+}
 interface Agreement {
   ok: true;
   is_owner: boolean;
@@ -11,7 +23,12 @@ interface Agreement {
   accepted_at: string | null;
   terms: string;
   terms_version: string;
+  addendum: Addendum;
+  acknowledged: boolean;
 }
+const acceptedAt = (value: unknown) =>
+  typeof value === 'string' && Number.isFinite(Date.parse(value));
+const percent = (bps: number) => `${(bps / 100).toLocaleString()}%`;
 export default function DiamondSpinsOwnerTerms({
   clubId,
   onAccepted,
@@ -40,14 +57,22 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
       const value = data as unknown as Agreement & { error?: string };
       if (!value || value.ok !== true)
         throw new Error(value?.error ?? 'The Agreement Could Not Be Loaded');
+      const addendum = value.addendum;
       if (
         typeof value.accepted !== 'boolean' ||
         typeof value.is_owner !== 'boolean' ||
         typeof value.terms !== 'string' ||
-        value.terms_version !== 'diamond-spins-2026-09-14-v1' ||
-        (value.accepted &&
-          (typeof value.accepted_at !== 'string' ||
-            !Number.isFinite(Date.parse(value.accepted_at))))
+        value.terms_version !== DIAMOND_SPINS_TERMS_VERSION ||
+        (value.accepted && !acceptedAt(value.accepted_at)) ||
+        !addendum ||
+        addendum.version !== DIAMOND_SPINS_ADDENDUM_VERSION ||
+        typeof addendum.text !== 'string' ||
+        typeof addendum.accepted !== 'boolean' ||
+        (addendum.accepted && !acceptedAt(addendum.accepted_at)) ||
+        !Number.isSafeInteger(addendum.profit_burn_bps) ||
+        addendum.profit_burn_bps < 0 ||
+        addendum.profit_burn_bps > 10000 ||
+        value.acknowledged !== (value.accepted && addendum.accepted)
       ) {
         throw new Error('The Agreement Could Not Be Verified');
       }
@@ -70,8 +95,14 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
       cancelled = true;
     };
   }, [clubId, reload, request]);
+  // The base receipt opens the games; the addendum is a notice the owner
+  // acknowledges. Both are permanent receipts, so nothing is re-accepted.
+  const baseOpen = agreement?.accepted === true;
+  const addendumOpen = agreement?.addendum.accepted === true;
+  const pending = agreement ? !(baseOpen && addendumOpen) : false;
+  const primaryLabel = busy ? 'Saving' : baseOpen ? 'Acknowledge Notice' : 'Accept Agreement';
   async function accept() {
-    if (!checked || busy || !agreement?.is_owner || agreement.accepted) return;
+    if (!checked || busy || !agreement?.is_owner || !pending) return;
     setBusy(true);
     setError(null);
     try {
@@ -88,7 +119,9 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
     <SpadeConsole
       title="Owner Agreement"
       eyebrow="Diamond Spins"
-      pill={agreement?.accepted ? 'Accepted' : 'Required'}
+      pill={
+        !agreement ? 'Required' : baseOpen ? (addendumOpen ? 'Accepted' : 'Notice') : 'Required'
+      }
       plates={{
         secondary: {
           label: 'Refresh Agreement',
@@ -99,9 +132,9 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
           disabled: busy,
         },
         primary: {
-          label: busy ? 'Saving' : 'Accept Agreement',
+          label: primaryLabel,
           onClick: () => void accept(),
-          disabled: busy || !checked || !agreement?.is_owner || agreement.accepted,
+          disabled: busy || !checked || !agreement?.is_owner || !pending,
         },
       }}
     >
@@ -110,25 +143,47 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
       ) : (
         <p className="sc-copy">Loading The Host Wallet Agreement.</p>
       )}
+      {agreement ? (
+        <>
+          <p className="sc-copy">
+            <strong>
+              Daily Profit Burn Notice ({percent(agreement.addendum.profit_burn_bps)})
+            </strong>
+          </p>
+          <p className="sc-copy">{agreement.addendum.text}</p>
+        </>
+      ) : null}
       {agreement?.accepted ? (
         <p className="sc-copy">
           Accepted By The Wallet Owner On {new Date(agreement.accepted_at!).toLocaleString()}.
         </p>
-      ) : agreement?.is_owner ? (
-        <label className="sc-copy">
-          <input
-            type="checkbox"
-            checked={checked}
-            disabled={busy}
-            onChange={(e) => setChecked(e.target.checked)}
-          />{' '}
-          I Have Read And Agree To These Wallet Obligations.
-        </label>
-      ) : agreement ? (
+      ) : null}
+      {agreement?.addendum.accepted ? (
         <p className="sc-copy">
-          The Union Owner, Or Club Owner For A Standalone Club, Must Accept Before The Bonus Games
-          Open.
+          Notice Acknowledged By The Wallet Owner On{' '}
+          {new Date(agreement.addendum.accepted_at!).toLocaleString()}.
         </p>
+      ) : null}
+      {agreement && pending ? (
+        agreement.is_owner ? (
+          <label className="sc-copy">
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={busy}
+              onChange={(e) => setChecked(e.target.checked)}
+            />{' '}
+            {baseOpen
+              ? 'I Have Read The Daily Profit Burn Notice.'
+              : 'I Have Read And Agree To These Wallet Obligations And The Daily Profit Burn Notice.'}
+          </label>
+        ) : (
+          <p className="sc-copy">
+            {baseOpen
+              ? 'The Wallet Owner Acknowledges The Daily Profit Burn Notice. Play Stays Open Meanwhile.'
+              : 'The Union Owner, Or Club Owner For A Standalone Club, Must Accept Before The Bonus Games Open.'}
+          </p>
+        )
       ) : null}
       {error ? (
         <p className="sc-copy sc-ink--red" role="alert">

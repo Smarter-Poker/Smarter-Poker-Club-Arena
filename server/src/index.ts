@@ -42,6 +42,10 @@ import {
 } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader, stopHorseLaneLoader } from './services/HorseLaneLoader.js';
 import {
+  startCommerceRenewalConsumer,
+  stopCommerceRenewalConsumer,
+} from './services/CommerceRenewalConsumer.js';
+import {
   startGtoAggregationDriver,
   stopGtoAggregationDriver,
 } from './services/GtoAggregationDriver.js';
@@ -214,6 +218,11 @@ async function startLeaderOwnedServices(): Promise<void> {
   // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
   // database; this hydrates it and re-balances when the fleet grows.
   startHorseLaneLoader();
+  // Club and union diamond costs (2026-09-22): the durable owner of due
+  // renewal authorizations and due trial reminders. Leased, generation
+  // fenced, silent during the maintenance freeze. See
+  // services/CommerceRenewalConsumer.ts and migration 20260922143541.
+  startCommerceRenewalConsumer();
   // V30 (Dan 2026-08-29): the one-time turn/river aggregation, paced in
   // small batches off the deal path. Restart-safe (cursor in
   // gto_agg_progress); permanently silent once both streets are done.
@@ -265,6 +274,7 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],
     ['HorseDataLedgerSync', stopHorseDataLedgerSync],
     ['HorseLaneLoader', stopHorseLaneLoader],
+    ['CommerceRenewalConsumer', stopCommerceRenewalConsumer],
     ['GtoAggregationDriver', stopGtoAggregationDriver],
     ['GtoAggregationDriverV31', stopGtoAggregationDriverV31],
     ['HorseOnboardingBootSweep', drainLeaderBootMutations],

@@ -165,8 +165,9 @@ describe('Club Chat Ban', () => {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MULTI-DAY MTT
-   Not built: no day end, no Day 2 resume, no flight merge, and nothing writes
-   flight_end_chips_snapshot. The flag is refused rather than promised.
+   The legacy flag columns are refused rather than promised: nothing writes
+   flight_end_chips_snapshot and no flight merge exists. Day 2 itself (single
+   flight) is built on new stage tables and gated by the capability registry.
    ═══════════════════════════════════════════════════════════════════════════ */
 describe('Multi-Day MTT is refused, not faked', () => {
   const BUILD = read('src/lib/tournamentFromTableConfig.ts');
@@ -181,9 +182,21 @@ describe('Multi-Day MTT is refused, not faked', () => {
     expect(sliceEnclosingBlock(BUILD, 'isMultiDay:')).not.toContain('config.multiDayMtt');
   });
 
-  it('offers no control that could set it', () => {
-    expect(CONFIG).not.toContain("updateConfig('multiDayMtt'");
-    expect(CONFIG).toContain('NOT AVAILABLE YET');
+  /* 2026-09-24: replaced deliberately, not broken. Day 2 is built (single
+     flight), so the form offers the switch again, but ONLY while the
+     capability registry says tournament.multi_day.single_flight is available,
+     and what it drives is a Day Schedule sealed into the stage tables, never
+     the flag above (the first test here still pins that refusal). Everywhere
+     else the honest NOT AVAILABLE YET stays. Full pins:
+     theCreateTableFormOffersOnlyLiveSwitches.test.ts section 5e. */
+  it('offers the control only behind the capability, and says so otherwise', () => {
+    const gate = CONFIG.indexOf("{multiDayGate === 'available' ? (");
+    expect(gate).toBeGreaterThan(0);
+    const control = CONFIG.indexOf("updateConfig('multiDayMtt'");
+    expect(control).toBeGreaterThan(gate);
+    expect(CONFIG.indexOf("updateConfig('multiDayMtt'", control + 1)).toBe(-1);
+    expect(CONFIG.indexOf('NOT AVAILABLE YET', gate)).toBeGreaterThan(control);
+    expect(CONFIG).toContain('usePlatformCapability(MULTI_DAY_CAPABILITY)');
   });
 });
 

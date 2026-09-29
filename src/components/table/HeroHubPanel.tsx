@@ -351,6 +351,7 @@ export function HeroHubPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           as="div"
           className="hero-hub__console"
           eyebrow={heroName}

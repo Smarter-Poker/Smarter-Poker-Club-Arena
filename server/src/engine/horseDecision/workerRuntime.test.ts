@@ -21,7 +21,13 @@ import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from './workerRuntime.js';
-import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
+import {
+  buildTournamentMState,
+  TOURNAMENT_ANTE_TYPES,
+  TOURNAMENT_CONTEXT_INCOMPLETE,
+  TOURNAMENT_CONTEXT_STATUSES,
+  TOURNAMENT_PREFLOP_ATLAS_DOMAIN,
+} from '../HorseTournamentPreflop.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 
@@ -706,6 +712,170 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 51 });
   });
 
+  /** Phase 6B: a labeled non-complete context keeps the complete request's numeric facts. */
+  function labeledContextRequest(
+    contextStatus: 'incomplete' | 'warming' | 'stale',
+    requestId: number
+  ): FastHorseDecisionRequest {
+    const request = phase6TournamentRequest(requestId);
+    const tournament = request.gameState.tournament!;
+    return rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        tournament: {
+          ...tournament,
+          contextStatus,
+          contextIssues: [TOURNAMENT_CONTEXT_INCOMPLETE, `tournament_context_${contextStatus}`],
+          sourceAgeMs: null,
+          tournamentId: null,
+          tournamentType: '',
+          tournamentStatus: '',
+          gameVariant: '',
+          entrants: 0,
+          playersLeft: 0,
+          spotsPaid: 0,
+          avgStackChips: 0,
+          medianStackChips: 0,
+          currentLevel: 0,
+          levelDurationMin: null,
+          levelElapsedMin: null,
+          stacks: [],
+          payoutPct: [],
+        },
+      },
+    });
+  }
+
+  it.each(['incomplete', 'warming', 'stale'] as const)(
+    'Phase 6B: routes a real %s-context decision through the atlas as incomplete_context with zero shifts',
+    async (contextStatus) => {
+      const h = harness(true);
+      h.runtime.receive(labeledContextRequest(contextStatus, 70));
+      await h.runtime.drain();
+      const result = h.messages.at(-1);
+      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+      expect(result.requestId).toBe(70);
+      const receipt = result.decision.tournamentPreflopAttribution!;
+      expect(receipt.reason).toBe('incomplete_context');
+      expect(receipt.status).toBe('unavailable');
+      expect(receipt.lookup!.coordinate.gameFamily).toBe('nlh');
+      expect(receipt.lookup!.coordinate.contextStatus).toBe(contextStatus);
+      expect(receipt.lookup!.policy.source).toBe('labeled_fallback');
+      expect(receipt.lookup!.policy.fallbackReason).toBe('incomplete_context');
+      expect(Object.values(receipt.lookup!.policy.shifts)).toEqual([0, 0, 0, 0, 0]);
+    }
+  );
+
+  it('Phase 6B: the complete control on the same request reaches the atlas baseline', async () => {
+    const h = harness(true);
+    h.runtime.receive(phase6TournamentRequest(71));
+    await h.runtime.drain();
+    const result = h.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    const receipt = result.decision.tournamentPreflopAttribution!;
+    expect(receipt.reason).toBe('atlas_forwarded');
+    expect(receipt.status).toBe('atlas_evaluated');
+    expect(receipt.lookup!.policy.source).toBe('deterministic_baseline');
+  });
+
+  it('Phase 6B: a dealt sit-out counts in the census but never as a covering stack', async () => {
+    const request = phase6TournamentRequest(72);
+    const sitOut = {
+      ...request.gameState.players[1],
+      seat: 4,
+      user_id: 'horse-4',
+      username: 'Horse Four',
+      stack: 500,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: true,
+      is_sitting_out: true,
+    };
+    const players = [...request.gameState.players, sitOut];
+    const tournament = request.gameState.tournament!;
+    const mFor = (opponents: Array<{ userId: string; stackChips: number }>) =>
+      buildTournamentMState({
+        stackChips: request.player.stack,
+        smallBlind: tournament.currentSmallBlind!,
+        bigBlind: tournament.currentBigBlind!,
+        ante: tournament.currentAnte!,
+        anteType: tournament.anteType!,
+        playersAtTable: 3,
+        nextSmallBlind: tournament.nextSmallBlind,
+        nextBigBlind: tournament.nextBigBlind,
+        nextAnte: tournament.nextAnte,
+        minutesToNextLevel: tournament.nextBlindInMin,
+        opponentStacks: opponents,
+      });
+    const withRequest = (m: ReturnType<typeof buildTournamentMState>) =>
+      rekey({
+        ...request,
+        gameState: {
+          ...request.gameState,
+          players,
+          tournament: { ...tournament, seatsPerTable: 3, playersAtTable: 3, m },
+        },
+      });
+
+    // Three dealt seats scale effective M by 0.3; only the actionable opponent can cover.
+    const canonical = mFor([{ userId: 'horse-3', stackChips: 96 }]);
+    expect(canonical.effectiveM).toBeCloseTo(canonical.realM * 0.3, 10);
+    expect(canonical.coveringOpponents.map((opponent) => opponent.userId)).toEqual(['horse-3']);
+    const accepted = harness(true);
+    accepted.runtime.receive(withRequest(canonical));
+    await accepted.runtime.drain();
+    expect(accepted.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 72 });
+
+    // Listing the sit-out's 500 chips as cover is not the canonical M and is refused.
+    const inflated = mFor([
+      { userId: 'horse-3', stackChips: 96 },
+      { userId: 'horse-4', stackChips: 500 },
+    ]);
+    expect(inflated.coveringOpponents.map((opponent) => opponent.userId)).toEqual([
+      'horse-3',
+      'horse-4',
+    ]);
+    const refused = harness();
+    refused.runtime.receive(withRequest(inflated));
+    await refused.runtime.drain();
+    expect(refused.decisionsAtRng).toEqual([]);
+    expect(refused.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament M state does not match the canonical snapshot',
+    });
+  });
+
+  it('Phase 6B: an Omaha tournament request takes the named unsupported_variant fallback', async () => {
+    const request = phase6TournamentRequest(73);
+    const tournament = request.gameState.tournament!;
+    const omaha = rekey({
+      ...request,
+      player: { ...snapshot.player },
+      gameState: {
+        ...request.gameState,
+        gameVariant: 'plo4',
+        bettingStructure: 'pot_limit',
+        variantRules: snapshot.gameState.variantRules,
+        legalActions: snapshot.gameState.legalActions,
+        minRaiseTo: snapshot.gameState.minRaiseTo,
+        maxRaiseTo: snapshot.gameState.maxRaiseTo,
+        tournament: { ...tournament, gameVariant: 'plo4' },
+      },
+    });
+    const h = harness(true);
+    h.runtime.receive(omaha);
+    await h.runtime.drain();
+    const result = h.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    const receipt = result.decision.tournamentPreflopAttribution!;
+    expect(receipt.reason).toBe('unsupported_variant');
+    expect(receipt.status).toBe('unavailable');
+    expect(receipt.lookup!.coordinate.gameFamily).toBe('omaha');
+    expect(receipt.lookup!.policy.source).toBe('labeled_fallback');
+    expect(Object.values(receipt.lookup!.policy.shifts)).toEqual([0, 0, 0, 0, 0]);
+  });
+
   it('rejects an implicit tournament context and a non-canonical M snapshot', async () => {
     const missing = phase6TournamentRequest(52);
     const h1 = harness();
@@ -967,6 +1137,103 @@ describe('HorseDecisionWorkerRuntime', () => {
     await h.runtime.drain();
 
     expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 61 });
+  });
+
+  it('Phase 6B: the worker admits exactly the atlas domain context statuses and refuses one outside it by name', async () => {
+    // The worker reads TOURNAMENT_CONTEXT_STATUSES; this pins that the admitted set is the
+    // domain's set, not a second table. Every status in the domain is admitted through the
+    // real validator; a status outside it is refused with the named error.
+    expect([...TOURNAMENT_CONTEXT_STATUSES].sort()).toEqual(
+      [
+        ...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.contextStatuses.baseline,
+        ...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.contextStatuses.fallback,
+      ].sort()
+    );
+    let requestId = 62;
+    for (const status of TOURNAMENT_CONTEXT_STATUSES) {
+      const h = harness();
+      h.runtime.receive(
+        status === 'complete'
+          ? phase6TournamentRequest(requestId)
+          : labeledContextRequest(status, requestId)
+      );
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId });
+      requestId++;
+    }
+    const outside = labeledContextRequest('warming', requestId);
+    const refused = rekey({
+      ...outside,
+      gameState: {
+        ...outside.gameState,
+        tournament: { ...outside.gameState.tournament!, contextStatus: 'pending' as never },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(refused);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context status is invalid',
+    });
+  });
+
+  it('Phase 6B: the worker admits exactly the atlas domain ante types and refuses one outside it by name', async () => {
+    expect([...TOURNAMENT_ANTE_TYPES]).toEqual([...TOURNAMENT_PREFLOP_ATLAS_DOMAIN.anteTypes]);
+    const request = phase6TournamentRequest(66);
+    const tournament = request.gameState.tournament!;
+    const withAnte = (
+      anteType: (typeof TOURNAMENT_ANTE_TYPES)[number] | 'button',
+      requestId: number
+    ) => {
+      const ante = anteType === 'none' ? 0 : 0.4;
+      const m = buildTournamentMState({
+        stackChips: request.player.stack,
+        smallBlind: tournament.currentSmallBlind!,
+        bigBlind: tournament.currentBigBlind!,
+        ante,
+        anteType: anteType as never,
+        playersAtTable: 2,
+        nextSmallBlind: tournament.nextSmallBlind,
+        nextBigBlind: tournament.nextBigBlind,
+        nextAnte: ante,
+        minutesToNextLevel: tournament.nextBlindInMin,
+        opponentStacks: request.gameState.players
+          .filter((seat) => seat.user_id !== request.player.user_id)
+          .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+      });
+      return rekey({
+        ...request,
+        requestId,
+        gameState: {
+          ...request.gameState,
+          ante,
+          bigBlindAnte: anteType === 'big_blind',
+          tournament: {
+            ...tournament,
+            currentAnte: ante,
+            anteType: anteType as never,
+            nextAnte: ante,
+            m,
+          },
+        },
+      });
+    };
+    let requestId = 66;
+    for (const anteType of TOURNAMENT_ANTE_TYPES) {
+      const h = harness();
+      h.runtime.receive(withAnte(anteType, requestId));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId });
+      requestId++;
+    }
+    const h = harness();
+    h.runtime.receive(withAnte('button', requestId));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context numeric state is invalid',
+    });
   });
 
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {
@@ -2036,6 +2303,63 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
       baseKey
     );
+  });
+
+  it('planted red: journals the governor scale the decision ran at, not a reading taken after it (Phase 6C)', async () => {
+    const h = harness();
+    // Each read of the live governor may take a new reading (one a second).
+    const readings = [0.6, 1, 0.35, 0.2];
+    let pinned: number | null = null;
+    const live = () => pinned ?? readings.shift() ?? 0.08;
+    const seenByDecision: number[] = [];
+    const journaled: number[] = [];
+    h.deps.governorScale = live;
+    h.deps.atGovernorScale = <T>(fn: () => T) => {
+      const scale = live();
+      pinned = scale;
+      try {
+        return { value: fn(), scale };
+      } finally {
+        pinned = null;
+      }
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      // Two Monte Carlo reads inside the one decision.
+      seenByDecision.push(live(), live());
+      return decide(...args);
+    };
+    h.deps.journalEnabled = () => true;
+    h.deps.journalDecision = (_request, payload) => {
+      journaled.push((payload as { governorScale: number }).governorScale);
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    expect(seenByDecision).toEqual([0.6, 0.6]);
+    expect(journaled).toEqual([0.6]);
+    expect(result).toMatchObject({ governorScale: 0.6 });
+  });
+
+  it('without a decision-scale hook, reads the governor once, before the decision', async () => {
+    const h = harness();
+    const reads: string[] = [];
+    let phase = 'before';
+    h.deps.governorScale = () => {
+      reads.push(phase);
+      return 0.35;
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      phase = 'during';
+      const out = decide(...args);
+      phase = 'after';
+      return out;
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    expect(reads).toEqual(['before']);
+    expect(h.messages.find((m) => m.type === 'FAST_RESULT')).toMatchObject({ governorScale: 0.35 });
   });
 
   it('captures actual fast/deep journal inputs privately and retains decisions when capture fails', async () => {

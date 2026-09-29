@@ -42,8 +42,13 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
       'club',
       expect.any(Function),
       expect.any(Function),
-      undefined
+      undefined,
+      // 2026-09-26 (Lightning): a sixth argument, the deferral callback, so a
+      // seat deferred by LIGHTNING_HAND_IN_PROGRESS here is retried every pass.
+      expect.any(Function)
     );
+    h.leaveCall.mock.calls[0][5]?.('lightning-deferred', 'occupancy-lightning');
+    expect(h.engine.lightningDeferredLeaves.get('lightning-deferred')).toBe('occupancy-lightning');
     h.leaveCall.mock.calls[0][3]?.('departed', 'occupancy-departed');
     expect(h.engine.departedSeatsAwaitingTeardown).toEqual([
       { userId: 'departed', occupancyId: 'occupancy-departed' },

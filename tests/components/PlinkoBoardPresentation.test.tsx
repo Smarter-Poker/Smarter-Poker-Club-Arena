@@ -120,7 +120,7 @@ describe('the bucket colour scale is derived from the multiplier, not from the t
           if (table[i] < table[j]) expect(heats[i]).toBeLessThan(heats[j]);
     }
   });
-  it('anchors the scale on the multiplier so 20x is the same red on both tables', () => {
+  it('anchors the scale on the multiplier so 20x is the same gold on both tables', () => {
     expect(bucketTint(2000)).toBe(bucketTint(2000));
     expect(bucketHeat(2000)).toBeGreaterThan(0.9);
     expect(bucketTint(DIAMOND[0])).toBe(bucketTint(SUPER[0]));
@@ -138,16 +138,29 @@ describe('the bucket colour scale is derived from the multiplier, not from the t
     expect(bucketTint(0)).toMatch(/^#[0-9a-f]{6}$/);
     expect(bucketTint(1_000_000)).toMatch(/^#[0-9a-f]{6}$/);
   });
-  it('paints the low middle cool and the high outside hot', () => {
+  it('paints the low middle blue and the high outside gold, in the smarter.poker schema', () => {
     const rgb = (tint: string) =>
       [1, 3, 5].map((at) => Number.parseInt(tint.slice(at, at + 2), 16));
     const [coldR, , coldB] = rgb(bucketTint(8));
-    const [hotR, , hotB] = rgb(bucketTint(2000));
+    const [hotR, hotG, hotB] = rgb(bucketTint(2000));
     expect(coldB).toBeGreaterThan(coldR);
-    expect(hotR).toBeGreaterThan(hotB);
-    // A mid bucket is neither: green-dominant, between the two ends.
-    const [, midG] = rgb(bucketTint(100));
+    // The loud end is gold on black, the platform's one colour for money.
+    expect(hotR).toBeGreaterThan(200);
+    expect(hotG).toBeGreaterThan(150);
+    expect(hotB).toBeLessThan(60);
+    // A mid bucket is light blue: still blue-dominant, brighter than the floor.
+    const [midR, midG, midB] = rgb(bucketTint(100));
+    expect(midB).toBeGreaterThan(midR);
     expect(midG).toBeGreaterThan(120);
+    // Dan, 2026-09-21: "the bottom is rainbow colored instead of smarter.poker
+    // color schema". No green, orange or red anywhere on the scale: a tint is
+    // never green-dominant, and red never runs away from green (gold keeps them
+    // together; orange and red pull them 90 or more apart).
+    for (let cents = 5; cents <= 2500; cents += 5) {
+      const [r, g, b] = rgb(bucketTint(cents));
+      expect(g > Math.max(r, b) + 24).toBe(false);
+      expect(r > g + 90).toBe(false);
+    }
   });
   it('lifts the engraved ink off the tint so a slot face stays readable', () => {
     const brightness = (colour: string) =>
@@ -223,9 +236,7 @@ describe('the DOM legend carries the whole scale, so it survives a dead WebGL co
       );
     });
     // The value bar is a second channel; the printed multiplier always carries it too.
-    expect(
-      screen.getByText('Slots Run From Left To Right. The Hottest Colours Pay The Most.')
-    ).toBeVisible();
+    expect(screen.getByText('Slots Run From Left To Right. Gold Pays The Most.')).toBeVisible();
   });
   it('marks the high buckets before anything is dropped, and the landed one when it is', () => {
     const props = { multipliersCents: SUPER, path: null, dropKey: 0 };
@@ -371,6 +382,46 @@ describe('a bucket reacts to the ball that lands in it', () => {
     // The second drop is all left turns, so slot 0 reacts on its own beat.
     expect(slotMesh(scene, 0).material.emissiveIntensity).toBeGreaterThan(1);
     expect(screen.getByRole('status')).toHaveTextContent('2 Of 2 Landed. Best 20x.');
+  });
+  it('drops a ball released later from the top, and a released batch keeps its cadence', () => {
+    // THE PLAYER RELEASES THE BALLS (Dan 2026-09-21, R6): the page grows the
+    // batch as the player taps Drop or Drop All. A ball added six seconds in
+    // must fall from the top now, not be back-dated to the batch start and
+    // land without ever being seen.
+    const frame = frames();
+    const onProgress = vi.fn();
+    const onLanded = vi.fn();
+    const props = {
+      multipliersCents: DIAMOND,
+      path: null,
+      dropKey: 21,
+      restingSlot: null,
+      onProgress,
+      onLanded,
+    };
+    const view = render(<PlinkoBoard {...props} batchPathBits={[0xffff]} />);
+    frame(100);
+    frame(6000);
+    // The one released ball has landed and the board says so, once.
+    expect(onProgress).toHaveBeenLastCalledWith(1);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    expect(field.light).toHaveBeenLastCalledWith([]);
+    // The player releases a second ball: it starts at row zero, six seconds in.
+    view.rerender(<PlinkoBoard {...props} batchPathBits={[0xffff, 0]} />);
+    frame(6100);
+    expect(field.light).toHaveBeenLastCalledWith([pegIndexAt(0, 0)]);
+    frame(7000);
+    expect(field.light.mock.calls.at(-1)![0]).toHaveLength(1);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    // And two more at once come down one gap apart, so three are in flight together.
+    view.rerender(<PlinkoBoard {...props} batchPathBits={[0xffff, 0, 0xffff, 0]} />);
+    frame(7100);
+    frame(7500);
+    expect(field.light.mock.calls.at(-1)![0]).toHaveLength(3);
+    frame(12000);
+    expect(onProgress).toHaveBeenLastCalledWith(4);
+    expect(onLanded).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('status')).toHaveTextContent('4 Of 4 Landed.');
   });
   it('collapses the motion under reduced motion and keeps the colour and the mark', () => {
     reduceMotion(true);

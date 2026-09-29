@@ -229,6 +229,7 @@ export function ClubProfileModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow={clubName}
           title="Profile"
           titleId="cpm-title"

@@ -8,7 +8,11 @@ describe('source maps never ship to players', () => {
     expect(read('vite.config.ts')).toContain('sourcemap: false');
   });
   it('the publisher strips maps and refuses any surviving source map', () => {
-    const publisher = read('.github/workflows/publish-club-arena.yml');
+    // The publisher's shell is the workflow plus the origin activation
+    // transaction it pipes to the host; the pool prune lives in the latter.
+    const publisher =
+      read('.github/workflows/publish-club-arena.yml') +
+      read('.github/scripts/publish-origin-activate.sh');
     expect(publisher).toContain("find dist -name '*.map' -delete");
     expect(publisher).toContain('source maps survived the strip');
     expect(publisher).toContain(`find "$ROOT/pool" -type f -name '*.map' -delete`);

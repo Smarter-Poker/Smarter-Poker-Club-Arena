@@ -73,6 +73,14 @@
 import { toDeckCards, type StoredCard, type DeckCard } from './deckCards';
 import { bestFive, bestLow, cardKey, isEightOrBetterVariant } from './handEvaluator';
 import { derivePositions, smallBlindSeat, bigBlindSeat } from './pokerPositions';
+import {
+  killCancelReasonText,
+  killPotName,
+  limitPair,
+  parseKillPotRecord,
+  type ActiveKillMode,
+  type KillPotRecordView,
+} from './killPot';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INPUT — the union of what hand_history stores and what the BBJ RPC returns
@@ -229,6 +237,14 @@ export interface ReplayInput {
    * where before it drew backs or nothing.
    */
   privateHoleCards?: Record<string, StoredCard[]> | null;
+  /**
+   * KILL POTS (rule manifest kill-v1): the hand's `hand_history.kill_pot`
+   * record, parsed. On a kill hand it carries the base and effective limits,
+   * the kill blind and the killer; on a hand that set the next kill, who the
+   * killer is; on a hand whose scheduled kill did not play, why. Absent on
+   * every other hand and on rows older than the column.
+   */
+  killPot?: KillPotRecordView | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,6 +256,12 @@ export type ReplayVerb =
   | 'bb'
   | 'ante'
   | 'straddle'
+  /**
+   * KILL POTS (kill-v1): the killer's live forced post. A blind in every
+   * sense the reconstruction cares about: it is live money, it sets the
+   * preflop bet level, and a later raise-TO is differenced against it.
+   */
+  | 'kill_blind'
   | 'fold'
   | 'check'
   | 'call'
@@ -438,6 +460,31 @@ export interface ReplayModel {
    * conflation `winners[].amount` was corrected for on 2026-08-23.
    */
   perBoardAwards: boolean;
+  /**
+   * KILL POTS (kill-v1): what the record says about kills on this hand, worded
+   * for the rundown. Null when the hand neither played, set nor cancelled one.
+   * Optional so a model built by hand (a fixture, an older cache) still types.
+   */
+  killPot?: ReplayKillPot | null;
+}
+
+export interface ReplayKillPot {
+  /** Set on a kill hand. Limits read "8/16"; base and effective both stated. */
+  hand: {
+    mode: ActiveKillMode;
+    name: string;
+    baseLimits: string;
+    effectiveLimits: string;
+    killBlind: number;
+    killerUserId: string;
+    killerName: string;
+    killerSeat: number;
+    chained: boolean;
+  } | null;
+  /** Set on the hand that triggered the NEXT hand's kill. */
+  next: { mode: ActiveKillMode; name: string; killerName: string; killerSeat: number } | null;
+  /** Set when a scheduled kill was cancelled at this hand's deal. */
+  cancelled: { reasonText: string; killerName: string; killerSeat: number } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -464,6 +511,7 @@ const VERB_LABEL: Record<ReplayVerb, string> = {
   bb: 'BB',
   ante: 'Ante',
   straddle: 'Straddle',
+  kill_blind: 'Kill Blind',
   fold: 'Fold',
   check: 'Check',
   call: 'Call',
@@ -511,6 +559,11 @@ const BLIND_VERBS = new Set([
   'blind',
   'small_blind',
   'big_blind',
+  /* KILL POTS (kill-v1): a log that carries the kill blind was written by an
+     engine that records its forced posts, so the blinds are in it too (or the
+     killer's post stands in place of one). Synthesising blinds on top would
+     count the killer's blind twice. */
+  'kill_blind',
 ]);
 
 const money = (n: number) => Math.round(n * 100) / 100;
@@ -1265,6 +1318,56 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     }),
     hiLo,
     perBoardAwards: hasPerBoard,
+    killPot: replayKillPot(input.killPot ?? null, (uid, seat) => {
+      const p =
+        (uid && players.find((pp) => pp.userId === uid)) || bySeat.get(Number(seat)) || null;
+      return p?.username || 'Player';
+    }),
+  };
+}
+
+/**
+ * The record's kill facts, worded for the rundown. Every number is the
+ * record's own: the effective limits and kill blind the engine froze into the
+ * hand, and the base limits from the base big blind it recorded beside them.
+ */
+function replayKillPot(
+  record: KillPotRecordView | null,
+  nameOf: (userId: string, seat: number) => string
+): ReplayKillPot | null {
+  if (!record) return null;
+  const k = record.killHand;
+  const n = record.nextKill;
+  const c = record.cancelled;
+  return {
+    hand: k
+      ? {
+          mode: k.mode,
+          name: killPotName(k.mode),
+          baseLimits: limitPair(k.baseBigBlind, k.baseBigBlind * 2),
+          effectiveLimits: limitPair(k.smallBet, k.bigBet),
+          killBlind: k.killBlind,
+          killerUserId: k.killerUserId,
+          killerName: nameOf(k.killerUserId, k.killerSeat),
+          killerSeat: k.killerSeat,
+          chained: k.chained,
+        }
+      : null,
+    next: n
+      ? {
+          mode: n.mode,
+          name: killPotName(n.mode),
+          killerName: nameOf(n.killerUserId, n.killerSeat),
+          killerSeat: n.killerSeat,
+        }
+      : null,
+    cancelled: c
+      ? {
+          reasonText: killCancelReasonText(c.reason),
+          killerName: nameOf(c.killerUserId, c.killerSeat),
+          killerSeat: c.killerSeat,
+        }
+      : null,
   };
 }
 
@@ -1300,6 +1403,8 @@ export interface HandHistoryRowLike {
   hole_cards?: unknown;
   showdown?: unknown;
   pots?: unknown;
+  /** KILL POTS (kill-v1): hand_history.kill_pot jsonb. */
+  kill_pot?: unknown;
 }
 
 /**
@@ -1404,5 +1509,6 @@ export function replayInputFromRow(
     discardedCards: extras.discardedCards ?? null,
     privateHoleCards: extras.privateHoleCards ?? null,
     bombPot: row.bomb_pot != null,
+    killPot: parseKillPotRecord(row.kill_pot),
   };
 }

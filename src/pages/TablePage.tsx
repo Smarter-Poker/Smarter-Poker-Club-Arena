@@ -110,9 +110,14 @@ import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
+import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
-import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
+import {
+  accessRefusalFromClose,
+  isStillWakeableTableRow,
+  shouldRecoverMissedHandStartPresentation,
+} from '../services/EngineStateClient';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
@@ -178,6 +183,16 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import {
+  fixedLimitStreetBet,
+  killNextAnnouncement,
+  killPotPillText,
+  killTableRuleOf,
+  isKillVariant,
+  type KillHandSnapshot,
+  type KillNextSnapshot,
+  type KillTableRule,
+} from '../utils/killPot';
 import type { HeroLeaveClock } from '../lib/chipContinuity';
 import {
   heroLeaveIsLocked,
@@ -186,7 +201,7 @@ import {
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { createSeatIdentityOverrides } from '../lib/seatIdentityOverrides';
-import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+import { bettingStructureFor } from '../lib/bettingStructure';
 import {
   isPreActionHonorable,
   PRE_ACTION_EXEC_GRACE_MS,
@@ -237,7 +252,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
-import { arenaAssetUnitCents } from '../lib/arenaUnitCents';
+import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -266,7 +281,12 @@ import { peekWarmSeats, warmSeatsPromise, type WarmSeat } from '../services/tabl
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
-import { betChipOffsetPx, chipCollectOffsetPx, seatPodPx } from '../components/table/tableGeometry';
+import {
+  betChipOffsetPx,
+  chipCollectOffsetPx,
+  POT_ANCHOR_PCT,
+  seatPodPx,
+} from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -386,6 +406,7 @@ import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
 import '../components/table/ControlThemeTokens.css';
+import '../styles/table-design-tokens.css';
 import './TablePage.css';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components
@@ -671,6 +692,13 @@ interface TableState {
   /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
   bombPotWaitingFor: number | null;
   /**
+   * KILL POTS (rule manifest kill-v1), straight from the engine snapshot:
+   * this hand's kill (effective limits, kill blind, killer) and the kill
+   * scheduled for the next hand. Null on a base-limit hand / none scheduled.
+   */
+  killHand?: KillHandSnapshot | null;
+  killNext?: KillNextSnapshot | null;
+  /**
    * THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when the table
    * runs none, and who posts it. Printed on the felt beside the blinds.
    */
@@ -768,6 +796,10 @@ interface TableState {
   // and are held out only by their seat. The hero is never asked again while
   // their own id is in here; the engine posts for them when the seat clears.
   postBBDeferredUserIds?: string[];
+  // 2026-09-24 - released from the wait and owing a live big blind on the next
+  // deal. In neither list above; the seat reads it as "posting" so nobody is
+  // painted SITTING OUT between agreeing to post and being dealt in.
+  postingBBUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
@@ -910,8 +942,13 @@ const _win = window as any;
  * `.pot-area` is a zero-size anchor with translate(-50%,-50%), so its top%
  * IS the pot's centre. Aim there.
  * If either the base rule or the hotfix moves the pot, move this with it.
+ *
+ * 2026-09-23: the constant moved to tableGeometry.ts, because the collect
+ * sweep (chipCollectOffsetPx) lives there and was still converging on the
+ * MIDDLE of the felt - the bets flew to a point a quarter of the table below
+ * the pill every hand (Dan: "THE CHIPS ARE NOT BEING MOVED OR SHIPPED TO THE
+ * CORRECT POSITION"). One anchor for chips going in and chips coming out.
  */
-const POT_ANCHOR_PCT = { x: 49.9, y: 23 };
 
 /**
  * How long a multi-board reveal that was still playing when the NEXT hand
@@ -2169,6 +2206,7 @@ function LiveTablePage({
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
+    reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it
@@ -2281,6 +2319,8 @@ function LiveTablePage({
       bombPotIn: null,
       bombPotNextAt: null,
       bombPotWaitingFor: null,
+      killHand: null,
+      killNext: null,
       ante: 0,
       anteMode: null,
       gameStyle: null,
@@ -2678,6 +2718,9 @@ function LiveTablePage({
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
         bombPotWaitingFor: mapped.bombPotWaitingFor,
+        // KILL POTS (kill-v1): the engine's own kill facts, never derived here.
+        killHand: mapped.killHand,
+        killNext: mapped.killNext,
         ante: mapped.ante,
         anteMode: mapped.anteMode,
         handVariant: mapped.handVariant,
@@ -2729,6 +2772,7 @@ function LiveTablePage({
         // Walkthrough Step 4 fix 2026-04-29: waiting-for-BB user IDs.
         waitingForBBUserIds: mapped.waitingForBBUserIds,
         postBBDeferredUserIds: mapped.postBBDeferredUserIds,
+        postingBBUserIds: mapped.postingBBUserIds,
       };
     });
     // tableState.maxPlayers is read through tableStateRef above, deliberately:
@@ -3740,6 +3784,10 @@ function LiveTablePage({
   // tick, which would reset the consecutive-close counter every second.
   const maintenanceBreakRef = useRef(maintenanceBreak);
   maintenanceBreakRef.current = maintenanceBreak;
+  // Same reason, for the row check below: the table this page is on NOW, read
+  // after an await, without putting tableId in the effect's dependencies.
+  const notFoundTableIdRef = useRef(tableId);
+  notFoundTableIdRef.current = tableId;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3772,15 +3820,52 @@ function LiveTablePage({
             tableClosedToastShownRef.current = false;
             return;
           }
+          /* ASK THE ROW BEFORE WRITING THE OBITUARY (2026-09-20). Three 4404s
+             say the ENGINE has no game for this table; they say nothing about
+             whether the table is closed. A table created seconds ago is absent
+             from the engine until its first viewer wakes it, and a host who
+             tapped Start was told "This Table Is No Longer Running" about a
+             row that was still status 'waiting' and not deleted.
+
+             Same read shape as loadTableInfo below (bound error, maybeSingle),
+             judged by the engine's own wake rule (isStillWakeableTableRow
+             mirrors server/src/services/onDemandTableWake.ts). A row the
+             engine WILL wake gets another attempt now instead of a toast, and
+             the counter starts again so a table that really does close later
+             is still announced. A read that fails, or a row that is gone,
+             closed, deleted or a tournament's, is today's behaviour exactly. */
+          const askedFor = notFoundTableIdRef.current;
+          if (askedFor) {
+            const { data: tableRow, error: tableRowError } = await supabase
+              .from('tables')
+              .select('id, tournament_id, status, game_type, is_deleted')
+              .eq('id', askedFor)
+              .maybeSingle();
+            // The player moved to another table during the read: this verdict
+            // belongs to neither. Release the slot and say nothing.
+            if (notFoundTableIdRef.current !== askedFor) {
+              tableClosedToastShownRef.current = false;
+              return;
+            }
+            if (tableRowError) {
+              reportError(tableRowError, 'TablePage.not_found_row_check');
+            } else if (isStillWakeableTableRow(tableRow)) {
+              notFoundCountRef.current = 0;
+              tableClosedToastShownRef.current = false;
+              reconnectEngineNow();
+              return;
+            }
+          }
           heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
         })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
-    // per error rather than on every break countdown tick.
-  }, [engineLastError, refreshMaintenanceBreak]);
+    // refreshMaintenanceBreak and reconnectEngineNow are stable useCallbacks,
+    // so this still runs once per error rather than on every break countdown
+    // tick.
+  }, [engineLastError, refreshMaintenanceBreak, reconnectEngineNow]);
   /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
      Why this flag has to exist at all: `auth_failed` is a status the client
      passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
@@ -3822,6 +3907,13 @@ function LiveTablePage({
   useEffect(() => {
     if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
   }, [engineWsStatus]);
+  /* 2026-09-20: WHY the engine will not show this viewer the table, for the
+     banner. 'access_refused' is terminal for the reconnect ladder, so the
+     close that produced it is still the last error when this is read. */
+  const engineAccessRefusal =
+    engineWsStatus === 'access_refused'
+      ? accessRefusalFromClose(engineLastError?.code, engineLastError?.reason)
+      : null;
 
   useEffect(() => {
     if (engineWsStatus === 'connected') {
@@ -6051,7 +6143,13 @@ function LiveTablePage({
       tableState.potLimitPot ?? tableState.pot,
       callAmount
     );
-    const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+    // Server first; a kill hand never falls back to the base big blind.
+    const flBetSize = fixedLimitStreetBet({
+      serverBetSize: tableState.fixedBetSize,
+      killHand: tableState.killHand,
+      bigBlind: bb,
+      stage: tableState.boardStage,
+    });
     const flWagerTo = Math.min(
       allInTo,
       serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
@@ -6080,6 +6178,7 @@ function LiveTablePage({
     tableState.potLimitPot,
     tableState.fixedBetSize,
     tableState.fixedRaiseSize,
+    tableState.killHand,
     tableState.boardStage,
     tableState.wagersCapped,
   ]);
@@ -7147,6 +7246,38 @@ function LiveTablePage({
     /** BUTTON POLICY (2026-08-29): 'regular' | 'separate'. */
     buttonPolicy: string;
   } | null>(null);
+
+  /**
+   * KILL POTS (rule manifest kill-v1): the table's kill rule, for the Game
+   * Rules sheet only, read when the sheet opens. It is its OWN read and NOT a
+   * column on the bootstrap select above: a table whose row cannot answer
+   * simply shows no kill rule, and the felt still loads. What the felt shows
+   * about a kill (the pill, the next-hand line, the killer's marker) comes
+   * from the engine snapshot, never from here. Fixed-limit cash tables only,
+   * the only kind kill-v1 covers.
+   */
+  const [killPotRules, setKillPotRules] = useState<KillTableRule | null>(null);
+  const killRulesApply = !tableState.isTournament && isKillVariant(tableState.gameType);
+  useEffect(() => {
+    if (!tableId || !isUUID(tableId) || !killRulesApply) {
+      setKillPotRules(null);
+      return;
+    }
+    if (!showGameRules) return;
+    let live = true;
+    void (async () => {
+      const { data, error } = await supabase
+        .from('tables')
+        .select('kill_mode, kill_threshold_bb')
+        .eq('id', tableId)
+        .maybeSingle();
+      if (!live) return;
+      setKillPotRules(error || !data ? null : killTableRuleOf(data));
+    })();
+    return () => {
+      live = false;
+    };
+  }, [tableId, killRulesApply, showGameRules]);
 
   /**
    * TIMED BOMB CLOCK 2026-08-28 (spec §15.2): the engine publishes
@@ -12783,7 +12914,7 @@ function LiveTablePage({
              * with no table_seats row, so every seat-derived signal here says
              * "spectator" — while tournament_players says he has paid.
              */
-            if (userId) {
+            if (userId && isUUID(userId)) {
               const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
                 .select('status, table_id')
@@ -14597,8 +14728,16 @@ function LiveTablePage({
     const s = payload?.settings || payload;
     if (!s) return;
     // Apply sound preference if changed
-    if (typeof s.soundEnabled === 'boolean') {
-      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
+    // MUTE ONLY (2026-09-27). This payload is the Settings page's cached copy,
+    // re-sent on every tab return and theme change, and it goes stale the
+    // moment the player mutes at the table or in the menu (those write the
+    // sound keys, not this cache). So it may only ever turn sound OFF: a stale
+    // `true` here must never un-mute a player. Sound ON from the Settings page
+    // already arrives through useTableSettings (applyGateChanges -> setEnabled).
+    // Off goes through the engine, which also returns the Safari audio session
+    // to "ambient", so a player's music is not left paused.
+    if (s.soundEnabled === false) {
+      soundService.setEnabled(false);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read
@@ -22749,6 +22888,10 @@ function LiveTablePage({
           tap it. Their tap is broadcast so every other seat opens in step. */}
       <MysteryBountyChest
         data={mysteryChest}
+        /* THE GRID THE CHEST WAS DRAWN ON (2026-09-21): whole Diamonds at a
+           Diamond table, the chest's own chip figure at a chip one, and no
+           figure at all while this table's arena is still unread. */
+        unitCents={arenaAssetUnitCentsIfRead(tableState.arenaAsset)}
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
@@ -23024,9 +23167,18 @@ function LiveTablePage({
                         // Dan 2026-09-04: a hub tab beside this table, not a
                         // separate browser tab the felt cannot see (the
                         // strip, the swipe and every other table stay put).
+                        //
+                        // 2026-09-21: the exact Hub page, not the alias. The
+                        // menu said '/hub/marketplace', which 308s to
+                        // /hub/diamond-store inside the frame - so the tab's
+                        // own address no longer matched what opened it, and
+                        // pressing the item again opened a SECOND tab (or hit
+                        // the cap) instead of focusing the one already there.
+                        // It also names this table's club, so "Club
+                        // Marketplace" opens that club's shop.
                         onClick: () =>
                           masterBus.emit('OPEN_HUB_TAB', {
-                            path: '/hub/marketplace',
+                            path: hubMarketplaceDestination('', actualClubIdRef.current),
                             requestedBy: userId,
                           }),
                       },
@@ -23181,6 +23333,9 @@ function LiveTablePage({
               <TournamentHUD
                 tournamentId={tableState.tournamentId}
                 spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
+                /* A background slot stays mounted (PersistentTableLayer), so
+                   its bar must know it is off screen and stop asking. */
+                hidden={!isVisible}
                 onOpen={() => setShowTournamentLobby(true)}
               />
             )}
@@ -23426,6 +23581,7 @@ function LiveTablePage({
                   status={engineWsStatus}
                   isActive={isActive}
                   authRefused={engineRefusedAuth}
+                  accessRefusal={engineAccessRefusal}
                   /* A dealt hand number proves the felt is showing real state,
                      which silences 'connecting' — see the prop's own doc. */
                   hasLiveState={(tableState.handNumber ?? 0) > 0}
@@ -23568,12 +23724,26 @@ function LiveTablePage({
                           {(tableState.clubName || tableState.unionName) && (
                             <span className="table-brand__line table-brand__line--identity">
                               <span className="table-brand__club">
-                                {tableState.clubName}
+                                {/* A NAME IS ONE WORD TO THE LINE BREAKER (Dan 2026-09-23:
+                                    '"Shark Club" needs to be on the same line, not stacked').
+                                    The union span below is nowrap and carried its own
+                                    separator, so the only break opportunity on the row was
+                                    the space INSIDE the club's name - "SHARK" / "CLUB ·
+                                    MIDWAY UNION" on every phone. The club name is nowrap
+                                    now, and the one breakable space on the row sits between
+                                    the two names, so a row too long for one line breaks
+                                    club / union and never inside either. */}
+                                <span className="table-brand__club-name">
+                                  {tableState.clubName}
+                                </span>
                                 {tableState.unionName && (
-                                  <span className="table-brand__union">
-                                    {tableState.clubName ? ' · ' : ''}
-                                    {tableState.unionName}
-                                  </span>
+                                  <>
+                                    {tableState.clubName ? ' ' : ''}
+                                    <span className="table-brand__union">
+                                      {tableState.clubName ? '· ' : ''}
+                                      {tableState.unionName}
+                                    </span>
+                                  </>
                                 )}
                               </span>
                             </span>
@@ -23686,6 +23856,20 @@ function LiveTablePage({
                         }`}
                       >
                         <span className="table-brand__bomb">{bombPotBadge.text}</span>
+                      </span>
+                    )}
+                    {/* KILL POTS (kill-v1): the next hand is a kill hand. The
+                        bomb clock's line, word for word the same pattern: a
+                        masthead line under the blinds, not a pill on the felt.
+                        The engine says so (kill_next); nothing here predicts. */}
+                    {tableState.killNext && (
+                      <span
+                        className="table-brand__line table-brand__line--bomb table-brand__line--bomb-next table-brand__line--kill"
+                        aria-live="polite"
+                      >
+                        <span className="table-brand__bomb">
+                          {killNextAnnouncement(tableState.killNext)}
+                        </span>
                       </span>
                     )}
                   </div>
@@ -23994,6 +24178,22 @@ function LiveTablePage({
                     <div className="bomb-pot-live" aria-live="polite">
                       <span className="bomb-pot-live__dot" />
                       {bombPotBadge.text}
+                    </div>
+                  )}
+                  {/* KILL POTS (kill-v1): THIS hand is a kill hand. Same pill,
+                      same anchor as the live bomb (the two never share a hand:
+                      a kill table runs no bomb pots). It states the hand's
+                      effective limits as the engine published them, "Kill Pot
+                      8/16" or "Half Kill 6/12"; the killer's seat carries the
+                      matching marker. */}
+                  {tableState.killHand && bombPotBadge?.state !== 'live' && (
+                    <div
+                      className="bomb-pot-live kill-pot-live"
+                      aria-live="polite"
+                      aria-label={`${killPotPillText(tableState.killHand)}, Killer In Seat ${tableState.killHand.killerSeat}`}
+                    >
+                      <span className="bomb-pot-live__dot" aria-hidden="true" />
+                      {killPotPillText(tableState.killHand)}
                     </div>
                   )}
                 </div>
@@ -24562,10 +24762,31 @@ function LiveTablePage({
                       ? null
                       : (sitOutStamps.get(displayPlayer.id) ?? null)
                   }
+                  /* Dan 2026-09-23: a cash entrant the engine is holding for
+                     the big blind is "Waiting For BB", and one who agreed to
+                     post it is not sitting out at all. The three engine lists
+                     (post_bb_deferred_user_ids, posting_bb_user_ids and
+                     waiting_for_bb_user_ids); the hero's own local agreement
+                     covers the round trip before the engine echoes it. The
+                     posting list was missing on 2026-09-23: a player released
+                     to post on the next deal is in neither of the other two,
+                     so that window still read SITTING OUT. */
+                  entryWait={
+                    !displayPlayer?.id || tableState.isTournament
+                      ? null
+                      : (tableState.postBBDeferredUserIds ?? []).includes(displayPlayer.id) ||
+                          (tableState.postingBBUserIds ?? []).includes(displayPlayer.id) ||
+                          (displayPlayer.isHero && bbPostAgreed)
+                        ? 'posting_bb'
+                        : (tableState.waitingForBBUserIds ?? []).includes(displayPlayer.id)
+                          ? 'waiting_for_bb'
+                          : null
+                  }
                   /* Dan 2026-08-18: only the hero can mark their own cards. */
                   showPickedCardIndexes={displayPlayer?.isHero ? shownCardIndexes : undefined}
                   onToggleShowCard={displayPlayer?.isHero ? handleToggleShowCard : undefined}
                   position={tableState.positions[idx] || null}
+                  killMarker={tableState.killHand?.killerSeat === seatNumber ? 'Kill Blind' : null}
                   /* Always on: the acting seat is always marked active. The
                      v8Settings.highlight_active_players gate is gone — see the
                      spotlight note above. */
@@ -25011,6 +25232,10 @@ function LiveTablePage({
           <div className="seat-buyin-confirm__card">
             <SpadeConsole
               as="div"
+              /* The X is Cancel (Dan 2026-09-23: every popup closes from its
+                 top-right corner). Withheld while the debit is in flight, the
+                 same guard the backdrop and the Cancel plate carry. */
+              onClose={seatFirstPending ? undefined : () => setSeatFirstConfirm(null)}
               eyebrow={`Seat ${seatFirstConfirm} · ${seatFirstBuyIn.label}`}
               title="Buy In"
               titleId="seat-buyin-confirm-title"
@@ -25567,8 +25792,15 @@ function LiveTablePage({
                   // Fixed limit: one legal wager, so the floor and the ceiling
                   // are the same number and there is no range to drag through.
                   // A short stack clamps to its all-in.
-                  const flBetSize =
-                    tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+                  // KILL POTS (kill-v1): the server's size wins; on a kill
+                  // hand from an older engine the fallback reads the kill
+                  // limits the snapshot published, never bb x a multiplier.
+                  const flBetSize = fixedLimitStreetBet({
+                    serverBetSize: tableState.fixedBetSize,
+                    killHand: tableState.killHand,
+                    bigBlind: bb,
+                    stage: tableState.boardStage,
+                  });
                   const flWagerTo = Math.min(
                     allInTo,
                     serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
@@ -25834,6 +26066,10 @@ function LiveTablePage({
           >
             <SpadeConsole
               as="div"
+              /* The X is Wait For BB (Dan 2026-09-23: every popup closes from
+                 its top-right corner) - the same thing the secondary plate
+                 does, and the engine keeps holding the seat either way. */
+              onClose={() => setPostOrWaitOpen(false)}
               eyebrow="Your Entry"
               title="Post Or Wait"
               titleId="post-or-wait-title"
@@ -25976,12 +26212,17 @@ function LiveTablePage({
       {/* ═══════════════════════════════════════════════════════════════════════
           SIDE MENU (Slide-in)
           ═══════════════════════════════════════════════════════════════════════ */}
-      /* THE SIDE MENU IS GONE (2026-09-15). It could not be opened: the only reference to
-      `toggleSideMenu` was the overlay's own close handler, inside the block the overlay itself
-      rendered, so nothing anywhere could set `isSideMenuOpen` true. The felt's menu is `TableMenu`
-      in the HUD - the trigger `approvedHamburgerGearGuard` pins - and this was its superseded
-      predecessor left behind with 241 lines of JSX and its own stylesheet. The hamburger is
-      untouched (CLAUDE.md 10.7): what went is a menu no player could reach. */
+      {/* THE SIDE MENU IS GONE (2026-09-15). It could not be opened: the only reference to
+          `toggleSideMenu` was the overlay's own close handler, inside the block the overlay itself
+          rendered, so nothing anywhere could set `isSideMenuOpen` true. The felt's menu is `TableMenu`
+          in the HUD - the trigger `approvedHamburgerGearGuard` pins - and this was its superseded
+          predecessor left behind with 241 lines of JSX and its own stylesheet. The hamburger is
+          untouched (CLAUDE.md 10.7): what went is a menu no player could reach.
+
+          2026-09-23: this note shipped as a BARE block comment in JSX, and JSX has no such thing -
+          between two elements the text of a comment is a text node, so every live table printed
+          the paragraph above under the felt (Dan's screenshot). A JSX comment lives inside braces.
+          tests/unit/noBareCommentsInJsx.test.ts now fails the build on the next one. */}
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
       {/* THE FLOATING "I'M BACK" IS GONE (Dan 2026-09-04: "there shouldn't be
           two 'im back' buttons"). It hung bottom-right over the hero's cards
@@ -26194,6 +26435,7 @@ function LiveTablePage({
         showGameRules={showGameRules}
         isStraddleEnabled={isStraddleEnabled}
         bombPotRules={bombPotRules}
+        killPotRules={killPotRules}
         canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
         onManualBombPot={handleManualBombPot}
         canEditBombSettings={isClubStaff}

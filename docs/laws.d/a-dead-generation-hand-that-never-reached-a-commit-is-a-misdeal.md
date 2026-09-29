@@ -1,0 +1,3 @@
+# tests/a-dead-generation-hand-that-never-reached-a-commit-is-a-misdeal.law.test.ts
+
+The abandoned-generation door voids a dead generation hand that was dealt without its hand-start snapshot, or dispatched to a commit that refused it and that the platform recorded as disposed, under the misdeal ruling only when rows prove the void takes nothing (no commit, history, private state, discard or retained submission; every hole card at a live chair; every live chair holding exactly its last committed end stack), names the ruling on an abort receipt that fences the hand number, never writes a chair, a registration or money, never deletes a permit, and otherwise raises the refusal each shape always had (20260926075505).

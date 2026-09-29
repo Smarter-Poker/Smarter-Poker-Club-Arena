@@ -15,7 +15,6 @@ import { isAgentRole, isClubPrincipal, isClubStaff } from '@/types/clubRoles';
 import type { ClubMembership, MemberRole } from '@/services/MembershipService';
 import { reportError } from '../utils/errorReporter';
 
-import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // CLUB HOOKS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -299,54 +298,6 @@ export function useChipFormatter() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Get nearby clubs using geolocation
- */
-export function useNearbyClubs(radiusKm = 50) {
-  const { nearbyClubs, isDiscovering, userLocation, setUserLocation, discoverNearby } =
-    useClubStore();
-
-  const [geoError, setGeoError] = useState<string | null>(null);
-
-  // Request geolocation on mount
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setGeoError('Geolocation not supported');
-      return;
-    }
-
-    if (!userLocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            club_id: '', // User's location, not a club
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        },
-        (error) => {
-          setGeoError(safeErrorMessage(error));
-        }
-      );
-    }
-  }, [userLocation, setUserLocation]);
-
-  // Discover when location is available
-  useEffect(() => {
-    if (userLocation) {
-      discoverNearby(radiusKm);
-    }
-  }, [userLocation, radiusKm, discoverNearby]);
-
-  return {
-    clubs: nearbyClubs,
-    isLoading: isDiscovering,
-    hasLocation: !!userLocation,
-    error: geoError,
-    refresh: () => discoverNearby(radiusKm),
-  };
-}
-
-/**
  * Search clubs
  */
 export function useClubSearch() {
@@ -442,7 +393,6 @@ export default {
   useWallet,
   useCanAfford,
   useChipFormatter,
-  useNearbyClubs,
   useClubSearch,
   useStakesFormatter,
   useDurationFormatter,

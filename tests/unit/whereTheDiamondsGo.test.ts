@@ -361,6 +361,36 @@ describe('the wiring', () => {
     }
   });
 
+  it('the daily profit burn (2026-09-21, R14) adds no wallet kind: the owner still gets one transfer, the burn is a register row', () => {
+    // The 20% burn leaves custody and reaches no wallet. It is retired in
+    // ca_mint_ledger (holder player, the owner) and never written as a
+    // diamond_transactions row, so the map above stays exact: the owner's one
+    // daily row is still the bare kind `transfer`, filed under Transfers.
+    const burn = read(
+      'supabase/migrations/20260921202834_diamond_spins_daily_settlement_burns_twenty_percent_of_a_pro.sql'
+    );
+    const settle = burn.slice(
+      burn.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_spin_settle_day'),
+      burn.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_spin_settlement_receipt')
+    );
+    expect(settle.match(/add_diamonds_to_balance\(/g)).toHaveLength(1);
+    expect(settle).toContain("public.add_diamonds_to_balance(p_owner,v_credit,'transfer',");
+    expect(settle).toContain(
+      'INSERT INTO public.ca_mint_ledger(op_id,action,asset,holder_type,holder_id'
+    );
+    expect(settle).toContain("'diamond-spin-burn:'||p_owner||':'||p_day");
+    expect(settle).toContain("'burn','diamonds','player',p_owner");
+    expect(settle).not.toMatch(/INSERT INTO public\.diamond_transactions/);
+    expect(settle).not.toMatch(/fn_ca_burn\(/);
+    // The rate is one named function, not a literal scattered around.
+    expect(burn).toContain(
+      'CREATE FUNCTION public.fn_diamond_spin_profit_burn_bps() RETURNS integer'
+    );
+    expect(burn.match(/SELECT 2000/g)).toHaveLength(1);
+    expect(settle).toContain('public.fn_diamond_spin_profit_burn_bps()');
+    expect(settle).not.toMatch(/\b2000\b/);
+  });
+
   it('the schema-manifest fragment names both functions', () => {
     const fragment = JSON.parse(
       read('scripts/ci/schema-manifest.d/cw-wallet-where-the-diamonds-go.json')

@@ -1,205 +1,59 @@
 /**
  * VPIP REQUIREMENT BADGE — styles.
  *
- * Every value here is from Dan's 2026-09-07 specification. Sections cited in
- * the comments are his section numbers, so the two can be read side by side.
+ * ── 2026-09-23: THREE ROWS, NO FRAMES (Dan) ─────────────────────────────────
+ * "THE VPIP EXTERIOR AND INTERIOR FRAMES NEED TO BE REMOVED AND IT SHOULD JUST
+ * DISPLAY 'VPIP', UNDER IT THE ACTUAL PERCENTAGE, AND UNDER THAT THE 'TABLE
+ * MIN'." The 2026-09-07 plaque - matte outer bezel, black face, inner frame,
+ * readout window, two blue lights, CURRENT caption - is removed. What remains
+ * is the type: the same metallic gradient text, stacked VPIP / value / MIN N%,
+ * drawn straight on the felt beside the hero.
  *
- * ── SPEC 27, THE VISUAL LOCK ────────────────────────────────────────────────
- * These are protected design tokens: outer dimensions, corner radius, both
- * frame thicknesses, the title / window / accent / CURRENT / value / MIN
- * positions, font family, weight, tracking, the black tones, the metal tones,
- * the blue tones, the shadows, the spacing and the aspect ratio. Responsive
- * work scales the WHOLE component and never re-tunes one of them (spec 28) -
- * which is why there is exactly one size input, `--vpip-badge-size`, and every
- * other length below is a percentage of the badge or an em of its own scaled
- * font. There are no breakpoint font sizes in this file, deliberately.
+ * What survives of the 2026-09-07 lock (sections cited are Dan's):
+ *   28  ONE size input, `--vpip-badge-size`; every length here is a
+ *       percentage of the badge or a container unit of its own width. No
+ *       breakpoint font sizes in this file.
+ *   4   the box stays square, so the hero geometry that places it is unchanged.
+ *   15  tabular figures, so 38% -> 42% -> 54% never shifts sideways.
+ *   19  the only animation is a short opacity fade on the value.
+ *   25  no pass/fail colouring; silver whatever the standing.
  */
 
 .vpipBadge {
   /* Spec 28: ONE size variable. The caller sets it; nothing else here does. */
   width: var(--vpip-badge-size, 58px);
-  aspect-ratio: 1; /* spec 4 - never stretched on one axis alone */
+  aspect-ratio: 1; /* spec 4 - the box the hero geometry reserves is square */
 
   /* ── TYPE SCALES IN CONTAINER UNITS, NOT IN A SUB-PIXEL em ────────────────
-     This first shipped as `font-size: calc(var(--vpip-badge-size) / 100)` with
-     children at 26em / 13em / 8.5em - a 0.58px root on desktop and 0.40px at
-     the narrowest breakpoint. That is a trap, not a scale: browsers enforce a
-     MINIMUM FONT SIZE (a standard accessibility setting, and Chrome on Android
-     applies font boosting besides), and a clamped 0.4px root turns a 26em
-     readout into roughly 312px inside a 40px square. The spec's "the frame
-     does not move" lock has no defence against a value that renders eight
-     times the size of the plaque.
-
-     `container-type: inline-size` makes 1cqw exactly 1% of the badge's own
-     width, so every child resolves to a real, proportional pixel size that a
-     minimum-font-size floor can only nudge rather than multiply. Same single
-     source of scale, same one drawing at every breakpoint. */
+     Browsers enforce a MINIMUM FONT SIZE (an accessibility setting, and Chrome
+     on Android applies font boosting besides), and a scale built on a
+     sub-pixel em root turns a 26em readout into hundreds of pixels the moment
+     the floor bites. `container-type: inline-size` makes 1cqw exactly 1% of
+     the badge's own width, so every row resolves to a real, proportional pixel
+     size that a floor can only nudge rather than multiply. */
   container-type: inline-size;
   font-family: 'Montserrat', 'Arial Black', sans-serif;
 
-  /* ── Spec 5: MATTE machined metal. Not chrome, not polished, not glossy. ── */
-  --vpip-frame: #898785;
-  --vpip-frame-light: #a6a3a0;
-  --vpip-frame-dark: #646260;
-
-  /* ── Spec 6: near-black charcoal, never flat pure black ── */
-  --vpip-face-top: #202022;
-  --vpip-face-mid: #151517;
-  --vpip-face-bottom: #0c0c0e;
-
-  /* ── Spec 8 ── */
-  --vpip-window: #111214;
-
-  /* ── Spec 9: the blue lives ONLY inside the current window ── */
-  --vpip-blue: #087bff;
-  --vpip-blue-bright: #28b8ff;
-  --vpip-blue-deep: #0a55b5;
-
   position: relative;
-  display: block;
-  border-radius: 18%;
-  background: var(--vpip-frame);
-  /* Spec 5: subtle, and consistent on all four sides. No directional sweep,
-     no outer glow, no hotspot. */
-  border: 1px solid rgb(196 193 190 / 36%);
-  box-shadow:
-    inset 0 1px 1px rgb(255 255 255 / 12%),
-    inset 0 -2px 3px rgb(0 0 0 / 30%),
-    0 5px 9px rgb(0 0 0 / 50%);
-  user-select: none;
-}
-
-/* The black face, inset inside the matte frame. Spec 6 allows the gradient
-   HERE and only here - the frame itself stays one flat matte colour. */
-.vpipBadge__face {
-  position: absolute;
-  inset: 6.5%;
-  border-radius: 13%;
-  background: linear-gradient(180deg, #202022 0%, #171719 42%, #0c0c0e 100%);
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 60%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* ── Spec 11: the VPIP header ───────────────────────────────────────────────
-   Metallic text is allowed even though the frames are matte. No blue. */
-.vpipBadge__title {
-  position: absolute;
-  top: 6%;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 13cqw;
-  font-weight: 800;
-  letter-spacing: 0.045em;
-  line-height: 1;
-  background: linear-gradient(
-    180deg,
-    #f0efed 0%,
-    #d2cfcc 24%,
-    #a5a29f 55%,
-    #d3d0cd 82%,
-    #969390 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow:
-    0 2px 2px rgb(0 0 0 / 75%),
-    0 4px 5px rgb(0 0 0 / 32%);
-}
-
-/* ── Spec 7: the inner frame is thick on purpose, and matte like the outer ──
-   Its proportions are pinned: 53% wide, 42% tall, starting 29.5% down. */
-.vpipBadge__currentFrame {
-  position: absolute;
-  top: 29.5%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 53%;
-  height: 42%;
-  border-radius: 12%;
-  background: var(--vpip-frame);
-  box-shadow:
-    inset 0 1px 1px rgb(255 255 255 / 14%),
-    inset 0 -2px 3px rgb(0 0 0 / 34%),
-    0 2px 4px rgb(0 0 0 / 45%);
-  padding: 7%;
-  box-sizing: border-box;
-}
-
-/* ── Spec 8: the window the readout sits in ── */
-.vpipBadge__currentWindow {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 8%;
-  background: linear-gradient(180deg, #1b1d20 0%, #111214 45%, #090a0c 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  gap: 4%;
+  /* No frame, no face, no shadow box: the rows sit on the felt. */
+  background: none;
+  border: 0;
+  user-select: none;
 }
 
-/* ── Spec 9: two horizontal blue lights, top and bottom, INSIDE the window ──
-   There is deliberately no blue anywhere else - no illuminated outer edge.
-   The glow is bounded by the window's `overflow: hidden` so it reads as an
-   internal light source rather than a neon border. */
-.vpipBadge__blueAccent {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: max(1px, 1.6cqw);
-  background: linear-gradient(
-    90deg,
-    rgb(8 123 255 / 0%) 0%,
-    rgb(8 123 255 / 35%) 15%,
-    var(--vpip-blue) 32%,
-    var(--vpip-blue-bright) 50%,
-    var(--vpip-blue) 68%,
-    rgb(8 123 255 / 35%) 85%,
-    rgb(8 123 255 / 0%) 100%
-  );
-  box-shadow:
-    0 0 4px rgb(8 123 255 / 90%),
-    0 0 9px rgb(8 123 255 / 42%);
-}
-
-.vpipBadge__blueAccent--top {
-  top: 0;
-}
-
-.vpipBadge__blueAccent--bottom {
-  bottom: 0;
-}
-
-/* ── Spec 12: CURRENT. Never changes. ── */
-.vpipBadge__currentLabel {
-  font-size: 7cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: #d8d6d4;
-  line-height: 1;
-  margin-bottom: 2%;
-}
-
-/* ── Spec 13 + 15: THE ONE DYNAMIC FIELD ────────────────────────────────────
-   `tabular-nums` is load-bearing, not decoration: without it the glyph widths
-   differ and 38% -> 42% -> 54% makes the readout jump inside a frame the spec
-   says must never move. The container is full-width and centred so the number
-   is laid out in a fixed box; nothing here auto-scales per value, and the
-   layout is built to hold 100% without touching the frame. */
-.vpipBadge__currentValue {
-  width: 100%;
+/* The shared metallic ink. Text-only, so there is nothing around it to read
+   as a frame; the drop shadows lift it off the felt art instead. */
+.vpipBadge__title,
+.vpipBadge__currentValue,
+.vpipBadge__minimum {
   text-align: center;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  font-size: 26cqw;
-  font-weight: 800;
-  letter-spacing: -0.045em;
   line-height: 1;
+  white-space: nowrap;
   background: linear-gradient(
     180deg,
     #f2f1ef 0%,
@@ -211,40 +65,47 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 3px 1px rgb(0 0 0 / 80%)) drop-shadow(0 6px 5px rgb(0 0 0 / 28%));
+  filter: drop-shadow(0 2px 1px rgb(0 0 0 / 85%)) drop-shadow(0 4px 4px rgb(0 0 0 / 35%));
+}
+
+/* Row 1: the word. */
+.vpipBadge__title {
+  font-size: 15cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+/* Row 2: THE ONE DYNAMIC FIELD (spec 13 + 15). `tabular-nums` is load-bearing:
+   without it the glyph widths differ and 38% -> 42% -> 54% makes the readout
+   walk sideways. Full width and centred so the number is laid out in a fixed
+   box; nothing here auto-scales per value. */
+.vpipBadge__currentValue {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-size: 26cqw;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   /* Spec 19: the ONLY permitted update animation. No rolling, spinning,
      counting, flipping, bouncing or zooming, and no layout movement. */
   transition: opacity 120ms ease-out;
 }
 
-/* ── Spec 23 / 24: the fixed minimum. One component, one prop. ── */
+/* Row 3: the table's rule. One component, one prop (spec 23 / 24). */
 .vpipBadge__minimum {
-  position: absolute;
-  bottom: 6.5%;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5em;
-  font-size: 8.5cqw;
+  /* "TABLE MIN 30%" is thirteen characters of heavy caps on a row the badge's
+     own width sizes. Measured 2026-09-24 in Chromium at 40, 44 and 58px: at
+     11cqw the phrase took 87-90% of the badge in a fallback face, which is
+     over the edge once Montserrat's wider caps load; at 10cqw with 0.02em
+     tracking it takes 79%, in every size the seat asks for. The row read
+     "MIN 30%" at 11cqw before, and Dan's words were "the 'TABLE MIN'". */
+  font-size: 10cqw;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #cfccc9;
-  line-height: 1;
-  text-shadow: 0 2px 2px rgb(0 0 0 / 70%);
+  letter-spacing: 0.02em;
 }
 
 .vpipBadge__minText {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-.vpipBadge__dash {
-  width: 1.1em;
-  height: 1px;
-  background: rgb(207 204 201 / 55%);
-  flex-shrink: 0;
 }
 
 /* Spec 21: a lost connection never destroys the badge and never blanks the

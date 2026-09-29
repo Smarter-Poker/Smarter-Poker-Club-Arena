@@ -18,6 +18,7 @@ import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import {
   TOURNAMENT_CONTEXT_INCOMPLETE,
   TOURNAMENT_CORE_DEPTHS,
+  TOURNAMENT_PREFLOP_ATLAS_DOMAIN,
   TOURNAMENT_PREFLOP_BRANCHES,
   TOURNAMENT_TABLE_SIZES,
   buildTournamentMState,
@@ -31,6 +32,11 @@ import {
   type TournamentPreflopBranch,
   type TournamentPosition,
 } from './HorseTournamentPreflop.js';
+import {
+  horsePhase6AttributionIsValid,
+  observePhase6Lookup,
+  type HorsePhase6Attribution,
+} from './HorsePhase6Attribution.js';
 import { deriveBlindState, deriveContext } from '../services/TournamentBrainContext.js';
 import { spinBlindsForLevel } from '../config/spinSpec.js';
 
@@ -879,30 +885,67 @@ describe('Phase 6 exact position and action branches', () => {
   });
 });
 
+/** A v1-shaped receipt around one lookup, exactly as `createPhase6Attribution` builds it
+ * for an intent-engine route. The real validator, not this test, decides whether it holds. */
+function receiptFor(
+  input: Parameters<typeof tournamentPreflopPolicy>[0],
+  policy: ReturnType<typeof tournamentPreflopPolicy>
+): HorsePhase6Attribution {
+  return {
+    version: 'horse-phase6-attribution-v1',
+    status: policy.source === 'deterministic_baseline' ? 'atlas_evaluated' : 'unavailable',
+    route: 'intent_engine',
+    reason: policy.fallbackReason ?? 'atlas_forwarded',
+    inputSource: {
+      basis: 'provided_decision_snapshot',
+      stateSchemaVersion: 1,
+      tournamentSchemaVersion: 1,
+      tournamentMode: true,
+    },
+    atlasEvaluated: true,
+    forwardedToIntentEngine: true,
+    lookup: observePhase6Lookup(input, policy),
+    referenceProposal: { action: 'fold', amount: null },
+    causalInfluence: 'not_established',
+    gtoOptimality: 'not_established',
+  };
+}
+
 describe('Phase 6 total preflop atlas', () => {
   it('returns a baseline for every valid coordinate and a labeled fallback for impossible pairs', () => {
+    // The loop walks the machine-readable domain. It proves the lookup is total over the
+    // declared coordinates and labels impossible pairs; it does not validate numerical
+    // strategy, calibration, or whether a real betting history reaches a coordinate.
+    // Phase 6B adds two intersection facts to the same walk: every coordinate owns
+    // exactly one cell string (no two coordinates collide), and the real receipt
+    // validator, which rebuilds the cell from the coordinate, accepts every one of them.
+    const domain = TOURNAMENT_PREFLOP_ATLAS_DOMAIN;
     let cells = 0;
     const invalid: string[] = [];
-    for (const tableSize of TOURNAMENT_TABLE_SIZES) {
-      const positions = tournamentPositionsForTable(tableSize);
+    const seenCells = new Set<string>();
+    const refusedReceipts: string[] = [];
+    for (const tableSize of domain.tableSizes) {
+      const positions = domain.positionsBySize[tableSize];
+      expect(positions).toBe(tournamentPositionsForTable(tableSize));
       for (const heroPosition of positions) {
         for (const raiserPosition of [
           null,
           ...positions.filter((position) => position !== heroPosition),
         ]) {
-          for (const anteType of ['none', 'per_player', 'big_blind'] as const) {
-            for (const branch of TOURNAMENT_PREFLOP_BRANCHES) {
-              for (const stackBB of TOURNAMENT_CORE_DEPTHS) {
-                const policy = tournamentPreflopPolicy({
-                  gameFamily: 'nlh',
-                  contextStatus: 'complete',
+          for (const anteType of domain.anteTypes) {
+            for (const branch of domain.branches) {
+              for (const stackBB of domain.depth.anchorsBB) {
+                const input = {
+                  gameFamily: 'nlh' as const,
+                  contextStatus: 'complete' as const,
                   tableSize,
                   heroPosition,
                   raiserPosition,
                   anteType,
                   branch,
                   stackBB,
-                });
+                };
+                const policy = tournamentPreflopPolicy(input);
                 if (
                   policy.source !== 'deterministic_baseline' ||
                   policy.fallbackReason !== null ||
@@ -914,6 +957,10 @@ describe('Phase 6 total preflop atlas', () => {
                 ) {
                   invalid.push(policy.cell);
                 }
+                if (seenCells.has(policy.cell)) invalid.push(`duplicate:${policy.cell}`);
+                seenCells.add(policy.cell);
+                if (!horsePhase6AttributionIsValid(receiptFor(input, policy)))
+                  refusedReceipts.push(policy.cell);
                 cells++;
               }
             }
@@ -922,8 +969,11 @@ describe('Phase 6 total preflop atlas', () => {
       }
     }
     expect(invalid).toEqual([]);
+    expect(refusedReceipts).toEqual([]);
     // sum(2^2..10^2) valid hero/raiser pairs x 3 antes x 11 branches x 17 depths
     expect(cells).toBe(215_424);
+    expect(cells).toBe(domain.totalValidCoordinates);
+    expect(seenCells.size).toBe(domain.totalValidCoordinates);
 
     for (const tableSize of TOURNAMENT_TABLE_SIZES) {
       for (const heroPosition of tournamentPositionsForTable(tableSize)) {
@@ -942,6 +992,85 @@ describe('Phase 6 total preflop atlas', () => {
         expect(Object.values(impossible.shifts)).toEqual([0, 0, 0, 0, 0]);
       }
     }
+  });
+
+  it('resolves every coordinate under every family and context status to exactly one named outcome', () => {
+    // Phase 6B intersection check: for each (family, status) pair the walk covers every
+    // (size, hero, raiser-or-none) coordinate, every ante type and every branch at one
+    // anchor, and asserts the outcome is exactly one of the four named ones, chosen by
+    // the declared fallback precedence. Only nlh + complete reaches the baseline; each
+    // labeled family or non-complete status is a named refusal, never a silent zero.
+    const domain = TOURNAMENT_PREFLOP_ATLAS_DOMAIN;
+    const families = [...domain.gameFamilies.supported, ...domain.gameFamilies.labeled];
+    const statuses = [...domain.contextStatuses.baseline, ...domain.contextStatuses.fallback];
+    const outcomes = new Map<string, number>();
+    let coordinates = 0;
+    const wrong: string[] = [];
+    for (const gameFamily of families) {
+      for (const contextStatus of statuses) {
+        const expected =
+          gameFamily !== 'nlh'
+            ? 'unsupported_variant'
+            : contextStatus !== 'complete'
+              ? 'incomplete_context'
+              : null;
+        for (const tableSize of domain.tableSizes) {
+          const positions = domain.positionsBySize[tableSize];
+          for (const heroPosition of positions) {
+            for (const raiserPosition of [
+              null,
+              ...positions.filter((position) => position !== heroPosition),
+            ]) {
+              for (const anteType of domain.anteTypes) {
+                for (const branch of domain.branches) {
+                  const policy = tournamentPreflopPolicy({
+                    gameFamily,
+                    contextStatus,
+                    tableSize,
+                    heroPosition,
+                    raiserPosition,
+                    anteType,
+                    branch,
+                    stackBB: 20,
+                  });
+                  coordinates++;
+                  const named =
+                    policy.source === 'deterministic_baseline'
+                      ? policy.fallbackReason === null
+                      : policy.fallbackReason !== null &&
+                        domain.fallbackPrecedence.includes(policy.fallbackReason);
+                  if (!named || policy.fallbackReason !== expected) wrong.push(policy.cell);
+                  if (
+                    policy.source === 'labeled_fallback' &&
+                    Object.values(policy.shifts).some((shift) => shift !== 0)
+                  )
+                    wrong.push(`shifted:${policy.cell}`);
+                  const key = `${gameFamily}:${contextStatus}:${policy.source}:${policy.fallbackReason}`;
+                  outcomes.set(key, (outcomes.get(key) ?? 0) + 1);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+    const perPair = domain.totalValidCoordinates / domain.depth.anchorsBB.length;
+    expect(perPair).toBe(12_672);
+    expect(coordinates).toBe(perPair * families.length * statuses.length);
+    // Exactly one outcome per (family, status) pair, and every pair is present.
+    expect(outcomes.size).toBe(families.length * statuses.length);
+    for (const count of outcomes.values()) expect(count).toBe(perPair);
+    expect(outcomes.get('nlh:complete:deterministic_baseline:null')).toBe(perPair);
+    for (const contextStatus of domain.contextStatuses.fallback)
+      expect(outcomes.get(`nlh:${contextStatus}:labeled_fallback:incomplete_context`)).toBe(
+        perPair
+      );
+    for (const gameFamily of domain.gameFamilies.labeled)
+      for (const contextStatus of statuses)
+        expect(
+          outcomes.get(`${gameFamily}:${contextStatus}:labeled_fallback:unsupported_variant`)
+        ).toBe(perPair);
   });
 
   it('labels non-NLH and incomplete-context cells without claiming solver coverage', () => {

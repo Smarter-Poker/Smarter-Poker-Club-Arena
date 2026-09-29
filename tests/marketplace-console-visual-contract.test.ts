@@ -279,7 +279,7 @@ describe('Marketplace Console Visual Contract', () => {
     expect(marketplaceCss).toContain('shark-panel-v1/top.png');
     expect(marketplaceCss).toContain('shark-panel-v1/mid.png');
     expect(marketplaceCss).toContain('shark-panel-v1/bottom.png');
-    expect(marketplaceCss).toContain('wallet-row-shell.webp');
+    expect(marketplaceCss).toContain('wallet-row-shell-e7964bb1791f.webp');
     expect(marketplaceCss).toContain('action-primary-shell.webp');
     expect(marketplaceCss).not.toContain('border-left: 3px');
     expect(diamondsCss).toContain('shark-panel-v1/top.png');
@@ -332,7 +332,7 @@ describe('Marketplace Console Visual Contract', () => {
     expect(page).toContain('diamond-buy-btn--secondary');
     expect(page).not.toMatch(/[◆◈♛★▲▼]/u);
     expect(page).not.toContain("style={{ background: 'rgba(255,255,255,0.08)'");
-    expect(pageCss).toContain('wallet-row-shell.webp');
+    expect(pageCss).toContain('wallet-row-shell-e7964bb1791f.webp');
     expect(pageCss).toContain('shark-panel-v1/top.png');
     expect(pageCss).toContain('shark-panel-v1/mid.png');
     expect(pageCss).toContain('shark-panel-v1/bottom.png');
@@ -408,7 +408,7 @@ describe('Marketplace Console Visual Contract', () => {
     expect(css).toContain('shark-panel-v1/top.png');
     expect(css).toContain('shark-panel-v1/mid.png');
     expect(css).toContain('shark-panel-v1/bottom.png');
-    expect(css).toContain('wallet-row-shell.webp');
+    expect(css).toContain('wallet-row-shell-e7964bb1791f.webp');
     expect(css).toContain('action-primary-shell.webp');
     expect(css).toContain('aspect-ratio: 900 / 143');
     expect(css).toContain('aspect-ratio: 900 / 139');

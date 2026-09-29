@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/claude-ca-product/feat/kill-pot-table-settings. Migration 20260924034010_kill_pot_table_settings (NOT applied by the lane; it needs the capability registry 20260924025555 installed first, and the owner confirms the two pinned md5(prosrc) values named in its header before install). Adds tables.kill_mode and tables.kill_threshold_bb (metadata-only, NOT VALID checks), hand_history.kill_pot, the zz_tables_kill_pot_guard trigger and its SECURITY INVOKER function, the pure refusal rule, and the owner door fn_set_cash_game_kill_settings. Proved by scripts/ci/test-kill-pot-table-settings.py.",
+  "functions": [
+    "fn_kill_pot_configuration_refusal",
+    "fn_set_cash_game_kill_settings",
+    "fn_tables_kill_pot_guard"
+  ],
+  "columns": {
+    "tables": ["kill_mode", "kill_threshold_bb"],
+    "hand_history": ["kill_pot"]
+  }
+}

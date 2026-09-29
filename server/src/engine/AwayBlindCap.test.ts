@@ -93,13 +93,45 @@ describe('away-blind cap', () => {
 
   // ── Coming back must refund the budget ───────────────────────────────────
 
-  it('a heartbeat after a disconnect clears the charges', () => {
+  /**
+   * PIN MOVED, NOT WEAKENED - 2026-09-09.
+   *
+   * This test used to assert the opposite: that a heartbeat after a disconnect
+   * REFUNDED the budget, so a second absence started fresh. The reasoning was
+   * "the cap is a budget for ONE absence, and they came back".
+   *
+   * A heartbeat is proof of a SOCKET, not of a player. A backgrounded mobile
+   * client produces one reconnect edge per orbit - the tab freezes, the socket
+   * dies, the OS wakes it and a beat lands - with nobody at the phone. The
+   * budget was therefore refunded several times an hour and
+   * `awayBlindSbCharged && awayBlindBbCharged` could never both be true at
+   * once, so the seat was never evicted: it kept posting blinds for ever while
+   * every hand spent a full turn clock folding an empty chair. The same
+   * heartbeat reset zeroed `consecutiveTimeouts`, which is why the auto-sit-out
+   * ladder never fired either.
+   *
+   * The property being protected is unchanged - the budget is spent by ABSENCE
+   * and refunded by PRESENCE. What changed is what counts as presence: a
+   * voluntary action, or sitting back. Both are pinned below, and both were
+   * already pinned before this change.
+   */
+  it('a heartbeat does NOT refund the budget - only real presence does', () => {
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
     eng.heartbeat(TABLE, PLAYER);
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
-    // The second absence starts fresh: one blind this time, no eviction.
+    // One SB and one BB across the two absences is the whole budget.
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
+  });
+
+  it('acting after the reconnect DOES refund it, and the next absence starts fresh', () => {
+    eng.markDisconnected(TABLE, PLAYER);
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
+    eng.heartbeat(TABLE, PLAYER);
+    eng.recordPlayerActed(TABLE, PLAYER); // somebody is genuinely there
+    eng.markDisconnected(TABLE, PLAYER);
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
   });
 

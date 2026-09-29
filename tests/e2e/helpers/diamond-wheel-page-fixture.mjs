@@ -46,11 +46,21 @@ export function diamondWheelPageFixture() {
       useMasterBusSubscription: `export const useMasterBusSubscription=()=>{};`,
       MasterBus: `export const masterBus={emit:()=>{},on:()=>()=>{}};`,
       avatarGenerator: `export const sizedStorageUrl=(url)=>url;`,
-      DiamondWheelService: `const state=${JSON.stringify(state)};export default {
+      // The page reads the service's NAMED exports as well as its default one:
+      // the unverified-receipt error, the refusal the card table prints, and
+      // the saved-pick store. A layout fixture wagers nothing, so the store is
+      // empty and both money doors refuse.
+      DiamondWheelService: `const state=${JSON.stringify(state)};export class WheelReceiptUnverified extends Error{};
+        export const CARD_NOT_PICKED='That Card Could Not Be Turned Over';
+        export const readWheelPendingCard=()=>null;
+        export const saveWheelPendingCard=()=>{};
+        export const clearWheelPendingCard=()=>{};
+        export default {
         getStateV2:async()=>({...state,available:!location.search.includes('paused'),reason:'Local Connection Is Paused'}),
         welcomeState:async()=>({available:true,enabled:true,price:100}),
         dailyBonusState:async()=>({available:true,ticket_count:2}), history:async()=>[],
         commit:async()=>({ok:true,commit_id:'d1000000-0000-4000-8000-000000000001',server_seed_hash:'a'.repeat(64)}),
+        pickCard:async()=>{throw Error('This Layout Fixture Cannot Wager')},
         spinV2:async()=>{throw Error('This Layout Fixture Cannot Wager')}};`,
       useAuthUser: `export const useAuthUser=()=>({user:{id:'local-layout-player'}});`,
       useGameFloor: `const refresh=()=>{};export const useGameFloor=()=>({floor:null,refresh});`,
@@ -58,7 +68,10 @@ export function diamondWheelPageFixture() {
       FloorFeed: `export default()=>null`,
       Toast: `const t={success:()=>{},error:()=>{},info:()=>{},warning:()=>{}};export const useToast=()=>t;`,
       errorReporter: `export const reportError=console.error`,
-      SoundService: `export const soundService={playWin:()=>{},playBigWin:()=>{},playSpinStart:()=>{},playSpinTicking:()=>{},playSpinPeg:()=>{},playSpinResult:()=>{}};`,
+      // Every cue is a no-op, whatever its name: the scenes play their own sounds
+      // (2026-09-26) and a fixed list of method names broke the build each time a
+      // cue was added. PLINKO_PEG_GAP_MS mirrors src/services/SoundService.ts.
+      SoundService: `export const soundService=new Proxy({},{get:()=>()=>{}});export const haptic=new Proxy({},{get:()=>()=>{}});export const PLINKO_PEG_GAP_MS=30;`,
       HapticService: `export const triggerHaptic=()=>{};`,
     };
     const result = await build({

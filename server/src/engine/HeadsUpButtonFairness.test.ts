@@ -175,7 +175,12 @@ describe('the dealing loop is wired to both rules', () => {
   it('restores the last big blind seat across an engine restart', () => {
     expect(BASE).toMatch(/protected lastBigBlindSeat: number = 0;/);
     const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
-    expect(body).toMatch(/select\('button_seat, players'\)/);
-    expect(body).toMatch(/this\.lastBigBlindSeat = nextOf\(sb\);/);
+    // 2026-09-25 (the dead button at every table size): the blind POSTS are
+    // read back with the row, so the seat that posted each blind is exact and
+    // a dead small blind is visible; the walk from the button stays as the
+    // fallback for a row written before posts were recorded.
+    expect(body).toMatch(/select\('button_seat, players, actions'\)/);
+    expect(body).toMatch(/this\.lastBigBlindSeat = bbPosted > 0 \? bbPosted : nextOf\(walkedSb\);/);
+    expect(body).toMatch(/this\.lastSmallBlindSeat = /);
   });
 });

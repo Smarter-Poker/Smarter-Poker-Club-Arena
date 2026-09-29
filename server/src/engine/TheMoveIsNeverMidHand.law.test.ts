@@ -334,7 +334,8 @@ describe('D5 - a player who left leaves nothing of themselves behind', () => {
     expect(prune).toMatch(/if \(!this\.isTournamentTable\(\)\) \{/);
     for (const call of [
       'this.disconnectEngine.unregisterPlayer(this.tableId, id);',
-      'this.timeBankEngine.removePlayer(this.tableId, id);',
+      // 2026-09-25: the bank and its metadata leave together (forgetTimeBank).
+      'this.forgetTimeBank(id);',
       'this.straddleEngine.removePlayer(this.tableId, id);',
       'this.preActionEngine.removePlayer(this.tableId, id);',
     ]) {

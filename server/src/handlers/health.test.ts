@@ -2,11 +2,25 @@
  * Tests for the telemetry handlers (Phase U3.5).
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { handleHealth, handleWsMetrics, handleMetrics } from './health.js';
 import { mockRes, parseJson } from './_testHelpers.js';
+import type { HorseJournalHealth } from '../services/HorseDecisionJournal.js';
 
 describe('handleHealth', () => {
+  // 2026-09-26: the default journal source reports every state, including
+  // `disabled` when no journal directory is configured, so a body read through
+  // the default carries the section. The routing verdict never reads it.
+  beforeEach(() => {
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const withDisabledJournal = (status: Record<string, unknown>) => ({
+    ...status,
+    horseJournal: expect.objectContaining({ mode: 'disabled', lastFailureReason: null }),
+  });
   function statusCodeFor(status: Record<string, unknown>): number {
     const { res, captured } = mockRes();
     const gameServer = {
@@ -14,7 +28,7 @@ describe('handleHealth', () => {
       getPrometheusMetrics: vi.fn().mockReturnValue(''),
     };
     handleHealth(res, { gameServer });
-    expect(parseJson(captured)).toEqual(status);
+    expect(parseJson(captured)).toEqual(withDisabledJournal(status));
     return captured.statusCode ?? 0;
   }
 
@@ -34,7 +48,7 @@ describe('handleHealth', () => {
     };
     handleHealth(res, { gameServer });
     expect(captured.statusCode).toBe(200);
-    expect(parseJson(captured)).toEqual(status);
+    expect(parseJson(captured)).toEqual(withDisabledJournal(status));
     expect(captured.headers?.['Content-Type']).toBe('application/json');
   });
 
@@ -72,18 +86,34 @@ describe('handleHealth', () => {
       dealerPrerequisitesReady: true,
       liveHorseDecision: { phase: 'ready' },
     };
-    const horseJournal = {
-      mode: 'failed' as const,
-      lastFailureReason: 'archive_catalog_capacity' as const,
+    const horseJournal: HorseJournalHealth = {
+      mode: 'paused',
+      lastFailureReason: null,
+      pausedReason: 'archive_catalog_capacity',
+      pausedSince: '2026-09-25T19:34:05.000Z',
+      failedSince: null,
       queued: 16,
       appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
       maxCatalogBytes: 6 * 1024 * 1024 * 1024,
       catalogBytes: 6 * 1024 * 1024 * 1024,
-      pendingSegments: 0,
+      segments: 500_000,
+      maxSegments: 500_000,
+      publishedSegments: 499_999,
+      pendingSegments: 1,
+      retiredSegments: 0,
+      retiredRecords: 0,
+      heldSegments: 0,
+      heldBytes: 0,
+      holdBudgetBytes: 4 * 1024 * 1024 * 1024,
+      holdTrimmedSegments: 0,
+      compressedBytes: 6_476_021_020,
+      maxBytes: 8 * 1024 * 1024 * 1024,
       records: 7_000_000,
       maxRecords: 8_000_000,
       maxRowid: 7_000_000,
       statsAgeMs: 900,
+      reportAgeMs: 400,
+      capture: 'not running: paused since 2026-09-25T19:34:05.000Z at archive_catalog_capacity',
     };
     const gameServer = {
       getStatus: vi.fn().mockReturnValue(status),
@@ -96,7 +126,7 @@ describe('handleHealth', () => {
     expect(parseJson(captured)).toEqual({ ...status, horseJournal });
   });
 
-  it('leaves the body untouched when no Horse journal is configured', () => {
+  it('leaves the body untouched when the journal source answers null', () => {
     const { res, captured } = mockRes();
     const status = { liveness: 'standby', status: 'ok' };
     const gameServer = {
@@ -121,7 +151,7 @@ describe('handleHealth', () => {
     expect(gameServer.getStatus).toHaveBeenCalledTimes(1);
     expect(gameServer.getStatus).toHaveBeenCalledWith({ kind: 'tables', tableIds: [id] });
     expect(captured.statusCode).toBe(503);
-    expect(parseJson(captured)).toEqual(status);
+    expect(parseJson(captured)).toEqual(withDisabledJournal(status));
   });
 });
 

@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/claude-ca-product/fix/one-club-membership-cap. Migration 20260922153234_one_club_membership_cap_one_count_one_lock (prepared; installed only after owner approval). Proved by scripts/ci/test-club-membership-cap.py.",
+  "tables": [],
+  "functions": [
+    "fn_club_creation_open",
+    "fn_club_membership_cap",
+    "fn_club_membership_count",
+    "fn_club_membership_lock"
+  ],
+  "columns": {}
+}

@@ -113,9 +113,26 @@ describe('the engine stamps new cash hands WEIGHTED_CONTRIBUTED', () => {
     expect(settlement).toMatch(/p_returned_uncalled:\s*returnedObj/);
   });
 
-  it('the unbanked-fee queue carries the methodology so a re-driven hand keeps it', () => {
+  it('the unbanked-fee queue carries the methodology it was settled under', () => {
     expect(settlement).toMatch(/rakeMethod:\s*'WEIGHTED_CONTRIBUTED'/);
-    expect(reconciler).toMatch(/p_rake_method:\s*row\.rake_method\s*\?\?\s*'DEALT_EQUAL'/);
+  });
+
+  /**
+   * NOTHING RE-DRIVES A QUEUED RAKE, SO NOTHING CAN RE-DRIVE IT EQUAL-DEALT
+   * (2026-09-22). This pin used to require the reconciler's re-drive to fall
+   * back to `row.rake_method ?? 'DEALT_EQUAL'`. That fallback was the door this
+   * law exists to keep shut: the hourly re-queue filed DEALT_EQUAL claims for
+   * raked hands whose envelope was merely late, the re-drive banked them first,
+   * and atomic_distribute_rake keeps the first write, so the hand's weighted
+   * attribution was lost for good. The rake of an accepted hand is now banked
+   * only by its own post-commit envelope, and the reconciler re-drives no rake
+   * at all. Stronger than the old pin, not weaker: no methodology can re-enter
+   * through a path that no longer exists.
+   */
+  it('the reconciler re-drives no rake, so equal-dealt cannot re-enter through it', () => {
+    expect(reconciler).not.toMatch(/atomic_distribute_rake/);
+    expect(reconciler).not.toMatch(/DEALT_EQUAL/);
+    expect(reconciler).not.toMatch(/fn_requeue_unbanked_cash_rake/);
   });
 
   it('eligible contribution and returned-uncalled are captured as separate first-class state', () => {

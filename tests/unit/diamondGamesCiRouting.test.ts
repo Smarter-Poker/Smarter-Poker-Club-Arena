@@ -68,11 +68,25 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
     'supabase/migrations/20260919153418_public_bonus_replay_has_an_explicitly_public_reader.sql',
     'tests/fixtures/accounting-delivery/diamond-games/replay-public-guard-dependencies.sql',
     'tests/sql/diamond-daily-custody.sql',
+    'tests/sql/diamond-spins-quiet-ledger-before.sql',
+    'tests/sql/diamond-spins-quiet-ledger.sql',
+    'tests/sql/diamond-spins-daily-profit-burn.sql',
+    'tests/sql/diamond-spins-every-movement-has-a-ledger-row.sql',
+    'tests/fixtures/accounting-delivery/diamond-games/quiet-ledger-dependencies.sql',
+    'tests/fixtures/accounting-delivery/diamond-games/daily-burn-dependencies.sql',
+    'tests/fixtures/accounting-delivery/diamond-games/daily-burn-legacy-seed.sql',
+    'tests/fixtures/accounting-delivery/diamond-games/daily-burn-legacy-assert.sql',
+    'tests/fixtures/accounting-delivery/diamond-games/daily-custody-concurrency-assert.sql',
     'tests/fixtures/accounting-delivery/diamond-games/replay-social-dependencies.sql',
     'tests/fixtures/accounting-delivery/diamond-games/daily-custody-dependencies.sql',
     'src/services/DiamondReplayService.ts',
     'src/services/DiamondStatementService.ts',
     'tests/fixtures/diamond-spins/wheel-v3-postgres-receipts.json',
+    'tests/sql/diamond-wheel-v4-model-and-matrix.sql',
+    'tests/sql/diamond-wheel-v4-draw-and-cards.sql',
+    'tests/fixtures/diamond-spins/wheel-v4-postgres-receipts.json',
+    'tests/unit/wheelV4PostgresContract.test.ts',
+    'src/utils/wheelV4Model.ts',
     'tests/unit/wheelUpgradePostgresContract.test.ts',
     'tests/unit/wheelUpgradeReceipts.test.ts',
     'tests/fixtures/diamond-wheel-v2-receipts.json',
@@ -318,5 +332,46 @@ describe('the law registry admits the suite that reads it', () => {
       tests: false,
     });
     expect(classifyChangedPaths(['docs/LAWS.md']).tests).toBe(false);
+  });
+});
+
+/**
+ * MEASURED 2026-09-26. PR #5260 changed a client scene and
+ * scripts/dev/diamond-scene-perf.mjs, a headless-Chromium frame-time tool for
+ * the Diamond fixture page. `scripts/dev/` admits the PostgreSQL accounting
+ * job (it is where that job's test-*.sh and probe-* files live), so the tool
+ * alone bought 29.5 minutes of accounting and four server shards. The two
+ * screenshot/perf harnesses are named out of that lane exactly; nothing else
+ * in scripts/dev/ moves, and a harness changed beside anything server-bound
+ * still runs the job.
+ */
+describe('the Diamond screenshot harnesses do not buy the accounting job', () => {
+  it.each(['scripts/dev/diamond-test-shots.mjs', 'scripts/dev/diamond-scene-perf.mjs'])(
+    '%s alone does not admit the server lane',
+    (path) => {
+      expect(classifyChangedPaths([path]).server).toBe(false);
+    }
+  );
+
+  it.each([
+    'scripts/dev/test-accounting-delivery.sh',
+    'scripts/dev/probe-atomic-tournament-blinds-pg17.py',
+    'scripts/dev/diamond-wheel-render.mjs',
+    'scripts/dev/diamond-test-shots.mjs.bak',
+    'scripts/dev/nested/diamond-test-shots.mjs',
+  ])('every other scripts/dev path still admits it: %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it('a harness changed beside a migration or server source still runs accounting', () => {
+    expect(
+      classifyChangedPaths([
+        'scripts/dev/diamond-test-shots.mjs',
+        'supabase/migrations/20260926000000_example.sql',
+      ]).server
+    ).toBe(true);
+    expect(
+      classifyChangedPaths(['scripts/dev/diamond-scene-perf.mjs', 'server/src/index.ts']).server
+    ).toBe(true);
   });
 });

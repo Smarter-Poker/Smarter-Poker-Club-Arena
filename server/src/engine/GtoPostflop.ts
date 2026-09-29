@@ -47,6 +47,7 @@
  */
 
 import type { Card } from '../types.js';
+import { solverStoreIdentity, type SolverStoreIdentity } from '../gto/SolverStoreIdentity.js';
 
 export interface GtoPostflopRow {
   street: string;
@@ -65,6 +66,9 @@ export type GtoStreetAdvice = {
 };
 
 let store = new Map<string, Record<string, Record<string, number>>>();
+/** Content identity of `store` (Phase 6C G4); null after an additive test write until read. */
+let storeIdentity: SolverStoreIdentity | null = solverStoreIdentity(store, null);
+let storeRevision: string | null = null;
 
 const DEPTH_BUCKETS = [10, 20, 40, 80, 150];
 const STREETS = new Set(['flop', 'turn', 'river']);
@@ -156,11 +160,24 @@ function validatedGtoPostflopStore(
   return next;
 }
 
-/** Validate the complete snapshot, then atomically replace the live store. */
-export function replaceGtoPostflop(rows: GtoPostflopRow[]): number {
+/**
+ * Validate the complete snapshot, then atomically replace the live store.
+ * `revision` is the source's build watermark (the table's latest built_at the
+ * loader read on both sides of its paged fetch); it travels with the digest.
+ */
+export function replaceGtoPostflop(rows: GtoPostflopRow[], revision: string | null = null): number {
   const next = validatedGtoPostflopStore(rows);
+  const identity = solverStoreIdentity(next, revision);
   store = next;
+  storeRevision = revision;
+  storeIdentity = identity;
   return store.size;
+}
+
+/** The exact open-node cell set the brain reads: entry count, content digest and revision. */
+export function gtoPostflopStoreIdentity(): SolverStoreIdentity {
+  if (!storeIdentity) storeIdentity = solverStoreIdentity(store, storeRevision);
+  return storeIdentity;
 }
 
 /**
@@ -178,6 +195,9 @@ export function setGtoPostflop(rows: GtoPostflopRow[]): number {
     );
     applied++;
   }
+  // An additive write is not a sourced snapshot: its identity has no revision.
+  storeRevision = null;
+  storeIdentity = null;
   return applied;
 }
 
@@ -218,6 +238,8 @@ export function gtoPostflopCount(): number {
 /** Test seam. */
 export function _clearGtoPostflop(): void {
   store = new Map<string, Record<string, Record<string, number>>>();
+  storeRevision = null;
+  storeIdentity = null;
 }
 
 const RANKV: Record<string, number> = {

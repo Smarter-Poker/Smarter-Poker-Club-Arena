@@ -29,10 +29,18 @@
       "pct": 3.5,
       "reason": "Matte gunmetal frame and its antialiased silhouette, inspected at full size on black on 2026-09-19. The detector removes 13487 edge pixels with mean RGB luminance 104.94; none exceeds 200 and only 831 are fully opaque. The removed band follows the horizontal steel rim and corner housing shadows, not a white export background. An in-memory cleaned copy converges to 0.0%, but convergence alone is insufficient: it removes the frame silhouette shading. Keep the approved matte frame and pin this exact reading."
     },
+    "public/assets/diamond-spins/wheel-selector-holder-v2.png": {
+      "pct": 7.3,
+      "reason": "Artwork, the known silver-at-the-border case, inspected at full size on black on 2026-09-21. This is the centre holder cut from the approved wheel-selector-mount-v1.png around its hub axis (owner ruling 2026-09-21, R5: only the holder and the pointer, no side arcs), with the two cuts feathered over 36 px so the arm ends softly. The detector removes 9575 pixels of mean RGB luminance 134.8, only 32 of them fully opaque and only 673 above 200, all in columns 3-105 and 415-517 of the 520-wide crop: the two feathered brushed-steel arm stubs, which are smooth, neutral and bright by design and sit at the image border because that is where the cut is. The hub, clamps and everything above and below them read clean. A cleaned copy loses the arm stubs entirely, which is the art, not a matte. Pin the reading."
+    },
+    "public/assets/diamond-spins/wheel-selector-holder-v2.webp": {
+      "pct": 7.2,
+      "reason": "The sealed WebP derivative of wheel-selector-holder-v2.png above, written once by scripts/generate-webp-media.mjs (quality 88) and committed as the bytes the wheel actually loads. Same feathered brushed-steel arm stubs at the two cut edges; the lossy encode moves the reading by a tenth of a point. See the PNG entry for the inspection."
+    },
     "public/assets/diamond-spins/wheel-selector-matte-v1.png": {
       "pct": 1.0,
       "reason": "Matte steel pointer, inspected at full size on black on 2026-09-19. The detector removes 6072 pixels with mean RGB luminance 93.14, only two above 200; 5928 lie in the top 20% of the image along the pointed steel crest and upper shoulders. An in-memory cleaned copy reads 0.0031%, but removes the matte metal contour, not a white background. Preserve the blue crystal and matte housing and pin the measured reading."
     }
   },
-  "generated": "2026-09-19"
+  "generated": "2026-09-21"
 }

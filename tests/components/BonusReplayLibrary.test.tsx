@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   report: vi.fn(),
   open: vi.fn(),
   appShare: vi.fn(),
+  /** How many times the replay player's module has been evaluated. */
+  playerLoads: 0,
 }));
 vi.mock('../../src/services/DiamondReplayService', async (original) => ({
   ...(await original<typeof import('../../src/services/DiamondReplayService')>()),
@@ -29,11 +31,19 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => ({ success: mocks.toast }),
 }));
-vi.mock('../../src/components/games/BonusReplayPlayer', () => ({
-  default: ({ replay }: { replay: BonusReplay }) => (
-    <div data-testid="player">{replay.payout_chips} Confirmed</div>
-  ),
-}));
+vi.mock('../../src/components/games/BonusReplayPlayer', () => {
+  /* Counted, not just stubbed: the whole point of the split is that this
+     module is not evaluated until a player asks to watch something. */
+  mocks.playerLoads++;
+  return {
+    default: ({ replay }: { replay: BonusReplay }) => (
+      <div data-testid="player">{replay.payout_chips} Confirmed</div>
+    ),
+  };
+});
+/** The count at the instant the library module finished evaluating: a static
+ *  import of the player makes this 1 no matter which test runs first. */
+const playerLoadsAtImport = mocks.playerLoads;
 
 const clubA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const clubB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -110,6 +120,25 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe('the replay player is not on the way to the list', () => {
+  /**
+   * This library is rendered by DiamondWheelPage, the page every round starts
+   * on. A static import of BonusReplayPlayer put PlinkoBoard, CrashCurve and
+   * ChoiceScene - and with them the whole three.js chunk, 511kB raw / 125kB
+   * gzipped - on the wheel's first paint, for a component that renders only
+   * after somebody picks a row.
+   */
+  it('does not evaluate the player module until a replay is selected', async () => {
+    expect(playerLoadsAtImport).toBe(0);
+    render(<BonusReplayLibrary clubId={clubA} />);
+    await screen.findByRole('button', { name: 'Replay', exact: true });
+    expect(mocks.playerLoads).toBe(0);
+    await click('Replay');
+    expect(await screen.findByTestId('player')).toBeInTheDocument();
+    expect(mocks.playerLoads).toBe(1);
+  });
 });
 
 describe('private bonus replay library', () => {

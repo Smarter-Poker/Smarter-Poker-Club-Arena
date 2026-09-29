@@ -1,0 +1,29 @@
+-- A RESOLVED OPENING REGISTRATION IS THE ENTRY EVIDENCE FOR ITS WEEK (2026-09-28).
+--
+-- After 20260928211132 (#5551) and 20260928222109 (#5553) and the opening
+-- resolution writers, Midway Union's book 2026-09-21 07:00 .. 09-28 07:00 UTC
+-- still fails two in-week tests of fn_union_pnl_evidence_report for the same
+-- pre-capture registrations (read-only on production 2026-09-28):
+--  * tournament_original_population_or_instrument_incomplete: 681 of the
+--    registrations the opening boundary now carries through a resolution were
+--    touched in the week (busts, the 09-27 cancellation) and have no funding
+--    receipt, so the receipt test refuses them;
+--  * tournament_award_original_earning_owner_incomplete: 172 in-week awards to
+--    those registrations (104 prizes 3,617.69 + 68 bounties 423.75, all posted
+--    prize_liability -> player_wallet at the resolved club) were paid with
+--    entry_receipt_ids = '{}', because no entry receipt existed to name.
+-- This migration changes only those two tests:
+--  * a touched registration without a receipt entry is accepted when the
+--    opening boundary carried it through a valid resolution (its holding is
+--    marked basis 'opening_registration_resolution');
+--  * fn_union_pnl_award_owner_resolved: an award naming no entry receipt is
+--    accepted only when exactly one resolution for its tournament and player
+--    exists at the week's opening, names the award's own registration, was
+--    accepted by the opening boundary, owns the credited club, and the award
+--    is the posted ledger credit from this prize pool to this player at that
+--    club for the same amount. Anything else stays refused.
+-- Every other test, value and order of the report is unchanged. Nothing is
+-- written; no balance column is touched.
+--
+-- Native qualification: scripts/dev/test-union-pnl-award-owner.sh (green +
+-- RED=1 control).

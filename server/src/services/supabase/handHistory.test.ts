@@ -849,6 +849,42 @@ describe('logHandHistory - accepted-hand transaction', () => {
     expect(rpcCalls).toHaveLength(1);
     expect((rpcCalls[0].args.p_hand_row as Record<string, unknown>).rit_boards).toEqual(ritBoards);
   });
+
+  it('persists the kill_pot record in the same authoritative hand payload, and only when present', async () => {
+    // KILL POTS (rule manifest kill-v1): the pending kill is restored from the
+    // trigger hand's own row, so it must travel inside the atomic commit.
+    acceptAtomicHand();
+    const killPot = {
+      rule_version: 'kill-v1' as const,
+      kill_hand: null,
+      next_kill: {
+        killer_user_id: 'u1',
+        killer_seat: 1,
+        mode: 'full' as const,
+        multiplier: '2/1',
+        threshold_bb: 10,
+        threshold_amount: 20,
+        contested_total: 40,
+        trigger_hand_id: historyId,
+        trigger_hand_number: GLOBAL_HAND + 508,
+        chained: false,
+        scoop: { winner: 'u1', pots: 1, awards: 1, boards: [1], low_awards: 0 },
+      },
+      cancelled: null,
+    };
+    await logHandHistory({ ...atomicParams(GLOBAL_HAND + 508), killPot });
+    expect(rpcCalls).toHaveLength(1);
+    const row = rpcCalls[0].args.p_hand_row as Record<string, unknown>;
+    expect(row.kill_pot).toEqual(killPot);
+    // The base blinds stay on the row; the BBJ commit check requires them.
+    expect(row.small_blind).toBe(1);
+    expect(row.big_blind).toBe(2);
+
+    rpcCalls.length = 0;
+    acceptAtomicHand();
+    await logHandHistory({ ...atomicParams(GLOBAL_HAND + 509), killPot: null });
+    expect('kill_pot' in (rpcCalls[0].args.p_hand_row as Record<string, unknown>)).toBe(false);
+  });
 });
 
 describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {

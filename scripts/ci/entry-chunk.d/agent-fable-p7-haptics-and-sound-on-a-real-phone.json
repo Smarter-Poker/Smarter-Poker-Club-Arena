@@ -1,0 +1,4 @@
+{
+  "_owner": "haptics-and-sound-on-a-real-phone (2026-09-26): src/utils/audioSession.ts is 60 lines with no imports. The sound engine (already in first paint) sets the Safari audio session when it is constructed, before the first sound, so game sound plays with the iPhone silent switch on while Sounds is on. A lazy import would let the first card or chip sound play in the muted ambient session.",
+  "modules": ["src/utils/audioSession.ts"]
+}

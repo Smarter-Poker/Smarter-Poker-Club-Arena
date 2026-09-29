@@ -105,6 +105,198 @@ SELECT fixture.assert(position('AND (p_user_ids IS NULL OR s.player_id=ANY(p_use
   IN pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))>0,
  'A NULL user list draws every payee of the period from accounting_payable_earning_sources');
 
+-- ===== the 2026-09-25 cost rewrite is what everything below proves =====
+-- The rewrite made the weekly tournament gate prove the week in ONE pass
+-- instead of calling fn_accounting_tournament_fee_net_plan once per event, and
+-- stopped fn_calculate_cash_rakeback_periods reading the week three times. Both
+-- claim to keep every assertion, every reason and the same payee set. A fixture
+-- that silently ran the PREDECESSOR would report that as proven without having
+-- looked at it, so the bodies under test are named here before the coverage
+-- assertions below depend on them.
+SELECT fixture.assert(position('survivor_ids AS MATERIALIZED'
+  IN pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))>0,
+ 'The installed weekly tournament gate is the one-pass rewrite, so the coverage proof below tests it');
+SELECT fixture.assert(position('week_records AS MATERIALIZED'
+  IN pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))>0,
+ 'The installed period calculator reads its week once, so the coverage proof below tests it');
+DO $$ DECLARE verdict jsonb; BEGIN
+ verdict:=fn_accounting_tournament_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ PERFORM fixture.assert(verdict->>'status'='ready',
+  'The one-pass weekly tournament gate proves the coverage week ready: '||verdict::text);
+ PERFORM fixture.assert((verdict->>'checked')::int>=0,'The gate reports how many events it proved: '||verdict::text);
+END $$;
+-- The per-event authority the fast path declines to call must reach the same
+-- verdict for every candidate event of the week. If the set pass ever computed
+-- a fingerprint, a net fee or a union that net_plan would have disagreed with,
+-- the gate above would have said ready while this says otherwise.
+DO $$ DECLARE bad text; BEGIN
+ SELECT string_agg(c.t::text,',') INTO bad FROM (
+   SELECT DISTINCT tournament_id AS t FROM accounting_tournament_fee_recognitions
+    WHERE recognized_at>='2026-09-21 07:00Z' AND recognized_at<'2026-09-28 07:00Z') c
+  WHERE NOT EXISTS(SELECT 1 FROM accounting_tournament_fee_recognitions r
+    CROSS JOIN LATERAL public.fn_accounting_tournament_fee_net_plan(c.t) AS net(plan)
+    WHERE r.tournament_id=c.t AND net.plan->>'status'='proven'
+      AND net.plan->>'source_fingerprint' IS NOT DISTINCT FROM r.source_fingerprint
+      AND (net.plan->>'net_fee')::numeric IS NOT DISTINCT FROM r.net_rake);
+ PERFORM fixture.assert(bad IS NULL,
+  'The per-event authority agrees with the one-pass gate for every candidate event of the coverage week: '||COALESCE(bad,''));
+END $$;
+
+-- ===== the rewrite answers exactly what the bodies it replaced answered =====
+-- rakeback-cost-predecessors.sql installs production's pre-rewrite bodies,
+-- pinned by md5(prosrc), as fixture.predecessor_*. Every club of this cluster,
+-- for every week it has carried money in, is asked both questions by both
+-- versions on the same rows. The gate must return the identical verdict; the
+-- calculator must return the identical receipt AND write the identical
+-- certificates - same payees, same rake, same entitlement, same payer, same
+-- source fingerprint and allocations - including the payee owed nothing. Each
+-- calculator run is undone before the next (a subtransaction the block itself
+-- aborts), so both versions see the same starting book.
+DO $$ DECLARE club uuid; week date; new_gate jsonb; old_gate jsonb; new_calc jsonb; old_calc jsonb;
+  new_certs jsonb; old_certs jsonb; compared int:=0; certified int:=0; zero_certified int:=0;
+BEGIN
+ FOR club IN SELECT id FROM clubs ORDER BY id LOOP
+  FOREACH week IN ARRAY ARRAY['2026-08-31','2026-09-07','2026-09-14','2026-09-21']::date[] LOOP
+   new_gate:=public.fn_accounting_tournament_week_quality(club,week::timestamp AT TIME ZONE 'America/Los_Angeles',
+     (week+7)::timestamp AT TIME ZONE 'America/Los_Angeles');
+   old_gate:=fixture.predecessor_week_quality(club,week::timestamp AT TIME ZONE 'America/Los_Angeles',
+     (week+7)::timestamp AT TIME ZONE 'America/Los_Angeles');
+   PERFORM fixture.assert(new_gate=old_gate,format('Weekly tournament gate for club %s week %s: rewrite %s, predecessor %s',
+     club,week,new_gate,old_gate));
+   BEGIN
+    BEGIN new_calc:=public.fn_calculate_cash_rakeback_periods(club,week,week+6,NULL);
+    EXCEPTION WHEN OTHERS THEN IF SQLSTATE='RB001' THEN RAISE; END IF; new_calc:=jsonb_build_object('raised',SQLSTATE,'message',SQLERRM); END;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('player_id',c.player_id,'rake_generated',c.rake_generated,
+      'rakeback_amount',c.rakeback_amount,'display_rate',c.display_rate,'payer_kind',c.payer_kind,'payer_user_id',c.payer_user_id,
+      'coordinator_union_id',c.coordinator_union_id,'source_fingerprint',c.source_fingerprint,'allocations',c.source_allocations,
+      'period',jsonb_build_object('rake_generated',rp.rake_generated,'rakeback_rate',rp.rakeback_rate,
+        'rakeback_amount',rp.rakeback_amount,'status',rp.status)) ORDER BY c.player_id),'[]') INTO new_certs
+     FROM accounting_rakeback_period_calculations c JOIN rakeback_periods rp ON rp.id=c.period_id
+     WHERE c.club_id=club AND c.period_start=week;
+    RAISE EXCEPTION USING ERRCODE='RB001',MESSAGE='undo the rewrite''s writes';
+   EXCEPTION WHEN SQLSTATE 'RB001' THEN NULL;
+   END;
+   BEGIN
+    BEGIN old_calc:=fixture.predecessor_calculate_cash_rakeback_periods(club,week,week+6,NULL);
+    EXCEPTION WHEN OTHERS THEN IF SQLSTATE='RB001' THEN RAISE; END IF; old_calc:=jsonb_build_object('raised',SQLSTATE,'message',SQLERRM); END;
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('player_id',c.player_id,'rake_generated',c.rake_generated,
+      'rakeback_amount',c.rakeback_amount,'display_rate',c.display_rate,'payer_kind',c.payer_kind,'payer_user_id',c.payer_user_id,
+      'coordinator_union_id',c.coordinator_union_id,'source_fingerprint',c.source_fingerprint,'allocations',c.source_allocations,
+      'period',jsonb_build_object('rake_generated',rp.rake_generated,'rakeback_rate',rp.rakeback_rate,
+        'rakeback_amount',rp.rakeback_amount,'status',rp.status)) ORDER BY c.player_id),'[]') INTO old_certs
+     FROM accounting_rakeback_period_calculations c JOIN rakeback_periods rp ON rp.id=c.period_id
+     WHERE c.club_id=club AND c.period_start=week;
+    RAISE EXCEPTION USING ERRCODE='RB001',MESSAGE='undo the predecessor''s writes';
+   EXCEPTION WHEN SQLSTATE 'RB001' THEN NULL;
+   END;
+   PERFORM fixture.assert(new_calc=old_calc,format('Period calculator receipt for club %s week %s: rewrite %s, predecessor %s',
+     club,week,new_calc,old_calc));
+   PERFORM fixture.assert(new_certs=old_certs,format('Period certificates for club %s week %s: rewrite %s, predecessor %s',
+     club,week,new_certs,old_certs));
+   compared:=compared+1;
+   IF new_calc->>'status'='ready' AND jsonb_array_length(new_certs)>0 THEN certified:=certified+1; END IF;
+   zero_certified:=zero_certified+(SELECT count(*) FROM jsonb_array_elements(new_certs) x WHERE (x->>'rakeback_amount')::numeric=0);
+  END LOOP;
+ END LOOP;
+ -- Not vacuous: the comparison reached real certified weeks, one of them
+ -- carrying the zero-entitlement payee round 3 depends on.
+ PERFORM fixture.assert(certified>=1 AND zero_certified>=1,
+  format('The rewrite/predecessor comparison covered %s club-weeks, %s of them certified, %s zero-entitlement certificates',
+   compared,certified,zero_certified));
+ -- And the book is exactly as it was: every comparison undid itself.
+ PERFORM fixture.assert((SELECT count(*)=1 FROM rakeback_periods rp JOIN accounting_rakeback_period_calculations c ON c.period_id=rp.id
+   WHERE rp.period_start='2026-09-21' AND rp.period_end='2026-09-27'),'The comparison left the page-drained book untouched');
+END $$;
+
+-- ===== the gate's two paths: set pass for a clean event, net_plan for a refund =====
+-- The rewritten gate skips fn_accounting_tournament_fee_net_plan only for an
+-- event with no refund reversal and clean structural facts; anything else takes
+-- the original per-event path. This cluster's captured weeks hold no tournament
+-- fee at all, so both kinds are written here, inside a transaction that is
+-- rolled back: T7001 was entered by 907 and fully refunded by unregistration
+-- (+10, -10, recognised cancelled at zero), T7011 is an ordinary recognised fee
+-- of 10. The rows are the gate's INPUT, so the write-side guards those tables
+-- carry are suspended for the inserts (session_replication_role) and restored
+-- before either gate reads them. Function-call counts come from the
+-- transaction's own pg_stat_xact_user_functions, so the proof is WHICH path ran,
+-- not only what it answered.
+BEGIN;
+SET LOCAL track_functions='pl';
+SET LOCAL session_replication_role=replica;
+INSERT INTO rake_records(id,club_id,rake_amount,bbj_contribution,is_tournament,tournament_id,created_at,metadata,source,rake_method) VALUES
+ (fixture.u(7002),fixture.u(104),10,0,true,fixture.u(7001),'2026-09-22 10:00Z',jsonb_build_object('user_id',fixture.u(907)),'fn_register_for_tournament','DEALT_EQUAL'),
+ (fixture.u(7003),fixture.u(104),-10,0,true,fixture.u(7001),'2026-09-22 11:00Z',jsonb_build_object('user_id',fixture.u(907),'original_rake_record_id',fixture.u(7002)),'fn_unregister_from_tournament','DEALT_EQUAL'),
+ (fixture.u(7012),fixture.u(104),10,0,true,fixture.u(7011),'2026-09-22 10:30Z',jsonb_build_object('user_id',fixture.u(907)),'fn_register_for_tournament','DEALT_EQUAL');
+INSERT INTO accounting_tournament_fee_batches(rake_record_id,tournament_id,source_fingerprint,status,source_version,source_manifest,rake_amount,captured_at)
+ SELECT r.id,r.tournament_id,fn_accounting_tournament_fee_fingerprint(r),'captured',2,'{}',10,r.created_at
+   FROM rake_records r WHERE r.id IN(fixture.u(7002),fixture.u(7012));
+INSERT INTO accounting_tournament_fee_sources(id,rake_record_id,tournament_id,player_id,club_id,union_id,coordinator_union_id,game_type,
+  registration_id,source_charge_ledger_id,source_entitlement_id,charged_at,rake_credit,contract,recorded_at)
+ SELECT fixture.u(x.n+100),fixture.u(x.n),fixture.u(x.t),fixture.u(907),fixture.u(104),fixture.u(203),fixture.u(203),'mtt',
+   fixture.u(x.n+200),fixture.u(x.n+300),fixture.u(x.n+400),x.at,10,
+   jsonb_build_object('player_id',fixture.u(907),'club_id',fixture.u(104),'rake_credit',10,'terms_at',x.at,
+     'union_id',fixture.u(203),'coordinator_union_id',fixture.u(203)),x.at
+   FROM (VALUES(7002,7001,'2026-09-22 10:00Z'::timestamptz),(7012,7011,'2026-09-22 10:30Z'::timestamptz)) x(n,t,at);
+INSERT INTO tournament_unregistration_receipts(registration_id,request_id,tournament_id,user_id,refunded_chips,returned_ticket_value,
+  entitlement_ids,ticket_ids,source_wallet_club_ids,credit_ledger_ids,wallet_transaction_ids,fees_reversed,fee_reversal_ids,
+  fee_source_rake_record_ids,scheduled_start_at,settled_at,start_authority)
+ VALUES(fixture.u(7202),fixture.u(7501),fixture.u(7001),fixture.u(907),0,0,'{}','{}','{}','{}','{}',10,
+  ARRAY[fixture.u(7003)],ARRAY[fixture.u(7002)],'2026-09-23 00:00Z','2026-09-22 11:00Z','launch_release');
+INSERT INTO accounting_tournament_fee_recognitions(tournament_id,recognized_at,status,net_rake,union_id,bank_club_id,bank_journal_id,source_fingerprint,plan)
+ SELECT x.t,'2026-09-23 12:00Z',x.status,x.net,fixture.u(203),CASE WHEN x.net>0 THEN fixture.u(104) END,
+   CASE WHEN x.net>0 THEN fixture.u(7601) END,
+   (SELECT md5(string_agg(fn_accounting_tournament_fee_fingerprint(r),':' ORDER BY r.id)) FROM rake_records r WHERE r.tournament_id=x.t AND r.is_tournament),'{}'
+   FROM (VALUES(fixture.u(7001),'cancelled',0),(fixture.u(7011),'recognized',10)) x(t,status,net);
+INSERT INTO accounting_tournament_recognized_sources(source_id,tournament_id,recognized_at,disposition,rake_credit) VALUES
+ (fixture.u(7102),fixture.u(7001),'2026-09-23 12:00Z','refunded',0),
+ (fixture.u(7112),fixture.u(7011),'2026-09-23 12:00Z','earned',10);
+SET LOCAL session_replication_role=origin;
+CREATE FUNCTION pg_temp.net_plan_calls() RETURNS bigint LANGUAGE sql AS
+ $f$SELECT COALESCE(sum(calls),0) FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='fn_accounting_tournament_fee_net_plan'$f$;
+DO $$ DECLARE before bigint; after_new bigint; after_old bigint; new_gate jsonb; old_gate jsonb; BEGIN
+ before:=pg_temp.net_plan_calls();
+ new_gate:=public.fn_accounting_tournament_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ after_new:=pg_temp.net_plan_calls();
+ old_gate:=fixture.predecessor_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ after_old:=pg_temp.net_plan_calls();
+ PERFORM fixture.assert(new_gate->>'status'='ready' AND new_gate=old_gate,
+  format('A fully refunded entry and an ordinary fee prove the week ready, exactly as before: rewrite %s, predecessor %s',new_gate,old_gate));
+ PERFORM fixture.assert((new_gate->>'checked')::int>=2,'Both synthetic events were in scope and proved: '||new_gate::text);
+ PERFORM fixture.assert(after_new-before=1,
+  format('Only the refund reversal took the per-event net_plan path under the rewrite (%s calls)',after_new-before));
+ PERFORM fixture.assert(after_old-after_new=(old_gate->>'checked')::int,
+  format('The predecessor called net_plan once per proved event (%s calls, %s events)',after_old-after_new,old_gate->>'checked'));
+END $$;
+-- A cheap fact that disagrees with its batch falls through to net_plan, which
+-- refuses it; both versions return the identical refusal and detail.
+SET LOCAL session_replication_role=replica;
+UPDATE accounting_tournament_fee_batches SET rake_amount=9 WHERE rake_record_id=fixture.u(7012);
+SET LOCAL session_replication_role=origin;
+-- (Only net_plan can produce that detail: it is its own SQLERRM, and the set
+-- pass never writes a detail. A call that ends in an exception is not counted
+-- by pg_stat_xact_user_functions, so the detail is the witness here.)
+DO $$ DECLARE new_gate jsonb; old_gate jsonb; BEGIN
+ new_gate:=public.fn_accounting_tournament_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ old_gate:=fixture.predecessor_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ PERFORM fixture.assert(new_gate=old_gate AND new_gate->>'reason'='tournament_net_source_evidence_invalid'
+   AND new_gate->>'detail'='tournament_fee_sources_require_reconciliation' AND new_gate->>'tournament_id'=fixture.u(7011)::text,
+  format('A batch that disagrees with its record is refused identically: rewrite %s, predecessor %s',new_gate,old_gate));
+END $$;
+-- A recognition that disagrees with clean sources is refused on the set pass
+-- itself, with the original reason.
+SET LOCAL session_replication_role=replica;
+UPDATE accounting_tournament_fee_batches SET rake_amount=10 WHERE rake_record_id=fixture.u(7012);
+UPDATE accounting_tournament_recognized_sources SET disposition='earned',rake_credit=10 WHERE source_id=fixture.u(7102);
+SET LOCAL session_replication_role=origin;
+DO $$ DECLARE new_gate jsonb; old_gate jsonb; BEGIN
+ new_gate:=public.fn_accounting_tournament_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ old_gate:=fixture.predecessor_week_quality(fixture.u(104),'2026-09-21 07:00Z','2026-09-28 07:00Z');
+ PERFORM fixture.assert(new_gate=old_gate AND new_gate->>'reason'='tournament_recognized_source_receipts_incomplete'
+   AND new_gate->>'tournament_id'=fixture.u(7001)::text,
+  format('A refunded source recorded as earned is refused identically on the refund path: rewrite %s, predecessor %s',new_gate,old_gate));
+END $$;
+ROLLBACK;
+
 -- The club scope reaches the same producer. Deep Stack Society settles through
 -- exactly this call: fn_accounting_week_clubs returns the club itself, and the
 -- period-complete recompute closes the page-drained gap before any payer stage.

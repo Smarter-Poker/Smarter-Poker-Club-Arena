@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/one-question-for-every-cash-seat-move-arrival. Applied to production 2026-09-24 19:20 UTC as migration 20260924190214_cash_seat_move_arrivals_for_players (recorded under version 20260924192040): the batched arrivals question the legacy engine checkpoint asks once per fleet.",
+  "functions": ["fn_cash_seat_move_arrivals_for_players"]
+}

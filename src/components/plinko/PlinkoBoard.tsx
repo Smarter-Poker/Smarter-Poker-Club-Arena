@@ -1,11 +1,13 @@
 /** A physical Plinko cabinet. The server supplies every turn of each diamond. */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as THREE from 'three';
-import { gameRenderer, inscription, metal, solid } from '../games/sceneKit';
+import { gameRenderer, metal, solid } from '../games/sceneKit';
 import { pegIndexAt, plinkoPegField } from './plinkoPegField';
+import { plinkoCabinet, type CabinetFrame } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
+import { PLINKO_PEG_GAP_MS, soundService } from '../../services/SoundService';
 import styles from './PlinkoBoard.module.css';
 export const PLINKO_ROWS = 16;
 /** Sixteen rows of pegs drop into seventeen buckets. */
@@ -25,7 +27,7 @@ const SLOT_REST_Y = -4.55;
  *
  * The scale is ABSOLUTE - anchored on the multiplier itself rather than on the
  * table's own smallest and largest - so it works for the Diamond table, the
- * Super table and any table opened later, and so 20x is the same red wherever
+ * Super table and any table opened later, and so 20x is the same gold wherever
  * it appears. It also makes the difference between the tables legible: the
  * Super table's 0.52x floor correctly reads warmer than the Diamond table's
  * 0.08x, because it genuinely pays more. Logarithmic, because 0.08x to 0.60x
@@ -40,16 +42,22 @@ export function bucketHeat(multiplierCents: number): number {
   return Math.log(cents / HEAT_FLOOR_CENTS) / Math.log(HEAT_CEILING_CENTS / HEAT_FLOOR_CENTS);
 }
 
-/** Cool blue through teal and green for the middle buckets, gold to red for the outer ones. */
+/**
+ * The smarter.poker schema, cold to hot (Dan, 2026-09-21: "the bottom is
+ * rainbow colored instead of smarter.poker color schema"): deep navy through
+ * royal blue and light blue for the middle buckets, chrome white at the
+ * threshold, and gold, the one colour that means money everywhere else on the
+ * platform, for the buckets worth chasing. No green, no orange, no red: the
+ * loud end reads as gold on black, exactly like a win.
+ */
 const TINT_RAMP: Array<[heat: number, r: number, g: number, b: number]> = [
-  [0, 0x2a, 0x5c, 0xd8],
-  [0.22, 0x2f, 0x93, 0xe0],
-  [0.38, 0x33, 0xbe, 0xc8],
-  [0.52, 0x3f, 0xc0, 0x7e],
-  [0.66, 0x9c, 0xcb, 0x3f],
-  [0.78, 0xf2, 0xc4, 0x2c],
-  [0.9, 0xf8, 0x85, 0x1e],
-  [1, 0xf2, 0x3b, 0x2d],
+  [0, 0x1c, 0x3d, 0x74],
+  [0.25, 0x18, 0x77, 0xf2],
+  [0.48, 0x45, 0xad, 0xff],
+  [0.64, 0x9f, 0xd3, 0xff],
+  [0.78, 0xe4, 0xe7, 0xec],
+  [0.9, 0xff, 0xd7, 0x00],
+  [1, 0xff, 0xb3, 0x00],
 ];
 const channel = (value: number) =>
   Math.round(Math.max(0, Math.min(255, value)))
@@ -151,33 +159,53 @@ function dropDiamondGeometry() {
 }
 
 /**
- * Tall engraving uses the whole slot face instead of a tiny landscape label,
- * and it is painted in the bucket's own colour so the physical board carries
- * the same scale as the legend printed under it.
+ * The bucket's sign plate, engraved: the multiplier in the bucket's own ink
+ * (its tint lifted toward white), lit from behind in the tint itself, on a
+ * transparent face so the black glass of the plate and its flash show through.
+ * The same scale as the legend printed under the board, so the physical board
+ * and the list can never disagree about which bucket is hot.
  */
 function payoutInscription(multiplier: number) {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = 160;
+  canvas.height = 272;
   const ctx = canvas.getContext('2d');
   if (ctx) {
+    const tint = bucketTint(multiplier);
+    const big = isBigWin(multiplier);
+    // The glass sheen across the top of the plate.
+    const sheen = ctx.createLinearGradient(0, 0, 0, 120);
+    sheen.addColorStop(0, 'rgba(244,247,251,0.16)');
+    sheen.addColorStop(1, 'rgba(244,247,251,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(6, 6, 148, 120);
+    // A hairline in the tint just inside the chrome, the plate's own LED edge.
+    ctx.strokeStyle = tint;
+    ctx.globalAlpha = big ? 0.85 : 0.55;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(9, 9, 142, 254);
+    ctx.globalAlpha = 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#050607';
-    ctx.lineWidth = 10;
-    ctx.fillStyle = bucketInk(multiplier);
-    if (isBigWin(multiplier)) {
-      ctx.shadowColor = bucketTint(multiplier);
-      ctx.shadowBlur = 26;
-    }
     const value = multiplierLabel(multiplier).slice(0, -1);
-    ctx.font = '700 132px "Roboto Condensed", Arial, sans-serif';
-    ctx.strokeText(value, 128, 90, 244);
-    ctx.fillText(value, 128, 90, 244);
-    ctx.font = '700 80px "Roboto Condensed", Arial, sans-serif';
-    ctx.strokeText('x', 128, 200);
-    ctx.fillText('x', 128, 200);
+    ctx.font = '800 112px "Roboto Condensed", "Arial Narrow", Arial, sans-serif';
+    // The backlight: the numeral glows in the bucket's colour.
+    ctx.save();
+    ctx.shadowColor = tint;
+    ctx.shadowBlur = big ? 30 : 18;
+    ctx.fillStyle = tint;
+    ctx.fillText(value, 80, 104, 140);
+    ctx.restore();
+    ctx.strokeStyle = '#050607';
+    ctx.lineWidth = 9;
+    ctx.strokeText(value, 80, 104, 140);
+    ctx.fillStyle = bucketInk(multiplier);
+    ctx.fillText(value, 80, 104, 140);
+    ctx.font = '800 84px "Roboto Condensed", "Arial Narrow", Arial, sans-serif';
+    ctx.strokeText('x', 80, 206);
+    ctx.fillStyle = tint;
+    ctx.fillText('x', 80, 206);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -205,6 +233,37 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
   const height = Math.round(width * 1.13);
   const initialSize = useRef({ width, height });
   const sceneRef = useRef<ReturnType<typeof gameRenderer> | null>(null);
+  /** The last landing reported, by dropKey and how many balls it covered,
+   * whichever path reported it. The count matters because the player releases
+   * a batch a ball at a time (R6): each release is its own landing. */
+  const landedKey = useRef<{ key: number; count: number } | null>(null);
+  // A drop the scene cannot draw lands at once (2026-09-22). Its result is
+  // already booked; only the picture is missing. Without this a renderer that
+  // could not start, or a context lost mid-drop, never drew the frame that
+  // reports the landing, and the page waiting on it held every exit until the
+  // player pressed Show Results. CrashCurve settles an undrawable round the
+  // same way.
+  useEffect(() => {
+    const p = latest.current;
+    const count = p.batchPathBits?.length ?? 0;
+    if (!failed || (!count && !p.path)) return;
+    if (landedKey.current?.key === p.dropKey && landedKey.current.count === count) return;
+    const from = landedKey.current?.key === p.dropKey ? landedKey.current.count : 0;
+    landedKey.current = { key: p.dropKey, count };
+    // The landing is still heard and felt without a picture: one clink (and
+    // its buzz, the jackpot buzz on a 5x or better) at the best bucket this
+    // report lands, as the drawn board gives one a frame.
+    const slots = count
+      ? p.batchPathBits!.slice(from).map((bits) => pathBitsSlot(bits))
+      : p.path
+        ? [p.path.reduce((a, b) => a + b, 0)]
+        : [];
+    let best = -1;
+    for (const slot of slots) best = Math.max(best, p.multipliersCents[slot] ?? 0);
+    if (best >= 0) soundService.playPlinkoLanding(best, isBigWin(best));
+    if (count) p.onProgress?.(count);
+    p.onLanded?.();
+  }, [failed, props.batchPathBits, props.path, props.dropKey]);
   useEffect(() => {
     if (!canvas.current) return;
     let kit: ReturnType<typeof gameRenderer>;
@@ -226,49 +285,61 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     const restored = () => setFailed(false);
     surface.addEventListener('webglcontextlost', lost);
     surface.addEventListener('webglcontextrestored', restored);
-    camera.position.set(0, 2.6, 19.9);
+    // Stood back far enough that the whole chrome frame, sign plate included,
+    // sits inside the canvas with a margin on a phone.
+    camera.position.set(0, 2.5, 20.9);
     camera.lookAt(0, -0.1, 0);
-    const steel = metal(0xa8b4c2),
-      blue = metal(0x1877f2),
-      dark = metal(0x101820, 0.38);
-    solid(scene, steel, [12, 13, 0.6], [0, 0, -0.45], 0.3);
-    solid(scene, dark, [11.6, 12.6, 0.18], [0, 0, -0.08], 0.2);
-    const glow = new THREE.MeshStandardMaterial({
-      color: 0x1877f2,
-      emissive: 0x1877f2,
-      emissiveIntensity: 2,
-    });
-    solid(scene, glow, [0.06, 11.8, 0.06], [-5.56, 0, 0.07], 0.02);
-    solid(scene, glow, [0.06, 11.8, 0.06], [5.56, 0, 0.07], 0.02);
-    // Two instanced draw calls preserve every physical peg and its blue contact
-    // light, without 136 separate material/shadow submissions on small devices.
-    const pegs = plinkoPegField(steel);
+    // Chrome studs: a bright, low-roughness metal so every peg carries a
+    // specular highlight on its dome. Two instanced draw calls preserve every
+    // physical peg and its blue contact light, without 136 separate
+    // material/shadow submissions on small devices.
+    const chrome = metal(0xdfe6ee, 0.1);
+    chrome.envMapIntensity = 1.6;
+    const pegs = plinkoPegField(chrome);
     scene.add(pegs.group);
     const slots: THREE.Mesh[] = [];
     const labels: THREE.Mesh[] = [];
     // Each bucket's own colour, read off its multiplier when the table is painted.
     const tints: THREE.Color[] = [];
+    // THE SIGN PLATES. Every bucket is a plate of black glass (tinted a shade
+    // toward its own colour) in a chrome bezel, the multiplier engraved on its
+    // face. The plate is what flashes on a landing: its emissive is the tint.
+    const plateGlass = new THREE.MeshPhysicalMaterial({
+      color: 0x0a0f16,
+      metalness: 0.2,
+      roughness: 0.12,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+      envMapIntensity: 0.8,
+    });
+    // One geometry for all seventeen, hung from the plate's centre so its top
+    // stays where the old bucket's was and the plate reaches down to the sill.
+    let plateGeometry: ReturnType<typeof solid>['geometry'] | null = null;
+    const labelGeometry = new THREE.PlaneGeometry(0.56, 0.95);
     for (let i = 0; i < PLINKO_SLOTS; i++) {
       const x = (i - 8) * 0.65;
-      const slot = solid(scene, blue.clone(), [0.61, 0.82, 0.28], [x, SLOT_REST_Y, 0.08], 0.07);
+      const slot = solid(scene, plateGlass.clone(), [0.6, 1.0, 0.26], [x, SLOT_REST_Y, 0.08], 0.05);
+      if (plateGeometry) {
+        slot.geometry.dispose();
+        slot.geometry = plateGeometry;
+      } else {
+        slot.geometry.translate(0, -0.09, 0);
+        plateGeometry = slot.geometry;
+      }
       slot.name = `Plinko Slot ${i + 1}`;
       slots.push(slot);
       tints.push(new THREE.Color(0x1877f2));
       const label = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.59, 0.64),
-        new THREE.MeshBasicMaterial({ transparent: true })
+        labelGeometry,
+        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false })
       );
-      label.position.set(x, -4.48, 0.235);
-      scene.add(label);
+      // On the plate's face, so the engraving squashes with the plate it is on.
+      label.position.set(0, -0.09, 0.135);
+      slot.add(label);
       labels.push(label);
     }
-    solid(scene, steel, [10.95, 0.12, 0.25], [0, -5.06, 0.1], 0.04);
-    const title = new THREE.Mesh(
-      new THREE.PlaneGeometry(5.1, 0.67),
-      new THREE.MeshBasicMaterial({ map: inscription('DIAMOND PLINKO', '#8bd6ff') })
-    );
-    title.position.set(0, 5.65, 0.04);
-    scene.add(title);
+    plateGlass.dispose();
+    const cabinet = plinkoCabinet(scene, slots);
     const ball = new THREE.Mesh(
       dropDiamondGeometry(),
       new THREE.MeshPhysicalMaterial({
@@ -291,8 +362,25 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       return mesh;
     });
     let reported = -1;
-    const halo = new THREE.PointLight(0x39b6ff, 3, 2);
-    scene.add(halo);
+    /** Every diamond, the single drop first, for the cabinet's glows and trail. */
+    const diamonds: THREE.Object3D[] = [ball, ...batchBalls];
+    /** The same diamonds, those in flight first; reused every frame. */
+    const falling: THREE.Object3D[] = [];
+    /** Pegs struck this frame, for the cabinet's flares; reused every frame. */
+    const struckNow: number[] = [];
+    /** The batch's pegs lit this frame; reused every frame. */
+    const batchStruck: number[] = [];
+    /** The cabinet's frame description, one object rewritten every frame (no per-frame allocation). */
+    const cabinetFrame: CabinetFrame = {
+      now: 0,
+      speed: 1,
+      reduced: false,
+      idle: true,
+      struck: struckNow,
+      balls: falling,
+      flying: 0,
+      pulsing: false,
+    };
     // The win pulse: one ring, parked over whichever bucket just paid 5x or more.
     const winRing = new THREE.Mesh(
       new THREE.RingGeometry(0.3, 0.42, 36),
@@ -323,7 +411,18 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       ringAt = Number.NEGATIVE_INFINITY,
       ringSlot = 8,
       booked = 0,
-      bestCents = -1;
+      bestCents = -1,
+      /** The single drop's last row struck, so each peg ticks once. */
+      dropRow = -1,
+      /** When the last peg tick sounded, on the frame clock. */
+      tickedAt = Number.NEGATIVE_INFINITY,
+      /** The best bucket landed on since the last drawn frame, and whether any paid 5x. */
+      clinkCents = -1,
+      clinkBig = false;
+    /** When each ball of the batch was released, in visible milliseconds of the batch. */
+    const releaseAt: number[] = [];
+    /** The last row each ball of the batch has struck; grows only when a ball is released. */
+    const ballRow: number[] = [];
     let lastVisibleFrame: number | null = null;
     const visibilityChanged = () => {
       lastVisibleFrame = null;
@@ -340,6 +439,10 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         ringSlot = index;
       }
       if (cents > bestCents) bestCents = cents;
+      // One clink a drawn frame, at the best bucket it shows landing: ten
+      // diamonds landing together under reduced motion are one beat, one buzz.
+      if (cents > clinkCents) clinkCents = cents;
+      if (hitBig[index]) clinkBig = true;
     };
     const writeTally = (count: number, total: number) => {
       if (tally.current) tally.current.textContent = tallyLine(count, total, bestCents);
@@ -363,8 +466,15 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           m.map = payoutInscription(cents);
           m.needsUpdate = true;
           tints[i].set(bucketTint(cents));
-          (slots[i].material as THREE.MeshPhysicalMaterial).color.copy(tints[i]);
+          // Black glass carrying a breath of the bucket's own colour.
+          (slots[i].material as THREE.MeshPhysicalMaterial).color
+            .copy(tints[i])
+            .multiplyScalar(0.02);
         });
+        cabinet.paintBuckets(
+          tints,
+          p.multipliersCents.map((cents) => isBigWin(cents))
+        );
       }
       if ((p.path || p.batchPathBits?.length) && key !== p.dropKey) {
         key = p.dropKey;
@@ -376,31 +486,64 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         reported = -1;
         booked = 0;
         bestCents = -1;
+        dropRow = -1;
+        clinkCents = -1;
+        clinkBig = false;
+        releaseAt.length = 0;
+        ballRow.length = 0;
         ringAt = Number.NEGATIVE_INFINITY;
         hitAt.fill(Number.NEGATIVE_INFINITY);
         hitBig.fill(false);
         writeTally(0, 0);
         pegs.reveal([], -1);
       }
+      if (
+        landedKey.current?.key === key &&
+        landedKey.current.count >= (p.batchPathBits?.length ?? 0)
+      ) {
+        // Landed already, without the scene: a context that comes back never
+        // flies or reports the same drop a second time. A batch the player has
+        // since added to is not that drop: those balls have never been shown.
+        landed = true;
+        pendingLanding = false;
+        pendingProgress = null;
+      }
       ball.visible = !p.batchPathBits?.length;
       batchBalls.forEach((mesh) => {
         mesh.visible = false;
       });
+      falling.length = 0;
+      struckNow.length = 0;
+      const gap = 140 * speed;
+      // THE PLAYER RELEASES THE BALLS (Dan 2026-09-21, R6). A batch may grow
+      // while it plays: each ball the page adds is released now, one gap after
+      // the ball before it, never back-dated to the batch's start (a back-dated
+      // ball would land without ever being seen). Drop All adds the rest at
+      // once and they come down at the batch cadence.
+      while (releaseAt.length < (p.batchPathBits?.length ?? 0)) {
+        const previous = releaseAt.length
+          ? releaseAt[releaseAt.length - 1]
+          : Number.NEGATIVE_INFINITY;
+        releaseAt.push(Math.max(visibleElapsed, previous + gap));
+        ballRow.push(-1);
+        landed = false;
+      }
+      /** Pegs newly struck this frame, and the lowest row among them, for the tick. */
+      let strikes = 0,
+        strikeRow = 0;
       if (p.batchPathBits?.length && !landed) {
-        const gap = 140 * speed;
-        const elapsed = reduced ? duration + gap * p.batchPathBits.length : visibleElapsed;
-        const finished = Math.max(
-          0,
-          Math.min(p.batchPathBits.length, Math.floor((elapsed - duration) / gap) + 1)
-        );
-        const newest = Math.min(p.batchPathBits.length - 1, Math.floor(elapsed / gap));
+        const count = p.batchPathBits.length;
+        const progressOf = (index: number) =>
+          reduced ? 16 : Math.min(16, ((visibleElapsed - releaseAt[index]) / duration) * 16);
+        let finished = 0;
+        while (finished < count && progressOf(finished) >= 16) finished++;
         // Every ball in flight lights the peg it is passing, so a batch shows
         // the same contact the single drop does instead of a silent board.
-        const struck: number[] = [];
-        for (let j = 0; j < 32; j++) {
-          const index = newest - j;
-          if (index < finished || index < 0) continue;
-          const progress = Math.min(16, ((elapsed - index * gap) / duration) * 16);
+        const struck = batchStruck;
+        struck.length = 0;
+        let j = 0;
+        for (let index = finished; index < count && j < 32; index++) {
+          const progress = progressOf(index);
           if (progress < 0 || progress >= 16) continue;
           const row = Math.min(15, Math.floor(progress)),
             t = progress - row;
@@ -408,7 +551,12 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           let rights = 0;
           for (let k = 0; k < row; k++) rights += (bits >> k) & 1;
           struck.push(pegIndexAt(row, rights));
-          const mesh = batchBalls[j];
+          if (row > (ballRow[index] ?? -1)) {
+            ballRow[index] = row;
+            strikes++;
+            strikeRow = Math.max(strikeRow, row);
+          }
+          const mesh = batchBalls[j++];
           mesh.visible = true;
           mesh.rotation.set(0.22, reduced ? 0.32 : visibleElapsed / 850 + index, -0.12);
           mesh.position.set(
@@ -418,6 +566,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           );
         }
         pegs.light(struck);
+        for (const index of struck) struckNow.push(index);
+        for (let k = 0; k < j; k++) falling.push(batchBalls[k]);
         for (let i = booked; i < finished; i++) {
           const slot = pathBitsSlot(p.batchPathBits[i]);
           bookLanding(slot, p.multipliersCents[slot] ?? 0, visibleElapsed);
@@ -426,9 +576,9 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         if (reported !== finished) {
           reported = finished;
           pendingProgress = finished;
-          writeTally(finished, p.batchPathBits.length);
+          writeTally(finished, count);
         }
-        if (finished === p.batchPathBits.length) {
+        if (finished === count) {
           landed = true;
           pendingLanding = true;
         }
@@ -441,6 +591,15 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         const dx = (p.path[row] === 1 ? 1 : -1) * 0.325;
         ball.position.set(x + dx * t, 4.95 - progress * 0.55 + Math.sin(t * Math.PI) * 0.17, 0.46);
         pegs.reveal(p.path, row);
+        if (!reduced) {
+          struckNow.push(pegIndexAt(row, rights));
+          falling.push(ball);
+          if (row > dropRow && progress < 16) {
+            dropRow = row;
+            strikes++;
+            strikeRow = row;
+          }
+        }
         if (progress >= 16) {
           landed = true;
           const slot = p.path.reduce((a, b) => a + b, 0);
@@ -475,6 +634,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         if (level > 0) m.emissive.copy(big ? GOLD : tints[i]);
         else m.emissive.setHex(resting ? 0x1877f2 : 0);
         m.emissiveIntensity = level * (big ? 3.4 : 1.9) + (resting ? 1.1 : 0);
+        cabinet.flashBucket(i, level);
       });
       // The win pulse: a gold ring thrown out of the bucket that paid 5x or more.
       const ringSpan = 700 * speed;
@@ -489,16 +649,38 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         (winRing.material as THREE.MeshBasicMaterial).opacity = reduced ? 0.85 : Math.max(0, 1 - t);
       }
       ball.rotation.set(0.22, reduced ? 0.32 : now / 850, -0.12);
-      halo.position.copy(ball.position);
-      halo.color.setHex(pulsing ? 0xffd700 : 0x39b6ff);
-      halo.intensity = pulsing ? 5.2 : 3;
-      if (kit.render()) {
+      // The machine around the board: the LEDs, the peg chase and flares, the
+      // bucket pools, the diamond glows and the sparkle trail.
+      const flying = falling.length;
+      for (const diamond of diamonds) if (!falling.includes(diamond)) falling.push(diamond);
+      cabinetFrame.now = now;
+      cabinetFrame.speed = speed;
+      cabinetFrame.reduced = reduced;
+      cabinetFrame.idle = landed && !pendingLanding;
+      cabinetFrame.flying = flying;
+      cabinetFrame.pulsing = pulsing;
+      cabinet.frame(cabinetFrame);
+      if (kit.render(reduced ? 150 : 30)) {
+        /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
+           for the pegs this frame shows being struck, at most one every
+           PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row
+           struck; a clink for the best landing it shows. */
+        if (strikes > 0 && now - tickedAt >= PLINKO_PEG_GAP_MS) {
+          tickedAt = now;
+          soundService.playPlinkoPeg(strikeRow, strikes);
+        }
+        if (clinkCents >= 0) {
+          soundService.playPlinkoLanding(clinkCents, clinkBig);
+          clinkCents = -1;
+          clinkBig = false;
+        }
         if (pendingProgress !== null) {
           p.onProgress?.(pendingProgress);
           pendingProgress = null;
         }
         if (pendingLanding) {
           pendingLanding = false;
+          landedKey.current = { key, count: p.batchPathBits?.length ?? 0 };
           p.onLanded?.();
         }
       }
@@ -511,6 +693,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;
       pegs.dispose();
+      cabinet.dispose();
       kit.cleanup();
     };
   }, []);
@@ -522,13 +705,15 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     if (!kit) return;
     kit.camera.aspect = width / height;
     kit.camera.updateProjectionMatrix();
-    kit.renderer.setSize(width, height, false);
+    // Through the kit so the governor's pixel ratio survives the resize.
+    if (typeof kit.setSize === 'function') kit.setSize(width, height);
+    else kit.renderer.setSize(width, height, false);
   }, [width, height]);
   return (
     <div className={styles.board} data-motion="keep">
       {failed ? (
         <p className="sc-copy">
-          The 3D Scene Is Unavailable. Use Show Results To See Your Saved Bonus.
+          The 3D Scene Is Unavailable. Your Saved Results Are Shown Without It.
         </p>
       ) : null}
       <canvas
@@ -544,7 +729,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         aria-label="Payout Multipliers"
       >
         <h3>Slot Multipliers</h3>
-        <p>Slots Run From Left To Right. The Hottest Colours Pay The Most.</p>
+        <p>Slots Run From Left To Right. Gold Pays The Most.</p>
         <p className={styles.tally} ref={tally} role="status" aria-live="polite" />
         <ol className={styles.payoutList} aria-label="Plinko Payout Slots">
           {props.multipliersCents.map((multiplier, index) => {

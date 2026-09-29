@@ -212,7 +212,26 @@ test.describe('Watching a running tournament', () => {
     await expect(lobby, 'the corner button must open the tournament lobby overlay').toBeVisible({
       timeout: 20_000,
     });
-    await expect(lobby).toContainText(/Tournament Lobby/i);
+    /* WHICH panel opened, asked of the thing that names it (moved here
+       2026-09-22 with the console rebuild, guarding the same behaviour).
+
+       This used to read the two words back out of the panel's text as one
+       run with a space between them. The console header prints the name in
+       two measured zones - eyebrow "Tournament" above title "Lobby" - so the
+       panel's textContent concatenates to
+       "TournamentLobby" with no separator and the old regex could never
+       match again, while the player reads exactly what they always did.
+       A concatenated substring was never what this line was guarding: it is
+       here to catch TournamentInfoPanel opening instead of the lobby. The
+       dialog's accessible name says that outright, survives any future zone
+       split, and still fails if the wrong panel opens. */
+    await expect(
+      page.getByRole('dialog', { name: /tournament lobby/i }),
+      'the overlay that opened must be the Tournament Lobby, not the info panel'
+    ).toBeVisible({ timeout: 20_000 });
+    /* And the name is PAINTED, both words, in the header the player reads. */
+    await expect(lobby.locator('.tlm-console')).toContainText(/Tournament/i);
+    await expect(lobby.locator('.tlm-console')).toContainText(/Lobby/i);
 
     /* Clicking off closes it — Dan's standing rule for every 3/4 popup: "when
        it's 3/4 page you should be able to click off to close as well."

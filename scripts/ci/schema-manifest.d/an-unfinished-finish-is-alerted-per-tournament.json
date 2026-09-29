@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-cron-hardfix/detector (20260922160729_an_unfinished_finish_is_alerted_per_tournament). Applied as 20260922162135.",
+  "functions": ["fn_ca_finished_not_completed_open_alert"]
+}

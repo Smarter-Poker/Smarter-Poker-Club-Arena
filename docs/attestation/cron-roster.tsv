@@ -3,24 +3,43 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-09-20T14:01:28Z
-# active: 132
+# observed_at: 2026-09-24T02:47:08Z
+# active: 121
 # retained-inactive: 2	the two bust sweeps, restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
 # three_watchers_whose_defects_were_fixed_stop_running, because the writer that
 # replaced each one is universal. The argument is in that migration's header.
+# 2026-09-23: 132 -> 133. ca-crash-settle-abandoned-minute was scheduled by
+# migration an_abandoned_crash_round_settles_itself. It is another owner's
+# work and is listed here, not judged here.
+# 2026-09-24: 133 -> 121. Twelve compensation jobs retired by migrations
+# eleven_compensation_jobs_whose_writers_are_correct_stop_running and
+# the_incident_tick_that_repairs_nothing_stops_running, each because the
+# writer it compensated for is correct at its source and its candidate set
+# has been empty for days. The argument is in those headers. Originally
+# measured 2026-09-22: 132 -> 121.
+# (2026-09-22 note, superseded by the line above) 132 -> 121. ca-redrive-unbanked-rake-15m, rake-repair-unbanked-hourly,
+# ca-union-rake-attribution-hourly, ca-bounty-backpay-hourly, ca-payout-sweep-hourly,
+# spin_repair_missing_multiplier, spin_sweep_unbooked,
+# ca-spin-return-unawarded-draws-15m, ca-promo-accrual-retry-10m,
+# ca-post-commit-orphan-drain-10m and ca-pgrst-reload-if-stale are retired by
+# migration 20260922155223_eleven_compensation_jobs_whose_writers_are_correct_stop_running,
+# because the writer each one compensated for is correct at its source. The
+# argument is in that migration's header. The observed_at above is when
+# fn_ca_cron_health() was read, and it returned 132 jobs, identical to the
+# previous body; this body is that reading minus those eleven rows, which is
+# what production holds once that migration is applied.
 # jobname	schedule
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
-ca-auto-reconcile-tick	* * * * *
 ca-bbj-threshold-notify-5m	*/5 * * * *
-ca-bounty-backpay-hourly	12 * * * *
 ca-break-scorecard	12 * * * *
 ca-burnin-gate-hourly	58 * * * *
 ca-cash-pot-conservation-hourly	34 */6 * * *
 ca-collusion-daily	20 4 * * *
 ca-conservation-sweep-hourly	52 * * * *
+ca-crash-settle-abandoned-minute	* * * * *
 ca-cron-health-30m	7,37 * * * *
 ca-daily-attestation	10 6 * * *
 ca-diamond-economy-watch-daily	25 6 * * *
@@ -51,19 +70,13 @@ ca-op-claims-prune-daily	45 5 * * *
 ca-orphaned-checks-daily	18 6 * * *
 ca-pay-backed-payout-shortfalls-hourly	26 * * * *
 ca-payout-guarantee-check-hourly	18 * * * *
-ca-payout-sweep-hourly	52 * * * *
-ca-pgrst-reload-if-stale	*/5 * * * *
-ca-post-commit-orphan-drain-10m	*/10 * * * *
-ca-promo-accrual-retry-10m	4,14,24,34,44,54 * * * *
 ca-quick-reconcile-5m	*/10 * * * *
 ca-ratchet-watch-hourly	35 * * * *
-ca-redrive-unbanked-rake-15m	7,22,37,52 * * * *
 ca-resolve-cleared-incidents-hourly	23 * * * *
 ca-resolve-settled-alerts-20m	4,24,44 * * * *
 ca-results-without-a-hand-6h	46 */6 * * *
 ca-revenue-digest-weekly	0 13 * * 1
 ca-settlement-correctness-30m	15 * * * *
-ca-spin-return-unawarded-draws-15m	8,23,38,53 * * * *
 ca-stats-witness-audit-15m	9,24,39,54 * * * *
 ca-supply-snapshot-hourly	5 * * * *
 ca-suspense-regression-15m	*/15 * * * *
@@ -71,7 +84,6 @@ ca-tournament-conservation-10m	*/10 * * * *
 ca-tournament-finished-not-completed-5m	*/5 * * * *
 ca-trial-balance-hourly	20 * * * *
 ca-uncollected-entry-check-hourly	47 * * * *
-ca-union-rake-attribution-hourly	20 * * * *
 cleanup-hole-cards	0 */6 * * *
 club-rake-rollup-catchup	25 * * * *
 cron-history-retention-daily	35 6 * * *
@@ -112,7 +124,6 @@ rake-attribution-drift-audit-hourly	47 * * * *
 rake-bbj-invariant-audit-hourly	38 * * * *
 rake-law-adherence-hourly	40 * * * *
 rake-law-wide-daily	50 7 * * *
-rake-repair-unbanked-hourly	2,17,32,47 * * * *
 rate-limit-prune	17 3 * * *
 reconcile-club-member-daily-profit	35 0 * * *
 reconcile-ledger-integrity-6h	55 */6 * * *
@@ -130,8 +141,6 @@ sp_resolve_settled_prize_alerts_15m	9,24,39 * * * *
 sp_upcoming_tournament_pushes	* * * * *
 spin_chip_conservation_hourly	49 * * * *
 spin_fairness_check_hourly	44 * * * *
-spin_repair_missing_multiplier	*/15 * * * *
-spin_sweep_unbooked	*/5 * * * *
 spin_unpaid_check	50 * * * *
 tournament_rake_settlement_check_hourly	19 * * * *
 tourney_money_conservation_deep_daily	25 3 * * *

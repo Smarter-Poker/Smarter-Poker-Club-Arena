@@ -6,7 +6,10 @@
  * Central design token system for consistent spacing, typography, colors,
  * shadows, animations, and theming across all table components.
  *
- * Usage: @import '../styles/design-tokens.css'; in any component CSS
+ * Usage: the entry stylesheet already carries these (index.html links this
+ * file). A table component that needs them to win over later global sheets
+ * imports src/styles/table-design-tokens.css from its .tsx; never @import this
+ * file from a component sheet, which inlines a fresh copy into every chunk.
  * Theme: Apply [data-theme="blue|red|purple|black|gold"] on root element
  */
 

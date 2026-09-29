@@ -14,6 +14,10 @@ import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
+  expectMissionArtworkDecoded,
+  installMissionArtObservation,
+} from './support/dailyMissionArtObservation';
+import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -310,6 +314,26 @@ test.describe('production Daily Missions certification', () => {
     let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
     const cleanupErrors: string[] = [];
+    // A run cancelled mid-certification (CI cancellation, a SIGTERM from the
+    // runner) still reaches this handler even though it never reaches the
+    // finally block's own cleanup below - Node delivers the signal, but the
+    // process is free to exit before an interrupted await resumes. Reading
+    // certificationHandHistoryId here is a closure read, so it always sees
+    // whatever the try block has assigned by the time the signal lands. This
+    // is a backstop for cancellation only: it cannot run after SIGKILL or a
+    // host loss, which is why the retention sweep fix in
+    // 20260926151328_prune_e2e_certification_hand_history_fixtures.sql exists
+    // as the durable backstop underneath it (board #5070).
+    const deleteFixtureOnSignal = () => {
+      if (!certificationHandHistoryId) return;
+      void deleteServiceRows(
+        environment,
+        'hand_history',
+        new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+      ).catch(() => undefined);
+    };
+    process.once('SIGTERM', deleteFixtureOnSignal);
+    process.once('SIGINT', deleteFixtureOnSignal);
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -353,6 +377,7 @@ test.describe('production Daily Missions certification', () => {
       const { page } = missions;
 
       await test.step('one-request cold load stays inside the production budget', async () => {
+        await page.addInitScript(installMissionArtObservation);
         await page.addInitScript(() => {
           const metrics = { lcp: 0, cls: 0 };
           Object.defineProperty(window, '__dailyMissionVitals', {
@@ -457,7 +482,7 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.locator('main')).toHaveCount(1);
         await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
 
-        await page.waitForTimeout(750);
+        await expectMissionArtworkDecoded(page);
         const vitals = await page.evaluate(() => {
           const navigation = performance.getEntriesByType(
             'navigation'
@@ -468,28 +493,27 @@ test.describe('production Daily Missions certification', () => {
               __dailyMissionVitals?: { lcp: number; cls: number };
             }
           ).__dailyMissionVitals;
-          const missionArt = performance
-            .getEntriesByType('resource')
-            .filter((entry) =>
-              /\/images\/challenges\/daily-missions-(?:casino|diamond)/.test(entry.name)
-            )
-            .map((entry) => {
-              const resource = entry as PerformanceResourceTiming;
-              return {
-                name: new URL(resource.name).pathname.split('/').pop() || resource.name,
-                bytes: resource.encodedBodySize,
-              };
-            });
+          const artObservation = window.__dailyMissionArt;
+          if (!artObservation)
+            throw new Error('Daily Missions artwork observer was not installed.');
+          artObservation.finish();
+          const missionArt = artObservation.missionArt;
           return {
             ttfb: navigation.responseStart - navigation.requestStart,
             fcp: paint?.startTime ?? 0,
             lcp: observed?.lcp ?? 0,
             cls: observed?.cls ?? Number.POSITIVE_INFINITY,
+            resourcesSeen: artObservation.resourcesSeen,
+            timelineOverflowed: artObservation.timelineOverflowed,
             missionArt,
             missionArtBytes: missionArt.reduce((total, asset) => total + asset.bytes, 0),
           };
         });
         report.webVitals = vitals;
+        await test.info().attach('daily-missions-cold-load.json', {
+          body: JSON.stringify(vitals, null, 2),
+          contentType: 'application/json',
+        });
         expect(vitals.ttfb).toBeGreaterThan(0);
         expect(vitals.ttfb).toBeLessThan(TTFB_BUDGET_MS);
         expect(vitals.fcp).toBeGreaterThan(0);
@@ -1611,11 +1635,21 @@ test.describe('production Daily Missions certification', () => {
           // dropped link and own the reconnect: a new routed socket proves the
           // reconnect happened, and the rejoin's SUBSCRIBED status is the only
           // thing allowed to read the cursor.
+          //
+          // The close code must be one a browser script may send: 1000 or
+          // 3000-4999. Playwright performs the server-side close with the page's
+          // own WebSocket, and a reserved code such as 1012 ("service restart")
+          // is refused there without an error reaching this step: neither the
+          // page nor the real server ever saw a close, supabase-js had nothing
+          // to reconnect from, and every post-deploy run from b293beb4e onward
+          // timed out below with the routed socket count unchanged. 4000 is an
+          // application code, the realtime client reconnects after any close it
+          // did not request, and the close is forwarded to the page.
           const socketsBeforeInterruption = interceptedRealtimeSockets;
           const cursorReadsBeforeInterruption = cursorReads;
           for (const server of routedRealtimeServers.splice(0)) {
             try {
-              await server.close({ code: 1012, reason: 'Certification Realtime Interruption' });
+              await server.close({ code: 4000, reason: 'Certification Realtime Interruption' });
             } catch {
               // A side the client already closed is not an interruption failure.
               // The reconnect proof below is what decides that.
@@ -2029,6 +2063,8 @@ test.describe('production Daily Missions certification', () => {
         contentType: 'application/json',
       });
     } finally {
+      process.removeListener('SIGTERM', deleteFixtureOnSignal);
+      process.removeListener('SIGINT', deleteFixtureOnSignal);
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }

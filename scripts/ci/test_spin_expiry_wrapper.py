@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before all six separate PG17 images.
+The normal wrapper runs these controls before every separately owned PG17 image.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -12,6 +12,7 @@ import re
 import signal
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,12 +21,129 @@ from unittest.mock import Mock, patch
 SPEC = importlib.util.spec_from_file_location('spin_expiry_pg_wrapper', Path(__file__).with_name('test-spin-expiry-postgres.py'))
 W = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(W)
+ARCHIVE_TEST_SPEC = importlib.util.spec_from_file_location('first_archived_oracle_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_oracle.py')
+ARCHIVE_TEST_MODULE = importlib.util.module_from_spec(ARCHIVE_TEST_SPEC)
+ARCHIVE_TEST_SPEC.loader.exec_module(ARCHIVE_TEST_MODULE)
+FirstArchivedOracleTests = ARCHIVE_TEST_MODULE.FirstArchivedOracleTests
+ARCHIVE_CONCURRENCY_SPEC = importlib.util.spec_from_file_location('first_archived_concurrency_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_concurrency.py')
+ARCHIVE_CONCURRENCY_MODULE = importlib.util.module_from_spec(ARCHIVE_CONCURRENCY_SPEC)
+ARCHIVE_CONCURRENCY_SPEC.loader.exec_module(ARCHIVE_CONCURRENCY_MODULE)
+FirstArchivedConcurrencyTests = ARCHIVE_CONCURRENCY_MODULE.FirstArchivedConcurrencyTests
+ARCHIVE_LOCK_SPEC = importlib.util.spec_from_file_location('first_archived_lock_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_locks.py')
+ARCHIVE_LOCK_MODULE = importlib.util.module_from_spec(ARCHIVE_LOCK_SPEC)
+ARCHIVE_LOCK_SPEC.loader.exec_module(ARCHIVE_LOCK_MODULE)
+FirstArchivedLockTests = ARCHIVE_LOCK_MODULE.FirstArchivedLockTests
+ARCHIVE_PROBE_SPEC = importlib.util.spec_from_file_location('first_archived_production_probe_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_production_probe.py')
+ARCHIVE_PROBE_MODULE = importlib.util.module_from_spec(ARCHIVE_PROBE_SPEC)
+ARCHIVE_PROBE_SPEC.loader.exec_module(ARCHIVE_PROBE_MODULE)
+FirstArchivedProductionProbeTests = ARCHIVE_PROBE_MODULE.FirstArchivedProductionProbeTests
+ARCHIVE_POSTABORT_SPEC = importlib.util.spec_from_file_location('first_archived_postabort_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_postabort.py')
+ARCHIVE_POSTABORT_MODULE = importlib.util.module_from_spec(ARCHIVE_POSTABORT_SPEC)
+ARCHIVE_POSTABORT_SPEC.loader.exec_module(ARCHIVE_POSTABORT_MODULE)
+FirstArchivedPostabortTests = ARCHIVE_POSTABORT_MODULE.FirstArchivedPostabortTests
+ARCHIVE_BANK_SPEC = importlib.util.spec_from_file_location('first_archived_bank_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_bank_observer.py')
+ARCHIVE_BANK_MODULE = importlib.util.module_from_spec(ARCHIVE_BANK_SPEC)
+ARCHIVE_BANK_SPEC.loader.exec_module(ARCHIVE_BANK_MODULE)
+FirstArchivedBankObserverTests = ARCHIVE_BANK_MODULE.FirstArchivedBankObserverTests
 EXECUTION = '00000000-0000-4000-8000-000000000001'
 ORDINARY = '00000000-0000-4000-8000-000000000002'
 TOURNAMENT = '00000000-0000-4000-8000-000000000003'
 MANIFEST_SHA = 'b' * 64
 PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
+
+
+class OwnedBackendDisposalTests(unittest.TestCase):
+    def test_frame_retains_every_original_argument_and_only_reads_its_backend(self):
+        argv = W.server_endpoint_command(PG, SOURCE)
+        actual = W.psql_backend_command(argv, PG, EXECUTION)
+        self.assertEqual(actual[0], argv[0])
+        self.assertEqual(actual[3:], argv[1:])
+        self.assertEqual(actual[1], '-c')
+        self.assertIn('pg_backend_pid()', actual[2])
+        self.assertIn(EXECUTION, actual[2])
+        self.assertEqual(W.psql_backend_command(['/usr/bin/python3', 'probe.py'], PG, EXECUTION), ['/usr/bin/python3', 'probe.py'])
+        for nonce in (None, 12, "bad'nonce", 'AAAAAAAA-0000-4000-8000-000000000001'):
+            with self.subTest(nonce=nonce), self.assertRaises(RuntimeError):
+                W.psql_backend_command(argv, PG, nonce)
+
+    def test_only_exact_first_frame_is_removed_and_original_bytes_are_retained(self):
+        body = b'{"ok":true}\n  second line\n'
+        frame = ('spin_backend:' + EXECUTION + ':12345\n').encode()
+        self.assertEqual(W.parse_backend_frame(frame + body, EXECUTION), (12345, body))
+        for raw in [b'', body, frame + frame, frame.replace(b'12345', b'0'), frame.replace(b'12345', b'-1'), frame.replace(EXECUTION.encode(), ORDINARY.encode())]:
+            with self.subTest(raw=raw), self.assertRaises(RuntimeError):
+                W.parse_backend_frame(raw, EXECUTION)
+
+    def test_client_exit_is_not_backend_exit_and_no_process_is_killed(self):
+        with patch.object(W, 'process_absent', side_effect=[False, False, True]) as absent, patch.object(W.time, 'monotonic', side_effect=[1.0, 1.02, 1.03, 1.04]), patch.object(W.time, 'sleep') as pause, patch.object(W.os, 'kill') as kill:
+            W.wait_backend_exit(12345, 2.0)
+        self.assertEqual(absent.call_args_list, [((12345,),), ((12345,),), ((12345,),)])
+        self.assertEqual(pause.call_count, 2)
+        kill.assert_not_called()
+
+    def test_lingering_or_reused_pid_is_failure_inside_the_existing_deadline(self):
+        with patch.object(W, 'process_absent', return_value=False), patch.object(W.time, 'monotonic', return_value=2.0), patch.object(W.time, 'sleep') as pause:
+            with self.assertRaises(TimeoutError): W.wait_backend_exit(12345, 2.0)
+        pause.assert_not_called()
+
+    def test_absence_after_original_deadline_cannot_qualify(self):
+        with patch.object(W, 'process_absent', return_value=True), patch.object(W.time, 'monotonic', side_effect=[1.99, 2.01]):
+            with self.assertRaisesRegex(RuntimeError, 'after deadline'):
+                W.wait_backend_exit(12345, 2.0)
+
+    def test_both_original_and_unframed_streams_are_retained(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory).resolve()/'work'; output=Path(directory).resolve()/'evidence'
+            work.mkdir(); output.mkdir()
+            receipt={'stages':[{'stage':'archive_connected_rollback','backend_nonce':EXECUTION}]}
+            body=b'BEGIN\nROLLBACK\n'; raw=('spin_backend:'+EXECUTION+':456\n').encode()+body
+            (work/'receipt.json').write_text(json.dumps(receipt))
+            (work/'archive_connected_rollback.stdout').write_bytes(body)
+            (work/'archive_connected_rollback.stderr').write_bytes(b'')
+            (work/'archive_connected_rollback.backend.stdout').write_bytes(raw)
+            kept=W.retained_evidence(work,output,receipt,b'{}')
+            self.assertEqual((output/'archive_connected_rollback.backend.stdout').read_bytes(),raw)
+            self.assertEqual(kept['archive_connected_rollback.backend.stdout'],W.pin(raw))
+            self.assertEqual((output/'archive_connected_rollback.stdout').read_bytes(),body)
+            (work/'archive_connected_rollback.backend.stdout').unlink()
+            with self.assertRaisesRegex(RuntimeError,'original evidence leaf missing'):
+                W.retained_evidence(work,output,receipt,b'{}')
+
+
+
+class ReadOnlyOracleImportTests(unittest.TestCase):
+    def test_plain_python_oracle_imports_preserve_staged_inventory(self):
+        # CI invokes plain python3, unlike local -B runs. The parent verifier
+        # imports these staged modules in-process after the SQL clients exit.
+        repo = Path(__file__).resolve().parents[2]
+        names = [W.ARCHIVE.CONCURRENCY, W.ARCHIVE.LOCKS,
+                 W.ARCHIVE.PRODUCTION_PROBE, W.ARCHIVE.BANK_OBSERVER, W.ARCHIVE.BANK_RACES,
+                 'scripts/qualification/spin-expiry-business-races.py']
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for name in names:
+                leaf = source / name
+                leaf.parent.mkdir(parents=True, exist_ok=True)
+                leaf.write_bytes((repo / name).read_bytes())
+                leaf.chmod(0o400)
+            program = '''
+import importlib.util, pathlib, runpy, sys
+assert not sys.dont_write_bytecode, 'test must start without -B or inherited policy'
+runpy.run_path(sys.argv[1], run_name='oracle_import_control')
+source = pathlib.Path(sys.argv[2])
+before = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
+for index, name in enumerate(sys.argv[3:]):
+    spec = importlib.util.spec_from_file_location('staged_oracle_' + str(index), source / name)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+after = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
+assert before == after, 'oracle imports changed staged inventory: ' + repr(sorted(set(after) - set(before)))
+'''
+            result = subprocess.run(
+                [sys.executable, '-E', '-c', program, str(repo / 'scripts/ci/test-spin-expiry-postgres.py'),
+                 str(source), *names], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 def mixed_source_files():
@@ -347,6 +465,52 @@ class PositiveFeeEntryTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 46)
 
+    def test_paid_entry_timestamps_preserve_postgres_microseconds(self):
+        from datetime import datetime, timedelta, timezone
+        instant = W.FEE.load_oracle(W.ROOT).instant
+        # Literal from the retained failed native execution, not generated by the parser.
+        self.assertEqual(instant('2026-09-25T05:32:55.91439+00:00'),
+                         datetime(2026, 9, 25, 5, 32, 55, 914390, timezone.utc))
+        for fraction in ('', '1', '12', '123', '1234', '12345', '123456'):
+            expected = datetime(2026, 9, 25, 5, 32, 55,
+                                int((fraction + '000000')[:6]), timezone.utc)
+            for separator in ('T', ' '):
+                for zone in ('Z', '+00:00'):
+                    raw = '2026-09-25' + separator + '05:32:55' + ('.' + fraction if fraction else '') + zone
+                    with self.subTest(raw=raw):
+                        self.assertEqual(instant(raw), expected)
+        self.assertEqual(instant('2026-09-25T07:02:55.91439+01:30'),
+                         instant('2026-09-25T04:02:55.914390-01:30'))
+        self.assertEqual(instant('2026-09-25T05:32:55+05:30').utcoffset(), timedelta(hours=5, minutes=30))
+
+    def test_paid_entry_timestamps_refuse_ambiguous_or_lossy_input(self):
+        instant = W.FEE.load_oracle(W.ROOT).instant
+        invalid = [None, True, 1, {}, '', '2026-09-25',
+                   '2026-09-25T05:32:55', '2026-09-25T05:32:55.1234567Z',
+                   '2026-09-25T05:32:55.Z', '2026-09-25T05:32:55,123Z',
+                   '2026-09-25X05:32:55Z', '2026-09-25T05:32:55z',
+                   '2026-09-25T05:32:55Z\n', '2026-09-25T05:32:55Z ',
+                   '2026-09-25T05:32:55Zjunk', '2026-09-25T05:32:55+24:00',
+                   '2026-09-25T05:32:55+00:60', '2026-09-25T05:32:55-01:99',
+                   '2026-09-25T05:32:55+01:30:01', '2026-09-25T05:32:55+0130',
+                   '2026-02-29T05:32:55Z', '2026-09-25T24:00:00Z',
+                   '2026-09-25T05:60:00Z', '2026-09-25T05:32:60Z']
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                instant(raw)
+
+    def test_paid_entry_connected_observation_accepts_short_fraction(self):
+        oracle = W.FEE.load_oracle(W.ROOT)
+        execution, tournament, records = oracle._control_records()
+        q = records[oracle.STAGES.index('positive_fee_entry_committed_observation')]
+        # Change only the later observation clock, which is not fingerprinted.
+        q['observed_at'] = '2026-09-18T01:10:00.91439+00:00'
+        records[-1]['observed_at'] = '2026-09-18T01:10:00.914390+00:00'
+        raw = ('\n'.join(oracle._jsonb_text(row) for row in records) + '\n').encode()
+        result = oracle.validate_output(raw, execution, tournament)
+        self.assertEqual(result['issued'], '100.00')
+        self.assertEqual(result['fee_sources'], 3)
+
     def test_restoration_reader_is_created_before_the_read_only_observation(self):
         sql = (W.ROOT / 'scripts/qualification/spin-mixed-positive-fee-entry.sql').read_text()
         start = sql.index('BEGIN READ ONLY;')
@@ -661,13 +825,13 @@ class MixedCurrentTests(unittest.TestCase):
                     b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError): W.MIXED.decode_races(raw)
 
-    def test_all_six_images_and_original_cases_remain_required(self):
+    def test_all_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal', 'finalized-horse-admission', 'first-archived-spin', 'first-archived-spin-bank-mvcc'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': (), 'finalized-horse-admission': (), 'first-archived-spin': (), 'first-archived-spin-bank-mvcc': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -1713,7 +1877,7 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(lane_source_files())
         files.update(mixed_source_files())
         files.update({name: (Path(__file__).resolve().parents[2] / name).read_bytes()
-                      for name in W.FEE.INPUTS})
+                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS, *W.HORSE.INPUTS, *W.ARCHIVE.INPUTS)})
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -2573,3 +2737,318 @@ class ReceiptLaneTests(unittest.TestCase):
             if mode=='foreign-key':rpc['receipt_fk_count']=1
             with self.subTest(mode=mode),self.assertRaises(RuntimeError):
                 W.validate_lane_races(value,EXECUTION,lane_source_files())
+
+
+class PaidTerminalTests(unittest.TestCase):
+    def test_sources_are_exact_and_original_images_are_retained(self):
+        files={name:(W.ROOT/name).read_bytes() for name in W.TERMINAL.INPUTS}
+        W.TERMINAL.validate_sources(files,W.FEE)
+        self.assertTrue(set(W.TERMINAL.INPUTS)<=set(W.REPLACEMENTS))
+        self.assertEqual(W.CASES[W.TERMINAL.IMAGE],())
+        for name in W.TERMINAL.INPUTS:
+            changed=dict(files);changed[name]+=b'changed'
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                W.TERMINAL.validate_sources(changed,W.FEE)
+
+    def test_extended_stage_receipt_cannot_omit_fail_reorder_or_replace_a_stage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source'
+            receipt=PositiveFeeEntryTests.allocation_receipt(self,source)
+            target=source/W.TERMINAL.BASE/'rules.json';target.parent.mkdir(parents=True)
+            target.write_bytes((W.ROOT/W.TERMINAL.BASE/'rules.json').read_bytes())
+            prefix=receipt['stages'][:22];suffix=receipt['stages'][-2:]
+            plan=W.TERMINAL.body_plan(PG,source,EXECUTION,ORDINARY,TOURNAMENT,W.FEE,W.MIXED)
+            body=[]
+            for n,argv in plan:
+                st={'stage':n,'argv':argv,'pid':1350+len(body),'returncode':0,'terminal_returncode':0}
+                for stream in ('stdout','stderr'):
+                    raw=(n+':'+stream+'\n').encode();(source.parent/'work'/(n+'.'+stream)).write_bytes(raw)
+                    st[stream+'_sha256']=W.digest(raw)
+                body.append(st)
+            receipt['stages']=prefix+body+suffix
+            receipt['positive_fee_terminal_qualification']={'protocol_mock_only':True}
+            def check(value):
+                with patch.object(W.FEE,'validate_outputs',return_value={'mocked_output_only':True}),patch.object(W.TERMINAL,'validate_outputs',return_value={'protocol_mock_only':True}):
+                    return W.TERMINAL.validate_stages(value,PG,source,EXECUTION,ORDINARY,TOURNAMENT,W.FEE,W.MIXED)
+            self.assertEqual(check(receipt),[])
+            for index in range(len(receipt['stages'])):
+                for mode in ('omit','failure','unknown','args','hash'):
+                    changed=copy.deepcopy(receipt);st=changed['stages'][index]
+                    if mode=='omit':changed['stages'].pop(index)
+                    elif mode=='failure':st['returncode']=1
+                    elif mode=='unknown':st['terminal_returncode']=None
+                    elif mode=='args':st['argv']+=['wrong-target']
+                    else:st['stdout_sha256']='f'*64
+                    with self.subTest(index=index,mode=mode),self.assertRaises((ValueError,KeyError)):
+                        check(changed)
+            changed=copy.deepcopy(receipt);changed['stages'][24:26]=reversed(changed['stages'][24:26])
+            with self.assertRaises(ValueError):check(changed)
+
+    def test_original_output_parser_rejects_nonfinite_duplicate_and_diagnostics(self):
+        for raw in (b'{"stage":"x","amount":NaN}\n',b'{"stage":"x","stage":"x"}\n',b'ERROR: failing SQL\n',b'{"ok":true}\n',b'{"stage":"x"}|unexpected\n',
+                    b'{"stage":"x","amount":1e999}\n',b'{"stage":"x","amount":1e-999}\n'):
+            with self.subTest(raw=raw),self.assertRaises(ValueError):W.TERMINAL.observations(raw)
+        self.assertEqual(W.TERMINAL.observations(b'SET\n{"stage":"x","amount":0.24}\n')[0]['amount'],W.Decimal('.24'))
+
+
+class FinalizedHorseTests(unittest.TestCase):
+    def test_house_club_binding_cannot_be_inferred_from_the_observation(self):
+        root=Path(__file__).resolve().parents[2]
+        oracle=W.FEE.load_oracle(root)
+        execution,tournament,rows=oracle._control_records()
+        raw=('\n'.join(oracle._jsonb_text(row) for row in rows)+'\n').encode()
+        oracle.validate_output(raw,execution,tournament)
+        ex,tt,house=oracle._control_records(expected_club=W.FEE.HOUSE_BOARD)
+        house_raw=('\n'.join(oracle._jsonb_text(row) for row in house)+'\n').encode()
+        oracle.validate_output(house_raw,ex,tt,expected_club=W.FEE.HOUSE_BOARD)
+        with self.assertRaises(ValueError):
+            oracle.validate_output(house_raw,ex,tt)
+        for club in (W.FEE.HOUSE_BOARD,'00000000-0000-4000-8000-000000000009'):
+            with self.assertRaises(ValueError):
+                oracle.validate_output(raw,execution,tournament,expected_club=club)
+        rows[oracle.STAGES.index('positive_fee_entry_committed_observation')]['club']=W.FEE.HOUSE_BOARD
+        raw=('\n'.join(oracle._jsonb_text(row) for row in rows)+'\n').encode()
+        with self.assertRaises(ValueError):
+            oracle.validate_output(raw,execution,tournament,expected_club=W.FEE.HOUSE_BOARD)
+
+    def test_platform_board_variant_preserves_every_paid_operation(self):
+        root = Path(__file__).resolve().parents[2]
+        pg = Path('/qualified/pg17/bin')
+        ordinary = '00000000-0000-4000-8000-000000000002'
+        original = W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT)
+        variant = W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+        self.assertEqual(original[:-1],variant[:-1])
+        self.assertEqual(original[-1][1][:-1],variant[-1][1][:-1])
+        for invalid in (None,1,'true'):
+            with self.assertRaises(ValueError):
+                W.FEE.body_plan(pg,root,EXECUTION,ordinary,TOURNAMENT,platform_board=invalid)
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)
+            target='scripts/qualification/spin-horse-platform-paid-entry.sql'
+            for name in (W.FEE.FIXTURE,target):
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes((root/name).read_bytes())
+            W.FEE.body_plan(pg,source,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+            path=source/target;path.write_bytes(path.read_bytes()+b'\nSELECT 1;\n')
+            with self.assertRaises(ValueError):
+                W.FEE.body_plan(pg,source,EXECUTION,ordinary,TOURNAMENT,platform_board=True)
+
+    def test_exact_sources_and_each_changed_input_are_refused(self):
+        root = Path(__file__).resolve().parents[2]
+        files = {name: (root / name).read_bytes() for name in W.HORSE.INPUTS}
+        W.HORSE.validate_sources(files)
+        for name in W.HORSE.INPUTS:
+            changed = dict(files); changed[name] += b' '
+            if name == W.HORSE.MANIFEST:
+                self.assertNotEqual(W.digest(changed[name]), W.HORSE_MANIFEST_SHA256)
+                continue
+            with self.subTest(name=name), self.assertRaises((ValueError, KeyError)):
+                W.HORSE.validate_sources(changed)
+
+    def test_original_observations_refuse_wrong_identity_or_mutating_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            state={'rows':{'parser_control_'+str(i):[] for i in range(201)},'sequences':{}}
+            race={'execution':EXECUTION,'tournament':TOURNAMENT,'passed':True,'cleanup_verified':True,
+                'modeled_chair_closure':True,'finalization_transition_qualified':False,
+                'full_financial_qualification':False,'production_qualification':False,
+                'work_deadline_seconds':20,'cleanup_deadline_seconds':5,
+                'backend_cleanup':{'backends':0,'locks':0},
+                'backend_pids':{'observer':1,'holder':2,'writer':3},
+                'clients':[{'backend_pid':n,'client_exit':0} for n in (1,2,3)],
+                'verifier_client':{'client_exit':0},'transcripts':{'one':'parser mock','two':'parser mock','three':'parser mock'},
+                'cases':[{'case':name,'before':state,'inside':state,'after':state,'result':result,
+                    'wait':{'pid':3,'wait_event_type':'Lock','wait_event':'transactionid','blockers':[2]}}
+                    for name,result in [('existing_live_chair',{'ok':True,'already_seated':True}),
+                        ('modeled_closed_chair',{'ok':False,'reason':'game_already_started'})]]}
+            for key in ('client','verifier','backend'):
+                changed=copy.deepcopy(race)
+                if key=='client': changed['clients'][0]['client_exit']=False
+                elif key=='verifier': changed['verifier_client']['client_exit']=False
+                else: changed['backend_cleanup']['backends']=False
+                with self.subTest(numeric_identity=key),self.assertRaises(ValueError):
+                    W.HORSE.validate_race(changed,EXECUTION,TOURNAMENT)
+            changed=copy.deepcopy(race)
+            changed['cases'][1]['inside']=copy.deepcopy(state)
+            changed['cases'][1]['inside']['rows']['parser_control_0']=[{'unexpected_write':True}]
+            with self.assertRaises(ValueError):
+                W.HORSE.validate_race(changed,EXECUTION,TOURNAMENT)
+            rows = {'horse_parent_race':race}
+            for candidate, horse, stage in [(False,False,'horse_preimage_closed_chair'),
+                    (False,True,'horse_preimage_horse_closed_chair'),
+                    (True,False,'horse_candidate_closed_chair'),
+                    (True,True,'horse_candidate_horse_closed_chair')]:
+                rows[stage] = {'stage': 'closed_winning_chair', 'execution': EXECUTION,
+                    'tournament': TOURNAMENT, 'candidate': candidate, 'horse_profile': horse,
+                    'synthetic_finish_input': True, 'dealt_gameplay': False,
+                    'historical_qualification': False, 'full_financial_qualification': False,
+                    'production_qualification': False, 'state_unchanged': candidate,
+                    'sequences_unchanged': candidate,
+                    'live_replay': {'result': {'ok': True,'already_seated': True},
+                        'state_unchanged': True, 'sequences_unchanged': True},
+                    'response': {'ok': False, 'reason': 'game_already_started'} if candidate
+                       else {'ok': True, 'reused_registration': True, 'reused_seat': True}}
+            for horse,stage in [(False,'horse_prestart_ordinary'),(True,'horse_prestart_horse')]:
+                rows[stage]={'stage':'prestart_existing_entry','execution':EXECUTION,'tournament':TOURNAMENT,
+                    'horse_profile':horse,'status':'REGISTERING','money_unchanged':True,'live_seats':3,
+                    'live_stack':3000,'synthetic_closed_chair':True,'full_financial_qualification':False,
+                    'production_qualification':False,'response':{'ok':True,'reused_registration':True,
+                    'reused_seat':True,'stack':1000}}
+            def write(values):
+                for name, value in values.items():
+                    raw=json.dumps(value)+'\n'
+                    if name.startswith('horse_prestart_'):
+                        raw+=json.dumps({'stage':'finalized_prestart_refusal','execution':EXECUTION,
+                            'tournament':TOURNAMENT,'horse_profile':value['horse_profile'],
+                            'response':{'ok':False,'reason':'registration_closed'},
+                            'state_unchanged':True,'sequences_unchanged':True,
+                            'modeled_legacy_finalized_flag':True,'historical_qualification':False,
+                            'full_financial_qualification':False,'production_qualification':False})+'\n'
+                    (work / (name + '.stdout')).write_text(raw)
+            write(rows)
+            W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+            leaf=work/'horse_prestart_horse.stdout'
+            for key,bad in [('state_unchanged',False),('sequences_unchanged',False),
+                    ('response',{'ok':True}),('modeled_legacy_finalized_flag',False)]:
+                records=[json.loads(line) for line in leaf.read_text().splitlines()]
+                records[1][key]=bad
+                leaf.write_text('\n'.join(json.dumps(record) for record in records)+'\n')
+                with self.subTest(finalized_key=key),self.assertRaises(ValueError):
+                    W.HORSE.validate_outputs(work,work,EXECUTION,TOURNAMENT)
+                write(rows)
+            for stage, key, value in [
+                    ('horse_parent_race','cleanup_verified',False),
+                    ('horse_parent_race','backend_cleanup',{'backends':1,'locks':0}),
+                    ('horse_parent_race','cases',[]),
+                    ('horse_prestart_horse', 'money_unchanged', False),
+                    ('horse_prestart_ordinary', 'live_stack', 2000),
+                    ('horse_candidate_closed_chair', 'state_unchanged', False),
+                    ('horse_candidate_closed_chair', 'sequences_unchanged', False),
+                    ('horse_candidate_closed_chair', 'execution', 'wrong'),
+                    ('horse_preimage_closed_chair', 'state_unchanged', True),
+                    ('horse_preimage_closed_chair', 'production_qualification', True)]:
+                changed = copy.deepcopy(rows); changed[stage][key] = value; write(changed)
+                with self.subTest(stage=stage, key=key), self.assertRaises(ValueError):
+                    W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+            write(rows)
+            target = work / 'horse_candidate_closed_chair.stdout'
+            target.write_bytes(target.read_bytes() * 2)
+            with self.assertRaises(ValueError):
+                W.HORSE.validate_outputs(work, work, EXECUTION, TOURNAMENT)
+
+
+class FirstArchivedTests(unittest.TestCase):
+    def test_archive_large_leaf_allowance_is_exact_and_still_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            leaf=Path(directory)/'bounded.sql'
+            leaf.write_bytes(b'x' * (1048576 + 1))
+            exact=W.ARCHIVE.BASE+'full-readback.sql'
+            self.assertEqual(W.read_regular(leaf,W.qualification_leaf_limit(exact)),leaf.read_bytes())
+            for name in (exact+'.other', 'other/full-readback.sql', W.ARCHIVE.BASE+'other.sql'):
+                with self.subTest(name=name), self.assertRaises(RuntimeError):
+                    W.read_regular(leaf,W.qualification_leaf_limit(name))
+            leaf.write_bytes(b'x' * (2097152 + 1))
+            with self.assertRaises(RuntimeError):
+                W.read_regular(leaf,W.qualification_leaf_limit(exact))
+            self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-provider-catalog.json'),3145728)
+            self.assertEqual(W.qualification_leaf_limit(W.ARCHIVE.BASE+'full-functions.sql'),2097152)
+
+    def test_archive_lock_capacity_is_private_and_image_scoped(self):
+        source=Path(W.__file__).read_text()
+        block=source[source.index('        if archive_image:\n            # Four bounded'):source.index('        pg_attempted = True')]
+        self.assertIn("handle.write('max_locks_per_transaction=1024\\n')",block)
+        self.assertIn('max_connections=8',source)
+        self.assertEqual(source.count('max_locks_per_transaction=1024'),1)
+
+    def test_exact_archive_sources_reject_each_changed_input(self):
+        root=Path(__file__).resolve().parents[2]
+        files={n:(root/n).read_bytes() for n in W.ARCHIVE.INPUTS}
+        W.ARCHIVE.validate_sources(files)
+        for name in W.ARCHIVE.INPUTS:
+            changed=dict(files);changed[name]+=b' '
+            if name==W.ARCHIVE.MANIFEST:
+                self.assertNotEqual(W.digest(changed[name]),W.ARCHIVE_MANIFEST_SHA256)
+            else:
+                with self.subTest(name=name),self.assertRaises(ValueError):
+                    W.ARCHIVE.validate_sources(changed)
+
+    def test_archive_plan_restores_original_rows_before_triggers_and_no_synthetic_entry(self):
+        root=Path(__file__).resolve().parents[2]
+        plan=W.archive_stage_plan(Path('/qualified/pg17/bin'),root,EXECUTION,
+            '00000000-0000-4000-8000-000000000002',TOURNAMENT)
+        names=[name for name,_ in plan]
+        self.assertEqual(len(names),len(set(names)))
+        self.assertLess(names.index('schema_prefix'),names.index('archive_original_seed'))
+        self.assertLess(names.index('archive_original_seed'),names.index('schema_suffix_all_real_triggers'))
+        self.assertLess(names.index('tested_role_readback'),names.index('archive_full_functions_sql'))
+        self.assertEqual(names[-6:],['archive_connected_rollback','archive_production_probe','archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        for forbidden in ('restore_preexisting_principals','current_catalog_readback','empty_provider_readback',
+            'authentic_entry_provider_supplement','fee_actual_paid_entry','real_funded_paid_seat_fixture'):
+            self.assertNotIn(forbidden,names)
+
+    def test_bank_variant_keeps_original_image_and_uses_same_allocator(self):
+        root=Path(__file__).resolve().parents[2]
+        args=(Path('/qualified/pg17/bin'),root,EXECUTION,'00000000-0000-4000-8000-000000000002',TOURNAMENT)
+        original=W.archive_stage_plan(*args,W.ARCHIVE.IMAGE)
+        variant=W.archive_stage_plan(*args,W.ARCHIVE.BANK_IMAGE)
+        original_names=[n for n,_ in original];variant_names=[n for n,_ in variant]
+        i=original_names.index('archive_production_probe')
+        self.assertEqual(variant[:i],original[:i])
+        self.assertEqual(variant[i][1],original[i][1]+['--bank-races'])
+        self.assertEqual(variant_names[i+1:],['pg_stop_fast','pg_stopped_readback'])
+        self.assertEqual(original_names[i+1:],['archive_admission_locks','archive_concurrency_commit','pg_stop_fast','pg_stopped_readback'])
+        with self.assertRaises(ValueError):W.archive_stage_plan(*args,'unknown-variant')
+
+    def test_archive_complete_stage_identity_and_original_streams_fail_closed(self):
+        root=Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'source';work=Path(directory)/'work'
+            source.mkdir();work.mkdir()
+            leaf=source/W.ARCHIVE.BASE/'first-captured-state.json'
+            leaf.parent.mkdir(parents=True)
+            leaf.write_bytes((root/W.ARCHIVE.BASE/'first-captured-state.json').read_bytes())
+            (source/'inputs').mkdir()
+            schema=b'prefix\n'+W.MARKER+b'\nsuffix\n'
+            (source/'inputs/schema.sql').write_bytes(schema)
+            before,after=schema.split(W.MARKER)
+            (work/'schema-prefix.sql').write_bytes(before)
+            (work/'schema-suffix.sql').write_bytes(W.MARKER+after)
+            pg=Path('/qualified/pg17/bin');ordinary='00000000-0000-4000-8000-000000000002'
+            plan=W.archive_stage_plan(pg,source,EXECUTION,ordinary,TOURNAMENT)
+            stages=[]
+            for name,argv in plan:
+                code=3 if name=='pg_stopped_readback' else 0
+                row={'stage':name,'argv':argv,'executed_argv':argv,'pid':123,'returncode':code,'terminal_returncode':code}
+                for stream in ('stdout','stderr'):
+                    raw=(name+stream).encode();(work/(name+'.'+stream)).write_bytes(raw)
+                    row[stream+'_sha256']=W.digest(raw)
+                if argv[0] == str(pg / 'psql'):
+                    original = (work / (name + '.stdout')).read_bytes()
+                    raw = ('spin_backend:' + EXECUTION + ':456\n').encode() + original
+                    (work / (name + '.backend.stdout')).write_bytes(raw)
+                    row.update(executed_argv=W.psql_backend_command(argv,pg,EXECUTION),
+                               backend_nonce=EXECUTION, backend_pid=456,
+                               backend_exit_observed=True, backend_stdout_sha256=W.digest(raw))
+                stages.append(row)
+            summary={'diagnostic_passed':True,'financial_qualified':False}
+            receipt={'image':W.ARCHIVE.IMAGE,'stages':stages,'work_deadline_seconds':240,'cleanup_deadline_seconds':30,
+                     'first_archived_diagnostic':summary}
+            with patch.object(W.ARCHIVE,'validate_stages',return_value=summary):
+                W.validate_archive_stages(receipt,pg,source,EXECUTION,ordinary,TOURNAMENT)
+                changes=[]
+                x=copy.deepcopy(receipt);x['stages'].append(x['stages'][0]);changes.append(x)
+                x=copy.deepcopy(receipt);x['stages'].pop(8);changes.append(x)
+                for key,value in [('returncode',True),('terminal_returncode',1),('pid',0),
+                                  ('argv',['other endpoint']),('stdout_sha256','0'*64)]:
+                    x=copy.deepcopy(receipt);x['stages'][8][key]=value;changes.append(x)
+                x=copy.deepcopy(receipt);x['work_deadline_seconds']=999;changes.append(x)
+                x=copy.deepcopy(receipt);x['first_archived_diagnostic']={};changes.append(x)
+                for key,value in [('backend_nonce',None),('backend_pid',457),
+                                  ('backend_exit_observed',False),('backend_stdout_sha256','0'*64),
+                                  ('executed_argv',['other invocation'])]:
+                    x=copy.deepcopy(receipt)
+                    next(r for r in x['stages'] if r['argv'][0] == str(pg/'psql'))[key]=value
+                    changes.append(x)
+                for x in changes:
+                    with self.assertRaises(RuntimeError):
+                        W.validate_archive_stages(x,pg,source,EXECUTION,ordinary,TOURNAMENT)

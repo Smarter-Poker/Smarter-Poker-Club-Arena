@@ -35,6 +35,10 @@ import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
 import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
+import { triggerHaptic } from '../../services/HapticService';
+import { TapHaptic } from '../haptics/TapHaptic';
+import { DeviceCheck } from '../device/DeviceCheck';
+import { vibrationHint } from '../device/deviceReport';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
@@ -164,6 +168,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   }, [tableSettings.show_stack_in_bb, tableSettingsLoading]);
   const [showTableSettings, setShowTableSettings] = useState(false);
+  const [showDeviceCheck, setShowDeviceCheck] = useState(false);
+  // What the Vibrations switch can do on this device, said under it
+  // (an iPhone browser can only buzz under a finger; some browsers never can).
+  const [vibrationNote] = useState(() => vibrationHint());
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   const checkoutResumeHandledRef = useRef(false);
 
@@ -467,7 +475,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const getFocusable = () =>
       Array.from(
         drawer.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          // input[tabindex="-1"] excluded: a TapHaptic switch inside a button is
+          // for the finger, never a keyboard stop.
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
       ).filter((element) => element.offsetParent !== null);
 
@@ -685,6 +695,21 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     onClose();
   };
 
+  // The Device Check is a modal destination too, and the shared Modal stacks
+  // at 1000, far under this drawer (9450/9500): opened with the drawer still
+  // up it painted behind the backdrop and could not be reached. Same hand-off
+  // as Table Studio: open it and close the drawer in the same click.
+  const handleOpenDeviceCheck = () => {
+    setShowDeviceCheck(true);
+    onClose();
+  };
+  // The menu reopened over an open check (edge swipe, Ctrl/Cmd+M, the bus):
+  // the check is dismissed with it, so closing the menu never brings back a
+  // blank Device Check the player did not ask for.
+  useEffect(() => {
+    if (isOpen) setShowDeviceCheck(false);
+  }, [isOpen]);
+
   const togglePinnedPath = (path: string) => {
     const nextPinnedPaths = pinnedPaths.includes(path)
       ? pinnedPaths.filter((item) => item !== path)
@@ -770,6 +795,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
        a mute set by the in-table switch, because the gate fails closed on
        `ca_vibration_enabled` and nothing here ever touched it. */
     setVibrationAllowed(newValue);
+    // Turned on: the player feels what they switched on, inside this tap
+    // (an iPhone browser feels the switch's own TapHaptic tick instead).
+    if (newValue) triggerHaptic('medium');
     /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
        useTableSettings — the store calls it `isHapticEnabled` — so the
        whitelist at useTableSettings dropped this event silently and an open
@@ -910,6 +938,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Do not leave an off-canvas tree full of focusable controls in the tab order.
   if (!isOpen) {
+    if (showDeviceCheck) return <DeviceCheck isOpen onClose={() => setShowDeviceCheck(false)} />;
     return showThemeSettings ? (
       <ThemeSettingsModal
         isOpen
@@ -1348,7 +1377,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
           {/* Vibrations Toggle */}
           <div className={styles.settingRow}>
-            <span className={styles.settingLabel}>Vibrations</span>
+            <span className={styles.settingLabel}>
+              Vibrations
+              {vibrationNote && <span className={styles.settingHint}>{vibrationNote}</span>}
+            </span>
             <button
               type="button"
               onClick={handleVibrationsToggle}
@@ -1360,6 +1392,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.toggleTrack} aria-hidden="true">
                 <span className={styles.toggleThumb} />
               </span>
+              {/* Ticks when switching vibration ON (an iPhone browser feels it); off is silent. */}
+              <TapHaptic ignorePreference disabled={vibrationsEnabled} radius="3px" />
             </button>
           </div>
 
@@ -1390,6 +1424,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.navLabel}>Table Studio</span>
               <span className={styles.navDescription}>
                 Themes, Tables, Buttons, Backgrounds, And Card Backs
+              </span>
+            </span>
+            <span className={styles.navArrow} aria-hidden="true">
+              ›
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={handleOpenDeviceCheck}
+            aria-label="Open Device Check"
+          >
+            <span>
+              <span className={styles.navLabel}>Device Check</span>
+              <span className={styles.navDescription}>
+                Test Vibration, Sound And Graphics On This Device
               </span>
             </span>
             <span className={styles.navArrow} aria-hidden="true">

@@ -508,12 +508,16 @@
   font-weight: 500;
 }
 
+/* --accent and --accent-dark live only in globals.css, which main.tsx does not
+   import, so this gradient never resolved: the button painted no fill and its
+   black label sat unreadable on the dark card (the schedule card's Deactivate
+   and Reactivate, visual acceptance 2026-09-24). The brand blue is live. */
 .joinButton {
   padding: 0.5rem;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  background: #1877f2;
   border: none;
   border-radius: 0.5rem;
-  color: #000;
+  color: #f4f7fb;
   font-weight: 600;
   text-align: center;
   text-decoration: none;

@@ -6,8 +6,11 @@
     "fn_f06_admit_mixed_manager_custody",
     "fn_f06_find_mixed_manager_custody",
     "fn_f06_mixed_custody_intent",
-    "fn_f06_complete_mixed_manager_custody"
+    "fn_f06_complete_mixed_manager_custody",
+    "fn_ca_legacy_spin_original_fee_proof"
   ],
   "removedFunctions": ["fn_ca_close_incidents_the_check_no_longer_finds"],
-  "columns": { "ca_drift_incidents": ["closure_basis"] }
+  "columns": {
+    "ca_drift_incidents": ["closure_basis"]
+  }
 }

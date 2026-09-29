@@ -164,9 +164,10 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
       >
         <p className="sc-copy">
           Game Earnings Include Entry Diamonds And Prize Costs. New Entries Stay In Daily Custody;
-          Diamond And Inventory Prizes Are Deducted Before One Net Owner Wallet Settlement. Chip
-          Prizes Use The Promo Wallet First, Then The Bank. Welcome Spins Are Shown Separately.
-          Daily Diamond Statements Show The Exact Wallet Settlement.
+          Diamond And Inventory Prizes Are Deducted Before One Net Owner Wallet Settlement, Which
+          Burns 20% Of A Profitable Day And Credits The Remaining 80%. Chip Prizes Use The Promo
+          Wallet First, Then The Bank. Welcome Spins Are Shown Separately. Daily Diamond Statements
+          Show The Net, The Burn And The Exact Wallet Credit.
         </p>
         <div className={styles.rows}>
           {refusal ? <p className="sc-copy sc-ink--red">{refusal}</p> : null}

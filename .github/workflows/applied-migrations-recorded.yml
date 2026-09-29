@@ -61,19 +61,54 @@ jobs:
           repositories: Smarter-Poker-World-Hub
           permission-contents: read
 
+      # ONCE A WEEK, THE WHOLE HISTORY (2026-09-28). The default window is seven
+      # days, so a migration that slipped past it is invisible for ever: on
+      # 2026-09-28, 194 applied migrations had no file and 188 of them were
+      # older than any window this job had looked at. The Monday-morning run of
+      # the existing schedule (no new timer - tests/no-workflow-gains-a-new-timer)
+      # reads everything since 2026-04-01 instead, and a dispatch can ask for
+      # the same with client_payload.full_history=true.
       - name: Compare the live migration history against this repo
         id: compare
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GH_TOKEN: ${{ steps.estate-token.outputs.token }}
+          FULL_HISTORY_REQUESTED: ${{ github.event.client_payload.full_history }}
         run: |
           set -o pipefail
+          SINCE_ARGS=""
+          if [ "$FULL_HISTORY_REQUESTED" = "true" ] || \
+             { [ "$(date -u +%u)" = "1" ] && [ "$((10#$(date -u +%H)))" -lt 12 ]; }; then
+            SINCE_ARGS="--since 20260401"
+            echo "Weekly full-history run: every migration applied since 2026-04-01."
+          fi
           # --fail makes the run go red when the gap exists. The script exits 2
           # on its own errors (missing credentials, missing RPC), which is a
           # different failure and should also be visible rather than swallowed.
           set +e
-          node scripts/ci/check-applied-migrations-are-recorded.mjs --fail 2>&1 | tee /tmp/recorded.log
+          node scripts/ci/check-applied-migrations-are-recorded.mjs --fail $SINCE_ARGS 2>&1 | tee /tmp/recorded.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
+      # 2026-09-23 (issue #5008). scripts/ci/recording-only.mjs lets the
+      # file-text guards stop predicting what an ALREADY-APPLIED migration will
+      # do. That is only honest if somebody asks production what actually
+      # happened, and this is the only job in the estate that already holds the
+      # database credentials AND already files an issue when it goes red - so
+      # it is the reader (CLAUDE.md 10.86 rule 3).
+      #
+      # Exit 3 is COULD NOT TELL and is deliberately NOT success: a recording
+      # whose evidence could not be checked is a recording nobody checked.
+      - name: Verify every recorded migration against production
+        id: recordings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/ci/check-recorded-migrations-evidence.mjs 2>&1 | tee /tmp/recordings.log
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 
@@ -85,6 +120,12 @@ jobs:
             echo ""
             echo '```'
             cat /tmp/recorded.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "## Recorded migrations verified against production"
+            echo ""
+            echo '```'
+            cat /tmp/recordings.log 2>/dev/null || echo "(the check produced no output)"
             echo '```'
             echo ""
             echo "The applied SQL for each one is in"
@@ -118,4 +159,10 @@ jobs:
         if: steps.compare.outputs.status != '0'
         run: |
           echo "::error title=Unrecorded migrations::Production has applied migrations that this repo has no file for. See the job summary."
+          exit 1
+
+      - name: Fail the run when a recording's evidence does not hold
+        if: steps.recordings.outputs.status != '0'
+        run: |
+          echo "::error title=Recorded migration evidence::A row in scripts/ci/recorded-migrations.manifest.json is not what production holds, or a finding it exempts is still live. See the job summary."
           exit 1

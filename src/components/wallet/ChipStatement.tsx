@@ -5,7 +5,7 @@
  *  is also the cheapest support tool on the platform: 'where did my chips go'
  *  answers itself. Same for a club operator and their treasury."
  *
- * One RPC, fn_ca_chip_statement, answers three things and this renders them:
+ * One RPC, fn_ca_chip_statement_page, answers three things and this renders them:
  *
  *   1. THE BALANCE NOW, per club and in total (scope=player), or the club's
  *      treasury (scope=club_treasury).
@@ -79,9 +79,18 @@ export interface Statement {
   legs: StatementLeg[];
   has_more: boolean;
   next_before: string | null;
+  next_cursor: StatementCursor | null;
   audit: StatementAudit;
   generated_at: string;
   ms: number;
+}
+
+export interface StatementCursor {
+  at: string;
+  id: string;
+  direction: 'in' | 'out';
+  account: string;
+  club_filter: string | null;
 }
 
 /** The live journal vocabulary, in the player's words. Unknown categories are
@@ -169,14 +178,17 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
   const [denied, setDenied] = useState(false);
 
   const load = useCallback(
-    async (before: string | null) => {
-      const { data, error: rpcError } = await supabase.rpc('fn_ca_chip_statement', {
+    async (cursor: StatementCursor | null) => {
+      const { data, error: rpcError } = await supabase.rpc('fn_ca_chip_statement_page', {
         p_scope: scope,
         p_club_id: clubId || null,
-        p_before: before,
+        p_cursor: cursor,
         p_limit: pageSize,
       });
       if (rpcError) throw rpcError;
+      if (data?.has_more && !data.next_cursor) {
+        throw new Error('Statement continuation is missing');
+      }
       return data as Statement;
     },
     [scope, clubId, pageSize]
@@ -204,12 +216,12 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
   }, [load]);
 
   const loadMore = useCallback(async () => {
-    if (!statement?.has_more || !statement.next_before || loadingMore) return;
+    if (!statement?.has_more || !statement.next_cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const s = await load(statement.next_before);
+      const s = await load(statement.next_cursor);
       setStatement((prev) =>
-        prev ? { ...prev, has_more: s.has_more, next_before: s.next_before } : s
+        prev ? { ...prev, has_more: s.has_more, next_cursor: s.next_cursor } : s
       );
       setLegs((prev) => [...prev, ...(s.legs || [])]);
     } catch (e) {
@@ -332,7 +344,7 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
           <ol className="chip-statement__legs" aria-label="Chip Movements">
             {legs.map((leg) => (
               <li
-                key={leg.id}
+                key={`${leg.id}:${leg.direction}`}
                 className={`chip-statement__leg chip-statement__leg--${leg.direction}`}
               >
                 <div className="chip-statement__leg-main">

@@ -23,8 +23,9 @@ CLUB = '7beef002-0002-4000-8000-000000000002'
 # The restored hosted job supplies PG17 through its existing signed package path.
 # Record this invocation's actual binary identities; never reuse retired worker pins.
 PROVIDER_BINARIES = ('postgres', 'initdb', 'pg_ctl', 'psql')
-ACCOUNTING_JOB_NAME = 'Accounting transactions (PostgreSQL 17)'
-# Must match accounting_postgres in ci.yml; directly checked by test_current_ci.
+ACCOUNTING_JOB_NAME = 'Accounting transactions (PostgreSQL 17) shard 1/4'
+# Shard 1/4 of accounting_postgres in ci.yml runs BBJ, so its job name is the one
+# to read; tests/ci-tells-the-truth-faster.law.test.ts pins the match.
 JOB_SECONDS = 2400
 # Finite first qualification ceilings, not observed funded runtimes. Setup's
 # original 300-second cap and three original 30-second physical cleanup caps.

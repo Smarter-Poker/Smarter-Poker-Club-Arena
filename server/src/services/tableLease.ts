@@ -50,6 +50,7 @@ import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningTh
 // re-exports every submodule, so importing it from here would pull the whole
 // data layer into the module graph for one rpc() call.
 import { supabase } from './supabase/client.js';
+import { leaseHeartbeatRpc } from './leaseHeartbeatSession.js';
 /* Counted, not merely returned: every branch below that declines to renew a
    lease used to be silent, and repeated silent declines are exactly how a
    table ends up restarting every twenty seconds with nothing to read. */
@@ -374,7 +375,7 @@ let reclaimableHeartbeats = 0;
 const retainedTableHeartbeats = new RetainedLeaseHeartbeatBatches<
   TableLeaseHeartbeatClaim,
   TableLeaseHeartbeatOutcome
->();
+>(() => tableLeaseMonotonicNow());
 
 export async function heartbeatTables(
   claims: TableLeaseHeartbeatClaim[],
@@ -481,7 +482,10 @@ async function heartbeatTableBatch(
      conservative floor for it, well inside the audited stale window. */
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
+    /* LEASE RENEWAL CANNOT QUEUE BEHIND GAME TRAFFIC (2026-09-24): the
+       dedicated session when configured, the shared client otherwise. Same
+       arguments, same { data, error } answer. See leaseHeartbeatSession.ts. */
+    const { data, error } = await leaseHeartbeatRpc('table', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         table_id: claim.tableId,

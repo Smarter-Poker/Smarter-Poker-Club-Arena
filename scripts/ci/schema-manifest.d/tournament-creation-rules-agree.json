@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-ca-product/fix/tournament-creation-rules-agree",
+  "_comment": "20260924033701: the shared tournament creation validator called by fn_create_tournament and fn_upsert_tournament_schedule.",
+  "functions": ["fn_tournament_config_refusal"]
+}

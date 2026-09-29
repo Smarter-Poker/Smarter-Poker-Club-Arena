@@ -1,0 +1,19 @@
+/**
+ * THE TABLE'S COPY OF THE DESIGN TOKENS, SHIPPED ONCE (2026-09-24).
+ *
+ * design-tokens.css is already in the entry stylesheet (index.html links it).
+ * Later global sheets (globals.css, club-engine.css) then redefine a few of
+ * the same :root properties (--text-primary, the --shadow-* set, the --z-*
+ * scale), and the table screen is built on the design-tokens values. So the
+ * table re-asserts the tokens in a lazily loaded sheet, which lands after the
+ * entry stylesheet and wins the cascade while a table is open.
+ *
+ * That re-assertion used to be an `@import` at the top of TablePage.css,
+ * ActionPanel.css, SeatSlot.css, MiniHUD.css and CommunityCards.css. An
+ * @import is inlined into every sheet that names it, so the same 7kB of
+ * tokens shipped in three lazy stylesheets and a table load fetched it three
+ * times over. Those components now import this one file instead: Vite gives
+ * it a single shared stylesheet that loads whenever any of them loads, which
+ * is exactly when one of the three copies used to.
+ */
+@import './design-tokens.css';

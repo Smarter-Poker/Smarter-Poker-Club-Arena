@@ -1,0 +1,4 @@
+{
+  "_owner": "Supabase account audit. Independently read in production 2026-09-27T00:11:49.397127Z after root installed migration 20260927001026 once. Exact 4121 source bytes, MD5 a8a4ab184d12646edbeeb296dd967199. Trigger enabled, authenticated owner-only SELECT policy, no anon/authenticated EXECUTE and no profiles WAL publication.",
+  "functions": ["fn_publish_profile_account_change"]
+}

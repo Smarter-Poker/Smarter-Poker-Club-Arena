@@ -145,7 +145,11 @@ describe('one line, three pages', () => {
 describe('the one blocker with a way out', () => {
   it('Plinko and the new games keep Buy More in their shared entry setup', () => {
     const setup = src('src/components/games/BonusSetup.tsx');
-    expect(setup).toContain("navigate('/marketplace?tab=diamonds')");
+    // The door leaves through the page (review 2026-09-22): the page lets go of
+    // its bonus hold and navigates. A plain navigate from the setup ran into
+    // that hold while a won game waited, and the door opened nothing.
+    expect(setup).toContain("exit('/marketplace?tab=diamonds')");
+    expect(setup).toMatch(/if \(!disabled\) leave\(to\);/);
     expect(setup).toContain('Buy More');
     expect(setup).toContain('disabled={disabled}');
     for (const page of ['src/pages/DiamondPlinkoPage.tsx', 'src/pages/DiamondChoicePage.tsx'])

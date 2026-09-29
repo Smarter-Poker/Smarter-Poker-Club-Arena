@@ -57,6 +57,8 @@ PORT = '55472'
 RUNNERS = [
     ('run-poker-diamond-custody.py', '69 additional assertions passed'),
     ('run-diamond-wallet-transfer.py', '37 Phase 4 assertions passed'),
+    ('run-diamond-transfer-door-and-dr16.py',
+     '26 isolated transfer door and DR16 checks passed; this is not a production certification.'),
     ('run-diamond-cash-custody.py',
      'Diamond custody contract passed; this is not full gameplay certification.'),
     ('run-diamond-cash-admission.py', 'forgery case leaves the fixture settled again'),
@@ -73,11 +75,27 @@ RUNNERS = [
     ('run-diamond-accepted-hand.py',
      'Diamond accepted-hand integration passed; public gameplay remains gated.'),
     ('run-diamond-controlled-play.py', 'CONTROLLED PLAY PASSED:'),
+    ('run-diamond-incident-resolution.py',
+     '50 isolated incident resolution checks passed; this is not a production certification.'),
     ('run-diamond-tournament-doors.py', 'Diamond tournament door capture verified.'),
     ('run-diamond-tournament-lifecycle.py',
      'Diamond tournament lifecycle cases verified against the installed doors,'),
     ('run-diamond-stats-asset-dimension.py',
      'Diamond stats asset dimension certified on isolated PostgreSQL 17.'),
+    ('run-diamond-club-commerce.py',
+     'club and union diamond commerce qualified in isolation'),
+    ('run-diamond-club-commerce-admission.py',
+     'diamond commerce admission is wired in shadow, qualified in isolation'),
+    ('run-diamond-club-commerce-refunds.py',
+     'diamond commerce refunds, notices and catalog lifecycle qualified in isolation'),
+    ('run-diamond-club-commerce-completion.py',
+     'diamond commerce catalog, terms, written quotes and trial reviews qualified in isolation'),
+    ('run-diamond-club-commerce-metrics.py',
+     'diamond commerce staff metrics qualified in isolation'),
+    ('run-diamond-club-commerce-earnings.py',
+     'settled earnings coverage and sponsored club insurance qualified in isolation'),
+    ('run-diamond-club-commerce-recovery.py',
+     'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -94,6 +112,13 @@ SQL_SCRIPTS = [
 # (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-club-commerce-admission.py',
+    'run-diamond-club-commerce-completion.py',
+    'run-diamond-club-commerce-earnings.py',
+    'run-diamond-club-commerce-metrics.py',
+    'run-diamond-club-commerce-recovery.py',
+    'run-diamond-club-commerce-refunds.py',
+    'run-diamond-club-commerce.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

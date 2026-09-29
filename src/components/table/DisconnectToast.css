@@ -12,7 +12,9 @@
 
 .disconnect-toast {
   position: absolute;
-  top: calc(var(--sp-brand-top, 58%) - 6%);
+  /* 2026-09-23: --sp-brand-top is the wordmark's TOP edge now, not its centre,
+     so the pill's bottom sits half a point above it rather than six. */
+  top: calc(var(--sp-brand-top, 56%) - 0.5%);
   left: 50%;
   transform: translate(-50%, -100%);
   z-index: 70;

@@ -15,12 +15,17 @@ const verified = {
 
 test('affected ready or draft source requires genuine successful native outcome', () => {
   assert.match(requireFixtureNativeResult(verified), /required native fixture verification passed/);
-  for (const nativeResult of ['skipped', 'failure', 'cancelled', 'timed_out', '', undefined]) {
+  for (const nativeResult of ['skipped', 'failure', 'timed_out', '', undefined]) {
     assert.throws(
       () => requireFixtureNativeResult({ ...verified, nativeResult }),
       /FIXTURE_GATE_NATIVE_SUCCESS_REQUIRED/
     );
   }
+  // A cancelled native job is no verdict: still refused, under its own name.
+  assert.throws(
+    () => requireFixtureNativeResult({ ...verified, nativeResult: 'cancelled' }),
+    /FIXTURE_GATE_NO_VERDICT_CANCELLED/
+  );
 });
 
 test('missing or failed classification cannot turn skipped native work green', () => {
@@ -50,12 +55,27 @@ test('missing or failed classification cannot turn skipped native work green', (
 });
 
 test('successful native work cannot hide skipped or failed compilation', () => {
-  for (const compileResult of ['skipped', 'failure', 'cancelled', '', undefined]) {
+  for (const compileResult of ['skipped', 'failure', 'timed_out', '', undefined]) {
     assert.throws(
       () => requireFixtureNativeResult({ ...verified, compileResult }),
       /FIXTURE_GATE_COMPILATION_REQUIRED/
     );
   }
+  // Cancelled compilation is superseded, not failed, and never green.
+  assert.throws(
+    () => requireFixtureNativeResult({ ...verified, compileResult: 'cancelled' }),
+    /FIXTURE_GATE_NO_VERDICT_CANCELLED/
+  );
+  // A real failure beside a cancellation is still reported as the failure.
+  assert.throws(
+    () =>
+      requireFixtureNativeResult({
+        ...verified,
+        compileResult: 'cancelled',
+        nativeResult: 'failure',
+      }),
+    /FIXTURE_GATE_COMPILATION_REQUIRED/
+  );
 });
 
 test('a positively unaffected diff reports its skip without claiming native execution', () => {
@@ -63,12 +83,21 @@ test('a positively unaffected diff reports its skip without claiming native exec
     requireFixtureNativeResult({ ...verified, fixtureChanged: 'false', nativeResult: 'skipped' }),
     /skipped for a verified unaffected diff/
   );
-  for (const nativeResult of ['failure', 'cancelled', '', undefined]) {
+  for (const nativeResult of ['failure', '', undefined]) {
     assert.throws(
       () => requireFixtureNativeResult({ ...verified, fixtureChanged: 'false', nativeResult }),
       /FIXTURE_GATE_UNEXPECTED_NATIVE_OUTCOME/
     );
   }
+  assert.throws(
+    () =>
+      requireFixtureNativeResult({
+        ...verified,
+        fixtureChanged: 'false',
+        nativeResult: 'cancelled',
+      }),
+    /FIXTURE_GATE_NO_VERDICT_CANCELLED/
+  );
 });
 
 test('a scheduled or missing event cannot satisfy the pull-request required gate', () => {

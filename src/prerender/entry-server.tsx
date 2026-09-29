@@ -12,8 +12,8 @@
  * vite.prerender.config.ts) and run once after the client build by
  * scripts/prerender-public-routes.mjs. It renders the PUBLIC pages, and only
  * those, to static HTML with react-dom/server: the landing page, the Help
- * Center and the four legal documents, exactly the routes src/lib/seo.ts
- * declares indexable. Nothing signed-in is ever rendered here; there is no
+ * Center, the Legal Center and the four legal documents, exactly the routes
+ * src/lib/seo.ts declares indexable. Nothing signed-in is ever rendered here; there is no
  * session, no Supabase, no store. The page components are rendered inside a
  * StaticRouter with the web basename so every <Link> resolves to the public
  * address, and inside nothing else: no AuthGuard, no AppLayout, no providers,
@@ -31,6 +31,7 @@ import { ROUTER_BASENAME } from '../lib/appBase';
 import { PUBLIC_PATHS, resolveSeo, type SeoEntry } from '../lib/seo';
 import PokerArenaLandingPage from '../pages/PokerArenaLandingPage';
 import HelpPrerender from './HelpPrerender';
+import LegalPrerender from './LegalPrerender';
 import TermsOfServicePage from '../pages/legal/TermsOfServicePage';
 import PrivacyPolicyPage from '../pages/legal/PrivacyPolicyPage';
 import FairGamingPage from '../pages/legal/FairGamingPage';
@@ -39,6 +40,7 @@ import ClubPromotionRulesPage from '../pages/legal/PromotionsPage';
 const PAGES: Record<string, () => React.JSX.Element> = {
   '/': () => <PokerArenaLandingPage />,
   '/help': () => <HelpPrerender />,
+  '/legal': () => <LegalPrerender />,
   '/legal/tos': () => <TermsOfServicePage />,
   '/legal/privacy': () => <PrivacyPolicyPage />,
   '/legal/fair-gaming': () => <FairGamingPage />,
@@ -51,8 +53,9 @@ const PAGES: Record<string, () => React.JSX.Element> = {
  * markup) and its per-route SEO once the bundle runs.
  */
 export const PRERENDER_EXCEPTIONS: Readonly<Record<string, string>> = {
-  '/legal':
-    'LegalWorkspacePage lives in pages/workspaces/ArenaWorkspacePages, whose module graph creates the Supabase client at import time; the four documents it links to are prerendered and carry the same words',
+  // '/legal' was the one exception until 2026-09-22: Google filed it as an
+  // alternate of the arena root because it served the landing's canonical.
+  // It is rendered from pages/legalCenterContent.ts by LegalPrerender.
 };
 
 /** The routes this entry can render. With the exceptions, must equal seo.ts PUBLIC_ROUTES. */

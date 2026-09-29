@@ -34,8 +34,7 @@ interface PresenceCallbacks {
 
 class PresenceServiceClass {
   private channels: Map<string, RealtimeChannel> = new Map();
-  private channelHeartbeats: Map<string, ReturnType<typeof setInterval>> = new Map();
-  private currentUserId: string | null = null;
+  private channelPresence: Map<string, PresenceState> = new Map();
   private unloadListener: (() => void) | null = null;
 
   constructor() {
@@ -72,12 +71,17 @@ class PresenceServiceClass {
       return this.channels.get(channelName)!;
     }
 
-    this.currentUserId = userId;
-
     const channel = supabase.channel(channelName, {
       config: {
         presence: { key: userId },
       },
+    });
+
+    this.channels.set(channelName, channel);
+    this.channelPresence.set(channelName, {
+      userId,
+      ...presence,
+      lastSeen: new Date().toISOString(),
     });
 
     // Set up event handlers
@@ -101,13 +105,14 @@ class PresenceServiceClass {
 
     // Subscribe and track
     await channel.subscribe(async (status: string, err?: Error) => {
+      if (this.channels.get(channelName) !== channel) return;
       if (status === 'SUBSCRIBED') {
         try {
-          await channel.track({
-            userId,
-            ...presence,
-            lastSeen: new Date().toISOString(),
-          });
+          // The SDK owns connection heartbeats and removes disconnected
+          // presences. Only joins/rejoins and actual status changes need track().
+          // Read current state so reconnecting cannot reset Away to Online.
+          const current = this.channelPresence.get(channelName);
+          if (current) await channel.track(current);
         } catch (e: unknown) {
           reportError(e, 'PresenceService.track');
         }
@@ -117,9 +122,6 @@ class PresenceServiceClass {
         console.debug(`[PresenceService] Channel ${channelName} timed out`);
       }
     });
-
-    this.channels.set(channelName, channel);
-    this.startHeartbeat(channelName, userId, presence);
 
     return channel;
   }
@@ -131,12 +133,10 @@ class PresenceServiceClass {
     const channel = this.channels.get(channelName);
     if (!channel) return;
 
+    this.channels.delete(channelName);
+    this.channelPresence.delete(channelName);
     await channel.untrack();
     await supabase.removeChannel(channel);
-    this.channels.delete(channelName);
-
-    // Stop heartbeat for this specific channel
-    this.stopHeartbeat(channelName);
   }
 
   /**
@@ -146,7 +146,6 @@ class PresenceServiceClass {
     for (const channelName of this.channels.keys()) {
       await this.leave(channelName);
     }
-    this.stopHeartbeat();
   }
 
   /**
@@ -176,13 +175,16 @@ class PresenceServiceClass {
    */
   async updateStatus(channelName: string, status: 'online' | 'away' | 'playing'): Promise<void> {
     const channel = this.channels.get(channelName);
-    if (!channel || !this.currentUserId) return;
+    const current = this.channelPresence.get(channelName);
+    if (!channel || !current) return;
 
-    await channel.track({
-      userId: this.currentUserId,
+    const next: PresenceState = {
+      ...current,
       status,
       lastSeen: new Date().toISOString(),
-    });
+    };
+    this.channelPresence.set(channelName, next);
+    await channel.track(next);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -265,62 +267,6 @@ class PresenceServiceClass {
    */
   getTableOnlineCount(tableId: string): number {
     return this.getOnlineCount(`table:${tableId}`);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // HEARTBEAT
-  // ═══════════════════════════════════════════════════════════════════════════════
-
-  private startHeartbeat(
-    channelName: string,
-    userId: string,
-    presence: Omit<PresenceState, 'userId' | 'lastSeen'>
-  ): void {
-    // Don't start duplicate heartbeat for same channel
-    if (this.channelHeartbeats.has(channelName)) return;
-
-    // Heartbeat every 30 seconds to update lastSeen per channel
-    const interval = setInterval(async () => {
-      const channel = this.channels.get(channelName);
-      if (!channel) {
-        // Channel was removed but heartbeat is still running — clean up
-        console.warn(`[PresenceService] Heartbeat orphaned for ${channelName} - stopping`);
-        this.stopHeartbeat(channelName);
-        return;
-      }
-      try {
-        await channel.track({
-          userId,
-          ...presence,
-          lastSeen: new Date().toISOString(),
-        });
-      } catch (err: unknown) {
-        reportError(err, 'PresenceService.heartbeat', { channelName });
-        // Don't stop heartbeat on transient errors — it will retry next interval.
-        // But if the channel is gone from our map, stop to prevent memory leak.
-        if (!this.channels.has(channelName)) {
-          this.stopHeartbeat(channelName);
-        }
-      }
-    }, 60_000); // 60s heartbeat — halves message volume vs 30s, presence accuracy sufficient
-
-    this.channelHeartbeats.set(channelName, interval);
-  }
-
-  private stopHeartbeat(channelName?: string): void {
-    if (channelName) {
-      const interval = this.channelHeartbeats.get(channelName);
-      if (interval) {
-        clearInterval(interval);
-        this.channelHeartbeats.delete(channelName);
-      }
-    } else {
-      // Stop all heartbeats
-      for (const interval of this.channelHeartbeats.values()) {
-        clearInterval(interval);
-      }
-      this.channelHeartbeats.clear();
-    }
   }
 }
 

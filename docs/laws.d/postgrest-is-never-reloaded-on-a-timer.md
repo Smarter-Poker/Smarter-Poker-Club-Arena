@@ -1,0 +1,3 @@
+# tests/postgrest-is-never-reloaded-on-a-timer.law.test.ts
+
+PostgREST's schema cache is reloaded by DDL (the pgrst_ddl_watch event trigger) and recovers from a failed load by itself; it is never reloaded on a timer. Pins the root fix for the 2026-08-31 PGRST002 outage (authenticator statement_timeout 5min; no later migration may set it under two minutes or reset it) and, from 20260922141524, refuses any cron job that notifies pgrst, calls fn_ca_pgrst_reload_if_stale, or calls a function declared to notify pgrst, and refuses re-declaring fn_ca_pgrst_reload_if_stale. Measured: 0 PGRST002 from 2026-09-11 to 2026-09-22; the timer sent 269 redundant reloads in 7 days and ended no burst in any window examined.

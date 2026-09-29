@@ -49,6 +49,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { partitionMigrations, reportRecorded } from './recording-only.mjs';
 import process from 'node:process';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -322,17 +323,30 @@ function main() {
     return 0;
   }
 
+  const { judge, recorded, unknown } = partitionMigrations(files, { repo: REPO });
+  reportRecorded('check-no-new-band-aids', recorded, unknown);
+  if (judge.length === 0) {
+    console.log(
+      `[check-no-new-band-aids] OK - ${files.length} migration(s); every one is a verified ` +
+        'recording of SQL production has already applied, so none of them is creating ' +
+        'anything. Whether the repair-shaped names they mention are existing debt with a ' +
+        'row in docs/BAND-AIDS-REGISTER.md is asked by ' +
+        'scripts/ci/check-recorded-migrations-evidence.mjs.'
+    );
+    return 0;
+  }
+
   // Names any changed migration drops count for every changed migration (declare in one file,
   // rename-and-drop in a later one is still "replaced on the way out").
   const droppedInBranch = new Set();
-  for (const file of files) {
+  for (const file of judge) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
     for (const fn of droppedFunctions(readFileSync(path, 'utf8'))) droppedInBranch.add(fn);
   }
 
   const hits = [];
-  for (const file of files) {
+  for (const file of judge) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
     const sql = readFileSync(path, 'utf8');

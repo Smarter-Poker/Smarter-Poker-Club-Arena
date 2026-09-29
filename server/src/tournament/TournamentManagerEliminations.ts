@@ -120,6 +120,15 @@ interface CandidateBackedKnockoutEvidence extends PersistedKnockoutEvidence {
 }
 
 /**
+ * The settlement door refused because a table break still names one of this
+ * event's tables as its source (`f06_source_guard`). Only the balance stage
+ * can finish that break, so the refusal must not keep the sweep from it.
+ */
+export function isTableBreakExclusion(error: unknown): boolean {
+  return error instanceof Error && /\bF06_SOURCE_EXCLUDED\b/.test(error.message);
+}
+
+/**
  * The money threshold is a finishing place, not the number of rows in a
  * payout ladder. A valid stored ladder may be sparse (for example 1, 2, 3,
  * and 5), so hand-for-hand must begin with six players rather than five.
@@ -156,6 +165,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
+
+  /**
+   * A BUST IS RECORDED BEFORE THE BREAK IT BLOCKS IS RETRIED (2026-09-29).
+   *
+   * A busted player keeps a `playing` registration with 0 chips and no live
+   * seat until the bust stage (1) records the elimination. The table break
+   * door counts that registration, so no break of that player's last table can
+   * begin until then. The recovery stage (0) settles earlier bounty
+   * obligations before any bust is admitted, so the rewind is to 0. The
+   * cursor applies it at the next admission and never twice in a row (see
+   * TournamentSweepWorkCursor), so the balance stage keeps its turn too.
+   */
+  protected override bustAwaitsItsStage(): void {
+    this.eliminationSweepCursor.rewindTo(0);
+  }
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -454,11 +478,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (this.isProcessingEliminations) return;
 
     this.isProcessingEliminations = true;
+    // A bust that arrived while a later stage held the continuation takes its
+    // turn here, before that stage is admitted again (see bustAwaitsItsStage).
+    this.eliminationSweepCursor.beginAdmission();
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
-    // One grace per admitted sweep (SWEEP_MUTATION_GRACE_MS). Reset with the
-    // deadline it extends, never carried between sweeps.
-    this.eliminationMutationGraceGranted = false;
+    // The bust batch window is opened by the assignment pass alone and closed
+    // with it. Reset with the deadline, never carried between sweeps.
+    this.closeEliminationMutationBatch();
     // How many of these the single JS thread is carrying at once, and how
     // long one takes. Both are measurement only - see engineInstruments.
     const sweepStartedAt = Date.now();
@@ -1024,172 +1051,175 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
           let committedThisPass = 0;
-          for (let i = 0; i < bustedOrdered.length; i++) {
-            if (!this.running || signal.aborted) return;
 
-            /**
-             * A SWEEP THAT CANNOT AFFORD ITS FIRST MUTATION NEVER MAKES ONE.
-             *
-             * Everything above this line is READS, and on a large backlog they
-             * can spend the whole work budget. Every mutation below asks
-             * `eliminationMutationAllowed()`, which is false once the budget is
-             * gone - so `eliminatePlayer` used to refuse silently, the pass
-             * aborted as though the database had said no, the durable wake was
-             * never acknowledged, and the next sweep repeated the same reads on
-             * the same backlog. Fifteen tournaments were in that livelock for up
-             * to 100 minutes on 2026-09-10, three of them holding more than 150
-             * busted players each.
-             *
-             * Yielding is still the rule; buying one bounded extension when this
-             * pass has committed NOTHING is what makes the yield a yield rather
-             * than a stall. See SWEEP_MUTATION_GRACE_MS for the measurement.
-             */
-            if (this.eliminationWorkBudgetExpired()) {
-              if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
-                /* A BACKLOG ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
-                   (2026-09-12, drift incident 7ab0dcbe). This is the same class
-                   as the `bustBatchHasMore` return fixed below: returning here
-                   left eliminationSweepCursor at stage 1, so finishStage,
-                   addOnStage and balanceStage - the ONLY caller of
-                   checkTableBalance - were unreachable for as long as the work
-                   budget kept expiring mid-batch, which on a large backlog is
-                   every pass. Ending the LOOP instead leaves the rest of the
-                   sweep and the cursor exactly where completedStage(2) expects
-                   them; the unresolved-bust retry still re-drives the players
-                   this pass did not reach. */
-                bustBatchHasMore = true;
-                this.requestUrgentEliminationSweepAfter(
-                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
-                );
-                break;
-              }
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; extending once by ${TournamentManagerBase.SWEEP_MUTATION_GRACE_MS}ms so this sweep commits at least one finish`
-                ),
-                'Tournament.bust_mutation_grace_granted'
-              );
-            }
+          /**
+           * THE BATCH THE SWEEP PREPARED IS THE BATCH IT RECORDS (2026-09-27).
+           *
+           * Everything above this line is READS, and on a large backlog they
+           * spend the whole work budget: the zero-stack roster, two field
+           * counts, the chunked knockout-order lookup (six chunks for 213
+           * busts), the rebuy offers, the rebuy-decision RPC, the taken-places
+           * list and the unplaced count. Every mutation below asks
+           * `eliminationMutationAllowed()`. On 2026-09-10 that refused the
+           * first finish silently (the livelock), and the answer was a grace:
+           * extend once, commit one, yield. Measured on 2026-09-27 that grace
+           * was the whole throughput. The process-wide scheduler admitted a
+           * large MTT about every six minutes (317 registered, 275 queued,
+           * oldest wait 333 s), each admission logged the one-finish grace
+           * and exactly one `Eliminated:` line, and 618741a5 sat with 213
+           * busted players still `playing` at 0 chips while its 38 tables held
+           * one player each; ac10f59a held 96 and c775d008 100 the same way.
+           * Their roster rows kept their chairs, the balancer could place
+           * nobody, and nothing dealt.
+           *
+           * So the budget decides whether this pass may START recording, and
+           * nothing else. The batch here is already bounded
+           * (SWEEP_MUTATION_BATCH_SIZE) and ordered; it is recorded whole, and
+           * the yield to other tournaments comes after it. A refusal still ends
+           * the pass in hand order exactly as before; manager stop and the
+           * sweep's abort signal still end it at once. Only the clock lost its
+           * vote inside the batch.
+           */
+          if (this.eliminationWorkBudgetExpired()) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; the prepared batch is recorded whole before this sweep yields`
+              ),
+              'Tournament.bust_batch_recorded_past_budget'
+            );
+          }
+          this.openEliminationMutationBatch();
+          try {
+            for (let i = 0; i < bustedOrdered.length; i++) {
+              if (!this.running || signal.aborted) return;
 
-            // Place 1 belongs to the winner and is never handed out here.
-            let place = nextPosition;
-            while (place >= 2 && takenPositions.has(place)) place--;
+              // Place 1 belongs to the winner and is never handed out here.
+              let place = nextPosition;
+              while (place >= 2 && takenPositions.has(place)) place--;
 
-            if (place < 2) {
-              // The ladder is already corrupt — every place from the seed down
-              // to 2 is spoken for. Do NOT abandon the player: that is the
-              // deadlock. Take the lowest place above the seed that is free.
-              let up = nextPosition + 1;
-              const ceiling = nextPosition + takenPositions.size + 2;
-              while (up <= ceiling && takenPositions.has(up)) up++;
-              if (up > ceiling) {
+              if (place < 2) {
+                // The ladder is already corrupt - every place from the seed down
+                // to 2 is spoken for. Do NOT abandon the player: that is the
+                // deadlock. Take the lowest place above the seed that is free.
+                let up = nextPosition + 1;
+                const ceiling = nextPosition + takenPositions.size + 2;
+                while (up <= ceiling && takenPositions.has(up)) up++;
+                if (up > ceiling) {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} - cannot eliminate, tournament will not finish without intervention`
+                    ),
+                    'TournamentManager.no_free_finishing_place'
+                  );
+                  break;
+                }
+                place = up;
                 reportError(
                   new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} - cannot eliminate, tournament will not finish without intervention`
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} - ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
                   ),
-                  'TournamentManager.no_free_finishing_place'
+                  'TournamentManager.finishing_ladder_exhausted'
                 );
-                break;
               }
-              place = up;
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} - ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
-                ),
-                'TournamentManager.finishing_ladder_exhausted'
-              );
-            }
 
-            const eliminated = await this.eliminatePlayer(bustedOrdered[i].user_id, place);
-            if (sweepStopped()) return;
-            // False includes both a deliberate evidence defer and a CAS miss
-            // because another generation/process got there first. In either
-            // case takenPositions is now stale. Abort the assignment pass;
-            // the already-armed unresolved-bust retry rebuilds the ladder
-            // from persisted positions before it writes anybody else.
-            if (!eliminated) {
-              // Remember WHO refused only as the last tiebreak for the same
-              // hand and same starting stack. Hand order must never be skipped:
-              // doing so would advance a PKO watermark past unpaid money.
-              const refusedId = bustedOrdered[i].user_id;
-              const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
-              this.bustRefusalStreak.set(refusedId, streak);
+              const eliminated = await this.eliminatePlayer(bustedOrdered[i].user_id, place);
+              if (sweepStopped()) return;
+              // False includes both a deliberate evidence defer and a CAS miss
+              // because another generation/process got there first. In either
+              // case takenPositions is now stale. Abort the assignment pass;
+              // the already-armed unresolved-bust retry rebuilds the ladder
+              // from persisted positions before it writes anybody else.
+              if (!eliminated) {
+                // Remember WHO refused only as the last tiebreak for the same
+                // hand and same starting stack. Hand order must never be skipped:
+                // doing so would advance a PKO watermark past unpaid money.
+                const refusedId = bustedOrdered[i].user_id;
+                const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
+                this.bustRefusalStreak.set(refusedId, streak);
 
-              /**
-               * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
-               * WHOLE EVENT (2026-09-10).
-               *
-               * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
-               * or an evidence defer clears itself in seconds, and retrying in
-               * hand order costs nothing. It is wrong for a PERMANENT one. The
-               * door refuses deterministically for several real reasons
-               * (`unresolved_knockout_generation_chain`,
-               * `pko_order_already_advanced`,
-               * `knockout_generation_has_new_live_seat`), and every one of them
-               * used to freeze the event: no other bust could be recorded, the
-               * field never shrank, the event never finished, and its escrow
-               * was never paid to anybody. Measured today: seven events stuck
-               * that way for up to eighteen hours, one refusing the same player
-               * every fifteen seconds since 2026-09-08, together holding
-               * thousands of chips no player could be given.
-               *
-               * So the abort stands for the first two refusals of the same
-               * player, and after that this pass records the rest of the field
-               * and says out loud who it could not record. Skipping is the
-               * lesser harm and it is bounded: hand order is preserved for
-               * everyone the door accepts, the blocked player is stamped with
-               * the commit time of the hand that busted them when they are
-               * finally recorded, and fn_settle_tournament_places - the
-               * engine's terminal cash authority - ranks every bust by that
-               * hand's commit time before it pays, not by when it was recorded
-               * (20260911062048). A skipped player recorded late therefore
-               * finishes where they busted - in a cash ladder; a satellite or
-               * a final-table deal still pays the recording order
-               * (bustOrder.ts). For the two refusals that can never clear by
-               * themselves - `unresolved_knockout_generation_chain`, and
-               * `knockout_bust_time_unproven` for a generation the player
-               * played on from - the door also writes one critical
-               * financial_alerts row per player
-               * (`knockout_door.payout_blocked_by_unrecordable_bust`), so the
-               * stuck event reaches the money board and not only this log
-               * line.
-               */
-              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {
-                /* A REFUSAL ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
-                   (2026-09-12, drift incident 7ab0dcbe). The abort itself is
-                   deliberate and stays: takenPositions is stale the moment the
-                   door refuses, so no further place may be handed out from this
-                   snapshot. What was wrong was returning from the SWEEP -
-                   eliminationSweepCursor stayed at stage 1, balanceStage never
-                   ran, and one player the door would not accept stopped the
-                   whole field consolidating until its tables drained to one
-                   player each and could no longer deal. All 10 RUNNING events
-                   with a >20 zero-chip backlog were stuck this way; event
-                   05e104c7 dealt 22 hands in 12 minutes while resolving 0
-                   busts. The already-armed unresolved-bust retry rebuilds the
-                   ladder from persisted positions before it writes anybody
-                   else. */
-                bustBatchHasMore = true;
+                /**
+                 * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
+                 * WHOLE EVENT (2026-09-10).
+                 *
+                 * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
+                 * or an evidence defer clears itself in seconds, and retrying in
+                 * hand order costs nothing. It is wrong for a PERMANENT one. The
+                 * door refuses deterministically for several real reasons
+                 * (`unresolved_knockout_generation_chain`,
+                 * `pko_order_already_advanced`,
+                 * `knockout_generation_has_new_live_seat`), and every one of them
+                 * used to freeze the event: no other bust could be recorded, the
+                 * field never shrank, the event never finished, and its escrow
+                 * was never paid to anybody. Measured today: seven events stuck
+                 * that way for up to eighteen hours, one refusing the same player
+                 * every fifteen seconds since 2026-09-08, together holding
+                 * thousands of chips no player could be given.
+                 *
+                 * So the abort stands for the first two refusals of the same
+                 * player, and after that this pass records the rest of the field
+                 * and says out loud who it could not record. Skipping is the
+                 * lesser harm and it is bounded: hand order is preserved for
+                 * everyone the door accepts, the blocked player is stamped with
+                 * the commit time of the hand that busted them when they are
+                 * finally recorded, and fn_settle_tournament_places - the
+                 * engine's terminal cash authority - ranks every bust by that
+                 * hand's commit time before it pays, not by when it was recorded
+                 * (20260911062048). A skipped player recorded late therefore
+                 * finishes where they busted - in a cash ladder; a satellite or
+                 * a final-table deal still pays the recording order
+                 * (bustOrder.ts). For the two refusals that can never clear by
+                 * themselves - `unresolved_knockout_generation_chain`, and
+                 * `knockout_bust_time_unproven` for a generation the player
+                 * played on from - the door also writes one critical
+                 * financial_alerts row per player
+                 * (`knockout_door.payout_blocked_by_unrecordable_bust`), so the
+                 * stuck event reaches the money board and not only this log
+                 * line.
+                 */
+                if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {
+                  /* A REFUSAL ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                     (2026-09-12, drift incident 7ab0dcbe). The abort itself is
+                     deliberate and stays: takenPositions is stale the moment the
+                     door refuses, so no further place may be handed out from this
+                     snapshot. What was wrong was returning from the SWEEP -
+                     eliminationSweepCursor stayed at stage 1, balanceStage never
+                     ran, and one player the door would not accept stopped the
+                     whole field consolidating until its tables drained to one
+                     player each and could no longer deal. All 10 RUNNING events
+                     with a >20 zero-chip backlog were stuck this way; event
+                     05e104c7 dealt 22 hands in 12 minutes while resolving 0
+                     busts. The already-armed unresolved-bust retry rebuilds the
+                     ladder from persisted positions before it writes anybody
+                     else. */
+                  bustBatchHasMore = true;
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  break;
+                }
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
+                  ),
+                  'Tournament.bust_blocked_player_skipped'
+                );
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
-                break;
+                continue;
               }
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
-                ),
-                'Tournament.bust_blocked_player_skipped'
-              );
-              this.requestUrgentEliminationSweepAfter(
-                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
-              );
-              continue;
+              this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+              committedThisPass++;
+              takenPositions.add(place);
+              nextPosition = Math.min(nextPosition, place) - 1;
             }
-            this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
-            committedThisPass++;
-            takenPositions.add(place);
-            nextPosition = Math.min(nextPosition, place) - 1;
+          } finally {
+            this.closeEliminationMutationBatch();
+          }
+          // The pass recorded what it prepared; the clock decides the yield
+          // from here, exactly as for every other stage.
+          if (committedThisPass > 0 && this.eliminationWorkBudgetExpired()) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           }
         }
 
@@ -1438,19 +1468,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
         // engines has proved the platform thawed.
+        // A retry asked for inside the balancer is a break or a seat move
+        // that is not finished. While one is outstanding, every sweep this
+        // manager is owed comes from the scheduler's consolidation lane,
+        // because a field spread one player to a table cannot deal until
+        // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
+        const redrivesBeforeBalance = this.urgentRedrivesRequested;
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
           do {
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) return;
+            if (this.eliminationWorkBudgetExpired()) {
+              this.declareConsolidationOutstanding(true);
+              return;
+            }
             // Only a fully receipted retirement permits another fresh plan
             // inside this admission. Unknown/blocked work returns through the
             // remaining stages, so the next sweep can process new busts and
             // release their reserved roster chairs. Each success removes one
             // table; the existing deadline bounds even a changing field.
           } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
+          this.declareConsolidationOutstanding(
+            this.urgentRedrivesRequested !== redrivesBeforeBalance ||
+              progress?.kind === 'table-retired'
+          );
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -1723,6 +1766,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.isProcessingEliminations = false;
       eliminationSweepsInflight.dec();
       eliminationSweepMs.observe(Date.now() - sweepStartedAt);
+      // Multi-day: busts in the day's final hands are recorded before the
+      // bag. A finished sweep is the edge the stage-end barrier waits for.
+      if (completedWholeSweep && this.stageEndPause && this.running && !signal.aborted) {
+        this.advanceStageEndBarrier();
+      }
     }
   }
 
@@ -1744,6 +1792,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Bounded by construction: the database event cap/window plus the Free Buy
    * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
+  /**
+   * A POLICY THE ENGINE CANNOT READ SAYS SO, ONCE (2026-09-27).
+   *
+   * An errored window read keeps the purchase path, by design: the door
+   * re-checks everything under its own lock, so asking it is never wrong,
+   * only slow. What was wrong is that it said nothing. From 20:56 to 22:15 UTC
+   * on 2026-09-27 every read answered 42501 (the function had never been
+   * granted to service_role), every closed-window Free Buy sweep went back to
+   * asking the door horse by horse, and the only sign was three fields
+   * draining to one player per table. Name the refusal the first time this
+   * manager sees each code (CLAUDE.md 10.86 rule 1); count nothing, change
+   * nothing else.
+   */
+  private rebuyWindowUnreadableCodes?: Set<string>;
+
+  private noteRebuyWindowUnreadable(error: { code?: unknown; message?: unknown }): void {
+    const code = typeof error?.code === 'string' && error.code ? error.code : 'no_sqlstate';
+    const seen = (this.rebuyWindowUnreadableCodes ??= new Set<string>());
+    if (seen.has(code)) return;
+    seen.add(code);
+    const message = typeof error?.message === 'string' ? error.message.slice(0, 200) : '';
+    reportError(
+      new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] the rebuy-window policy could not be read (${code}${message ? `: ${message}` : ''}); this batch keeps the purchase door`
+      ),
+      'Tournament.rebuy_window_unreadable',
+      { tournamentId: this.tournamentId, code }
+    );
+  }
+
   private async tryTournamentRebuys(
     bustedUserIds: string[]
   ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
@@ -1781,13 +1859,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
 
-    // The database owns the canonical window. Its policy deliberately folds
-    // zero-valued settings through NULLIF fallbacks, extends the cap through
-    // configured add-on levels, and closes at the exact boundary. Duplicating
-    // only part of that policy here caused eligible horses to be silently
-    // eliminated. The RPC is the cheap, authoritative refusal.
-
     try {
+      // Ask the same policy the purchase door uses, once for this input batch.
+      // A finalized/closed event cannot accept a new purchase. Repeatedly
+      // asking its money door for every horse acquires the settlement lane
+      // and burns the bust budget before ordinary eliminations can run.
+      // This is not an elimination decision or a replacement receipt: the
+      // caller still reads durable prompts and the atomic elimination door.
+      let closedWindow = false;
+      try {
+        const { data: window, error: windowError } = await supabase.rpc(
+          'fn_ca_tournament_rebuy_window',
+          { p_tournament_id: this.tournamentId }
+        );
+        closedWindow =
+          !windowError &&
+          window?.open === false &&
+          ['tournament_not_rebuyable', 'rebuy_window_closed'].includes(window.reason);
+        if (windowError) this.noteRebuyWindowUnreadable(windowError);
+      } catch (error) {
+        reportError(error, 'Tournament.rebuy_window_read_failed');
+      }
+      if (!this.eliminationMutationAllowed()) return { rebought, answered };
+      if (closedWindow) return { rebought, answered };
+      // Open, malformed or unreadable policy retains the original purchase
+      // authority, including its exact receipt replay and fresh locked checks.
       const { data: horseRows, error: horseErr } = await supabase
         .from('profiles')
         .select('id')
@@ -4295,7 +4391,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           } catch (error) {
             if (error instanceof SatelliteSettlementRefusedError) {
               this.tournamentFinished = false;
-              reportError(error, 'Tournament.satellite_qualifiers_refused');
+              reportError(error, 'Tournament.satellite_qualifiers_refused', {
+                tournamentId: this.tournamentId,
+                qualifierCount: state.qualifierIds.length,
+              });
+              /*
+               * A TABLE BREAK THAT EXCLUDES A SOURCE IS FINISHED, NOT WAITED
+               * ON (2026-09-28).
+               *
+               * `f06_source_guard` refuses the settlement's own seat and
+               * registration writes (`F06_SOURCE_EXCLUDED`) while this event
+               * still has a table break open on one of its tables. That break
+               * is finished by exactly one thing: the balance stage, which
+               * begins it, moves its members and retires its source. This
+               * branch used to answer 'pending', and 'pending' resets the
+               * sweep cursor to the elimination stage, so the balance stage
+               * was never reached again: the settlement waited for the break
+               * and the break waited for the settlement, with every table
+               * parked for the qualifier boundary. Production 2026-09-28:
+               * satellites b165b22f (break 8fea2a2b park_requested since
+               * 23:25Z), 0e1d340e (break b7c61dda begun since 23:27Z) and
+               * e8cc6c78 (break 5586c18d park_requested since 03:51Z) each had
+               * every remaining player qualifying and sat frozen for 11 to 15
+               * hours.
+               *
+               * The qualifier boundary stays held, so no hand is dealt; the
+               * sweep only goes on to the stage that owns the break, and the
+               * next pass asks the settlement door again. Every other refusal
+               * keeps its old answer.
+               */
+              if (isTableBreakExclusion(error)) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return 'continue';
+              }
               return 'pending';
             }
             reportError(error, 'Tournament.satellite_qualifiers_outcome_unknown');

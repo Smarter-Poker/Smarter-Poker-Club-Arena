@@ -1,0 +1,5 @@
+{
+  "name": "idx_chip_ledger_reviewed_overlay_returns",
+  "definition": "CREATE INDEX idx_chip_ledger_reviewed_overlay_returns ON public.chip_ledger USING btree (tournament_id) INCLUDE (amount) WHERE ((tournament_id IS NOT NULL) AND (category = 'reversal'::text) AND (from_type = 'prize_liability'::text) AND (from_entity_id = tournament_id) AND ((metadata ->> 'kind'::text) = 'reviewed_void_overlay_return'::text))",
+  "definitionMD5": "6691784c84cb002e628f2c23a944429d"
+}

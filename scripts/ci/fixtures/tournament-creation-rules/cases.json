@@ -1,0 +1,901 @@
+{
+  "_comment": "Run against src/lib/tournamentCreationRules.ts (tests/unit/tournamentCreationRules.test.ts) and public.fn_tournament_config_refusal (scripts/ci/test-tournament-creation-rules.py). startOffsetMinutes sets startTime relative to now. expectClient overrides expect for the browser only.",
+  "cases": [
+    {
+      "name": "a valid MTT is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null
+    },
+    {
+      "name": "a zero starting stack is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 0,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "starting_stack_must_be_positive"
+    },
+    {
+      "name": "a negative starting stack is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": -5,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "starting_stack_must_be_positive"
+    },
+    {
+      "name": "a fractional starting stack is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 100.5,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "starting_stack_must_be_positive"
+    },
+    {
+      "name": "a zero Spin stack is refused too",
+      "surface": "create",
+      "config": {
+        "type": "spin",
+        "startingStack": 0,
+        "tableSize": 3
+      },
+      "expect": "starting_stack_must_be_positive"
+    },
+    {
+      "name": "an unreadable stack is unreadable",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": "abc",
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "invalid_configuration"
+    },
+    {
+      "name": "a start ten minutes ago is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "start_time_in_past",
+      "startOffsetMinutes": -10
+    },
+    {
+      "name": "a start three minutes ago: the browser refuses, the database allows clock skew",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null,
+      "startOffsetMinutes": -3,
+      "expectClient": "start_time_in_past"
+    },
+    {
+      "name": "a start in half an hour is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null,
+      "startOffsetMinutes": 30
+    },
+    {
+      "name": "an unreadable start time is unreadable",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8,
+        "startTime": "not a date"
+      },
+      "expect": "invalid_configuration"
+    },
+    {
+      "name": "a satellite without a target is refused",
+      "surface": "create",
+      "config": {
+        "type": "satellite",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "satellite_target_required"
+    },
+    {
+      "name": "a satellite with a blank target is refused",
+      "surface": "create",
+      "config": {
+        "type": "satellite",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8,
+        "satelliteTargetId": "  "
+      },
+      "expect": "satellite_target_required"
+    },
+    {
+      "name": "a satellite with a target is accepted",
+      "surface": "create",
+      "config": {
+        "type": "satellite",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8,
+        "satelliteTargetId": "00000000-0000-4000-8000-0000000000aa"
+      },
+      "expect": null
+    },
+    {
+      "name": "payouts within 1 of 100 are accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 60
+          },
+          {
+            "place": 2,
+            "percentage": 39.5
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null
+    },
+    {
+      "name": "payouts 1.5 short are refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 60
+          },
+          {
+            "place": 2,
+            "percentage": 38.5
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "payouts_must_total_100"
+    },
+    {
+      "name": "a zero payout total is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 0
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "payouts_must_total_100"
+    },
+    {
+      "name": "payouts at 101 are accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 101
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null
+    },
+    {
+      "name": "a Sit And Go ladder that falls is refused",
+      "surface": "create",
+      "config": {
+        "type": "sng",
+        "tableSize": 6,
+        "blindStructure": [
+          {
+            "smallBlind": 15,
+            "bigBlind": 30,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 5
+          }
+        ]
+      },
+      "expect": "blind_structure_must_not_decrease"
+    },
+    {
+      "name": "a Sit And Go ladder that rises through a break is accepted",
+      "surface": "create",
+      "config": {
+        "type": "sng",
+        "tableSize": 6,
+        "blindStructure": [
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 0,
+            "bigBlind": 0,
+            "isBreak": true
+          },
+          {
+            "smallBlind": 15,
+            "bigBlind": 30,
+            "durationMinutes": 5
+          }
+        ]
+      },
+      "expect": null
+    },
+    {
+      "name": "a Sit And Go ladder that falls after a break is refused",
+      "surface": "create",
+      "config": {
+        "type": "sng",
+        "tableSize": 6,
+        "blindStructure": [
+          {
+            "smallBlind": 15,
+            "bigBlind": 30,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 0,
+            "bigBlind": 0,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 5
+          }
+        ]
+      },
+      "expect": "blind_structure_must_not_decrease"
+    },
+    {
+      "name": "a Spin level of 0 minutes is refused",
+      "surface": "create",
+      "config": {
+        "type": "spin",
+        "tableSize": 3,
+        "blindStructure": [
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 0
+          }
+        ]
+      },
+      "expect": "blind_level_duration_invalid"
+    },
+    {
+      "name": "a falling big blind alone is refused",
+      "surface": "create",
+      "config": {
+        "type": "sng",
+        "tableSize": 6,
+        "blindStructure": [
+          {
+            "smallBlind": 10,
+            "bigBlind": 30
+          },
+          {
+            "smallBlind": 15,
+            "bigBlind": 20
+          }
+        ]
+      },
+      "expect": "blind_structure_must_not_decrease"
+    },
+    {
+      "name": "an MTT ladder is left to the MTT blind contract",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8,
+        "blindStructure": [
+          {
+            "smallBlind": 15,
+            "bigBlind": 30,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 5
+          }
+        ]
+      },
+      "expect": null
+    },
+    {
+      "name": "PLO6 at the default nine seats is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO6"
+      },
+      "expect": "table_size_exceeds_deck"
+    },
+    {
+      "name": "PLO6 at seven seats is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO6",
+        "tableSize": 7
+      },
+      "expect": null
+    },
+    {
+      "name": "PLO6 at eight seats is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO6",
+        "tableSize": 8
+      },
+      "expect": "table_size_exceeds_deck"
+    },
+    {
+      "name": "PLO5 at nine seats is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO5",
+        "tableSize": 9
+      },
+      "expect": null
+    },
+    {
+      "name": "PLO5 at ten seats is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO5",
+        "tableSize": 10
+      },
+      "expect": "table_size_exceeds_deck"
+    },
+    {
+      "name": "PLO4 at ten seats is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "PLO4",
+        "tableSize": 10
+      },
+      "expect": null
+    },
+    {
+      "name": "Short Deck at ten seats is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "SHORT_DECK",
+        "tableSize": 10
+      },
+      "expect": null
+    },
+    {
+      "name": "a table of twenty clamps to ten and Hold'em deals it",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "gameVariant": "NLH",
+        "tableSize": 20
+      },
+      "expect": null
+    },
+    {
+      "name": "a rebuy with no late registration is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 0,
+        "isRebuy": true
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "a re-entry with no late registration is refused",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 0,
+        "isReentry": true
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "rebuy and re-entry together with late registration are accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 6,
+        "isRebuy": true,
+        "isReentry": true
+      },
+      "expect": null
+    },
+    {
+      "name": "a rebuy with a timed late window is accepted",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 0,
+        "isRebuy": true,
+        "lateRegistrationMinutes": 30
+      },
+      "expect": null
+    },
+    {
+      "name": "a Free Buy rebuy needs no late registration of its own",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 0,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 0,
+        "isRebuy": true,
+        "isReentry": true
+      },
+      "expect": null
+    },
+    {
+      "name": "a free Sit And Go rebuy is not a Free Buy",
+      "surface": "create",
+      "config": {
+        "type": "sng",
+        "buyIn": 0,
+        "tableSize": 6,
+        "isRebuy": true
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "an unreadable rebuy flag is unreadable",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8,
+        "isRebuy": "maybe"
+      },
+      "expect": "invalid_configuration"
+    },
+    {
+      "name": "a rebuy flag spelled yes is a rebuy",
+      "surface": "create",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 0,
+        "isRebuy": "yes"
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "a configuration that is not an object is unreadable",
+      "surface": "create",
+      "config": [],
+      "expect": "invalid_configuration"
+    },
+    {
+      "name": "a schedule satellite named by target name is accepted",
+      "surface": "schedule",
+      "config": {
+        "type": "satellite",
+        "satelliteTargetName": "Sunday Major"
+      },
+      "expect": null
+    },
+    {
+      "name": "a schedule satellite with a target object is accepted",
+      "surface": "schedule",
+      "config": {
+        "type": "satellite",
+        "satelliteTarget": {
+          "tournamentId": "x",
+          "seatsAwarded": 2
+        }
+      },
+      "expect": null
+    },
+    {
+      "name": "a schedule satellite with no target is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "satellite"
+      },
+      "expect": "satellite_target_required"
+    },
+    {
+      "name": "a schedule satellite with a blank target is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "satellite",
+        "satelliteTarget": " "
+      },
+      "expect": "satellite_target_required"
+    },
+    {
+      "name": "a schedule carries no start time to refuse",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": null,
+      "startOffsetMinutes": -600
+    },
+    {
+      "name": "a schedule rebuy with no late registration key gets eight levels",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "isRebuy": true
+      },
+      "expect": null
+    },
+    {
+      "name": "a schedule re-entry with late registration 0 is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "isReentry": true,
+        "lateRegistrationLevels": 0
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "a schedule typed mtt_rebuy with late registration 0 is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt_rebuy",
+        "buyIn": 10,
+        "lateRegistrationLevels": 0
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "a schedule with the legacy rebuy flag and late registration 0 is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "rebuy": true,
+        "lateRegistrationLevels": 0
+      },
+      "expect": "rebuy_requires_late_registration"
+    },
+    {
+      "name": "a schedule Spin always sits three",
+      "surface": "schedule",
+      "config": {
+        "type": "spin",
+        "gameVariant": "PLO6",
+        "tableSize": 10
+      },
+      "expect": null
+    },
+    {
+      "name": "a schedule PLO6 Sit And Go of nine with no table size is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "sng",
+        "gameVariant": "PLO6",
+        "maxPlayers": 9
+      },
+      "expect": "table_size_exceeds_deck"
+    },
+    {
+      "name": "a schedule PLO6 Sit And Go of six is accepted",
+      "surface": "schedule",
+      "config": {
+        "type": "sng",
+        "gameVariant": "PLO6",
+        "maxPlayers": 6
+      },
+      "expect": null
+    },
+    {
+      "name": "a schedule heads-up ladder that falls is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "heads_up",
+        "maxPlayers": 2,
+        "blindStructure": [
+          {
+            "smallBlind": 15,
+            "bigBlind": 30,
+            "durationMinutes": 5
+          },
+          {
+            "smallBlind": 10,
+            "bigBlind": 20,
+            "durationMinutes": 5
+          }
+        ]
+      },
+      "expect": "blind_structure_must_not_decrease"
+    },
+    {
+      "name": "a schedule paying 90 percent is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 10000,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 90
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "payouts_must_total_100"
+    },
+    {
+      "name": "a schedule starting stack of 0 is refused",
+      "surface": "schedule",
+      "config": {
+        "type": "mtt",
+        "buyIn": 10,
+        "startingStack": 0,
+        "tableSize": 9,
+        "gameVariant": "NLH",
+        "payoutStructure": [
+          {
+            "place": 1,
+            "percentage": 100
+          }
+        ],
+        "lateRegistrationLevels": 8
+      },
+      "expect": "starting_stack_must_be_positive"
+    }
+  ]
+}

@@ -42,7 +42,7 @@ groups:
             The engine's own watchdog should have recovered it; if this alert
             is firing, the watchdog did not. Check
             engine.smarter.poker/health -> stalledTables for the table ids.
-          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+          runbook: 'docs/runbooks/tables-frozen.md'
 
       # ── THE FLEET STOPPED TOGETHER (2026-09-18) ────────────────────────
       # The zombie sweep now refuses to rebuild the whole estate at once, and
@@ -108,7 +108,7 @@ groups:
             Check engine.smarter.poker/health ->
             tableLivenessSummary.tournamentTablesNeverStarted, then
             /health?liveness_table_ids=... for the loopPhase of each.
-          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+          runbook: 'docs/runbooks/tables-frozen.md'
 
       # ── THE ENGINE CANNOT BE REPLACED (2026-09-19) ─────────────────────
       # Whether a break ever certified a restart is recorded per break in
@@ -141,7 +141,7 @@ groups:
             the reason the gate is refusing. A table holding an unresolved F06
             preparation is process-local: only replacing that table's engine,
             or restarting the process, clears it.
-          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+          runbook: 'docs/runbooks/tables-frozen.md'
 
       # The bounded half of the same fault. Past ten minutes an unresolved F06
       # preparation stops holding every other table's restart certificate shut,
@@ -161,7 +161,7 @@ groups:
             certificate, so releases can proceed, but that table is wedged and
             its permit only clears when its engine is replaced. The container
             log names the table id.
-          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+          runbook: 'docs/runbooks/tables-frozen.md'
 
       # A settlement retry heartbeat can keep the existing progress watchdog
       # healthy while the same accepted hand remains blocked indefinitely.

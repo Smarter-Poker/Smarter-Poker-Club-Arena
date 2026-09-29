@@ -115,6 +115,7 @@ export function TournamentStatusBadge({
     | 'late_reg'
     | 'on_break'
     | 'final_table'
+    | 'bagged'
     | 'finished'
     | 'cancelled';
 }) {
@@ -125,6 +126,8 @@ export function TournamentStatusBadge({
       late_reg: { variant: 'warning', label: 'Late Registration' },
       on_break: { variant: 'secondary', label: 'On Break' },
       final_table: { variant: 'primary', label: 'Final Table', pulse: true },
+      // Multi-day, between days: under way, nobody dealing, not finished.
+      bagged: { variant: 'secondary', label: 'Day Complete' },
       finished: { variant: 'default', label: 'Finished' },
       cancelled: { variant: 'error', label: 'Cancelled' },
     };

@@ -205,6 +205,7 @@ export default function CommissionHistoryModal({
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
+          onClose={onClose}
           as="div"
           eyebrow={agentName}
           title="Commission History"

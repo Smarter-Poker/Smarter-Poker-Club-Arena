@@ -78,6 +78,7 @@ import type { Tournament } from '../../../types/database.types';
 import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
 import { chips, clockText, type NormalisedBlindLevel, type TournamentTabProps } from './types';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../../utils/multiDaySchedule';
 import '../../../styles/tournament-lobby-3d.css';
 import './BlindsTab.css';
 
@@ -161,7 +162,12 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
      from the raw row rather than from `isFinished` below, because that is
      computed after this effect. */
   const rowStatus = String(row.status || '').toUpperCase();
-  const clockIsDead = rowStatus === 'COMPLETED' || rowStatus === 'CANCELLED' || !!row.ended_at;
+  const clockIsDead =
+    rowStatus === 'COMPLETED' ||
+    rowStatus === 'CANCELLED' ||
+    !!row.ended_at ||
+    // Multi-day, between days: the clock is stopped overnight, not finished.
+    isBaggedStatus(rowStatus);
 
   useEffect(() => {
     if (clockIsDead) return;
@@ -261,6 +267,10 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
 
   const isFinished = status === 'COMPLETED' || status === 'CANCELLED' || endedMs !== null;
   const isPaused = status === 'PAUSED';
+  /* Multi-day, between days: started, not finished, and no level running. The
+     level clock is stored as a remaining duration by the bag, so a derived
+     countdown here would read "Level Change Pending" all night. */
+  const isBagged = isBaggedStatus(status);
   const hasStarted =
     !isFinished && (status === 'RUNNING' || status === 'LATE_REG' || startedMs !== null);
 
@@ -362,7 +372,7 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   const rowBreakEndsMs = epoch(row.break_ends_at);
   const structureBreak = Boolean(current?.isBreak);
   const rowOnBreak = Boolean(row.on_break) || (rowBreakEndsMs !== null && rowBreakEndsMs > nowMs);
-  const onBreak = hasStarted && (structureBreak || rowOnBreak || busBreak !== null);
+  const onBreak = hasStarted && !isBagged && (structureBreak || rowOnBreak || busBreak !== null);
 
   const breakEndsAtMs = busBreak ? busBreak.endsAtMs : rowBreakEndsMs;
   const breakRemainingSec: number | null = structureBreak
@@ -410,7 +420,8 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
      PRESENTATION
      ─────────────────────────────────────────────────────────────────────────── */
 
-  const urgent = !isPaused && hasStarted && remainingSec !== null && remainingSec <= 60;
+  const urgent =
+    !isPaused && !isBagged && hasStarted && remainingSec !== null && remainingSec <= 60;
 
   const clockClass = [
     'tl-clock',
@@ -439,6 +450,9 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   if (isFinished) {
     mainClock = '--:--';
     mainCaption = status === 'CANCELLED' ? 'Tournament Cancelled' : 'Tournament Complete';
+  } else if (isBagged) {
+    mainClock = '--:--';
+    mainCaption = DAY_COMPLETE_LABEL;
   } else if (!hasStarted) {
     if (secondsToStart === null) {
       mainClock = '--:--';
@@ -468,6 +482,9 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   let badgeTone = 'tl-badge--action';
   if (isFinished) {
     badgeText = status === 'CANCELLED' ? 'Cancelled' : 'Complete';
+    badgeTone = 'tl-badge--mute';
+  } else if (isBagged) {
+    badgeText = DAY_COMPLETE_LABEL;
     badgeTone = 'tl-badge--mute';
   } else if (isPaused) {
     badgeText = 'Paused';

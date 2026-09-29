@@ -632,6 +632,9 @@ describe('actual manager launch reaches the first hand and action timer after th
       await f.manager.advanceBlindLevel(f.row.blind_structure);
       expect(f.manager.currentLevel).toBe(0);
       expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        // Adoption first looks for a reserved hand a dead generation left
+        // (abandonedGenerationDoor.ts); this table holds none.
+        'fn_f06_hand_number_state',
         'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',
       ]);
@@ -643,6 +646,7 @@ describe('actual manager launch reaches the first hand and action timer after th
       expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
       expect(f.manager.currentLevel).toBe(0);
       expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_f06_hand_number_state',
         'fn_ca_resume_hand_submission',
         'fn_f06_hand_number_state',
         'fn_f06_allocate_hand_number',

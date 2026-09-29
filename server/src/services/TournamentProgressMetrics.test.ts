@@ -14,7 +14,7 @@ const counts = {
   unpaid_completed: 0,
   seat_first_waiting: 12,
 };
-const progress = { stalled_running: 84, overdue_breaks: 2 };
+const progress = { stalled_running: 84, overdue_breaks: 2, progressing_running: 9 };
 function succeed(main: unknown = counts, perEvent: unknown = progress) {
   rpc.mockImplementation(async (name: string) => ({
     data: [name === 'fn_tournament_metrics' ? main : perEvent],
@@ -39,6 +39,7 @@ describe('MTT monitoring reads progress for each event', () => {
       .toPrometheus({ owned: 509, isLeader: true, stillBooting: false })
       .join('\n');
     expect(lines).toContain('poker_mtt_stalled_running 84');
+    expect(lines).toContain('poker_mtt_progressing_running 9');
     expect(lines).toContain('poker_mtt_overdue_breaks 2');
     expect(lines).toContain('poker_tournament_fleet_unserved 0');
     expect(rpc).toHaveBeenCalledWith('fn_tournament_progress_metrics', {
@@ -91,6 +92,28 @@ describe('MTT monitoring reads progress for each event', () => {
       'poker_tournament_metrics_stale_seconds 240'
     );
   });
+
+  it('does not invent a progressing count when the database function predates it', async () => {
+    succeed(counts, { stalled_running: 84, overdue_breaks: 2 });
+    const metrics = new TournamentMetrics();
+    await metrics.refresh();
+    expect(metrics.get().progressingRunning).toBeNull();
+    const lines = metrics.toPrometheus().join('\n');
+    expect(lines).toContain('poker_mtt_stalled_running 84');
+    expect(lines).not.toContain('poker_mtt_progressing_running');
+  });
+
+  it.each([null, -1, 'x', 1.5])(
+    'keeps the last good snapshot when progressing_running is malformed (%j)',
+    async (bad) => {
+      const metrics = new TournamentMetrics();
+      await metrics.refresh();
+      const good = metrics.get();
+      succeed(counts, { ...progress, progressing_running: bad });
+      await metrics.refresh();
+      expect(metrics.get()).toBe(good);
+    }
+  );
 
   it('accepts integer strings and an explicit zero count', async () => {
     succeed({ ...counts, running: '0' }, { stalled_running: '0', overdue_breaks: '0' });

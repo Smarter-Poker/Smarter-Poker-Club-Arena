@@ -1,0 +1,102 @@
+/* Day Schedule editor. 375px first: each day stacks its two fields; from
+   560px the fields sit side by side. Nothing is wider than the form. */
+.day-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  min-width: 0;
+}
+
+.day-schedule__head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.day-schedule__title {
+  font-weight: 700;
+}
+
+.day-schedule__zone,
+.day-schedule__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.day-schedule__label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.day-schedule__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.day-schedule__row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  min-width: 0;
+}
+
+.day-schedule__day {
+  font-weight: 700;
+}
+
+.day-schedule__cell input {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  /* The date picker's own icon is drawn for a dark field, not lost in it. */
+  color-scheme: dark;
+}
+
+.day-schedule__fixed {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.day-schedule__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* THE FORM'S OWN INK (visual acceptance 2026-09-24). The two inputs wear the
+   page's field class (.config-datetime, as Start Time does) and these two
+   buttons the footer's outline button, so nothing here renders as a white
+   browser default on the black form. */
+.day-schedule__actions button {
+  flex: 1 1 9rem;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 2px solid #1877f2;
+  color: #1877f2;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.day-schedule__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (min-width: 560px) {
+  .day-schedule__row {
+    grid-template-columns: 4rem 1fr 1fr;
+    align-items: end;
+  }
+}

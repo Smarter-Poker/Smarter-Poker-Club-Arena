@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readCommittedObservationSnapshot as read } from './HorseCommittedObservationSnapshot.js';
 import { buildScopedOpponentModel } from '../engine/HorseScopedOpponentModel.js';
+import { COMMITTED_OBSERVATION_ACTION_KEYS } from '../engine/HorseAdaptiveObservation.js';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), abort: vi.fn() }));
 vi.mock('./supabase.js', () => ({ supabase: { rpc: mocks.rpc } }));
 const NOW = Date.UTC(2026, 8, 12, 19),
@@ -48,8 +49,10 @@ const node = {
     bbj: null,
   },
 };
+// The projected shape the RPC returns: exactly COMMITTED_OBSERVATION_ACTION_KEYS,
+// no seat column. A fixture that carried `seat` passed here for eight days while
+// production qualified nothing (2026-09-16 to 2026-09-25).
 const action = (userId = actor, ordinal = 0, handId = id) => ({
-  seat: node.actorSeat,
   userId,
   action: 'check',
   stage: 'preflop',
@@ -108,9 +111,21 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 describe('committed observation snapshot reader', () => {
+  it('qualifies the shape the database returns, which carries no seat column', async () => {
+    const data = hand();
+    expect(Object.keys(data.actions[0]).sort()).toEqual(
+      [...COMMITTED_OBSERVATION_ACTION_KEYS].sort()
+    );
+    respond(snapshot([data]));
+    const result = await read(request);
+    expect(result.status).toBe('snapshot');
+    if (result.status !== 'snapshot') throw Error('missing snapshot');
+    expect(result.rejected).toEqual({});
+    expect(result.observations.map((o) => o.observationId)).toEqual([id + ':0']);
+  });
   it('excludes a persisted action whose seat disagrees with its bound public node', async () => {
     const data = hand();
-    data.actions[0].seat = 2;
+    (data.actions[0] as { seat?: number }).seat = 2;
     respond(snapshot([data]));
     const result = await read(request);
     expect(result.status).toBe('snapshot');
@@ -207,7 +222,9 @@ describe('committed observation snapshot reader', () => {
     h.actions = [
       { action: 'bb' } as never,
       { action: 'discard', cards: ['As', 'Ah'] } as never,
-      action(other, 2),
+      // The other player acts from the other seat: without a seat column, a
+      // second actor on the same seat would be a contradiction, not evidence.
+      { ...action(other, 2), publicNode: { ...node, actorSeat: 2 } },
       action(actor, 3),
     ];
     respond(snapshot([h]));

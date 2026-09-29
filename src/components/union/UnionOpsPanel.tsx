@@ -6,6 +6,10 @@
  * distribution safety and the union-law self-test.
  *
  * Drops into any union surface as <UnionOpsPanel unionId={...} canRun={isOwner} />.
+ * The union is required. This panel used to default to one hardcoded union,
+ * so a surface that named none (the platform Financial Admin Hub) previewed,
+ * settled and swept that union's books whatever its viewer meant. Without a
+ * union id it now says so and asks the database nothing.
  * Read-only for anyone who is not an overseer — the RPCs enforce that server
  * side too, this just avoids showing buttons that would fail.
  */
@@ -13,7 +17,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   UnionOpsService,
-  MIDWAY_UNION_ID,
   describeRpcError,
   type AgentRiskRow,
   type UnionCoverage,
@@ -31,11 +34,25 @@ const money = (n: unknown) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 interface Props {
-  unionId?: string;
+  /** The union every read, preview, settlement and sweep below acts on. */
+  unionId: string;
   canRun?: boolean;
 }
 
-export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = false }: Props) {
+export default function UnionOpsPanel({ unionId, canRun = false }: Props) {
+  // The type requires a union, but a caller can still hand over an id it has
+  // not resolved yet. Refuse it here, before any read or run can start.
+  if (typeof unionId !== 'string' || unionId.trim() === '') {
+    return (
+      <div role="status" style={{ padding: 16, color: '#8aa' }}>
+        No Union Selected
+      </div>
+    );
+  }
+  return <UnionOpsPanelForUnion unionId={unionId} canRun={canRun} />;
+}
+
+function UnionOpsPanelForUnion({ unionId, canRun }: { unionId: string; canRun: boolean }) {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('risk');
   const [loading, setLoading] = useState(true);

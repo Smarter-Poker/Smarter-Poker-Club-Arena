@@ -22,8 +22,15 @@ export function useEarnedBonus(
   const { search } = useLocation();
   const requested = new URLSearchParams(search).get('wheelAward');
   const scope = `${user?.id ?? ''}:${club ?? ''}:${game}:${requested ?? ''}`;
-  const quote = `${scope}:${preference.doubled}:${mode ?? ''}`;
   const [snapshot, setSnapshot] = useState<{ quote: string; state: WheelBonusState } | null>(null);
+  // The Double Your Diamonds answer is the player's own for ONE award. A saved
+  // answer for an earlier award is not carried into the quote for a new one
+  // (Dan 2026-09-21, R9): until the award is known, or when it differs, the
+  // entry is quoted without the addition.
+  const targetAward = snapshot?.state.award?.id ?? requested;
+  const doubled =
+    preference.award && preference.award.id !== targetAward ? false : preference.doubled;
+  const quote = `${scope}:${doubled}:${mode ?? ''}`;
   const [failure, setFailure] = useState<{ quote: string; message: string } | null>(null);
   const [spent, setSpent] = useState<{ scope: string; id: string } | null>(null);
   // Failed reads in a row. A read that fails is tried again on its own
@@ -34,13 +41,7 @@ export function useEarnedBonus(
     const current = ++generation.current;
     if (!club || !user?.id) return;
     try {
-      const state = await WheelBonusEntryService.state(
-        club,
-        game,
-        preference.doubled,
-        mode,
-        requested
-      );
+      const state = await WheelBonusEntryService.state(club, game, doubled, mode, requested);
       if (current !== generation.current) return;
       setSnapshot({ quote, state });
       setFailure(null);
@@ -53,7 +54,7 @@ export function useEarnedBonus(
         setFailures((count) => count + 1);
       }
     }
-  }, [club, user?.id, game, preference.doubled, mode, requested, quote]);
+  }, [club, user?.id, game, doubled, mode, requested, quote]);
   useEffect(() => {
     void refresh();
     return () => {

@@ -3,11 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: mocks }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
-import { UnionOpsService, MIDWAY_UNION_ID } from '../../src/services/UnionOpsService';
+import { UnionOpsService } from '../../src/services/UnionOpsService';
+
+// Any union: the service has no default union and no hardcoded one.
+const UNION_ID = '22222222-2222-4222-8222-222222222222';
 
 const receipt = () => ({
   success: true,
-  union_id: MIDWAY_UNION_ID,
+  union_id: UNION_ID,
   round2_club_to_agents: { amount: 123.45, shortfalls: 0 },
   round3_agents_to_players: { amount: 67.89, shortfalls: 0 },
 });
@@ -24,7 +27,7 @@ describe('union settlement completion receipt', () => {
     'round4_invoices_failed: invoice_error',
   ])('refuses an HTTP-successful database refusal: %s', async (error) => {
     mocks.rpc.mockResolvedValue({ data: { ...receipt(), success: false, error }, error: null });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow(
+    await expect(UnionOpsService.runSettlementCascade(UNION_ID)).rejects.toThrow(
       'Settlement did not complete'
     );
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -38,7 +41,9 @@ describe('union settlement completion receipt', () => {
     { ...receipt(), union_id: 'another-union' },
   ])('does not certify an absent, malformed or wrong-union receipt', async (data) => {
     mocks.rpc.mockResolvedValue({ data, error: null });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow('could not be verified');
+    await expect(UnionOpsService.runSettlementCascade(UNION_ID)).rejects.toThrow(
+      'could not be verified'
+    );
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
 
@@ -63,7 +68,7 @@ describe('union settlement completion receipt', () => {
         { amount: 1, shortfalls: 0, success: false },
       ]) {
         mocks.rpc.mockResolvedValueOnce({ data: { ...receipt(), [key]: round }, error: null });
-        await expect(UnionOpsService.runSettlementCascade()).rejects.toThrow(
+        await expect(UnionOpsService.runSettlementCascade(UNION_ID)).rejects.toThrow(
           'could not be verified'
         );
       }
@@ -73,9 +78,9 @@ describe('union settlement completion receipt', () => {
 
   it('returns exact reported amounts after explicit matching completion', async () => {
     mocks.rpc.mockResolvedValue({ data: receipt(), error: null });
-    await expect(UnionOpsService.runSettlementCascade()).resolves.toEqual(receipt());
+    await expect(UnionOpsService.runSettlementCascade(UNION_ID)).resolves.toEqual(receipt());
     expect(mocks.rpc).toHaveBeenCalledWith('fn_union_settlement_cascade', {
-      p_union_id: MIDWAY_UNION_ID,
+      p_union_id: UNION_ID,
       p_period_start: null,
       p_period_end: null,
     });
@@ -102,7 +107,33 @@ describe('union settlement completion receipt', () => {
   it('preserves transport failure and never retries an uncertain mutation', async () => {
     const error = new Error('connection lost');
     mocks.rpc.mockResolvedValue({ data: receipt(), error });
-    await expect(UnionOpsService.runSettlementCascade()).rejects.toBe(error);
+    await expect(UnionOpsService.runSettlementCascade(UNION_ID)).rejects.toBe(error);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* These methods used to default a missing union id to Midway's, so a
+   surface that had not resolved its union read, swept or settled one hardcoded
+   union instead. A missing id is now refused before the database is asked. */
+describe('a union-scoped call names its union', () => {
+  const calls: Array<[string, (id: unknown) => Promise<unknown>]> = [
+    ['runSettlementCascade', (id) => UnionOpsService.runSettlementCascade(id as string)],
+    ['getSettlementPreview', (id) => UnionOpsService.getSettlementPreview(id as string)],
+    ['runIntegritySweep', (id) => UnionOpsService.runIntegritySweep(id as string)],
+    ['getCoverageStrict', (id) => UnionOpsService.getCoverageStrict(id as string)],
+    ['getCoverage', (id) => UnionOpsService.getCoverage(id as string)],
+    ['getAgentRisk', (id) => UnionOpsService.getAgentRisk(id as string)],
+    ['getAllAgentStatements', (id) => UnionOpsService.getAllAgentStatements(id as string)],
+    ['getDistributionCheck', (id) => UnionOpsService.getDistributionCheck(id as string)],
+    ['getSettlementRounds', (id) => UnionOpsService.getSettlementRounds(id as string)],
+    ['getClubExitBlockers', (id) => UnionOpsService.getClubExitBlockers(id as string, 'club-1')],
+    ['expelClub', (id) => UnionOpsService.expelClub(id as string, 'club-1')],
+  ];
+
+  it.each(calls)('%s refuses a missing union id without asking the database', async (_, call) => {
+    for (const id of [undefined, null, '', '   ']) {
+      await expect(call(id)).rejects.toThrow('No Union Selected');
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

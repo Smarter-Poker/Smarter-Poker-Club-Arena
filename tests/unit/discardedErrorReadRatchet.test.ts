@@ -125,7 +125,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
-  ['src/components/wallet/ChipMintModal.tsx', 3],
+  ['src/components/wallet/ChipMintModal.tsx', 2],
   // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
   // the dropped column it was reading, and its replacement binds the error.
   ['src/components/agent/AgentCommissionDashboard.tsx', 0],
@@ -161,7 +161,8 @@ const BASELINE = new Map<string, number>([
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
-  ['src/components/agent/AgentPromoPanel.tsx', 2],
+  // Visible promo observation now binds balance and profile read errors.
+  ['src/components/agent/AgentPromoPanel.tsx', 0],
   ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],
@@ -205,7 +206,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],
-  ['src/components/club/CreateTournamentModal.tsx', 1],
   ['src/components/agent/AgentAssignmentPanel.tsx', 1],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],
@@ -228,6 +228,10 @@ const AUDITED_ZERO = [
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',
   'src/pages/ClubHomePage.tsx',
+  // 2026-09-23, 1 -> 0: the satellite-target read binds its error, reports
+  // it, and says the targets could not load instead of "No Upcoming
+  // Tournaments". Moved out of the baseline so the file is held at zero.
+  'src/components/club/CreateTournamentModal.tsx',
 ];
 
 describe('discarded-error-read ratchet', () => {

@@ -25,7 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
+import { sliceBlockAfter, sliceCall } from '../testHelpers/sourceWindow.js';
 import { cashTableFill, occupancyTargetFor } from './HorseBehavior.js';
 import {
   FLEET_POLICY_DEFAULTS,
@@ -316,6 +316,7 @@ describe('the policy is read once per cycle per club scope', () => {
     const order = [
       "if (!policy.enabled) return 'fleet_disabled';",
       "if (policy.pauseNewSeatings) return 'seating_paused';",
+      "'brain_behind'",
       "'max_horses_reached'",
       "'max_per_table_reached'",
       "'below_min_humans'",
@@ -334,6 +335,57 @@ describe('the policy is read once per cycle per club scope', () => {
       expect(next).toBeGreaterThan(at);
       at = next;
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE BRAIN
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('the fleet seats no new horse while the decision lane is behind', () => {
+  /* 2026-09-26, measured: at 780-880 dealing tables the one-thread decision
+     lane sat 7.4-13.5 s behind with 40-68 expiries a second, and 57% of all
+     decisions were a legal check or fold nobody thought about. The cycle
+     used to seat new horses every 30 s without asking the lane. */
+  it('reads the lane ONCE per cycle, from the one status the engine publishes', () => {
+    expect(SRC).toMatch(
+      /import \{ liveHorseDecisionWorkerStatus \} from '\.\.\/engine\/horseDecision\/lane\.js';/
+    );
+    expect(CYCLE).toContain('const lane = liveHorseDecisionWorkerStatus();');
+    expect(CYCLE.match(/liveHorseDecisionWorkerStatus\(/g)?.length ?? 0).toBe(1);
+  });
+
+  it('passes the oldest queued age and the phase into the SAME withheld call as the policy', () => {
+    const CALL = sliceCall(CYCLE, 'withheldReason(globalPolicy, {');
+    expect(CALL).toContain('nowUTCHour: hourUTC,');
+    expect(CALL).toContain('seatedHorses: seatedHorseCount,');
+    expect(CALL).toContain('decisionLaneWaitMs: lane.oldestQueuedAgeMs,');
+    expect(CALL).toContain('decisionLanePhase: lane.phase,');
+    // The lane is read before it is asked about, not inside the seating loop.
+    expect(CYCLE.indexOf('const lane = liveHorseDecisionWorkerStatus();')).toBeLessThan(
+      CYCLE.indexOf('const cycleWithheld = withheldReason(globalPolicy, {')
+    );
+    expect(LOOP).not.toContain('liveHorseDecisionWorkerStatus');
+  });
+
+  it('says so in one line, with the wait and the hold', () => {
+    expect(CYCLE).toMatch(/if \(cycleWithheld === 'brain_behind'\)/);
+    expect(CYCLE).toContain('no new seats this cycle');
+    expect(CYCLE).toContain('(hold at ${HORSE_FLEET_DECISION_LANE_HOLD_MS} ms)');
+  });
+
+  it('is the same withhold as the pause: the cause, and only the cause, reaches the beat', () => {
+    /* Nothing new is added to the withheld path. The existing
+       `cycleWithheld` already empties the seating list, zeroes the seat calls
+       and lands on `beat.reason`; `brain_behind` rides that path unchanged. */
+    expect(withheldReason(policy(), { nowUTCHour: 12, decisionLaneWaitMs: 5000 })).toBe(
+      'brain_behind'
+    );
+    expect(withheldReason(policy(), { nowUTCHour: 12, decisionLanePhase: 'starting' })).toBe(
+      'brain_behind'
+    );
+    expect(CYCLE.match(/cycleWithheld = /g)?.length ?? 0).toBe(1);
+    expect(CYCLE).toMatch(/beat\.reason =\s*\n?\s*cycleWithheld/);
   });
 });
 

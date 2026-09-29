@@ -14,6 +14,11 @@ import { pushFinancialUpdate } from '../financialPush.js';
 import { reportError } from '../errorReporter.js';
 import { tableCountChangedFilter } from './tables.js';
 import type { LeavePendingOperation } from '../../observability/LeavePendingDiagnostic.js';
+import { isLightningHandInProgress } from '../../lightning/rpcErrors.js';
+import { RateLimitedLog } from '../../lightning/RateLimitedLog.js';
+
+/** A deferred departure is said once a minute per seat, not on every retry pass. */
+const lightningDeferralLog = new RateLimitedLog(60_000);
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -236,6 +241,17 @@ export interface CashoutOptions {
   leaveMode?: 'voluntary' | 'forced' | 'vpip_evicted';
   onLocked?: (stayRemainingMs: number) => void;
   onFailed?: (message: string) => void;
+  /**
+   * LIGHTNING (2026-09-25): the database refused because the player is in a
+   * live Lightning hand (LIGHTNING_HAND_IN_PROGRESS). Nothing moved - the
+   * refusing trigger rolls the whole cash-out back - and the same request
+   * succeeds once that hand is over. With this callback the refusal is a
+   * "not now": the callback runs and the function returns 0 with the seat
+   * exactly as it was. Without it the refusal falls through to `onFailed`
+   * (or a throw), which every caller already treats as "seat preserved,
+   * retry" - so an unconverted caller is safe, merely louder.
+   */
+  onLightningHandInProgress?: () => void;
 }
 
 const LEAVE_LOCKED_RE = /LEAVE_LOCKED:(\d+)/;
@@ -276,6 +292,16 @@ export async function atomicCashout(
         // Refused by the stay clock. Not a failure: the player is still in
         // their chair and the caller shows them the countdown.
         opts?.onLocked?.(Number(locked[1]));
+        return 0;
+      }
+      if (opts?.onLightningHandInProgress && isLightningHandInProgress(error)) {
+        if (lightningDeferralLog.shouldLog(`${tableId}:${userId}`)) {
+          console.log(
+            `[atomicCashout] ${userId} at ${tableId} is in a live Lightning hand - ` +
+              'departure deferred, seat untouched, retried on the next pass'
+          );
+        }
+        opts.onLightningHandInProgress();
         return 0;
       }
       throw new Error(String(error.message || 'cash-out failed'));
@@ -415,7 +441,13 @@ export async function processLeavePending(
    * that ever changes, this callback already covers it.
    */
   onDeparted?: (userId: string, occupancyId: string) => void,
-  diagnostic?: LeavePendingOperation
+  diagnostic?: LeavePendingOperation,
+  /**
+   * LIGHTNING (2026-09-26): told of each seat deferred because its player is
+   * in a live Lightning hand, so the caller can retry THOSE seats on its next
+   * pass without re-sweeping seats the stay clock is holding.
+   */
+  onLightningDeferred?: (userId: string, occupancyId: string) => void
 ): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -440,7 +472,11 @@ export async function processLeavePending(
 
   const cashedOut: Array<{ userId: string; occupancyId: string }> = [];
   for (const seat of pendingSeats) {
-    const out: { lockedMs: number | null; failed: boolean } = { lockedMs: null, failed: false };
+    const out: { lockedMs: number | null; failed: boolean; lightning: boolean } = {
+      lockedMs: null,
+      failed: false,
+      lightning: false,
+    };
     await atomicCashout(seat.user_id, tableId, seat.seat_number, {
       occupancyId: seat.occupancy_id,
       // The database applies durable forced authority for this exact occupancy.
@@ -451,7 +487,18 @@ export async function processLeavePending(
       onFailed: () => {
         out.failed = true;
       },
+      onLightningHandInProgress: () => {
+        out.lightning = true;
+      },
     });
+    // LIGHTNING (2026-09-25): the player is in a live Lightning hand. Not a
+    // failure and not a refusal of the leave: `leave_pending` stays set, the
+    // seat is untouched, and the next pass asks again. Never reported as
+    // departed, so no teardown runs for a player who is still seated.
+    if (out.lightning) {
+      onLightningDeferred?.(seat.user_id, seat.occupancy_id);
+      continue;
+    }
     if (out.lockedMs !== null) {
       // Refusal does not cancel the accepted departure. Keep the durable
       // pending flag so a new engine process reads the same occupancy after

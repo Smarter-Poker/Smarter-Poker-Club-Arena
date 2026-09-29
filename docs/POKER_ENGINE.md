@@ -28,8 +28,8 @@ import { evaluateHand, evaluateOmahaHand, compareHands } from '@engine';
 
 // Hold'em
 const result = evaluateHand(holeCards, communityCards);
-console.log(result.name);     // "Full House"
-console.log(result.ranking);  // 7
+console.log(result.name); // "Full House"
+console.log(result.ranking); // 7
 
 // Omaha (must use exactly 2 hole cards + 3 board)
 const omahaResult = evaluateOmahaHand(holeCards, communityCards);
@@ -40,18 +40,18 @@ const winner = compareHands(hand1, hand2); // >0 = hand1 wins
 
 ### 3. Hand Rankings
 
-| Rank | Name | Example |
-|------|------|---------|
-| 10 | Royal Flush | A♠ K♠ Q♠ J♠ T♠ |
-| 9 | Straight Flush | 9♥ 8♥ 7♥ 6♥ 5♥ |
-| 8 | Four of a Kind | K♠ K♥ K♦ K♣ 7♠ |
-| 7 | Full House | Q♠ Q♥ Q♦ 5♣ 5♠ |
-| 6 | Flush | A♦ J♦ 9♦ 6♦ 3♦ |
-| 5 | Straight | T♠ 9♥ 8♦ 7♣ 6♠ |
-| 4 | Three of a Kind | 8♠ 8♥ 8♦ K♣ 4♠ |
-| 3 | Two Pair | J♠ J♥ 5♦ 5♣ 9♠ |
-| 2 | Pair | A♠ A♥ K♦ 8♣ 3♠ |
-| 1 | High Card | A♠ Q♥ 9♦ 6♣ 2♠ |
+| Rank | Name            | Example        |
+| ---- | --------------- | -------------- |
+| 10   | Royal Flush     | A♠ K♠ Q♠ J♠ T♠ |
+| 9    | Straight Flush  | 9♥ 8♥ 7♥ 6♥ 5♥ |
+| 8    | Four of a Kind  | K♠ K♥ K♦ K♣ 7♠ |
+| 7    | Full House      | Q♠ Q♥ Q♦ 5♣ 5♠ |
+| 6    | Flush           | A♦ J♦ 9♦ 6♦ 3♦ |
+| 5    | Straight        | T♠ 9♥ 8♦ 7♣ 6♠ |
+| 4    | Three of a Kind | 8♠ 8♥ 8♦ K♣ 4♠ |
+| 3    | Two Pair        | J♠ J♥ 5♦ 5♣ 9♠ |
+| 2    | Pair            | A♠ A♥ K♦ 8♣ 3♠ |
+| 1    | High Card       | A♠ Q♥ 9♦ 6♣ 2♠ |
 
 ---
 
@@ -108,7 +108,7 @@ hand.performAction(seatNumber, 'all_in');
 ### Event Types
 
 ```typescript
-type HandEvent = 
+type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
   | { type: 'CARDS_DEALT'; seat: number; cards: Card[] }
   | { type: 'COMMUNITY_CARDS'; stage: HandStage; cards: Card[] }
@@ -140,9 +140,9 @@ const pots = calculatePots(players);
 
 ```typescript
 interface RakeConfig {
-  percent: number;  // e.g., 5 for 5%
-  cap: number;      // Maximum rake per hand
-  noFlop: boolean;  // No rake if hand ends preflop
+  percent: number; // e.g., 5 for 5%
+  cap: number; // Maximum rake per hand
+  noFlop: boolean; // No rake if hand ends preflop
 }
 
 import { calculateRake } from '@engine';
@@ -154,16 +154,17 @@ const rake = calculateRake(pot, sawFlop, rakeConfig);
 
 ## Game Variants
 
-| Variant | Hole Cards | Description |
-|---------|------------|-------------|
-| `nlh` | 2 | No Limit Hold'em |
-| `flh` | 2 | Fixed Limit Hold'em |
-| `plo4` | 4 | Pot Limit Omaha 4 |
-| `plo5` | 5 | Pot Limit Omaha 5 |
-| `plo6` | 6 | Pot Limit Omaha 6 |
-| `plo_hilo` | 4 | Omaha Hi-Lo |
-| `short_deck` | 2 | 6+ Short Deck |
-| `ofc` | 5* | Open Face Chinese |
+| Variant      | Hole Cards | Description         |
+| ------------ | ---------- | ------------------- |
+| `nlh`        | 2          | No Limit Hold'em    |
+| `flh`        | 2          | Fixed Limit Hold'em |
+| `plo4`       | 4          | Pot Limit Omaha 4   |
+| `plo5`       | 5          | Pot Limit Omaha 5   |
+| `plo6`       | 6          | Pot Limit Omaha 6   |
+| `plo_hilo`   | 4          | Omaha Hi-Lo         |
+| `short_deck` | 2          | 6+ Short Deck       |
+
+**Excluded:** Open-Face Chinese (`ofc`) is not a Club Arena game. It is excluded by owner decision (2026-09-22), the engine has no OFC rules, and no table has ever dealt it. The retired `ofc_pineapple` label was carried by Crazy Pineapple tables, which `supabase/migrations/20260823_retire_ofc_pineapple_variant.sql` relabelled `pineapple`. The variants the engine actually deals are `KNOWN_VARIANTS` in `server/src/engine/VariantRules.ts`.
 
 ---
 
@@ -172,13 +173,7 @@ const rake = calculateRake(pot, sawFlop, rakeConfig);
 ```typescript
 import { validateAction, calculateBettingState } from '@engine';
 
-const bettingState = calculateBettingState(
-  pot,
-  currentBet,
-  playerBet,
-  bigBlind,
-  lastRaise
-);
+const bettingState = calculateBettingState(pot, currentBet, playerBet, bigBlind, lastRaise);
 
 const validation = validateAction('raise', 50, playerStack, bettingState);
 if (!validation.valid) {
@@ -202,9 +197,9 @@ if (!validation.valid) {
 ```typescript
 import { cardToString, cardsToString, parseCard } from '@engine';
 
-cardToString({ rank: 'A', suit: 'spades' });  // "A♠"
-cardsToString([card1, card2]);                 // "A♠ K♥"
-parseCard('Ah');                               // { rank: 'A', suit: 'hearts' }
+cardToString({ rank: 'A', suit: 'spades' }); // "A♠"
+cardsToString([card1, card2]); // "A♠ K♥"
+parseCard('Ah'); // { rank: 'A', suit: 'hearts' }
 ```
 
 ---
@@ -215,12 +210,13 @@ parseCard('Ah');                               // { rank: 'A', suit: 'hearts' }
 const config: HandConfig = {
   // ...
   bombPot: {
-    anteMultiplier: 2,  // Each player antes 2x BB
+    anteMultiplier: 2, // Each player antes 2x BB
   },
 };
 ```
 
 With bomb pots:
+
 - All players ante (no blinds)
 - Flop is dealt immediately
 - Betting starts after flop
@@ -230,6 +226,7 @@ With bomb pots:
 ## Integration Example
 
 See `src/pages/TablePage.tsx` for a complete React integration with:
+
 - Real-time hand updates
 - Bot opponent simulation
 - Action button handling

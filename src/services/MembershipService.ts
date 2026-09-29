@@ -199,43 +199,6 @@ export const MembershipService = {
   },
 
   /**
-   * Add a new member to a club
-   */
-  async addMember(
-    clubId: string,
-    userId: string,
-    role: MemberRole = 'member',
-    invitedBy?: string
-  ): Promise<ClubMembership> {
-    const { data, error } = await supabase
-      .from('club_members')
-      .insert({
-        club_id: clubId,
-        user_id: userId,
-        role,
-        status: 'pending',
-        invited_by: invitedBy,
-      })
-      // Named: a bare .select() is RETURNING *, and club_members is moving to
-      // column-level grants that withhold is_bot from a player.
-      .select('club_id, user_id, role, status, joined_at, invited_by')
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error('Member creation returned no data');
-
-    return {
-      id: `${data.club_id}:${data.user_id}`, // Synthetic id from composite key
-      clubId: data.club_id,
-      userId: data.user_id,
-      role: data.role as MemberRole,
-      status: data.status as MemberStatus,
-      joinedAt: data.joined_at,
-      invitedBy: data.invited_by,
-    };
-  },
-
-  /**
    * Change a member's club role.
    *
    * TWO BUGS LIVED HERE. It wrote `club_members.role` directly, and it typed
@@ -304,21 +267,57 @@ export const MembershipService = {
   },
 
   /**
-   * Update member status
+   * Suspend, ban or reinstate a member (ClubDetailPage's Suspend,
+   * ClubMemberManagement's Ban and Unban).
+   *
+   * club_members.status is server owned: trg_club_members_status_guard refuses
+   * a browser write, because the RLS policy lets a member update their own row
+   * and a suspended member could otherwise set themselves back to active.
+   * fn_club_set_member_status checks the caller's authority, changes exactly
+   * one row, records the reason in audit_trail and returns that row's id.
+   *
+   * "No error" is not "done" (#5171): resolves true only when the server
+   * answers success AND names exactly the status that was asked for. Anything
+   * else throws, with the server's own refusal text when it gave one.
+   * CLUB_UPDATED is announced only after a confirmed change; a confirmed
+   * no-op (the member already had that status) has nothing to announce. An
+   * already 'approved' member asked to be 'active' is answered 'approved', which
+   * is not the status asked for, so it throws rather than claiming a change.
    */
-  async updateStatus(clubId: string, userId: string, status: MemberStatus): Promise<boolean> {
+  async updateStatus(
+    clubId: string,
+    userId: string,
+    status: Extract<MemberStatus, 'active' | 'suspended' | 'banned'>,
+    reason?: string
+  ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { error } = await supabase
-      .from('club_members')
-      .update({ status })
-      .eq('club_id', resolvedId)
-      .eq('user_id', userId);
+    const { data, error } = await supabase.rpc('fn_club_set_member_status', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+      p_status: status,
+      p_reason: reason ?? null,
+    });
 
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    if (error) throw error;
+
+    const result = (Array.isArray(data) ? data[0] : data) as {
+      success?: boolean;
+      error?: string;
+      unchanged?: boolean;
+      new_status?: string;
+    } | null;
+    if (!result?.success) {
+      throw new Error(result?.error || 'The Club Did Not Accept The Status Change');
+    }
+    if (result.new_status !== status) {
+      throw new Error('The Club Did Not Confirm The Status Change');
     }
 
-    return !error;
+    // The server reports unchanged: false only when its UPDATE changed the row.
+    if (result.unchanged === false) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    }
+    return true;
   },
 
   /**

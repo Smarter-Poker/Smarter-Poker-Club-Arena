@@ -86,8 +86,19 @@ export function gameTypeLabel(variant: string | null | undefined): string | null
      hand_history rows, ~120 live table rows, every horse profile and every
      lobby filter, and renaming a key to fix a label is how a rename becomes
      an outage. Only what a player READS changes. */
-  if (v === 'pineapple') return 'Crazy Pineapple';
-  if (v === 'ofc_pineapple' || v === 'ofc') return 'OFC';
+  /* 2026-09-22 - NOTHING HERE IS OFC (owner decision: Open-Face Chinese is
+     excluded, and Crazy Pineapple is never described as OFC).
+
+     Every table that ever carried `ofc_pineapple` was a Crazy Pineapple table
+     wearing the wrong label (20260823_retire_ofc_pineapple_variant.sql), and
+     hand_history was deliberately not rewritten, so a legacy row reads as the
+     game it was. A bare `ofc` was never stored by any row and names a game this
+     platform does not run: it takes the label the platform already uses when
+     it cannot name a variant ('Poker', which SearchPage prints for a missing
+     variant and the jackpot feed defaults to), because the words path below
+     would hand the retired name back as "Ofc". */
+  if (v === 'pineapple' || v === 'ofc_pineapple') return 'Crazy Pineapple';
+  if (v === 'ofc') return 'Poker';
   if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
   // Anything unrecognised prints as words rather than as a column key.
   return v.replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HorseDecisionJournalPublisher, type HorseJournalWorker } from '../HorseDecisionJournal.js';
+import {
+  HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
+  HorseDecisionJournalPublisher,
+  type HorseJournalWorker,
+} from '../HorseDecisionJournal.js';
 import { horseJournalFailureKind } from './failure.js';
 import type { HorseJournalRecord } from './record.js';
 
@@ -108,9 +113,11 @@ describe('bounded private Horse journal retry ownership', () => {
   });
   it('bounds the queue while a writer is recovering', async () => {
     const { a, b, p, notes } = fixture();
-    a.emit({ type: 'RETRYABLE' });
-    for (let i = 0; i < 64; i++) p.record('decision', 'hand', 'turn', {});
-    expect(notes.filter((n) => n === 'phase15_journal_enqueued')).toHaveLength(64);
+    a.exit();
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS; i++) p.record('decision', 'hand', 'turn', {});
+    expect(notes.filter((n) => n === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     await tick(250);
     b.emit({ type: 'READY' });
@@ -134,7 +141,7 @@ describe('bounded private Horse journal retry ownership', () => {
         const before = writers[index]!;
         p.record('decision', 'hand', `turn-${episode}`, { episode });
         const original = structuredClone(before.batch());
-        before.emit({ type: 'RETRYABLE' });
+        before.exit();
         await tick(1000);
         expect(restart).toHaveBeenCalledTimes(episode + 1);
         const replacement = writers[index]!;
@@ -154,12 +161,12 @@ describe('bounded private Horse journal retry ownership', () => {
       p.record('execution', 'hand', 'unacknowledged', {});
       const unacknowledged = structuredClone(writers[index]!.batch());
       for (const delay of [250, 1000]) {
-        writers[index]!.emit({ type: 'RETRYABLE' });
+        writers[index]!.exit();
         await tick(delay);
         writers[index]!.emit({ type: 'READY' });
         expect(writers[index]!.batch()).toEqual(unacknowledged);
       }
-      writers[index]!.emit({ type: 'RETRYABLE' });
+      writers[index]!.exit();
       await tick(10000);
       expect(restart).toHaveBeenCalledTimes(5);
       expect(notes.filter((key) => key === 'phase15_journal_retry_exhausted')).toHaveLength(1);
@@ -168,17 +175,17 @@ describe('bounded private Horse journal retry ownership', () => {
       expect(notes).toContain('phase15_journal_shutdown_unverified');
     }
   );
-  it('allows at most two replacement workers even when each reports a transient lock', async () => {
+  it('allows at most two replacement workers even when each dies with the batch unacknowledged', async () => {
     const { a, b, c, p, notes, restart } = fixture();
-    a.emit({ type: 'RETRYABLE' });
+    a.exit();
     await tick(250);
     b.emit({ type: 'READY' });
-    b.emit({ type: 'RETRYABLE' });
+    b.exit();
     await tick(999);
     expect(restart).toHaveBeenCalledTimes(1);
     await tick(1);
     c.emit({ type: 'READY' });
-    c.emit({ type: 'RETRYABLE' });
+    c.exit();
     await tick(10000);
     expect(restart).toHaveBeenCalledTimes(2);
     expect(notes).toContain('phase15_journal_retry_exhausted');
@@ -267,7 +274,7 @@ describe('bounded private Horse journal retry ownership', () => {
   });
   it('cancels delayed replacement at the bounded shutdown deadline', async () => {
     const { a, b, p, restart, notes } = fixture();
-    a.emit({ type: 'RETRYABLE' });
+    a.exit();
     await tick(250);
     b.emit({ type: 'READY' });
     const stop = p.stop();
@@ -295,6 +302,104 @@ describe('bounded private Horse journal retry ownership', () => {
     expect(restart).toHaveBeenCalledOnce();
     b.emit({ type: 'READY' });
     b.ack('replayed');
+    const stop = p.stop();
+    b.emit({ type: 'STOPPED' });
+    await stop;
+  });
+});
+describe('a lock is not a dead writer: the live writer is asked again in place', () => {
+  const appends = (w: Writer) => w.sent.filter((m) => m.type === 'APPEND').length;
+  it('retries a locked batch on the same writer after a bounded backoff and never replaces it', async () => {
+    const { a, p, notes, restart } = fixture(),
+      original = structuredClone(a.batch());
+    // More lock refusals than the replacement budget of two, as two shards
+    // sharing one archive produce under load (2026-09-27, e6b9dc5d).
+    for (let i = 0; i < 5; i++) {
+      const before = appends(a);
+      a.emit({ type: 'RETRYABLE' });
+      // Nothing is re-sent before the backoff, even when a record arrives.
+      p.record('execution', 'hand', `turn-${i}`, { i });
+      expect(appends(a)).toBe(before);
+      await tick(HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS[i]!);
+      expect(appends(a)).toBe(before + 1);
+      expect(a.batch()[0]).toEqual(original[0]);
+    }
+    expect(restart).not.toHaveBeenCalled();
+    expect(a.terminate).not.toHaveBeenCalled();
+    a.ack();
+    expect(notes.filter((n) => n === 'phase15_journal_lock_retry')).toHaveLength(5);
+    expect(notes).toContain('phase15_journal_recorded');
+    expect(notes).not.toContain('phase15_journal_retry_scheduled');
+    expect(notes).not.toContain('phase15_journal_unavailable');
+    const stop = p.stop();
+    expect(a.sent.at(-1)).toEqual({ type: 'STOP' });
+    a.emit({ type: 'STOPPED' });
+    await stop;
+    expect(notes).not.toContain('phase15_journal_shutdown_unverified');
+  });
+  it('renews the lock budget with the exact ACK, and a batch that exhausts it falls back to the bounded replacement', async () => {
+    const { a, b, p, notes, restart } = fixture();
+    const exhaust = async (w: Writer) => {
+      for (const delay of HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS) {
+        w.emit({ type: 'RETRYABLE' });
+        await tick(delay);
+      }
+    };
+    await exhaust(a);
+    expect(restart).not.toHaveBeenCalled();
+    a.ack();
+    // A fresh batch has the whole budget again.
+    p.record('decision', 'hand', 'next', { n: 2 });
+    const next = structuredClone(a.batch());
+    await exhaust(a);
+    expect(restart).not.toHaveBeenCalled();
+    // One more refusal of the same batch: the writer is replaced, and the
+    // replacement receives the same immutable records.
+    a.emit({ type: 'RETRYABLE' });
+    await tick(250);
+    expect(restart).toHaveBeenCalledOnce();
+    expect(a.terminate).toHaveBeenCalledOnce();
+    b.emit({ type: 'READY' });
+    expect(b.batch()).toEqual(next);
+    // The replacement starts with its own lock budget.
+    b.emit({ type: 'RETRYABLE' });
+    await tick(HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS[0]!);
+    expect(restart).toHaveBeenCalledOnce();
+    b.ack('replayed');
+    expect(notes).toContain('phase15_journal_retry_recovered');
+    expect(notes).not.toContain('phase15_journal_unavailable');
+    const stop = p.stop();
+    b.emit({ type: 'STOPPED' });
+    await stop;
+  });
+  it('still replaces a writer that met a lock before it could open', async () => {
+    vi.useFakeTimers();
+    const a = new Writer(),
+      b = new Writer(),
+      restart = vi.fn(() => b);
+    const p = new HorseDecisionJournalPublisher(a, () => {}, { restart, now: () => Date.now() });
+    p.record('decision', 'hand', 'turn', {});
+    a.emit({ type: 'RETRYABLE' });
+    await tick(250);
+    expect(restart).toHaveBeenCalledOnce();
+    b.emit({ type: 'READY' });
+    b.ack();
+    const stop = p.stop();
+    b.emit({ type: 'STOPPED' });
+    await stop;
+  });
+  it('drops a pending lock retry when the writer dies meanwhile', async () => {
+    const { a, b, p, restart } = fixture(),
+      original = structuredClone(a.batch());
+    a.emit({ type: 'RETRYABLE' });
+    a.exit();
+    await tick(1000);
+    expect(restart).toHaveBeenCalledOnce();
+    // The retired writer is never asked again.
+    expect(a.sent.filter((m) => m.type === 'APPEND')).toHaveLength(1);
+    b.emit({ type: 'READY' });
+    expect(b.batch()).toEqual(original);
+    b.ack();
     const stop = p.stop();
     b.emit({ type: 'STOPPED' });
     await stop;

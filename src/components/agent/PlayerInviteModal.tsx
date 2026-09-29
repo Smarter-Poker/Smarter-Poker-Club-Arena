@@ -252,6 +252,7 @@ export default function PlayerInviteModal({
         }}
       >
         <SpadeConsole
+          onClose={onClose}
           as="div"
           eyebrow="Downline"
           title="Add Player"

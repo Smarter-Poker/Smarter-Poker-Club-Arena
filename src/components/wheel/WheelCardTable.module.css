@@ -1,0 +1,221 @@
+/* THE THREE CARDS, MACHINED FROM THE HOUSE TOKENS.
+
+   The chassis, the plates and the diamond art are the wheel's own components;
+   everything below is the card BODY, and it is built only from the --realism-*
+   tokens club-engine.css puts on :root (owner ruling 2026-09-23: no invented
+   palette). A card is the same made object every other realism surface is: a
+   lit top edge, a dark cavity under it, a gunmetal edge and a real pressed
+   state, because on a phone the press is the only confirmation there is.
+
+   NO :hover ANYWHERE (tests/no-hover-effects.law.test.ts). A card that lights
+   up under a mouse teaches a phone nothing. */
+
+.stakes {
+  margin: 0 8px 6px;
+}
+
+.table {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  gap: 2px;
+  aspect-ratio: 0.7;
+  min-height: 0;
+  padding: 8px 4px;
+  cursor: pointer;
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
+  font-family: var(--realism-font-label);
+  transition: transform calc(0.18s * var(--animation-speed, 1)) ease-out;
+}
+
+/* The specular line along the milled top edge, the same one .btn wears. */
+.card::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 1px;
+  left: 1px;
+  height: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 34%), transparent);
+}
+
+.card:active:not(:disabled) {
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 70%);
+  filter: brightness(0.94);
+  transform: translateY(1px);
+}
+
+.card:active:not(:disabled)::after {
+  opacity: 0;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
+}
+
+/* Face down: the diamond is behind the card, not on it. The numeral is what
+   the player reads, and it is the only thing lit. */
+.card[data-face='down'] .art {
+  opacity: 0.16;
+  filter: grayscale(1);
+}
+
+.card[data-face='down'] .value {
+  color: var(--realism-muted);
+}
+
+/* The card whose pick is on the wire. It dims and holds; nothing else moves,
+   so a second press has nowhere to land. */
+.card[data-turning] {
+  border-color: var(--realism-gunmetal-lit);
+}
+
+.card[data-turning] .value {
+  color: var(--realism-gold);
+}
+
+/* Turned over. The two the player did not take stay readable but unlit: they
+   are the proof of what was on the table, not a second prize. */
+.card[data-face='up'] {
+  cursor: default;
+  border-color: var(--realism-gunmetal-lit);
+  animation: card-turn calc(0.42s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.card[data-face='up'] .art {
+  opacity: 0.55;
+}
+
+.card[data-face='up'] .value {
+  color: var(--realism-chrome-hot);
+}
+
+.card[data-taken] {
+  border-color: var(--realism-gold);
+  background: linear-gradient(180deg, #16202d 0%, var(--realism-panel-raised) 100%);
+}
+
+.card[data-taken] .art {
+  opacity: 1;
+}
+
+.card[data-taken] .value,
+.card[data-taken] .rank {
+  color: var(--realism-gold);
+}
+
+.card:disabled {
+  opacity: 1;
+}
+
+.rank {
+  color: var(--realism-chrome);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 55%);
+}
+
+.art {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.value {
+  color: var(--realism-chrome);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.status {
+  margin: 8px 8px 0;
+  min-height: 1em;
+}
+
+.seal {
+  display: grid;
+  gap: 1px;
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  background: var(--realism-carbon);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
+}
+
+.mono {
+  overflow-wrap: anywhere;
+  color: var(--realism-chrome);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+@keyframes card-turn {
+  0% {
+    transform: perspective(600px) rotateY(-90deg);
+  }
+
+  60% {
+    transform: perspective(600px) rotateY(8deg);
+  }
+
+  100% {
+    transform: perspective(600px) rotateY(0);
+  }
+}
+
+/* The movement stops; the object does not flatten. Every border, bevel and
+   colour below survives, so a turned card still reads as turned. */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card[data-face='up'] {
+    animation: none;
+    transition: none;
+  }
+
+  .card:active:not(:disabled) {
+    filter: none;
+    transform: none;
+  }
+}
+
+/* Three cards at 393px: the gutter gives each one about 110px, which is a
+   readable card. Below that the art shrinks before the type does. */
+@media (max-width: 360px) {
+  .table {
+    gap: 5px;
+    padding: 0 5px;
+  }
+
+  .card {
+    padding: 6px 2px;
+  }
+
+  .rank,
+  .value {
+    font-size: 11px;
+  }
+}

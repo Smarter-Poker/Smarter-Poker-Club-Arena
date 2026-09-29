@@ -77,9 +77,19 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     // auto-scroll past the context merely because the first button is lower.
     const focusableElements =
       containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
+    /* THE CONSOLE'S X IS NEVER WHERE A DIALOG STARTS (2026-09-24). Every
+       popup now carries SpadeConsole's painted close in its head (Dan
+       2026-09-23), and the head comes first in the DOM, so "the first
+       focusable element" became the X on every trapped dialog: an operator
+       opening Edit Table landed on Close instead of Game Name. The X is the
+       last resort for initial focus - the first field or plate takes it, as
+       it did before the X existed - and Tab still reaches the X in order. */
+    const firstActionable =
+      Array.from(focusableElements).find((el) => !el.classList.contains('sc__close')) ??
+      focusableElements[0];
     const initialFocus = initialFocusSelector
       ? containerRef.current.querySelector<HTMLElement>(initialFocusSelector)
-      : focusableElements[0];
+      : firstActionable;
     let rafId: number | null = null;
     if (initialFocus) {
       // Small delay to allow the modal animation to start

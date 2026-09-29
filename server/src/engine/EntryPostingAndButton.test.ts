@@ -259,6 +259,9 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     // covers the poll in between; this is the durable answer.
     const engine = strip(read('src/engine/ServerTableEngine.ts'));
     expect(engine).toMatch(/post_bb_deferred_user_ids: Array\.from\(this\.postBBWhenClear\)/);
+    // 2026-09-24: and the players already released to post on the next deal,
+    // who are in neither of the other two lists and were painted SITTING OUT.
+    expect(engine).toMatch(/posting_bb_user_ids: Array\.from\(this\.postingBBToEnter\)/);
   });
 });
 
@@ -339,7 +342,17 @@ describe('a new player never receives the button', () => {
     // seat — the same class of bug the shared sbSeat/bbSeat computation was
     // introduced to kill. Counted as "at least", not exactly: a future caller
     // that correctly adopts the shared helper must not fail this test.
-    expect((BASE.match(/this\.predictButtonSeat\(/g) || []).length).toBeGreaterThanOrEqual(3);
+    //
+    // 2026-09-25 (the dead button at every table size): the blind predictors
+    // now read predictBlindSeats, which names the button AND both blind seats
+    // in one place (a tournament small blind can be dead, which no walk from
+    // the button can express) and itself goes through predictButtonSeat.
+    // Either entry point is the shared definition.
+    const shared = BASE.match(/this\.predict(ButtonSeat|BlindSeats)\(/g) || [];
+    expect(shared.length).toBeGreaterThanOrEqual(3);
+    expect(sliceMethod(BASE, 'protected getSBSeatIndex')).toMatch(/this\.predictBlindSeats\(/);
+    expect(sliceMethod(BASE, 'protected getBBSeatIndex')).toMatch(/this\.predictBlindSeats\(/);
+    expect(sliceMethod(BASE, 'protected getButtonSeatIndex')).toMatch(/this\.predictButtonSeat\(/);
     // The horse auto-cashout predicts the next big blind to decide when a horse
     // stands up. It was a FOURTH independent getNextSeat walk over the raw
     // roster, so once new players stopped being button-eligible it could name a

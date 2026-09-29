@@ -190,9 +190,7 @@ export default function WaitlistBanner() {
                   }
                 : undefined
             }
-            aria-label={
-              held ? `Your Seat Is Held For ${left} More Seconds. Tap To Take It.` : undefined
-            }
+            aria-label={held ? 'Your Seat Is Held. Tap To Take It.' : undefined}
             style={{
               background:
                 'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 30, 60, 0.95) 100%)',
@@ -239,19 +237,22 @@ export default function WaitlistBanner() {
                 }}
               >
                 {held ? (
+                  /* THE CLOCK IS INTERNAL (Dan 2026-09-23: 'THE "SEAT HELD" SHOULD
+                     BE AN "INTERNAL CLOCK" NOT A FORWARD FACING CLOCK COUNTING
+                     DOWN'). The hold still expires on the server's instant -
+                     the tick above drops the card at zero and the dot and
+                     border turn red inside the last ten seconds - but the
+                     number itself is not printed. A player is told the seat is
+                     held and what to do about it, not read a countdown. */
                   <>
                     Seat Held{' '}
                     <span
-                      data-testid="waitlist-hold-countdown"
                       style={{
                         color: left <= 10 ? '#ff5c5c' : '#00d4ff',
-                        fontSize: '0.85rem',
-                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      0:{String(left).padStart(2, '0')}
-                    </span>{' '}
-                    Tap To Take It
+                      Tap To Take It
+                    </span>
                   </>
                 ) : (
                   <>

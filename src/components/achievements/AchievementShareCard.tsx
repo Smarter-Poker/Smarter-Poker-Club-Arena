@@ -16,7 +16,7 @@ import React, { useRef, useCallback, useState } from 'react';
 import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
 import { reportError } from '../../utils/errorReporter';
-import { isNativePlatform } from '../../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import { titleCase } from '../../utils/titleCase';
 
@@ -182,7 +182,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
       // THE APP (2026-09-08): Android's webview has no navigator.share and
       // neither webview honours <a download>. The system share sheet, via
       // Filesystem + Share (src/lib/native/share.ts).
-      if (isNativePlatform()) {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
         const png = await new Promise<Blob | null>((resolve) =>
           canvas.toBlob(resolve, 'image/png')
         );
@@ -229,6 +229,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Club Arena"
           title="Share Achievement"
           titleId="share-card-title"

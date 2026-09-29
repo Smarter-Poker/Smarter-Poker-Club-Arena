@@ -415,6 +415,10 @@ const EXPORTER_JOBS = {
 // silently and then counted as checked. A line that says more than it looked
 // at is the 10.86 defect in its purest form.
 //
+// 2026-09-26: those 22 annotations now name documents under docs/runbooks/,
+// written from each alert's expression and producer, and are checked here as
+// files like every other repo-relative runbook.
+//
 // So: still no fetching during a build. But the host is now checked against
 // the hostnames this repository's own Caddyfiles serve, which costs nothing
 // and catches a target no one serves, and the summary now states exactly what
@@ -491,6 +495,6 @@ if (httpCount) {
   // that question on the box, and exits 2 rather than pass when it cannot.
   console.log(
     `NOTE: ${httpCount} runbook URL(s) on ${httpAlerts} rule(s) are http(s) and were NOT fetched by this build. ` +
-      `scripts/ci/check-alert-rules-match.mjs fetches them where it has the network.`
+      `scripts/ci/check-runbook-links.mjs resolves them after the deploy, where it has the network.`
   );
 }

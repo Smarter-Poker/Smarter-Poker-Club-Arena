@@ -5,6 +5,7 @@
 
 import { useRef, useCallback, useEffect } from 'react';
 import './PreActionBar.css';
+import { TapHaptic } from '../haptics/TapHaptic';
 
 // Phase 2 T1-08: spec §5.3 calls for a circular dot ABOVE the label that
 // fills when the toggle is active. Replaces the inline check character.
@@ -195,6 +196,7 @@ export default function PreActionBar({
         >
           <ToggleDot active={preAction === 'fold'} />
           <span className="pre-action-btn__label">{foldLabel}</span>
+          <TapHaptic radius="8px" />
         </button>
 
         {/* Bible V8 §4.15: auto_check */}
@@ -208,6 +210,7 @@ export default function PreActionBar({
           >
             <ToggleDot active={preAction === 'check'} />
             <span className="pre-action-btn__label">Check</span>
+            <TapHaptic radius="8px" />
           </button>
         )}
 
@@ -226,6 +229,7 @@ export default function PreActionBar({
             {/* The branch is already inside `currentBet > 0`; the second test
                 that used to be here could never be false. */}
             <span className="pre-action-btn__label">Call {currentBet.toLocaleString()}</span>
+            <TapHaptic radius="8px" />
           </button>
         )}
 
@@ -239,6 +243,7 @@ export default function PreActionBar({
         >
           <ToggleDot active={preAction === 'callAny'} />
           <span className="pre-action-btn__label">Call Any</span>
+          <TapHaptic radius="8px" />
         </button>
       </div>
     </div>

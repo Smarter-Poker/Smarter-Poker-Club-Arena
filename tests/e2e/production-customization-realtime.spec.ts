@@ -6,9 +6,15 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test';
+import { rawProfileHeading } from './support/rawProfileHeading';
+import { readProfileInterfaceMode } from './support/profileInterfaceMode';
+import { walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { observeAccountRealtime } from './support/accountRealtimeObservation';
+import { installAccountRealtimeInterruption } from './support/accountRealtimeInterruption';
+import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -16,6 +22,7 @@ import {
   requireCustomizationCertificationEnvironment,
   type CustomizationCertificationEnvironment,
   type TemporaryCustomizationAccount,
+  withCauses,
 } from './support/temporaryCustomizationAccount';
 
 type Appearance = {
@@ -83,6 +90,51 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 };
 
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
+const PRESENCE_TOPIC_PREFIX = 'cert-presence:';
+const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
+// Record only the expected cosmetic signal, never session/auth websocket frames.
+const appearanceSignalReceived = new WeakMap<Page, boolean>();
+const accountSignalReceived = new WeakMap<Page, boolean>();
+function observeAppearanceSignal(page: Page, userId: string) {
+  appearanceSignalReceived.set(page, false);
+  accountSignalReceived.set(page, false);
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      try {
+        const frame = JSON.parse(String(payload));
+        const event = Array.isArray(frame) ? frame[3] : frame.event;
+        const body = Array.isArray(frame) ? frame[4] : frame.payload;
+        if (
+          event === 'broadcast' &&
+          body?.event === 'appearance_changed' &&
+          body?.payload?.user_id === userId
+        )
+          appearanceSignalReceived.set(page, true);
+        if (
+          event === 'broadcast' &&
+          body?.event === 'account_changed' &&
+          body?.payload?.user_id === userId
+        )
+          accountSignalReceived.set(page, true);
+      } catch {
+        /* Non-JSON websocket frames are unrelated to appearance. */
+      }
+    })
+  );
+}
+async function expectHeaderPortrait(page: Page, url: string) {
+  const portrait = page.locator('button[aria-label="My Profile"] span img').first();
+  await expect(portrait).toHaveAttribute('src', url, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  await expect
+    .poll(
+      () =>
+        portrait.evaluate(
+          (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+        ),
+      { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+    )
+    .toBe(true);
+}
 
 function preview(studio: Locator) {
   return studio.locator('.studio-game-preview');
@@ -222,6 +274,8 @@ async function signIn(
   account: TemporaryCustomizationAccount
 ) {
   const page = await context.newPage();
+  accountObservations.set(page, observeAccountRealtime(page, account.id, ''));
+  observeAppearanceSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
   const protectedURL = new URL('notifications', baseURL).toString();
@@ -401,6 +455,8 @@ test.describe('production Table Studio realtime contract', () => {
     let otherOriginal: SavedStudioState | undefined;
     let journeyFailure: unknown;
     const teardownFailures: unknown[] = [];
+    const presenceTransports: Array<Awaited<ReturnType<typeof createReservedPresenceTransport>>> =
+      [];
 
     try {
       // Each run owns both players. Post-deploy workflows intentionally do not
@@ -411,11 +467,33 @@ test.describe('production Table Studio realtime contract', () => {
       // the exact same two-device/isolation proof without shared mutable state.
       primaryAccount = await createTemporaryCustomizationAccount(environment, 'theme-primary', 0);
       otherAccount = await createTemporaryCustomizationAccount(environment, 'theme-other', 0);
+      // The shared fixture sets an Arena avatar, but intentionally does not opt
+      // it into the global header. Establish this test's explicit baseline
+      // through each reserved player's own authenticated session before opening
+      // the receiving browsers; never depend on a production column default.
+      for (const account of [primaryAccount, otherAccount]) {
+        const baseline = await account.client
+          .from('profiles')
+          .update({ use_avatar_as_profile_pic: true })
+          .eq('id', account.id)
+          .select('arena_avatar_url,use_avatar_as_profile_pic');
+        if (baseline.error) throw baseline.error;
+        expect(baseline.data).toEqual([
+          {
+            arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
+            use_avatar_as_profile_pic: true,
+          },
+        ]);
+      }
       primaryDesktop = await browser.newContext({
         ...devices['Desktop Chrome'],
         baseURL,
         storageState: { cookies: [], origins: [] },
       });
+      const interruptPrimaryRealtime = await installAccountRealtimeInterruption(
+        primaryDesktop,
+        environment.supabaseUrl
+      );
       primaryMobile = await browser.newContext({
         ...devices['iPhone 13'],
         baseURL,
@@ -442,6 +520,52 @@ test.describe('production Table Studio realtime contract', () => {
       otherOriginal = await captureState(otherStudio);
       const otherBefore = otherOriginal.appearance;
       console.log('[customization-realtime] account baselines captured');
+
+      // A third authenticated session makes the edit. Neither receiving browser
+      // is reloaded, focused, or sent an artificial bus event. Both must receive
+      // the real private database signal and render its authorized profile read.
+      const originalPortrait = '/avatars/table/free_samurai@2x.webp';
+      const changedPortrait = '/avatars/table/free_shark@2x.webp';
+      await expectHeaderPortrait(primaryPage, originalPortrait);
+      await expectHeaderPortrait(mobilePage, originalPortrait);
+      await expectHeaderPortrait(otherPage, originalPortrait);
+      appearanceSignalReceived.set(primaryPage, false);
+      appearanceSignalReceived.set(mobilePage, false);
+      const edited = await primaryAccount.client
+        .from('profiles')
+        .update({ arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true })
+        .eq('id', primaryUserId);
+      if (edited.error) throw edited.error;
+      await expect
+        .poll(() => appearanceSignalReceived.get(primaryPage!), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expect
+        .poll(() => appearanceSignalReceived.get(mobilePage), {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(true);
+      await expectHeaderPortrait(primaryPage, changedPortrait);
+      await expectHeaderPortrait(mobilePage, changedPortrait);
+      await expectHeaderPortrait(otherPage, originalPortrait);
+      const appearanceRows = await readServiceRows<{
+        arena_avatar_url: string;
+        use_avatar_as_profile_pic: boolean;
+      }>(
+        environment,
+        'profiles',
+        new URLSearchParams({
+          select: 'arena_avatar_url,use_avatar_as_profile_pic',
+          id: `eq.${primaryUserId}`,
+        })
+      );
+      expect(appearanceRows).toEqual([
+        { arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true },
+      ]);
+      console.log(
+        '[customization-realtime] profile signal reached both devices and preserved player isolation'
+      );
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
@@ -499,12 +623,236 @@ test.describe('production Table Studio realtime contract', () => {
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);
       console.log('[customization-realtime] second player remained isolated');
+
+      // Same real third session, now exercising the separate metadata/settings
+      // carrier on mounted profiles. No synthetic bus emission or read polling.
+      for (const page of [primaryPage, mobilePage, otherPage]) {
+        await page.goto(new URL('profile', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href, {
+          waitUntil: 'domcontentloaded',
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+        await expect(page.locator('#profile-heading')).toBeVisible({
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+      }
+      const otherName = await rawProfileHeading(otherPage);
+      const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);
+      await primaryPage.emulateMedia({ colorScheme: 'light' });
+      await mobilePage.emulateMedia({ colorScheme: 'dark' });
+      accountSignalReceived.set(primaryPage, false);
+      accountSignalReceived.set(mobilePage, false);
+      const alias = `Signal${primaryUserId.slice(0, 8)}`;
+      const accountEdit = await primaryAccount.client
+        .from('profiles')
+        .update({
+          alias,
+          settings: { theme: 'auto', achievementNotifications: false, settlementAlerts: false },
+        })
+        .eq('id', primaryUserId);
+      if (accountEdit.error) throw accountEdit.error;
+      for (const page of [primaryPage, mobilePage]) {
+        await expect
+          .poll(() => accountSignalReceived.get(page), { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+          .toBe(true);
+        await expect(page.locator('#profile-heading')).toHaveText(alias, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        });
+        await expect
+          .poll(
+            () =>
+              page.evaluate(() =>
+                JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')
+              ),
+            { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+          )
+          .toMatchObject({
+            theme: 'auto',
+            achievementNotifications: false,
+            settlementAlerts: false,
+          });
+      }
+      await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'light');
+      await expect(mobilePage.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await primaryPage.emulateMedia({ colorScheme: 'dark' });
+      await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
+      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode);
+      const accountReadback = await primaryAccount.client
+        .from('profiles')
+        .select('alias,settings')
+        .eq('id', primaryUserId)
+        .maybeSingle();
+      if (accountReadback.error) throw accountReadback.error;
+      expect(accountReadback.data).toMatchObject({
+        alias,
+        settings: { theme: 'auto', achievementNotifications: false, settlementAlerts: false },
+      });
+      console.log(
+        '[account-realtime] private metadata and preferences reached both devices, Auto followed each device, and the other player stayed isolated'
+      );
+
+      // UnionDetailPage is owner-only even for a public union. Reserved players
+      // must not bypass that route or create/fund a union for certification.
+      // This is real SDK transport proof on a disposable topic, separate from
+      // the PresenceService unit contracts and the unavailable owner-page UI.
+      const presenceTopic = `${PRESENCE_TOPIC_PREFIX}${primaryUserId}`;
+      const primaryPresence = await createReservedPresenceTransport(
+        environment,
+        primaryAccount,
+        presenceTopic
+      );
+      presenceTransports.push(primaryPresence);
+      const otherPresence = await createReservedPresenceTransport(
+        environment,
+        otherAccount,
+        presenceTopic
+      );
+      presenceTransports.push(otherPresence);
+      await expect
+        .poll(() => primaryPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([otherAccount.id, primaryUserId].sort());
+      await expect
+        .poll(() => otherPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([otherAccount.id, primaryUserId].sort());
+      const quietTracks = primaryPresence.state.tracks;
+      const quietJoins = primaryPresence.state.joins;
+      const quietHeartbeats = primaryPresence.state.heartbeatReplies;
+      expect(quietTracks).toBeGreaterThan(0);
+      // The old application producer fired every60s. Actual service regression
+      // protection remains in PresenceService.test.ts; this interval separately
+      // proves the SDK transport stays live without republishing Presence.
+      await primaryPage.waitForTimeout(65_000);
+      expect(primaryPresence.state.tracks).toBe(quietTracks);
+      expect(primaryPresence.state.joins).toBe(quietJoins);
+      expect(primaryPresence.state.heartbeatReplies).toBeGreaterThan(quietHeartbeats);
+      expect(primaryPresence.state.errors).toEqual([]);
+      await otherPresence.leave();
+      await expect
+        .poll(() => primaryPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([primaryUserId]);
+      expect(primaryPresence.state.leaves).toBeGreaterThan(0);
+      await otherPresence.reconnect();
+      await expect
+        .poll(() => primaryPresence.state.peers, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toEqual([otherAccount.id, primaryUserId].sort());
+      expect(otherPresence.state.tracks).toBeGreaterThan(1);
+      expect(otherPresence.state.errors).toEqual([]);
+      console.log(
+        '[presence-transport] real authenticated SDK join, leave and fresh connection rejoin passed on a reserved topic; unchanged Presence stayed quiet for65s while heartbeat replies continued; owner-only union UI was not exercised'
+      );
+      const primaryObserved = accountObservations.get(primaryPage)!;
+
+      // Read-only balance acceptance. No financial update is induced to make
+      // a cross-device event appear. Prove the real own-row subscription and
+      // authorized reads, retention while offline, then reads after rejoin.
+      await expect
+        .poll(() => primaryObserved.membershipSubscriptions, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => primaryObserved.membershipReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(0);
+      await expect
+        .poll(() => primaryObserved.balanceReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(0);
+      const persistedWallet = () =>
+        primaryPage!.evaluate(() => JSON.parse(localStorage.getItem('wallet-store') || '{}').state);
+      await expect
+        .poll(async () => (await persistedWallet())?._balancesUserId, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBe(primaryUserId);
+      const walletBefore = await persistedWallet();
+      const beforeReconnect = { ...primaryObserved };
+      await primaryDesktop.setOffline(true);
+      expect((await persistedWallet()).balances).toEqual(walletBefore.balances);
+      await primaryDesktop.setOffline(false);
+      // Offline HTTP emulation can preserve an existing Chromium WebSocket.
+      // Interrupt the real connection explicitly; the SDK owns rejoin and the
+      // consumers must perform their own authoritative reads after it.
+      await interruptPrimaryRealtime();
+      await expect
+        .poll(() => primaryObserved.socketCloses, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.socketCloses);
+      await expect
+        .poll(() => primaryObserved.membershipSubscriptions, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(beforeReconnect.membershipSubscriptions);
+      await expect
+        .poll(() => primaryObserved.membershipReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.membershipReads);
+      await expect
+        .poll(() => primaryObserved.balanceReads, { timeout: PRODUCTION_RESPONSE_TIMEOUT })
+        .toBeGreaterThan(beforeReconnect.balanceReads);
+      await expect
+        .poll(async () => (await persistedWallet())._balancesAt, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        })
+        .toBeGreaterThan(walletBefore._balancesAt);
+      const authorizedMembers = await primaryAccount.client
+        .from('club_members')
+        .select('chip_balance,promo_balance,locked_chips')
+        .eq('user_id', primaryUserId);
+      const authorizedAgents = await primaryAccount.client
+        .from('agents')
+        .select('agent_wallet_balance')
+        .eq('user_id', primaryUserId);
+      if (authorizedMembers.error) throw authorizedMembers.error;
+      if (authorizedAgents.error) throw authorizedAgents.error;
+      const total = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.chip_balance || 0),
+        0
+      );
+      const locked = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.locked_chips || 0),
+        0
+      );
+      const promo = (authorizedMembers.data || []).reduce(
+        (sum, row) => sum + Number(row.promo_balance || 0),
+        0
+      );
+      const business = (authorizedAgents.data || []).reduce(
+        (sum, row) => sum + Number(row.agent_wallet_balance || 0),
+        0
+      );
+      const walletAfter = await persistedWallet();
+      expect(walletAfter.balances.PLAYER).toMatchObject({
+        total,
+        locked,
+        available: Math.max(0, total - locked),
+      });
+      expect(walletAfter.balances.PROMO).toMatchObject({ total: promo, available: promo });
+      expect(walletAfter.balances.BUSINESS).toMatchObject({ total: business, available: business });
+      await primaryPage.goto(
+        new URL('wallet', baseURL.endsWith('/') ? baseURL : `${baseURL}/`).href,
+        { waitUntil: 'domcontentloaded' }
+      );
+      await expect(walletPlayableAmount(primaryPage)).toHaveText(
+        Math.max(0, total - locked).toLocaleString(),
+        {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        }
+      );
+      console.log(
+        '[member-balance] authenticated own-row subscription and initial/reconnect reads reached the persistent wallet and rendered amount; no financial mutation induced'
+      );
     } catch (error) {
       journeyFailure = error;
     } finally {
       // Close all realtime sockets before hard-deleting the reserved Auth and
       // database rows. Cleanup must still run when the journey itself fails.
       const closed = await Promise.allSettled([
+        ...presenceTransports.map((transport) => transport.close()),
         primaryDesktop?.close(),
         primaryMobile?.close(),
         otherPlayer?.close(),
@@ -526,17 +874,24 @@ test.describe('production Table Studio realtime contract', () => {
     }
 
     if (journeyFailure && teardownFailures.length) {
-      const failureSummary = [journeyFailure, ...teardownFailures]
-        .map((failure) => (failure instanceof Error ? failure.message : String(failure)))
-        .join(' | ');
       throw new AggregateError(
         [journeyFailure, ...teardownFailures],
-        `Customization certification journey and cleanup both failed: ${failureSummary}`
+        withCauses('Customization certification journey and cleanup both failed:', [
+          journeyFailure,
+          ...teardownFailures,
+        ])
       );
     }
     if (journeyFailure) throw journeyFailure;
     if (teardownFailures.length) {
-      throw new AggregateError(teardownFailures, 'Customization certification cleanup failed.');
+      /* The combined branch above already folded its causes into the title.
+         This one did not, so a teardown that failed ALONE still printed a bare
+         name - the same trap one level up (10.86 rule 4). Both branches now
+         go through the one helper. */
+      throw new AggregateError(
+        teardownFailures,
+        withCauses('Customization certification cleanup failed.', teardownFailures)
+      );
     }
   });
 });

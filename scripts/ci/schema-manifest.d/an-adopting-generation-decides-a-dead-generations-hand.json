@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-mtt-0922/fix/an-adopting-generation-decides-a-dead-generations-hand. The engine's adoption now calls public.fn_f06_abort_abandoned_generation, which production holds (applied 2026-09-22 as migration 20260922123913_an_abandoned_generation_hand_is_voided_from_rows and amended by 20260922132318_a_late_chair_a_bought_addon_and_a_foreign_park_do_not_hold_an_event_frozen); the base snapshot predates it.",
+  "functions": ["fn_f06_abort_abandoned_generation"]
+}

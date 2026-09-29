@@ -19,6 +19,15 @@
  * to serve it, and no document exists behind any of the slugs either.
  * EngineDown, PokerTablesFrozen, SpinPrizeUnpaid and sixteen others carry one.
  *
+ * 2026-09-26: the rules now point at documents in this repository instead.
+ * Nineteen runbooks were written under docs/runbooks/ from each alert's
+ * expression and producer, and all 22 annotations became repo-relative paths.
+ * So this command now resolves EVERY runbook target, not only http(s) ones: a
+ * repo-relative path must name a file here, an http(s) link into this
+ * repository is resolved the same way, and anything else is fetched. A scan
+ * that finds no runbook at all is still broken, not clean - but "no http(s)
+ * link" is now the healthy state and no longer means that.
+ *
  * This is its own command rather than another check inside
  * check-alert-rules-match.mjs, because that one's unit test replaces `curl`
  * with an offline fixture that answers Prometheus and Alertmanager. A second
@@ -54,8 +63,8 @@ export function ownRepoPath(url) {
   return m ? decodeURIComponent(m[1].split('#')[0]) : null;
 }
 
-/** Every distinct http(s) runbook URL declared in the rule files, with owners. */
-export function declaredRunbookUrls(dir = MON) {
+/** Every distinct runbook target declared in the rule files, http(s) or path, with owners. */
+export function declaredRunbooks(dir = MON) {
   const out = new Map();
   for (const f of readdirSync(dir).filter((n) => /\.ya?ml$/.test(n))) {
     let owner = '(unnamed)';
@@ -63,12 +72,17 @@ export function declaredRunbookUrls(dir = MON) {
       const named = /^\s*-\s*(?:alert|record):\s*['"]?([\w:.-]+)/.exec(line);
       if (named) owner = named[1];
       const rb = /^\s*runbook:\s*['"]?([^'"\s]+)/.exec(line);
-      if (!rb || !/^https?:\/\//.test(rb[1])) continue;
+      if (!rb) continue;
       if (!out.has(rb[1])) out.set(rb[1], []);
       out.get(rb[1]).push(`${f}:${owner}`);
     }
   }
   return out;
+}
+
+/** Every distinct http(s) runbook URL declared in the rule files, with owners. */
+export function declaredRunbookUrls(dir = MON) {
+  return new Map([...declaredRunbooks(dir)].filter(([target]) => /^https?:\/\//.test(target)));
 }
 
 /** The status a URL answers with, over the box's network when given an ssh target. */
@@ -88,16 +102,21 @@ function statusOf(url) {
 }
 
 export function main() {
-  const runbooks = declaredRunbookUrls();
+  const runbooks = declaredRunbooks();
   if (runbooks.size === 0) {
     // A scan that matches nothing is broken, not clean. Both of this
     // repository's monitoring checks have been bitten by exactly that.
-    console.error('[runbook-links] no http(s) runbook found in infra/monitoring - the scan is broken.');
+    console.error('[runbook-links] no runbook found in infra/monitoring - the scan is broken.');
     process.exit(2);
   }
 
   const dead = [];
   for (const [url, owners] of runbooks) {
+    if (!/^https?:\/\//.test(url)) {
+      // A repo-relative document: resolved as a file, never fetched.
+      if (!existsSync(join(ROOT, url))) dead.push([url, 'no such file in this repo', owners]);
+      continue;
+    }
     const rel = ownRepoPath(url);
     if (rel) {
       if (!existsSync(join(ROOT, rel))) dead.push([url, 'no such file in this repo', owners]);
@@ -134,7 +153,7 @@ export function main() {
     process.exit(1);
   }
 
-  console.log(`[runbook-links] OK - ${runbooks.size} runbook link(s) answer.`);
+  console.log(`[runbook-links] OK - ${runbooks.size} runbook target(s) resolve.`);
   process.exit(0);
 }
 

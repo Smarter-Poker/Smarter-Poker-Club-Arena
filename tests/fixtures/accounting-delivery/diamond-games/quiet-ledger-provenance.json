@@ -1,0 +1,17 @@
+{
+  "captured_at": "2026-09-21T20:30:00Z",
+  "source": "supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql, section D3, copied verbatim; installed-definition md5 witnesses computed by loading that text into the private PostgreSQL 17 fixture",
+  "purpose": "The captured invoice-functions.sql carries the pre-20260921052548 roster (fn_accounting_party_users md5 2436b25400e0ee73dbbe3158fdb47b0d). The gated roster is what makes an authenticated player's union chip prize raise accounting_invoice_recipient_missing before migration 20260921202827; tests/sql/diamond-spins-quiet-ledger-before.sql reproduces it and tests/sql/diamond-spins-quiet-ledger.sql proves it cannot occur afterwards.",
+  "functions": [
+    {
+      "name": "public.fn_union_overseer_of_record(uuid,uuid)",
+      "installed_definition_md5": "7f892f09fed9a0a768b2741a69ddf6b2",
+      "acl": "REVOKE PUBLIC, anon, authenticated; GRANT EXECUTE TO service_role (owner postgres retains EXECUTE)"
+    },
+    {
+      "name": "public.fn_accounting_party_users(text,uuid)",
+      "installed_definition_md5": "dd8941d9caba28d258313dfdb0499c82",
+      "acl": "owner postgres; REVOKE PUBLIC, anon, authenticated; GRANT EXECUTE TO postgres, service_role"
+    }
+  ]
+}

@@ -16,7 +16,8 @@ generation while still carrying every conjunct that proves no move is in
 flight and still replaying a pending move to a receipt; both preparation
 blocker classes share one bound instead of only the per-engine one; and the
 release gate asks the database whether a hand is actually in the air, by an
-allow-list of preparation reasons only, with the engine's own
+allow-list of bounded reasons only (`BOUNDED_ONLY`: the two preparation
+reasons and, since 2026-09-25, `stopped_bank_custody_stuck`), with the engine's own
 `handsInFlightTotal` as a second witness, freshness-bounded so a month-old
 incomplete snapshot is not mistaken for a live hand, three outcomes rather
 than two, failing closed on "could not tell", and with no flag, variable or

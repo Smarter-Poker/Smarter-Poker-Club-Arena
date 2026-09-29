@@ -199,6 +199,7 @@ export function LeaderboardPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           crest="flat"
           eyebrow="Table Rankings"
           title={title}

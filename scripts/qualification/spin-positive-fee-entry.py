@@ -90,14 +90,59 @@ def sql_argv(PG, source, execution, ordinary, tournament, path, user='postgres')
             '-c', settings, '-f', str(source / path)]
 
 
-def body_plan(PG, source, execution, ordinary, tournament):
+HOUSE_BOARD = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+HOUSE_FIXTURE = 'scripts/qualification/spin-horse-platform-paid-entry.sql'
+
+
+def house_board_fixture(original):
+    # The genuine chip-house allowlist uses an immutable club identity. Keep the
+    # fresh execution, union, operation keys and principals separate from it.
+    replacements = [
+        (":'execution_uuid'::uuid execution,", ":'execution_uuid'::uuid execution,\n  '" + HOUSE_BOARD + "'::uuid club,"),
+        ("SELECT execution,'Spin expiry host '", "SELECT club,'Spin expiry host '"),
+        ('SELECT execution,execution FROM spin_q_inputs;', 'SELECT execution,club FROM spin_q_inputs;'),
+        ("SELECT q.execution,u.id,'player'", "SELECT q.club,u.id,'player'"),
+        ("'club',execution", "'club',club"),
+        ("'club',q.execution", "'club',q.club"),
+        ('m.holder_id=q.execution', 'm.holder_id=q.club'),
+        ('to_entity_id=q.execution', 'to_entity_id=q.club'),
+        ('from_entity_id=q.execution', 'from_entity_id=q.club'),
+        ('club_id=q.execution', 'club_id=q.club'),
+        ('FROM public.clubs WHERE id=q.execution', 'FROM public.clubs WHERE id=q.club'),
+        ('fn_club_bank_send(execution,', 'fn_club_bank_send(club,'),
+        ("'club_id',execution", "'club_id',club"),
+        ("'club_id'=q.execution::text", "'club_id'=q.club::text"),
+        ("'host_club_id',q.execution", "'host_club_id',q.club"),
+    ]
+    for before, after in replacements:
+        require(before in original, 'house fixture source pattern changed: ' + before)
+        original = original.replace(before, after)
+    # The reserve is genuinely union-owned (fn_spin_reserve_owner reads clubs.union_id).
+    # Its legacy club_id column names the reserve owner, not the host club.
+    for before, after in [
+        ('WHERE p.club_id=q.club', 'WHERE p.club_id=q.execution'),
+        ('ON p.club_id=q.club', 'ON p.club_id=q.execution'),
+        ('FROM public.spin_reserve_ledger r CROSS JOIN spin_q_inputs q\n    WHERE r.club_id=q.club',
+         'FROM public.spin_reserve_ledger r CROSS JOIN spin_q_inputs q\n    WHERE r.club_id=q.execution')]:
+        require(before in original, 'reserve ownership pattern changed')
+        original = original.replace(before, after)
+    return original
+
+
+def body_plan(PG, source, execution, ordinary, tournament, *, platform_board=False):
+    require(type(platform_board) is bool, "house fixture variant must be explicit boolean")
+    fixture = FIXTURE
+    if platform_board:
+        fixture = HOUSE_FIXTURE
+        require((source / fixture).read_text() == house_board_fixture((source / FIXTURE).read_text()),
+                "house fixture must differ only in documented initial club identity")
     specs = [('fee_current_catalog_restore', CURRENT + 'catalog-restore.sql'),
              ('fee_current_catalog_readback', CURRENT + 'catalog-readback.sql'),
              ('fee_current_recognition_restore', CURRENT + 'recognition-restore.sql'),
              ('fee_current_recognition_readback', CURRENT + 'recognition-readback.sql'),
              ('fee_provider_restore', BASE + 'provider-supplement.sql'),
              ('fee_provider_readback', BASE + 'catalog-readback.sql'),
-             ('fee_actual_paid_entry', FIXTURE)]
+             ('fee_actual_paid_entry', fixture)]
     sequence = sql_argv(PG, source, execution, ordinary, tournament,
                         BASE + 'hand-id-sequence.sql', user='fixture_bootstrap')
     position = sequence.index('-c')
@@ -114,7 +159,7 @@ def load_oracle(source):
     return module
 
 
-def validate_outputs(source, work, execution, tournament):
+def validate_outputs(source, work, execution, tournament, *, platform_board=False):
     sequence_raw = (work / 'fee_hand_id_sequence.stdout').read_bytes()
     sequence_values = [decode(line) for line in sequence_raw.splitlines() if line.lstrip().startswith(b'{')]
     sequence, = sequence_values
@@ -149,7 +194,8 @@ def validate_outputs(source, work, execution, tournament):
                 'historical_qualification', 'production_qualification', 'full_qualification')),
             'current paid-entry provider not independently observed')
     original = (work / 'fee_actual_paid_entry.stdout').read_bytes()
-    summary = load_oracle(source).validate_output(original, execution, tournament)
+    summary = load_oracle(source).validate_output(original, execution, tournament,
+        expected_club=HOUSE_BOARD if platform_board else None)
     return {'sequence': sequence, 'sequence_stdout_sha256': sha(sequence_raw),
             'catalog': catalog, 'entry': summary,
             'catalog_stdout_sha256': sha(catalog_raw), 'entry_stdout_sha256': sha(original),
@@ -157,7 +203,7 @@ def validate_outputs(source, work, execution, tournament):
             'production_qualification': False}
 
 
-def validate_stages(receipt, PG, source, execution, ordinary, tournament):
+def allocation_plan(PG, source, execution, ordinary, tournament):
     # Exact original allocator sequence: bootstrap schema/authority first,
     # one fee-only bootstrap sequence stage and seven nonsuperuser entry stages,
     # then successful original cleanup. A
@@ -204,7 +250,14 @@ def validate_stages(receipt, PG, source, execution, ordinary, tournament):
                 '-v', 'execution_uuid=' + execution, '-v', 'ordinary_user_uuid=' + ordinary,
                 '-v', 'tournament_uuid=' + tournament, '-f', str(path)]
         plan.append((name, argv))
-    plan += body_plan(PG, source, execution, ordinary, tournament)
+    return plan
+
+
+def validate_stages(receipt, PG, source, execution, ordinary, tournament, *, platform_board=False):
+    work = source.parent / 'work'
+    data = work / 'data'
+    plan = allocation_plan(PG, source, execution, ordinary, tournament)
+    plan += body_plan(PG, source, execution, ordinary, tournament, platform_board=platform_board)
     plan += [('pg_stop_fast', [str(PG / 'pg_ctl'), '-D', str(data), '-w', '-t', '10', '-m', 'fast', 'stop']),
              ('pg_stopped_readback', [str(PG / 'pg_ctl'), '-D', str(data), 'status'])]
     stages = receipt['stages']
@@ -238,6 +291,6 @@ def validate_stages(receipt, PG, source, execution, ordinary, tournament):
                     and sha((work / (name + '.' + stream)).read_bytes()) == pin,
                     'original paid-entry stream changed: ' + name + '.' + stream)
     require(receipt['positive_fee_entry_qualification'] == validate_outputs(
-        source, source.parent / 'work', execution, tournament),
+        source, source.parent / 'work', execution, tournament, platform_board=platform_board),
         'paid-entry summary differs from original evidence')
     return []

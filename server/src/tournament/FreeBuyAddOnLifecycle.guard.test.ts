@@ -221,13 +221,19 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(resumeBreak).toMatch(
       /if \(addOnBreakStillActive\) \{[\s\S]*?this\.addOnBreakOwnsPause = true;[\s\S]*?this\.addOnBreakOwnsLevelClock = true;/
     );
-    expect(resumeBreak).toMatch(/if \(!this\.handForHandActive && !addOnBreakStillActive\)/);
-    expect(resumeBreak).toContain('if (!addOnBreakStillActive) {');
+    // Multi-day (2026-09-24): the stage-end pause is a fourth authority that
+    // neither break end may lift, so each release also names it.
+    expect(resumeBreak).toMatch(
+      /if \(!this\.handForHandActive && !addOnBreakStillActive && !this\.stageEndPause\)/
+    );
+    expect(resumeBreak).toContain('if (!addOnBreakStillActive && !this.stageEndPause) {');
     expect(finishBreak).toContain('if (!this.running) return');
     // A bubble can end during this break; its inherited gate must still release.
     // HandForHandBreakOwnership.test.ts exercises that transition with real engine pause methods.
-    expect(finishBreak).toMatch(/if \(!this\.onBreak && !this\.handForHandActive\)/);
-    expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak\)/);
+    expect(finishBreak).toMatch(
+      /if \(!this\.onBreak && !this\.handForHandActive && !this\.stageEndPause\)/
+    );
+    expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak && !this\.stageEndPause\)/);
   });
 
   it('adopts a shifted add-on break while maintenance still owns every dealer', () => {

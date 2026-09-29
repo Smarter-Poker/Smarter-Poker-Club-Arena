@@ -6,7 +6,9 @@ vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks }));
 import UnionOpsPanel from '../../src/components/union/UnionOpsPanel';
-import { UnionOpsService, MIDWAY_UNION_ID } from '../../src/services/UnionOpsService';
+import { UnionOpsService } from '../../src/services/UnionOpsService';
+
+const UNION_ID = '33333333-3333-4333-8333-333333333333';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -16,7 +18,7 @@ beforeEach(() => {
   vi.spyOn(UnionOpsService, 'getDistributionCheck').mockResolvedValue(null);
   vi.spyOn(UnionOpsService, 'getLawSelfTest').mockResolvedValue(null);
   vi.spyOn(UnionOpsService, 'getSettlementPreview').mockResolvedValue({
-    union_id: MIDWAY_UNION_ID,
+    union_id: UNION_ID,
     period_start: '2026-09-07',
     period_end: '2026-09-14',
     round1: { already_executed: true, rake_treasury_available: 100 },
@@ -33,7 +35,7 @@ afterEach(() => {
 
 async function confirmSettlement(data: unknown) {
   mocks.rpc.mockResolvedValue({ data, error: null });
-  render(<UnionOpsPanel canRun />);
+  render(<UnionOpsPanel unionId={UNION_ID} canRun />);
   fireEvent.click(await screen.findByRole('button', { name: /^Settlement$/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'Review & Run Settlement' }));
   fireEvent.click(await screen.findByRole('button', { name: /^Settle 15$/ }));
@@ -53,7 +55,7 @@ describe('union settlement completion message through the real service', () => {
   it('reports the verified amounts only after an explicit completion', async () => {
     await confirmSettlement({
       success: true,
-      union_id: MIDWAY_UNION_ID,
+      union_id: UNION_ID,
       round2_club_to_agents: { amount: 10, shortfalls: 0 },
       round3_agents_to_players: { amount: 5, shortfalls: 0 },
     });
@@ -62,5 +64,9 @@ describe('union settlement completion message through the real service', () => {
     );
     expect(mocks.error).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'fn_union_settlement_cascade',
+      expect.objectContaining({ p_union_id: UNION_ID })
+    );
   });
 });

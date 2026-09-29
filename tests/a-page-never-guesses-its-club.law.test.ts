@@ -120,13 +120,19 @@ const CLUB_CONTEXT_PAGES = [
 const RESOLVER_PAGES = CLUB_CONTEXT_PAGES.filter((p) => !p.endsWith('MarketplacePage.tsx'));
 
 const CLUB_MEMBERS = "from('club_members')";
+function clubSource(page: string) {
+  const source = read(page);
+  if (page !== 'src/pages/XMTTPage.tsx') return source;
+  expect(blankNonCode(source)).toContain('useXmttLobby');
+  return source + '\n' + read('src/hooks/useXmttLobby.ts');
+}
 
 describe('LAW: no page picks a club with an unordered limit(1)', () => {
   for (const page of CLUB_CONTEXT_PAGES) {
     it(`${page} does not take an arbitrary club_members row`, () => {
       /* The precise shape of the bug: a club_members read narrowed to one row
          with no ordering. Each query is one statement; check each. */
-      for (const chain of statementsContaining(read(page), CLUB_MEMBERS)) {
+      for (const chain of statementsContaining(clubSource(page), CLUB_MEMBERS)) {
         if (!chain.includes('limit(1)')) continue;
         expect(
           chain.includes("eq('club_id'") || chain.includes('order('),
@@ -138,7 +144,7 @@ describe('LAW: no page picks a club with an unordered limit(1)', () => {
 
   for (const page of RESOLVER_PAGES) {
     it(`${page} resolves its club through the shared resolver`, () => {
-      expect(blankNonCode(read(page))).toContain('resolvePageClubId');
+      expect(blankNonCode(clubSource(page))).toContain('resolvePageClubId');
     });
   }
 });
@@ -243,7 +249,7 @@ describe('LAW: a role-filtered fallback stays role-filtered, but stops being arb
          PEOPLE within an already-known club. The query this law governs is
          the CLUB-DISCOVERY one - the only one that SELECTS `club_id` instead
          of filtering by it. */
-      const roleFiltered = statementsContaining(read(page), CLUB_MEMBERS).filter(
+      const roleFiltered = statementsContaining(clubSource(page), CLUB_MEMBERS).filter(
         (chain) => chain.includes(".in('role'") && chain.includes(".select('club_id")
       );
 

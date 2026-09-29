@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettlementStatus } from '../../src/services/LeaderboardService';
 import { LeaderboardSettlementCard } from '../../src/components/leaderboard/LeaderboardSettlementCard';
 
@@ -206,5 +206,38 @@ describe('LeaderboardSettlementCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry Status' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  describe('period-close countdown', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('counts a live round down to the exclusive UTC end the server returned', () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      // Sep 21 19:30 UTC; the weekly round ends at Sep 27 00:00 UTC.
+      vi.setSystemTime(new Date('2026-09-21T19:30:00Z'));
+      render(
+        <LeaderboardSettlementCard
+          status={{ ...openStatus, period_start: '2026-09-20', period_end: '2026-09-27' }}
+          onRetry={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('timer')).toHaveTextContent('Closes In 5D 4H');
+
+      vi.setSystemTime(new Date('2026-09-26T23:20:00Z'));
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(screen.getByRole('timer')).toHaveTextContent('Closes In 40M');
+    });
+
+    it('shows no countdown once the round has closed', () => {
+      render(
+        <LeaderboardSettlementCard status={{ ...openStatus, state: 'pending' }} onRetry={vi.fn()} />
+      );
+      expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+    });
   });
 });

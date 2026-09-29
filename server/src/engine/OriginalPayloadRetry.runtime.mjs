@@ -8,6 +8,7 @@ import ts from 'typescript';
 import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.ts';
 import { leavePendingTerminalReason } from '../observability/LeavePendingDiagnostic.ts';
 import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration.ts';
+import { KillPotSchedule } from './KillPot.ts';
 const readCurrent = (file) => fs.readFileSync(resolve(process.cwd(), 'src', file), 'utf8');
 const base = readCurrent('engine/ServerTableEngineBase.ts'),
   settlement = readCurrent('engine/ServerTableEngineSettlement.ts');
@@ -160,6 +161,10 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     currentHandCashoutRedirects: new Map(),
     currentHandReturnedUncalled: new Map(),
     currentHandDealtStacks: new Map([[uuid, 100]]),
+    // Kill pots (kill-v1): postHandTasks binds this hand's id into the table's
+    // pending kill. The real engine field, empty: a hand with no kill facts.
+    killSchedule: new KillPotSchedule(),
+    currentHandKillRecord: null,
     currentHandSeatGenerations: new Map([
       [uuid, { seat_id: uuid, seat_joined_at: '2026-09-12T00:00:00.123456Z' }],
     ]),

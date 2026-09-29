@@ -98,6 +98,7 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Tournament"
           title="Lobby"
           pill="In Game"

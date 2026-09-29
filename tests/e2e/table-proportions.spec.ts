@@ -50,6 +50,7 @@ import {
   PROBE,
   CALIBRATION,
   measureAll,
+  applyInsets,
 } from './support/feltHarness.mjs';
 
 /* process.cwd(), not __dirname: importing the .mjs harness puts this file in ES
@@ -511,5 +512,73 @@ test.describe('every device gets the same proportions', () => {
         1
       );
     }
+  });
+});
+
+test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, item 7)', () => {
+  /* "6 MAX GAMES THE TABLE SHOULD BE LOWER BY ABOUT 15-20. THERE IS TOO MUCH
+     SPACE ON THE BOTTOM AND NOT ENOUGH ON THE TOP."
+
+     SHIPPED BUG (cafc6dca, one night). The first cut lowered the 2..6 seat
+     oval by re-deriving its WIDTH from a reduced height on the seat rule, at
+     0,3,0. That outranked the <=768px fill rule (0,1,0) - the one that exists
+     because "THE ASPECT LOCK IS THE THING STARVING THE WIDTH" on a notched
+     phone - and the landscape rule's `width: auto`. Measured with the real
+     insets: a 6-max felt on an iPhone 12/13/14 came out 350.7px wide against
+     the 390px a 9-max gets on the same phone, and in landscape it overflowed
+     its container by 21px. The drop is now paid out of the height budget in
+     the rule that derives each size, and on phones out of the 4% the 960
+     canvas already gives back, so it costs the oval nothing.
+
+     Asserted as a comparison between the two rings on the same device, because
+     that is the form the bug took: the short ring must start lower, must end
+     inside its container, and must be as wide as the full ring, within the 4%
+     the shorter canvas takes off a cap that scales with height. */
+  const SHORT_DROP_PX = 18;
+  const seatHtml = (html: string, seats: number) =>
+    html.replace(
+      'class="table-page table-page--embedded"',
+      `class="table-page table-page--embedded" data-seats="${seats}"`
+    );
+  const probeBox = () => {
+    const s = document.querySelector('.table-scaler') as HTMLElement;
+    const c = document.querySelector('.table-container') as HTMLElement;
+    const r = s.getBoundingClientRect();
+    const cr = c.getBoundingClientRect();
+    return { w: r.width, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
+  };
+
+  test('6-max starts 18px lower than 9-max, ends inside the container, and is as wide', async ({
+    page,
+  }) => {
+    const offenders: string[] = [];
+    for (const [device, width, height, insetTop = 0, insetBottom = 0] of DEVICES) {
+      await page.setViewportSize({ width, height });
+      const html = buildHtml(
+        insetTop || insetBottom ? applyInsets(css, insetTop, insetBottom) : css
+      );
+      await page.setContent(seatHtml(html, 9));
+      const full = await page.evaluate(probeBox);
+      await page.setContent(seatHtml(html, 6));
+      const short = await page.evaluate(probeBox);
+      const label = `${device} (${width}x${height})`;
+      if (Math.abs(short.top - full.top - SHORT_DROP_PX) > 0.5) {
+        offenders.push(
+          `${label}: 6-max starts ${(short.top - full.top).toFixed(1)}px below 9-max, not ${SHORT_DROP_PX}px`
+        );
+      }
+      if (short.bottomGap < -0.5) {
+        offenders.push(
+          `${label}: 6-max overflows its container by ${(-short.bottomGap).toFixed(1)}px`
+        );
+      }
+      if (short.w < full.w * 0.95) {
+        offenders.push(
+          `${label}: 6-max is ${short.w.toFixed(1)}px wide against ${full.w.toFixed(1)}px for 9-max - ` +
+            'the seat rule is deriving its own width again'
+        );
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

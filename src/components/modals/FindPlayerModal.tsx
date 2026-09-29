@@ -48,7 +48,7 @@ import { reportError } from '../../utils/errorReporter';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
-import { titleCase } from '../../utils/titleCase';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { compactChips } from '../../utils/format';
 import styles from './FindPlayerModal.module.css';
@@ -252,12 +252,12 @@ export default function FindPlayerModal({
     runSearch(value);
   };
 
-  const handleTableClick = async (table: PlayerSearchTable) => {
+  const handleTableClick = async (table: PlayerSearchTable, targetUserId: string) => {
     if (verifyingTableId) return;
     setVerifyingTableId(table.table_id);
     setError(null);
     try {
-      const access = await PlayerSearchService.getTableWatchAccess(table.table_id);
+      const access = await PlayerSearchService.getTableWatchAccess(table.table_id, targetUserId);
       if (access.can_watch) {
         haptic.success();
         ClubEntryTrustService.track('find', 'watch_opened', {
@@ -352,6 +352,7 @@ export default function FindPlayerModal({
       >
         <div className={styles.scrollBody}>
           <SpadeConsole
+            onClose={handleClose}
             as="div"
             className={styles.console}
             eyebrow="Network Locator"
@@ -450,11 +451,11 @@ export default function FindPlayerModal({
                         index === highlightedIndex ? 'sc-ink--white' : 'sc-ink--silver'
                       }`}
                     >
-                      {player.display_name || player.username}
+                      {titleCase(player.display_name || player.username)}
                     </span>
                     {player.display_name && (
                       <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                        @{player.username}
+                        @{titleCase(player.username)}
                       </span>
                     )}
                   </button>
@@ -511,11 +512,11 @@ export default function FindPlayerModal({
                         onClick={() => handleProfileClick(player.id)}
                       >
                         <span className={`${styles.rowName} sc-ink--silver`}>
-                          {player.display_name || player.username}
+                          {titleCase(player.display_name || player.username)}
                         </span>
                         {player.display_name && (
                           <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                            @{player.username}
+                            @{titleCase(player.username)}
                           </span>
                         )}
                         <span
@@ -530,7 +531,7 @@ export default function FindPlayerModal({
                           {presenceCopy(player)}
                         </span>
                         <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                          {player.relationship}
+                          {enumToTitleCase(player.relationship)}
                         </span>
                       </button>
 
@@ -557,10 +558,11 @@ export default function FindPlayerModal({
                               <div key={account.club_uuid} className={styles.account}>
                                 <div className={styles.accountHead}>
                                   <span className={`${styles.rowName} sc-ink--silver`}>
-                                    {account.club_name}
+                                    {titleCase(account.club_name)}
                                   </span>
                                   <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                                    {account.access} / {account.role}
+                                    {enumToTitleCase(account.access)} /{' '}
+                                    {enumToTitleCase(account.role)}
                                   </span>
                                 </div>
                                 <dl className={styles.facts}>
@@ -604,7 +606,7 @@ export default function FindPlayerModal({
                             <button
                               key={table.id}
                               className={styles.tableRow}
-                              onClick={() => void handleTableClick(table)}
+                              onClick={() => void handleTableClick(table, player.id)}
                               disabled={verifyingTableId !== null}
                             >
                               <span
@@ -615,15 +617,15 @@ export default function FindPlayerModal({
                                 {table.is_tournament ? 'Tournament' : 'Cash Game'}
                               </span>
                               <span className={`${styles.rowName} sc-ink--silver`}>
-                                {table.name}
+                                {titleCase(table.name)}
                               </span>
                               <span className={`sc-copy ${styles.tableDetails}`}>
-                                {table.game_variant} / {table.stakes}
-                                {table.club_name && ` / ${table.club_name}`}
+                                {titleCase(table.game_variant)} / {titleCase(table.stakes)}
+                                {table.club_name && ` / ${titleCase(table.club_name)}`}
                               </span>
                               {!table.can_watch && (
                                 <span className={`sc-copy sc-ink--muted ${styles.tableDetails}`}>
-                                  {gateCopy(table)}
+                                  {titleCase(gateCopy(table))}
                                 </span>
                               )}
                               <span
@@ -758,7 +760,7 @@ function watchLabel(table: PlayerSearchTable): string {
  * a locked card still tells you exactly what to do next rather than dead-ending.
  */
 function gateCopy(table: PlayerSearchTable): string {
-  const club = table.club_name || 'This Club';
+  const club = titleCase(table.club_name || 'This Club');
   switch (table.access_action) {
     case 'join':
       return `Members Only - Join ${club} To Observe This Table.`;
@@ -799,13 +801,13 @@ function PlayerAffiliations({
   // A player row can arrive without affiliations from an older cached bundle or a
   // half-rolled-out RPC. Falling back keeps the whole result list rendering instead
   // of blanking the modal on a destructure.
-  const { clubs, unions, hidden_count: hiddenCount } = player.affiliations || EMPTY_AFFILIATIONS;
-  if (!clubs.length && !unions.length && !hiddenCount) return null;
+  const { clubs, unions, has_hidden: hasHidden } = player.affiliations || EMPTY_AFFILIATIONS;
+  if (!clubs.length && !unions.length && !hasHidden) return null;
 
   return (
     <section
       className={styles.affiliations}
-      aria-label={`Clubs And Unions For ${player.display_name || player.username}`}
+      aria-label={`Clubs And Unions For ${titleCase(player.display_name || player.username)}`}
     >
       {clubs.length > 0 && (
         <div className={styles.affiliationGroup}>
@@ -822,14 +824,18 @@ function PlayerAffiliations({
                       className={styles.affiliationRow}
                       onClick={() => onJoinClub(club)}
                     >
-                      <span className={`${styles.rowName} sc-ink--silver`}>{club.club_name}</span>
+                      <span className={`${styles.rowName} sc-ink--silver`}>
+                        {titleCase(club.club_name)}
+                      </span>
                       <span className={`sc-label sc-ink--gold ${styles.rowAside}`}>
                         {clubActionLabel(club.viewer_action)}
                       </span>
                     </button>
                   ) : (
                     <span className={styles.affiliationRow}>
-                      <span className={`${styles.rowName} sc-ink--silver`}>{club.club_name}</span>
+                      <span className={`${styles.rowName} sc-ink--silver`}>
+                        {titleCase(club.club_name)}
+                      </span>
                       <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
                         {clubActionLabel(club.viewer_action)}
                       </span>
@@ -849,7 +855,9 @@ function PlayerAffiliations({
             {unions.map((union) => (
               <li key={union.union_id} className={styles.affiliationItem}>
                 <span className={styles.affiliationRow}>
-                  <span className={`${styles.rowName} sc-ink--silver`}>{union.union_name}</span>
+                  <span className={`${styles.rowName} sc-ink--silver`}>
+                    {titleCase(union.union_name)}
+                  </span>
                   {union.union_code && (
                     <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
                       #{union.union_code}
@@ -862,10 +870,8 @@ function PlayerAffiliations({
         </div>
       )}
 
-      {hiddenCount > 0 && (
-        <p className={`sc-copy sc-ink--muted ${styles.copy}`}>
-          {hiddenCount} Private Club{hiddenCount === 1 ? '' : 's'} Not Shown.
-        </p>
+      {hasHidden && (
+        <p className={`sc-copy sc-ink--muted ${styles.copy}`}>Private Clubs Not Shown.</p>
       )}
     </section>
   );

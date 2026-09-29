@@ -1,0 +1,65 @@
+{
+  "raw_capture_sha256": "e886b90a10bcccf084517c0e0ed061001d0e2172e539ef0e0fdad50cfd3b9b25",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('observed_at',now(),'cutover',(SELECT coalesce(jsonb_agg(to_jsonb(c)),'[]') FROM public.accounting_tournament_fee_cutover c),'club',(SELECT jsonb_build_object('id',id,'is_union',is_union,'union_id',union_id) FROM public.clubs WHERE id='a41434bb-8d0c-400a-8f0d-e8b3d65afed4'),'prior_union_history',(SELECT coalesce(jsonb_agg(to_jsonb(h) ORDER BY observed_at,id),'[]') FROM public.accounting_agreement_history h WHERE entity_type='union_clubs' AND club_id='a41434bb-8d0c-400a-8f0d-e8b3d65afed4' AND observed_at<='2026-09-08T14:45:08.753219Z'),'prior_member_history',(SELECT coalesce(jsonb_agg(to_jsonb(h) ORDER BY observed_at,id),'[]') FROM public.accounting_agreement_history h WHERE entity_type='club_members' AND entity_key=ANY(ARRAY['a41434bb-8d0c-400a-8f0d-e8b3d65afed4:036f0b55-c601-4d09-982a-5294cf4ea15d','a41434bb-8d0c-400a-8f0d-e8b3d65afed4:72f2fedb-a5f9-4d10-b147-d92e18102d3f','a41434bb-8d0c-400a-8f0d-e8b3d65afed4:aef849b8-2906-4dc0-b108-251710e76d3c']) AND observed_at<='2026-09-08T14:45:08.753219Z'),'history_bounds',(SELECT jsonb_agg(x) FROM (SELECT entity_type,count(*) count,min(observed_at) earliest,max(observed_at) latest FROM public.accounting_agreement_history WHERE club_id='a41434bb-8d0c-400a-8f0d-e8b3d65afed4' AND (entity_type='union_clubs' OR subject_user_id IN('036f0b55-c601-4d09-982a-5294cf4ea15d','72f2fedb-a5f9-4d10-b147-d92e18102d3f','aef849b8-2906-4dc0-b108-251710e76d3c')) GROUP BY entity_type)x)) evidence; COMMIT;",
+  "evidence": {
+    "club": {
+      "id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+      "is_union": false,
+      "union_id": "fade0000-0000-0000-0000-000000000001"
+    },
+    "cutover": [
+      {
+        "singleton": true,
+        "starts_at": "2026-09-17T18:24:02.831517+00:00"
+      }
+    ],
+    "observed_at": "2026-09-26T22:03:52.426219+00:00",
+    "history_bounds": [
+      {
+        "count": 3,
+        "latest": "2026-09-14T12:09:28.115546+00:00",
+        "earliest": "2026-09-14T12:09:28.098848+00:00",
+        "entity_type": "club_members"
+      },
+      {
+        "count": 1,
+        "latest": "2026-09-14T12:09:28.153203+00:00",
+        "earliest": "2026-09-14T12:09:28.153203+00:00",
+        "entity_type": "union_clubs"
+      }
+    ],
+    "prior_union_history": [],
+    "prior_member_history": []
+  },
+  "scope": "Only original-time agreement lookup through 2026-09-08T14:45:08.753219Z; later histories intentionally not restored. Not a whole current table snapshot.",
+  "financial_qualified": false,
+  "first_event_recognized_sources": {
+    "raw_capture_sha256": "d6dbce0717a9cc86c30a1ab1b2fbd49f28c24f5ba7888785dddb05da8771d62f",
+    "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT now() observed_at,coalesce(jsonb_agg(to_jsonb(s)),'[]'::jsonb) rows FROM public.accounting_tournament_recognized_sources s WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533'; COMMIT;",
+    "evidence": [
+      {
+        "observed_at": "2026-09-26 22:23:20.578105+00",
+        "rows": []
+      }
+    ],
+    "scope": "Current first-event recognized sources only; no global absence claim."
+  },
+  "recognition_period": {
+    "capture_sha256": "96903b28b5fc613731c0a50c86639e21b29b7e00bd8bbb4d396092a4b8ba0f1a",
+    "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SET LOCAL timezone='UTC'; WITH scopes AS (SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533' UNION SELECT f.union_id,t.club_id FROM public.tournaments t JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)), bounds AS (SELECT public.fn_union_week_start(transaction_timestamp()) start_at,((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' end_at) SELECT jsonb_build_object('observed_at',transaction_timestamp(),'week_start',b.start_at,'week_end',b.end_at,'scopes',(SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) FROM scopes s),'runs_overlapping_week',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.period_start,r.period_end,r.round_no),'[]'::jsonb) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<b.end_at AND r.period_end>b.start_at AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id))),'runs_blocking_now',(SELECT count(*) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<=transaction_timestamp() AND r.period_end>transaction_timestamp() AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id)))) evidence FROM bounds b; COMMIT;",
+    "evidence": {
+      "scopes": [
+        {
+          "club_id": "fade0000-0000-0000-0000-000000000001",
+          "coordinator_union_id": "fade0000-0000-0000-0000-000000000001"
+        }
+      ],
+      "week_end": "2026-10-05T07:00:00+00:00",
+      "week_start": "2026-09-28T07:00:00+00:00",
+      "observed_at": "2026-09-27T00:22:27.735724+00:00",
+      "runs_blocking_now": 0,
+      "runs_overlapping_week": []
+    },
+    "scope": "Current recognition transaction period, not original charge period; outside these bounds requires authentic recapture."
+  }
+}

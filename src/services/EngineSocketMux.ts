@@ -72,6 +72,44 @@ interface MuxStateProbe {
 export const CLOSE_MUX_SUPERSEDED = 4901;
 
 /**
+ * ═══ AN ACCESS REFUSAL IS A VERDICT, NOT A BAD LINK (2026-09-20) ═══════════
+ *
+ * The engine answers SUBSCRIBE with `ERROR` + one of these two codes when the
+ * viewer may not WATCH the table (server TableViewerAccess: a seated player or
+ * an active member of a club in scope may; anyone else may not - and that
+ * includes a union operator who was allowed to CREATE the table). The facade
+ * is closed with 4400 like every other refusal, so the wire is unchanged, but
+ * the close reason has always carried the engine's code and nothing read it:
+ * EngineStateClient put the refusal on the ordinary ladder and the player got
+ * "Reconnecting To The Table" forever for a verdict no retry can change.
+ *
+ * Deliberately NOT a new close code: every 4xxx this platform declares has to
+ * be in docs/runbooks/tables-say-reconnecting.md (tests/every-refusal-has-a-
+ * runbook.law.test.ts), and this is not a new thing on the wire - it is the
+ * existing reason string, finally parsed by one function both ends share.
+ */
+export const MUX_ACCESS_REFUSAL_CODES = [
+  'CLUB_MEMBERSHIP_REQUIRED',
+  'OBSERVERS_RESTRICTED',
+] as const;
+export type MuxAccessRefusalCode = (typeof MUX_ACCESS_REFUSAL_CODES)[number];
+/** The prefix the per-table ERROR branch below puts in front of the engine's code. */
+export const MUX_REFUSAL_REASON_PREFIX = 'subscription refused: ';
+
+/** The engine's access verdict carried by a facade close, or null for any other close. */
+export function accessRefusalFromClose(
+  code: number | undefined,
+  reason: string | undefined
+): MuxAccessRefusalCode | null {
+  if (code !== 4400 || typeof reason !== 'string') return null;
+  if (!reason.startsWith(MUX_REFUSAL_REASON_PREFIX)) return null;
+  const verdict = reason.slice(MUX_REFUSAL_REASON_PREFIX.length);
+  return (MUX_ACCESS_REFUSAL_CODES as readonly string[]).includes(verdict)
+    ? (verdict as MuxAccessRefusalCode)
+    : null;
+}
+
+/**
  * ═══ THE PROTOCOL VERSION (Realtime Phase 4, 2026-09-05) ═══════════════════
  *
  * What this bundle speaks, sent as `?v=` on the socket URL.
@@ -747,14 +785,16 @@ class EngineSocketMuxImpl {
         // everything to 4400 gave "table not found" the wrong retry policy in
         // both directions (retried forever with the mux on, abandoned forever
         // with it off). The server's codes: TABLE_NOT_FOUND, BANNED,
-        // TABLE_CAP, SUB_FAILED.
+        // TABLE_CAP, SUB_FAILED, and the two access verdicts
+        // (MUX_ACCESS_REFUSAL_CODES) which stay 4400 and are read back out of
+        // the reason by accessRefusalFromClose.
         const f = this.facades.get(msg.tableId);
         if (f) {
           f._message(raw);
           this.facades.delete(msg.tableId);
           const closeCode =
             msg.code === 'TABLE_NOT_FOUND' ? 4404 : msg.code === 'BANNED' ? 4403 : 4400;
-          f._close(closeCode, 'subscription refused: ' + (msg.code ?? 'unknown'));
+          f._close(closeCode, MUX_REFUSAL_REASON_PREFIX + (msg.code ?? 'unknown'));
         }
         return;
       }

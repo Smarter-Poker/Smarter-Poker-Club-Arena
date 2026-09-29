@@ -431,6 +431,33 @@ describe('TournamentBrainContext lifecycle cache', () => {
     }
   );
 
+  /* fn_tournament_late_registration_open (20260926035534): when a level cap
+     AND a minute deadline are configured, whichever passes first closes late
+     registration. The horse brain mirrors the database door. */
+  it.each([
+    ['past the clock at an early level (the stalled-level case)', 0, 5 * 24 * 60, false],
+    ['inside both windows', 0, 8, true],
+    ['at the level cap while the clock is open', 2, 8, false],
+    ['exactly at the clock deadline', 0, 30, false],
+  ] as const)('late registration %s', async (_label, level, startedMinutesAgo, open) => {
+    successfulResponses();
+    h.responses.set('tournaments', {
+      data: {
+        ...tournamentRow(),
+        current_level: level,
+        late_reg_levels: 2,
+        late_reg_mins: 30,
+        started_at: new Date(NOW - startedMinutesAgo * 60_000).toISOString(),
+      },
+      error: null,
+    });
+    refreshTournamentBrainContext('t-late-reg-clock');
+    await settleRefresh();
+    const snapshot = getTournamentBrainContextSnapshot('t-late-reg-clock');
+    expect(snapshot.status).toBe('complete');
+    expect(snapshot.context?.lateRegistrationOpen).toBe(open);
+  });
+
   it('does not count a zero-chip playing row as a live ICM stack while elimination status catches up', async () => {
     successfulResponses();
     h.responses.set('tournament_players', {

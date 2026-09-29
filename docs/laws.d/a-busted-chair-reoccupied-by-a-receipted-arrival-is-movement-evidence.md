@@ -1,0 +1,3 @@
+# tests/a-busted-chair-reoccupied-by-a-receipted-arrival-is-movement-evidence.law.test.ts
+
+A parked tournament table whose proven hand busted a player from a chair row that a receipted move then handed to an arrival must still be provable: `smarter_private.f06_movement_prior` admits that bust only by its eliminated, zero-chip registration on this table (recorded no later than the arrival sat) and the arrival's move receipt into exactly that chair, keeps it out of the roster, `eliminated` and the counts, records it as `receipts.reoccupied` only when present, and refuses every other missing chair with F06_MOVEMENT_SEAT_CHANGED as before.

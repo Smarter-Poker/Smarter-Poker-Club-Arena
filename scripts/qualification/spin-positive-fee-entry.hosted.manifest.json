@@ -4,12 +4,12 @@
   "image": "positive-fee-entry",
   "files": {
     "scripts/qualification/spin-positive-fee-entry.py": {
-      "bytes": 15299,
-      "sha256": "a9e1aee8289be8d4fffb89ad33a5b3d0ab11c4a2afb3b02d2d803439e667835d"
+      "bytes": 18336,
+      "sha256": "032248475e1b870efb656b053d7234b36a58dbc2b510cb15debbe1757eff93a7"
     },
     "scripts/qualification/spin-positive-fee-entry-oracle.py": {
-      "bytes": 47098,
-      "sha256": "7cce48c16acfdb7b681569d5361b7fe8dd8bbfed3a5af49fed7c473846adb2b9"
+      "bytes": 48038,
+      "sha256": "5492bc820b115110c6ef26410e0cd9c6fa9917c0a7a87bcedf47e1e761e63879"
     },
     "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
       "bytes": 51515,

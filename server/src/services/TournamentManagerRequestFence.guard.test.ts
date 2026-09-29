@@ -147,6 +147,45 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     expect(clientCreators).toEqual(['services/supabase/client.ts']);
   });
 
+  /* DELIBERATE EXCEPTION (2026-09-24). Lease heartbeats leave the Data API
+     for a dedicated Postgres session so they cannot queue behind game traffic
+     for a PostgREST pool connection (leaseHeartbeatSession.ts). They carry no
+     actor headers there, which is safe only because neither heartbeat
+     function reads a request setting or auth.role(): both take their
+     authority from the instance id and exact lease generation in their
+     arguments. So a raw session may exist in exactly two places, and the lease
+     one may run exactly those two functions and nothing that writes. */
+  it('lets only lease heartbeats and the outbox LISTEN bypass the Data API on a raw session', () => {
+    const src = join(process.cwd(), 'src');
+    const rawSessions = runtimeTypescriptFiles(src)
+      .filter((path) => /\bnew pg\.(?:Client|Pool)\s*\(/.test(readFileSync(path, 'utf8')))
+      .map((path) => path.slice(src.length + 1))
+      .sort();
+    expect(rawSessions).toEqual([
+      'services/leaseHeartbeatSession.ts',
+      'services/supabase/handOutboxListener.ts',
+    ]);
+
+    const leaseSession = readFileSync(join(src, 'services', 'leaseHeartbeatSession.ts'), 'utf8');
+    const sqlLiterals = [
+      ...leaseSession.matchAll(/'((?:SELECT|SET|INSERT|UPDATE|DELETE|CALL|DO)\b[^']*)'/g),
+    ].map((match) => match[1]);
+    expect(sqlLiterals.length).toBeGreaterThan(0);
+    for (const sql of sqlLiterals) {
+      expect(sql).toMatch(/^(?:SELECT|SET)\b/);
+    }
+    const functionsCalled = new Set(
+      [...leaseSession.matchAll(/FROM public\.(\w+)\(/g)].map((match) => match[1])
+    );
+    expect([...functionsCalled].sort()).toEqual([
+      'heartbeat_table_leases_v4',
+      'heartbeat_tournament_leases_v4',
+    ]);
+    expect(leaseSession).toContain(
+      'SET statement_timeout = ${LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS}'
+    );
+  });
+
   it('binds managers and every tournament child before either object is published', () => {
     const admissionStart = gameServer.indexOf('private async performTournamentManagerAdmission(');
     const managerConstruction = gameServer.indexOf(

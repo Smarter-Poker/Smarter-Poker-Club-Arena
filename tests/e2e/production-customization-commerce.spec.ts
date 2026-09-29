@@ -20,6 +20,7 @@ import {
   type CustomizationCertificationEnvironment,
   type StorefrontSku,
   type TemporaryCustomizationAccount,
+  withCauses,
 } from './support/temporaryCustomizationAccount';
 
 const CERTIFICATION_ENABLED = process.env.CUSTOMIZATION_COMMERCE_CERTIFICATION === '1';
@@ -589,14 +590,17 @@ test.describe('production Table Studio commerce certification', () => {
     if (journeyFailure && cleanupFailures.length) {
       throw new AggregateError(
         [journeyFailure, ...cleanupFailures],
-        'Customization Commerce Journey And Cleanup Both Failed.'
+        withCauses('Customization Commerce Journey And Cleanup Both Failed.', [
+          journeyFailure,
+          ...cleanupFailures,
+        ])
       );
     }
     if (journeyFailure) throw journeyFailure;
     if (cleanupFailures.length) {
       throw new AggregateError(
         cleanupFailures,
-        'Customization Commerce Certification Cleanup Failed.'
+        withCauses('Customization Commerce Certification Cleanup Failed.', cleanupFailures)
       );
     }
   });

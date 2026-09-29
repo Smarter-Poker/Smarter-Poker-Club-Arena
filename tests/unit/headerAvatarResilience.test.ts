@@ -52,6 +52,7 @@ vi.mock('@/lib/supabase', () => {
       if (table === 'profiles') return chain;
       return Object.assign(Promise.resolve({ count: 0, error: null }), chain);
     });
+    chain.abortSignal = vi.fn(() => chain);
     chain.maybeSingle = vi.fn(() => Promise.resolve(supabaseMock.profileResult));
     void self;
     return chain;
@@ -296,5 +297,53 @@ describe('header avatar resilience', () => {
       source: 'avatar-picker',
     });
     expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
+  });
+});
+
+describe('private appearance signal refresh', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    busMock.handlers.clear();
+    supabaseMock.profileResult = { data: null, error: null };
+  });
+  it('re-reads the saved photograph, arena preference and cosmetics without a profile WAL event', async () => {
+    const store = await freshStore();
+    supabaseMock.profileResult = { data: { avatar_url: '/first.jpg' }, error: null };
+    store.getState().loadOnce(USER);
+    await vi.waitFor(() => expect(store.getState().avatarUrl).toBe('/first.jpg'));
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: '/second.jpg',
+        arena_avatar_url: '/table.webp',
+        use_avatar_as_profile_pic: true,
+      },
+      error: null,
+    };
+    await store.getState().refreshAppearance();
+    expect(store.getState().avatarUrl).toBe('/table.webp');
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: '/second.jpg',
+        arena_avatar_url: '/table.webp',
+        use_avatar_as_profile_pic: false,
+      },
+      error: null,
+    };
+    await store.getState().refreshAppearance();
+    expect(store.getState().avatarUrl).toBe('/second.jpg');
+    store.getState().teardown();
+  });
+  it('retains the known photograph when the refresh is refused', async () => {
+    const store = await freshStore();
+    supabaseMock.profileResult = { data: { avatar_url: '/first.jpg' }, error: null };
+    store.getState().loadOnce(USER);
+    await vi.waitFor(() => expect(store.getState().avatarUrl).toBe('/first.jpg'));
+    supabaseMock.profileResult = { data: null, error: new Error('refused') };
+    await store.getState().refreshAppearance();
+    expect(store.getState().avatarUrl).toBe('/first.jpg');
+    expect(
+      reported.calls.some(([, name]) => name === 'useHeaderDataStore.appearance_refresh')
+    ).toBe(true);
+    store.getState().teardown();
   });
 });

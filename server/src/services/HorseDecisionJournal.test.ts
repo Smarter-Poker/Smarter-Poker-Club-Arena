@@ -26,6 +26,7 @@ import {
   HorseDecisionJournalStore,
   horseJournalCapacityReason,
 } from './horseDecisionJournal/store.js';
+import { horseJournalFailureKind } from './horseDecisionJournal/failure.js';
 import {
   horseJournalJson,
   journalHash,
@@ -33,7 +34,17 @@ import {
   validateHorseJournalRecord,
   type HorseJournalRecord,
 } from './horseDecisionJournal/record.js';
-import { HorseDecisionJournalPublisher, type HorseJournalWorker } from './HorseDecisionJournal.js';
+import {
+  HorseDecisionJournalPublisher,
+  horseDecisionJournalHealth,
+  relayHorseDecisionJournalHealth,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
+  type HorseJournalWorker,
+} from './HorseDecisionJournal.js';
+import {
+  HORSE_JOURNAL_ARCHIVE_HOLD,
+  runtimeHorseJournalArchiveOptions,
+} from './horseDecisionJournal/config.js';
 
 const folders: string[] = [],
   stores: HorseDecisionJournalStore[] = [];
@@ -70,7 +81,9 @@ afterEach(() => {
   for (const s of stores.splice(0))
     try {
       s.close();
-    } catch {}
+    } catch {
+      /* already closed by the test */
+    }
   for (const f of folders.splice(0)) rmSync(f, { recursive: true, force: true });
   vi.useRealTimers();
 });
@@ -290,9 +303,12 @@ describe('bounded isolated Horse journal publisher', () => {
     const w = new FakeWorker(),
       notes: string[] = [],
       p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    for (let i = 0; i < 65; i++) p.record('decision', 'hand', 'turn', {});
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS + 1; i++)
+      p.record('decision', 'hand', 'turn', {});
     p.record('decision', null, 'turn', {});
-    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(64);
+    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     expect(notes).toContain('phase15_journal_capture_unavailable');
     w.emit({ type: 'UNAVAILABLE' });
@@ -584,21 +600,37 @@ describe('bounded immutable Horse archive custody', () => {
       );
     expect(a.readHand(record().handKey)).toEqual([record(), record(2)]);
   });
-  it.each(['maxBytes', 'maxSegments'] as const)(
-    'reserves %s atomically and never deletes earlier custody',
-    (key) => {
-      const dir = folder(),
-        s = store(dir, { archive: options(dir, { [key]: key === 'maxBytes' ? 1 : 1 }) });
-      if (key === 'maxSegments') s.append(record());
-      expect(() => s.append(record(2))).toThrow(
-        key === 'maxBytes' ? 'byte_capacity' : 'segment_capacity'
-      );
-      expect(s.storageStats().archive).toMatchObject({
-        records: key === 'maxBytes' ? 0 : 1,
-        pendingSegments: 0,
-      });
-    }
-  );
+  it('refuses a batch that could not fit an empty archive without retiring anything', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxBytes: 1 }) });
+    expect(() => s.append(record())).toThrow('byte_capacity');
+    expect(s.storageStats().archive).toMatchObject({
+      records: 0,
+      segments: 0,
+      pendingSegments: 0,
+      retiredSegments: 0,
+    });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([]);
+  });
+  it('at the segment quota the ring retires the oldest published segment and records the batch', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 1 }) });
+    expect(s.append(record())).toBe('recorded');
+    const [first] = readdirSync(join(dir, 'archive', 'segments'));
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2)]);
+    expect(s.storageStats().archive).toMatchObject({
+      records: 1,
+      segments: 1,
+      publishedSegments: 1,
+      pendingSegments: 0,
+      retiredSegments: 1,
+      retiredRecords: 1,
+    });
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    expect(files).not.toContain(first);
+  });
   it('retains a reserved batch after index failure and recovers exact bytes once at reopen', () => {
     const dir = folder(),
       s = store(dir, { archive: options(dir) }),
@@ -704,6 +736,11 @@ describe('bounded immutable Horse archive custody', () => {
     // Fewer free pages than one batch's documented margin, as a real writer
     // connection would see them; no fake SQLite error and no trigger.
     writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    // A replayed-only batch reserves nothing, so it is not refused and the
+    // ring retires nothing for it.
+    expect(s.appendBatch([record()])).toEqual(['replayed']);
+    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
     let capacityError: unknown;
     try {
       s.appendBatch([record(2), record(3)]);
@@ -712,17 +749,27 @@ describe('bounded immutable Horse archive custody', () => {
     }
     expect(capacityError).toMatchObject({ message: 'horse_archive_catalog_capacity' });
     expect(horseJournalCapacityReason(capacityError)).toBe('archive_catalog_capacity');
-    // Nothing was reserved: no pending row, no usage charge, no staged file,
-    // and the hand reads exactly what it read before.
-    expect(s.storageStats().archive).toEqual({ ...before, pendingSegments: 0 });
-    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
-    expect(s.readHand(record().handKey)).toEqual([record()]);
-    expect(s.append(record())).toBe('replayed');
-    // A replayed-only batch reserves nothing, so it is not refused.
-    expect(() => s.appendBatch([record()])).not.toThrow();
+    // Nothing was reserved: no pending row, no usage charge for the batch, no
+    // staged file. The ring retired the one published segment trying to make
+    // room, and that retirement is kept (2026-09-26): its rows, usage and
+    // file are gone together, and the hand reads it as missing.
+    expect(s.storageStats().archive).toEqual({
+      ...before,
+      compressedBytes: 0,
+      segments: 0,
+      publishedSegments: 0,
+      records: 0,
+      retiredSegments: 1,
+      retiredRecords: 1,
+      pendingSegments: 0,
+      maxRowid: 0,
+      catalogBytes: s.storageStats().archive!.catalogBytes,
+    });
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([]);
+    expect(s.readHand(record().handKey)).toEqual([]);
     writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
     expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
-    expect(s.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3)]);
   });
   it('recovers publication interrupted between hard-link creation and staging unlink', () => {
     const dir = folder(),
@@ -904,56 +951,946 @@ describe('bounded immutable Horse archive custody', () => {
   });
 });
 
-describe('archive capacity reporting uses the existing terminal failure path', () => {
-  it.each([
-    'archive_bytes',
-    'archive_segments',
-    'archive_catalog_capacity',
-    'archive_storage_capacity',
-  ])('reports %s without acknowledging uncaptured records', async (reason) => {
-    const w = new FakeWorker(),
-      notes: string[] = [],
-      p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    p.record('decision', 'hand', 'turn', {});
-    w.emit({ type: 'READY' });
-    w.emit({ type: 'UNAVAILABLE', reason });
-    p.record('decision', 'hand', 'turn2', {});
-    await p.stop();
-    expect(notes).toContain('phase15_journal_' + reason);
-    expect(notes).not.toContain('phase15_journal_recorded');
-    expect(notes).toContain('phase15_journal_capture_unavailable');
-    expect(w.terminate).toHaveBeenCalledTimes(1);
+describe('the capacity probe asks the writer, read-only, whether a quota has room', () => {
+  const archiveOptions = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  it('agrees with the writer at the segment and byte quotas and changes nothing', () => {
+    const dir = folder(),
+      s = store(dir, { archive: archiveOptions(dir, { maxSegments: 1 }) });
+    expect(s.capacityRefusal([record(1)])).toBeNull();
+    expect(s.appendBatch([record(1)])).toEqual(['recorded']);
+    const before = s.storageStats();
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    // At the segment quota with a published segment to retire, the probe says
+    // room, because that is what the next append will make; it retires nothing.
+    expect(s.capacityRefusal([record(2)])).toBeNull();
+    expect(s.storageStats()).toEqual(before);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual(files);
+    expect(s.appendBatch([record(2)])).toEqual(['recorded']);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).not.toEqual(files);
+    const small = folder(),
+      tiny = store(small, { archive: archiveOptions(small, { maxBytes: 1 }) });
+    expect(tiny.capacityRefusal([record(1)])).toBe('archive_bytes');
+    expect(() => tiny.appendBatch([record(1)])).toThrow('horse_archive_byte_capacity');
+    expect(() => s.capacityRefusal([])).toThrow();
+  });
+  it('sees catalog room return and the writer then accepts the same batch', () => {
+    const dir = folder(),
+      s = store(dir, { archive: archiveOptions(dir) });
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count),
+      empty = s.storageStats().archive!;
+    // Nothing published: the catalog ceiling refuses by name and nothing changes.
+    writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBe('archive_catalog_capacity');
+    expect(() => s.appendBatch([record(2), record(3)])).toThrow('horse_archive_catalog_capacity');
+    expect(s.storageStats().archive).toEqual({ ...empty, pendingSegments: 0 });
+    writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
+    expect(s.append(record())).toBe('recorded');
+    // With a published segment the probe says room, the append retires it and,
+    // when the ceiling still refuses, keeps that retirement and refuses by
+    // name: the next attempt starts nearer to room, never from the same place.
+    const held = Number(writer.prepare('PRAGMA page_count').get()!.page_count);
+    writer.exec(`PRAGMA max_page_count=${held + 8};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBeNull();
+    expect(() => s.appendBatch([record(2), record(3)])).toThrow('horse_archive_catalog_capacity');
+    expect(s.storageStats().archive).toMatchObject({
+      records: 0,
+      segments: 0,
+      pendingSegments: 0,
+      retiredSegments: 1,
+    });
+    expect(s.capacityRefusal([record(2), record(3)])).toBe('archive_catalog_capacity');
+    writer.exec(`PRAGMA max_page_count=${(6 * 1024 * 1024 * 1024) / 4096};`);
+    expect(s.capacityRefusal([record(2), record(3)])).toBeNull();
+    expect(s.appendBatch([record(2), record(3)])).toEqual(['recorded', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3)]);
+  });
+  it('the actual dedicated worker answers a probe without writing', async () => {
+    const dir = folder();
+    const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href;
+    const entry = new URL('./horseDecisionJournal/worker.ts', import.meta.url).href;
+    const code = `import { tsImport } from ${JSON.stringify(tsx)}; await tsImport(${JSON.stringify(entry)}, ${JSON.stringify(import.meta.url)});`;
+    const worker = new Worker(new URL('data:text/javascript,' + encodeURIComponent(code)), {
+      workerData: { directory: dir, archive: archiveOptions(dir, { maxSegments: 1 }) },
+    });
+    try {
+      const next = () =>
+        new Promise<any>((resolve, reject) => {
+          worker.once('message', resolve);
+          worker.once('error', reject);
+        });
+      const ask = (message: unknown) => {
+        const reply = next();
+        worker.postMessage(message);
+        return reply;
+      };
+      expect(await next()).toEqual({ type: 'READY' });
+      expect(await ask({ type: 'PROBE', records: [record(1)] })).toEqual({
+        type: 'CAPACITY',
+        room: true,
+      });
+      expect(await ask({ type: 'APPEND', records: [record(1)] })).toMatchObject({ type: 'ACK' });
+      // At the quota the probe answers room and the append retires the oldest
+      // published segment: capture continues through the real writer.
+      expect(await ask({ type: 'PROBE', records: [record(2)] })).toEqual({
+        type: 'CAPACITY',
+        room: true,
+      });
+      expect(await ask({ type: 'APPEND', records: [record(2)] })).toMatchObject({
+        type: 'ACK',
+        receipts: [{ eventId: record(2).eventId, status: 'recorded' }],
+      });
+      // A malformed probe is answered "no room", never a failure of the writer.
+      expect(await ask({ type: 'PROBE', records: [{ bogus: true }] })).toEqual({
+        type: 'CAPACITY',
+        room: false,
+      });
+      const stats = await ask({ type: 'STATS' });
+      expect(stats.stats.archive).toMatchObject({
+        records: 1,
+        segments: 1,
+        pendingSegments: 0,
+        publishedSegments: 1,
+        retiredSegments: 1,
+      });
+      expect(await ask({ type: 'STOP' })).toEqual({ type: 'STOPPED' });
+    } finally {
+      await worker.terminate();
+    }
   });
 });
 
-describe('the journal says why it stopped and shows itself to /health', () => {
-  it('logs exactly one structured line when capture stops, with the named reason', async () => {
+describe('the archive is a ring: the oldest published segments make room, unpublished ones never do', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  const segmentFiles = (dir: string) => readdirSync(join(dir, 'archive', 'segments')).sort();
+  it('retires oldest first and only as many as the batch needs; the file, the rows and the usage leave together', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 3 }) });
+    const three: string[] = [];
+    for (const n of [1, 2, 3]) {
+      expect(s.append(record(n))).toBe('recorded');
+      three.push(segmentFiles(dir).find((f) => !three.includes(f))!);
+    }
+    expect(s.append(record(4))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3), record(4)]);
+    expect(s.appendBatch([record(5), record(6)])).toEqual(['recorded', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(3), record(4), record(5), record(6)]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 3,
+      publishedSegments: 3,
+      pendingSegments: 0,
+      records: 4,
+      retiredSegments: 2,
+      retiredRecords: 2,
+    });
+    const now = segmentFiles(dir);
+    expect(now).toHaveLength(3);
+    expect(now).not.toContain(three[0]);
+    expect(now).not.toContain(three[1]);
+    expect(now).toContain(three[2]);
+    const native = catalog(dir);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_segments').get()!.n).toBe(3);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_events').get()!.n).toBe(4);
+    const usage = native.prepare('SELECT bytes FROM archive_meta WHERE id=1').get()!;
+    expect(usage.bytes).toBe(
+      native.prepare('SELECT sum(bytes) AS n FROM archive_segments').get()!.n
+    );
+    native.close();
+  });
+  it('the byte quota is the same ring: the oldest published segment goes when a new one needs its bytes', () => {
+    const sizing = folder(),
+      probe = store(sizing, { archive: options(sizing) });
+    probe.append(record(1));
+    probe.append(record(2));
+    const maxBytes = probe.storageStats().archive!.compressedBytes;
+    probe.close();
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxBytes }) });
+    expect(s.append(record(1))).toBe('recorded');
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.append(record(3, { a: 1 }))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2), record(3, { a: 1 })]);
+    expect(s.storageStats().archive).toMatchObject({ segments: 2, retiredSegments: 1 });
+    expect(s.storageStats().archive!.compressedBytes).toBeLessThanOrEqual(maxBytes);
+  });
+  it('never retires a reserved batch that was not published; only unpublished segments hold the quota', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir, { maxSegments: 1 }) }),
+      native = catalog(dir);
+    native.exec(
+      "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+    );
+    expect(() => s.append(record(1))).toThrow('synthetic interruption');
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      publishedSegments: 0,
+      pendingSegments: 1,
+      retiredSegments: 0,
+    });
+    // The probe: nothing published can be retired, so the quota stands by name.
+    expect(s.capacityRefusal([record(2)])).toBe('archive_segments');
+    // The append: the reserved batch is completed first, never retired, and
+    // while it cannot be completed nothing is retired either.
+    expect(() => s.append(record(2))).toThrow('synthetic interruption');
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      pendingSegments: 1,
+      retiredSegments: 0,
+    });
+    expect(native.prepare('SELECT count(*) AS n FROM archive_pending').get()!.n).toBe(1);
+    native.exec('DROP TRIGGER fail_index');
+    native.close();
+    // Once published it is the oldest published segment, and the ring may retire it.
+    expect(s.append(record(2))).toBe('recorded');
+    expect(s.readHand(record().handKey)).toEqual([record(2)]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 1,
+      publishedSegments: 1,
+      pendingSegments: 0,
+      retiredSegments: 1,
+    });
+  });
+  it('a lowered ring retires its excess over the following appends and keeps the newest', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir, { maxSegments: 5 }) });
+    for (const n of [1, 2, 3, 4, 5]) a.append(record(n));
+    a.close();
+    const b = store(dir, { archive: options(dir, { maxSegments: 2 }) });
+    expect(b.append(record(6))).toBe('recorded');
+    expect(b.readHand(record().handKey)).toEqual([record(5), record(6)]);
+    expect(b.storageStats().archive).toMatchObject({
+      segments: 2,
+      maxSegments: 2,
+      retiredSegments: 4,
+    });
+    expect(segmentFiles(dir)).toHaveLength(2);
+  });
+  it('a file whose rows were retired before the process died is unlinked at the next open', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record(1));
+    a.close();
+    const sha = 'f'.repeat(64),
+      orphan = join(dir, 'archive', 'segments', sha + '.ndjson.gz');
+    writeFileSync(orphan, gzipSync(Buffer.from('retired\n')), { mode: 0o600 });
+    const native = catalog(dir);
+    native.prepare('INSERT INTO archive_retired VALUES(?,?)').run(sha, 1);
+    native.close();
+    const b = store(dir, { archive: options(dir) });
+    expect(segmentFiles(dir)).not.toContain(sha + '.ndjson.gz');
+    expect(catalog(dir).prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(b.readHand(record().handKey)).toEqual([record(1)]);
+  });
+  it('a segment retired between a reader snapshot and its file read is missing, not corruption', () => {
+    const dir = folder(),
+      w = store(dir, { archive: options(dir, { maxSegments: 1 }) });
+    w.append(record(1));
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    const proto = HorseDecisionJournalStore.prototype as unknown as {
+      readSegment: (row: unknown) => unknown;
+    };
+    const original = proto.readSegment;
+    const spy = vi.spyOn(proto, 'readSegment').mockImplementationOnce(function (
+      this: unknown,
+      row: unknown
+    ) {
+      // The writer retires the snapshotted segment before the reader opens it.
+      spy.mockRestore();
+      w.append(record(2));
+      return original.call(this, row);
+    });
+    expect(r.readHand(record().handKey)).toEqual([]);
+    expect(r.readHand(record().handKey)).toEqual([record(2)]);
+  });
+  it('a read-only observer of a catalog that has not been opened by a ring writer reports zero retired', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record(1));
+    a.close();
+    const native = catalog(dir);
+    native.exec('DROP TABLE archive_ring; DROP TABLE archive_retired;');
+    native.close();
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    expect(r.storageStats().archive).toMatchObject({
+      publishedSegments: 1,
+      retiredSegments: 0,
+      retiredRecords: 0,
+    });
+  });
+  it('/health says whether capture runs and why, with the ring counts', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const w = new FakeWorker(),
-        p = new HorseDecisionJournalPublisher(w, () => {});
-      p.record('decision', 'hand', 'turn', {});
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
       w.emit({ type: 'READY' });
-      expect(warn).not.toHaveBeenCalled();
-      w.emit({ type: 'UNAVAILABLE', reason: 'archive_catalog_capacity' });
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        '[HorseDecisionJournal] capture stopped mode=failed reason=archive_catalog_capacity'
-      );
-      // A second failure signal, another record and the stop do not log again.
-      w.emit({ type: 'UNAVAILABLE' });
-      p.record('decision', 'hand', 'turn2', {});
-      await p.stop();
-      expect(warn).toHaveBeenCalledTimes(1);
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
       expect(p.health()).toMatchObject({
-        mode: 'failed',
-        lastFailureReason: 'archive_catalog_capacity',
-        queued: 1,
+        segments: 1,
+        maxSegments: 100,
+        publishedSegments: 1,
+        pendingSegments: 0,
+        retiredSegments: 4,
+        retiredRecords: 12,
+        compressedBytes: 10,
+        maxBytes: 1024,
+        capture:
+          'running: the archive is a ring of 100 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=1 published=1 held=0 unpublished=0 retired=4',
       });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment left to retire (only unpublished segments remain); asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
+      );
+      w.emit({ type: 'CAPACITY', room: false, reason: 'archive_storage_capacity' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
+      );
+      void p.stop();
     } finally {
       warn.mockRestore();
     }
   });
+});
+
+describe('the ring holds the Phase 6A/6B evidence: held segments are never retired, capture still runs', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const at = (sequence: number, atMs: number): HorseJournalRecord =>
+    makeHorseJournalRecord(
+      {
+        producerId: '10000000-0000-4000-8000-000000000001',
+        sequence,
+        atMs,
+        sourceRelease: null,
+        kind: 'decision',
+        handKey: journalHash('hand'),
+        turnKey: journalHash('turn'),
+      },
+      { privateSyntheticCard: 'As' }
+    );
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  /** Five segments captured at t=100..500, written before any hold existed. */
+  const archiveOfFive = (dir: string) => {
+    const w = store(dir, { archive: options(dir) });
+    for (const n of [1, 2, 3, 4, 5]) expect(w.append(at(n, n * 100))).toBe('recorded');
+    w.close();
+  };
+  it('retires only published segments outside the hold, below it first and then above it', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 150, untilMs: 350 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      heldRecords: 2,
+    });
+    // Below the hold first: t=100 goes.
+    expect(s.append(at(6, 600))).toBe('recorded');
+    // Then the oldest above it: t=400 and t=500, never t=200 or t=300.
+    expect(s.appendBatch([at(7, 700)])).toEqual(['recorded']);
+    expect(s.append(at(8, 800))).toBe('recorded');
+    expect(s.readHand(journalHash('hand'))).toEqual([
+      at(2, 200),
+      at(3, 300),
+      at(6, 600),
+      at(7, 700),
+      at(8, 800),
+    ]);
+    expect(s.storageStats().archive).toMatchObject({
+      segments: 5,
+      heldSegments: 2,
+      retiredSegments: 3,
+      retiredRecords: 3,
+    });
+    const native = catalog(dir);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_events').get()!.n).toBe(5);
+    expect(native.prepare('SELECT count(*) AS n FROM archive_retired').get()!.n).toBe(0);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toHaveLength(5);
+    native.close();
+  });
+  it('never retires a held segment, and a hold cannot fill the ring: past its budget it keeps its oldest segments and capture runs', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    // 2026-09-28: a hold of every segment used to leave the ring nothing to
+    // retire, so the quota refused and capture stopped. The hold may keep at
+    // most half of each quota (here 2 of 5 segments): it keeps its oldest two.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 1, untilMs: 1000 } }),
+    });
+    warn.mockRestore();
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 2, holdTrimmedSegments: 3 });
+    expect(s.capacityRefusal([at(6, 600)])).toBeNull();
+    expect(s.append(at(6, 600))).toBe('recorded');
+    // t=300 (the oldest segment outside the kept hold) went; t=100, t=200 stayed.
+    expect(s.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([1, 2, 4, 5, 6]);
+    expect(s.storageStats().archive).toMatchObject({ segments: 5, retiredSegments: 1 });
+    s.close();
+    // Released (the env var reads "none"): the ring reclaims them oldest first.
+    const released = store(dir, { archive: options(dir, { maxSegments: 5, hold: null }) });
+    expect(released.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(released.capacityRefusal([at(7, 700)])).toBeNull();
+    expect(released.append(at(7, 700))).toBe('recorded');
+    expect(released.readHand(journalHash('hand'))).toEqual(
+      [2, 4, 5, 6, 7].map((n) => at(n, n * 100))
+    );
+  });
+  it('the held set is resolved once per window and does not grow with later capture', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const hold = { fromMs: 250, untilMs: 1000 };
+    const a = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(a.storageStats().archive).toMatchObject({ heldSegments: 3, heldRecords: 3 });
+    // Captured later with a timestamp inside the window: the ring's, not held.
+    expect(a.append(at(6, 260))).toBe('recorded');
+    a.close();
+    const b = store(dir, { archive: options(dir, { maxSegments: 6, hold }) });
+    expect(b.storageStats().archive).toMatchObject({ segments: 6, heldSegments: 3 });
+    expect(b.append(at(7, 700))).toBe('recorded');
+    expect(b.append(at(8, 800))).toBe('recorded');
+    expect(b.append(at(9, 900))).toBe('recorded');
+    // t=100, t=200, then the later t=260 segment went; t=300..500 stayed.
+    expect(b.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([3, 4, 5, 7, 8, 9]);
+    expect(b.storageStats().archive).toMatchObject({ heldSegments: 3, retiredSegments: 3 });
+  });
+  it('a window that holds nothing leaves the ring whole, and a read-only observer of a pre-hold catalog reports zero held', () => {
+    const dir = folder();
+    archiveOfFive(dir);
+    const native = catalog(dir);
+    native.exec('DROP TABLE archive_hold');
+    native.close();
+    const r = store(dir, { readOnly: true, archive: options(dir) });
+    expect(r.storageStats().archive).toMatchObject({ heldSegments: 0, heldRecords: 0 });
+    r.close();
+    const s = store(dir, {
+      archive: options(dir, { maxSegments: 5, hold: { fromMs: 5000, untilMs: 6000 } }),
+    });
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 0 });
+    expect(s.append(at(6, 600))).toBe('recorded');
+    expect(s.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([2, 3, 4, 5, 6]);
+  });
+  it('HORSE_DECISION_JOURNAL_ARCHIVE_HOLD defaults to the Phase 6A/6B window and refuses a malformed value', () => {
+    const directory = join(tmpdir(), 'horse-journal-config');
+    expect(HORSE_JOURNAL_ARCHIVE_HOLD).toBe('2026-09-18T21:56:28Z/2026-09-25T19:34:06Z');
+    expect(runtimeHorseJournalArchiveOptions(directory, {}).hold).toEqual({
+      fromMs: Date.parse('2026-09-18T21:56:28Z'),
+      untilMs: Date.parse('2026-09-25T19:34:06Z'),
+    });
+    expect(
+      runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: 'none' })
+        .hold
+    ).toBeNull();
+    for (const value of [
+      '',
+      'None',
+      '2026-09-18T21:56:28Z',
+      '2026-09-25T19:34:06Z/2026-09-18T21:56:28Z',
+      '2026-09-18T21:56:28Z/2026-09-18T21:56:28Z',
+      '2026-02-30T00:00:00Z/2026-03-01T00:00:00Z',
+      '2026-09-18T21:56:28.000Z/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28+00:00/2026-09-25T19:34:06Z',
+      '2026-09-18T21:56:28Z/2026-09-25T19:34:06Z/',
+    ])
+      expect(() =>
+        runtimeHorseJournalArchiveOptions(directory, { HORSE_DECISION_JOURNAL_ARCHIVE_HOLD: value })
+      ).toThrow('Invalid Horse archive evidence hold');
+  });
+  it('/health counts the held segments and says when only held or unpublished segments remain', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({
+        type: 'STATS',
+        stats: {
+          archive: {
+            ...STATS_ARCHIVE,
+            segments: 500_000,
+            publishedSegments: 500_000,
+            heldSegments: 237_613,
+            retiredSegments: 0,
+            maxSegments: 2_000_000,
+          },
+        },
+      });
+      expect(p.health()).toMatchObject({
+        heldSegments: 237_613,
+        capture:
+          'running: the archive is a ring of 2000000 segments; the oldest published segment outside the evidence hold is retired when a new one needs its room; retained=500000 published=500000 held=237613 unpublished=0 retired=0',
+      });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_bytes' });
+      expect(p.health().capture).toBe(
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_bytes: the evidence hold is crowding capture, no published segment outside it is left to retire (only held or unpublished segments remain); asks again every minute; retained=500000 published=500000 held=237613 unpublished=0 retired=0'
+      );
+      void p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+const CAPACITY_REASONS = [
+  'archive_bytes',
+  'archive_segments',
+  'archive_catalog_capacity',
+  'archive_storage_capacity',
+] as const;
+const PAUSED_AT = Date.parse('2026-09-25T19:34:05.000Z');
+const identities = (records: readonly HorseJournalRecord[]) =>
+  records.map((r) => [r.eventId, r.sha256]);
+const sentOf = (w: FakeWorker, type: string) =>
+  w.sent.filter((m) => m.type === type) as Array<{ type: string; records: HorseJournalRecord[] }>;
+const STATS_ARCHIVE = {
+  compressedBytes: 10,
+  segments: 1,
+  records: 3,
+  pendingSegments: 0,
+  publishedSegments: 1,
+  retiredSegments: 4,
+  retiredRecords: 12,
+  catalogBytes: 40960,
+  maxRowid: 3,
+  maxBytes: 1024,
+  maxSegments: 100,
+  maxRecords: 1600,
+  maxCatalogBytes: 6 * 1024 * 1024 * 1024,
+  appliedMaxCatalogBytes: 6 * 1024 * 1024 * 1024,
+};
+
+describe('capacity is a condition: the journal pauses at its quota and says so', () => {
+  it.each(CAPACITY_REASONS)(
+    'pauses on %s, keeps its queue, re-probes and replays the same records once when room returns',
+    async (reason) => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const w = new FakeWorker(),
+          notes: string[] = [],
+          p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x), {
+            wallNow: () => PAUSED_AT,
+          });
+        p.record('decision', 'hand', 'turn', { n: 1 });
+        w.emit({ type: 'READY' });
+        const head = sentOf(w, 'APPEND')[0]!.records;
+        w.emit({ type: 'UNAVAILABLE', reason });
+        expect(p.health()).toMatchObject({
+          mode: 'paused',
+          pausedReason: reason,
+          pausedSince: '2026-09-25T19:34:05.000Z',
+          lastFailureReason: null,
+          failedSince: null,
+          queued: 1,
+        });
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
+        );
+        // The writer is kept: a quota is not a broken writer.
+        expect(w.terminate).not.toHaveBeenCalled();
+        expect(notes).toContain('phase15_journal_' + reason);
+        expect(notes).toContain('phase15_journal_capacity_paused');
+        expect(notes).not.toContain('phase15_journal_unavailable');
+        // record() while paused is counted as paused, not as a failed journal,
+        // and still queues within the same bounds.
+        p.record('execution', 'hand', 'turn', { n: 2 });
+        expect(notes).toContain('phase15_journal_capture_paused_capacity');
+        expect(notes).not.toContain('phase15_journal_capture_unavailable');
+        expect(p.health().queued).toBe(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(1);
+        // A fixed, bounded schedule: nothing before a minute, then one a minute.
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(sentOf(w, 'PROBE')).toHaveLength(0);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sentOf(w, 'PROBE')).toHaveLength(1);
+        const probed = sentOf(w, 'PROBE')[0]!.records;
+        expect(probed).toHaveLength(2);
+        expect(identities(probed.slice(0, 1))).toEqual(identities(head));
+        w.emit({ type: 'CAPACITY', room: false, reason });
+        expect(p.health()).toMatchObject({ mode: 'paused', pausedReason: reason });
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(sentOf(w, 'PROBE')).toHaveLength(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(1);
+        // A probe is not a retry: the restart budget is untouched.
+        expect(notes).not.toContain('phase15_journal_retry_scheduled');
+        // Room again (a quota raised for the next start, or a rotated archive).
+        w.emit({ type: 'CAPACITY', room: true });
+        expect(p.health()).toMatchObject({
+          mode: 'ready',
+          pausedReason: null,
+          pausedSince: null,
+          lastFailureReason: null,
+        });
+        expect(warn).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenLastCalledWith(
+          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`
+        );
+        expect(notes).toContain('phase15_journal_capacity_resumed');
+        const replay = sentOf(w, 'APPEND')[1]!.records;
+        expect(identities(replay)).toEqual(identities(probed));
+        expect(replay[0]).toEqual(head[0]);
+        w.emit({
+          type: 'ACK',
+          receipts: replay.map((r) => ({
+            eventId: r.eventId,
+            sha256: r.sha256,
+            status: 'recorded',
+          })),
+        });
+        expect(p.health()).toMatchObject({ mode: 'ready', queued: 0 });
+        expect(notes.filter((x) => x === 'phase15_journal_recorded')).toHaveLength(2);
+        // Resumed: no more probes and no second copy of anything.
+        await vi.advanceTimersByTimeAsync(180_000);
+        expect(sentOf(w, 'PROBE')).toHaveLength(2);
+        expect(sentOf(w, 'APPEND')).toHaveLength(2);
+        const stopping = p.stop();
+        expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+        w.emit({ type: 'STOPPED' });
+        await stopping;
+        expect(p.health().mode).toBe('stopped');
+      } finally {
+        warn.mockRestore();
+      }
+    }
+  );
+  it('keeps the bounded queue while paused and drops beyond it with the same count', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      // Queue starts at 1 (the batch in flight when the pause landed); fill it
+      // to its bound and run a fixed 7 more past it.
+      const overflow = 7;
+      const iterations = HORSE_JOURNAL_QUEUE_MAX_RECORDS - 1 + overflow;
+      for (let i = 0; i < iterations; i++) p.record('decision', 'hand', 'turn', { i });
+      expect(p.health().queued).toBe(HORSE_JOURNAL_QUEUE_MAX_RECORDS);
+      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(overflow);
+      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(
+        iterations
+      );
+      // Stopping while paused is prompt and names the gap it leaves.
+      const stopping = p.stop();
+      expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+      w.emit({ type: 'STOPPED' });
+      await stopping;
+      expect(p.health().mode).toBe('stopped');
+      expect(notes).toContain('phase15_journal_shutdown_unverified');
+      expect(notes).not.toContain('phase15_journal_recorded');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('a quota refusal while draining for shutdown stops at once and names the gap', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      const stopping = p.stop();
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
+      w.emit({ type: 'STOPPED' });
+      await stopping;
+      expect(p.health().mode).toBe('stopped');
+      expect(notes).toContain('phase15_journal_shutdown_unverified');
+      expect(sentOf(w, 'PROBE')).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('an integrity refusal stays terminal: ack_mismatch fails, never pauses, never probes', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x), {
+          wallNow: () => PAUSED_AT,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      const head = sentOf(w, 'APPEND')[0]!.records[0]!;
+      w.emit({
+        type: 'ACK',
+        receipts: [{ eventId: 'wrong', sha256: head.sha256, status: 'recorded' }],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=failed reason=ack_mismatch'
+      );
+      // /health says failed, with the reason, when, and the last stats it had.
+      expect(p.health()).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'ack_mismatch',
+        failedSince: '2026-09-25T19:34:05.000Z',
+        pausedReason: null,
+        pausedSince: null,
+        queued: 1,
+        records: 3,
+        catalogBytes: 40960,
+        maxRecords: 1600,
+      });
+      p.record('decision', 'hand', 'turn2', {});
+      expect(notes).toContain('phase15_journal_capture_unavailable');
+      expect(notes).not.toContain('phase15_journal_capture_paused_capacity');
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(sentOf(w, 'PROBE')).toHaveLength(0);
+      expect(w.terminate).toHaveBeenCalledOnce();
+      // A late capacity answer cannot revive a failed journal.
+      w.emit({ type: 'CAPACITY', room: true });
+      expect(p.health().mode).toBe('failed');
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('a capacity report from a writer that never became ready stays terminal', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      // The writer could not open (it closes its port after this message).
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_storage_capacity' });
+      expect(p.health()).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'archive_storage_capacity',
+      });
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('shows paused with its reason and keeps the last stats while paused', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let clock = 0;
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, {
+          now: () => clock,
+          wallNow: () => PAUSED_AT,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      clock = 100;
+      w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
+      clock = 5000;
+      expect(p.health()).toMatchObject({
+        mode: 'paused',
+        pausedReason: 'archive_segments',
+        pausedSince: '2026-09-25T19:34:05.000Z',
+        lastFailureReason: null,
+        failedSince: null,
+        queued: 1,
+        records: 3,
+        maxRecords: 1600,
+        catalogBytes: 40960,
+        statsAgeMs: 5000,
+      });
+      // A paused writer is alive, so it is still asked for fresh figures.
+      expect(sentOf(w, 'STATS')).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('/health reads the journal from the thread that runs it', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  it('says disabled without a directory, starting before any report, then the owning report', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '');
+      expect(horseDecisionJournalHealth()).toMatchObject({ mode: 'disabled' });
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+      // This thread owns no publisher and nothing has reported yet.
+      expect(horseDecisionJournalHealth()).toMatchObject({
+        mode: 'starting',
+        lastFailureReason: null,
+        reportAgeMs: null,
+      });
+      // The publisher that failed lives in the Horse decision worker.
+      const w = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(w, () => {}, { wallNow: () => PAUSED_AT });
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      p.health();
+      w.emit({ type: 'STATS', stats: { archive: STATS_ARCHIVE } });
+      w.emit({ type: 'ACK', receipts: [] });
+      relayHorseDecisionJournalHealth(JSON.parse(JSON.stringify(p.health())));
+      const relayed = horseDecisionJournalHealth()!;
+      expect(relayed).toMatchObject({
+        mode: 'failed',
+        lastFailureReason: 'ack_mismatch',
+        failedSince: '2026-09-25T19:34:05.000Z',
+        queued: 1,
+        records: 3,
+        maxRecords: 1600,
+      });
+      expect(typeof relayed.reportAgeMs).toBe('number');
+      // A malformed report is ignored rather than shown.
+      relayHorseDecisionJournalHealth({ mode: 'fine', path: '/unused-fixture-horse-journal' });
+      relayHorseDecisionJournalHealth(null);
+      expect(horseDecisionJournalHealth()!.mode).toBe('failed');
+      // Only the finite field set crosses; free text never does.
+      relayHorseDecisionJournalHealth({
+        ...p.health(),
+        path: '/unused-fixture-horse-journal',
+        lastFailureReason: 'ENOSPC /unused-fixture-horse-journal',
+      });
+      expect(horseDecisionJournalHealth()).not.toHaveProperty('path');
+      expect(horseDecisionJournalHealth()!.lastFailureReason).toBeNull();
+      // The capture sentence is rebuilt on this thread from the finite fields,
+      // never copied from the report.
+      relayHorseDecisionJournalHealth({ ...p.health(), capture: 'running: /unused-fixture-path' });
+      expect(horseDecisionJournalHealth()!.capture).toBe(p.health().capture);
+      expect(horseDecisionJournalHealth()!.capture).toMatch(
+        /^not running: capture stopped for good at ack_mismatch/
+      );
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('/health shows every decision shard, never only the one that answered last', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+  // Two shards as /health saw them on e6b9dc5d at 21:53 UTC on 2026-09-27:
+  // one capturing, one stopped for good since 21:22:51.
+  const report = (mode: 'ready' | 'failed', patch: Record<string, unknown> = {}) => ({
+    mode,
+    lastFailureReason: null,
+    pausedReason: null,
+    pausedSince: null,
+    failedSince: null,
+    queued: 6,
+    ...STATS_ARCHIVE,
+    records: 4886577,
+    maxRowid: 4935653,
+    statsAgeMs: 1087,
+    reportAgeMs: null,
+    capture: 'copied text is never shown',
+    ...patch,
+  });
+  const failed = report('failed', {
+    lastFailureReason: 'termination_unverified',
+    failedSince: '2026-09-27T21:22:51.994Z',
+    queued: 64,
+    records: 4774445,
+    maxRowid: 4823521,
+    statsAgeMs: 1971018,
+  });
+  it('reports the least healthy shard and counts the shards by mode', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    m.relayHorseDecisionJournalHealth(failed, 'shard-2');
+    // The running shard answers last; the stopped one must still show.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    const health = m.horseDecisionJournalHealth();
+    expect(health).toMatchObject({
+      mode: 'failed',
+      lastFailureReason: 'termination_unverified',
+      failedSince: '2026-09-27T21:22:51.994Z',
+      queued: 70,
+      publishers: { total: 2, byMode: { ready: 1, failed: 1 } },
+    });
+    // The catalog is one shared archive: its figures are the freshest shard's.
+    expect(health.records).toBe(4886577);
+    expect(health.maxRowid).toBe(4935653);
+    expect(health.statsAgeMs).toBeLessThan(1971018);
+    expect(health.capture).toMatch(
+      /^1 of 2 decision-shard publishers running; least healthy: not running: capture stopped at termination_unverified since 2026-09-27T21:22:51\.994Z; a fresh writer is started every minute until one captures;/
+    );
+    // Every shard capturing again: ready, and the sentence says all of them.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-2');
+    expect(m.horseDecisionJournalHealth()).toMatchObject({
+      mode: 'ready',
+      lastFailureReason: null,
+      publishers: { total: 2, byMode: { ready: 2 } },
+    });
+    expect(m.horseDecisionJournalHealth().capture).toMatch(
+      /^2 of 2 decision-shard publishers running; least healthy: running:/
+    );
+  });
+  it('keeps the single-shard sentence unchanged', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(failed);
+    const health = m.horseDecisionJournalHealth();
+    expect(health.publishers).toEqual({ total: 1, byMode: { failed: 1 } });
+    expect(health.capture).toMatch(
+      /^not running: capture stopped at termination_unverified since .*; a fresh writer is started every minute until one captures;/
+    );
+  });
+});
+
+describe('a competing writer on the shared archive is a lock, not a dead writer', () => {
+  it('refuses as RETRYABLE while the other shard holds the catalog, and the same store then succeeds', () => {
+    const dir = folder(),
+      options = { directory: join(dir, 'archive'), maxBytes: 1024 * 1024, maxSegments: 100 };
+    const a = store(dir, { archive: options }),
+      b = store(dir, { archive: options });
+    const catalogA = (a as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    catalogA.exec('BEGIN IMMEDIATE');
+    let refused: unknown = null;
+    try {
+      b.appendBatch([record(1)]);
+    } catch (error) {
+      refused = error;
+    }
+    expect(horseJournalFailureKind(refused)).toBe('RETRYABLE');
+    catalogA.exec('ROLLBACK');
+    // Nothing was half written: the same writer, asked again, records it, and
+    // the other writer sees the same record as a replay.
+    expect(b.appendBatch([record(1)])).toEqual(['recorded']);
+    expect(a.appendBatch([record(1)])).toEqual(['replayed']);
+    expect(b.storageStats().archive).toMatchObject({ records: 1, pendingSegments: 0 });
+  });
+});
+
+describe('the journal says why it stopped and shows itself to /health', () => {
   it('names the publisher fence that gave up when the writer never said', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -982,15 +1919,31 @@ describe('the journal says why it stopped and shows itself to /health', () => {
     expect(p.health()).toEqual({
       mode: 'starting',
       lastFailureReason: null,
+      pausedReason: null,
+      pausedSince: null,
+      failedSince: null,
       queued: 0,
       appliedMaxCatalogBytes: null,
       maxCatalogBytes: null,
       catalogBytes: null,
+      segments: null,
+      maxSegments: null,
+      publishedSegments: null,
       pendingSegments: null,
+      retiredSegments: null,
+      retiredRecords: null,
+      heldSegments: null,
+      heldBytes: null,
+      holdBudgetBytes: null,
+      holdTrimmedSegments: null,
+      compressedBytes: null,
+      maxBytes: null,
       records: null,
       maxRecords: null,
       maxRowid: null,
       statsAgeMs: null,
+      reportAgeMs: null,
+      capture: 'not running yet: the writer has not said READY',
     });
     // A writer that is not ready is not asked.
     expect(w.sent).toEqual([]);
@@ -1048,5 +2001,95 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       ],
     });
     expect(p.health()).toMatchObject({ mode: 'ready', queued: 0 });
+  });
+});
+
+describe('a writer that never said READY never started', () => {
+  it('a real worker whose module cannot load is start_failed and unavailable, never ready', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // `new Worker()` does not throw for a module that fails to load: it
+      // reports an 'error' then an 'exit' event after the constructor returned.
+      const broken = () =>
+        new Worker(
+          new URL(
+            'data:text/javascript,' +
+              encodeURIComponent('throw new Error("horse journal writer failed to load")')
+          )
+        );
+      const notes: string[] = [],
+        startFailed = vi.fn(),
+        restart = vi.fn(broken),
+        p = new HorseDecisionJournalPublisher(broken(), (x) => notes.push(x), {
+          restart,
+          onStartFailed: startFailed,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      const deadline = Date.now() + 8000;
+      const seen = new Set<string>();
+      while (Date.now() < deadline && p.health().mode !== 'unavailable') {
+        seen.add(p.health().mode);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(seen.has('ready')).toBe(false);
+      expect(p.health()).toMatchObject({
+        mode: 'unavailable',
+        lastFailureReason: 'start_failed',
+        queued: 1,
+      });
+      // The bounded replacements were still tried: a lock at open is transient.
+      expect(restart).toHaveBeenCalledTimes(2);
+      expect(startFailed).toHaveBeenCalledOnce();
+      expect(notes).toContain('phase15_journal_start_failed');
+      expect(notes).not.toContain('phase15_journal_retry_exhausted');
+      expect(warn).toHaveBeenCalledWith(
+        '[HorseDecisionJournal] capture stopped mode=unavailable reason=start_failed'
+      );
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  }, 15_000);
+  it('a writer that was once ready and then keeps dying is still retry_exhausted', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = new FakeWorker(),
+        b = new FakeWorker(),
+        c = new FakeWorker(),
+        writers = [b, c],
+        startFailed = vi.fn(),
+        p = new HorseDecisionJournalPublisher(a, () => {}, {
+          restart: () => writers.shift()!,
+          now: () => Date.now(),
+          onStartFailed: startFailed,
+        });
+      p.record('decision', 'hand', 'turn', {});
+      a.emit({ type: 'READY' });
+      for (const w of [a, b, c]) {
+        w.listeners.get('error')?.(new Error('died'));
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(p.health()).toMatchObject({ mode: 'failed', lastFailureReason: 'retry_exhausted' });
+      expect(startFailed).not.toHaveBeenCalled();
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it('a writer that dies before READY with no restart available is start_failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = new FakeWorker(),
+        p = new HorseDecisionJournalPublisher(a, () => {});
+      a.listeners.get('exit')?.(1);
+      expect(p.health()).toMatchObject({
+        mode: 'unavailable',
+        lastFailureReason: 'start_failed',
+      });
+      await p.stop();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

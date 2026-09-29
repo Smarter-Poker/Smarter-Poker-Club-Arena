@@ -21,12 +21,16 @@ import {
 } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
+// accounting_postgres runs as four matrix shards (2026-09-26,
+// tests/ci-tells-the-truth-faster.law.test.ts). A suite step's only condition
+// is the one shard that runs it: never a bypass, never a failure suppression.
+const ONLY_ITS_SHARD = /^matrix\.shard == [1-4]$/;
 const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
 const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
-it('runs the real Diamond playfields once with an isolated software-rendering worker', () => {
+it('runs the real Diamond playfields once with an isolated software-rendering worker and one visible retry', () => {
   const beat = ci.jobs['css-beats-e2e'].steps.find(
     (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"
   );
@@ -36,7 +40,13 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
   );
   expect(playfields).toHaveLength(1);
   expect(playfields[0]).toContain('--workers=1');
-  expect(playfields[0]).toContain('--retries=0');
+  // One retry since 2026-09-26, and a retried pass is named, never hidden:
+  // the JSON report feeds the flaky-case summary step that follows.
+  expect(playfields[0]).toContain('--retries=1');
+  expect(playfields[0]).toContain('--reporter=line,json');
+  expect(playfields[0]).toContain(
+    'PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json"'
+  );
   expect(playfields[0]).not.toContain('tests/e2e/multi-table.spec.ts');
   expect(commands.some((line: string) => line.includes('tests/e2e/multi-table.spec.ts'))).toBe(
     true
@@ -173,10 +183,12 @@ describe('BBJ source changes reach their existing accounting verification', () =
     );
 
     expect(receipt.if).toBe(
-      "always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')"
+      "always() && matrix.shard == 1 && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')"
     );
     expect(receipt.env.BBJ_STEP_OUTCOME).toBe('${{ steps.bbj.outcome }}');
-    expect(upload.if).toBe("always() && steps.bbj_evidence.outputs.ready == 'true'");
+    expect(upload.if).toBe(
+      "always() && matrix.shard == 1 && steps.bbj_evidence.outputs.ready == 'true'"
+    );
     expect(upload.uses).toBe('actions/upload-artifact@v4');
     expect(upload.with.path).toBe('artifacts/bbj-bank-replay/');
     expect(upload.with['if-no-files-found']).toBe('error');
@@ -322,7 +334,7 @@ describe('required CI owns native fixture verification', () => {
       '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
     );
     expect(movement['continue-on-error']).toBeUndefined();
-    expect(movement.if).toBeUndefined();
+    expect(movement.if).toMatch(ONLY_ITS_SHARD);
     const artifact = steps.find(
       (step: { name?: string }) => step.name === 'Retain parked movement custody evidence'
     );
@@ -398,7 +410,7 @@ describe('required CI owns native fixture verification', () => {
     expect(native[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(native[0].env.PG_ISOLATION_TESTER).toContain('isolationtester');
     expect(native[0]['continue-on-error']).toBeUndefined();
-    expect(native[0].if).toBeUndefined();
+    expect(native[0].if).toMatch(ONLY_ITS_SHARD);
     const artifact = steps.find(
       (step: { name?: string }) => step.name === 'Retain original paid custody evidence'
     );
@@ -432,7 +444,7 @@ describe('required CI owns native fixture verification', () => {
     expect(native[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(native[0].env.PG_ISOLATION_TESTER).toContain('isolationtester');
     expect(native[0]['continue-on-error']).toBeUndefined();
-    expect(native[0].if).toBeUndefined();
+    expect(native[0].if).toMatch(ONLY_ITS_SHARD);
     const artifact = steps.find(
       (step: { name?: string }) => step.name === 'Retain accepted elimination custody evidence'
     );
@@ -577,7 +589,7 @@ describe('required CI owns native fixture verification', () => {
       '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
     );
     expect(satellite[0]['continue-on-error']).toBeUndefined();
-    expect(satellite[0].if).toBeUndefined();
+    expect(satellite[0].if).toMatch(ONLY_ITS_SHARD);
     const upload = steps.find(
       (step: { name?: string }) => step.name === 'Retain satellite qualifier receipts'
     );
@@ -650,7 +662,7 @@ describe('required CI owns native fixture verification', () => {
     );
     expect(mtt[0].run).not.toContain('20260915150000');
     expect(mtt[0]['continue-on-error']).toBeUndefined();
-    expect(mtt[0].if).toBeUndefined();
+    expect(mtt[0].if).toMatch(ONLY_ITS_SHARD);
     const evidence = steps.filter(
       (step: { name?: string }) =>
         step.name === 'Retain MTT preparation and activation receipts and exact native transcripts'
@@ -675,7 +687,7 @@ describe('required CI owns native fixture verification', () => {
     );
     expect(invocations).toHaveLength(1);
     expect(invocations[0].env.POKER_AUDIT_PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-    expect(invocations[0].if).toBeUndefined();
+    expect(invocations[0].if).toMatch(ONLY_ITS_SHARD);
     expect(invocations[0]['continue-on-error']).toBeUndefined();
     expect(classifyChangedPaths([path]).server).toBe(true);
   });
@@ -971,6 +983,41 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-first-archived.py',
+  'scripts/qualification/spin-first-archived.manifest.json',
+  'scripts/qualification/spin-first-archived-races.py',
+  'scripts/qualification/spin-first-archived-concurrency.py',
+  'scripts/qualification/spin-first-archived-locks.py',
+  'scripts/qualification/spin-first-archived-production-probe.py',
+  'scripts/qualification/test_first_archived_oracle.py',
+  'scripts/qualification/test_first_archived_concurrency.py',
+  'scripts/qualification/test_first_archived_locks.py',
+  'scripts/qualification/test_first_archived_production_probe.py',
+  'scripts/qualification/fixtures/archived-spin/first-connected-probe.sql',
+  'scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql',
+  'supabase/components/spin-archived-first-witness.sql',
+  'supabase/components/spin-archived-first-admission.sql',
+  'supabase/components/spin-archived-first-bridge.sql',
+  'supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql',
+  'scripts/qualification/spin-finalized-horse-admission.py',
+  'scripts/qualification/spin-finalized-horse-admission.manifest.json',
+  'scripts/qualification/spin-horse-admission-race.py',
+  'scripts/qualification/spin-horse-platform-paid-entry.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/prestart-seat.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/closed-seat.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/provider.sql',
+  'scripts/qualification/fixtures/finalized-horse-admission/owner-capture.json',
+  'scripts/qualification/fixtures/archived-spin-core-provider/generate.py',
+  'scripts/qualification/fixtures/archived-spin-core-provider/catalog.json',
+  'scripts/qualification/fixtures/archived-spin-core-provider/readback.sql',
+  'supabase/migrations/20260926143705_finalized_horse_seating_preserves_existing_custody.sql',
+  'scripts/qualification/spin-paid-terminal.py',
+  'scripts/qualification/spin-paid-terminal.md',
+  'scripts/qualification/spin-paid-terminal.hosted.manifest.json',
+  'scripts/qualification/fixtures/spin-paid-terminal/capture.json',
+  'scripts/qualification/fixtures/spin-paid-terminal/provider.sql',
+  'scripts/qualification/fixtures/spin-paid-terminal/execute.sql',
+  'scripts/qualification/fixtures/spin-paid-terminal/rules.json',
   'scripts/qualification/spin-positive-fee-entry.py',
   'scripts/qualification/spin-positive-fee-entry-oracle.py',
   'scripts/qualification/spin-mixed-positive-fee-entry.sql',
@@ -1150,6 +1197,18 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
 
   it.each([
     'docs/spin-expiry-plan.md',
+    'scripts/qualification/spin-first-archived.py.bak',
+    'scripts/qualification/test_first_archived_oracle.py.bak',
+    'scripts/qualification/test_first_archived_concurrency.py.bak',
+    'scripts/qualification/test_first_archived_locks.py.bak',
+    'scripts/qualification/test_first_archived_production_probe.py.bak',
+    'scripts/qualification/fixtures/archived-spin-notes/input.sql',
+    'supabase/components/spin-archived-first-admission.sql.bak',
+    'scripts/qualification/spin-finalized-horse-admission.py.bak',
+    'scripts/qualification/spin-horse-admission-race.py.bak',
+    'scripts/qualification/spin-horse-platform-paid-entry.sql.bak',
+    'scripts/qualification/fixtures/finalized-horse-admission-notes/input.sql',
+    'scripts/qualification/fixtures/archived-spin-core-provider-notes/input.sql',
     'supabase/components/spin-mixed-basis-current-terminal.sql.bak',
     'supabase/components/spin-mixed-basis-current-terminal.rollback.sql.bak',
     'scripts/qualification/spin-positive-fee-entry.py.bak',
@@ -1213,7 +1272,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].run).toBe('python3 scripts/ci/test-spin-expiry-postgres.py');
     expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-    expect(calls[0].if).toBeUndefined();
+    expect(calls[0].if).toMatch(ONLY_ITS_SHARD);
     expect(calls[0]['continue-on-error']).toBeUndefined();
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
     const gate = ci.jobs.server.steps.find(
@@ -1284,7 +1343,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
       expect(calls).toHaveLength(1);
       expect(calls[0].run).toBe(command);
       expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-      expect(calls[0].if).toBeUndefined();
+      expect(calls[0].if).toMatch(ONLY_ITS_SHARD);
       expect(calls[0]['continue-on-error']).toBeUndefined();
       const current = accounting.steps.indexOf(calls[0]);
       expect(current).toBeGreaterThan(previous);
@@ -1350,7 +1409,9 @@ describe('native PG17 isolation tool is built by the existing accounting job', (
     const evidence = steps.find(
       (step: { name?: string }) => step.name === 'Retain PostgreSQL isolation tool build evidence'
     );
-    expect(evidence.if).toBe("always() && steps.pg17_isolation_tool.outcome != 'skipped'");
+    expect(evidence.if).toBe(
+      "always() && (matrix.shard == 3 || matrix.shard == 4) && steps.pg17_isolation_tool.outcome != 'skipped'"
+    );
     expect(evidence.with.path).toContain('artifacts/postgresql-17-isolationtester/receipt.json');
     expect(evidence.with.path).not.toContain('**');
   });
@@ -1421,7 +1482,7 @@ describe('composed alert inputs stay in the existing accounting qualification', 
       expect(calls).toHaveLength(1);
       expect(calls[0].run).toBe(command);
       expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
-      expect(calls[0].if).toBeUndefined();
+      expect(calls[0].if).toMatch(ONLY_ITS_SHARD);
       expect(calls[0]['continue-on-error']).toBeUndefined();
       expect(steps.indexOf(calls[0])).toBeLessThan(
         steps.findIndex(
@@ -1464,7 +1525,7 @@ describe('Class4 evidence uses the same PostgreSQL job', () => {
       (step: { id?: string }) => step.id === 'class4_hand_outcome'
     );
     expect(calls).toHaveLength(1);
-    expect(calls[0].if).toBeUndefined();
+    expect(calls[0].if).toMatch(ONLY_ITS_SHARD);
     expect(calls[0]['continue-on-error']).toBeUndefined();
     expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(calls[0].run.trim()).toBe(
@@ -1510,7 +1571,7 @@ describe('cash failure intake is exercised by the actual hosted scheduler fixtur
     expect(execution[0].run.trim()).toBe(
       'python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py\npython3 scripts/ci/test-cash-failure-pgcron.py'
     );
-    expect(execution[0].if).toBeUndefined();
+    expect(execution[0].if).toMatch(ONLY_ITS_SHARD);
     expect(execution[0]['continue-on-error']).toBeUndefined();
     expect(job.steps.indexOf(build[0])).toBeLessThan(job.steps.indexOf(execution[0]));
   });
@@ -1528,6 +1589,7 @@ describe('restored provider accounting qualification', () => {
     'cash-source-compatibility',
     'cash-source-refusals',
     'cashier-document-authority',
+    'cashier-statements',
     'club-weekly-summary',
     'correction-document-authority',
     'correction-writer-authority',
@@ -1665,6 +1727,7 @@ describe('restored provider accounting qualification', () => {
       'accounting-delivery',
       'credit-invoice-payment',
       'agent-accounting-statements',
+      'cashier-statements',
       'accounting-agreement-history',
       'club-weekly-summary',
       'weekly-accounting-coordinator',
@@ -1683,7 +1746,7 @@ describe('restored provider accounting qualification', () => {
       expect(matches, runner).toHaveLength(1);
       const step = matches[0];
       expect(step.run!.split(command)).toHaveLength(2);
-      expect(step.if, runner).toBeUndefined();
+      expect(step.if, runner).toMatch(ONLY_ITS_SHARD);
       expect(step['continue-on-error'], runner).not.toBe(true);
       expect(step.env?.PG_BIN, runner).toBe('/usr/lib/postgresql/17/bin');
       if (runner !== 'full-weekly-accounting-activation') expect(step.run).toBe(command);
@@ -1718,7 +1781,7 @@ describe('restored provider accounting qualification', () => {
     const evidence = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) => step.name === 'Preserve weekly accounting qualification evidence'
     );
-    expect(evidence.if).toBe('always()');
+    expect(evidence.if).toBe('always() && matrix.shard == 2');
     expect(evidence.uses).toBe('actions/upload-artifact@v4');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-results');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-activation');
@@ -1789,6 +1852,14 @@ it('the actual replay condition executes for missing output and non-instruction 
   expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
 });
 
+it('paid terminal qualification uses the actual engine rule manifest', async () => {
+  const { spinRuleManifest } = await import('../../server/src/tournament/SpinDrawReceipt');
+  const rules = JSON.parse(
+    readFileSync(join(root, 'scripts/qualification/fixtures/spin-paid-terminal/rules.json'), 'utf8')
+  );
+  expect(rules).toEqual(spinRuleManifest(1, 1000));
+});
+
 describe('original Breakfast witness reaches its existing accounting gate', () => {
   it.each([
     'scripts/ci/test-breakfast-original-witness.py',
@@ -1807,7 +1878,7 @@ describe('original Breakfast witness reaches its existing accounting gate', () =
       step.run?.includes('scripts/ci/test-breakfast-original-witness.py')
     );
     expect(run).toHaveLength(1);
-    expect(run[0].if).toBeUndefined();
+    expect(run[0].if).toMatch(ONLY_ITS_SHARD);
     expect(run[0]['continue-on-error']).toBeUndefined();
     expect(run[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(run[0].env.PG_ISOLATION_TESTER).toContain('postgresql-17-isolationtester');

@@ -1,4 +1,0 @@
-{
-  "_owner": "GlobalWaitlistListener is mounted in App.tsx for every authenticated user, so it is already in the entry chunk; this is the pure decision function it calls, 83 lines with zero imports of its own. It decides a seat offer INSIDE the realtime handler, and the hold it is deciding about lasts sixty seconds, so a dynamic import would put a network round trip in front of the most time-critical moment in the product to defer about a kilobyte. It is a separate module rather than inline code because the logic it replaces was unprovable: it branched on payload.old.status, which an RLS-enabled table does not send, and being pure is what lets the regression assert both outcomes with the old row present and absent. This branch's entry chunk is 10kB gz SMALLER than the baseline overall.",
-  "modules": ["src/components/common/waitlistSeatOffer.ts"]
-}

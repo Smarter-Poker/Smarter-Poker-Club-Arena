@@ -176,9 +176,20 @@ describe('LAW 3: the live jackpot payout defers to the break', () => {
     const loop = code.slice(code.indexOf('for (const row of rows) {'));
     const gate = loop.indexOf('if (isMaintenanceFrozen()) {');
     expect(gate).toBeGreaterThan(-1);
-    // FIRST in the body, so a deferred row costs no reads either
-    expect(gate).toBeLessThan(loop.indexOf("row.kind === 'bbj_payout'"));
-    expect(gate).toBeLessThan(loop.indexOf('hand_history'));
+    /* FIRST in the body, so a deferred row costs no reads either. Since
+       2026-09-22 the loop completes jackpot claims only (the rake and BBJ drop
+       are the hand's own envelope), so the reads and money moves it must come
+       before are the kind check, the live seat read and the payout itself -
+       each asserted to exist, so a missing anchor cannot pass as -1. */
+    for (const anchor of [
+      "row.kind !== 'bbj_payout'",
+      ".from('table_seats')",
+      'processBBJPayout(',
+      ".from('pending_fee_distributions')",
+    ]) {
+      expect(loop.indexOf(anchor), anchor).toBeGreaterThan(-1);
+      expect(gate, anchor).toBeLessThan(loop.indexOf(anchor));
+    }
     expect(loop.slice(gate)).toMatch(
       /if \(isMaintenanceFrozen\(\)\) \{\s+summary\.deferredFrozen\+\+;\s+continue;\s+\}/
     );

@@ -5,12 +5,50 @@
   min-width: 0;
   overflow: hidden;
   border-radius: 10px;
+  /* Under the canvas before its first frame: the night sky down to its haze
+     at the horizon (a sixth of the way down, where the scene's own horizon
+     prints), then the road's tones, so a slow phone shows a frame, not a
+     black hole. The canvas is transparent until it is drawn on. */
+  background:
+    radial-gradient(90% 40% at 50% 66%, rgb(255 231 194 / 7%), transparent 70%),
+    linear-gradient(
+      180deg,
+      #050607 0%,
+      #071120 9%,
+      #0f2446 17%,
+      #101a28 24%,
+      #0b0f14 55%,
+      #050607 100%
+    );
+  box-shadow:
+    0 0 0 1px rgb(154 165 179 / 30%) inset,
+    0 1px 0 rgb(255 255 255 / 6%) inset;
 }
 .canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
+/* The frame: a soft vignette and a darker foot, so the plates and the strip
+   sit on the road instead of floating over it, and the lit streets read as
+   the bright part of the picture. The head of the frame is the sky now, so
+   it is only lightly darkened, and only above the skyline. Above the canvas,
+   below every plate. */
+.scene::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 45%, rgb(5 6 7 / 0%) 55%, rgb(5 6 7 / 46%) 100%),
+    linear-gradient(180deg, rgb(5 6 7 / 24%) 0%, rgb(5 6 7 / 0%) 12%),
+    linear-gradient(0deg, rgb(5 6 7 / 62%) 0%, rgb(5 6 7 / 0%) 26%);
+}
+/* #SMARTERCASINOREALISM: the overlays are machined plates, not glass pills.
+   One obsidian face, a 4px corner, a gunmetal hairline and the bevel every
+   Marketplace surface wears; the label tracked and muted, and gold kept for
+   the one number that is money. */
 .caption {
   position: absolute;
   z-index: 1;
@@ -18,21 +56,28 @@
   left: 50%;
   transform: translateX(-50%);
   max-width: 90%;
-  border: 1px solid #7da1b844;
-  border-radius: 20px;
+  border: 1px solid var(--realism-gunmetal-lit, #3a4756);
+  border-radius: 4px;
   padding: 8px 16px;
-  background: #0b1b2de8;
-  color: #e3f3ff;
+  background: rgb(5 7 10 / 90%);
+  box-shadow: var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07));
+  color: var(--realism-chrome, #b8c3cd);
   font:
-    500 12px/1.3 Inter,
+    500 11px/1.3 Inter,
     sans-serif;
+  letter-spacing: 0.07em;
   text-align: center;
+  /* Centred from the middle, the caption only has half the scene before it
+     would wrap; it is one short line and stays one line on a phone. */
+  white-space: nowrap;
   pointer-events: none;
 }
+/* The bust keeps the strip's language: a black plate, silver type, and the
+   bust red as its edge alone (never brown, salmon or pink). */
 .scene[data-phase='lost'] .caption {
-  background: #552c29;
-  color: #ffe6dd;
-  border-color: #eaa081;
+  background: rgb(5 7 10 / 92%);
+  color: #e4e7ec;
+  border-color: #ff5b6e;
 }
 .fallback {
   position: absolute;
@@ -51,10 +96,11 @@
   gap: 2px;
   max-width: calc(100% - 24px);
   padding: 8px 12px;
-  border: 1px solid #7da1b844;
-  border-radius: 12px;
-  background: #0b1b2de0;
-  color: #e3f3ff;
+  border: 1px solid var(--realism-gunmetal-lit, #3a4756);
+  border-radius: 4px;
+  background: rgb(5 7 10 / 90%);
+  box-shadow: var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07));
+  color: var(--realism-chrome, #b8c3cd);
   pointer-events: none;
 }
 .readoutLabel,
@@ -62,24 +108,104 @@
   font:
     500 11px/1.3 Inter,
     sans-serif;
-  color: #a9cbe3;
+  letter-spacing: 0.07em;
+  color: var(--realism-muted, #7f8c9b);
 }
 .readoutValue {
   font:
     800 22px/1.1 'Roboto Condensed',
     Inter,
     sans-serif;
-  color: #ffe9a8;
+  color: var(--realism-gold, #ffc93c);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 14px #ffc85766;
+  text-shadow: 0 0 14px rgb(255 201 60 / 28%);
 }
 .readout[data-tone='bust'] {
-  background: #4a1f1ce6;
-  border-color: #eaa081;
+  background: rgb(5 7 10 / 90%);
+  border-color: #ff5b6e;
+  box-shadow: inset 0 0 12px rgb(240 40 73 / 22%);
 }
 .readout[data-tone='bust'] .readoutValue {
-  color: #ffd9cc;
+  color: #e4e7ec;
   text-shadow: none;
+}
+
+/* HOW FAR THE DONKEY COULD HAVE GONE: the one plate a booked win adds. The
+   same machined black plate, with a gold LED edge because what it states is
+   value the player weighed, and the figure in gold. It slides in on the beat
+   the win is shown as booked, timed by the player's Animation Speed. */
+.route {
+  position: absolute;
+  z-index: 1;
+  bottom: 68px;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 9px 16px 10px;
+  border: 1px solid rgb(255 215 0 / 78%);
+  border-radius: 4px;
+  background: rgb(5 7 10 / 92%);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 215 0 / 22%),
+    inset 0 0 18px rgb(255 215 0 / 14%),
+    0 10px 30px rgb(0 0 0 / 55%);
+  color: var(--realism-chrome, #b8c3cd);
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: route-in calc(480ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.route[data-outcome='crash'] {
+  border-color: rgb(255 91 110 / 80%);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 22%),
+    inset 0 0 18px rgb(240 40 73 / 16%),
+    0 10px 30px rgb(0 0 0 / 55%);
+}
+.routeLabel,
+.routeNote {
+  font:
+    500 10px/1.3 Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--realism-muted, #7f8c9b);
+}
+.routeNote {
+  text-transform: none;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--realism-chrome, #b8c3cd);
+}
+.routeValue {
+  font:
+    800 19px/1.15 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 16px rgb(255 215 0 / 35%),
+    0 1px 0 #050607;
+}
+.route[data-outcome='crash'] .routeValue {
+  color: #e4e7ec;
+  text-shadow: 0 1px 0 #050607;
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 /* The bust moment: one flash and a stamp, brief and unmistakable. */
@@ -89,52 +215,55 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #ff5a3c00;
+  background: rgb(240 40 73 / 0%);
   pointer-events: none;
   animation: bust-flash 0.7s ease-out both;
 }
 .bust span {
   padding: 6px 22px;
-  border: 3px solid #ffb09a;
-  border-radius: 8px;
-  background: #4a1f1cf0;
-  color: #fff1ea;
+  border: 3px solid #ff5b6e;
+  border-radius: 4px;
+  background: rgb(5 7 10 / 94%);
+  box-shadow:
+    inset 0 0 14px rgb(240 40 73 / 35%),
+    0 0 18px rgb(240 40 73 / 30%);
+  color: #f2f4f7;
   font:
     900 34px/1 'Roboto Condensed',
     Inter,
     sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  transform: rotate(-8deg);
-  animation: bust-stamp 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
-  animation-delay: 0.35s;
+  /* The stamp mounts at the moment of impact now, so it neither waits for its
+     cue nor arrives spinning: it is simply there, in 150 ms. */
+  animation: bust-stamp 0.15s ease-out both;
 }
 @keyframes bust-flash {
   0% {
-    background: #ff5a3c00;
-  }
-  45% {
-    background: #ff5a3c00;
-  }
-  55% {
-    background: #ff5a3c66;
+    background: rgb(240 40 73 / 30%);
   }
   100% {
-    background: #ff5a3c00;
+    background: rgb(240 40 73 / 0%);
   }
 }
 @keyframes bust-stamp {
   from {
     opacity: 0;
-    transform: rotate(-8deg) scale(2.4);
   }
   to {
     opacity: 1;
-    transform: rotate(-8deg) scale(1);
   }
 }
 
-/* Every street and what it pays, in one strip; the tint rises with the danger. */
+/* Every street and what it pays, in one strip. #SMARTERCASINOREALISM (Dan
+   2026-09-21: "THE MULTIPLIERS NEED TO BE SMARTER.POKER COLOR SCHEMA"): each
+   street is a machined black tile with a thin crisp edge, its multiplier in
+   engraved silver and the chips it pays in gold. The rise toward the big
+   streets is the edge itself, dim chrome to chrome to brass to gold, never
+   brown, maroon or red; red is the bust alone. The street underfoot and the
+   next one light an electric-blue LED edge. The glows are inset because the
+   strip scrolls and clips anything drawn outside a tile. The signs painted on
+   the road (ChoiceScene.tsx, SIGN_INK) wear the same edges. */
 .streets {
   position: absolute;
   z-index: 1;
@@ -160,63 +289,125 @@
   gap: 1px;
   min-width: 54px;
   padding: 5px 6px;
-  border: 1px solid #7da1b844;
-  border-radius: 8px;
-  background: #0b1b2de0;
-  color: #dcefff;
+  border: 1px solid var(--realism-muted, #7f8c9b);
+  border-radius: 4px;
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-obsidian, #05070a) 100%
+  );
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
+  color: #e4e7ec;
   scroll-snap-align: center;
   font-variant-numeric: tabular-nums;
   transition:
     background 0.25s,
-    border-color 0.25s;
+    border-color 0.25s,
+    box-shadow 0.25s;
 }
 .street[data-hazard='1'] {
-  background: #221c2ae0;
-  border-color: #9b7a8a55;
+  border-color: var(--realism-chrome, #b8c3cd);
 }
 .street[data-hazard='2'] {
-  background: #34202ae0;
-  border-color: #c4837b66;
+  border-color: rgb(214 173 82 / 72%);
 }
 .street[data-hazard='3'] {
-  background: #4a1f1ce0;
-  border-color: #eaa08188;
+  border-color: #ffd700;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
+    inset 0 0 8px rgb(255 215 0 / 16%);
 }
 .streetNumber {
   font:
     600 10px/1.2 Inter,
     sans-serif;
-  color: #a9cbe3;
+  color: #9aa5b3;
 }
 .streetMultiplier {
   font:
     800 14px/1.1 'Roboto Condensed',
     Inter,
     sans-serif;
-  color: #ffe9a8;
+  color: #e4e7ec;
+  text-shadow:
+    0 1px 0 #050607,
+    0 1px 3px rgb(0 0 0 / 80%);
 }
 .streetPrize {
   font:
     500 10px/1.2 Inter,
     sans-serif;
-  color: #cfe6f5;
+  color: #ffd700;
+  text-shadow: 0 1px 0 #050607;
 }
 .street[data-state='crossed'] {
   opacity: 0.55;
 }
 .street[data-state='current'] {
-  border-color: #64cbb0;
-  background: #143b39e8;
-  box-shadow: 0 0 0 1px #64cbb0;
+  border-color: #45adff;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(69 173 255 / 55%),
+    inset 0 0 14px rgb(69 173 255 / 38%);
 }
 .street[data-state='next'] {
-  border-color: #65cfff;
-  box-shadow: 0 0 0 1px #65cfff;
+  border-color: #45adff;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(69 173 255 / 35%),
+    inset 0 0 9px rgb(69 173 255 / 26%);
 }
 .street[data-state='crash'] {
-  border-color: #ff745b;
-  background: #552c29f0;
-  box-shadow: 0 0 0 1px #ff745b;
+  border-color: #ff5b6e;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 45%),
+    inset 0 0 12px rgb(240 40 73 / 35%);
+}
+/* A booked win's route: the streets the donkey would still have crossed light
+   gold as the ghost reaches them, and the one after them is the crash it never
+   met. The same colours the signs on the road wear for the same streets. */
+.street[data-route='reachable'] {
+  opacity: 1;
+  border-color: #ffd700;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 215 0 / 45%),
+    inset 0 0 14px rgb(255 215 0 / 30%);
+}
+.street[data-route='reachable'] .streetMultiplier {
+  color: #ffd700;
+}
+.street[data-route='crash'] {
+  border-color: #ff5b6e;
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    inset 0 0 0 1px rgb(255 91 110 / 40%),
+    inset 0 0 12px rgb(240 40 73 / 30%);
+}
+@media (min-width: 761px) {
+  /* Room to the right of the readout on a wide scene: the plate takes it. */
+  .route {
+    top: 56px;
+    right: 12px;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    animation-name: route-in-wide;
+  }
+  @keyframes route-in-wide {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 @media (max-width: 760px) {
   .scene {
@@ -224,6 +415,52 @@
   }
   .readoutValue {
     font-size: 19px;
+  }
+  /* Above the strip and over the signs, which the strip repeats: the ghost
+     walking the route stays in clear view. */
+  .route {
+    padding: 7px 12px 8px;
+  }
+  .routeValue {
+    font-size: 16px;
+  }
+  .street {
+    min-width: 48px;
+    padding: 4px 5px;
+  }
+}
+/* A PHONE ON ITS SIDE (2026-09-26). The console is one screen tall and the
+   scene takes the height it leaves (--scene-budget, GameConsole.module.css),
+   so the road, its plates and the street strip all sit inside that screen.
+   The scene is then only as wide as a phone held upright, so the plates take
+   their phone places too: the wide layout's top-right route plate landed on
+   the readout at this width. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .scene {
+    height: max(220px, var(--scene-budget, 64dvh));
+  }
+  .caption {
+    top: 10px;
+    padding: 6px 12px;
+  }
+  .readout {
+    top: 44px;
+    padding: 6px 10px;
+  }
+  .readoutValue {
+    font-size: 19px;
+  }
+  .route {
+    top: auto;
+    right: auto;
+    bottom: 64px;
+    left: 50%;
+    padding: 7px 12px 8px;
+    transform: translateX(-50%);
+    animation-name: route-in;
+  }
+  .routeValue {
+    font-size: 16px;
   }
   .street {
     min-width: 48px;
@@ -237,12 +474,16 @@
     animation: none;
   }
   .bust {
-    background: #ff5a3c33;
+    background: rgb(240 40 73 / 20%);
   }
   .street {
     transition: none;
   }
   .streets {
     scroll-behavior: auto;
+  }
+  /* The plate is simply there, in gold, saying the same thing. */
+  .route {
+    animation: none;
   }
 }

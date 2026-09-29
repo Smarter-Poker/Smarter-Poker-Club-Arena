@@ -1,0 +1,3 @@
+# tests/the-two-retired-events-are-voided-money-neutral.law.test.ts
+
+The reviewed void door (smarter_private.f06_void_retired_mixed_custody_event) can only ever void the two retired mixed-custody events 5a387a75 and 615783bf, once, with every money and roster fact pinned; each event is voided in its own transaction (20260926131948 voids 615783bf, 20260926142646 voids 5a387a75 and restores f06_source_guard byte for byte to its live body), the guard bypass only ever admits a write inside the transaction holding the void's uncompleted claim, each transaction takes the settlement lane only with try-locks (never queueing) under a statement cap, and the door never rewrites a vacated chair that already reads left.

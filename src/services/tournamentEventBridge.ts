@@ -213,6 +213,69 @@ export function relayTournamentEvent(
       break;
     }
 
+    /**
+     * THE REST OF WHAT A SEATED PLAYER'S HUD HAS TO HEAR (2026-09-22).
+     *
+     * The engine broadcasts four more facts on this channel that nothing
+     * relayed, so the only way to hear them was to bind the channel yourself.
+     * That is how TournamentHUD came to hold its own `.on('broadcast')` on a
+     * channel TablePage was already holding - and a Realtime binding cannot be
+     * removed on its own, so while TablePage kept the channel every remount of
+     * the HUD left one more live listener behind, each still firing reads.
+     *
+     *   late_reg_closed     the entry window shut; the prize pool is changing
+     *   ADDON_PERIOD_START  the persisted add-on window opened, so the row now
+     *                       carries addon_period_started_at / _ends_at
+     *   bubble_burst        hand-for-hand is over; carries playersRemaining
+     *   final_table         the field fits one table; carries playerCount
+     *
+     * They ride TOURNAMENT_UPDATED, the bus's existing "this tournament moved"
+     * event that level_up already publishes above, with the engine's event
+     * named in `status` - the same shape as `blind_level_<n>`. Every
+     * TOURNAMENT_UPDATED listener already reads it as "re-read if you care",
+     * which is what all four mean.
+     *
+     * FINAL_TABLE_REACHED is deliberately NOT emitted for final_table.
+     * FinalTableOverlay listens for it, and TablePage publishes it itself, for
+     * MTTs only, with the seated field. A second copy from here would give a
+     * three-handed Spin a final-table celebration on its first hand, which is
+     * precisely what TablePage suppresses.
+     */
+    case 'late_reg_closed': {
+      if (freshFor('')) {
+        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: 'late_reg_closed' });
+      }
+      break;
+    }
+
+    case 'ADDON_PERIOD_START': {
+      // A thaw can move the window and re-announce it; that one is new.
+      const endsAt = typeof data.endsAt === 'string' ? data.endsAt : '';
+      if (freshFor(endsAt)) {
+        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: 'addon_period_start' });
+      }
+      break;
+    }
+
+    case 'bubble_burst': {
+      /* A count, or nothing. `Number(null)` is 0, and "0 players left" is a
+         claim the engine never made. */
+      const raw = data.playersRemaining;
+      const playersRemaining =
+        typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : undefined;
+      const burst = { tournamentId, status: 'bubble_burst', playersRemaining };
+      if (freshFor(playersRemaining)) masterBus.emit('TOURNAMENT_UPDATED', burst);
+      break;
+    }
+
+    case 'final_table': {
+      const count = typeof data.playerCount === 'number' ? data.playerCount : undefined;
+      if (freshFor(count)) {
+        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: 'final_table' });
+      }
+      break;
+    }
+
     default:
       // Not a break event. Every page keeps its own switch for the rest.
       break;

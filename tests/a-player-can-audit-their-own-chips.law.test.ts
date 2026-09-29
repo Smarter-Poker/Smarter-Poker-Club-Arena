@@ -96,7 +96,8 @@ describe('a player can audit their own chips', () => {
   });
 
   it('the component asks the RPC and never guesses', () => {
-    expect(component).toMatch(/supabase\.rpc\('fn_ca_chip_statement'/);
+    expect(component).toMatch(/supabase\.rpc\('fn_ca_chip_statement_page'/);
+    expect(component).not.toMatch(/supabase\.rpc\('fn_ca_chip_statement'/);
     expect(component).toMatch(/The Statement Could Not Be Loaded/);
     expect(component).toMatch(/does_not_reconcile/);
     expect(component).toMatch(/no_reading_yet/);

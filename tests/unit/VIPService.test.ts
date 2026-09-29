@@ -87,8 +87,9 @@ describe('VIPService', () => {
       // members on /vip and /profile, and none of the three existed:
       //   leaderboardBoost 0.06  LeaderboardService applies no boost.
       //   themes 3               nothing reads it; Table Studio sells singly.
-      //   clubCreation 3         fn_get_club_creation_eligibility caps EVERYONE
-      //                          at 4 club memberships, VIP or not.
+      //   clubCreation 3         the club membership cap is the same for
+      //                          everyone, VIP or not, and the server owns its
+      //                          number (preflight: fn_get_club_creation_eligibility).
       expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('leaderboardBoost');
       expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('themes');
       expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('clubCreation');

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "image": "positive-fee-terminal",
+  "synthetic_finish_input": true,
+  "historical_qualification": false,
+  "full_financial_qualification": false,
+  "production_qualification": false,
+  "files": {
+    "scripts/qualification/spin-paid-terminal.py": {
+      "bytes": 25583,
+      "sha256": "be79cdd3079e8f017f571d43effc7cc0ed2595371b907971c830f467e42023a2"
+    },
+    "scripts/qualification/fixtures/spin-paid-terminal/capture.json": {
+      "bytes": 142191,
+      "sha256": "a6bd1647e21156483b127f4466e06a2d0033079fb85d15e1552bfd732d5f117c"
+    },
+    "scripts/qualification/fixtures/spin-paid-terminal/provider.sql": {
+      "bytes": 149455,
+      "sha256": "1b17500f439fa5c623380f00faf350663ba70c35adacd13552ff30049213f341"
+    },
+    "scripts/qualification/fixtures/spin-paid-terminal/execute.sql": {
+      "bytes": 11627,
+      "sha256": "71620e54be91255b2f29bdeb864fa944d54cdea8ad4798e672f8194aed6e50de"
+    },
+    "scripts/qualification/fixtures/spin-paid-terminal/rules.json": {
+      "bytes": 18511,
+      "sha256": "2ffdfae02572aac6fba86ed9c71ff235e871f172e44acfd15304e242e6e05b46"
+    },
+    "server/src/tournament/SpinDrawReceipt.ts": {
+      "bytes": 7528,
+      "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+    },
+    "server/src/config/spinSpec.ts": {
+      "bytes": 43968,
+      "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+    }
+  }
+}

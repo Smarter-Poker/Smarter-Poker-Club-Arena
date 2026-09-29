@@ -1,0 +1,23 @@
+{
+  "_owner": "agent/claude-lightning-p5/lightning/phase5-conversion - migration 20260926023047_lightning_phase_9_remediation_nothing_holds_a_player_that_no",
+  "_comment": "Lightning 2.0 Phase 9 remediation. NOT YET APPLIED: every name below is a promise until the owner installs 20260926023047 after 20260925215731, and check-migrations-applied reports them as declared by this fragment only until then. NOTHING HELD A PLAYER THAT NOTHING COULD RELEASE: fn_lightning_reap_formations and the index it read both filtered state IN ('forming', 'reserved'), nothing moves an instance out of dealing or settling, so an engine that died holding a dealing hand left six committed reservations no code path could release and those six players could never play Lightning in that Cluster again. The reaper now abandons a dealing or settling instance past deadline_at, with p_now clamped to clock_timestamp() so a caller cannot reap a live hand by asserting a future clock, and fn_lightning_instance_keepalive is the engine's heartbeat that pushes deadline_at forward - forward only, at most fifteen minutes a call, and never for a hand already past its deadline. lightning_instance_past_deadline is replaced by lightning_instance_live_past_deadline over all four live states. THE REAPER, THE SLOT SYNC AND SLOT OPEN WERE CALLED BY NOTHING: fn_lightning_form_hand now reaps its own Cluster under the Cluster row lock before its own INSERT, and fn_cash_clusters_tick_all calls fn_lightning_reap_formations once for the estate and fn_lightning_pool_slots_sync once for every Cluster that is lightning or still holds an open slot, after the freeze short-circuit and the Phase 5 conversion reap and before the per-game loop, each in its own sub-block. THE LATCH IS NOT A BIRTHRIGHT: trg_lightning_hand_is_immutable now fires on INSERT and refuses a hand born carrying either half of the latch, and fn_lightning_instance_is_disciplined releases a hand into dealing only when player_count equals both its participant rows and its instance's committed reservations. THE MONEY GUARD MEASURES THE TRANSACTION IT IS IN: the barrier locks its participants' pool sessions FOR SHARE before a single stack is read and compares every money column of those rows, rather than a whole-Cluster sum across two READ COMMITTED snapshots that any other player's settlement could move. The retryable SQLSTATEs - lock_not_available, deadlock_detected, serialization_failure - are caught and answered formation_contended with a matcher_retry, and query_canceled deliberately is not. TRUNCATE is refused on all seven lightning tables by a statement-level BEFORE TRUNCATE trigger calling fn_lightning_refuses_truncate, which binds the owner, and is also revoked from service_role. SPECIFICATION 2137-2143: lightning_hand gains rules_version, matcher_version, blind_algorithm_version, lightning_version and rake_version, NOT NULL, named by lightning_hand_versions_are_named and frozen from birth, stamped by the barrier in the INSERT that creates the hand; matcher_version is supplied by the matcher, so fn_lightning_form_hand gains p_matcher_version and the old eight-argument signature is dropped in the same transaction. Also: fn_lightning_pool_slot_open closes a stale slot rather than returning it, positions at seven, eight and nine seats name utg, utg1, utg2 and lj so exactly one player is under the gun, and lightning_reservation.lightning_instance_id is NOT NULL. Every re-cut is by asserted substitution - read from the catalogue, every anchor counted to exactly one, EXECUTEd and read back - and none is SECURITY DEFINER or mentions is_horse (Law 10.5). The first two functions are new; the other six already exist and are listed because this file re-cuts them, which is what the nightly refresh must find carrying the new bodies.",
+  "functions": [
+    "fn_lightning_refuses_truncate",
+    "fn_lightning_instance_keepalive",
+    "fn_lightning_hand_is_immutable",
+    "fn_lightning_instance_is_disciplined",
+    "fn_lightning_reap_formations",
+    "fn_lightning_pool_slot_open",
+    "fn_lightning_form_hand",
+    "fn_cash_clusters_tick_all"
+  ],
+  "columns": {
+    "lightning_hand": [
+      "rules_version",
+      "matcher_version",
+      "blind_algorithm_version",
+      "lightning_version",
+      "rake_version"
+    ]
+  }
+}

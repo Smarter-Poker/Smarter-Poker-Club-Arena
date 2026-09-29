@@ -25,7 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (rel: string) => readFileSync(join(__dirname, rel), 'utf8');
 
@@ -55,20 +55,29 @@ describe('prize disbursement audit', () => {
     const gs = read('../GameServer.ts');
     expect(gs).toMatch(/await auditSatelliteConservation\(\s*\d+\s*\)/);
   });
-  it('the restart-orphaned fee sweep exists, files claims only, and runs each cycle', () => {
-    const src = read('./FeeReconciler.ts');
-    expect(src).toContain('export async function requeueUnbankedCashRake');
-
-    const body = sliceMethod(src, 'export async function requeueUnbankedCashRake');
-    // It asks the SQL sweep, which inserts into the durable queue.
-    expect(body).toContain('fn_requeue_unbanked_cash_rake');
-    // It must never bank directly: banking stays on the hand-gated,
-    // idempotent atomic_distribute_rake path the reconciler already drives.
-    expect(body).not.toContain('atomic_distribute_rake');
-    expect(body).not.toMatch(/\.from\(['"]rake_records['"]\)\s*\.\s*(insert|upsert)/);
+  /*
+   * RETIRED 2026-09-22: the restart-orphaned fee re-queue.
+   *
+   * This pin used to require requeueUnbankedCashRake in this cycle. It filed
+   * an equal-split claim for any raked cash hand with no rake record after ten
+   * minutes, blind to the hand's post-commit envelope, so a merely late
+   * envelope lost the race to it and the hand's weighted attribution was gone
+   * for good (atomic_distribute_rake keeps the first write). The only hand
+   * door now refuses a raked hand whose envelope does not carry its rake, so
+   * there is no orphan for a sweep to find. The retirement is pinned in
+   * noEngineTimerReDrivesAFeeTheHandOwes.law.test.ts; this pin now says the
+   * sweep is gone from both files, on code rather than on the prose that
+   * explains why.
+   */
+  it('the restart-orphaned fee re-queue is retired from the reconciler and its cycle', () => {
+    const reconciler = blankNonCode(read('./FeeReconciler.ts'));
+    expect(reconciler).not.toMatch(/\brequeueUnbankedCashRake\b/);
+    expect(read('./FeeReconciler.ts')).not.toMatch(
+      /\.rpc\(\s*['"]fn_requeue_unbanked_cash_rake['"]/
+    );
 
     const gs = read('../GameServer.ts');
-    expect(gs).toContain('requeueUnbankedCashRake,');
-    expect(gs).toMatch(/await requeueUnbankedCashRake\(/);
+    expect(blankNonCode(gs)).not.toMatch(/\brequeueUnbankedCashRake\b/);
+    expect(gs).not.toMatch(/\.rpc\(\s*['"]fn_requeue_unbanked_cash_rake['"]/);
   });
 });

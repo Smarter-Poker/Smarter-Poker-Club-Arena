@@ -44,6 +44,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { partitionMigrations, reportRecorded } from './recording-only.mjs';
 import { join } from 'node:path';
 
 const REPO = process.cwd();
@@ -108,11 +109,89 @@ function changedMigrations(base) {
     .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
 }
 
-/** Comments only. String literals are KEPT: the declaration lives inside them. */
+/**
+ * Comments go. Single-quoted string literals are KEPT, because the declaration
+ * lives inside them - `VALUES ('chip_ledger','my_guard', ...)`.
+ *
+ * DOLLAR-QUOTED BLOCKS ARE DATA UNLESS THEY ARE CODE (2026-09-23).
+ *
+ * This used to be two `.replace` calls and nothing else, so every character of
+ * every `$tag$ ... $tag$` block was read as SQL this migration executes. Two of
+ * the migrations recovered in issue #5008 pin their expected catalogue in one:
+ *
+ *     FOR v_trigger IN SELECT value FROM jsonb_array_elements($trigger_pins$
+ *       [{"relation":"table_seats","tgname":"aa_tournament_live_seat_proof_lock",
+ *         "definition":"CREATE TRIGGER aa_tournament_live_seat_proof_lock ...
+ *                       ON public.table_seats ..."}]$trigger_pins$)
+ *
+ * That is a migration ASSERTING that a trigger is present and unchanged - the
+ * opposite of creating an unreviewed one - and this gate reported all eight of
+ * them as new undeclared triggers on money tables. Measured 2026-09-23 across
+ * the two files: 33 findings, 32 of them text inside a `$tag$` literal and ONE
+ * a real `CREATE TRIGGER` statement. A gate that is wrong 32 times out of 33 is
+ * a gate people learn to push past.
+ *
+ * A block is treated as CODE, and scanned exactly as the surrounding SQL is,
+ * when it follows `AS`, `DO` or `EXECUTE` - a function body, an anonymous
+ * block, or plpgsql dynamic SQL. Those are the three places a real
+ * CREATE TRIGGER can hide, and all three stay visible. Everything else is a
+ * value being passed to something, and a value is not a statement.
+ */
 export function stripComments(sql) {
-  return String(sql)
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/--[^\n]*/g, ' ');
+  const source = String(sql);
+  const out = [];
+  let i = 0;
+  while (i < source.length) {
+    const start = i;
+    if (source.startsWith('--', i)) {
+      const end = source.indexOf('\n', i + 2);
+      i = end < 0 ? source.length : end;
+      out.push(' ');
+      continue;
+    }
+    if (source.startsWith('/*', i)) {
+      let depth = 1;
+      i += 2;
+      while (i < source.length && depth > 0) {
+        if (source.startsWith('/*', i)) {
+          depth += 1;
+          i += 2;
+        } else if (source.startsWith('*/', i)) {
+          depth -= 1;
+          i += 2;
+        } else i += 1;
+      }
+      out.push(' ');
+      continue;
+    }
+    if (source[i] === "'") {
+      i += 1;
+      while (i < source.length) {
+        if (source[i++] === "'") {
+          if (source[i] !== "'") break;
+          i += 1;
+        }
+      }
+      out.push(source.slice(start, i)); // kept: the declaration is in here
+      continue;
+    }
+    if (source[i] === '$' && !/[\w$]/.test(source[i - 1] ?? '')) {
+      const tag = /^\$(?:[A-Za-z_]\w*)?\$/.exec(source.slice(i))?.[0];
+      const end = tag ? source.indexOf(tag, i + tag.length) : -1;
+      if (end < 0) {
+        out.push(source[i++]);
+        continue;
+      }
+      const body = source.slice(i + tag.length, end);
+      const before = out.join('');
+      const executable = /\b(?:AS|EXECUTE|DO(?:\s+LANGUAGE\s+\w+)?)\s*$/i.test(before);
+      out.push(executable ? tag + stripComments(body) + tag : ' ');
+      i = end + tag.length;
+      continue;
+    }
+    out.push(source[i++]);
+  }
+  return out.join('');
 }
 
 /**
@@ -190,9 +269,21 @@ function main() {
     return;
   }
 
+  const { judge, recorded, unknown } = partitionMigrations(files, { repo: REPO });
+  reportRecorded('check-money-trigger-declared', recorded, unknown);
+  if (judge.length === 0) {
+    console.log(
+      `[check-money-trigger-declared] OK - ${files.length} migration(s); every one is a ` +
+        'verified recording of SQL production has already applied. Whether each trigger it ' +
+        'names is in public.ca_declared_money_triggers TODAY is asked of production by ' +
+        'scripts/ci/check-recorded-migrations-evidence.mjs.'
+    );
+    return;
+  }
+
   const hits = [];
   let inspected = 0;
-  for (const file of files) {
+  for (const file of judge) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
     inspected += 1;

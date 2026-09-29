@@ -33,6 +33,41 @@ const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.m
 const TARGETS = [
   { dir: 'public/cards/2color', width: 360, quality: 82 },
   { dir: 'public/cards/4color', width: 360, quality: 82 },
+  /**
+   * Diamond Spins wheel art (2026-09-21, R20). These derivatives are COMMITTED,
+   * not build-time: public/assets/** is an append-only origin pool whose URLs
+   * are permanent, so the bytes must not depend on the encoder of whichever
+   * runner built last. `sealed` therefore writes a derivative only when it is
+   * missing; re-encoding an existing one is an explicit decision (delete it,
+   * rerun, review the diff). Sources stay at their native size: the card
+   * atlases are sampled at 2x into the sector meshes and the rim is drawn at
+   * up to its native width on desktop.
+   */
+  {
+    dir: 'public/assets/diamond-spins',
+    quality: 88,
+    sealed: true,
+    files: [
+      'wheel-main-cards-v1.png',
+      'wheel-upgrade-cards-v1.png',
+      'wheel-upgrade-titles-v1.png',
+      'wheel-prize-atlas-v2.png',
+      'wheel-matte-rim-v1.png',
+      'wheel-selector-holder-v2.png',
+      'wheel-selector-pointer-v2.png',
+      'wheel-selector-pointer-glow-v2.png',
+    ],
+  },
+  {
+    // The combination throwables cutout, right-sized for the wheel's prize
+    // art (reveal, prize card, gallery): about 430 CSS px at its largest.
+    dir: 'public/images/marketplace/throwables',
+    width: 640,
+    quality: 88,
+    sealed: true,
+    files: [{ from: 'all-throwables-access-v1.png', to: 'wheel-prize-throwables-v1.webp' }],
+    outDir: 'public/assets/diamond-spins',
+  },
 ];
 
 async function main() {
@@ -54,20 +89,32 @@ async function main() {
       console.warn(`[webp-media] Missing dir (skipping): ${target.dir}`);
       continue;
     }
-    const pngs = readdirSync(dirPath).filter((f) => f.toLowerCase().endsWith('.png'));
-    for (const file of pngs) {
+    const pngs = target.files
+      ? target.files.map((entry) => (typeof entry === 'string' ? { from: entry } : entry))
+      : readdirSync(dirPath)
+          .filter((f) => f.toLowerCase().endsWith('.png'))
+          .map((from) => ({ from }));
+    for (const { from: file, to } of pngs) {
       const src = path.join(dirPath, file);
-      const dest = src.replace(/\.png$/i, '.webp');
+      const dest = path.join(
+        target.outDir ? path.join(ROOT, target.outDir) : dirPath,
+        to ?? file.replace(/\.png$/i, '.webp')
+      );
       try {
+        // A sealed derivative is generated once and committed; never re-encoded.
+        if (target.sealed && existsSync(dest)) {
+          skipped++;
+          continue;
+        }
         // Skip when an up-to-date WebP already exists
         if (existsSync(dest) && statSync(dest).mtimeMs >= statSync(src).mtimeMs) {
           skipped++;
           continue;
         }
-        await sharp(src)
-          .resize({ width: target.width, withoutEnlargement: true })
-          .webp({ quality: target.quality })
-          .toFile(dest);
+        let pipeline = sharp(src);
+        if (target.width)
+          pipeline = pipeline.resize({ width: target.width, withoutEnlargement: true });
+        await pipeline.webp({ quality: target.quality }).toFile(dest);
         bytesIn += statSync(src).size;
         bytesOut += statSync(dest).size;
         converted++;

@@ -69,6 +69,9 @@ const BRAIN_FILES = [
   'engine/horseDecision/client.ts',
   // Phase 15 final outcomes are emitted by the shared private witness owner.
   'engine/HorseExecutionWitness.ts',
+  // The decision journal publisher counts its own phase15_journal_* receipts,
+  // including paused-at-quota apart from failed (2026-09-26).
+  'services/HorseDecisionJournal.ts',
   'services/BrainTelemetryFlush.ts',
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
@@ -209,6 +212,20 @@ describe('HorseDataLedger - the contract holds against the source', () => {
         expect(fired, `receipt ${r.key} is registered but never fired`).toBe(true);
       }
     }
+  });
+
+  it('names paused-at-quota apart from a failed journal', () => {
+    for (const key of [
+      'phase15_journal_capture_paused_capacity',
+      'phase15_journal_capacity_paused',
+      'phase15_journal_capacity_resumed',
+    ]) {
+      expect(ledgerReceiptFor(key)?.key, key).toBe(key);
+      expect(read('services/HorseDecisionJournal.ts')).toContain(
+        `'${key.replace('phase15_journal_', '')}'`
+      );
+    }
+    expect(ledgerReceiptFor('phase15_journal_capture_unavailable')?.key).toBe('phase15_journal_*');
   });
 
   it('every horse_profile key the tuner writes is parsed by resolveHorseStyle, and every parsed key is registered', () => {

@@ -121,3 +121,16 @@ refuse direct authenticated access to the private ledger writer.
 `wheel-guard-dependencies.sql` carries the exact read-only declaration-function
 capture and empty isolated stores, allowing the migration's real guard-history
 declaration to execute. No production user, session or currency is used.
+
+The 2026-09-21 settlement burn and quiet ledger (owner rulings R14, R16, R17)
+add `quiet-ledger-dependencies.sql` (the 20260921052548 roster gate the capture
+predates, so the latent union-prize refusal is reproduced before migration
+20260921202827 closes it) and `daily-burn-dependencies.sql` (the owner agreement
+RPC and the two read-only supports the trial balance report needs). Migration
+20260921202834 is installed twice: once over `diamond_custody_legacy`, a copy
+seeded by `daily-burn-legacy-seed.sql` with a day settled under the pre-burn
+contract and an older open day, asserted untouched by `daily-burn-legacy-assert.sql`;
+and once over the probe database before `diamond-spins-daily-profit-burn.sql` and
+`diamond-spins-every-movement-has-a-ledger-row.sql`. The two-connection race now
+runs on the burn contract and its assert expects one transfer of 80, one register
+burn of 20, one quiet notification and no push.

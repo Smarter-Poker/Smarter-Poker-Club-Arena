@@ -227,6 +227,71 @@ BEGIN
 END $$;
 
 -- ===========================================================================
+-- THE ECO RECORD ANSWERS FOR ITS OWN ARITHMETIC, AND THE CLOSED UNION SEND
+-- DOOR CREDITS ONE OWNER (20260925145748)
+--
+-- The refusal above - the document against union_eco_ledger - is the record
+-- against itself since 20260921040847 taught fn_union_club_invoice to RETURN
+-- the recorded amount, so for an ECO-enabled club with a recorded row it can
+-- never fire. Comparing against a fresh fn_union_eco_adjustment call instead
+-- would resurrect the 2026-09-14 overstatement, because that report is VOLATILE
+-- and every call is another snapshot. The independent basis is inside the
+-- record: eco_base, eco_rate and eco_amount are stored side by side, all NOT
+-- NULL, and the producer defines the amount as round(-eco_rate*eco_base,2).
+--
+-- The same change closes the union send door properly. It resolved ONE owner
+-- with LIMIT 1 and credited EVERY role='owner' row against a single debit, with
+-- no authorization check, no idempotency key and no journal leg - and its audit
+-- row named wallet='main', which union_wallet_transactions_wallet_check has
+-- never permitted, so every call it ever received aborted there.
+-- ===========================================================================
+DO $$DECLARE source text;
+BEGIN
+ SELECT prosrc INTO source FROM pg_proc
+   WHERE oid='public.fn_union_issue_weekly_invoices(uuid,timestamptz,timestamptz,boolean)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'union_squareup_eco_record_fails_its_own_arithmetic')>0
+  AND strpos(source,'union_squareup_eco_record_fails_its_own_arithmetic')<strpos(source,'INSERT INTO settlement_invoices'),
+  'a recorded ECO that does not equal round(-eco_rate*eco_base,2) is refused before the document is written');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'round(-v_recorded_rate * v_recorded_base, 2)')>0
+  AND strpos(source,'l.eco_base, l.eco_rate')>0,
+  'the arithmetic check reads the base and the rate the record stores, not a recomputation of the week');
+ PERFORM pg_temp.assert_pnl_hook(
+  (length(source)-length(replace(source,'fn_union_eco_adjustment','')))/length('fn_union_eco_adjustment')=1,
+  'the writer still calls the volatile week recomputation exactly once, for baseline_cash_exact, and never for the ECO refusals');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'union_squareup_eco_not_recorded')>0
+  AND (length(source)-length(replace(source,'union_squareup_eco_disagrees_with_record','')))
+      /length('union_squareup_eco_disagrees_with_record')=2,
+  'both existing refusals are kept: the document must quote its record, and with ECO disabled no non-zero ECO may be recorded');
+
+ SELECT pg_get_functiondef(oid) INTO source FROM pg_proc
+   WHERE oid='public.fn_union_send_chips_to_club(uuid,uuid,numeric,text)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'AND role = ''owner''')=0
+  AND strpos(source,'WHERE club_id = p_club_id AND user_id = v_owner_user_id')>0,
+  'the union send door credits exactly the one owner it resolved, not every role=owner row');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'c.owner_id INTO v_owner_user_id')>0
+  AND strpos(source,'union_send_club_owner_is_ambiguous')>0,
+  'it resolves the owner from clubs.owner_id and refuses an ambiguous one instead of taking LIMIT 1');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'fn_caller_is_engine()')>0
+  AND strpos(source,'union_send_not_authorized')>0 AND strpos(source,'union_send_club_not_in_union')>0,
+  'it carries the house authorization check and the club-in-union check');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'app.union_send_chips_op_id')>0
+  AND strpos(source,'union_send_requires_operation_id')>0
+  AND strpos(source,'''union_send_chips_to_club:'' || v_op')>0,
+  'it carries an idempotency key declared by its caller, and refuses without one');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'INSERT INTO public.chip_ledger')>0
+  AND strpos(source,'''union_send'', p_club_id, p_union_id')>0
+  AND strpos(source,'app.ledger_autoskip_club_members')>0,
+  'it writes one chip_ledger leg naming the receiving club, with both auto-journals stood down');
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'''main'', ''debit''')=0
+  AND strpos(source,'''chip_balance'', ''debit''')>0,
+  'and its audit row names a wallet union_wallet_transactions_wallet_check permits');
+ PERFORM pg_temp.assert_pnl_hook(NOT has_function_privilege('anon','public.fn_union_send_chips_to_club(uuid,uuid,numeric,text)'::regprocedure,'EXECUTE')
+  AND NOT has_function_privilege('authenticated','public.fn_union_send_chips_to_club(uuid,uuid,numeric,text)'::regprocedure,'EXECUTE')
+  AND NOT has_function_privilege('service_role','public.fn_union_send_chips_to_club(uuid,uuid,numeric,text)'::regprocedure,'EXECUTE'),
+  'the door a guarded body does not reopen: no client role holds a key to it');
+END $$;
+
+-- ===========================================================================
 -- THE TOURNAMENT RAKE LEG NAMES THE CLUB IT WAS EARNED IN (20260921065613)
 --
 -- 20260921040847 fixed the CASH rake payer and the union cash rake leg has

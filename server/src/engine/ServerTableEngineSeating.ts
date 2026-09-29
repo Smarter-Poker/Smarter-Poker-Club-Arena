@@ -19,6 +19,14 @@ import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
+import {
+  isLightningHandInProgress,
+  LIGHTNING_ADD_ON_REFUSED_MESSAGE,
+} from '../lightning/rpcErrors.js';
+import { RateLimitedLog } from '../lightning/RateLimitedLog.js';
+
+/** "Add-ons wait behind a Lightning hand" is said once a minute per table. */
+const lightningAddOnWaitLog = new RateLimitedLog(60_000);
 
 type ExactPendingAddOnReceipt = {
   ok?: boolean;
@@ -91,6 +99,55 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
     }
 
+    /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
+
+       `midHand` above is read before any await, but dealHand() snapshots the
+       roster's stacks under the seat boundary and only then sets
+       `handController`, after the original cash manifest has been captured.
+       An add-on that read "between hands" while a hand was being prepared
+       applied its chips to table_seats.stack while the prepared roster still
+       held the old stack, so fn_cash_capture_hand_manifest found the seat row
+       disagreeing with the dealt stack and recorded
+       original_seat_or_starting_stack_unproven. Production, book 2026-09-21:
+       85 accepted Midway hands, each with exactly one direct add-on committed
+       0.006-6.7s before the manifest, blocked the union's weekly close.
+
+       The fix is ordering, not tolerance. A seat credit takes the same FIFO
+       seat boundary that hand preparation and departures hold, and decides
+       seat-versus-queue only once it owns it: either it lands before the
+       roster is snapshotted (and the dealt stack includes it), or the hand has
+       started and it is queued in table_pending_addons for settlement. A
+       mid-hand request never touches the seat and does not wait. */
+    if (!midHand) {
+      let releaseSeatBoundary: () => void;
+      try {
+        releaseSeatBoundary = await this.acquireSeatBoundary();
+      } catch {
+        return { success: false, error: 'Add-on failed' };
+      }
+      try {
+        return await this.addChipsDecided(userId, amount, opId);
+      } finally {
+        releaseSeatBoundary();
+      }
+    }
+    return this.addChipsDecided(userId, amount, opId);
+  }
+
+  /** The chip add-on once the seat-versus-queue decision can no longer race hand preparation. */
+  private async addChipsDecided(
+    userId: string,
+    amount: number,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (isMaintenanceFrozen()) {
+      return { success: false, error: 'Scheduled maintenance is in progress' };
+    }
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    const maxBuyIn = this.getMaxBuyIn();
+    const midHand = !!this.handController;
+
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
     //
@@ -159,6 +216,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         break;
       }
       lastError = error;
+      /* LIGHTNING (2026-09-25): the player's chips are in a live Lightning
+         hand, and the database refuses any stack change until it is over.
+         The refusal rolled the debit back with the seat write, so nothing
+         was taken; it is a "not now", told to the player as one - not an
+         error report, and not asked twice. */
+      if (isLightningHandInProgress(error)) {
+        return { success: false, error: LIGHTNING_ADD_ON_REFUSED_MESSAGE };
+      }
       // "Insufficient balance" is a verdict, not a transport failure — retrying
       // it just asks the same question twice.
       if (/insufficient/i.test(String(error.message || ''))) break;
@@ -309,6 +374,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         return { success: true, applied };
       }
       lastError = error;
+      // LIGHTNING (2026-09-25): see the chip add-on above. Nothing was taken.
+      if (isLightningHandInProgress(error)) {
+        return { success: false, error: LIGHTNING_ADD_ON_REFUSED_MESSAGE };
+      }
       const message = String(error.message || '');
       /* A verdict is not a transport failure; asking twice only repeats it. */
       if (/insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(message)) {
@@ -373,6 +442,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         p_expected_stack: stack,
         p_request_id: requestId,
       });
+      /* LIGHTNING (2026-09-25): the player's Diamonds are in a live Lightning
+         hand. Nothing was taken and the intent is still good, so it is KEPT
+         and landed on a later pass - the one refusal here that is a "not
+         now" rather than an intent that can no longer be honoured. */
+      if (error && isLightningHandInProgress(error)) continue;
       this.diamondTopUpIntents.delete(requestId);
       if (error) {
         reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
@@ -455,6 +529,27 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           p_lease_generation: authority.generation,
         });
         if (!this.lifecycleCanMutate()) return;
+        /* LIGHTNING (2026-09-25). A row's player is in a live Lightning hand
+           and the database refused the stack change. The resolver is one
+           transaction, so it rolled back whole: no row resolved, no chip
+           moved. That is a "not now", NOT an unreachable resolver - killing
+           the engine here would turn one player's Lightning hand into a
+           dead table. Keep the sweep requested and try on the next pass. */
+        const lightning =
+          (error && isLightningHandInProgress(error)) ||
+          (!error &&
+            (data as ExactPendingAddOnReceipt | null)?.ok !== true &&
+            isLightningHandInProgress((data as ExactPendingAddOnReceipt | null)?.reason ?? ''));
+        if (lightning) {
+          this.requestPendingAddOnSweep();
+          if (lightningAddOnWaitLog.shouldLog(this.tableId)) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] pending add-ons wait: a player's chips are in a ` +
+                'live Lightning hand - retried on the next pass'
+            );
+          }
+          return;
+        }
         if (!error) {
           receipt = (data ?? null) as ExactPendingAddOnReceipt | null;
           break;
@@ -611,6 +706,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
       if (resolveErr) {
         // Row stays unresolved -> retried next hand / next start. No chips move.
+        // LIGHTNING (2026-09-25): a player in a live Lightning hand is a "not
+        // now", not a fault worth a report; the row is retried all the same.
+        if (isLightningHandInProgress(resolveErr)) {
+          unresolved++;
+          continue;
+        }
         reportError(resolveErr, `ServerTableEngine.${this.tableId}.pending_addon_resolve_failed`, {
           userId: row.user_id,
           pendingId: row.id,
@@ -1062,7 +1163,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * of their buy-in with stay clock remaining. `stay_remaining_ms` says how
      * long; `error` is the label the leave control shows. Nothing else.
      */
-    code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY';
+    /**
+     * 'LIGHTNING_HAND_IN_PROGRESS' (2026-09-25) rides a SUCCESS with
+     * `immediate: false`: the player is in a live Lightning hand, the leave
+     * is recorded as a durable `leave_pending` request, and it completes on
+     * the first pass after that hand is over. The same answer the mid-hand
+     * leave has always given, for the same reason.
+     */
+    code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY' | 'LIGHTNING_HAND_IN_PROGRESS';
     stay_remaining_ms?: number;
   }> {
     // Capture legacy internal callers' target before joining the boundary.
@@ -1190,9 +1298,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
               replacement.seat_number !== opts.seatNumber)
           )
             return stale();
-          const out: { locked: number | null; failed: string | null } = {
+          const out: { locked: number | null; failed: string | null; lightning: boolean } = {
             locked: null,
             failed: null,
+            lightning: false,
           };
           await atomicCashout(userId, this.tableId, opts.seatNumber!, {
             occupancyId: opts.occupancyId,
@@ -1203,7 +1312,18 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             onFailed: (message) => {
               out.failed = message;
             },
+            onLightningHandInProgress: () => {
+              out.lightning = true;
+            },
           });
+          if (out.lightning)
+            return this.queueDepartureBehindLightningHand(
+              userId,
+              opts.seatNumber!,
+              opts.occupancyId!,
+              opts.forced ? 'forced' : 'voluntary',
+              opts.admin
+            );
           if (out.locked !== null)
             return {
               success: false,
@@ -1510,7 +1630,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           )
             return false;
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.forgetTimeBank(userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
           this.leaveHeldByClock.delete(userId);
@@ -1523,14 +1643,38 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         };
 
         if (opts.forced) {
-          const out: { failed: string | null } = { failed: null };
+          const out: { failed: string | null; lightning: boolean } = {
+            failed: null,
+            lightning: false,
+          };
           await atomicCashout(userId, this.tableId, player.seat_number, {
             occupancyId: player.occupancy_id,
             leaveMode: 'forced',
             onFailed: (m) => {
               out.failed = m;
             },
+            onLightningHandInProgress: () => {
+              out.lightning = true;
+            },
           });
+          if (out.lightning) {
+            // atomicCashout refuses before the RPC without an occupancy, so
+            // this cannot be reached without one; the guard keeps a refused
+            // exit from ever falling through to the success path below.
+            if (!player.occupancy_id)
+              return {
+                success: false,
+                error: 'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
+                immediate: false,
+              };
+            return this.queueDepartureBehindLightningHand(
+              userId,
+              player.seat_number,
+              player.occupancy_id,
+              'forced',
+              opts.admin
+            );
+          }
           if (out.failed !== null) {
             console.warn(
               `[ServerTableEngine:${this.tableId}] forced cash-out failed for ${userId} - seat preserved: ${out.failed}`
@@ -1569,6 +1713,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           }
           return { success: true, immediate: true };
         }
+        if (res.code === 'LIGHTNING_HAND_IN_PROGRESS' && player.occupancy_id) {
+          return this.queueDepartureBehindLightningHand(
+            userId,
+            player.seat_number,
+            player.occupancy_id,
+            'voluntary'
+          );
+        }
         if (res.code === 'LEAVE_LOCKED') {
           // The mirror was behind the database (empty after a restart, or a
           // settlement landed between the check above and the door). The player
@@ -1598,7 +1750,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         // Transport or database failure: the seat is untouched (one transaction)
         // and the player can try again. Nothing to tear down, because nothing left.
         console.warn(
-          `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${res.message}`
+          `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${'message' in res ? res.message : res.code}`
         );
         return {
           success: false,
@@ -1610,6 +1762,67 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     } finally {
       releaseSeatBoundary();
     }
+  }
+
+  /**
+   * A LEAVE BEHIND A LIGHTNING HAND IS QUEUED, NEVER DROPPED AND NEVER FATAL
+   * (Lightning 2.0 Phase 5 remediation, 2026-09-25).
+   *
+   * The database refuses any change to a seat's stack or `left_at` while the
+   * player is in a live Lightning hand (LIGHTNING_HAND_IN_PROGRESS), and the
+   * refusal rolled the whole cash-out back: nothing was paid, the seat is as
+   * it was. The leave is not refused, only deferred - so it is recorded as the
+   * durable `leave_pending` request the mid-hand path already writes, and the
+   * client is told exactly what the mid-hand path tells it: accepted, not yet
+   * immediate. The request outlives this process, and the next pass of
+   * whichever loop the table is in completes it (`prepareNextHand`'s sweep,
+   * or `sweepQueuedLeaves` for a quiet table), through the same
+   * one-transaction, occupancy-keyed cash-out - which is what makes a retry
+   * unable to pay twice.
+   *
+   * An administrator's departure was already recorded durably, with its
+   * authority, before the cash-out was attempted, so it is not requested
+   * again here.
+   */
+  private async queueDepartureBehindLightningHand(
+    userId: string,
+    seatNumber: number,
+    occupancyId: string,
+    leaveMode: 'voluntary' | 'forced',
+    admin?: AdminDepartureAuthority
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    immediate: boolean;
+    code?: 'LIGHTNING_HAND_IN_PROGRESS';
+  }> {
+    if (!admin) {
+      try {
+        await requestSeatDeparture(userId, this.tableId, seatNumber, occupancyId, leaveMode);
+      } catch {
+        return {
+          success: false,
+          immediate: false,
+          error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+        };
+      }
+    }
+    const seat = this.seatedPlayers.find(
+      (p) => p.user_id === userId && p.occupancy_id === occupancyId
+    );
+    this.noteLightningDeferredLeave(userId, occupancyId);
+    if (seat) {
+      seat.leave_pending = true;
+      // Out of this table's deal until the cash-out lands, as a mid-hand
+      // leaver is.
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+    }
+    console.log(
+      `[ServerTableEngine:${this.tableId}] leave for ${userId} queued behind a live Lightning hand ` +
+        '- completes on the first pass after it'
+    );
+    this.broadcastCurrentState();
+    return { success: true, immediate: false, code: 'LIGHTNING_HAND_IN_PROGRESS' };
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

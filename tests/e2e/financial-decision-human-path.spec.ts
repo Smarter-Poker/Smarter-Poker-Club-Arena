@@ -155,10 +155,7 @@ test('A 60-second waitlist offer counts down, fits a phone, and hands off to the
 
   const card = page.getByTestId('waitlist-banner-card');
   await expect(card).toBeVisible();
-  await expect(card).toHaveAttribute(
-    'aria-label',
-    /Your Seat Is Held For \d+ More Seconds\. Tap To Take It\./
-  );
+  await expect(card).toHaveAttribute('aria-label', 'Your Seat Is Held. Tap To Take It.');
   await expect(card.getByText('Phase Five Hold Table')).toBeVisible();
 
   // Measure the settled card, not the intentional overshoot in its 400ms
@@ -179,14 +176,13 @@ test('A 60-second waitlist offer counts down, fits a phone, and hands off to the
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height - 52 - 12);
 
-  const countdown = page.getByTestId('waitlist-hold-countdown');
-  const readSeconds = async () =>
-    Number(((await countdown.innerText()).match(/:(\d{2})/) ?? [])[1]);
-  const first = await readSeconds();
+  /* Dan 2026-09-23: the hold's clock is internal. The card says the seat is
+     held and what to do; it prints no countdown, at any moment of the hold. */
+  await expect(card).toContainText('Seat Held');
+  await expect(card).toContainText('Tap To Take It');
+  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
   await page.waitForTimeout(2_100);
-  const later = await readSeconds();
-  expect(first).toBeGreaterThan(later);
-  expect(first - later).toBeLessThanOrEqual(4);
+  expect(await card.innerText()).not.toMatch(/\d:\d{2}/);
 
   const dismiss = card.getByRole('button', {
     name: 'Dismiss The Waitlist Notice For Phase Five Hold Table',

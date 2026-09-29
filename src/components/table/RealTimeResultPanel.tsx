@@ -412,6 +412,7 @@ export default function RealTimeResultPanel({
       <div className="rtr__panel">
         {onOpenDetailed ? (
           <SpadeConsole
+            onClose={onClose}
             crest="flat"
             eyebrow={clock}
             title="Real Time Result"
@@ -426,6 +427,7 @@ export default function RealTimeResultPanel({
           </SpadeConsole>
         ) : (
           <SpadeConsole
+            onClose={onClose}
             crest="flat"
             eyebrow={clock}
             title="Real Time Result"

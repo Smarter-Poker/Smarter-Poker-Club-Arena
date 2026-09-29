@@ -1,0 +1,25 @@
+/* An invisible native switch over the whole face of its tap target. A finger
+   landing on it toggles the switch, and iOS plays the switch's own haptic tick,
+   the one buzz a web page can still get on an iPhone (see TapHaptic.tsx). The
+   click then bubbles to the host button as before. clip-path, not
+   overflow + border-radius, because it clips the hit area as well as the paint. */
+.switch {
+  /* !important: a host's own "every child is relative" rule (the table's
+     action buttons have one) must never pull this overlay into the flow. */
+  position: absolute !important;
+  /* The whole BORDER box, not just the padding box: a tap on a plate's
+     machined edge is a tap on the plate. TapHaptic writes the host's border
+     widths into these properties when it mounts. */
+  top: calc(-1 * var(--tap-haptic-bt, 0px)) !important;
+  left: calc(-1 * var(--tap-haptic-bl, 0px)) !important;
+  z-index: 6 !important;
+  width: calc(100% + var(--tap-haptic-bl, 0px) + var(--tap-haptic-br, 0px)) !important;
+  height: calc(100% + var(--tap-haptic-bt, 0px) + var(--tap-haptic-bb, 0px)) !important;
+  margin: 0 !important;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: inherit;
+  clip-path: inset(0 round var(--tap-haptic-radius, 10px));
+  -webkit-tap-highlight-color: transparent;
+}

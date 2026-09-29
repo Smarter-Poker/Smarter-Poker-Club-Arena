@@ -37,6 +37,7 @@ import {
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
+import { usePlatformCapability } from '../../hooks/usePlatformCapability';
 import './AdvancedFilters.css';
 
 const TABS: { key: FilterGameType; label: string }[] = [
@@ -375,6 +376,20 @@ export default function AdvancedFilters({
 
   const spec: GameFilterSpec | undefined =
     activeType === 'ALL' ? undefined : FILTER_SPECS[activeType];
+
+  /* A CHIP FOR A CAPABILITY IS DRAWN ONLY WHILE IT IS LIVE (kill-v1). The
+     registry is asked only when this tab carries such a chip, and anything but
+     a fresh "available" (not yet answered, could not ask, not available) keeps
+     the chip off the sheet: a feature no table can have is not advertised. */
+  const gatedCapability = spec?.features.find((f) => f.capability)?.capability ?? null;
+  const capabilityGate = usePlatformCapability(gatedCapability);
+  const shownFeatures = useMemo(
+    () =>
+      (spec?.features ?? []).filter(
+        (f) => !f.capability || (f.capability === gatedCapability && capabilityGate === 'available')
+      ),
+    [spec, gatedCapability, capabilityGate]
+  );
 
   const value = useMemo<GameFilterValue>(
     () =>
@@ -718,7 +733,7 @@ export default function AdvancedFilters({
                 )}
               </details>
 
-              {spec.features.length > 0 && (
+              {shownFeatures.length > 0 && (
                 <>
                   <details className="afx-section">
                     <summary>
@@ -726,7 +741,7 @@ export default function AdvancedFilters({
                     </summary>
                     <p className="afx-hint">Only Show Games With Every Selected Feature.</p>
                     <div className="afx-grid">
-                      {spec.features.map((f) => (
+                      {shownFeatures.map((f) => (
                         <button
                           key={f.key}
                           type="button"
@@ -746,7 +761,7 @@ export default function AdvancedFilters({
                     </summary>
                     <p className="afx-hint">Hide Games That Use Any Selected Feature.</p>
                     <div className="afx-grid">
-                      {spec.features.map((f) => (
+                      {shownFeatures.map((f) => (
                         <button
                           key={f.key}
                           type="button"

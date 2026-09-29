@@ -5,14 +5,22 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } f
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { retryTransient } from './transient-retry.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
+const LEGACY_DIRECT_PREFIX = 'club-create-cert-';
+const LEGACY_DIRECT_SUFFIX = '@smarter-poker.invalid';
 const FREE_AVATAR = '/avatars/table/free_samurai@2x.webp';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
+// The exact names fn_ca_retire_certification_club itself accepts. The door
+// re-checks them, but this side refuses first so an unrecognized club is never
+// even offered to it.
+const CERTIFICATION_CLUB_NAME_PREFIXES = ['Crest Cert ', 'Preset Crest Cert '];
 
 function headers(key, hasBody = false) {
   return supabaseServerHeaders(key, {
@@ -38,7 +46,10 @@ function fixturePath(environment) {
 }
 
 function reserved(email) {
-  return email.startsWith(ACCOUNT_PREFIX) && email.endsWith(ACCOUNT_SUFFIX);
+  return (
+    (email.startsWith(ACCOUNT_PREFIX) && email.endsWith(ACCOUNT_SUFFIX)) ||
+    (email.startsWith(LEGACY_DIRECT_PREFIX) && email.endsWith(LEGACY_DIRECT_SUFFIX))
+  );
 }
 
 async function responseBody(response) {
@@ -61,9 +72,18 @@ async function serviceRequest(configuration, path, init = {}, fetchImpl = fetch)
   });
   const body = await responseBody(response);
   if (!response.ok) {
-    throw new Error(
-      `Supabase service request ${init.method || 'GET'} ${path} failed (${response.status}): ` +
-        JSON.stringify(body).slice(0, 400)
+    // status/code/body ride on the error so a caller can tell a slow database
+    // (retry) from a guard speaking (refuse) without parsing the message.
+    throw Object.assign(
+      new Error(
+        `Supabase service request ${init.method || 'GET'} ${path} failed (${response.status}): ` +
+          JSON.stringify(body).slice(0, 400)
+      ),
+      {
+        status: response.status,
+        code: body && typeof body === 'object' ? body.code : undefined,
+        body,
+      }
     );
   }
   return body;
@@ -130,7 +150,7 @@ export async function cleanupProductionE2EAccount({
       { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
       fetchImpl
     );
-    if (result?.success === true) break;
+    if (result?.success === true || result?.reason === 'auth_soft_delete_required') break;
     if (result?.reason !== 'platform_is_frozen' || attempt === 36) {
       throw new Error(
         `Guarded test-account sweep refused ${account.id}: ${String(result?.reason || 'unknown')}`
@@ -139,11 +159,42 @@ export async function cleanupProductionE2EAccount({
     console.log('[production-e2e-account] platform freeze is active; cleanup will retry.');
     await wait(10_000);
   }
+  if (result?.reason === 'auth_soft_delete_required') {
+    if (result.user_id !== account.id || result.email !== account.email) {
+      throw new Error('Reserved ledger actor retirement did not match the owned fixture.');
+    }
+    // Use GoTrue's supported transaction: retain the UUID, clear credentials
+    // and revoke only this disposable identity's sessions/refresh tokens.
+    // An unknown response retains the fixture record; the next cleanup reads
+    // the durable terminal state before deciding whether any action remains.
+    await serviceRequest(
+      configuration,
+      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
+      { method: 'DELETE', body: JSON.stringify({ should_soft_delete: true }) },
+      fetchImpl
+    );
+    result = await serviceRequest(
+      configuration,
+      '/rest/v1/rpc/cleanup_reserved_certification_account',
+      { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
+      fetchImpl
+    );
+    if (result?.success !== true || result?.disposition !== 'retained_ledger_actor') {
+      throw new Error(`Reserved ledger actor ${account.id} retirement is not verified.`);
+    }
+  }
   const verification = await fetchImpl(
     `${configuration.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
     { headers: headers(configuration.serviceRoleKey) }
   );
-  if (verification.status !== 404) {
+  const retained = result?.disposition === 'retained_ledger_actor';
+  if (retained) {
+    const body = await responseBody(verification);
+    const user = body?.user || body;
+    if (verification.status !== 200 || user?.id !== account.id || !user?.deleted_at) {
+      throw new Error(`Reserved ledger actor ${account.id} Auth retirement is not verified.`);
+    }
+  } else if (verification.status !== 404) {
     const body = await responseBody(verification);
     throw new Error(
       `Reserved account ${account.id} remains after cleanup (${verification.status}): ` +
@@ -151,7 +202,11 @@ export async function cleanupProductionE2EAccount({
     );
   }
   if (!record && existsSync(path)) unlinkSync(path);
-  console.log('[production-e2e-account] reserved account hard-deleted and absence verified.');
+  console.log(
+    retained
+      ? '[production-e2e-account] reserved ledger actor retained; Auth retirement verified.'
+      : '[production-e2e-account] reserved account hard-deleted and absence verified.'
+  );
   return true;
 }
 
@@ -166,6 +221,7 @@ export async function cleanupProductionE2EAccount({
 export async function prepareProductionE2EStaffMembership({
   environment = process.env,
   fetchImpl = fetch,
+  requireStandalone = false,
 } = {}) {
   const path = fixturePath(environment);
   const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
@@ -177,6 +233,23 @@ export async function prepareProductionE2EStaffMembership({
   const anonKey = environment.SUPABASE_ANON_KEY || environment.VITE_SUPABASE_ANON_KEY || '';
   if (!anonKey) throw new Error('SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY is required.');
   const clubId = environment.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+  if (requireStandalone) {
+    const clubs = await serviceRequest(
+      configuration,
+      `/rest/v1/clubs?id=eq.${encodeURIComponent(clubId)}&select=id,union_id,status`,
+      {},
+      fetchImpl
+    );
+    if (
+      !Array.isArray(clubs) ||
+      clubs.length !== 1 ||
+      clubs[0].id !== clubId ||
+      clubs[0].union_id !== null ||
+      clubs[0].status !== 'active'
+    ) {
+      throw new Error('Template certification requires one active standalone club.');
+    }
+  }
   const query = new URLSearchParams({
     select: 'club_id,user_id,role,status,chip_balance',
     club_id: `eq.${clubId}`,
@@ -261,24 +334,35 @@ export async function prepareProductionE2EStaffMembership({
   return row;
 }
 
+/** Reuse the same reserved, zero-balance public-join fixture in a standalone
+ * club. A union member club correctly refuses this creation route regardless
+ * of its local admin membership; never weaken that gate or mint a test club. */
+export function prepareProductionE2ETemplateMembership({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  return prepareProductionE2EStaffMembership({
+    environment: {
+      ...environment,
+      E2E_CLUB_ID: environment.E2E_TEMPLATE_CLUB_ID || DEFAULT_E2E_TEMPLATE_CLUB_ID,
+    },
+    fetchImpl,
+    requireStandalone: true,
+  });
+}
+
 export async function cleanupStaleProductionE2EAccounts({
   environment = process.env,
   fetchImpl = fetch,
   now = Date.now(),
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
 } = {}) {
   const configuration = requireEnvironment(environment);
   const cutoff = new Date(now - STALE_ACCOUNT_AGE_MS).toISOString();
-  const query = new URLSearchParams({
-    select: 'id,email,created_at',
-    email: `like.${ACCOUNT_PREFIX}*${ACCOUNT_SUFFIX}`,
-    created_at: `lte.${cutoff}`,
-    order: 'created_at.asc',
-    limit: String(STALE_ACCOUNT_LIMIT + 1),
-  });
   const accounts = await serviceRequest(
     configuration,
-    `/rest/v1/profiles?${query.toString()}`,
-    {},
+    '/rest/v1/rpc/fn_ca_stale_certification_accounts',
+    { method: 'POST', body: JSON.stringify({ p_before: cutoff }) },
     fetchImpl
   );
   if (!Array.isArray(accounts)) throw new Error('Stale account query returned a non-array body.');
@@ -294,12 +378,133 @@ export async function cleanupStaleProductionE2EAccounts({
     ) {
       throw new Error('Refusing an invalid stale post-deploy account candidate.');
     }
-    await cleanupProductionE2EAccount({ environment, fetchImpl, record: account });
+    // A certification run that died between creating its fixture clubs and
+    // retiring them leaves an identity that still owns a club, and the guarded
+    // account sweep refuses exactly that (CERTIFICATION_RETIREMENT_HAS_AUTHORITY_
+    // OR_CUSTODY). Refusing is right; wedging every later certificate on it is
+    // not. Retire the clubs this identity owns through the same guarded door the
+    // run itself uses, THEN sweep the identity. A club that is not a recognized
+    // fixture still throws here and is never retired.
+    await retireProductionCreateClubFixtures({
+      environment,
+      fetchImpl,
+      wait,
+      record: account,
+      reason: 'stale-cert-recovery',
+    });
+    await cleanupProductionE2EAccount({ environment, fetchImpl, wait, record: account });
   }
   if (accounts.length) {
     console.log(`[production-e2e-account] recovered ${accounts.length} stale account(s).`);
   }
   return accounts.length;
+}
+
+/**
+ * Retire one certification club through the sanctioned door, surviving a slow
+ * database. The door is idempotent (a club that is already gone answers
+ * `success: true, already_gone: true`) and runs as one transaction, so a
+ * statement timeout rolled it back and a replay is safe. Transient failures
+ * are retried with backoff; a `success: false` refusal is definitive.
+ */
+export async function retireCertificationClubWithRetry({
+  configuration,
+  clubId,
+  reason,
+  fetchImpl = fetch,
+  wait,
+}) {
+  const result = await retryTransient(
+    () =>
+      serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_ca_retire_certification_club',
+        { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
+        fetchImpl
+      ),
+    { wait, label: `retirement of certification club ${clubId}` }
+  );
+  if (result?.success === false) {
+    throw new Error(`Certification club ${clubId} retirement was refused: ${result.error}`);
+  }
+  return result;
+}
+
+/**
+ * Retire only clubs owned by a reserved Create A Club certificate identity.
+ * The account namespace and club-name prefix are both mandatory so this door
+ * can never be pointed at a player or a pre-existing club by mistake.
+ *
+ * Without `record` it reads the current job's fixture file. A stale-account
+ * recovery passes the stale identity's own `record` explicitly; every guard
+ * below applies to it unchanged.
+ */
+export async function retireProductionCreateClubFixtures({
+  environment = process.env,
+  fetchImpl = fetch,
+  wait,
+  record,
+  reason = 'ui-cert-cleanup',
+} = {}) {
+  const path = fixturePath(environment);
+  const account = record || (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
+  if (!account) {
+    console.log(
+      '[production-e2e-account] no fixture record exists; Create Club retirement is a no-op.'
+    );
+    return 0;
+  }
+  if (!account?.id || !reserved(account.email || '')) {
+    throw new Error('Refusing to retire clubs outside the reserved post-deploy namespace.');
+  }
+  const configuration = requireEnvironment(environment);
+  const query = new URLSearchParams({
+    select: 'id,name,owner_id',
+    owner_id: `eq.${account.id}`,
+  });
+  const clubs = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(clubs))
+    throw new Error('Create Club fixture query returned a non-array body.');
+  // Validate EVERY owned club before retiring ANY, so one unrecognized club
+  // refuses the whole batch instead of leaving it half retired.
+  for (const club of clubs) {
+    const name = String(club.name || '');
+    if (
+      club.owner_id !== account.id ||
+      !CERTIFICATION_CLUB_NAME_PREFIXES.some((prefix) => name.startsWith(prefix))
+    ) {
+      throw new Error(`Refusing to retire unrecognized club ${String(club.id || 'unknown')}.`);
+    }
+  }
+  for (const club of clubs) {
+    await retireCertificationClubWithRetry({
+      configuration,
+      clubId: club.id,
+      reason,
+      fetchImpl,
+      wait,
+    });
+  }
+  const remaining = await serviceRequest(
+    configuration,
+    `/rest/v1/clubs?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(remaining) || remaining.length) {
+    throw new Error(
+      `Certification left ${Array.isArray(remaining) ? remaining.length : 'an unreadable number of'} owned club fixture(s) behind.`
+    );
+  }
+  console.log(
+    `[production-e2e-account] retired and verified ${clubs.length} Create Club fixture(s).`
+  );
+  return clubs.length;
 }
 
 export async function createProductionE2EAccount({
@@ -370,8 +575,12 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
+  if (command === 'prepare-template-staff') return prepareProductionE2ETemplateMembership();
+  if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
-  throw new Error('Usage: production-e2e-account.mjs <create|prepare-staff|cleanup>');
+  throw new Error(
+    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-template-staff|retire-create-clubs|cleanup>'
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

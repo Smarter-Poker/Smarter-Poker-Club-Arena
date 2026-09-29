@@ -34,14 +34,14 @@ END $$;
 DO $$
 DECLARE
   fixture record; wallet_before record; wallet_after record; unrelated_before record; unrelated_after record;
-  result record; leg record; invoice record; delivery record;
+  result record; leg record;
   host uuid; kind text; bank_store uuid; promo_store uuid; member_before numeric; member_after numeric;
   player constant uuid := 'd1000000-0000-4000-8000-000000000001';
   operator constant uuid := 'd1000000-0000-4000-8000-000000000002';
   other_admin constant uuid := '2d1cd6c3-5700-4af9-a271-d4863fdab20d';
   key text; first_key text; category text; categories text[] := ARRAY['mines_prize', 'plinko_prize', 'crash_prize', 'crossing_prize'];
   expected_promo numeric; expected_bank numeric; amount numeric; expected_member numeric;
-  expected_recipients uuid[]; actual_recipients uuid[];
+  expected_recipients uuid[];
   ledger_count integer; ledger_total numeric; invoice_count integer; bank_count integer := 0;
   frozen_rows jsonb; affiliated_before jsonb; affiliated_after jsonb; refusal boolean; host_count integer := 0;
 BEGIN
@@ -153,32 +153,18 @@ BEGIN
            CASE WHEN kind = 'union' THEN host ELSE NULL::uuid END, 'posted'::text) THEN
         RAISE EXCEPTION 'bank journal source, recipient or host identity is wrong for % %', kind, category;
       END IF;
+      -- Owner ruling 2026-09-21, R17 (migration 20260921202827): a Diamond Spins
+      -- prize leg keeps its journal rows and issues NO accounting document,
+      -- Messenger invoice, notification or push, for the player or the host
+      -- roster. Before that ruling this block required exactly one invoice with
+      -- its message and notification per bank leg (20260914121645).
       SELECT count(*) INTO invoice_count FROM public.settlement_invoices WHERE source_ledger_id = leg.id;
-      IF invoice_count IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'bank leg must issue exactly one invoice'; END IF;
-      SELECT * INTO STRICT invoice FROM public.settlement_invoices WHERE source_ledger_id = leg.id;
-      IF ROW(invoice.from_entity_type, invoice.from_entity_id, invoice.to_entity_type, invoice.to_entity_id,
-             invoice.gross_amount, invoice.net_amount, invoice.status, invoice.chips_transferred, invoice.message_sent)
-         IS DISTINCT FROM ROW(kind, host::text, 'player'::text, player::text, 0.01::numeric,
-                              0.01::numeric, 'paid'::text, true, true)
-         OR invoice.invoice_number IS NULL
-         OR invoice.breakdown->>'ledger_from_entity_id' IS DISTINCT FROM bank_store::text THEN
-        RAISE EXCEPTION 'invoice must preserve the physical bank source and correct accounting party';
+      IF invoice_count IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'a Diamond Spins bank leg must issue no accounting document'; END IF;
+      IF EXISTS (SELECT 1 FROM public.notifications n WHERE n.type = 'accounting_invoice' AND n.created_at >= leg.created_at
+                   AND n.user_id = ANY (expected_recipients))
+         OR EXISTS (SELECT 1 FROM public.social_messages m WHERE m.message_type = 'invoice' AND m.created_at >= leg.created_at) THEN
+        RAISE EXCEPTION 'a Diamond Spins bank leg must deliver no invoice message or notification';
       END IF;
-      SELECT array_agg(recipient_id ORDER BY recipient_id) INTO actual_recipients
-        FROM public.accounting_invoice_deliveries WHERE invoice_id = invoice.id;
-      IF actual_recipients IS DISTINCT FROM expected_recipients THEN
-        RAISE EXCEPTION 'invoice recipients do not match the synthetic % host and player', kind;
-      END IF;
-      FOR delivery IN SELECT * FROM public.accounting_invoice_deliveries WHERE invoice_id = invoice.id LOOP
-        IF NOT EXISTS (SELECT 1 FROM public.social_messages m
-          WHERE m.id = delivery.message_id AND m.sender_id = operator AND m.message_type = 'invoice'
-            AND m.media_metadata->>'invoice_id' = invoice.id::text)
-           OR NOT EXISTS (SELECT 1 FROM public.notifications n
-          WHERE n.id = delivery.notification_id AND n.user_id = delivery.recipient_id
-            AND n.type = 'accounting_invoice' AND n.data->>'invoice_id' = invoice.id::text) THEN
-          RAISE EXCEPTION 'invoice must have its actual message and notification';
-        END IF;
-      END LOOP;
       expected_promo := 0;
       bank_count := bank_count + 1;
     END LOOP;
@@ -224,6 +210,6 @@ END $$;
 
 SET CONSTRAINTS ALL IMMEDIATE;
 DO $$ BEGIN
-  RAISE NOTICE 'PASS Diamond Main Bank fallback: Union and Club, Promo first, exact shortfall, four game categories, balanced journals, actual invoices/messages/notifications, host isolation, atomic insufficient cover';
+  RAISE NOTICE 'PASS Diamond Main Bank fallback: Union and Club, Promo first, exact shortfall, four game categories, balanced journals, no documents, messages or notifications (owner ruling 2026-09-21 R17), host isolation, atomic insufficient cover';
 END $$;
 ROLLBACK;

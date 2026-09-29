@@ -50,6 +50,13 @@ const statement = (over: Record<string, unknown> = {}) => ({
   ],
   has_more: true,
   next_before: '2026-09-07T15:42:03Z',
+  next_cursor: {
+    at: '2026-09-07T15:42:03.123456+00:00',
+    id: '00000000-0000-4000-8000-000000000003',
+    direction: 'out',
+    account: 'player_wallet:u:club_members.chip_balance',
+    club_filter: null,
+  },
   audit: {
     status: 'reconciles',
     read_at: '2026-09-07T06:40:00Z',
@@ -73,10 +80,10 @@ describe('ChipStatement', () => {
     rpc.mockResolvedValueOnce({ data: statement(), error: null });
     render(<ChipStatement scope="player" />);
     await waitFor(() => expect(screen.getByText('Your Chip Statement')).toBeTruthy());
-    expect(rpc).toHaveBeenCalledWith('fn_ca_chip_statement', {
+    expect(rpc).toHaveBeenCalledWith('fn_ca_chip_statement_page', {
       p_scope: 'player',
       p_club_id: null,
-      p_before: null,
+      p_cursor: null,
       p_limit: 50,
     });
     expect(screen.getByText('+12.50')).toBeTruthy(); // in
@@ -87,10 +94,10 @@ describe('ChipStatement', () => {
     expect(screen.getByText('Beta')).toBeTruthy(); // balance by club
   });
 
-  it('pages with next_before and appends', async () => {
+  it('passes the full server cursor unchanged, including microseconds, and appends', async () => {
     rpc.mockResolvedValueOnce({ data: statement(), error: null });
     rpc.mockResolvedValueOnce({
-      data: statement({ legs: [leg({ id: 'l3', amount: 7 })], has_more: false, next_before: null }),
+      data: statement({ legs: [leg({ id: 'l3', amount: 7 })], has_more: false, next_cursor: null }),
       error: null,
     });
     render(<ChipStatement scope="player" />);
@@ -98,8 +105,8 @@ describe('ChipStatement', () => {
     fireEvent.click(screen.getByText('Load Earlier Movements'));
     await waitFor(() => expect(screen.getByText('+7.00')).toBeTruthy());
     expect(rpc).toHaveBeenLastCalledWith(
-      'fn_ca_chip_statement',
-      expect.objectContaining({ p_before: '2026-09-07T15:42:03Z' })
+      'fn_ca_chip_statement_page',
+      expect.objectContaining({ p_cursor: statement().next_cursor })
     );
     expect(screen.queryByText('Load Earlier Movements')).toBeNull();
   });
@@ -119,6 +126,47 @@ describe('ChipStatement', () => {
     render(<ChipStatement scope="player" />);
     await waitFor(() => expect(screen.getByText(/Does Not Reconcile\./)).toBeTruthy());
     expect(screen.getByText(/Difference 0\.52/)).toBeTruthy();
+  });
+
+  it('keeps both directions when a self-transfer spans pages', async () => {
+    rpc.mockResolvedValueOnce({
+      data: statement({ legs: [leg({ id: 'same-transfer', amount: 7 })] }),
+      error: null,
+    });
+    rpc.mockResolvedValueOnce({
+      data: statement({
+        legs: [leg({ id: 'same-transfer', direction: 'out', amount: 7 })],
+        has_more: false,
+        next_cursor: null,
+      }),
+      error: null,
+    });
+    render(<ChipStatement scope="player" />);
+    fireEvent.click(await screen.findByText('Load Earlier Movements'));
+    await screen.findByText('-7.00');
+    expect(screen.getByText('+7.00')).toBeTruthy();
+  });
+
+  it('refuses a response that says more rows exist but loses their cursor', async () => {
+    rpc.mockResolvedValueOnce({
+      data: statement({ next_cursor: null }),
+      error: null,
+    });
+    render(<ChipStatement scope="player" />);
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Load Earlier Movements')).toBeNull();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fall back to timestamp pagination when the new reader is unavailable', async () => {
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST202', message: 'reader unavailable' },
+    });
+    render(<ChipStatement scope="player" />);
+    await screen.findByRole('alert');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][0]).toBe('fn_ca_chip_statement_page');
   });
 
   it('never reads an error as "no movements"', async () => {

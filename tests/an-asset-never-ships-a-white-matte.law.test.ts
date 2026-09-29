@@ -158,7 +158,7 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
     }
   });
 
-  it('retains the original six and measured matte wheel artwork', () => {
+  it('retains the original six and the measured matte wheel artwork', () => {
     // If one of these leaves the baseline it means somebody cleaned it. That
     // is a decision about Dan's art, not a refactor, and it should be read as
     // one - the reasons above say what cleaning each of them destroys.
@@ -170,6 +170,8 @@ describe('the baseline is a record of work done, not a list of excuses', () => {
       'public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp',
       'public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png',
       'public/assets/diamond-spins/wheel-matte-controls-v1.png',
+      'public/assets/diamond-spins/wheel-selector-holder-v2.png',
+      'public/assets/diamond-spins/wheel-selector-holder-v2.webp',
       'public/assets/diamond-spins/wheel-selector-matte-v1.png',
     ]);
   });

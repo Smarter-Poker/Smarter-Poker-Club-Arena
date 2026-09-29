@@ -13,7 +13,7 @@ import type {
   PrivateRosterHand,
   UnknownObject,
 } from './contract.js';
-const forced = new Set(['sb', 'bb', 'post', 'ante', 'straddle', 'bomb_ante']);
+const forced = new Set(['sb', 'bb', 'post', 'ante', 'straddle', 'bomb_ante', 'kill_blind']);
 /** Rebuild the export from actual retained/source input at qualification time.
  * Caller-invented output objects or signed v1 authority cannot bypass the read. */
 export function acceptedRosterEligibility(

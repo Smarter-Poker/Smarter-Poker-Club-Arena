@@ -59,6 +59,15 @@
   appearance: none;
   margin: 0;
   padding: 1.4cqw 1.2cqw;
+  /* The touch floor applies to each axis (2026-09-22). min-height alone left
+     DAY at 32.7 wide, WEEK 42.1 and YEAR 41.1 at 390px, because the width came
+     only from padding around three or four condensed characters, and
+     club-data-deep.spec.ts:150 reported all three from the live page. The
+     sibling `.word` rule in ClubDataPage.module.css had the identical defect
+     and was fixed in the same change; this is that fix carried to the panel
+     next door rather than left for the next run to find. Every container here
+     wraps, so the floor costs a wrap, never an overflow. */
+  min-width: 44px;
   min-height: 44px;
   border: 0;
   background: transparent;
@@ -301,6 +310,7 @@
   appearance: none;
   margin: 0;
   padding: 1.4cqw 1.2cqw;
+  min-width: 44px;
   min-height: 44px;
   border: 0;
   background: transparent;
@@ -381,6 +391,7 @@
   appearance: none;
   margin: 0;
   padding: 1.2cqw 0.8cqw;
+  min-width: 44px;
   min-height: 44px;
   border: 0;
   background: transparent;
@@ -661,6 +672,7 @@
   appearance: none;
   margin: 0;
   padding: 1.4cqw 1.2cqw;
+  min-width: 44px;
   min-height: 44px;
   border: 0;
   background: transparent;

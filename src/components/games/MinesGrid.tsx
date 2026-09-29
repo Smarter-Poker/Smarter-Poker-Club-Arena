@@ -1,47 +1,56 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { gameChips } from '../../utils/bonusGameBudget';
+import { soundService } from '../../services/SoundService';
+import { triggerHaptic } from '../../services/HapticService';
+import { TapHaptic } from '../haptics/TapHaptic';
 import styles from './MinesGrid.module.css';
+/**
+ * The gem and the mine a tile turns over. The geometry is the original art; the
+ * palette is the house one (2026-09-25): the gem is cut from light blue
+ * (#45adff), royal blue (#1877f2) and chrome white, and the mine is a gunmetal
+ * body on chrome spikes whose only colour is its bust-red fuse tip.
+ */
 export function GemArt({ mine = false }: { mine?: boolean }) {
   const id = useId().replace(/:/g, '');
   return (
     <svg viewBox="0 0 100 100" aria-hidden="true" className={styles.gem}>
       <defs>
         <linearGradient id={`${id}a`} x1="0" y1="0" x2=".8" y2="1">
-          <stop stopColor={mine ? '#728493' : '#f1ffff'} />
-          <stop offset=".42" stopColor={mine ? '#28384b' : '#8ee9ff'} />
-          <stop offset="1" stopColor={mine ? '#050910' : '#1a72c7'} />
+          <stop stopColor="#f4f7fb" />
+          <stop offset=".42" stopColor="#45adff" />
+          <stop offset="1" stopColor="#1877f2" />
         </linearGradient>
         <radialGradient id={`${id}b`} cx=".35" cy=".25">
-          <stop stopColor="#92a9bb" />
-          <stop offset=".4" stopColor="#344557" />
-          <stop offset="1" stopColor="#050911" />
+          <stop stopColor="#b8c3cd" />
+          <stop offset=".38" stopColor="#3a4756" />
+          <stop offset="1" stopColor="#0b1017" />
         </radialGradient>
       </defs>
       {mine ? (
         <g>
-          <g stroke="#9bb4c8" strokeWidth="5" strokeLinecap="round">
+          <g stroke="#7f8c9b" strokeWidth="5" strokeLinecap="round">
             {[0, 45, 90, 135].map((a) => (
               <path key={a} d="M50 13V87" transform={`rotate(${a} 50 50)`} />
             ))}
           </g>
-          <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#7b91a6" />
-          <path d="M31 38Q37 25 51 26" fill="none" stroke="#d6e7f3" strokeWidth="3" opacity=".7" />
-          <circle cx="54" cy="40" r="8" fill="#f96146" />
-          <circle cx="52" cy="38" r="3" fill="#ffedd0" />
+          <circle cx="50" cy="50" r="29" fill={`url(#${id}b)`} stroke="#9aa5b3" />
+          <path d="M31 38Q37 25 51 26" fill="none" stroke="#e4e7ec" strokeWidth="3" opacity=".7" />
+          <circle cx="54" cy="40" r="8" fill="#ff5b6e" />
+          <circle cx="52" cy="38" r="3" fill="#ffd2d8" />
         </g>
       ) : (
-        <g stroke="#caf5ff" strokeWidth=".8" strokeLinejoin="round">
+        <g stroke="#e4e7ec" strokeWidth=".8" strokeLinejoin="round">
           <path d="M11 35L28 16H72L89 35L50 87Z" fill={`url(#${id}a)`} />
-          <path d="M11 35H89L50 87Z" fill="#239bd9" />
-          <path d="M11 35L34 37L50 87Z" fill="#64dcff" />
-          <path d="M34 37H65L50 87Z" fill="#d6faff" />
-          <path d="M65 37L89 35L50 87Z" fill="#2384c8" />
-          <path d="M28 16L34 37L11 35Z" fill="#99ebff" />
-          <path d="M28 16L50 16L34 37Z" fill="#f4ffff" />
-          <path d="M50 16L65 37H34Z" fill="#a5ecff" />
-          <path d="M50 16H72L65 37Z" fill="#f4ffff" />
-          <path d="M72 16L89 35L65 37Z" fill="#64c9f3" />
+          <path d="M11 35H89L50 87Z" fill="#1877f2" />
+          <path d="M11 35L34 37L50 87Z" fill="#45adff" />
+          <path d="M34 37H65L50 87Z" fill="#bfe6ff" />
+          <path d="M65 37L89 35L50 87Z" fill="#1466d6" />
+          <path d="M28 16L34 37L11 35Z" fill="#8ecfff" />
+          <path d="M28 16L50 16L34 37Z" fill="#f4f7fb" />
+          <path d="M50 16L65 37H34Z" fill="#a9dcff" />
+          <path d="M50 16H72L65 37Z" fill="#f4f7fb" />
+          <path d="M72 16L89 35L65 37Z" fill="#6bbcff" />
           <path d="M20 22L22 14L24 22L32 24L24 26L22 34L20 26L12 24Z" fill="white" stroke="none" />
         </g>
       )}
@@ -84,6 +93,18 @@ export function minesReadouts(input: {
             : signedChips(next - value),
   };
 }
+/** Read by assistive technology, never drawn. */
+const SPOKEN_ONLY = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
 /** The cascade ripples out from the tile that ended the round, one ring at a time. */
 export const cascadeDelay = (cell: number, origin: number, stepMs: number) => {
   const distance =
@@ -123,103 +144,164 @@ export default function MinesGrid({
     document.addEventListener('visibilitychange', update);
     return () => document.removeEventListener('visibilitychange', update);
   }, []);
+  /**
+   * THE BOARD IS HEARD AS IT TURNS (2026-09-26). A tile flips, or the mine
+   * blasts, on the render that shows it, so the cue is played from the effect
+   * that follows that render: a crystalline chime for a gem, climbing with
+   * each gem found this round, a blast for the mine, the booked sting for a
+   * win. Each fires once per change; a new round (or a board that mounts on a
+   * round already in progress) starts from where it stands, silently.
+   * Reduced motion keeps every cue: only the motion collapses.
+   */
+  const heard = useRef({ roundId, picks: picked.length, phase });
+  const lastPick = picked[picked.length - 1];
+  const lastIsMine = lastPick !== undefined && (mines?.includes(lastPick) ?? false);
+  useEffect(() => {
+    const was = heard.current;
+    heard.current = { roundId, picks: picked.length, phase };
+    if (was.roundId !== roundId) return;
+    const picks = picked.length;
+    if (phase === 'lost') {
+      if (was.phase !== 'lost') soundService.playMinesExplosion(getAnimationSpeed());
+      return;
+    }
+    if (picks > was.picks && !lastIsMine) soundService.playMinesGem(picks);
+    if (phase === 'cashed' && was.phase !== 'cashed')
+      soundService.playBonusBooked(
+        betChips && betChips > 0 && payoutChips !== undefined ? payoutChips / betChips : 1
+      );
+  }, [roundId, phase, picked.length, lastIsMine, betChips, payoutChips]);
   const speed = getAnimationSpeed();
   const readouts =
     prizes && betChips !== undefined && betChips > 0
       ? minesReadouts({ phase, picks: picked.length, prizes, betChips, payoutChips })
       : null;
   const origin = picked[picked.length - 1] ?? 12;
+  // Tiles a round in play can reach stay in the tab order even while they
+  // cannot be pressed (a pick is out, or the tile is already turned): a
+  // browser drops focus from a control the moment it is disabled, and every
+  // pick used to throw a keyboard player back to the top of the page. Only a
+  // board with no round in play is taken out of the tab order.
+  const live = phase === 'open';
+  // What the last pick turned over, said once by the status beside the board.
+  const last = picked[picked.length - 1];
+  const outcome =
+    last === undefined ? '' : `Tile ${last + 1} Is A ${mines?.includes(last) ? 'Mine' : 'Gem'}.`;
   return (
-    <div
-      key={`${roundId}:${phase}`}
-      className={styles.board}
-      aria-label="Diamond Mines Board"
-      data-motion="keep"
-      data-terminal={terminal}
-      style={
-        terminal
-          ? {
-              animationDuration: `${1800 * speed}ms`,
-              animationPlayState: visible ? 'running' : 'paused',
-            }
-          : undefined
-      }
-      onAnimationEnd={(event) => {
-        if (terminal && event.target === event.currentTarget) onSettled?.();
-      }}
-    >
-      {readouts && (
-        <dl className={styles.readouts} aria-live="polite">
-          <div>
-            <dt>{readouts.totalLabel}</dt>
-            <dd data-sign={readouts.totalProfit.startsWith('-') ? 'loss' : 'gain'}>
-              {readouts.totalProfit}
-            </dd>
+    <>
+      <div
+        key={`${roundId}:${phase}`}
+        className={styles.board}
+        role="group"
+        aria-label="Diamond Mines Board"
+        data-motion="keep"
+        data-terminal={terminal}
+        // Before the first pick the board runs its attract: a slow light sweep.
+        data-attract={!terminal && picked.length === 0 ? 'true' : undefined}
+        style={
+          terminal
+            ? {
+                animationDuration: `${1800 * speed}ms`,
+                animationPlayState: visible ? 'running' : 'paused',
+              }
+            : undefined
+        }
+        onAnimationEnd={(event) => {
+          if (terminal && event.target === event.currentTarget) onSettled?.();
+        }}
+      >
+        {readouts && (
+          <dl className={styles.readouts} aria-live="polite">
+            <div>
+              <dt>{readouts.totalLabel}</dt>
+              <dd data-sign={readouts.totalProfit.startsWith('-') ? 'loss' : 'gain'}>
+                {readouts.totalProfit}
+              </dd>
+            </div>
+            <div>
+              <dt>{readouts.nextLabel}</dt>
+              <dd>{readouts.nextProfit}</dd>
+            </div>
+          </dl>
+        )}
+        <div className={styles.stage}>
+          <div className={styles.grid}>
+            {Array.from({ length: 25 }, (_, cell) => {
+              const mine = mines?.includes(cell) ?? false,
+                selected = picked.includes(cell),
+                revealed = selected || mines !== null,
+                // A tile the player turned over flips as it is picked; on the final
+                // reveal the rest of the board turns over in a ripple from the last pick,
+                // while the picks already showing stay put (the hit mine blasts instead).
+                cascade = terminal && !selected,
+                flip = revealed && (!terminal || cascade),
+                refused = busy || selected;
+              return (
+                <button
+                  key={cell}
+                  type="button"
+                  className={styles.tile}
+                  data-revealed={revealed}
+                  data-mine={revealed && mine}
+                  data-picked={selected}
+                  data-hit={selected && mine}
+                  data-flip={flip}
+                  data-cascade={cascade}
+                  style={
+                    cascade
+                      ? {
+                          animationDelay: `${cascadeDelay(cell, origin, 70 * speed)}ms`,
+                          animationDuration: `${420 * speed}ms`,
+                        }
+                      : live && refused
+                        ? // Reads and responds to a pointer exactly as a disabled tile did.
+                          { pointerEvents: 'none' }
+                        : undefined
+                  }
+                  aria-label={`Tile ${cell + 1}${revealed ? (mine ? ', Mine' : ', Gem') : ''}`}
+                  disabled={!live}
+                  aria-disabled={live ? refused : undefined}
+                  onClick={() => {
+                    if (!live || refused) return;
+                    // Inside the tap, where a phone allows a buzz: the pick is felt
+                    // the moment the finger lands (the gem or the mine is felt
+                    // again when the board shows it).
+                    triggerHaptic('selection');
+                    onPick(cell);
+                  }}
+                >
+                  <TapHaptic disabled={!live || refused} radius="3px" />
+                  {revealed ? (
+                    <GemArt mine={mine} />
+                  ) : (
+                    <>
+                      <span className={styles.seal} aria-hidden="true">
+                        ◆
+                      </span>
+                      <span className={styles.number}>{String(cell + 1).padStart(2, '0')}</span>
+                    </>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div>
-            <dt>{readouts.nextLabel}</dt>
-            <dd>{readouts.nextProfit}</dd>
-          </div>
-        </dl>
-      )}
-      <div className={styles.stage}>
-        <div className={styles.grid}>
-          {Array.from({ length: 25 }, (_, cell) => {
-            const mine = mines?.includes(cell) ?? false,
-              selected = picked.includes(cell),
-              revealed = selected || mines !== null,
-              // A tile the player turned over flips as it is picked; on the final
-              // reveal the rest of the board turns over in a ripple from the last pick,
-              // while the picks already showing stay put (the hit mine blasts instead).
-              cascade = terminal && !selected,
-              flip = revealed && (!terminal || cascade);
-            return (
-              <button
-                key={cell}
-                type="button"
-                className={styles.tile}
-                data-revealed={revealed}
-                data-mine={revealed && mine}
-                data-picked={selected}
-                data-hit={selected && mine}
-                data-flip={flip}
-                data-cascade={cascade}
-                style={
-                  cascade
-                    ? {
-                        animationDelay: `${cascadeDelay(cell, origin, 70 * speed)}ms`,
-                        animationDuration: `${420 * speed}ms`,
-                      }
-                    : undefined
-                }
-                aria-label={`Tile ${cell + 1}${revealed ? (mine ? ', Mine' : ', Gem') : ''}`}
-                disabled={busy || phase !== 'open' || selected}
-                onClick={() => onPick(cell)}
-              >
-                {revealed ? (
-                  <GemArt mine={mine} />
-                ) : (
-                  <>
-                    <span className={styles.seal} aria-hidden="true">
-                      ◆
-                    </span>
-                    <span className={styles.number}>{String(cell + 1).padStart(2, '0')}</span>
-                  </>
-                )}
-              </button>
-            );
-          })}
         </div>
+        <p className={styles.caption}>
+          {mines
+            ? phase === 'lost'
+              ? 'A Mine Ended The Round. Every Mine And Gem Is Revealed.'
+              : 'Win Booked. Every Mine And Gem Is Revealed.'
+            : phase === 'open'
+              ? 'Choose A Tile. Find A Diamond.'
+              : '25 Tiles. Your Next Discovery Awaits.'}
+        </p>
       </div>
-      <p className={styles.caption}>
-        {mines
-          ? phase === 'lost'
-            ? 'A Mine Ended The Round. Every Mine And Gem Is Revealed.'
-            : 'Win Booked. Every Mine And Gem Is Revealed.'
-          : phase === 'open'
-            ? 'Choose A Tile. Find A Diamond.'
-            : '25 Tiles. Your Next Discovery Awaits.'}
+      {/* Outside the keyed board, which a finished round rebuilds for its reveal:
+        a live region is only read out when it changes, never when it is new.
+        Hidden by its own style, so it stays unseen wherever the board is drawn. */}
+      <p role="status" aria-live="polite" style={SPOKEN_ONLY}>
+        {outcome}
       </p>
-    </div>
+    </>
   );
 }

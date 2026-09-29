@@ -29,6 +29,7 @@ vi.mock('./financialAlerts.js', () => ({
 }));
 
 import { reconcilePendingFees } from './FeeReconciler.js';
+import { reportError } from './errorReporter.js';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 const PARAMS = {
@@ -204,36 +205,74 @@ it('preserves the Mini kind, tier and metadata when reconstructing a stored oper
   });
 });
 
-it.each([
-  null,
-  [],
-  {},
-  { applied: false, already_processed: false, rake_record_id: null },
-  { applied: true, already_processed: true, rake_record_id: 'rake-1' },
-  { applied: 'true', already_processed: false, rake_record_id: 'rake-1' },
-  { applied: true, already_processed: false, rake_record_id: null },
-  [
-    { applied: true, already_processed: false, rake_record_id: 'rake-1' },
-    { applied: true, already_processed: false, rake_record_id: 'rake-2' },
-  ],
-])('does not resolve a queued rake without one explicit banking receipt: %j', async (receipt) => {
-  from.mockImplementation(() =>
-    table({ data: [{ ...QUEUED_ROW, kind: 'rake', rake: 4 }], error: null }, (p) => patches.push(p))
-  );
-  rpc.mockResolvedValue({ data: receipt, error: null });
-  const result = await reconcilePendingFees();
-  expect(result).toMatchObject({ resolved: 0, stillFailing: 1 });
-  expect((patches[0] as { resolved_at?: string }).resolved_at).toBeUndefined();
-});
-it.each([true, false])('accepts a confirmed rake receipt with applied=%j', async (applied) => {
-  from.mockImplementation(() =>
-    table({ data: [{ ...QUEUED_ROW, kind: 'rake', rake: 4 }], error: null }, (p) => patches.push(p))
-  );
-  rpc.mockResolvedValue({
-    data: [{ applied, already_processed: !applied, rake_record_id: 'rake-1' }],
-    error: null,
+/**
+ * THE DRAIN IS FOR JACKPOT CLAIMS ONLY (2026-09-22).
+ *
+ * The rake and the BBJ drop of an accepted hand are carried by its post-commit
+ * envelope, which the only hand door refuses to commit without, and banked in
+ * one transaction by fn_ca_process_hand_post_commit_obligations. The drain's
+ * rake and BBJ-drop re-drive compensated for the split write that envelope
+ * removed. Worse, a rake claim re-driven here was banked on the claim's own
+ * methodology, and an equal-split claim filed by the hourly re-queue for a
+ * hand whose envelope was merely late would win atomic_distribute_rake's first
+ * write and erase the hand's weighted attribution for good. So the drain asks
+ * the queue for bbj_payout rows only, and a row of any other kind that still
+ * reached it is neither re-driven nor written.
+ */
+describe('the drain never re-drives a fee the hand already owes', () => {
+  it('asks the queue for jackpot payout claims only', async () => {
+    const filters: Array<[string, unknown]> = [];
+    from.mockImplementation((name: string) => {
+      const chain = table({ data: [], error: null });
+      if (name === 'pending_fee_distributions') {
+        chain.eq = (column: string, value: unknown) => {
+          filters.push([column, value]);
+          return chain;
+        };
+      }
+      return chain;
+    });
+    const summary = await reconcilePendingFees();
+    expect(filters).toContainEqual(['kind', 'bbj_payout']);
+    expect(summary).toMatchObject({ scanned: 0, resolved: 0, stillFailing: 0 });
   });
-  expect((await reconcilePendingFees()).resolved).toBe(1);
+
+  it.each(['rake', 'bbj_contribution'])(
+    'leaves a queued %s row untouched even when a read returns one',
+    async (kind) => {
+      from.mockImplementation((name: string) =>
+        name === 'pending_fee_distributions'
+          ? table(
+              {
+                data: [{ ...QUEUED_ROW, kind, rake: 4, bbj: 1, contributions: { p3: 40 } }],
+                error: null,
+              },
+              (p) => patches.push(p)
+            )
+          : table({ data: null, error: null })
+      );
+      rpc.mockResolvedValue({
+        data: [{ applied: true, already_processed: false, rake_record_id: 'rake-1' }],
+        error: null,
+      });
+      logBBJCollection.mockResolvedValue(true);
+
+      const summary = await reconcilePendingFees();
+
+      // Not banked: no atomic_distribute_rake, no BBJ drop, no jackpot payout.
+      expect(rpc).not.toHaveBeenCalled();
+      expect(logBBJCollection).not.toHaveBeenCalled();
+      expect(processBBJPayout).not.toHaveBeenCalled();
+      // Not written: not resolved, and not even its attempt counter bumped.
+      expect(patches).toEqual([]);
+      // Counted as still open, and said out loud: the read broke its own filter.
+      expect(summary).toMatchObject({ scanned: 1, resolved: 0, stillFailing: 1, exhausted: 0 });
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'FeeReconciler.not_a_jackpot_claim'
+      );
+    }
+  );
 });
 
 it.each([

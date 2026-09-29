@@ -86,6 +86,46 @@ try:
   sql+='ALTER FUNCTION '+signature+' OWNER TO '+row['owner']+';\n'
  run(sql,'exact-installed-weekly-predecessors')
  run(next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text(),'weekly-qualified-source')
+ # The 2026-09-25 cost rewrite of the two functions the weekly close depends on.
+ # Only STEP 2's function bodies are taken: STEP 1 is eight CREATE INDEX
+ # CONCURRENTLY statements against production-sized ledgers, and 2.1 asserts they
+ # exist - neither is a statement about behaviour, and a native fixture holding a
+ # handful of rows has nothing to index. What IS a statement about behaviour is
+ # that these exact bodies close the same week, with the same certificates for
+ # the same payees, which is what every regression below now qualifies.
+ # The one authority the rewrite's set pass reaches that this cluster's
+ # 2026-09-14 catalog predates: the mixed-cutover Spin proof, which the
+ # installed fn_accounting_tournament_fee_net_plan consults before it calls a
+ # legacy_unverified batch bad. Its maintained candidate is taken here rather
+ # than migration 20260918085836, whose preconditions assert production md5s
+ # that a native cluster cannot carry.
+ spin=(root/'tests/fixtures/spin-mixed-cutover/proof-authority.sql').read_text()
+ # Same exclusion the captured contracts above use, for the same reason: the
+ # immutability triggers belong to the Spin qualification's own fixture and
+ # their function is not part of this cluster. What is needed here is the
+ # relation and the proof predicate, so the rewritten gate can ASK it.
+ spin=re.sub(r'CREATE TRIGGER[\s\S]*?;\n','',spin)
+ run('SET check_function_bodies=off;\n'+spin,'mixed-cutover-spin-proof-authority')
+ # The exact production bodies the rewrite replaces, installed beside it as
+ # fixture.predecessor_* so period-coverage-regression.sql can require the
+ # rewrite to answer every club-week exactly as they do.
+ run((root/'tests/fixtures/union-weekly-basis/rakeback-cost-predecessors.sql').read_text(),'rakeback-cost-predecessors')
+ rewrite=next((root/'supabase/migrations').glob('20260925205938*.sql')).read_text()
+ rewrite=rewrite[rewrite.index('CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_week_quality'):rewrite.rindex('COMMIT;')]
+ run('SET check_function_bodies=off;\n'+rewrite,'weekly-rakeback-cost-rewrite')
+ # The installed period calculator reads one week of attributions
+ # (20260926042810); its own pre- and postimage assertions bind it to the
+ # rewrite above. That exact body is then kept beside its successor as
+ # fixture.predecessor_page_calculator, so page-evidence-regression.sql can show
+ # what a page cost before 20260927160709 and prove what it answers after.
+ run(next((root/'supabase/migrations').glob('20260926042810*.sql')).read_text(),'period-calculator-one-week')
+ run("""DO $$ BEGIN EXECUTE replace(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure),
+  'FUNCTION public.fn_calculate_cash_rakeback_periods(','FUNCTION fixture.predecessor_page_calculator('); END $$;""",'predecessor-page-calculator')
+ # A page recompute reads only the evidence that changed. The whole file is
+ # applied as the door applies it: three CREATE INDEX CONCURRENTLY statements,
+ # then one transaction whose assertions bind the calculator above. Every
+ # regression below runs with its checkpoint and its two insert guards armed.
+ run(next((root/'supabase/migrations').glob('20260927160709*.sql')).read_text(),'page-evidence-checkpoint')
  # The club settlement floor bounds standalone discovery. Its own preimage
  # assertions name this exact installed base, so it is applied here, while the
  # predecessors are still pristine. Its fixture runs last, below.
@@ -157,6 +197,9 @@ try:
  # settler's drain page. It adds a hand to the raked table and closes a later
  # week, so it runs after every fixture that reads that table's own seals.
  run((root/'tests/fixtures/union-weekly-basis/period-coverage-regression.sql').read_text(),'period-coverage-regression')
+ # Then the page path's own proof: oracle, randomized property, calculator
+ # equivalence, before/after, the untouched whole period and the two guards.
+ run((root/'tests/fixtures/union-weekly-basis/page-evidence-regression.sql').read_text(),'page-evidence-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

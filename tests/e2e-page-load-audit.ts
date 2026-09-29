@@ -127,7 +127,8 @@ const ALL_PAGES: PageTest[] = [
   { route: '/clubs-list', importPath: '../src/pages/ClubsPage' },
   { route: '/anti-cheat', importPath: '../src/pages/AntiCheatPage' },
   { route: '/xmtt', importPath: '../src/pages/XMTTPage' },
-  { route: '/marketplace', importPath: '../src/pages/MarketplacePage' },
+  { route: '/marketplace', importPath: '../src/pages/MarketplaceRoute' },
+  { route: '/marketplace (in-app storefront)', importPath: '../src/pages/MarketplacePage' },
   { route: '/agent-management', importPath: '../src/pages/AgentManagementPage' },
 
   // Dev / Legal / Admin

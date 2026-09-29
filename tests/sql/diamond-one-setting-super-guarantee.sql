@@ -114,7 +114,10 @@ BEGIN
    SELECT chip_balance INTO before_chips FROM public.club_members WHERE club_id=club AND user_id=player;
    IF game='crash' THEN
     -- The sealed point is 1.00x: the round has already crashed, and the loss pays the entry back.
+    -- A live round's clock is sealed (20260922173914), so the shortcut says it is maintenance.
+    PERFORM set_config('app.ledger_maintenance','probe clock: ten seconds of play',true);
     UPDATE public.crash_rounds SET started_at=clock_timestamp()-interval '10 seconds' WHERE id=rid;
+    PERFORM set_config('app.ledger_maintenance','',true);
     SET LOCAL ROLE authenticated; settled:=public.fn_crash_cashout(rid,101); RESET ROLE;
     IF settled#>>'{outcome,status}'<>'crashed' OR (settled#>>'{outcome,payout_chips}')::numeric<>minimum OR (SELECT (public.fn_crash_round_result(r)->>'payout_version')::integer FROM public.crash_rounds r WHERE r.id=rid) IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'Super Crash Loss Did Not Pay The Entry: %',settled; END IF;
    ELSIF game='crossing' THEN

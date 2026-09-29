@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 
 import type {
   LeaderboardSettings,
+  LeaderboardProgramHistoryEntry,
   LeaderboardRewardContext,
   LeaderboardRewardPlan,
   LeaderboardSettlementStatus,
@@ -47,6 +48,12 @@ import {
   totalPrizePlan,
 } from '../utils/leaderboardPrizePlans';
 import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
+import { describeProgramChanges } from '../utils/leaderboardProgramHistory';
+
+/* Owner program history: the newest versions are shown, and one extra is read
+   so the oldest shown version can still say what it changed. */
+const PROGRAM_HISTORY_COLLAPSED = 3;
+const PROGRAM_HISTORY_VISIBLE = 6;
 
 // ── SWR Cache helpers ──
 const LB_CACHE_KEY = 'lb_cache_v2_';
@@ -262,6 +269,17 @@ export default function LeaderboardPage() {
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
   const settingsStaleRef = useRef(false);
   const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
+  // Every club whose prizes this user may manage (their own clubs, and each
+  // affiliated club of a union whose wallet they manage). The wizard offers the
+  // union siblings of the club being edited as template targets.
+  const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
+  const [programHistory, setProgramHistory] = useState<LeaderboardProgramHistoryEntry[] | null>(
+    null
+  );
+  const [programHistoryError, setProgramHistoryError] = useState<string | null>(null);
+  const [programHistoryReloadKey, setProgramHistoryReloadKey] = useState(0);
+  const [showFullProgramHistory, setShowFullProgramHistory] = useState(false);
+  const programHistoryRequestRef = useRef(0);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
   const [settlementStatus, setSettlementStatus] = useState<LeaderboardSettlementStatus | null>(
     null
@@ -597,6 +615,7 @@ export default function LeaderboardPage() {
 
       if (getIsMounted && !getIsMounted()) return;
       setUserClubs(clubs);
+      setRewardContexts(rewardContexts);
 
       /* ── THE REPORTED BUG LIVED IN THE LINE BELOW (Dan, 2026-09-02) ───────
          It used to read:
@@ -958,6 +977,62 @@ export default function LeaderboardPage() {
 
   const canManagePrizes = Boolean(settings?.can_manage);
 
+  // History is read only while its section can be on screen: the club board,
+  // Rankings, for a prize manager of a club that has published at least once.
+  const programHistoryClubId =
+    activeTab === 'rankings' &&
+    scope === 'my-clubs' &&
+    settings?.can_manage &&
+    settings.setup_complete
+      ? settings.club_id
+      : null;
+  const programHistoryVersion = settings?.program_version ?? 0;
+  useEffect(() => {
+    const requestId = ++programHistoryRequestRef.current;
+    setProgramHistoryError(null);
+    if (!programHistoryClubId) {
+      setProgramHistory(null);
+      return;
+    }
+    // A different club's rows never stay on screen while this club loads.
+    setProgramHistory((current) =>
+      current && current[0]?.club_id === programHistoryClubId ? current : null
+    );
+    LeaderboardService.getRewardProgramHistory(programHistoryClubId, PROGRAM_HISTORY_VISIBLE + 1)
+      .then((rows) => {
+        if (requestId === programHistoryRequestRef.current) setProgramHistory(rows);
+      })
+      .catch(() => {
+        if (requestId === programHistoryRequestRef.current) {
+          setProgramHistoryError('Program History Could Not Be Loaded.');
+        }
+      });
+    return () => {
+      // A newer request (or unmount) retires this one's result.
+      programHistoryRequestRef.current += 1;
+    };
+  }, [programHistoryClubId, programHistoryVersion, programHistoryReloadKey]);
+
+  // Union template targets: the other clubs of the SAME union that this user
+  // manages. A club-funded (standalone) setup has none.
+  const templateClubs = useMemo(() => {
+    if (
+      !editingSettings ||
+      editingSettings.funding_owner_type !== 'union' ||
+      !editingSettings.union_id
+    ) {
+      return [];
+    }
+    return rewardContexts
+      .filter(
+        (context) =>
+          context.funding_owner_type === 'union' &&
+          context.union_id === editingSettings.union_id &&
+          context.club_id !== editingSettings.club_id
+      )
+      .map((context) => ({ club_id: context.club_id, club_name: context.club_name }));
+  }, [editingSettings, rewardContexts]);
+
   const visibleMetricOptions = METRIC_OPTIONS.filter(
     (m) => scope === 'my-clubs' || m.globalSupported
   );
@@ -1180,7 +1255,7 @@ export default function LeaderboardPage() {
           )}
         </div>
         {activeTab === 'rankings' && (
-          <div className="lb-telemetry" aria-label="Current Leaderboard Summary">
+          <div className="lb-telemetry" role="group" aria-label="Current Leaderboard Summary">
             <div>
               <span className="lb-telemetry-label">Field</span>
               <strong>{totalRanked != null ? compactChips(totalRanked) : '-'}</strong>
@@ -1794,6 +1869,70 @@ export default function LeaderboardPage() {
                   ? 'Published Prizes Stay Visible. Settlement Waits For The Promo Wallet And Never Uses The Operating Wallet.'
                   : 'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.')}
             </span>
+            {canManagePrizes && (
+              <section className="lb-program-history" aria-label="Program History">
+                <span className="lb-prize-program-kicker">Program History</span>
+                {programHistoryError ? (
+                  <div className="lb-program-history-error">
+                    <span role="status">{programHistoryError}</span>
+                    <button
+                      type="button"
+                      onClick={() => setProgramHistoryReloadKey((value) => value + 1)}
+                    >
+                      Retry History
+                    </button>
+                  </div>
+                ) : !programHistory ? (
+                  <span className="lb-program-history-note" role="status">
+                    Loading Program History
+                  </span>
+                ) : (
+                  <>
+                    <ol className="lb-program-history-list" role="list">
+                      {programHistory
+                        .slice(
+                          0,
+                          showFullProgramHistory
+                            ? PROGRAM_HISTORY_VISIBLE
+                            : PROGRAM_HISTORY_COLLAPSED
+                        )
+                        .map((entry, index) => {
+                          const changes = describeProgramChanges(entry, programHistory[index + 1]);
+                          return (
+                            <li key={entry.id}>
+                              <div className="lb-program-history-head">
+                                <strong>V{entry.version}</strong>
+                                <span>
+                                  {formatUtcTimestamp(entry.published_at)} ·{' '}
+                                  {entry.publisher_name || 'Publisher Unavailable'}
+                                </span>
+                              </div>
+                              {changes.length > 0 && (
+                                <span className="lb-program-history-change">
+                                  {changes.join(' · ')}
+                                </span>
+                              )}
+                              <small>
+                                Weekly From {entry.weekly_effective_from} · Monthly From{' '}
+                                {entry.monthly_effective_from}
+                              </small>
+                            </li>
+                          );
+                        })}
+                    </ol>
+                    {programHistory.length > PROGRAM_HISTORY_COLLAPSED && (
+                      <button
+                        type="button"
+                        aria-expanded={showFullProgramHistory}
+                        onClick={() => setShowFullProgramHistory((value) => !value)}
+                      >
+                        {showFullProgramHistory ? 'Show Fewer Versions' : 'Show Earlier Versions'}
+                      </button>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
           </section>
         )}
 
@@ -1843,14 +1982,20 @@ export default function LeaderboardPage() {
           onSaveError={() => {
             settingsStaleRef.current = true;
           }}
-          onSaved={(savedSetup) => {
+          templateClubs={templateClubs}
+          onSaved={(savedSetup, templateResults) => {
             // A publish that succeeds after an earlier refusal in the same
             // dialog leaves nothing stale: the saved record is authoritative.
             settingsStaleRef.current = false;
             setSettings(savedSetup);
             setShowSettings(false);
             setEditingSettings(null);
-            toast.success(`Prize Program V${savedSetup.program_version} Published.`);
+            if (templateResults) {
+              const published = 1 + templateResults.filter((result) => result.ok).length;
+              toast.success(`Prize Program Published To ${published} Clubs.`);
+            } else {
+              toast.success(`Prize Program V${savedSetup.program_version} Published.`);
+            }
           }}
         />
       )}

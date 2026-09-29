@@ -1,0 +1,18 @@
+{
+  "_comment": "Migration 20260921203512 (owner rulings 2026-09-21, R3/R6/R10/R11/R16): the paid floor, the first-pick mines board, the v4 road ladder and prizes, the floor-chosen Plinko table, the paid-diamonds and add-on debit helpers, and payout_version on both round tables.",
+  "_owner": "agent/cowork-dspins/d2-bonus",
+  "functions": [
+    "fn_diamond_bonus_floor",
+    "fn_diamond_game_paid_diamonds",
+    "fn_diamond_game_debit_text",
+    "fn_diamond_game_debit_meta",
+    "fn_choice_ladder_v4",
+    "fn_choice_board_v4",
+    "fn_choice_prizes_v4",
+    "fn_plinko_table_for_floor"
+  ],
+  "columns": {
+    "diamond_choice_rounds": ["payout_version"],
+    "crash_rounds": ["payout_version"]
+  }
+}

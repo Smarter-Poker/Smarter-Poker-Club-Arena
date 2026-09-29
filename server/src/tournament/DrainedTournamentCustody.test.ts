@@ -215,15 +215,61 @@ it('preserves packet and pending generation after unknown original release', asy
   expect(s.drainedF06TournamentCustody.get(id(1)).engines).toBe(engines);
   expect(s.tournamentManagerPendingLeaseReleases.get(id(1))).toBe(id(2));
 });
-it('retains real successor ownership and no gameplay when original request is absent', async () => {
+/* A FRESH ADOPTION HAS NO STRICT RECOVERY TO WAIT FOR (2026-09-26). This
+   test used to pin the opposite: with no drained packet and no mixed
+   transfer, a reserved hand made the successor a custody-only recovery owner
+   that never resumed. Nothing ever continued that owner - the only one that
+   can decide a dead generation's hand is the abandoned-generation door, which
+   runs inside resume() - so 68 RUNNING events held their lease and never dealt
+   on engine 778075b4. See f06RecoveryDispositionOwner. */
+it('a fresh adoption with a reserved hand and no custody resumes instead of holding the lease', async () => {
   const s = server();
+  const resume = vi.spyOn(TournamentManager.prototype, 'resume').mockImplementation(async function (
+    this: any
+  ) {
+    managers.push(this);
+    // resume() is entered as an ordinary manager: no custody-only hold that
+    // would make it throw f06_recovery_business_admission_held.
+    expect(this.isF06RecoveryOwner()).toBe(false);
+    expect(this.tableEngines.size).toBe(0);
+  });
   await s.performTournamentManagerAdmission(id(1), 'resume', 'test', 1);
   const m = s.tournamentEngines.get(id(1));
-  managers.push(m);
-  expect(m.isF06RecoveryOwner()).toBe(true);
-  expect(m.isRunning()).toBe(false);
+  expect(m.isF06RecoveryOwner()).toBe(false);
+  expect(resume).toHaveBeenCalledOnce();
+  // The retained original submission is still finished first.
   expect(mocks.resume).toHaveBeenCalledOnce();
   expect(mocks.release).not.toHaveBeenCalled();
+  expect(s.finishTournamentManagerAdmission).toHaveBeenCalledOnce();
+});
+it('a drained in-process packet with a reserved hand keeps strict ownership and never resumes', async () => {
+  const { s, m } = stopped();
+  expect(await s.transferDrainedF06Custody(id(1), m)).toBe(true);
+  const resume = vi.spyOn(TournamentManager.prototype, 'resume');
+  mocks.rpc.mockClear();
+  await s.performTournamentManagerAdmission(id(1), 'resume', 'test', 1);
+  const successor = s.tournamentEngines.get(id(1));
+  managers.push(successor);
+  expect(successor).not.toBe(m);
+  expect(successor.isF06RecoveryOwner()).toBe(true);
+  expect(resume).not.toHaveBeenCalled();
+  expect(s.drainedF06TournamentCustody.has(id(1))).toBe(true);
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).not.toContain('fn_f06_hand_number_state');
+  expect(asked).not.toContain('fn_f06_abort_abandoned_generation');
+  expect(s.finishTournamentManagerAdmission).not.toHaveBeenCalled();
+});
+it('a door-owned adoption whose resume fails is stopped, not left holding the event', async () => {
+  const s = server();
+  vi.spyOn(TournamentManager.prototype, 'resume').mockImplementation(async function (this: any) {
+    managers.push(this);
+    throw new Error('door read failed before any dealer');
+  });
+  s.stopTournamentManagerIfOwned = vi.fn().mockResolvedValue(true);
+  await expect(s.performTournamentManagerAdmission(id(1), 'resume', 'test', 1)).rejects.toThrow(
+    'door read failed'
+  );
+  expect(s.stopTournamentManagerIfOwned).toHaveBeenCalledOnce();
   expect(s.finishTournamentManagerAdmission).not.toHaveBeenCalled();
 });
 it.each(['absent', 'unknown'])('keeps %s journal evidence as recovery custody', async (kind) => {

@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: state.user }) }));
 vi.mock('../../src/services/DiamondGamesService', () => ({ default: { entry: state.read } }));
+// These ids are this suite's own; the resolver hands them through (slug routes: diamondGamesEntrySlug.test.tsx).
+vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     subscribe: (name: string, listener: (event: { payload: Record<string, unknown> }) => void) => {

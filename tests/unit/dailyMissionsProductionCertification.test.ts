@@ -73,8 +73,17 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('routedRealtimeServers.push(server)');
     expect(spec).toContain('routedRealtimeServers.splice(0)');
     expect(spec).toContain(
-      "await server.close({ code: 1012, reason: 'Certification Realtime Interruption' })"
+      "await server.close({ code: 4000, reason: 'Certification Realtime Interruption' })"
     );
+    // A browser script may only close a WebSocket with 1000 or 3000-4999.
+    // Playwright's server-side close runs through the page's own WebSocket, so
+    // a reserved code (1012 was used from b293beb4e) is refused silently: no
+    // close reaches either side and the reconnect this step proves never starts.
+    const closeCodes = [...spec.matchAll(/\.close\(\{\s*code:\s*(\d+)/g)].map((m) => Number(m[1]));
+    expect(closeCodes.length).toBeGreaterThan(0);
+    for (const code of closeCodes) {
+      expect(code === 1000 || (code >= 3000 && code <= 4999), `close code ${code}`).toBe(true);
+    }
     expect(spec.indexOf('await page.waitForTimeout(NO_POLL_QUIET_WINDOW_MS)')).toBeLessThan(
       spec.indexOf('routedRealtimeServers.splice(0)')
     );

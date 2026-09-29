@@ -181,6 +181,7 @@ export function IdentityModal({
         aria-labelledby="identity-modal-title"
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Table Identity"
           title="Identity Settings"
           titleId="identity-modal-title"

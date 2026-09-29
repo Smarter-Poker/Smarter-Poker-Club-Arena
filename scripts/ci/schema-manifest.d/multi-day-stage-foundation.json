@@ -1,0 +1,27 @@
+{
+  "_owner": "agent/claude-ca-product/feat/multi-day-stage-foundation. NOT YET APPLIED: migrations 20260924043217, 20260924043224, 20260924043232 and 20260924043239 are a promise until the owner confirms the live md5(prosrc) pins in 20260924043224 and installs them (after 20260924025555). Multi-day R1, R3, R3b, R4 and the R5 database RPCs; see docs/handoffs/club-arena-product-completion/MULTI-DAY-DESIGN.md.",
+  "tables": [
+    "tournament_stage_plans",
+    "tournament_stages",
+    "tournament_stage_transitions",
+    "tournament_stage_clock_snapshots",
+    "tournament_stage_bag_watermarks",
+    "tournament_stage_bags",
+    "tournament_qualification_entitlements",
+    "tournament_stage_resume_receipts"
+  ],
+  "functions": [
+    "fn_multi_day_stage_rows_are_rpc_owned",
+    "fn_multi_day_stage_rows_never_truncate",
+    "fn_tournaments_bagged_status_door",
+    "fn_tournament_players_bagged_custody_fence",
+    "fn_multi_day_lease_is_current",
+    "fn_seal_tournament_stage_plan",
+    "fn_begin_stage_end",
+    "fn_bag_tournament_stage",
+    "fn_reschedule_tournament_stage",
+    "fn_begin_stage_resume",
+    "fn_seat_stage_entitlement",
+    "fn_complete_stage_resume"
+  ]
+}

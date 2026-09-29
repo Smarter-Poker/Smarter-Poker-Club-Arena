@@ -5,7 +5,7 @@
    scrim, the centring, the rows on the glass, and the ONE drawn control: the
    amount field, which the art does not paint. It is drawn as little as a
    field can be - big silver numerals on the glass over an engraved rule, no
-   box. Quick amounts are lit words, the chosen one in white. No :hover.
+   box. Quick amounts are lit words, the chosen one in white. No hover state.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .cashier-overlay {
@@ -128,7 +128,8 @@
 }
 
 .cashier-amount__input::placeholder {
-  color: #4b5561;
+  color: #9aa5b3;
+  opacity: 0.45;
 }
 
 .cashier-amount__input:focus-visible {
@@ -153,6 +154,8 @@
 }
 
 .cashier-quick__word {
+  /* A preset on a phone still has to be hittable. */
+  min-height: 44px;
   margin: 0;
   padding: 1.4cqw 2cqw;
   border: 0;
@@ -176,7 +179,7 @@
 }
 
 .cashier-quick__word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
+  outline: 0.6cqw solid #45adff;
   outline-offset: 0.2cqw;
 }
 

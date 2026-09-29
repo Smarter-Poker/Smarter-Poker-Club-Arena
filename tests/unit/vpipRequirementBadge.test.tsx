@@ -36,10 +36,10 @@ describe('section 30 — the value matrix, both game rules', () => {
 
   for (const min of [30, 50] as const) {
     for (const cur of [0, 7, 29, 30, 49, 50, 54, 99, 100]) {
-      it(`MIN ${min}% + CURRENT ${cur}%`, () => {
+      it(`TABLE MIN ${min}% + CURRENT ${cur}%`, () => {
         render(<VpipRequirementBadge minimumVpip={min} currentVpip={cur} />);
         expect(screen.getByText(`${cur}%`)).toBeTruthy();
-        expect(screen.getByText(`MIN ${min}%`)).toBeTruthy();
+        expect(screen.getByText(`TABLE MIN ${min}%`)).toBeTruthy();
       });
     }
   }
@@ -97,7 +97,7 @@ describe('section 1 — only two game rules are sanctioned', () => {
       expect(() =>
         render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />)
       ).not.toThrow();
-      expect(screen.getByText('MIN 40%')).toBeTruthy();
+      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
       expect(spy.mock.calls.flat().join(' ')).toMatch(/Invalid VPIP requirement: 40/);
     } finally {
       spy.mockRestore();
@@ -121,7 +121,7 @@ describe('section 1 — only two game rules are sanctioned', () => {
     vi.stubEnv('DEV', false);
     try {
       render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />);
-      expect(screen.getByText('MIN 40%')).toBeTruthy();
+      expect(screen.getByText('TABLE MIN 40%')).toBeTruthy();
       expect(screen.getByText('54%')).toBeTruthy();
       expect(reportError).toHaveBeenCalledTimes(1);
       expect(String(reportError.mock.calls[0][0])).toMatch(/not a sanctioned game rule/i);
@@ -221,19 +221,45 @@ describe('sections 4 + 28 — one square drawing, scaled', () => {
   });
 });
 
-describe('sections 3 + 9 — drawn, not baked; blue only inside the window', () => {
+describe('section 3 — drawn, not baked; and since 2026-09-23, no frames at all', () => {
   it('the current value is a real text node, not an image', () => {
     render(<VpipRequirementBadge minimumVpip={30} currentVpip={54} />);
     expect(screen.getByText('54%').tagName).not.toBe('IMG');
     expect(TSX).not.toMatch(/\.png|\.webp|<img/i);
   });
 
-  it('both blue accents live inside the current window and nowhere else', () => {
-    const accents = CSS.match(/--vpip-blue\b/g) ?? [];
-    expect(accents.length).toBeGreaterThan(0);
-    // No blue on the outer frame: section 5 bans an illuminated outer edge.
-    const frame = CSS.slice(CSS.indexOf('.vpipBadge {'), CSS.indexOf('.vpipBadge__face'));
-    expect(frame).not.toMatch(/box-shadow:[^;]*rgb\(8 123 255/);
+  it('three rows and nothing around them: VPIP, the figure, TABLE MIN N% (Dan 2026-09-23)', () => {
+    /* "THE VPIP EXTERIOR AND INTERIOR FRAMES NEED TO BE REMOVED AND IT SHOULD
+       JUST DISPLAY 'VPIP', UNDER IT THE ACTUAL PERCENTAGE, AND UNDER THAT THE
+       'TABLE MIN'." The plaque's bezel, face, inner frame, readout window,
+       blue lights and CURRENT caption are gone from the markup and the
+       stylesheet alike. */
+    const { container } = render(<VpipRequirementBadge minimumVpip={30} currentVpip={54} />);
+    const badge = screen.getByTestId('vpip-badge');
+    const rows = Array.from(badge.children).map((el) => el.textContent);
+    expect(rows).toEqual(['VPIP', '54%', 'TABLE MIN 30%']);
+    expect(badge.textContent).not.toContain('CURRENT');
+    for (const gone of [
+      '.vpipBadge__face',
+      '.vpipBadge__currentFrame',
+      '.vpipBadge__currentWindow',
+      '.vpipBadge__blueAccent',
+      '.vpipBadge__currentLabel',
+      '.vpipBadge__dash',
+    ]) {
+      expect(container.querySelector(gone)).toBeNull();
+      expect(CSS).not.toContain(gone);
+    }
+    // No frame is drawn around the box, and no blue light lives in it.
+    const decls = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const frame = decls.slice(
+      decls.indexOf('.vpipBadge {'),
+      decls.indexOf('}', decls.indexOf('.vpipBadge {'))
+    );
+    expect(frame).toMatch(/border:\s*0;/);
+    expect(frame).toMatch(/background:\s*none;/);
+    expect(frame).not.toMatch(/box-shadow/);
+    expect(decls).not.toMatch(/--vpip-blue|#087bff|#28b8ff/i);
   });
 });
 

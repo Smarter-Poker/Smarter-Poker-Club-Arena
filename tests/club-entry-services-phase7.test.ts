@@ -97,11 +97,19 @@ describe('Phase 7 Club Entry service interactions', () => {
   it('maps the authoritative Find response and forwards all filters', async () => {
     const response = Promise.resolve({
       data: {
-        items: [{ id: 'player-1', username: 'river', tables: [] }],
+        items: [
+          {
+            id: 'player-1',
+            username: 'river',
+            tables: [],
+            affiliations: { clubs: [], unions: [], has_hidden: true },
+          },
+        ],
         total: 21,
         has_more: true,
         offset: 20,
         limit: 20,
+        fuzzy: true,
       },
       error: null,
     });
@@ -122,7 +130,8 @@ describe('Phase 7 Club Entry service interactions', () => {
       p_presence: 'playing',
       p_sort: 'name',
     });
-    expect(result).toMatchObject({ total: 21, hasMore: true, offset: 20, limit: 20 });
+    expect(result).toMatchObject({ total: 21, hasMore: true, offset: 20, limit: 20, fuzzy: true });
     expect(result.items).toHaveLength(1);
+    expect(result.items[0].affiliations).toEqual({ clubs: [], unions: [], has_hidden: true });
   });
 });

@@ -323,7 +323,10 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       return chain;
     }) as any);
     await expect(loadTable('table')).resolves.toMatchObject({ arena: { asset: 'chips' } });
-    expect(from).toHaveBeenCalledTimes(1);
+    // Two reads of `tables` - the row, and its kill settings beside it
+    // (kill-v1: read on their own so an engine can ship before the columns do)
+    // - and never the Diamond settings row.
+    expect(from.mock.calls.map(([name]) => name)).toEqual(['tables', 'tables']);
   });
 
   it('sends a Diamond add-on through the custody door, never the chip add-on', async () => {

@@ -1,122 +1,242 @@
-/* WEEKLY SCHEDULE EDITOR (2026-08-22) — recurrence controls shared by the
-   create-table MTT tab and the union tournament modal. Mobile-first: sized
-   for 375px, everything wraps. */
+/* WEEKLY SCHEDULE EDITOR (2026-08-22) - recurrence controls shared by the
+   create-table MTT tab and the club tournament modal. Mobile-first: sized
+   for 375px, everything wraps.
+
+   2026-09-20, #ClubArenaConsole. This editor always sits inside a painted
+   surface, so it draws no card of its own: a frame never sits on a frame. Rows
+   print on the glass and an engraved rule (a black line with a faint highlight
+   under it) separates them. Every colour is a schema ink: silver #e4e7ec,
+   white #f4f7fb, lit blue #45adff, red #ff5b6e, muted #9aa5b3; the wells are
+   the console's own bevel black #050607 and the focus ring is the kit's
+   #8fd4ff, the same two the create-table form uses. State is shown by ink,
+   never by a drawn pill, and there is no hover rule anywhere - only :active
+   and :focus-visible. Sizes are rem, not cqw, because one host is a dialog
+   with no container and cqw would fall back to the viewport there. */
 
 .weekly-schedule-editor {
-  padding: 0.5rem 0.5rem 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
   margin: 0.5rem 0;
+  padding: 0 0.5rem;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color: #e4e7ec;
+}
+
+/* The engraved rule: printed above every row that follows another row. */
+.weekly-schedule-editor .wse-days + .wse-mode-row,
+.weekly-schedule-editor .wse-days + .wse-times,
+.weekly-schedule-editor .wse-mode-row + .wse-times,
+.weekly-schedule-editor .wse-mode-row + .wse-interval-row,
+.weekly-schedule-editor .wse-time-row + .wse-time-row,
+.weekly-schedule-editor .wse-hint {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .wse-days {
   display: flex;
-  gap: 6px;
   justify-content: space-between;
-  margin-bottom: 0.6rem;
+  gap: 2px;
 }
 
-.wse-day-chip {
-  flex: 1;
+/* A day is a letter on the glass. Lit blue when chosen, muted when not. The
+   !important longhands switch off the bevel metallic-popups.css puts on every
+   button inside a dialog; this button paints nothing but its letter. */
+.weekly-schedule-editor .wse-day-chip {
+  flex: 1 1 0;
   min-width: 0;
-  height: 36px;
-  border-radius: 50%;
-  max-width: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  min-height: 44px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3 !important;
+  font: inherit;
+  font-size: 1rem;
   font-weight: 700;
-  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
-.wse-day-chip.active {
-  background: #1877f2;
-  border-color: #1877f2;
-  color: #fff;
+.weekly-schedule-editor .wse-day-chip.active {
+  color: #45adff !important;
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
+}
+
+.weekly-schedule-editor .wse-day-chip:active {
+  color: #f4f7fb !important;
+}
+
+.weekly-schedule-editor .wse-day-chip:focus-visible,
+.weekly-schedule-editor .wse-remove-time:focus-visible,
+.weekly-schedule-editor .wse-add-time:focus-visible,
+.weekly-schedule-editor .wse-time-input:focus-visible,
+.weekly-schedule-editor .wse-interval-input:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 .wse-mode-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  gap: 0 1.25rem;
 }
 
 .wse-mode-option {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8rem;
+  min-height: 44px;
   cursor: pointer;
+}
+
+/* The native radio stays in the tree, so arrow keys and screen readers work
+   exactly as they do for any radio group. It is only moved out of sight; the
+   words beside it carry the state. */
+.wse-mode-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.weekly-schedule-editor .wse-mode-text {
+  color: #9aa5b3;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.weekly-schedule-editor .wse-mode-input:checked + .wse-mode-text {
+  color: #45adff;
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
+}
+
+.weekly-schedule-editor .wse-mode-input:focus-visible + .wse-mode-text {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 4px;
 }
 
 .wse-times {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
+/* Label in lit blue on the left, value in silver on the right. */
 .wse-time-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.75rem;
+  min-height: 48px;
 }
 
+.weekly-schedule-editor .wse-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #45adff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Square wells. 16px type: anything smaller makes iOS zoom the page on focus. */
 .wse-time-input,
 .wse-interval-input {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-  color: #fff;
-  font-size: 0.85rem;
+  min-height: 40px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgb(154 165 179 / 40%);
+  border-radius: 0;
+  background: #050607;
+  color: #f4f7fb;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wse-time-input {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  cursor: pointer;
+}
+
+.wse-time-input option {
+  background: #050607;
+  color: #f4f7fb;
 }
 
 .wse-interval-input {
-  width: 90px;
+  width: 6rem;
 }
 
-.wse-remove-time {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.wse-add-time {
-  align-self: flex-start;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.35);
-  border-radius: 4px;
-  color: #1877f2;
-  padding: 0.3rem 0.7rem;
+/* Remove and Add Time are lit words on the glass, not drawn buttons. */
+.weekly-schedule-editor .wse-remove-time,
+.weekly-schedule-editor .wse-add-time {
+  min-height: 44px;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  font: inherit;
   font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
+}
+
+.weekly-schedule-editor .wse-remove-time {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border-top: 0 !important;
+  box-shadow: none !important;
+  color: #ff5b6e !important;
+}
+
+.weekly-schedule-editor .wse-add-time {
+  align-self: stretch;
+  padding: 0;
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  color: #45adff !important;
+  text-align: left;
+}
+
+.weekly-schedule-editor .wse-remove-time:active,
+.weekly-schedule-editor .wse-add-time:active {
+  color: #f4f7fb !important;
 }
 
 .wse-interval-row {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.25rem 0;
 }
 
-.wse-interval-label {
-  color: rgba(255, 255, 255, 0.75);
+.weekly-schedule-editor .wse-interval-label {
+  color: #9aa5b3;
   font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.wse-hint {
-  margin: 0.5rem 0 0;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+.weekly-schedule-editor .wse-hint {
+  margin: 0;
+  padding: 0.6rem 0 0.25rem;
+  color: #9aa5b3;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }

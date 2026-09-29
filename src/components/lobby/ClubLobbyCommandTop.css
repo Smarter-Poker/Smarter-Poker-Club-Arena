@@ -1784,6 +1784,10 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    /* This cabinet is now the scrollport, and the Find Your Game deck pins to
+       its top at z-index 30. Native focus and scroll-into-view must land below
+       that deck, by the height ClubLobbyCommandTop measures and publishes. */
+    scroll-padding-top: var(--ca-lobby-controls-h, 0px);
     scrollbar-color: #1b6da7 #030507;
     scrollbar-width: thin;
   }

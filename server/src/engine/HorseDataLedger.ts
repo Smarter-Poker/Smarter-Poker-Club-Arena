@@ -247,6 +247,24 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag('weak_kicker_trips_stackoff', 'measurement', 'board trips, dominated kicker, 40bb+', 'V24'),
   tag(
+    'one_pair_river_stackoff',
+    'measurement',
+    'one pair of hero own (overpair or a good-kicker hit) committed on the river on an unpaired, not three-suited board, 40bb+',
+    'V24'
+  ),
+  tag(
+    'board_paired_two_pair_stackoff',
+    'measurement',
+    'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',
+    'V24'
+  ),
+  tag(
+    'plo_paired_board_nut_stackoff',
+    'measurement',
+    'Omaha nut flush or nut straight lost at showdown on a paired board, where every raise is a full house',
+    'V15'
+  ),
+  tag(
     'straight_into_flush_stackoff',
     'measurement',
     'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',
@@ -434,6 +452,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v12River', 'OOP block bets, nut overbets, blocker catches', 'V12'),
   flag('v13', 'V13 position read (actsLastPostflop) and preflop chart depth', 'V13'),
   flag('v15', 'Omaha nut discipline: which flush/straight, caps, small ball', 'V15'),
+  flag(
+    'v15Boats',
+    'Omaha boat dominance: a full house a bigger boat beats calls a raise (default OFF, league plo5_v15_boats)',
+    'V15'
+  ),
   flag('v16Reads', 'deep reads: fold-to-c-bet, fold-to-3-bet, big-bet tells', 'V16'),
   flag('v16Icm', 'real ICM (Malmuth-Harville) in tournaments', 'V16'),
   flag('v16Hu', 'heads-up overlay', 'V16'),
@@ -713,6 +736,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('maxRaiseTo', 'maximum absolute legal wager after structure and table caps'),
   state('bettingStructure', 'no-limit, pot-limit or fixed-limit rule selected by the live hand'),
   state('fixedBetSize', 'fixed-limit street bet; null in other structures'),
+  state(
+    'fixedLimitSmallBet',
+    "the hand's effective fixed-limit small bet (raised on a kill hand); null in other structures"
+  ),
   state('wagersCapped', 'fixed-limit wager cap reached on this street'),
   state(
     'commitmentCapRemaining',
@@ -962,9 +989,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_solver_agreement_v31_decisions',
     'nightly',
     'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions; ca_horse_solver_agreement_v31_decisions',
-    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal',
-    'Phase4',
-    { dayColumn: 'run_date', freshnessDays: 2 }
+    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal. NO FRESHNESS WINDOW (2026-09-28): rows exist only while a gto_v31_datasets row is active, and none has ever been (0 rows, ever, on 2026-09-28). A two-day window filed data_stale critical every night for a pipeline that was never started; certified_v31_missing is the reader for that fact. Restore { dayColumn: run_date, freshnessDays: 2 } in the commit that commissions V31.',
+    'Phase4'
   ),
   table(
     'gto_v31_runtime_cells',
@@ -1191,7 +1217,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'gto_*',
     'HorseLogic (solver lookups)',
-    'gto_miss_* / gto_skip_too_deep / gto_depth_fallback; NLH solver misses by reason',
+    'gto_miss_* / gto_skip_too_deep / gto_served_beyond_depth_ceiling / gto_depth_fallback; NLH solver misses by reason',
     'V27'
   ),
   receipt(
@@ -1252,6 +1278,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V15',
     'decide_omaha',
     0.0003
+  ),
+  // No floor: v15Boats is default OFF, so silence is the expected state until
+  // the plo5_v15_boats league matchup resolves and the default changes.
+  receipt(
+    'v15_boat_dominated',
+    'HorseLogic (V15 boats)',
+    'Omaha full house read as dominated by a bigger boat or quads',
+    'V15'
+  ),
+  receipt(
+    'v15_boat_gate',
+    'HorseLogic (V15 boats)',
+    'dominated boat raised after betting called instead of re-raising',
+    'V15'
   ),
   receipt(
     'v16_hu_overlay',
@@ -2211,6 +2251,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase15_journal_*',
     'HorseDecisionJournalPublisher',
     'private host-local journal capture, queue admission, exact disk acknowledgement or explicit gap; enqueued is not durable, recorded is not complete coverage, full replay or a GTO verdict',
+    'Phase15'
+  ),
+  // 2026-09-26: a named archive quota pauses capture instead of ending it.
+  // These three keep paused-at-quota apart from failed (capture_unavailable).
+  receipt(
+    'phase15_journal_capture_paused_capacity',
+    'HorseDecisionJournalPublisher.record',
+    'a capture offered while the journal is paused at a named archive quota (archive_bytes, archive_segments, archive_catalog_capacity, archive_storage_capacity); the record is still queued within the same bound, and the same call also counts enqueued or queue_capacity; paused is not failed, and capture_unavailable still counts a journal that stopped for good',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_journal_capacity_paused',
+    'HorseDecisionJournalPublisher.pause',
+    'the writer refused an append at a named archive quota and capture paused with its queue kept; the writer is probed read-only once a minute; not a failure, not a deletion and not a retry',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_journal_capacity_resumed',
+    'HorseDecisionJournalPublisher.capacityAnswer',
+    'a capacity probe found room and capture resumed; the kept queue is replayed with the same event identities and digests, so a record already held is replayed, never written twice',
     'Phase15'
   ),
   receipt(

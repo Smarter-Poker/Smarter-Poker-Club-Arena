@@ -275,6 +275,18 @@ export function stakesRungTaken(
 export function cashGameCreateRefusalText(raw: unknown): string | null {
   const m = String((raw as { message?: string })?.message ?? raw ?? '');
   if (!m) return null;
+  // 20260924102056: an enforced commerce admission refuses a NEW table (or
+  // insurance on it) with a finished Title Case sentence from
+  // fn_ca_commerce_admission_message, HINT operating_access_required. It is
+  // the house copy already, so it is shown exactly as the server wrote it.
+  if (
+    (raw as { hint?: string })?.hint === 'operating_access_required' ||
+    /^(This (Club|Union) Needs (Active Operating Access|The Insurance Module) |Operating Access Is Required )/.test(
+      m
+    )
+  ) {
+    return m.trim();
+  }
   if (/VARIANT_UNAVAILABLE/.test(m)) return 'This Variant Is Not Available Yet';
   // zz_one_game_per_blind_category (Action and Madness are one game per blind
   // band): "... already runs NLH 0.25/0.50 Action (0.25/0.50) as its Action

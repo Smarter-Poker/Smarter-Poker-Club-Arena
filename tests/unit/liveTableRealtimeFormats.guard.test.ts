@@ -93,7 +93,7 @@ describe('the production realtime certificate covers every live-game lane', () =
   it('runs MTT, Spin and Sit & Go through the same read-only WebKit contract', () => {
     expect(spec).toContain("const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const");
     expect(spec).toContain('certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat)');
-    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat, testInfo)');
+    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat, testInfo, {');
     expect(spec).toContain('journal.waitForCausalHandCycle(');
     expect(spec).toContain('expectNextHandPresentation(page, cycle');
     expect(spec).toContain('whileConnectionBannerStaysHidden(');
@@ -105,13 +105,60 @@ describe('the production realtime certificate covers every live-game lane', () =
     expect(tournamentHelper).toContain('await context.setOffline(false)');
     expect(tournamentHelper).toContain('did not resubscribe after network restoration');
     expect(tournamentHelper).toContain('did not recover exactly one multiplexed transport');
-    expect(tournamentHelper).toContain('const observationDeadline = Date.now() + testInfo.timeout');
+    expect(tournamentHelper).toContain('const caseStartedAt = Date.now()');
+    expect(tournamentHelper).toContain(
+      'const observationDeadline = caseStartedAt + testInfo.timeout'
+    );
     expect(tournamentHelper.match(/remainingObservationMs\(observationDeadline\)/g)).toHaveLength(
       2
     );
+    // Both causal hands use the remaining case budget. After recovery the
+    // clock reader is read unconditionally, and only then is the case's one
+    // deadline sized to what that real clock needs (never a fixed guess).
+    expect(tournamentHelper).toContain('waitForSharedNaturalLevel(');
+    expect(tournamentHelper).toContain('reader.clocks([candidate.id])');
+    const recovered = tournamentHelper.indexOf('did not recover exactly one multiplexed transport');
+    // The SNG board witness signs in earlier, for selection; the MTT HUD clock
+    // is the reader created AFTER recovery.
+    const clock = tournamentHelper.indexOf('await createHudClockReader()', recovered);
+    const sized = tournamentHelper.indexOf('mttCaseTimeoutMs(');
+    const level = tournamentHelper.indexOf('await waitForSharedNaturalLevel(');
+    expect(recovered).toBeGreaterThan(-1);
+    expect(clock).toBeGreaterThan(recovered);
+    expect(sized).toBeGreaterThan(clock);
+    expect(level).toBeGreaterThan(sized);
+    expect(tournamentHelper.slice(clock)).not.toContain('setOffline(true)');
+    expect(tournamentHelper).toContain('testInfo.setTimeout(mttTimeoutMs)');
+    expect(tournamentHelper).toContain('hudEventObservationMs(hudClock, mttDeadline)');
+    expect(tournamentHelper).toContain('hudSince = hudClock.observedAt');
+    expect(tournamentHelper).toContain('hudBaseline = hudClock.levelIndex');
     expect(spec).toContain('const MAX_GAMEPLAY_SILENCE_MS = 45_000');
     expect(spec).toContain('test.setTimeout(300_000)');
     expect(spec).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(spec).not.toContain('MTT_HUD_CASE_TIMEOUT_MS');
+  });
+
+  it('bounds cold readiness separately while preserving live continuity checks', () => {
+    const tournament = spec.slice(
+      spec.indexOf('async function certifyReadOnlyTournamentFormat('),
+      spec.indexOf("test.describe('production mobile WebKit live-table realtime continuity'")
+    );
+    const initial = tournament.indexOf('await whileInitialTableConnects(');
+    const navigation = tournament.indexOf('page.goto(`table/${candidate.id}`');
+    const budget = tournament.indexOf(
+      'remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS)'
+    );
+    const continuity = tournament.indexOf('await whileConnectionBannerStaysHidden(');
+    expect(initial).toBeGreaterThan(-1);
+    expect(navigation).toBeGreaterThan(initial);
+    expect(budget).toBeGreaterThan(navigation);
+    expect(continuity).toBeGreaterThan(budget);
+    expect(spec).toContain('const CONNECT_DEADLINE_MS = 12_000');
+    expect(tournament.slice(0, initial)).toContain("type: 'SUBSCRIBED'");
+    expect(tournament.slice(0, initial)).toContain("type: 'SNAPSHOT'");
+    const cash = spec.slice(spec.indexOf("test('an already-running table stays live"));
+    expect(cash).not.toContain('whileInitialTableConnects(');
+    expect(cash).toContain('initial live-table connection');
   });
 
   it('observes tournament routes directly and refuses participation mutations', () => {

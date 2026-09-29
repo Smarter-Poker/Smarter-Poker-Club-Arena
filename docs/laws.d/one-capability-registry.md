@@ -1,0 +1,3 @@
+# tests/one-capability-registry.law.test.ts
+
+`public.platform_capabilities` is the one technical capability registry: `src/config/platformCapabilities.ts` only mirrors it (ids unique and equal to the migration's seed ids, or to the pinned JSON copy `scripts/ci/fixtures/capability-registry/seeds.json` in a tree without the migration; readiness ladder and scopes equal to the database CHECKs; `variant.ofc` seeded `excluded`, owner decision: no OFC), a capability is offered only when the RPC says available AND its readiness is `deployed` or `production_verified`, a failed read is `unknown` and never kept, and every surface asks through `usePlatformCapability` (shared 60 s read, `'available'` shows a control, anything else hides it) with no readiness constant of its own.

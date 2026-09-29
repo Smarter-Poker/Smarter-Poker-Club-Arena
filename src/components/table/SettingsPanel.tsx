@@ -281,6 +281,7 @@ export function SettingsPanel({
         aria-labelledby="table-settings-title"
       >
         <SpadeConsole
+          onClose={onClose}
           eyebrow="Table Preferences"
           title="Table Settings"
           titleId="table-settings-title"

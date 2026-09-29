@@ -126,7 +126,9 @@ export function Modal({
     if (e.key !== 'Tab' || !modalRef.current) return;
 
     const focusableElements = modalRef.current.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      // input[tabindex="-1"] excluded: a TapHaptic switch inside a button is
+      // for the finger, never a keyboard stop, and must not become the trap's edge.
+      'button, [href], input:not([tabindex="-1"]), select, textarea, [tabindex]:not([tabindex="-1"])'
     );
     const firstElement = focusableElements[0] as HTMLElement;
     const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
@@ -153,13 +155,18 @@ export function Modal({
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
 
-      // Focus the first focusable element in the modal
+      // Focus the first focusable element in the modal - skipping the
+      // console's painted X, which sits first in the DOM on every popup since
+      // 2026-09-23 and is the last resort for initial focus, never the first
+      // (see useFocusTrap for the same rule).
       setTimeout(() => {
         if (modalRef.current) {
-          const focusable = modalRef.current.querySelector(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          ) as HTMLElement;
-          focusable?.focus();
+          const focusable = Array.from(
+            modalRef.current.querySelectorAll<HTMLElement>(
+              'button, [href], input:not([tabindex="-1"]), select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+          );
+          (focusable.find((el) => !el.classList.contains('sc__close')) ?? focusable[0])?.focus();
         }
       }, 0);
     }

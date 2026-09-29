@@ -305,6 +305,11 @@ export interface MaintenanceBreakDeps {
   version?: string;
 }
 
+/** See MaintenanceBreak.UNPARKED_REASON_BOUNDS. */
+export type UnparkedReasonBound =
+  | { scope: 'break'; never: 'break_uncertified' }
+  | { scope: 'lifetime'; boundMs: number; never: string; neverHoldsGate: boolean };
+
 export class MaintenanceBreak {
   /** The break itself, matching the tournament synchronized break exactly. */
   static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
@@ -1207,27 +1212,7 @@ export class MaintenanceBreak {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase !== 'last_hand') return;
 
-    // Anything created during the last-hand wait, and anything that somehow
-    // slipped the first pass, is parked now. Cheap, and it makes "every table
-    // is parked" true rather than probable.
-    this.parkEveryEngine();
-
-    const stragglers = this.unparkedTables();
-    this.unparkedAtCountdown = stragglers.length;
-    this.peakUnparked = stragglers.length;
     this.readyForRestartAtMs = null;
-    if (stragglers.length > 0) {
-      // Not fatal, and deliberately not blocking. A table wedged mid-hand must
-      // not hold the platform's break open past the hour - the tournament
-      // break made the same call for the same reason - but the restart gate
-      // below refuses to fire while any table is unparked, so a straggler
-      // costs us a restart window, never a player's hand.
-      console.warn(
-        `[MaintenanceBreak] ${stragglers.length} table(s) had not parked when the countdown ` +
-          `started: ${stragglers.slice(0, 5).join(', ')}. The break runs on time; the restart ` +
-          `gate stays shut until they land.`
-      );
-    }
 
     /* announcedAt is the durable schedule authority. A delayed save or a
        briefly delayed event loop may make this method execute after :55, but
@@ -1240,6 +1225,8 @@ export class MaintenanceBreak {
     // Close the deploy gate before changing any of its semantic fields.
     this.durableConfirmed = false;
     this.phase = 'counting_down';
+    this.unparkedAtCountdown = 0;
+    this.peakUnparked = 0;
     /* beginCountdown is also the explicit/manual entry point. An intentional
        early call starts its five minutes immediately; an on-time or late
        scheduled call stays anchored to the already-promised boundary and can
@@ -1291,6 +1278,68 @@ export class MaintenanceBreak {
         error
       );
       this.reportFault('countdown', 'held_without_restart', error, countingDown.announcedAt);
+    }
+    if (!this.lifecycleIsCurrent(generation) || this.phase !== 'counting_down') return;
+    this.sweepStragglersAfterCertificate();
+  }
+
+  /* THE CERTIFICATE IS OPENED BEFORE THE FLEET IS SWEPT (2026-09-25).
+     ───────────────────────────────────────────────────────────────────
+     This second park pass and the straggler census used to run at the TOP of
+     beginCountdown, ahead of the countdown row's durable save, under a comment
+     calling them "cheap". They are not cheap and nobody had measured them.
+
+     `breakStartedAt` is pinned to the PROMISED :55, which is right - a slow
+     event loop is never permission to extend the freeze - so every millisecond
+     spent here before `durableConfirmed` is charged against the only headroom
+     the release has. The break is BREAK_DURATION_MS (300000ms) and
+     engine-release-transaction.sh admits a cutover on 285000ms of it, so the
+     certificate has to exist within 15000ms of :55:00.000 or the release is
+     arithmetically unreachable.
+
+     Measured on 2026-09-25 from runs 36155409978, 36157652866 and 36157811057
+     (7 consecutive breaks, every first complete certificate observation):
+     15375, 15939, 16408, 18455, 19060, 19846 and 76869 ms after remainingMs
+     was 300000. SEVEN OF SEVEN outside the window; the floor missed it by
+     375ms. That is the whole 6.7-day freeze, and it is CLAUDE.md 10.86 rule 4:
+     #5026 correctly budgeted the PUBLISHER's entry cost, wrote that the
+     headroom was "today 0", and nobody budgeted the ENGINE's own cost of
+     opening the certificate - which consumed all 15000ms by itself, walking
+     ~324 engines twice on one core.
+
+     So the order is inverted. Nothing here decides the countdown row's
+     content: `persistedState()` carries phase, announcedAt and breakEndsAt
+     only, `unparkedAtCountdown` and `peakUnparked` are diagnostics, and the
+     first park pass already ran at :53 in announceLastHand. Nothing resumes
+     early either - `breakEndsAt` is untouched.
+
+     Safety is unchanged in the direction that matters. `readyForRestart` still
+     requires `unparkedTables()` to be empty, that census is computed LIVE on
+     every /health read rather than from anything recorded here, and a table
+     with cards in the air is counted by `engine.isRunning() &&
+     !engine.isBetweenHands()` whether or not `pauseForMaintenance` has reached
+     it yet. The release script additionally demands its own physical witness,
+     `handsInFlightTotal === 0`. A certificate that exists but is not yet ready
+     is the ordinary case both sides already handle. */
+  private sweepStragglersAfterCertificate(): void {
+    // Anything created during the last-hand wait, and anything that somehow
+    // slipped the :53 pass, is parked now.
+    this.parkEveryEngine();
+
+    const stragglers = this.unparkedTables();
+    this.unparkedAtCountdown = stragglers.length;
+    if (stragglers.length > this.peakUnparked) this.peakUnparked = stragglers.length;
+    if (stragglers.length > 0) {
+      // Not fatal, and deliberately not blocking. A table wedged mid-hand must
+      // not hold the platform's break open past the hour - the tournament
+      // break made the same call for the same reason - but the restart gate
+      // refuses to fire while any table is unparked, so a straggler costs us a
+      // restart window, never a player's hand.
+      console.warn(
+        `[MaintenanceBreak] ${stragglers.length} table(s) had not parked when the countdown ` +
+          `started: ${stragglers.slice(0, 5).join(', ')}. The break runs on time; the restart ` +
+          `gate stays shut until they land.`
+      );
     }
   }
 
@@ -1833,6 +1882,115 @@ export class MaintenanceBreak {
    */
   static readonly F06_UNRESOLVED_GATE_MS = 10 * 60_000;
   /**
+   * HOW LONG A TERMINAL ENGINE'S STOPPED TIME BANK MAY HOLD THE WHOLE FLEET.
+   *
+   * The same bound, for the same reason, as F06_UNRESOLVED_GATE_MS beside it -
+   * and it was missing here while every F06 class had it. `cards_in_air` is
+   * unbounded on purpose and stays that way; this class is not a hand.
+   *
+   * A stopped-custody blocker is a TERMINAL engine
+   * (`hasUnretiredStoppedTimeBankCustody` requires `this.terminal`), so it has
+   * no dealing loop and no hand to protect - the reasoning the
+   * `if (!engine.isRunning()) continue` skip below already encodes for every
+   * other durability class. The custody test sits ABOVE that skip, which is
+   * correct (a terminal engine is exactly what it exists to catch, so moving it
+   * below would delete the check), but it therefore never inherited the skip's
+   * reasoning and never got a bound. Unbounded, it made a fleet-wide decision
+   * out of a per-table fact that this process cannot clear: the handoff it
+   * waits for is in-memory, and for a terminal engine no path in this process
+   * completes it (see ServerTableEngineBase.persistStoppedCustodyForRestart,
+   * #5255). Measured 2026-09-25: 137 -> 154 -> 187 tables over ten hours,
+   * monotonic, holding the restart certificate shut for 8 consecutive breaks -
+   * including the restart that carried its own fix. That is "not yet" for a
+   * question whose answer is "never" (CLAUDE.md 10.86 rule 1), and it is the
+   * identical shape #4909 bounded for F06 after engine 8825af51 held 70.
+   *
+   * PAST THE BOUND THE ANSWER CHANGES ITS NAME, NOT ITS VERDICT (corrected
+   * 2026-09-26, before merge). The first draft of this change retired the
+   * table from the census past the bound, exactly as the F06 class is retired,
+   * and justified it by "the release guard checks every captured engine's own
+   * durability per table, from rows". That guard is
+   * legacy-engine-checkpoint-guard.mjs, and engine-release-transaction.sh runs
+   * it ONLY when the serving release is one of four pinned predecessors
+   * (LEGACY_CHECKPOINT_SHA, CHECKPOINT_758/A0/8825_SHA). Every other cutover -
+   * including the one off 778075b4 - is admitted by `readyForRestart` and
+   * `unparkedTables == 0` alone, and never consults the reasons. Retiring the
+   * table here would therefore have been an allow-list by another name, one
+   * the release script cannot even see, for a class #5255 defines as "a bank
+   * we could not persist is still a bank at stake".
+   *
+   * An F06 preparation holds no money; a stopped time bank is a player's. So
+   * the two classes share the bound and the naming rule and differ in exactly
+   * one declared fact, `neverHoldsGate` in UNPARKED_REASON_BOUNDS: past the
+   * bound the custody table is reported as `stopped_bank_custody_stuck` - the
+   * distinct "this will not resolve in this process" outcome 10.86 rule 1 asks
+   * for - and it STILL refuses. The root cause is #5255's announcement write
+   * (a terminal engine persists the custody it holds at every break's :53
+   * fan-out), which drains the class on its own evidence; what outlives this
+   * bound is a write that keeps failing, named so an operator can act on it.
+   */
+  static readonly STOPPED_CUSTODY_GATE_MS = 10 * 60_000;
+  /**
+   * EVERY REASON THE RESTART CENSUS CAN REPORT, AND WHAT BOUNDS IT (2026-09-26).
+   *
+   * Every blocker that held the platform this week had one shape: a reason
+   * that could only ever answer "not yet" when the truth was "never" -
+   * `f06_preparation_unresolved` (70 breaks on 8825af51), the retained
+   * preparation loop, `stopped_bank_custody_unconfirmed` (137 -> 187 tables on
+   * 778075b4). Each was bounded one incident at a time, after it had wedged
+   * the fleet. This table makes the bound a property every reason must
+   * DECLARE, and `server/src/maintenance/everyRestartBlockerDeclaresItsBound.law.test.ts`
+   * derives the reasons from this file and the engine and fails CI on any
+   * reason that is missing here.
+   *
+   *   scope 'break'    - the reason is a fact about a LIVE dealing loop within
+   *                      one break (a hand in the air, an accounting write in
+   *                      flight). The loop resolves it, and the census only asks
+   *                      it of a running engine (below the isRunning skip). Its
+   *                      "never" is the break ending with no certificate, which
+   *                      is its own number: breaksSinceRestartCertified and
+   *                      engine_maintenance_break_log.ready_for_restart_at.
+   *   scope 'lifetime' - the reason can be held by something with NO dealing
+   *                      loop (a terminal engine, a process-local permit), so no
+   *                      break will ever resolve it. It must carry a finite
+   *                      boundMs, a distinct `never` name reported once the bound
+   *                      is outlived, and an explicit `neverHoldsGate`: whether
+   *                      the never outcome still refuses the restart. That is a
+   *                      decision about what is at stake, written down here
+   *                      rather than implied by which branch someone edited.
+   *
+   * A reason asked of a non-running engine MUST be 'lifetime'. That is the
+   * whole class: a 'break' reason on an engine with no loop is an unbounded
+   * "not yet".
+   */
+  static readonly UNPARKED_REASON_BOUNDS: Readonly<Record<string, UnparkedReasonBound>> = {
+    cards_in_air: { scope: 'break', never: 'break_uncertified' },
+    accounting_unconfirmed: { scope: 'break', never: 'break_uncertified' },
+    accounting_pending: { scope: 'break', never: 'break_uncertified' },
+    bank_park_write_incomplete: { scope: 'break', never: 'break_uncertified' },
+    unknown: { scope: 'break', never: 'break_uncertified' },
+    // No money and no hand: past the bound it stops deciding the fleet (#4909).
+    f06_preparation_unresolved: {
+      scope: 'lifetime',
+      boundMs: MaintenanceBreak.F06_UNRESOLVED_GATE_MS,
+      never: 'f06_preparation_stuck',
+      neverHoldsGate: false,
+    },
+    // A player's time bank: past the bound it is named, and still refuses.
+    stopped_bank_custody_unwritten: {
+      scope: 'lifetime',
+      boundMs: MaintenanceBreak.STOPPED_CUSTODY_GATE_MS,
+      never: 'stopped_bank_custody_stuck',
+      neverHoldsGate: true,
+    },
+    stopped_bank_custody_unreadable: {
+      scope: 'lifetime',
+      boundMs: MaintenanceBreak.STOPPED_CUSTODY_GATE_MS,
+      never: 'stopped_bank_custody_stuck',
+      neverHoldsGate: true,
+    },
+  };
+  /**
    * Breaks that have ended without the restart certificate ever opening.
    *
    * This is the alarm that was missing. The gate being shut is recorded per
@@ -1856,6 +2014,14 @@ export class MaintenanceBreak {
   private f06UnresolvedSince: Map<string, number> = new Map();
   private f06StuckAnnounced: Set<string> = new Set();
   private f06StuckTableCount = 0;
+  private stoppedCustodySince: Map<string, number> = new Map();
+  private stoppedCustodyStuckAnnounced: Set<string> = new Set();
+  private stoppedCustodyStuckTableCount = 0;
+
+  /** Terminal engines whose stopped time bank has outlived the gate, for /health. */
+  stoppedCustodyStuckTables(): number {
+    return this.stoppedCustodyStuckTableCount;
+  }
 
   /** Tables whose F06 preparation has outlived the gate, for /health. */
   f06StuckTables(): number {
@@ -1875,18 +2041,68 @@ export class MaintenanceBreak {
    *         stops deciding whether every other table may be restarted.
    */
   private f06PreparationHoldsGate(tableId: string): boolean {
-    const since = this.f06UnresolvedSince.get(tableId) ?? this.now();
-    this.f06UnresolvedSince.set(tableId, since);
-    const heldForMs = this.now() - since;
-    if (heldForMs <= MaintenanceBreak.F06_UNRESOLVED_GATE_MS) return true;
-    if (!this.f06StuckAnnounced.has(tableId)) {
-      this.f06StuckAnnounced.add(tableId);
+    return this.holdsGateWithinBound(
+      this.f06UnresolvedSince,
+      this.f06StuckAnnounced,
+      tableId,
+      'f06_preparation_unresolved',
+      'Its engine needs replacing; the permit is process-local and only that clears it.'
+    );
+  }
+
+  /**
+   * Has this terminal engine's stopped time bank stayed inside the bound?
+   *
+   * True  - still inside STOPPED_CUSTODY_GATE_MS; reported by the engine's own
+   *         refusing name.
+   * False - past it. Reported as `stopped_bank_custody_stuck`, which STILL
+   *         holds the gate (UNPARKED_REASON_BOUNDS.neverHoldsGate). See the
+   *         comment on STOPPED_CUSTODY_GATE_MS for why this differs from F06.
+   */
+  private stoppedCustodyHoldsGate(tableId: string, reason: string): boolean {
+    return this.holdsGateWithinBound(
+      this.stoppedCustodySince,
+      this.stoppedCustodyStuckAnnounced,
+      tableId,
+      reason,
+      'It is a player time bank this terminal engine could not persist at the break ' +
+        'announcement; it keeps refusing the restart under its never name until the write lands.'
+    );
+  }
+
+  /**
+   * One clock, one bound, one announcement for every 'lifetime' reason (the
+   * shared helper is carried from #5266; two copies of a bound drift). The
+   * bound is READ from UNPARKED_REASON_BOUNDS, never restated. The clock
+   * starts when the condition is first observed and is cleared by
+   * `unparkedTables()` the moment the condition disappears, so a table that
+   * recovers and later blocks again gets the full bound.
+   */
+  private holdsGateWithinBound(
+    since: Map<string, number>,
+    announced: Set<string>,
+    tableId: string,
+    reason: string,
+    remedy: string
+  ): boolean {
+    const bound = MaintenanceBreak.UNPARKED_REASON_BOUNDS[reason];
+    // An undeclared reason has no bound to outlive; it holds, and the law test
+    // is what keeps one from reaching this line.
+    if (!bound || bound.scope !== 'lifetime') return true;
+    const first = since.get(tableId) ?? this.now();
+    since.set(tableId, first);
+    const heldForMs = this.now() - first;
+    if (heldForMs <= bound.boundMs) return true;
+    if (!announced.has(tableId)) {
+      announced.add(tableId);
       console.error(
-        `[MaintenanceBreak] table ${tableId} has held an unresolved F06 preparation for ` +
-          `${Math.round(heldForMs / 1000)}s, past the ${Math.round(
-            MaintenanceBreak.F06_UNRESOLVED_GATE_MS / 1000
-          )}s gate. It no longer holds the platform's restart certificate shut. ` +
-          `Its engine needs replacing; the permit is process-local and only that clears it.`
+        `[MaintenanceBreak] table ${tableId} has reported ${reason} for ` +
+          `${Math.round(heldForMs / 1000)}s, past its ${Math.round(bound.boundMs / 1000)}s bound; ` +
+          `it is now reported as ${bound.never}, which ` +
+          (bound.neverHoldsGate
+            ? 'still refuses the restart. '
+            : "no longer holds the platform's restart certificate shut. ") +
+          remedy
       );
     }
     return false;
@@ -1896,7 +2112,9 @@ export class MaintenanceBreak {
     const out: string[] = [];
     const reasons: Record<string, number> = {};
     const seenUnresolved = new Set<string>();
+    const seenStoppedCustody = new Set<string>();
     let stuck = 0;
+    let custodyStuck = 0;
     const count = (reason: string) => {
       reasons[reason] = (reasons[reason] ?? 0) + 1;
     };
@@ -1925,8 +2143,37 @@ export class MaintenanceBreak {
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (engine.hasUnretiredStoppedTimeBankCustody?.()) {
+          seenStoppedCustody.add(tableId);
+          /* THE NAME THE ENGINE ANSWERS, NOT A NAME THIS FILE INVENTS.
+             #5255 split the engine's answer into the two REFUSING outcomes -
+             `stopped_bank_custody_unwritten` (a real bank not yet on disk) and
+             `stopped_bank_custody_unreadable` ("I could not tell") - and seeded
+             both as /metrics labels. This census kept publishing the retired
+             conflated name `stopped_bank_custody_unconfirmed`, which is in no
+             seed list, so the count only ever reached /metrics through the
+             dynamic extension and no rule could read it before it had already
+             wedged the fleet. That is the half this file still owed #5255.
+             A missing method, a null, or any name outside the class falls back
+             to `unreadable`, which REFUSES: an unreadable answer is never
+             coerced into a readable one (CLAUDE.md 10.86 rule 2). */
+          const answered = engine.maintenanceDurabilityReason?.();
+          const custodyReason =
+            typeof answered === 'string' && answered.startsWith('stopped_bank_custody_')
+              ? answered
+              : 'stopped_bank_custody_unreadable';
+          /* The bound comes before the push so the reported NAME is right;
+             the VERDICT is the same either side of it. Past the bound this is
+             `stopped_bank_custody_stuck` - distinct, alertable, "this process
+             will not resolve it" - and it still refuses (see
+             STOPPED_CUSTODY_GATE_MS: no guard behind this census re-checks the
+             bank on an ordinary cutover). */
           out.push(tableId);
-          count('stopped_bank_custody_unconfirmed');
+          if (this.stoppedCustodyHoldsGate(tableId, custodyReason)) {
+            count(custodyReason);
+            continue;
+          }
+          custodyStuck += 1;
+          count('stopped_bank_custody_stuck');
           continue;
         }
         if (engine.hasUnresolvedF06Preparation?.()) {
@@ -1967,7 +2214,19 @@ export class MaintenanceBreak {
       this.f06UnresolvedSince.delete(tableId);
       this.f06StuckAnnounced.delete(tableId);
     }
+    /* The same hygiene for the custody clocks. A table whose custody cleared -
+       adopted by a replacement engine, retired on a confirmed session close, or
+       made durable by its own park write - starts clean if it ever comes back,
+       and a table that left the fleet takes its entry with it. Without this a
+       replacement engine would inherit its predecessor's elapsed clock and be
+       past the bound the moment it appeared. */
+    for (const tableId of [...this.stoppedCustodySince.keys()]) {
+      if (seenStoppedCustody.has(tableId)) continue;
+      this.stoppedCustodySince.delete(tableId);
+      this.stoppedCustodyStuckAnnounced.delete(tableId);
+    }
     this.f06StuckTableCount = stuck;
+    this.stoppedCustodyStuckTableCount = custodyStuck;
     this.unparkedReasonCounts = reasons;
     if (this.phase === 'counting_down' && out.length > this.peakUnparked) {
       this.peakUnparked = out.length;
@@ -2456,6 +2715,11 @@ export class MaintenanceBreak {
          ended with no restart certificate at all. Both are identification
          only - neither decides anything. */
       f06StuckTables: this.f06StuckTableCount,
+      /* Terminal engines whose stopped time bank outlived STOPPED_CUSTODY_GATE_MS
+         and are now reported as stopped_bank_custody_stuck. They are still
+         counted in unparkedTables and still refuse the restart; this number
+         only says how many of those refusals this process will not resolve. */
+      stoppedCustodyStuckTables: this.stoppedCustodyStuckTableCount,
       breaksSinceRestartCertified: this.breaksSinceRestartCertified,
       readyForRestart: this.readyForRestart(),
       reason: this.reason,

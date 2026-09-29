@@ -3,13 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettings } from '../../src/services/LeaderboardService';
 
-const { saveLeaderboardRewardSetup } = vi.hoisted(() => ({
+const { saveLeaderboardRewardSetup, getLeaderboardRewardSetup } = vi.hoisted(() => ({
   saveLeaderboardRewardSetup: vi.fn(),
+  getLeaderboardRewardSetup: vi.fn(),
 }));
 
 vi.mock('../../src/services/LeaderboardService', () => ({
   LeaderboardService: {
     saveLeaderboardRewardSetup,
+    getLeaderboardRewardSetup,
   },
 }));
 
@@ -68,6 +70,7 @@ async function publishDefaultPlan(user: ReturnType<typeof userEvent.setup>) {
 describe('LeaderboardPrizeWizard', () => {
   beforeEach(() => {
     saveLeaderboardRewardSetup.mockReset();
+    getLeaderboardRewardSetup.mockReset();
   });
 
   afterEach(() => {
@@ -302,5 +305,189 @@ describe('LeaderboardPrizeWizard', () => {
     );
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
     expect(saveLeaderboardRewardSetup).not.toHaveBeenCalled();
+  });
+
+  describe('union template', () => {
+    const templateClubs = [
+      { club_id: 'club-2', club_name: 'Harbor Room' },
+      { club_id: 'club-3', club_name: 'Summit Club' },
+    ];
+    const versions: Record<string, number> = { 'club-1': 0, 'club-2': 4, 'club-3': 7 };
+    const fundingRefusal = new Error(
+      'Leaderboard Prize Program Requires 5000.00 Promo Chips But Only 3000.00 Are Available After Other Published Commitments'
+    );
+
+    beforeEach(() => {
+      getLeaderboardRewardSetup.mockImplementation(async (clubId: string) => ({
+        ...setup,
+        club_id: clubId,
+        setup_complete: true,
+        program_version: versions[clubId],
+      }));
+      saveLeaderboardRewardSetup.mockImplementation(
+        async (clubId: string, payload: { program_version: number; rewards_enabled: boolean }) => ({
+          ...setup,
+          club_id: clubId,
+          setup_complete: true,
+          rewards_enabled: payload.rewards_enabled,
+          program_version: payload.program_version + 1,
+        })
+      );
+    });
+
+    async function reviewWithTemplate(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      const clubs = screen.getByRole('group', { name: 'Other Union Clubs' });
+      await user.click(within(clubs).getByRole('button', { name: 'Harbor Room' }));
+      await user.click(within(clubs).getByRole('button', { name: 'Summit Club' }));
+      expect(within(clubs).getByRole('button', { name: 'Harbor Room' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+      expect(screen.getByText(/^Publishing To 3 Clubs\./)).toBeInTheDocument();
+      // This club's figure is not presented as the union-wide total.
+      expect(screen.getByText('Uncommitted After This Club')).toBeInTheDocument();
+      expect(screen.queryByText('Uncommitted After Publication')).not.toBeInTheDocument();
+    }
+
+    it("publishes the same plan to each chosen union club as that club's own next version", async () => {
+      const user = userEvent.setup();
+      const onSaved = vi.fn();
+      render(
+        <LeaderboardPrizeWizard
+          isOpen
+          setup={setup}
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          templateClubs={templateClubs}
+        />
+      );
+
+      await reviewWithTemplate(user);
+      await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      const calls = saveLeaderboardRewardSetup.mock.calls;
+      expect(calls.map(([clubId, payload]) => [clubId, payload.program_version])).toEqual([
+        ['club-1', 0],
+        ['club-2', 4],
+        ['club-3', 7],
+      ]);
+      // One plan, three clubs: the published rows are identical.
+      expect(calls[1][1].weekly_prizes).toEqual(calls[0][1].weekly_prizes);
+      expect(calls[2][1].monthly_prizes).toEqual(calls[0][1].monthly_prizes);
+      expect(calls[2][1].suggestion_key).toBe(calls[0][1].suggestion_key);
+      expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ club_id: 'club-1' }), [
+        { club_id: 'club-2', club_name: 'Harbor Room', ok: true, message: 'Program V5 Published.' },
+        { club_id: 'club-3', club_name: 'Summit Club', ok: true, message: 'Program V8 Published.' },
+      ]);
+    });
+
+    it('lists a refused club, retries only that club, and hands back the saved record when done', async () => {
+      const user = userEvent.setup();
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      const defaultSave = saveLeaderboardRewardSetup.getMockImplementation()!;
+      let summitAttempts = 0;
+      saveLeaderboardRewardSetup.mockImplementation(
+        async (clubId: string, payload: { program_version: number; rewards_enabled: boolean }) => {
+          // The union wallet refuses Summit Club once, then covers it.
+          if (clubId === 'club-3' && ++summitAttempts === 1) throw fundingRefusal;
+          return defaultSave(clubId, payload);
+        }
+      );
+      render(
+        <LeaderboardPrizeWizard
+          isOpen
+          setup={setup}
+          onClose={onClose}
+          onSaved={onSaved}
+          templateClubs={templateClubs}
+        />
+      );
+
+      await reviewWithTemplate(user);
+      await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+      expect(await screen.findByRole('heading', { name: 'Template Results' })).toBeInTheDocument();
+      expect(screen.getByText('Program V5 Published.')).toBeInTheDocument();
+      // Beside a Retry button the refusal says what happened, not "close and reopen".
+      expect(
+        screen.getByText(
+          "North Circuit Promo Wallet Cannot Cover This Club's Plan After Other Published Commitments."
+        )
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Close And Reopen/)).not.toBeInTheDocument();
+      // The step bar shows every step done while the results are on screen.
+      expect(screen.getByRole('list', { name: 'Setup Progress' })).not.toContainHTML(
+        'aria-current'
+      );
+      expect(onSaved).not.toHaveBeenCalled();
+
+      getLeaderboardRewardSetup.mockClear();
+      await user.click(screen.getByRole('button', { name: 'Retry Refused Clubs' }));
+      expect(await screen.findByText('Program V8 Published.')).toBeInTheDocument();
+      expect(getLeaderboardRewardSetup.mock.calls.map(([id]) => id)).toEqual(['club-3']);
+      expect(screen.getByRole('button', { name: 'Retry Refused Clubs' })).toBeDisabled();
+
+      await user.click(screen.getByRole('button', { name: 'Close Prize Setup' }));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onSaved).toHaveBeenCalledWith(
+        expect.objectContaining({ club_id: 'club-1', program_version: 1 }),
+        [
+          expect.objectContaining({ club_id: 'club-2', ok: true }),
+          expect.objectContaining({
+            club_id: 'club-3',
+            ok: true,
+            message: 'Program V8 Published.',
+          }),
+        ]
+      );
+    });
+
+    it('refuses a club that has left the union instead of funding the plan from its own wallet', async () => {
+      const user = userEvent.setup();
+      const onSaved = vi.fn();
+      getLeaderboardRewardSetup.mockImplementation(async (clubId: string) => ({
+        ...setup,
+        club_id: clubId,
+        program_version: versions[clubId],
+        ...(clubId === 'club-2'
+          ? { funding_owner_type: 'club', funding_source: 'club_promo_balance', union_id: null }
+          : {}),
+      }));
+      render(
+        <LeaderboardPrizeWizard
+          isOpen
+          setup={setup}
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          templateClubs={templateClubs}
+        />
+      );
+
+      await reviewWithTemplate(user);
+      await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+      expect(
+        await screen.findByText('This Club Is No Longer Funded By This Union.')
+      ).toBeInTheDocument();
+      expect(saveLeaderboardRewardSetup.mock.calls.map(([id]) => id)).toEqual(['club-1', 'club-3']);
+      await user.click(screen.getByRole('button', { name: 'Done With Template Results' }));
+      expect(onSaved).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers no template to a standalone club', async () => {
+      const user = userEvent.setup();
+      render(<LeaderboardPrizeWizard isOpen setup={setup} onClose={vi.fn()} onSaved={vi.fn()} />);
+      await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+      expect(screen.queryByText('Use As A Union Template')).not.toBeInTheDocument();
+    });
   });
 });

@@ -4,6 +4,7 @@ import { type PlateButtonProps, type ConsoleInk } from '../console/SpadeConsole'
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { wheelPrizeTitle } from './WheelExperience';
 import type { WheelSegment } from '../../services/DiamondWheelService';
+import { TapHaptic } from '../haptics/TapHaptic';
 import styles from './WheelCabinet.module.css';
 
 /** The wheel and its attached controls share one available play viewport. */
@@ -59,6 +60,7 @@ export function WheelCabinet({
                 data-ink={secondary.ink}
               >
                 {secondary.label}
+                <TapHaptic disabled={secondary.disabled} radius="4px" />
               </button>
             )}
             {primary && (
@@ -70,6 +72,7 @@ export function WheelCabinet({
                 data-ink={primary.ink}
               >
                 {primary.label}
+                <TapHaptic disabled={primary.disabled} radius="4px" />
               </button>
             )}
           </div>

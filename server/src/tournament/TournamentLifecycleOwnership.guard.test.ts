@@ -95,7 +95,7 @@ describe('one tournament lifecycle generation owns every continuation', () => {
     expect(capture).toBeGreaterThanOrEqual(0);
     const admission = code.slice(capture, retain);
     for (const refusal of [
-      '!packet ||',
+      'if (!packet)',
       'packet.manager !== manager',
       'packet.tournamentId !== tournamentId',
       'this.tournamentEngines.get(tournamentId) !== manager',
@@ -105,7 +105,9 @@ describe('one tournament lifecycle generation owns every continuation', () => {
       'packet.engines.some(',
       'this.tableEngines.get(id) !== engine',
       '!this.tournamentRetirementCustody.admissionAllowed(id)',
-      'return false;',
+      // Since 2026-09-25 a refusal returns false THROUGH the note that names
+      // it: the reason is recorded on the way out, never on a separate path.
+      'return this.noteF06CustodyRefusal(',
     ]) {
       expect(admission).toContain(refusal);
     }

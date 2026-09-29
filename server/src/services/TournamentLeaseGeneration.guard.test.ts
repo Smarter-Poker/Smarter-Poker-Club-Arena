@@ -97,7 +97,19 @@ describe('one tournament manager carries one database fencing generation', () =>
     );
     expect(heartbeat).toContain('p_stale_seconds IS DISTINCT FROM 30');
 
-    expect(leaseService).toContain("supabase.rpc('heartbeat_tournament_leases_v4'");
+    // 2026-09-24: the heartbeat moved off the shared Data API client onto a
+    // dedicated session (leaseHeartbeatSession.ts) so it cannot queue behind
+    // game traffic. Both of its transports still call exactly this function.
+    expect(leaseService).toContain("leaseHeartbeatRpc('tournament', {");
+    const heartbeatTransport = readFileSync(
+      join(process.cwd(), 'src', 'services', 'leaseHeartbeatSession.ts'),
+      'utf8'
+    );
+    expect(heartbeatTransport).toContain("tournament: 'heartbeat_tournament_leases_v4'");
+    expect(heartbeatTransport).toContain(
+      'FROM public.heartbeat_tournament_leases_v4($1::text, $2::jsonb, $3::integer)'
+    );
+    expect(heartbeatTransport).toContain('supabase.rpc(HEARTBEAT_FUNCTION[this.scope], args)');
     expect(leaseService).toContain('lease_generation: claim.leaseGeneration');
     expect(leaseService).toMatch(/row\.state === 'kept'[\s\S]{0,100}exactGeneration/);
 

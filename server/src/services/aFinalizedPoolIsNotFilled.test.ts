@@ -218,9 +218,12 @@ describe('1. a finalized prize pool is not filled', () => {
     expect(walk).toContain(
       'if (!poolFinalized && msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS)'
     );
+    // The past-start top-up is withheld from a finalized row. Since
+    // 2026-09-24 the field is the roster (fieldCount), not the counter.
     expect(walk).toContain(
-      'if (!poolFinalized && isPastStart && tournament.current_players < minPlayers)'
+      'const needsPastStartTopUp = !poolFinalized && isPastStart && fieldCount < minPlayers;'
     );
+    expect(walk).toContain('if (needsPastStartTopUp) {');
     // Reported once, never a `continue` that would also skip the start gate.
     //
     // AND THE START GATE NOW ACTUALLY RECOVERS ONE (2026-09-11). This comment

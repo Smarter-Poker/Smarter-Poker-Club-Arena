@@ -74,7 +74,7 @@ import UnionsTab from '../../components/tournament/details/UnionsTab';
 import TablesTab from '../../components/tournament/details/TablesTab';
 import RewardsTab from '../../components/tournament/details/RewardsTab';
 import SatellitesTab from '../../components/tournament/details/SatellitesTab';
-import { chipsCompact } from '../../components/tournament/details/types';
+import { chipsCompact, tournamentRowUnitCents } from '../../components/tournament/details/types';
 import type {
   NormalisedBlindLevel,
   TabId,
@@ -88,9 +88,11 @@ import { reportError } from '../../utils/errorReporter';
 import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
+import { useTournamentStageView } from '../../hooks/useTournamentStageView';
 import { openTableAsObserver } from '../../utils/observeTable';
 import './PremiumTournamentConsole.css';
 import { publicOrigin } from '../../lib/appBase';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../utils/multiDaySchedule';
 
 interface TournamentSnapshotOwner {
   tournamentId: string | undefined;
@@ -170,6 +172,8 @@ export default function TournamentDetails({
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
   const autoOpenedTableRef = useRef(false);
+  /** Set once this page has seen the event BAGGED (multi-day, between days). */
+  const [sawBagged, setSawBagged] = useState(false);
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -321,6 +325,7 @@ export default function TournamentDetails({
     };
     snapshotOwnerRef.current = owner;
     autoOpenedTableRef.current = false;
+    setSawBagged(false);
     setTournament(null);
     setEntries([]);
     setTables([]);
@@ -421,6 +426,23 @@ export default function TournamentDetails({
    * exactly once per tournament - re-navigating on every realtime tick would
    * trap the player on the table route and break the back button.
    */
+  /* A LATER DAY NEVER MOVES THE PLAYER (MULTI-DAY-DESIGN section 7, CLAUDE.md
+     10.6). The auto-open below is the first start's service. When Day 2 (or
+     any later day) resumes, the Overview shows "Your Day 2 Seat" with an Open
+     Table button and the player taps it; nothing navigates by itself. A later
+     day is recognised two ways: this page watched the event sit BAGGED, or the
+     stage view (capability available and a sealed plan) says the current day
+     is past Day 1. While that read is still answering, the auto-open waits. */
+  const { view: stageView, loading: stageViewLoading } = useTournamentStageView(
+    tournamentId,
+    tournament?.status ?? null
+  );
+  const baggedNow = isBaggedStatus(tournament?.status);
+  useEffect(() => {
+    if (baggedNow) setSawBagged(true);
+  }, [baggedNow]);
+  const laterDay = baggedNow || sawBagged || (stageView?.currentStage?.stageNo ?? 1) > 1;
+
   useEffect(() => {
     /* NOT WHEN WE ARE ALREADY AT THE TABLE (2026-08-28).
      *
@@ -433,6 +455,7 @@ export default function TournamentDetails({
      * were watching. The embedder says so explicitly rather than this effect
      * trying to infer where it is being rendered. */
     if (suppressAutoOpenTable) return;
+    if (laterDay || stageViewLoading) return;
     if (tournament?.status !== 'RUNNING') return;
     if (!user?.id) return;
     if (autoOpenedTableRef.current) return;
@@ -454,6 +477,8 @@ export default function TournamentDetails({
     navigate,
     suppressAutoOpenTable,
     snapshotReady,
+    laterDay,
+    stageViewLoading,
   ]);
 
   // ── Realtime subscription: live tournament updates ──
@@ -1848,6 +1873,12 @@ export default function TournamentDetails({
               );
             }
 
+            /* Multi-day, between days: entries are closed and nothing is
+               dealing, so a registered player must not be offered Unregister
+               and nobody else Register. The Overview carries the schedule. */
+            if (isBaggedStatus(tournament.status)) {
+              return <span className="tournament-status-badge running">{DAY_COMPLETE_LABEL}</span>;
+            }
             if (tournament.status === 'COMPLETED') {
               return <span className="tournament-status-badge completed">Completed</span>;
             }
@@ -1909,6 +1940,9 @@ export default function TournamentDetails({
           tournamentId={tournamentId}
           tournamentName={tournament.name || 'Tournament'}
           prizePool={tournament.prize_pool || 0}
+          /* The pool's unit, off the arena this row was read with - the same
+             reading every tab on this page prices through (2026-09-21). */
+          unitCents={tournamentRowUnitCents(tabProps.tournament)}
         />
       )}
     </PageErrorBoundary>

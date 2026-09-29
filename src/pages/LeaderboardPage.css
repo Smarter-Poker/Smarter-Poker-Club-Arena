@@ -240,6 +240,57 @@
   color: #9aa5b3;
   overflow-wrap: anywhere;
 }
+.leaderboard-page .lb-program-history {
+  display: grid;
+  gap: 2cqw;
+}
+.leaderboard-page .lb-program-history-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.leaderboard-page .lb-program-history-list li {
+  display: grid;
+  gap: 0.3em;
+  padding-block: 2.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+.leaderboard-page .lb-program-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3em 0.8em;
+}
+.leaderboard-page .lb-program-history-head strong {
+  color: #45adff;
+  font:
+    700 1.05em 'Roboto Condensed',
+    sans-serif;
+}
+.leaderboard-page .lb-program-history-head span,
+.leaderboard-page .lb-program-history-note {
+  color: #9aa5b3;
+  font-size: 0.8em;
+}
+.leaderboard-page .lb-program-history-change {
+  color: #e4e7ec;
+  font-size: 0.85em;
+}
+.leaderboard-page .lb-program-history-list small {
+  color: #9aa5b3;
+  font-size: 0.78em;
+}
+.leaderboard-page .lb-program-history-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  color: #ff5b6e;
+  font-size: 0.85em;
+}
 .leaderboard-page .lb-prize-program-safety {
   position: static;
   color: #9aa5b3;

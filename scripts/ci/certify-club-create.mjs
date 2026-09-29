@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { createClient } from '@supabase/supabase-js';
+import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
+import { retryTransient } from './transient-retry.mjs';
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -21,13 +23,68 @@ const admin = createClient(url, serviceKey, {
   },
 });
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const email = `club-create-cert-${stamp}@smarter-poker.invalid`;
+// Reuse the guarded, deletion-capable certification namespace. The older
+// smarter-poker.invalid identity could retire its clubs but could not pass the
+// reserved-account cleanup door, leaving auth/profile residue behind.
+const email = `ca-customization-cert-postdeploy-direct-${stamp}@example.invalid`;
 const password = `Cert-${crypto.randomUUID()}-9a!`;
 const requestId = crypto.randomUUID();
 const name = `Crest Cert ${stamp}`.slice(0, 30);
 let userId;
 const clubIds = [];
 let logoPath;
+
+async function cleanupLegacyDirectCertificates() {
+  const legacy = [];
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw new Error(`Legacy Certificate Inventory Failed: ${error.message}`);
+    const users = data?.users || [];
+    legacy.push(
+      ...users.filter((user) =>
+        /^club-create-cert-.+@smarter-poker\.invalid$/i.test(String(user.email || ''))
+      )
+    );
+    if (users.length < 1000) break;
+  }
+
+  for (const fixture of legacy) {
+    const { data: ownedClubs, error: clubError } = await admin
+      .from('clubs')
+      .select('id')
+      .eq('owner_id', fixture.id)
+      .limit(1);
+    if (clubError) throw new Error(`Legacy Certificate Club Check Failed: ${clubError.message}`);
+    if (ownedClubs?.length) {
+      throw new Error(`Refusing To Remove Legacy Certificate ${fixture.id}: It Still Owns A Club.`);
+    }
+
+    const folder = `club-logos/${fixture.id}`;
+    const { data: assets, error: listError } = await admin.storage
+      .from('club-assets')
+      .list(folder, { limit: 100 });
+    if (listError) throw new Error(`Legacy Certificate Asset Check Failed: ${listError.message}`);
+    if (assets?.length) {
+      const { error: removeError } = await admin.storage
+        .from('club-assets')
+        .remove(assets.map((asset) => `${folder}/${asset.name}`));
+      if (removeError) {
+        throw new Error(`Legacy Certificate Asset Cleanup Failed: ${removeError.message}`);
+      }
+    }
+
+    await cleanupProductionE2EAccount({
+      record: { id: fixture.id, email: fixture.email },
+      environment: process.env,
+    });
+  }
+
+  if (legacy.length) {
+    console.log(`Removed And Verified ${legacy.length} Legacy Create Club Certificate Account(s).`);
+  }
+}
+
+await cleanupLegacyDirectCertificates();
 
 try {
   const { data: created, error: createUserError } = await admin.auth.admin.createUser({
@@ -152,6 +209,7 @@ try {
 
   console.log(`PASS Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`);
 } finally {
+  const cleanupFailures = [];
   // Append-only financial records intentionally prevent a plain hard delete:
   // clubs -> chip_transactions is ON DELETE SET NULL, which is an UPDATE on an
   // append-only journal (and chip_transactions.club_id is NOT NULL, so it could
@@ -172,36 +230,72 @@ try {
     if (retireError) console.error(`Fixture Retirement Failed: ${retireError.message}`);
 
     for (const clubId of clubIds) {
-      const { data, error } = await admin.rpc('fn_ca_retire_certification_club', {
-        p_club_id: clubId,
-        p_reason: 'cert-cleanup',
-      });
+      // The door is one idempotent transaction (a repeat answers already_gone),
+      // so a statement timeout during a database load spike is retried with
+      // backoff instead of leaking the club: 2026-09-28 one such timeout left a
+      // fixture owned by the reserved identity and wedged every post-deploy
+      // certificate for ten hours. A `success: false` refusal is definitive and
+      // is never retried.
+      const { data, error } = await retryTransient(
+        () =>
+          admin.rpc('fn_ca_retire_certification_club', {
+            p_club_id: clubId,
+            p_reason: 'cert-cleanup',
+          }),
+        {
+          failureOf: (result) => result?.error,
+          label: `retirement of certification club ${clubId}`,
+        }
+      );
       if (error) {
         console.error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`);
       } else if (data && data.success === false) {
         console.error(`Fixture Cleanup Refused For ${clubId}: ${data.error}`);
       } else {
         console.log(
-          `Fixture ${clubId} retired: ${data?.chips_retired ?? 0} chips returned to the Mint.`,
+          `Fixture ${clubId} retired: ${data?.chips_retired ?? 0} chips returned to the Mint.`
         );
       }
     }
 
-    const { data: leaked } = await admin.from('clubs').select('id').in('id', clubIds);
-    if (leaked?.length) {
-      throw new Error(
-        `Certification leaked ${leaked.length} fixture club(s) into Club Arena: ${leaked
-          .map((c) => c.id)
-          .join(', ')}`,
+    const { data: leaked, error: leakedError } = await retryTransient(
+      () => admin.from('clubs').select('id').in('id', clubIds),
+      { failureOf: (result) => result?.error, label: 'fixture club verification read' }
+    );
+    if (leakedError) {
+      // An unreadable answer is not an empty one.
+      cleanupFailures.push(
+        new Error(
+          `Certification could not verify its fixture clubs are gone: ${leakedError.message}`
+        )
+      );
+    } else if (leaked?.length) {
+      cleanupFailures.push(
+        new Error(
+          `Certification leaked ${leaked.length} fixture club(s) into Club Arena: ${leaked
+            .map((c) => c.id)
+            .join(', ')}`
+        )
       );
     }
   }
   if (logoPath) {
     const { error: storageError } = await admin.storage.from('club-assets').remove([logoPath]);
-    if (storageError) console.error(`Fixture Asset Cleanup Failed: ${storageError.message}`);
+    if (storageError) {
+      cleanupFailures.push(new Error(`Fixture Asset Cleanup Failed: ${storageError.message}`));
+    }
   }
   if (userId) {
-    const { error: userDeleteError } = await admin.auth.admin.deleteUser(userId);
-    if (userDeleteError) console.warn(`Fixture User Delete Skipped: ${userDeleteError.message}`);
+    try {
+      await cleanupProductionE2EAccount({
+        record: { id: userId, email },
+        environment: process.env,
+      });
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+  }
+  if (cleanupFailures.length) {
+    throw new AggregateError(cleanupFailures, 'Club Create Certification Cleanup Was Incomplete.');
   }
 }

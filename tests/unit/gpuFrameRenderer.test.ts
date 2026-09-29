@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { gpuFrameRenderer } from '../../src/components/games/gpuFrameRenderer';
+import { isSoftwareRenderer } from '../../src/components/games/rendererTier';
 
 function fixture() {
   const canvas = document.createElement('canvas');
@@ -70,5 +71,36 @@ describe('game GPU frame backpressure', () => {
     expect(renderer.render).toHaveBeenCalledTimes(2);
     frames.dispose();
     expect(frames.render()).toBe(false);
+  });
+});
+
+describe('a CPU rasteriser is recognised, and a silent renderer counts as hardware', () => {
+  const contextNamed = (name: string | null, unmasked = true) =>
+    ({
+      RENDERER: 0x1f01,
+      getExtension: (ext: string) =>
+        ext === 'WEBGL_debug_renderer_info' && unmasked
+          ? { UNMASKED_RENDERER_WEBGL: 0x9246 }
+          : null,
+      getParameter: (p: number) => (p === 0x9246 || p === 0x1f01 ? name : null),
+    }) as unknown as WebGLRenderingContext;
+  it('names SwiftShader, llvmpipe and the Basic Render Driver as software', () => {
+    expect(isSoftwareRenderer(contextNamed('Google SwiftShader'))).toBe(true);
+    expect(
+      isSoftwareRenderer(
+        contextNamed('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))')
+      )
+    ).toBe(true);
+    expect(isSoftwareRenderer(contextNamed('llvmpipe (LLVM 15.0.7, 256 bits)'))).toBe(true);
+    expect(isSoftwareRenderer(contextNamed('Microsoft Basic Render Driver'))).toBe(true);
+  });
+  it('treats a GPU, an unnamed renderer and no context as hardware', () => {
+    expect(isSoftwareRenderer(contextNamed('Apple M2'))).toBe(false);
+    expect(isSoftwareRenderer(contextNamed('ANGLE (Apple, ANGLE Metal Renderer: Apple M2)'))).toBe(
+      false
+    );
+    expect(isSoftwareRenderer(contextNamed(null, false))).toBe(false);
+    expect(isSoftwareRenderer(null)).toBe(false);
+    expect(isSoftwareRenderer(undefined)).toBe(false);
   });
 });

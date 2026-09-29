@@ -279,7 +279,7 @@ it('renders the actual terminal request on a historical hold replay', async () =
   const input = await mount();
   fireEvent.change(input, { target: { value: '1.25' } });
   await submit();
-  await screen.findByText('This Cashout Is Already approved. Check Its Invoice For Details.');
+  await screen.findByText('This Cashout Is Already Approved. Check Its Invoice For Details.');
   expect(complete).toHaveBeenCalledOnce();
   expect(screen.queryByText(/Chips Are Held For Review/)).toBeNull();
 });

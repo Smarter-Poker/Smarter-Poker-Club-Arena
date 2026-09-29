@@ -14,6 +14,12 @@ export type DiamondStatement = Record<(typeof totals)[number], number> & {
   day: string;
   status: 'open' | 'settled';
   net_diamonds: number;
+  /** Basis points burned at settlement (2000 = 20%); null until the day settles, 0 on a day settled before the burn. */
+  profit_burn_bps: number | null;
+  /** Whole diamonds burned: floor(net * bps / 10000) on a positive net, else 0; null until the day settles. */
+  profit_burn: number | null;
+  /** What the one wallet transaction moved: net - profit_burn; null until the day settles. */
+  credited_net: number | null;
   settled_at: string | null;
   wallet_transaction_id: string | null;
   hosts: {
@@ -27,9 +33,14 @@ export type DiamondStatement = Record<(typeof totals)[number], number> & {
 };
 export interface DiamondStatements {
   timezone: 'America/Chicago';
+  /** The current daily profit burn rate in basis points (owner ruling 2026-09-21, R14). */
+  profit_burn_bps: number;
   days: DiamondStatement[];
   next_before_day: string | null;
 }
+/** Mirror of fn_diamond_spin_profit_burn: whole diamonds, never above the rate. */
+export const diamondProfitBurn = (net: number, bps: number): number =>
+  net > 0 && bps > 0 ? Math.floor((net * bps) / 10000) : 0;
 const day = (value: unknown): value is string =>
   typeof value === 'string' &&
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -57,6 +68,9 @@ export async function loadDiamondStatements(
   };
   if (
     result.timezone !== 'America/Chicago' ||
+    !integer(result.profit_burn_bps) ||
+    result.profit_burn_bps < 0 ||
+    result.profit_burn_bps > 10000 ||
     !Array.isArray(result.days) ||
     result.days.length > 31 ||
     (result.next_before_day !== null && !day(result.next_before_day))
@@ -82,6 +96,23 @@ export async function loadDiamondStatements(
     const expenses =
       row.diamond_prizes + row.throwables + row.time_banks + row.rabbit_hunts + row.other_expenses;
     if (entries - expenses !== row.net_diamonds) bad();
+    // The three settlement lines: net, burn and what the wallet actually
+    // received. An open day has none yet; a settled day must add up exactly,
+    // at the rate that day recorded (0 for a day settled before the burn).
+    if (row.status === 'open') {
+      if (row.profit_burn_bps !== null || row.profit_burn !== null || row.credited_net !== null)
+        bad();
+    } else if (
+      !integer(row.profit_burn_bps) ||
+      row.profit_burn_bps < 0 ||
+      row.profit_burn_bps > 10000 ||
+      !integer(row.profit_burn) ||
+      row.profit_burn !== diamondProfitBurn(row.net_diamonds, row.profit_burn_bps) ||
+      !integer(row.credited_net) ||
+      row.credited_net !== row.net_diamonds - row.profit_burn ||
+      (row.credited_net === 0) !== (row.wallet_transaction_id === null)
+    )
+      bad();
     for (const host of row.hosts) {
       if (
         !host ||

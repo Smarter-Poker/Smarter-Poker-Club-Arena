@@ -30,9 +30,17 @@ DECLARE
  prizes numeric[]; ladder integer[]; k integer; mode text; mines integer;
  counts bigint[]; board integer[]; picks bigint; report text:='';
  seg record; acc integer; total_weight integer; pick integer;
+ contract integer; floor_point integer; first integer;
 BEGIN
  IF current_database()<>'diamond_games_probe' THEN RAISE EXCEPTION 'Requires The Isolated Fixture'; END IF;
- bet:=1; minimum:=public.fn_diamond_bonus_minimum(bet);
+ -- Which contract is installed decides which closed forms the draws are held to.
+ -- Contract 4 (2026-09-21, owner rulings R3/R10/R11) floors the crash point at
+ -- 1.10x, makes the first road street certain at 0.80x, deals the mines board
+ -- around a guaranteed-safe first pick, and floors every loss at half the stake.
+ contract:=CASE WHEN to_regprocedure('public.fn_choice_prizes_v4(text,text,numeric,numeric)') IS NULL THEN 3 ELSE 4 END;
+ bet:=1;
+ IF contract=4 THEN minimum:=public.fn_diamond_bonus_floor(bet,1,100,100); ELSE minimum:=public.fn_diamond_bonus_minimum(bet); END IF;
+ IF minimum<>(CASE WHEN contract=4 THEN 0.5 ELSE 0.1 END) THEN RAISE EXCEPTION 'The Installed Floor Is Not Its Contract''s: % Under Contract %',minimum,contract; END IF;
 
  -- ── 1. PLINKO: the sealed slot distribution is Binomial(16, 1/2) ───────────
  -- fn_plinko_bonus_run reads bits 0..15 of hmac(server_seed,'<client>:<nonce>:drop:<i>')
@@ -90,7 +98,8 @@ BEGIN
  -- fn_crash_point_cents turns one 48-bit roll into the crash point, so a player
  -- who always cashes out at x wins x with that probability and keeps L
  -- otherwise. That identity is why every target carries the same 0.80B.
- FOREACH target IN ARRAY ARRAY[101,150,200,500,1000,2000] LOOP
+ -- 1.11x is the first cash-out target under contract 4 and a target under both: max(raw,110) >= x iff raw >= x for every x > 1.10.
+ FOREACH target IN ARRAY ARRAY[111,150,200,500,1000,2000] LOOP
   hits:=0; seed:=encode(extensions.digest('fairness-crash-'||target,'sha256'),'hex');
   FOR i IN 0..n_draws-1 LOOP
    roll:=(('x'||substr(encode(extensions.hmac('fairness:crash:'||i,seed,'sha256'),'hex'),1,12))::bit(48)::bigint)::numeric;
@@ -102,20 +111,27 @@ BEGIN
    RAISE EXCEPTION 'Crash Survival To %x Was % Over % Rounds, Expected % (band %)',target/100.0,round(hits::numeric/n_draws,4),n_draws,round(expect,4),round(band,4); END IF;
   report:=report||format(' crash %sx: %s of %s vs expected %s;',target/100.0,hits,n_draws,round(expect,4));
  END LOOP;
- -- A crash point is never below 1.00x, so a round can never pay less than the floor.
+ -- A crash point is never below the contract's floor: 1.00x under contract 3, 1.10x
+ -- under contract 4 (the ship can never explode until after 1.10x). The floor is
+ -- what the largest roll produces, and it must be exactly the contract's.
+ floor_point:=public.fn_crash_point_cents(c_two48-1,bet,minimum);
+ IF floor_point<>(CASE WHEN contract=4 THEN 110 ELSE 100 END) THEN RAISE EXCEPTION 'Crash Floor % Is Not Contract %''s',floor_point,contract; END IF;
  seed:=encode(extensions.digest('fairness-crash-floor','sha256'),'hex');
  FOR i IN 0..8191 LOOP
   roll:=(('x'||substr(encode(extensions.hmac('fairness:floor:'||i,seed,'sha256'),'hex'),1,12))::bit(48)::bigint)::numeric;
   point:=public.fn_crash_point_cents(roll,bet,minimum);
-  IF point<100 THEN RAISE EXCEPTION 'Crash Point % Is Below 1.00x',point; END IF;
+  IF point<floor_point THEN RAISE EXCEPTION 'Crash Point % Is Below %',point,floor_point; END IF;
  END LOOP;
+ report:=report||format(' crash floor %sx;',round(floor_point/100.0,2));
 
  -- ── 3. DONKEY CROSS: one sealed roll decides the whole road ────────────────
  -- fn_choice_act survives street n when (roll+1)*(prize_n - L) <= (0.8B - L)*2^48,
  -- so P(reach street n) = (0.8B - L)/(prize_n - L) and every street carries 0.80B.
  mode:=public.fn_choice_mode('crossing');
- ladder:=public.fn_choice_ladder(mode);
- prizes:=public.fn_choice_prizes('crossing',mode,bet);
+ IF contract=4 THEN ladder:=public.fn_choice_ladder_v4(mode); prizes:=public.fn_choice_prizes_v4('crossing',mode,bet,minimum);
+ ELSE ladder:=public.fn_choice_ladder(mode); prizes:=public.fn_choice_prizes('crossing',mode,bet); END IF;
+ -- Under contract 4 street one pays 0.80B, which the identity makes certain for every roll.
+ IF contract=4 AND (ladder[1]<>80 OR prizes[1]<>bet*0.8) THEN RAISE EXCEPTION 'Street One Is Not 0.80x Under Contract 4'; END IF;
  FOR k IN 1..cardinality(ladder) LOOP
   hits:=0; seed:=encode(extensions.digest('fairness-road-'||k,'sha256'),'hex');
   FOR i IN 0..n_draws-1 LOOP
@@ -123,6 +139,7 @@ BEGIN
    IF (roll+1)*(prizes[k]-minimum)<=(bet*0.8-minimum)*c_two48 THEN hits:=hits+1; END IF;
   END LOOP;
   expect:=LEAST(1,(bet*0.8-minimum)/(prizes[k]-minimum));
+  IF contract=4 AND k=1 AND hits<>n_draws THEN RAISE EXCEPTION 'Street One Lost % Of % Rolls Under Contract 4',n_draws-hits,n_draws; END IF;
   band:=4*sqrt(GREATEST(expect*(1-expect),0.000001)/n_draws)+0.001;
   IF abs(hits::numeric/n_draws-expect)>band THEN
    RAISE EXCEPTION 'Road Street % Survival Was % Over % Rounds, Expected % (band %)',k,round(hits::numeric/n_draws,4),n_draws,round(expect,4),round(band,4); END IF;
@@ -134,27 +151,45 @@ BEGIN
  -- sampling on a 32-bit draw, so every cell must hide a mine with probability
  -- mines/25 and no cell may be favoured. A biased board is the one way this
  -- game could cheat with every prize left untouched.
+ -- Under contract 4 the board is dealt AROUND the first pick, from the same seed and
+ -- that pick, so the first tile is always a gem: the pick is never on the board and
+ -- each other cell hides a mine with probability mines/24. The pick cycles through
+ -- every cell so no cell is spared the test.
  mines:=public.fn_choice_mode('mines')::integer;
  counts:=array_fill(0::bigint,ARRAY[25]);
  FOR i IN 0..n_boards-1 LOOP
-  board:=public.fn_choice_board(encode(extensions.digest('fairness-mines-'||i,'sha256'),'hex'),'fairness',1,mines);
+  first:=i%25;
+  IF contract=4 THEN board:=public.fn_choice_board_v4(encode(extensions.digest('fairness-mines-'||i,'sha256'),'hex'),'fairness',1,mines,first);
+   IF first=ANY(board) THEN RAISE EXCEPTION 'Mines Board % Holds Its First Pick %',i,first; END IF;
+  ELSE board:=public.fn_choice_board(encode(extensions.digest('fairness-mines-'||i,'sha256'),'hex'),'fairness',1,mines); END IF;
   IF cardinality(board)<>mines THEN RAISE EXCEPTION 'Mines Board % Dealt % Cells, Expected %',i,cardinality(board),mines; END IF;
   IF (SELECT count(DISTINCT x) FROM unnest(board) x)<>mines OR (SELECT min(x) FROM unnest(board) x)<0 OR (SELECT max(x) FROM unnest(board) x)>24 THEN
    RAISE EXCEPTION 'Mines Board % Is Not % Distinct Cells In 0..24: %',i,mines,board; END IF;
   FOREACH k IN ARRAY board LOOP counts[k+1]:=counts[k+1]+1; END LOOP;
  END LOOP;
  -- Twenty-four degrees of freedom; the one-in-a-hundred-thousand value is 66.6.
- expect:=n_boards::numeric*mines/25;
+ expect:=CASE WHEN contract=4 THEN n_boards::numeric*24/25*mines/24 ELSE n_boards::numeric*mines/25 END;
  chi:=0;
  FOR k IN 1..25 LOOP chi:=chi+(counts[k]-expect)^2/expect; END LOOP;
  IF chi>66.6 THEN RAISE EXCEPTION 'Mines Board Distribution Failed Its Chi-Square: % (counts %)',round(chi,2),counts; END IF;
  -- Every stop still carries 0.80B exactly: the prize ladder is the design, and
  -- the draw above is what makes P(survive k picks) = C(25-m,k)/C(25,k).
- prizes:=public.fn_choice_prizes('mines',public.fn_choice_mode('mines'),bet);
- FOR k IN 1..cardinality(prizes) LOOP
-  IF abs(prizes[k]-(minimum+(bet*0.8-minimum)*public.fn_choice_choose(25,k)/public.fn_choice_choose(25-mines,k)))>0.000001 THEN
-   RAISE EXCEPTION 'Mines Prize % Is Off Its Closed Form: %',k,prizes[k]; END IF;
- END LOOP;
+ -- Contract 4: the first pick is safe, so P(survive k) = C(24-m,k-1)/C(24,k-1) and
+ -- prize_k = L + (0.8B - L) C(24,k-1)/C(24-m,k-1); the first gem pays 0.80B.
+ IF contract=4 THEN
+  prizes:=public.fn_choice_prizes_v4('mines',public.fn_choice_mode('mines'),bet,minimum);
+  IF prizes[1]<>bet*0.8 THEN RAISE EXCEPTION 'The First Gem Is Not 0.80x Under Contract 4'; END IF;
+  FOR k IN 1..cardinality(prizes) LOOP
+   IF abs(prizes[k]-(minimum+(bet*0.8-minimum)*public.fn_choice_choose(24,k-1)/public.fn_choice_choose(24-mines,k-1)))>0.000001 THEN
+    RAISE EXCEPTION 'Mines Prize % Is Off Its Contract 4 Closed Form: %',k,prizes[k]; END IF;
+  END LOOP;
+ ELSE
+  prizes:=public.fn_choice_prizes('mines',public.fn_choice_mode('mines'),bet);
+  FOR k IN 1..cardinality(prizes) LOOP
+   IF abs(prizes[k]-(minimum+(bet*0.8-minimum)*public.fn_choice_choose(25,k)/public.fn_choice_choose(25-mines,k)))>0.000001 THEN
+    RAISE EXCEPTION 'Mines Prize % Is Off Its Closed Form: %',k,prizes[k]; END IF;
+  END LOOP;
+ END IF;
  report:=report||format(' mines: chi2 %s over %s boards of %s cells, %s prizes exact;',round(chi,2),n_boards,mines,cardinality(prizes));
 
  -- ── 5. THE WHEEL: the twelve outcomes arrive at their stated weights ───────
@@ -189,6 +224,6 @@ BEGIN
   RAISE EXCEPTION 'The Wheel Awarded A Game % Times In % Spins, Expected %',hits,n_draws,round(expect_hits,1); END IF;
  report:=report||format(' wheel: chi2 %s over %s spins, %s game awards vs expected %s;',round(chi,2),n_draws,hits,round(expect_hits,1));
 
- RAISE NOTICE 'PASS Diamond fairness audit:%',report;
+ RAISE NOTICE 'PASS Diamond fairness audit (contract %):%',contract,report;
 END $$;
 ROLLBACK;

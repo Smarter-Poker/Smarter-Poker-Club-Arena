@@ -29,13 +29,19 @@
  * own numbers here (`fn_ad_campaign_report`, opened to the advertiser's owner
  * on 2026-09-13).
  *
- * Dress: this family (advertise, campaign queue) is not yet on the
- * #ClubArenaConsole master - the sweep works in traffic order and operator
- * pages are last. The sponsor mode reuses the club page's dress so the family
- * is rebuilt once, together, when its turn comes.
+ * DRESS: #ClubArenaConsole since 2026-09-22. A club owner is a customer, so
+ * this page is on Dan's approved master like every other room in the arena.
+ * Nothing here is styled to look like a control: each section is one console
+ * cut from the master (spade head, club rate card, diamond pictures, flat
+ * ledger, and the shark frame for the two surfaces that carry exactly one
+ * action), every figure is a row on the black glass closed by an engraved
+ * rule, and every action is either a painted plate or a lit word. Sizes are
+ * cqw against the console, so a 320px phone and a 430px one get the same
+ * picture. See `.claude/skills/club-arena-console/SKILL.md`.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -46,6 +52,9 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { formatDate } from '../utils/format';
+import { titleCase, enumToTitleCase } from '../utils/titleCase';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import type { ConsoleInk } from '../components/console/SpadeConsole';
 import { AdCampaignService, POSTER_SHAPE } from '../services/AdCampaignService';
 import type {
   AdCampaign,
@@ -73,11 +82,39 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+/* The status word is printed in the master's own ink rather than in a filled
+   pill: the console paints no pill on the glass, and a colour invented here
+   would be a colour the schema does not own. */
+const STATUS_INK: Record<string, ConsoleInk> = {
+  submitted: 'gold',
+  approved: 'blue',
+  scheduled: 'blue',
+  live: 'green',
+  finished: 'muted',
+  rejected: 'red',
+  cancelled: 'muted',
+};
+
 /* The one surface nothing renders yet. A sponsor cannot book it (the RPC
    refuses too); a club cannot because its rate card row is closed. */
 const UNBUILT_SLOTS: AdSlot[] = ['table_between_hands'];
 
 const POSTER_RATIO = `${POSTER_SHAPE.width} / ${POSTER_SHAPE.height}`;
+
+/* Every surface keeps its TRUE shape in the picker, which is the whole point
+   of showing it - but a 3:4 poster at full body width is a screen and a half
+   of empty recess, and that is what the rate card looked like before the
+   console. Capping the WIDTH at `band * ratio` bounds the height at `band`
+   without touching the ratio: a wide banner still fills the body, a tall
+   poster shrinks to the same band height as everything else. */
+const SHAPE_BAND_CQW = 22;
+
+function shapeStyle(slot: AdSlot): CSSProperties {
+  const ratio = AD_SURFACE_RATIO[slot];
+  const [w, h] = ratio.split('/').map((part) => Number(part.trim()));
+  const cap = h > 0 ? (SHAPE_BAND_CQW * w) / h : SHAPE_BAND_CQW;
+  return { aspectRatio: ratio, maxWidth: `${cap.toFixed(2)}cqw` };
+}
 
 function fmt(n: number): string {
   return n.toLocaleString();
@@ -461,12 +498,28 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   if (loadError) {
     return (
       <div className="club-advertise">
-        <div className="club-advertise__error">
-          {loadError}
-          <button type="button" className="club-advertise__btn" onClick={() => void load()}>
-            Retry
-          </button>
-        </div>
+        <SpadeConsole
+          className="club-advertise__console"
+          crest="flat"
+          foot="foot"
+          eyebrow="Advertise"
+          title="Could Not Load"
+          titleId="club-advertise-error-title"
+          pill="Offline"
+          pillInk="red"
+          aria-labelledby="club-advertise-error-title"
+        >
+          <p className="sc-copy sc-copy--center">{titleCase(loadError)}</p>
+          <div className="club-advertise__actions club-advertise__actions--center">
+            <button
+              type="button"
+              className="club-advertise__word sc-ink--blue"
+              onClick={() => void load()}
+            >
+              Retry
+            </button>
+          </div>
+        </SpadeConsole>
       </div>
     );
   }
@@ -474,12 +527,28 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   if (isStaff === false) {
     return (
       <div className="club-advertise">
-        <div className="club-advertise__error">
-          Only Club Staff Can Buy Adverts For This Club.
-          <button type="button" className="club-advertise__btn" onClick={() => navigate(-1)}>
-            Back
-          </button>
-        </div>
+        <SpadeConsole
+          className="club-advertise__console"
+          crest="flat"
+          foot="foot"
+          eyebrow="Advertise"
+          title="Staff Only"
+          titleId="club-advertise-refused-title"
+          pill="Refused"
+          pillInk="red"
+          aria-labelledby="club-advertise-refused-title"
+        >
+          <p className="sc-copy sc-copy--center">Only Club Staff Can Buy Adverts For This Club.</p>
+          <div className="club-advertise__actions club-advertise__actions--center">
+            <button
+              type="button"
+              className="club-advertise__word sc-ink--blue"
+              onClick={() => navigate(-1)}
+            >
+              Back
+            </button>
+          </div>
+        </SpadeConsole>
       </div>
     );
   }
@@ -501,92 +570,121 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   );
   const advertiserFormOk = advName.trim().length > 0 && advName.trim().length <= 80 && !advBusy;
 
+  const submitLabel = busy ? 'Submitting' : sponsorMode ? 'Book It' : 'Pay And Submit';
+
   return (
     <div className="club-advertise">
-      <header className="club-advertise__head">
-        <button
-          type="button"
-          className="club-advertise__back"
-          onClick={() => navigate(-1)}
-          aria-label="Back"
-        >
-          {'‹'}
-        </button>
-        <div>
-          <h1 className="club-advertise__title">
-            {sponsorMode ? 'Advertise On Smarter.Poker' : `Advertise ${clubName || 'Your Club'}`}
-          </h1>
-          <p className="club-advertise__sub">
-            {sponsorMode
-              ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Smarter.Poker Reviews Every Advert And Invoices You Directly.'
-              : 'Put A Picture In Front Of Every Player On Smarter.Poker. Pay In Diamonds. The House Reviews Every Advert Before It Runs.'}
-          </p>
-        </div>
+      {/* ── The head: who is buying, what this page does, what they hold ── */}
+      <SpadeConsole
+        className="club-advertise__console"
+        crest="spade"
+        foot="foot"
+        eyebrow={sponsorMode ? 'Smarter.Poker' : titleCase(clubName) || 'Your Club'}
+        title="Advertise"
+        titleId="club-advertise-title"
+        subtitle={sponsorMode ? 'Book A Flight' : 'Pay In Diamonds'}
+        pill={sponsorMode ? (advertiser ? 'Sponsor' : 'New') : 'Staff'}
+        pillInk={sponsorMode && !advertiser ? 'muted' : 'blue'}
+        aria-labelledby="club-advertise-title"
+      >
+        <p className="sc-copy">
+          {sponsorMode
+            ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Smarter.Poker Reviews Every Advert And Invoices You Directly.'
+            : 'Put A Picture In Front Of Every Player On Smarter.Poker. Pay In Diamonds. The House Reviews Every Advert Before It Runs.'}
+        </p>
         {sponsorMode ? null : (
-          <div className="club-advertise__balance" aria-label="Your Diamonds">
-            <span className="diamond-icon" aria-hidden="true" />
-            <span>{balance == null ? '-' : fmt(balance)}</span>
+          <div className="club-advertise__row">
+            <span className="club-advertise__row-label sc-ink--blue">Your Diamonds</span>
+            <span className="club-advertise__row-value sc-ink--silver">
+              {balance == null ? '-' : fmt(balance)}
+            </span>
           </div>
         )}
-      </header>
+        <div className="club-advertise__actions">
+          <button
+            type="button"
+            className="club-advertise__word sc-ink--blue"
+            onClick={() => navigate(-1)}
+          >
+            Back
+          </button>
+        </div>
+      </SpadeConsole>
 
       {/* ── Who is advertising (sponsor mode) ── */}
       {sponsorMode ? (
-        <section className="club-advertise__card">
-          <h2 className="club-advertise__h2">Your Business</h2>
+        <SpadeConsole
+          className="club-advertise__console"
+          family="shark"
+          foot="plates"
+          eyebrow="Advertising As"
+          title={titleCase(advertiser?.name) || 'Your Business'}
+          titleId="club-advertise-business-title"
+          pill={advertiser?.status === 'suspended' ? 'Paused' : advertiser ? 'Active' : 'New'}
+          pillInk={advertiser?.status === 'suspended' ? 'red' : advertiser ? 'green' : 'muted'}
+          aria-labelledby="club-advertise-business-title"
+          plates={{
+            primary: {
+              label: advBusy ? 'Saving' : advertiser ? 'Save' : 'Start Advertising',
+              ink: 'white',
+              onClick: () => void saveAdvertiser(),
+              disabled: !advertiserFormOk,
+            },
+          }}
+        >
           {advertiser?.status === 'suspended' ? (
-            <div className="club-advertise__field-error">
+            <p className="club-advertise__field-error sc-ink--red">
               Your Advertising Account Is Paused. Contact Smarter.Poker To Resume.
-            </div>
+            </p>
           ) : null}
-          <div className="club-advertise__grid">
-            <label className="club-advertise__field">
-              <span>Business Name</span>
-              <input
-                type="text"
-                maxLength={80}
-                value={advName}
-                onChange={(e) => setAdvName(e.target.value)}
-                placeholder="Acme Poker Supplies"
-                disabled={advBusy}
-              />
-              <small>Shown On The Popup As Sponsored By, So Players Know Who Is Speaking.</small>
-            </label>
-            <label className="club-advertise__field">
-              <span>Contact Email (Optional)</span>
-              <input
-                type="email"
-                maxLength={200}
-                value={advEmail}
-                onChange={(e) => setAdvEmail(e.target.value)}
-                placeholder="ads@acme.example"
-                disabled={advBusy}
-              />
-              <small>Where Smarter.Poker Sends The Invoice And Any Questions.</small>
-            </label>
-          </div>
-          <div className="club-advertise__total">
-            <div>
-              <span className="club-advertise__total-label">
-                {advertiser ? 'Advertising As' : 'Not Set Up Yet'}
-              </span>
-              <span className="club-advertise__total-math">{advertiser?.name ?? ''}</span>
-            </div>
-            <button
-              type="button"
-              className="club-advertise__btn club-advertise__btn--primary"
-              onClick={() => void saveAdvertiser()}
-              disabled={!advertiserFormOk}
-            >
-              {advBusy ? 'Saving' : advertiser ? 'Save' : 'Start Advertising'}
-            </button>
-          </div>
-        </section>
+          <label className="club-advertise__field">
+            <span className="club-advertise__field-label sc-ink--blue">Business Name</span>
+            <input
+              className="club-advertise__input"
+              type="text"
+              maxLength={80}
+              value={advName}
+              onChange={(e) => setAdvName(e.target.value)}
+              placeholder="Acme Poker Supplies"
+              disabled={advBusy}
+            />
+            <small className="club-advertise__field-hint sc-ink--muted">
+              Shown On The Popup As Sponsored By, So Players Know Who Is Speaking.
+            </small>
+          </label>
+          <label className="club-advertise__field">
+            <span className="club-advertise__field-label sc-ink--blue">
+              Contact Email (Optional)
+            </span>
+            <input
+              className="club-advertise__input"
+              type="email"
+              maxLength={200}
+              value={advEmail}
+              onChange={(e) => setAdvEmail(e.target.value)}
+              placeholder="ads@acme.example"
+              disabled={advBusy}
+            />
+            <small className="club-advertise__field-hint sc-ink--muted">
+              Where Smarter.Poker Sends The Invoice And Any Questions.
+            </small>
+          </label>
+        </SpadeConsole>
       ) : null}
 
       {/* ── Rate card ── */}
-      <section className="club-advertise__card">
-        <h2 className="club-advertise__h2">Where It Runs</h2>
+      <SpadeConsole
+        className="club-advertise__console"
+        crest="club"
+        foot="foot"
+        eyebrow="The Rate Card"
+        title="Where It Runs"
+        titleId="club-advertise-rates-title"
+        subtitle="Choose One Surface"
+        pill={`${bookableRates.length} Open`}
+        pillInk="blue"
+        aria-labelledby="club-advertise-rates-title"
+      >
         <div className="club-advertise__surfaces">
           {bookableRates.map((r) => (
             <button
@@ -602,288 +700,369 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
             >
               <span
                 className="club-advertise__surface-shape"
-                style={{ aspectRatio: AD_SURFACE_RATIO[r.slot] }}
+                style={shapeStyle(r.slot)}
                 aria-hidden="true"
               />
-              <span className="club-advertise__surface-label">{r.label}</span>
-              {sponsorMode ? (
-                <span className="club-advertise__surface-price">Priced On Request</span>
-              ) : (
-                <span className="club-advertise__surface-price">
-                  <span className="diamond-icon" aria-hidden="true" />
-                  {fmt(r.diamondsPerDay)} Per Day
+              <span className="club-advertise__surface-text">
+                <span
+                  className={`club-advertise__surface-label ${r.slot === slot ? 'sc-ink--white' : 'sc-ink--silver'}`}
+                >
+                  {titleCase(r.label)}
                 </span>
-              )}
-              <span className="club-advertise__surface-size">
-                {`${r.creativeWidth} By ${r.creativeHeight}`}
+                <span className="club-advertise__surface-price sc-ink--blue">
+                  {sponsorMode ? 'Priced On Request' : `${fmt(r.diamondsPerDay)} Diamonds Per Day`}
+                </span>
+                <span className="club-advertise__surface-size sc-ink--muted">
+                  {`${r.creativeWidth} By ${r.creativeHeight}`}
+                </span>
+                {r.slot === slot ? (
+                  <span className="club-advertise__surface-state sc-ink--blue">Selected</span>
+                ) : null}
               </span>
             </button>
           ))}
         </div>
-        {rate ? <p className="club-advertise__blurb">{rate.blurb}</p> : null}
-      </section>
+        {rate ? <p className="sc-copy club-advertise__blurb">{titleCase(rate.blurb)}</p> : null}
+      </SpadeConsole>
 
-      {/* ── The creative ── */}
-      <section className="club-advertise__card">
-        <h2 className="club-advertise__h2">Your Picture</h2>
-        {rate ? (
-          <p className="club-advertise__hint">
-            Exactly {`${rate.creativeWidth} By ${rate.creativeHeight}`} Pixels, WebP, PNG Or JPEG,
-            Under {Math.round(rate.maxBytes / 1024)} KB. It Scales With The Page And Is Never
-            Cropped.
-          </p>
-        ) : null}
-        <div
-          className="club-advertise__preview"
-          style={{ aspectRatio: rate ? AD_SURFACE_RATIO[rate.slot] : '6 / 1' }}
-        >
-          {preview ? (
-            <img src={preview} alt="Your Advert Preview" />
-          ) : (
-            <span className="club-advertise__preview-empty">Preview Appears Here</span>
-          )}
-        </div>
-        <label className="club-advertise__file">
-          <input
-            type="file"
-            accept="image/webp,image/png,image/jpeg"
-            onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-            disabled={busy}
-          />
-          <span className="club-advertise__btn club-advertise__btn--ghost">
-            {file ? 'Choose A Different Picture' : 'Choose A Picture'}
-          </span>
-          {file ? <span className="club-advertise__file-name">{file.name}</span> : null}
-        </label>
-        {fileError ? <div className="club-advertise__field-error">{fileError}</div> : null}
-      </section>
-
-      {/* ── The poster: what a tap opens, full screen ── */}
-      <section className="club-advertise__card">
-        <h2 className="club-advertise__h2">Your Poster</h2>
-        <p className="club-advertise__hint">
-          When A Player Taps Your Advert It Opens Full Screen As This Poster, With One Button That
-          Goes Where You Point. Exactly {`${POSTER_SHAPE.width} By ${POSTER_SHAPE.height}`} Pixels,
-          Under {Math.round(POSTER_SHAPE.maxBytes / 1024)} KB.
-        </p>
-        <div
-          className="club-advertise__preview club-advertise__preview--poster"
-          style={{ aspectRatio: POSTER_RATIO }}
-        >
-          {posterPreview ? (
-            <img src={posterPreview} alt="Your Poster Preview" />
-          ) : (
-            <span className="club-advertise__preview-empty">Poster Appears Here</span>
-          )}
-        </div>
-        <label className="club-advertise__file">
-          <input
-            type="file"
-            accept="image/webp,image/png,image/jpeg"
-            onChange={(e) => onPickPoster(e.target.files?.[0] ?? null)}
-            disabled={busy}
-          />
-          <span className="club-advertise__btn club-advertise__btn--ghost">
-            {poster ? 'Choose A Different Poster' : 'Choose A Poster'}
-          </span>
-          {poster ? <span className="club-advertise__file-name">{poster.name}</span> : null}
-        </label>
-        {posterError ? <div className="club-advertise__field-error">{posterError}</div> : null}
-      </section>
-
-      {/* ── The flight ── */}
-      <section className="club-advertise__card">
-        <h2 className="club-advertise__h2">The Details</h2>
-        <div className="club-advertise__grid">
-          <label className="club-advertise__field">
-            <span>Headline</span>
+      {/* ── The two pictures: the surface creative and the poster a tap opens ── */}
+      <SpadeConsole
+        className="club-advertise__console"
+        crest="diamond"
+        foot="foot"
+        eyebrow="Your Creative"
+        title="Your Pictures"
+        titleId="club-advertise-pictures-title"
+        subtitle="Both Are Required"
+        pill={file && poster ? 'Ready' : 'Needed'}
+        pillInk={file && poster ? 'green' : 'muted'}
+        aria-labelledby="club-advertise-pictures-title"
+      >
+        <div className="club-advertise__picture">
+          <span className="club-advertise__row-label sc-ink--blue">The Surface Picture</span>
+          {rate ? (
+            <p className="sc-copy">
+              Exactly {`${rate.creativeWidth} By ${rate.creativeHeight}`} Pixels, WebP, PNG Or JPEG,
+              Under {Math.round(rate.maxBytes / 1024)} KB. It Scales With The Page And Is Never
+              Cropped.
+            </p>
+          ) : null}
+          <div
+            className="club-advertise__preview"
+            style={{ aspectRatio: rate ? AD_SURFACE_RATIO[rate.slot] : '6 / 1' }}
+          >
+            {preview ? (
+              <img src={preview} alt="Your Advert Preview" />
+            ) : (
+              <span className="club-advertise__preview-empty sc-ink--muted">
+                Preview Appears Here
+              </span>
+            )}
+          </div>
+          <label className="club-advertise__file">
             <input
-              type="text"
-              maxLength={120}
-              value={headline}
-              onChange={(e) => setHeadline(e.target.value)}
-              placeholder={
-                sponsorMode ? 'Free Shipping On Every Chip Set' : 'Sunday Deepstack, 10K Guaranteed'
-              }
+              type="file"
+              accept="image/webp,image/png,image/jpeg"
+              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
               disabled={busy}
             />
-            <small>
-              Read Aloud By Screen Readers, Printed Under The Poster, And Shown In Your Reports. Not
-              Drawn On The Picture.
+            <span className="club-advertise__word sc-ink--blue">
+              {file ? 'Choose A Different Picture' : 'Choose A Picture'}
+            </span>
+            {file ? (
+              <span className="club-advertise__file-name sc-ink--muted">{file.name}</span>
+            ) : null}
+          </label>
+          {fileError ? (
+            <div className="club-advertise__field-error sc-ink--red">{fileError}</div>
+          ) : null}
+        </div>
+
+        <div className="club-advertise__picture">
+          <span className="club-advertise__row-label sc-ink--blue">The Poster</span>
+          <p className="sc-copy">
+            When A Player Taps Your Advert It Opens Full Screen As This Poster, With One Button That
+            Goes Where You Point. Exactly {`${POSTER_SHAPE.width} By ${POSTER_SHAPE.height}`}{' '}
+            Pixels, Under {Math.round(POSTER_SHAPE.maxBytes / 1024)} KB.
+          </p>
+          <div
+            className="club-advertise__preview club-advertise__preview--poster"
+            style={{ aspectRatio: POSTER_RATIO }}
+          >
+            {posterPreview ? (
+              <img src={posterPreview} alt="Your Poster Preview" />
+            ) : (
+              <span className="club-advertise__preview-empty sc-ink--muted">
+                Poster Appears Here
+              </span>
+            )}
+          </div>
+          <label className="club-advertise__file">
+            <input
+              type="file"
+              accept="image/webp,image/png,image/jpeg"
+              onChange={(e) => onPickPoster(e.target.files?.[0] ?? null)}
+              disabled={busy}
+            />
+            <span className="club-advertise__word sc-ink--blue">
+              {poster ? 'Choose A Different Poster' : 'Choose A Poster'}
+            </span>
+            {poster ? (
+              <span className="club-advertise__file-name sc-ink--muted">{poster.name}</span>
+            ) : null}
+          </label>
+          {posterError ? (
+            <div className="club-advertise__field-error sc-ink--red">{posterError}</div>
+          ) : null}
+        </div>
+      </SpadeConsole>
+
+      {/* ── The flight: one plate, one action ── */}
+      <SpadeConsole
+        className="club-advertise__console"
+        family="shark"
+        foot="plates"
+        eyebrow="The Flight"
+        title="The Details"
+        titleId="club-advertise-details-title"
+        pill={sponsorMode ? 'Sponsor' : `${days} Day(s)`}
+        pillInk="blue"
+        aria-labelledby="club-advertise-details-title"
+        plates={{
+          primary: {
+            label: submitLabel,
+            ink: 'white',
+            onClick: () => void submit(),
+            disabled: !canSubmit,
+          },
+        }}
+      >
+        <label className="club-advertise__field">
+          <span className="club-advertise__field-label sc-ink--blue">Headline</span>
+          <input
+            className="club-advertise__input"
+            type="text"
+            maxLength={120}
+            value={headline}
+            onChange={(e) => setHeadline(e.target.value)}
+            placeholder={
+              sponsorMode ? 'Free Shipping On Every Chip Set' : 'Sunday Deepstack, 10K Guaranteed'
+            }
+            disabled={busy}
+          />
+          <small className="club-advertise__field-hint sc-ink--muted">
+            Read Aloud By Screen Readers, Printed Under The Poster, And Shown In Your Reports. Not
+            Drawn On The Picture.
+          </small>
+        </label>
+        {sponsorMode ? (
+          <label className="club-advertise__field">
+            <span className="club-advertise__field-label sc-ink--blue">
+              The Button Sends Players To
+            </span>
+            <input
+              className="club-advertise__input"
+              type="url"
+              maxLength={500}
+              value={externalUrl}
+              onChange={(e) => setExternalUrl(e.target.value)}
+              placeholder="https://acme.example/poker"
+              disabled={busy}
+              inputMode="url"
+            />
+            <small className="club-advertise__field-hint sc-ink--muted">
+              A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A Player
+              Signed Out.
             </small>
           </label>
-          {sponsorMode ? (
-            <label className="club-advertise__field">
-              <span>The Button Sends Players To</span>
-              <input
-                type="url"
-                maxLength={500}
-                value={externalUrl}
-                onChange={(e) => setExternalUrl(e.target.value)}
-                placeholder="https://acme.example/poker"
-                disabled={busy}
-                inputMode="url"
-              />
-              <small>
-                A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A
-                Player Signed Out.
-              </small>
-            </label>
-          ) : (
-            <label className="club-advertise__field">
-              <span>Tapping It Opens</span>
-              <select
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                disabled={busy}
-              >
-                {DESTINATIONS.map((d) => (
-                  <option key={d.key} value={d.key}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+        ) : (
           <label className="club-advertise__field">
-            <span>Days</span>
-            <input
-              type="number"
-              min={sponsorMode ? 1 : (rate?.minDays ?? 1)}
-              max={sponsorMode ? 365 : (rate?.maxDays ?? 30)}
-              value={days}
-              onChange={(e) =>
-                setDays(
-                  Math.max(
-                    1,
-                    Math.min(sponsorMode ? 365 : (rate?.maxDays ?? 30), Number(e.target.value) || 1)
-                  )
-                )
-              }
+            <span className="club-advertise__field-label sc-ink--blue">Tapping It Opens</span>
+            <select
+              className="club-advertise__select"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
               disabled={busy}
-            />
-            <small>Starts As Soon As The House Approves It.</small>
+            >
+              {DESTINATIONS.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
           </label>
-          {sponsorMode ? null : (
-            <label className="club-advertise__field">
-              <span>Who Sees It</span>
-              <select
-                value={scope}
-                onChange={(e) => setScope(e.target.value === 'own_club' ? 'own_club' : 'platform')}
-                disabled={busy}
-              >
-                <option value="platform">Every Player On Smarter.Poker</option>
-                <option value="own_club">Only Players Inside This Club</option>
-              </select>
-            </label>
-          )}
-        </div>
+        )}
+        <label className="club-advertise__field">
+          <span className="club-advertise__field-label sc-ink--blue">Days</span>
+          <input
+            className="club-advertise__input"
+            type="number"
+            min={sponsorMode ? 1 : (rate?.minDays ?? 1)}
+            max={sponsorMode ? 365 : (rate?.maxDays ?? 30)}
+            value={days}
+            onChange={(e) =>
+              setDays(
+                Math.max(
+                  1,
+                  Math.min(sponsorMode ? 365 : (rate?.maxDays ?? 30), Number(e.target.value) || 1)
+                )
+              )
+            }
+            disabled={busy}
+          />
+          <small className="club-advertise__field-hint sc-ink--muted">
+            Starts As Soon As The House Approves It.
+          </small>
+        </label>
+        {sponsorMode ? null : (
+          <label className="club-advertise__field">
+            <span className="club-advertise__field-label sc-ink--blue">Who Sees It</span>
+            <select
+              className="club-advertise__select"
+              value={scope}
+              onChange={(e) => setScope(e.target.value === 'own_club' ? 'own_club' : 'platform')}
+              disabled={busy}
+            >
+              <option value="platform">Every Player On Smarter.Poker</option>
+              <option value="own_club">Only Players Inside This Club</option>
+            </select>
+          </label>
+        )}
 
         <div className="club-advertise__total">
           {sponsorMode ? (
-            <div>
-              <span className="club-advertise__total-label">Payment</span>
-              <span className="club-advertise__total-math">
+            <>
+              <span className="club-advertise__total-label sc-ink--blue">Payment</span>
+              <span className="club-advertise__total-math sc-ink--muted">
                 Invoiced By Smarter.Poker After Review. Nothing Is Charged Here.
               </span>
-            </div>
+            </>
           ) : (
-            <div>
-              <span className="club-advertise__total-label">Total</span>
-              <span className="club-advertise__total-value">
-                <span className="diamond-icon" aria-hidden="true" />
-                {fmt(cost)}
+            <>
+              <span className="club-advertise__total-label sc-ink--blue">Total</span>
+              <span className="club-advertise__total-value sc-ink--silver">
+                {fmt(cost)} Diamonds
               </span>
-              <span className="club-advertise__total-math">
+              <span className="club-advertise__total-math sc-ink--muted">
                 {rate ? `${fmt(rate.diamondsPerDay)} x ${days} Day(s)` : ''}
               </span>
-            </div>
+            </>
           )}
-          <button
-            type="button"
-            className="club-advertise__btn club-advertise__btn--primary"
-            onClick={() => void submit()}
-            disabled={!canSubmit}
-          >
-            {busy ? 'Submitting' : sponsorMode ? 'Book It' : 'Pay And Submit'}
-          </button>
         </div>
         {!canAfford ? (
-          <div className="club-advertise__field-error">Not Enough Diamonds For This Flight.</div>
+          <div className="club-advertise__field-error sc-ink--red">
+            Not Enough Diamonds For This Flight.
+          </div>
         ) : null}
         {sponsorMode && !advertiser ? (
-          <div className="club-advertise__hint">Save Your Business Details Above First.</div>
+          <p className="sc-copy">Save Your Business Details Above First.</p>
         ) : null}
-      </section>
+      </SpadeConsole>
 
       {/* ── What this advertiser has bought ── */}
-      <section className="club-advertise__card">
-        <h2 className="club-advertise__h2">Your Adverts</h2>
+      <SpadeConsole
+        className="club-advertise__console"
+        crest="flat"
+        foot="foot"
+        eyebrow="Your Ledger"
+        title="Your Adverts"
+        titleId="club-advertise-list-title"
+        pill={campaigns.length ? `${campaigns.length} Booked` : 'None Yet'}
+        pillInk={campaigns.length ? 'blue' : 'muted'}
+        aria-labelledby="club-advertise-list-title"
+      >
         {campaigns.length === 0 ? (
-          <p className="club-advertise__hint">
+          <p className="sc-copy sc-copy--center">
             Nothing Yet. The First One Appears Here The Moment You Submit It.
           </p>
         ) : (
           <ul className="club-advertise__list">
             {campaigns.map((c) => (
               <li key={c.id} className="club-advertise__item">
-                <div
-                  className="club-advertise__item-picture"
-                  style={{ aspectRatio: AD_SURFACE_RATIO[c.slot] }}
-                >
-                  <img src={c.imageUrl} alt={c.headline} loading="lazy" />
-                </div>
+                {c.imageUrl ? (
+                  <div
+                    className="club-advertise__item-picture"
+                    style={{ aspectRatio: AD_SURFACE_RATIO[c.slot] }}
+                  >
+                    <img src={c.imageUrl} alt={c.headline} loading="lazy" />
+                  </div>
+                ) : null}
                 <div className="club-advertise__item-body">
                   <div className="club-advertise__item-top">
-                    <strong>{c.headline}</strong>
+                    <strong className="club-advertise__item-title sc-ink--silver">
+                      {titleCase(c.headline)}
+                    </strong>
                     <span
-                      className={`club-advertise__status club-advertise__status--${c.displayStatus}`}
+                      className={`club-advertise__status sc-ink--${STATUS_INK[c.displayStatus] ?? 'muted'}`}
                     >
-                      {STATUS_LABEL[c.displayStatus] ?? c.displayStatus}
+                      {STATUS_LABEL[c.displayStatus] ?? enumToTitleCase(c.displayStatus)}
                     </span>
                   </div>
                   <div className="club-advertise__item-meta">
-                    {rates.find((r) => r.slot === c.slot)?.label ?? c.slot} {'·'} {c.days} Day(s){' '}
-                    {'·'} {formatDate(c.startsAt)} To {formatDate(c.endsAt)}
+                    <span className="club-advertise__item-fact sc-ink--muted">
+                      {titleCase(rates.find((r) => r.slot === c.slot)?.label) ||
+                        enumToTitleCase(c.slot)}
+                    </span>
+                    <span className="club-advertise__item-fact sc-ink--muted">{c.days} Day(s)</span>
+                    <span className="club-advertise__item-fact sc-ink--muted">
+                      {formatDate(c.startsAt)} To {formatDate(c.endsAt)}
+                    </span>
                     {sponsorMode ? null : (
-                      <>
-                        {' '}
-                        {'·'} <span className="diamond-icon" aria-hidden="true" />
-                        {fmt(c.diamondsCharged)}
+                      <span className="club-advertise__item-fact sc-ink--muted">
+                        {fmt(c.diamondsCharged)} Diamonds
                         {c.diamondsRefunded > 0 ? ` (${fmt(c.diamondsRefunded)} Refunded)` : ''}
-                      </>
+                      </span>
                     )}
                   </div>
                   {c.reviewNote ? (
-                    <div className="club-advertise__item-note">
-                      Note From The House: {c.reviewNote}
+                    <div className="club-advertise__item-note sc-ink--gold">
+                      Note From The House: {titleCase(c.reviewNote)}
                     </div>
                   ) : null}
                   {c.status === 'approved' ? (
                     <div className="club-advertise__item-stats">
-                      <span>{fmt(c.viewers)} People</span>
-                      <span>{fmt(c.impressions)} Shown</span>
-                      <span>{fmt(c.viewable)} Seen</span>
-                      <span>{fmt(c.clicks)} Taps</span>
+                      <span className="club-advertise__item-stat sc-ink--silver">
+                        {fmt(c.viewers)} People
+                      </span>
+                      <span className="club-advertise__item-stat sc-ink--silver">
+                        {fmt(c.impressions)} Shown
+                      </span>
+                      <span className="club-advertise__item-stat sc-ink--silver">
+                        {fmt(c.viewable)} Seen
+                      </span>
+                      <span className="club-advertise__item-stat sc-ink--silver">
+                        {fmt(c.clicks)} Taps
+                      </span>
                     </div>
                   ) : null}
-                  {c.status === 'approved' ? (
-                    <button
-                      type="button"
-                      className="club-advertise__btn club-advertise__btn--ghost club-advertise__btn--sm"
-                      onClick={() => void toggleReport(c)}
-                      aria-expanded={reportFor === c.id}
-                    >
-                      {reportFor === c.id ? 'Hide Day By Day' : 'Day By Day'}
-                    </button>
-                  ) : null}
+                  <div className="club-advertise__actions">
+                    {c.status === 'approved' ? (
+                      <button
+                        type="button"
+                        className="club-advertise__word sc-ink--blue"
+                        onClick={() => void toggleReport(c)}
+                        aria-expanded={reportFor === c.id}
+                      >
+                        {reportFor === c.id ? 'Hide Day By Day' : 'Day By Day'}
+                      </button>
+                    ) : null}
+                    {c.status === 'submitted' ? (
+                      <button
+                        type="button"
+                        className="club-advertise__word sc-ink--blue"
+                        onClick={() => void cancel(c)}
+                      >
+                        {sponsorMode ? 'Withdraw' : 'Withdraw And Refund'}
+                      </button>
+                    ) : null}
+                  </div>
                   {reportFor === c.id ? (
                     reportFailure ? (
-                      <div className="club-advertise__field-error">{reportFailure}</div>
+                      <div className="club-advertise__field-error sc-ink--red">{reportFailure}</div>
                     ) : report == null ? (
-                      <div className="club-advertise__hint">Reading</div>
+                      <p className="sc-copy">Reading</p>
                     ) : report.length === 0 ? (
-                      <div className="club-advertise__hint">No Days To Show Yet.</div>
+                      <p className="sc-copy">No Days To Show Yet.</p>
                     ) : (
                       <table className="club-advertise__days">
                         <thead>
@@ -909,21 +1088,12 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
                       </table>
                     )
                   ) : null}
-                  {c.status === 'submitted' ? (
-                    <button
-                      type="button"
-                      className="club-advertise__btn club-advertise__btn--ghost club-advertise__btn--sm"
-                      onClick={() => void cancel(c)}
-                    >
-                      {sponsorMode ? 'Withdraw' : 'Withdraw And Refund'}
-                    </button>
-                  ) : null}
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </SpadeConsole>
     </div>
   );
 }

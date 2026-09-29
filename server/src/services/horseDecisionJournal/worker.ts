@@ -1,6 +1,5 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { HorseDecisionJournalStore, horseJournalCapacityReason } from './store.js';
-import { validateHorseJournalRecord } from './record.js';
 import { horseJournalFailureKind } from './failure.js';
 
 if (isMainThread || !parentPort) throw Error('Horse journal requires its private worker');
@@ -28,11 +27,32 @@ try {
       port.postMessage({ type: 'STATS', stats });
       return;
     }
+    if (message && typeof message === 'object' && 'type' in message && message.type === 'PROBE') {
+      // A paused publisher asks whether a quota has room for its next batch.
+      // Read-only: nothing is reserved, written or deleted. A probe that cannot
+      // be answered says no room, and never reclassifies or stops the writer.
+      let reason: ReturnType<typeof store.capacityRefusal> | undefined;
+      try {
+        reason = store.capacityRefusal((message as { records?: unknown }).records as never);
+      } catch {
+        reason = undefined;
+      }
+      port.postMessage(
+        reason === null
+          ? { type: 'CAPACITY', room: true }
+          : reason === undefined
+            ? { type: 'CAPACITY', room: false }
+            : { type: 'CAPACITY', room: false, reason }
+      );
+      return;
+    }
     try {
       const batch = message as { type?: string; records?: unknown[] };
       if (batch?.type !== 'APPEND' || !Array.isArray(batch.records) || batch.records.length > 16)
         throw Error('Invalid batch');
-      for (const record of batch.records) validateHorseJournalRecord(record);
+      // appendBatch validates every record before it writes anything (the
+      // legacy spool and the archive both do), so this thread does not walk
+      // each record's body a second time on its way in.
       const records = batch.records as import('./record.js').HorseJournalRecord[];
       const statuses = store.appendBatch(records);
       port.postMessage({

@@ -47,18 +47,11 @@
  *   resolved, then recurs      -> 1  (a resolved finding re-arms)
  */
 import { describe, it, expect } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
-const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
-
-/** Migration filenames are timestamps, so lexical order is chronological. */
-function migrationFiles(): string[] {
-  return fs
-    .readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-}
+// Load the complete, ordered source fixture once. Every question still scans
+// every definition, without reading the growing directory again per assertion.
+const migrations = migrationCorpus();
 
 /**
  * The definition that actually wins: the LAST `CREATE OR REPLACE FUNCTION
@@ -68,8 +61,7 @@ function migrationFiles(): string[] {
  */
 function latestDefinition(name: string): string {
   let found = '';
-  for (const file of migrationFiles()) {
-    const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+  for (const { sql } of migrations) {
     const re = new RegExp(
       `^CREATE OR REPLACE FUNCTION public\\.${name}\\s*\\([\\s\\S]*?\\$function\\$;`,
       'gm'

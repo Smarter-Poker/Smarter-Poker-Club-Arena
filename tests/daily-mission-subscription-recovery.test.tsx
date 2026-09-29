@@ -133,6 +133,23 @@ function setVisibility(state: 'hidden' | 'visible') {
   document.dispatchEvent(new Event('visibilitychange'));
 }
 
+// The page owns exactly one clock event: the UTC daily-reset rollover
+// (useDailyMissionDashboard schedules a silent dashboard read for 00:00 UTC).
+// Vitest's fake Date starts at the HOST wall clock unless told otherwise, so a
+// test that advances fake time across 00:00 UTC legitimately triggers that
+// read - and because the fixture's syncedAt is minted once and never moves,
+// the page's derived server clock then stays before midnight and re-arms the
+// rollover every few minutes. That is how "never issues a periodic repair
+// request" read 3 dashboard calls on CI run 36075088647 (started ~23:56 UTC).
+// Every test here starts at midday UTC so no advance can reach a reset; the
+// rollover itself is pinned by its own test below with a server-faithful clock.
+const MIDDAY_UTC = Date.parse('2026-09-24T12:00:00.000Z');
+
+function pinClockToMiddayUtc() {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.setSystemTime(MIDDAY_UTC);
+}
+
 async function settle(ms = 251) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -149,7 +166,7 @@ function visibleBalance() {
 describe('Daily Missions initial realtime subscription handoff', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    pinClockToMiddayUtc();
     mocks.dashboard.mockResolvedValue(dashboard());
     mocks.revision.mockResolvedValue(1);
     mocks.subscribed = null;
@@ -303,7 +320,7 @@ describe('Daily Missions event-driven catch-up (no repair timer)', () => {
     vi.clearAllMocks();
     // Date is faked too so the resume handler's one-second dedupe can elapse
     // under advanceTimersByTimeAsync; the product clock math reads Date.now().
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    pinClockToMiddayUtc();
     mocks.dashboard.mockResolvedValue(dashboard());
     mocks.revision.mockResolvedValue(1);
     mocks.subscribed = null;
@@ -329,6 +346,20 @@ describe('Daily Missions event-driven catch-up (no repair timer)', () => {
     await settle(10 * 60_000);
     expect(mocks.revision).toHaveBeenCalledTimes(1);
     expect(mocks.dashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the dashboard exactly once at the UTC daily reset and not again', async () => {
+    vi.setSystemTime(Date.parse('2026-09-24T23:55:45.000Z'));
+    // A real server stamps syncedAt with its own now(), so mint every receipt
+    // at the moment it is served rather than once in beforeEach.
+    mocks.dashboard.mockImplementation(async () => dashboard());
+    await mountPage();
+    await subscribe();
+    await settle();
+    expect(mocks.dashboard).toHaveBeenCalledTimes(1);
+    await settle(10 * 60_000);
+    expect(mocks.revision).toHaveBeenCalledTimes(1);
+    expect(mocks.dashboard).toHaveBeenCalledTimes(2);
   });
 
   it('does not fetch on a channel error and catches up from the cursor on the rejoin', async () => {

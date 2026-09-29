@@ -66,10 +66,6 @@ export interface ClubSettings {
   spins_wallet_funding: string;
 }
 
-export interface ClubWithDistance extends Club {
-  distance_km: number;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  UNIONS (Club Networks)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -773,6 +769,8 @@ export type TournamentStatus =
   | 'late_registration'
   | 'running'
   | 'final_table'
+  /* Multi-day, between days (src/utils/multiDaySchedule.ts). */
+  | 'bagged'
   | 'complete'
   | 'cancelled';
 

@@ -49,6 +49,7 @@ const ALLOWED: Record<string, Reason> = {
   'src/components/common/MilestoneToast.tsx': 'identifier', // toast instance id
   'src/components/customization/AvatarCustomizer.tsx': 'identifier', // mutation instance id
   'src/components/customization/AvatarGallery.tsx': 'identifier', // mutation instance id
+  'src/components/crash/CrashCurve.tsx': 'animation', // wake particle scatter behind the jet; the multiplier and the crash point come from the server
   'src/components/effects/ConfettiEffect.tsx': 'animation',
   'src/components/effects/DiamondRainEffect.tsx': 'animation',
   'src/components/gamification/ConfettiEffect.tsx': 'animation',
@@ -63,7 +64,6 @@ const ALLOWED: Record<string, Reason> = {
   'src/components/table/ThrowAnimation.tsx': 'animation',
   'src/components/table/TournamentWinnerOverlay.tsx': 'animation',
   'src/components/tournament/CoinShower.tsx': 'animation',
-  'src/components/wallet/DynamicWallet.tsx': 'identifier', // instance id
   'src/components/wallet/WalletCashierModal.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierPage.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/CashierTradePage.tsx': 'identifier', // uuid v4 fallback for an idempotency key

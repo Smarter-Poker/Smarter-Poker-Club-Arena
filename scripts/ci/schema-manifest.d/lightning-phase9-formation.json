@@ -1,0 +1,25 @@
+{
+  "_owner": "agent/claude-lightning-p5/lightning/phase5-conversion - migration 20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t",
+  "_comment": "Lightning 2.0 spec Phase 9: the atomic hand formation barrier. The specification says that BEFORE CARDS BECOME VISIBLE a formation barrier must complete atomically - identify legal candidates, reserve players, reserve seats, assign positions, assign blind roles, snapshot stack_before, create an immutable hand_id, bind instance_id, bind cluster_epoch, lock the participant set - and that AFTERWARDS there is no participant substitution, no silent seat swap, no blind reassignment, no additional player insertion and no matcher mutation of participants. Steps 1 to 10 and step 13's precondition are here. Steps 11 and 12, the shuffle and the deal, are deliberately NOT here: the authoritative RNG is not in this database, and a hole card that were a row here would be a hole card every replica, every backup and every future SELECT could see. THE SIX LIGHTNING TABLES HAD ZERO WRITERS BEFORE THIS FILE. fn_cash_cluster_commit_lightning creates lightning_pool_session rows and creates NO lightning_pool_slot, so the slot a reservation must reference did not exist and no hand could have formed for anybody. The slot is opened on POOL ENTRY rather than by the conversion, because the conversion runs once for the founding population and every later arrival comes through a door it stopped watching - a slot created there would cover the first twenty people and nobody after them. The four post-barrier no-rules are enforced by triggers keyed off lightning_hand.participants_locked_at, a one-way latch set in the same statement as player_count, so that 'after the barrier' is a fact in a column rather than a convention in a caller: a locked hand refuses UPDATE of player_id, pool_slot_id, seat, position, blind_role and stack_before, refuses DELETE, and refuses INSERT of another participant; fold_type and stack_after stay writable, because a locked hand that cannot be played is a barrier that froze the game. The specification's rule that a player can never have more than one active Lightning reservation within the same logical gaming session is enforced by index rather than by application code, and it forced a real narrowing that is said out loud: lightning_pool_slot_one_open is unique on (player_id, cluster_id, SLOT), which permits one player two open slots and therefore two live claims on one stack, so rule 725 and a multi-slot pool cannot both be true. An instance is born with a deadline that is NOT NULL with a default and a CHECK that it follows creation, so no code path can forget one or backdate one, and the next formation reaps the last one's corpse in the same transaction before opening a new one - Phase 5 got its reaper only after a Cluster had been wedged, and this file does not repeat that. Blind roles consult the specification's P2 key - unresolved BB obligation first, then last_bb_at ascending NULLS FIRST - through fn_lightning_blind_order, which is the first reader the lightning_pool_slot_oldest_bb index has ever had. The barrier never writes table_seats, wallets, chip_ledger, cash_player_session or lightning_pool_session, and asserts the Cluster's pool chip total before and after: forming a hand moves no money. Nothing forms for a Cluster that is not lightning, nothing forms across an epoch boundary, and a horse forms exactly like a human - Law 10.5 - with is_horse in no filtering position anywhere. Entry is gated on fn_platform_frozen and release is deliberately not, for the reason Phase 5 records: recovering a half-formed state during an incident must always be possible, and the break is when incidents are handled.",
+  "functions": [
+    "fn_lightning_form_hand",
+    "fn_lightning_instance_open",
+    "fn_lightning_instance_abandon",
+    "fn_lightning_instance_begin_dealing",
+    "fn_lightning_reap_formations",
+    "fn_lightning_pool_slot_open",
+    "fn_lightning_pool_slots_sync",
+    "fn_lightning_pool_stack",
+    "fn_lightning_blind_order",
+    "fn_lightning_hand_is_immutable",
+    "fn_lightning_hand_player_is_immutable",
+    "fn_lightning_instance_is_disciplined",
+    "fn_lightning_instance_releases_its_reservations",
+    "fn_lightning_pool_slot_holds_its_history",
+    "fn_lightning_reservation_is_disciplined"
+  ],
+  "columns": {
+    "lightning_instance": ["deadline_at", "abandon_reason"],
+    "lightning_hand": ["participants_locked_at", "player_count"]
+  }
+}

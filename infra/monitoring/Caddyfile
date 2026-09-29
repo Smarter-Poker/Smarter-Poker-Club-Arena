@@ -57,8 +57,13 @@ monitor.smarter.poker {
     redir /alertmanager /alertmanager/ permanent
 
     # ─── Runbook links ──────────────────────────────────────────────────
-    # SLO alerts include runbook: https://monitor.smarter.poker/runbooks/...
-    # Serve those straight from the checked-out repo (pulled by deploy.sh).
+    # 2026-09-26: no alert rule links here any more. monitor.smarter.poker
+    # has never resolved to a box running this file (it answers 404 from
+    # Vercel's wildcard), so 22 rules that pointed at /runbooks/<slug> led
+    # nowhere. Every rule now names a repo-relative document under
+    # docs/runbooks/ in this repository, checked by check-monitoring-drift.mjs
+    # and check-runbook-links.mjs. This handler, and the World Hub path it
+    # reads, are not what any rule uses.
     handle_path /runbooks/* {
         root * /opt/smarter-poker-monitoring-src/Smarter-Poker-World-Hub/docs/runbooks
         try_files {path} {path}.md =404

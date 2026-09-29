@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/claude-mtt-0927/fix/f06-allocation-after-bust - migration 20260928001128_a_permit_that_never_reached_the_database_does_not_hold_the_b. NOT applied at push time: it is applied after merge through the apply-merged-migration workflow. Proved first as pg_temp copies in rolled-back transactions on production (2026-09-28 00:06Z and 00:10Z). Adds smarter_private.f06_absent_permit_releases and its immutability trigger; replaces public.fn_park_stopped_time_bank_custody and public.fn_f06_begin_hand in place.",
+  "functions": [
+    "fn_park_stopped_time_bank_custody",
+    "fn_f06_begin_hand",
+    "smarter_private.f06_absent_permit_release_immutable"
+  ],
+  "tables": ["smarter_private.f06_absent_permit_releases"]
+}

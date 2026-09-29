@@ -133,8 +133,38 @@ function psql(sql) {
       maxBuffer: 32 * 1024 * 1024,
     });
   } catch (err) {
-    die(err.message);
+    // execFileSync puts the whole command line in the message, and the first
+    // argument IS the connection string, password and all.
+    die(String(err.message).split(url).join('<database url>'));
     return '';
+  }
+}
+
+/**
+ * A query the database is allowed to REJECT. `{ out }` when it answered,
+ * `{ error }` when it rejected this SQL (psql exit 1 with an ERROR line - a
+ * proof casting to regprocedure a function production does not carry yet,
+ * say). Anything else - no connection, a timeout - is still COULD NOT ASK,
+ * never a verdict.
+ */
+function ask(sql) {
+  const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || '';
+  if (!url) die('no SUPABASE_DB_URL / DATABASE_URL in the environment.');
+  try {
+    const out = execFileSync(process.env.PSQL_BIN || 'psql', [url, '-Atc', sql], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { out };
+  } catch (err) {
+    const refused = String(err.stderr || '')
+      .split('\n')
+      .find((l) => l.startsWith('ERROR:'));
+    if (err.status === 1 && refused) return { error: refused.trim() };
+    die(String(err.message).split(url).join('<database url>'));
+    return { error: '' };
   }
 }
 
@@ -203,9 +233,24 @@ export function declaredObjects(sql) {
   });
 }
 
-/** The `-- @live-proof:` lines a migration declares, in file order. */
+/**
+ * The `-- @live-proof:` lines a migration declares, in file order.
+ *
+ * ANCHORED, and anchored exactly the way every Lightning harness extracts them
+ * (`grep -n -- '^-- @live-proof: '`): the marker must BEGIN the line, with no
+ * indentation, one space after the dashes and one after the colon. Unanchored,
+ * this harvested prose. 20260925204249 and 20260925215731 each explain the
+ * convention in their headers with a sentence that quotes "-- @live-proof:"
+ * mid-line, and the tail of that sentence ("` is a claim that an expression is
+ * true of the database") was returned as a proof. Every proof is run as ONE
+ * UNION ALL query below, so a single harvested sentence is a syntax error that
+ * takes EVERY proof in the window down with it, and the check reports it could
+ * not ask rather than what it was asked. The harness and this check now read
+ * the same lines, which tests/a-merged-migration-must-be-live.law.test.ts pins
+ * per Lightning file against the raw line count.
+ */
 export function declaredProofs(sql) {
-  return [...sql.matchAll(/--\s*@live-proof:\s*(.+?)\s*$/gim)].map((m) => m[1].trim());
+  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim());
 }
 
 const sqlLiteral = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -298,18 +343,42 @@ function main() {
   const falseProofs = new Map();
   const proofChecks = unmatched.flatMap((m) => m.proofs.map((p) => ({ m, p })));
   if (proofChecks.length > 0) {
-    const probe = proofChecks
-      .map(
-        ({ p }, i) =>
-          `select ${i} as i, coalesce((select (${p}))::text, 'null') as answer`
-      )
-      .join(' union all ');
-    for (const line of rows(psql(probe))) {
-      const [i, answer] = line.split('|');
-      if (answer !== 'true') {
-        const { m, p } = proofChecks[Number(i)];
-        if (!falseProofs.has(m.file)) falseProofs.set(m.file, []);
-        falseProofs.get(m.file).push(`${p}  ->  ${answer}`);
+    const record = ({ m, p }, answer) => {
+      if (!falseProofs.has(m.file)) falseProofs.set(m.file, []);
+      falseProofs.get(m.file).push(`${p}  ->  ${answer}`);
+    };
+    const union = (checks) =>
+      checks
+        .map(({ p }, i) => `select ${i} as i, coalesce((select (${p}))::text, 'null') as answer`)
+        .join(' union all ');
+    const judge = (checks, out) => {
+      for (const line of rows(out)) {
+        const [i, answer] = line.split('|');
+        if (answer !== 'true') record(checks[Number(i)], answer);
+      }
+    };
+    // ONE query is cheap and is the normal case. But one proof the database
+    // REJECTS fails the whole UNION ALL, and a proof about a migration that is
+    // not live is exactly the proof most likely to be rejected, because it
+    // names what is not there yet. So a refused batch is asked again file by
+    // file, and a refused file proof by proof: a rejected expression becomes a
+    // false proof of ITS file instead of silencing every other file's answer.
+    const all = ask(union(proofChecks));
+    if (all.out !== undefined) {
+      judge(proofChecks, all.out);
+    } else {
+      for (const m of unmatched.filter((u) => u.proofs.length > 0)) {
+        const mine = proofChecks.filter((c) => c.m === m);
+        const file = ask(union(mine));
+        if (file.out !== undefined) {
+          judge(mine, file.out);
+          continue;
+        }
+        for (const check of mine) {
+          const one = ask(union([check]));
+          if (one.out !== undefined) judge([check], one.out);
+          else record(check, `rejected: ${one.error}`);
+        }
       }
     }
   }

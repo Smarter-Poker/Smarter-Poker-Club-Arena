@@ -133,9 +133,11 @@ const LIFETIME_INCLUDED_FEATURES = new Set<VIPFeature>([
  *                            member.
  *   themes: 3                Nothing reads it. `theme_unlock` is not metered,
  *                            and Table Studio sells themes individually.
- *   clubCreation: 3          The real rule is fn_get_club_creation_eligibility,
- *                            which caps EVERYONE - VIP or not - at 4 club
- *                            memberships. It is not a VIP benefit and the
+ *   clubCreation: 3          The real rule is the server's club membership
+ *                            cap, the same for everyone, VIP or not. Its
+ *                            number lives on the server and
+ *                            fn_get_club_creation_eligibility is the preflight
+ *                            that reports it. It is not a VIP benefit and the
  *                            number was not 3.
  *
  * What is left, and where each one is actually enforced:

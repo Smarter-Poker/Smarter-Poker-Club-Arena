@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/one-terminal-and-a-named-reentry",
+  "_comment": "One definition of a finished F06 operation. smarter_private.f06_terminal_operation_states() is the only place the terminal set is stated; f06_lease_has_pending_custody now asks it instead of carrying a second, narrower one.",
+  "functions": ["smarter_private.f06_terminal_operation_states"]
+}

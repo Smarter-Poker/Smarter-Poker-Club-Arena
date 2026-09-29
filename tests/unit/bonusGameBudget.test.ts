@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PLINKO_DROPS,
+  PLINKO_DIAMONDS_PER_DROP,
+  PLINKO_MAX_DROPS,
+  PLINKO_MIN_DROPS,
+  plinkoAllocations,
   plinkoBudget,
-  plinkoDenomination,
+  plinkoDrops,
   validPlinkoBudget,
+  validPlinkoDenomination,
   validSpinAmount,
   bonusTotal,
   bonusWalletDebit,
@@ -11,25 +15,79 @@ import {
   defaultBonusBudget,
   earnedReceiptBudget,
 } from '../../src/utils/bonusGameBudget';
-describe('every Plinko game is ten drops of a tenth of the entry', () => {
-  it('derives the drop value from the entry and never offers a choice', () => {
-    expect(PLINKO_DROPS).toBe(10);
-    expect(plinkoDenomination(100)).toBe(10);
-    expect(plinkoDenomination(2500)).toBe(250);
-    expect(plinkoDenomination(7500)).toBe(750);
-    for (const n of [25, 37, 0, -10, 2.5, NaN, Infinity]) expect(plinkoDenomination(n)).toBeNull();
-    for (let entry = 100; entry <= 7500; entry += 100)
-      expect(plinkoDenomination(entry)! * PLINKO_DROPS).toBe(entry);
+/**
+ * THE PLAYER CHOOSES THE DROP (Dan 2026-09-21, R6: "On Plinko the player must
+ * choose how many diamonds to drop and the value of each drop. Today it is
+ * just defaulted at 10 diamonds"). This moves the 2026-09-19 pin that every
+ * game was ten drops of a tenth: the value now comes from a fixed list, it must
+ * divide the stake, the drops stay between 1 and 100, and NOTHING is chosen
+ * for the player.
+ */
+describe('the player chooses the Plinko drop value', () => {
+  it('offers exactly the values that divide the stake into 1 to 100 drops, smallest first', () => {
+    expect(PLINKO_DIAMONDS_PER_DROP).toEqual([1, 2, 4, 5, 10, 20, 25, 50, 100, 250, 500]);
+    expect(PLINKO_MIN_DROPS).toBe(1);
+    expect(PLINKO_MAX_DROPS).toBe(100);
+    // 100 diamonds: 1 a drop is 100 drops (allowed), and every listed divisor.
+    expect(plinkoAllocations(100).map((a) => [a.diamondsPerDrop, a.drops])).toEqual([
+      [1, 100],
+      [2, 50],
+      [4, 25],
+      [5, 20],
+      [10, 10],
+      [20, 5],
+      [25, 4],
+      [50, 2],
+      [100, 1],
+    ]);
+    // 2,500 diamonds: 1 to 20 a drop would be more than 100 drops, so they are
+    // not offered; the whole stake as ONE drop always is (the server's rule,
+    // mirrored from diamondBonusPayout.plinkoDropChoices).
+    expect(plinkoAllocations(2500).map((a) => a.diamondsPerDrop)).toEqual([
+      25, 50, 100, 250, 500, 2500,
+    ]);
+    expect(plinkoAllocations(2500).find((a) => a.diamondsPerDrop === 25)?.drops).toBe(100);
+    expect(plinkoAllocations(2500).find((a) => a.diamondsPerDrop === 2500)?.drops).toBe(1);
+    // 7,500 diamonds (a Super award with the addition): 750 is not on the list.
+    expect(plinkoAllocations(7500).map((a) => a.diamondsPerDrop)).toEqual([100, 250, 500, 7500]);
+    // 25 diamonds: only 1, 5 and 25 divide it, and 25 is already the whole stake.
+    expect(plinkoAllocations(25).map((a) => a.diamondsPerDrop)).toEqual([1, 5, 25]);
+    // A stake no listed value splits into at most 100 drops is still playable:
+    // it is one drop of the whole stake, which is what the server accepts. An
+    // empty menu would be a stake the player could never start.
+    expect(plinkoAllocations(37).map((a) => a.diamondsPerDrop)).toEqual([1, 37]);
+    expect(plinkoAllocations(101).map((a) => [a.diamondsPerDrop, a.drops])).toEqual([[101, 1]]);
+    for (const n of [0, -10, 2.5, NaN, Infinity]) expect(plinkoAllocations(n)).toEqual([]);
   });
-  it('re-derives a saved drop value from before ten drops became the one setting', () => {
-    const saved = { base: 2500, doubled: false, denomination: 5 };
-    expect(plinkoBudget(saved)).toEqual({ base: 2500, doubled: false, denomination: 250 });
-    expect(validPlinkoBudget(saved)).toBe(false);
-    expect(validPlinkoBudget(plinkoBudget(saved))).toBe(true);
+  it('validates a chosen value against the list, the stake and the drop range', () => {
+    expect(validPlinkoDenomination(100, 10)).toBe(true);
+    expect(validPlinkoDenomination(100, 3)).toBe(false);
+    expect(validPlinkoDenomination(100, 250)).toBe(false);
+    expect(validPlinkoDenomination(2500, 10)).toBe(false);
+    expect(validPlinkoDenomination(2500, 25)).toBe(true);
+    expect(validPlinkoDenomination(100, null)).toBe(false);
+    expect(validPlinkoDenomination(NaN, 10)).toBe(false);
+  });
+  it('never pre-selects a drop value: the default budget has none and cannot start', () => {
+    expect(defaultBonusBudget().denomination).toBeNull();
+    expect(validPlinkoBudget(defaultBonusBudget())).toBe(false);
+    expect(plinkoDrops(defaultBonusBudget())).toBeNull();
+    const chosen = { base: 2500, doubled: false, denomination: 250 };
+    expect(validPlinkoBudget(chosen)).toBe(true);
+    expect(plinkoDrops(chosen)).toBe(10);
+  });
+  it('clears a saved value that no longer fits the stake instead of re-deriving one', () => {
+    // Twenty a drop on 2,500 would be 125 drops: cleared, so the player chooses again.
+    const saved = { base: 2500, doubled: false, denomination: 20 };
+    expect(plinkoBudget(saved)).toEqual({ base: 2500, doubled: false, denomination: null });
+    // Adding the diamonds changes the stake: 250 still divides 5,000 into 20 drops.
     const doubled = { base: 2500, doubled: true, denomination: 250 };
-    expect(plinkoBudget(doubled).denomination).toBe(500);
+    expect(plinkoBudget(doubled)).toBe(doubled);
+    // 500 a drop on 2,500 is five drops; on a doubled 5,000 it is ten. Both stay.
+    expect(plinkoBudget({ base: 2500, doubled: true, denomination: 500 }).denomination).toBe(500);
+    // A value off the list from an older rule is cleared too.
+    expect(plinkoBudget({ base: 2500, doubled: true, denomination: 750 }).denomination).toBeNull();
     expect(plinkoBudget(defaultBonusBudget())).toEqual(defaultBonusBudget());
-    expect(defaultBonusBudget().denomination).toBe(10);
   });
   it('leaves an invalid budget alone so the entry check reports it', () => {
     const invalid = { base: 24, doubled: false, denomination: 1 };
@@ -49,7 +107,7 @@ describe('wheel funding is distinct from the original stake', () => {
     boostMultiplier: 2 as const,
   };
   it('adds the original 100 stake to the upgraded 200 funded award', () => {
-    const budget = { base: 200, doubled: true, denomination: 30, award };
+    const budget = { base: 200, doubled: true, denomination: 50, award };
     expect(validBonusBudget(budget)).toBe(true);
     expect(bonusTotal(budget)).toBe(300);
     expect(bonusWalletDebit(budget)).toBe(100);
@@ -59,17 +117,18 @@ describe('wheel funding is distinct from the original stake', () => {
     const budget = {
       base: 5000,
       doubled: true,
-      denomination: 750,
+      denomination: 500,
       award: { ...award, entryDiamonds: 2500 },
     };
     expect(validBonusBudget(budget)).toBe(true);
     expect(bonusTotal(budget)).toBe(7500);
+    expect(plinkoDrops(budget)).toBe(15);
     expect(validBonusBudget({ ...budget, award: undefined })).toBe(false);
     expect(validBonusBudget({ ...budget, base: 4999 })).toBe(false);
     expect(validBonusBudget({ ...budget, award: { ...award, entryDiamonds: 2501 } })).toBe(false);
   });
-  it('reads a funded receipt into a budget whose drop value is the tenth of the entry', () => {
-    const budget = earnedReceiptBudget({
+  it('reads a funded receipt into a budget carrying the drop value it was dealt', () => {
+    const funding = {
       award_id: award.id,
       bet_diamonds: 300,
       bonus: {
@@ -79,7 +138,19 @@ describe('wheel funding is distinct from the original stake', () => {
         added_diamonds: 100,
         total_diamonds: 300,
       },
+    };
+    expect(earnedReceiptBudget({ ...funding, diamonds_per_drop: 50 })).toEqual({
+      base: 200,
+      doubled: true,
+      denomination: 50,
+      award,
     });
-    expect(budget).toEqual({ base: 200, doubled: true, denomination: 30, award });
+    // A Crash or a Choice receipt has no drop value.
+    expect(earnedReceiptBudget(funding)).toEqual({
+      base: 200,
+      doubled: true,
+      denomination: null,
+      award,
+    });
   });
 });

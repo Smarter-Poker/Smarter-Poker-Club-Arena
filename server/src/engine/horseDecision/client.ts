@@ -7,11 +7,14 @@ import {
   type HorsePlanBatchBinding,
   type HorsePlanRetirementReason,
 } from '../HorsePlanHandIdentity.js';
-import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution.js';
+import { horsePhase6AttributionMismatch } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
-import { horseDecisionJournalConfigured } from '../../services/HorseDecisionJournal.js';
+import {
+  horseDecisionJournalConfigured,
+  relayHorseDecisionJournalHealth,
+} from '../../services/HorseDecisionJournal.js';
 import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import { isHorseLifecycleRequest } from '../../services/horseDecisionJournal/lifecycle.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -76,6 +79,11 @@ export interface HorseDecisionJobOptions {
 
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
+  /** This client's position among its decision-lane peers (LiveHorseDecisionWorkerPool
+   * passes it); reaches the spawned worker so its journal writer opens its own
+   * archive instead of sharing one with every other shard. Absent is shard 0,
+   * unchanged from before sharding existed. */
+  shard?: { index: number };
   readyTimeoutMs?: number;
   /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
@@ -85,6 +93,12 @@ export interface LiveHorseDecisionWorkerClientOptions {
    * class comment for why the order does not depend on this being one.
    */
   maxInFlight?: number;
+  /**
+   * How long an observation or private-capture job may wait, from enqueue,
+   * before it expires. Decisions keep `jobTimeoutMs` (the turn clock); see
+   * `HORSE_OBSERVATION_DEADLINE_MS` for why the two must not share one.
+   */
+  observationDeadlineMs?: number;
   /**
    * Sole-worker failure is process-fatal in production. Invoked once, after
    * pending work is rejected and termination has been initiated.
@@ -179,42 +193,94 @@ interface QueuedJob {
   executionTimer: ReturnType<typeof setTimeout> | null;
   /** One poll-turn grace for a worker response already waiting on its port. */
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
+  /** Queued in the capture lane, ahead of every unposted decision (see HORSE_CAPTURE_LANE_TYPES). */
+  captureLane?: boolean;
 }
 
-const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
-  phase: 'stopped',
-  startedAt: null,
-  readyAt: null,
-  maxInFlight: 0,
-  queueDepth: 0,
-  inFlightJobs: 0,
-  activeRequestId: null,
-  activeJobAgeMs: null,
-  oldestQueuedAgeMs: null,
-  lastCompletedAt: null,
-  lastComputeMs: null,
-  completedJobs: 0,
-  expiredJobs: 0,
-  lastExpiredAt: null,
-  lastExpiredRequestType: null,
-  lastExpiredPhase: null,
-  recoverableRequestErrors: 0,
-  lastRecoverableRequestErrorAt: null,
-  lastRecoverableRequestErrorType: null,
-  lastRecoverableRequestError: null,
-  lastError: null,
-  solverStores: null,
-  solverPolicyArtifact: null,
-  governor: null,
-  statusSampledAt: null,
-});
+/**
+ * THE JOURNAL'S EVIDENCE DOES NOT WAIT BEHIND THE DECISIONS IT DESCRIBES
+ * (2026-09-29, engine c0c986ad).
+ *
+ * Every job this client posts shares one FIFO and one 8-second caller
+ * deadline: a decision, and also the private record of a decision that has
+ * ALREADY BEEN MADE (`OBSERVE_EXECUTION`, `OBSERVE_DISCARD_EXECUTION`,
+ * `OBSERVE_REQUEST_RETIREMENT`) and the completed-hand observation
+ * (`OBSERVE_COMPLETED_HAND`). The decision deadline exists so that an
+ * overdue decision becomes the caller's legal fallback. It has no meaning for
+ * a record of something that has already happened, and nobody is waiting on
+ * one: the caller's only response to its rejection is to count it.
+ *
+ * Measured on engine-01 (4 vCPU, two physical cores, 1% idle) at 05:15Z to
+ * 05:45Z, release c0c986ad, read from `horse_brain_flush_receipts`, the
+ * engine's /health and Prometheus:
+ *
+ *     poker_horse_decision_worker_queue_depth            500 .. 830
+ *     poker_horse_decision_worker_oldest_queued_age_ms   6,500 .. 13,700
+ *     rate(poker_horse_decision_worker_expired_jobs)     23 .. 48 a second
+ *     phase15_journal_capture_unavailable                ~1,900 a minute
+ *     phase15_journal_queue_capacity, lock_retry         0, 0
+ *
+ * The journal itself was healthy (`ready`, 2 of 2 publishers, nothing shed at
+ * its own queue). The records never reached it: each one was a job at the
+ * tail of a 700-deep FIFO whose head was 8 to 14 seconds old, so it expired
+ * unposted and its `.catch` counted `capture_unavailable`. A DECIDE job that
+ * expires undispatched makes it worse, because `observeUndispatchedRetirement`
+ * enqueues its retirement record at the same tail with the same 8 seconds,
+ * at the exact moment the queue is proven to be more than 8 seconds deep, so
+ * that record is lost by construction. The calm half hours read 0 and the
+ * saturated ones lost 20% of the offered records (15-minute bin 05:15Z:
+ * 21,304 capture_unavailable against 106,646 enqueued), so a chain could hold
+ * its request and calculation and lack the execution witness or the accepted
+ * hand.
+ *
+ * THE CAPTURE LANE. A job that only writes private evidence is queued ahead of
+ * every unposted decision, behind other capture jobs (order among them is
+ * unchanged), so it waits only for the jobs already posted to the worker
+ * (at most `maxInFlight`, about three seconds at the measured rate) and never
+ * for the backlog. It costs the worker well under a millisecond and never
+ * touches decision state, so it cannot slow a decision measurably; the lane is
+ * bounded, and a job beyond the bound simply queues at the tail like any other
+ * rather than being refused.
+ *
+ * `OBSERVE_COMPLETED_HAND` keeps its place in the FIFO, because the learner it
+ * runs reads and writes state that decisions and effect commits also touch and
+ * this change does not re-order that. It gets the observation deadline instead
+ * of the decision's. It is a few jobs a second, so the longer wait is bounded
+ * by volume as well as by time.
+ *
+ * NOT CLAIMED: this does not create CPU that is not there. engine-01 running at
+ * 1% idle with its niced workers at 25 to 30% of a core is a capacity
+ * condition and stays one; decisions still expire into their fallbacks
+ * (poker_horse_decision_fallbacks_total 137 to 165 a minute in the same
+ * window). What changes is that the evidence of what the horses did no longer
+ * disappears when they are slow.
+ */
+const HORSE_CAPTURE_LANE_TYPES: ReadonlySet<string> = new Set([
+  'OBSERVE_EXECUTION',
+  'OBSERVE_DISCARD_EXECUTION',
+  'OBSERVE_REQUEST_RETIREMENT',
+]);
+/** Jobs the capture lane holds at once; past it a job queues at the tail. */
+export const HORSE_CAPTURE_LANE_MAX_QUEUED = 1024;
+/** Deadline, from enqueue, for observation and capture jobs (never below `jobTimeoutMs`). */
+export const HORSE_OBSERVATION_DEADLINE_MS = 60_000;
+const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
+  ...HORSE_CAPTURE_LANE_TYPES,
+  'OBSERVE_COMPLETED_HAND',
+]);
 
-function defaultWorkerFactory(): WorkerLike {
+/** `shard` reaches the spawned thread as `workerData.shardIndex`, which
+ * worker.ts reads so its journal writer opens its own archive/catalog
+ * instead of the one every shard shared until 2026-09-28 (see
+ * runtimeHorseJournalArchiveOptions and HORSE_DECISION_WORKERS in lane.ts). */
+function defaultWorkerFactory(shard?: { index: number }): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
   // tsx and workers inherit that loader. Point each runtime at an entry it can
   // actually open rather than making the development engine fail at boot.
   const entry = import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js';
-  return new Worker(new URL(entry, import.meta.url)) as WorkerLike;
+  return new Worker(new URL(entry, import.meta.url), {
+    workerData: shard ? { shardIndex: shard.index } : undefined,
+  }) as WorkerLike;
 }
 
 function errorMessage(error: unknown): string {
@@ -262,8 +328,11 @@ function errorMessage(error: unknown): string {
  * .receive), so a full window can never starve its timers, its CANCEL handling
  * or its governor's sampler.
  */
+let journalRelaySources = 0;
 export class LiveHorseDecisionWorkerClient {
   private readonly journalConfigured = horseDecisionJournalConfigured();
+  /** Each shard's journal report keeps its own /health slot (HorseDecisionJournal.ts). */
+  private readonly journalRelaySource = `shard-${++journalRelaySources}`;
   private retirementCaptureCount = 0;
   private retirementCaptureBytes = 0;
   private readonly committedDecisions = new HorseCommittedDecisionTracker();
@@ -322,6 +391,7 @@ export class LiveHorseDecisionWorkerClient {
   private readonly worker: WorkerLike;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
+  private readonly observationDeadlineMs: number;
   private readonly maxInFlight: number;
   private phase: LiveHorseDecisionWorkerPhase = 'starting';
   private readonly startedAt = Date.now();
@@ -383,6 +453,15 @@ export class LiveHorseDecisionWorkerClient {
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
     );
+    const observationDeadlineMs = Math.floor(
+      options.observationDeadlineMs ?? HORSE_OBSERVATION_DEADLINE_MS
+    );
+    this.observationDeadlineMs = Math.max(
+      this.jobTimeoutMs,
+      Number.isSafeInteger(observationDeadlineMs)
+        ? observationDeadlineMs
+        : HORSE_OBSERVATION_DEADLINE_MS
+    );
     const maxInFlight = Math.floor(
       options.maxInFlight ?? LiveHorseDecisionWorkerClient.DEFAULT_MAX_IN_FLIGHT
     );
@@ -396,7 +475,9 @@ export class LiveHorseDecisionWorkerClient {
     // A caller may queue immediately and await the job rather than ready().
     // Keep the readiness rejection observed without altering its semantics.
     void this.readyPromise.catch(() => undefined);
-    this.worker = (options.workerFactory ?? defaultWorkerFactory)();
+    this.worker = options.workerFactory
+      ? options.workerFactory()
+      : defaultWorkerFactory(options.shard);
     this.worker.on('message', (message) => {
       if (!this.startupCancellationInProgress) this.onMessage(message);
     });
@@ -721,7 +802,9 @@ export class LiveHorseDecisionWorkerClient {
       const callerDeadlineMs =
         typeof deadlineMs === 'number' && Number.isFinite(deadlineMs) && deadlineMs > 0
           ? Math.floor(deadlineMs)
-          : this.jobTimeoutMs;
+          : HORSE_OBSERVATION_TYPES.has(request.type)
+            ? this.observationDeadlineMs
+            : this.jobTimeoutMs;
       const job: QueuedJob = {
         request,
         expected,
@@ -741,7 +824,16 @@ export class LiveHorseDecisionWorkerClient {
         job.abortListener = () => this.abort(job);
         signal.addEventListener('abort', job.abortListener, { once: true });
       }
-      if (priority && this.priorityInsertIndex !== null) {
+      const captureIndex = HORSE_CAPTURE_LANE_TYPES.has(request.type)
+        ? this.captureLaneInsertIndex()
+        : null;
+      if (captureIndex !== null) {
+        job.captureLane = true;
+        this.queue.splice(captureIndex, 0, job);
+        // Keep the barrier pointing at the same job it pointed at.
+        if (this.priorityInsertIndex !== null && captureIndex <= this.priorityInsertIndex)
+          this.priorityInsertIndex += 1;
+      } else if (priority && this.priorityInsertIndex !== null) {
         this.queue.splice(this.priorityInsertIndex, 0, job);
         this.priorityInsertIndex += 1;
       } else {
@@ -749,6 +841,13 @@ export class LiveHorseDecisionWorkerClient {
       }
       this.maybeDispatch();
     });
+  }
+
+  /** After the capture jobs already waiting, or null once the lane is full. */
+  private captureLaneInsertIndex(): number | null {
+    let index = 0;
+    while (index < this.queue.length && this.queue[index].captureLane) index++;
+    return index >= HORSE_CAPTURE_LANE_MAX_QUEUED ? null : index;
   }
 
   private abort(job: QueuedJob): void {
@@ -1105,11 +1204,18 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
       }
-      if (
-        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant) ||
-        !horsePhase6AttributionMatchesSnapshot(message.decision, active.request)
-      ) {
+      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));
+        return;
+      }
+      // A Phase 6 receipt whose declared coordinate disagrees with the
+      // coordinate recomputed from the request is refused by name, never
+      // silently accepted or silently dropped.
+      const phase6Mismatch = horsePhase6AttributionMismatch(message.decision, active.request);
+      if (phase6Mismatch !== null) {
+        this.fail(
+          new Error(`horse decision worker returned invalid policy receipt: ${phase6Mismatch}`)
+        );
         return;
       }
       const witness = createHorseExecutionWitness(active.request, message.decision, {
@@ -1172,6 +1278,9 @@ export class LiveHorseDecisionWorkerClient {
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;
+      // The journal publisher runs in this worker; /health runs here. Without
+      // this relay /health answered `starting` for a journal that had failed.
+      relayHorseDecisionJournalHealth(message.horseJournal, this.journalRelaySource);
     }
     if (!active.settled) {
       active.settled = true;
@@ -1339,34 +1448,5 @@ export class LiveHorseDecisionWorkerClient {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }
     return this.terminationPromise;
-  }
-}
-
-let singleton: LiveHorseDecisionWorkerClient | null = null;
-
-export async function startLiveHorseDecisionWorker(
-  options: LiveHorseDecisionWorkerClientOptions = {}
-): Promise<LiveHorseDecisionWorkerClient> {
-  if (!singleton) singleton = new LiveHorseDecisionWorkerClient(options);
-  await singleton.ready();
-  return singleton;
-}
-
-export function getLiveHorseDecisionWorker(): LiveHorseDecisionWorkerClient {
-  if (!singleton) throw new Error('live horse decision worker has not been started');
-  return singleton;
-}
-
-export function liveHorseDecisionWorkerStatus(): LiveHorseDecisionWorkerStatus {
-  return singleton?.status() ?? stoppedStatus();
-}
-
-export async function stopLiveHorseDecisionWorker(): Promise<void> {
-  const owned = singleton;
-  if (!owned) return;
-  try {
-    await owned.stop();
-  } finally {
-    if (singleton === owned) singleton = null;
   }
 }

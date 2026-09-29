@@ -28,7 +28,12 @@ describe('unlimited MTT creation and saved schedules', () => {
     'removes every legacy numeric cap from %s payloads',
     (type) => {
       for (const maxPlayers of [null, 0, 2, 100, 1000000]) {
-        const config = Object.freeze({ ...draft, type, maxPlayers });
+        // A satellite names its target (20260924033701 refuses one that does not).
+        const target =
+          type === 'satellite'
+            ? { satelliteTarget: { tournamentId: 'target', seatsAwarded: 1 } }
+            : {};
+        const config = Object.freeze({ ...draft, type, maxPlayers, ...target });
         const payload = tournamentService.buildRpcConfig(config);
         expect(payload.maxPlayers).toBeNull();
         expect(payload.tableSize).toBe(6);
@@ -122,8 +127,10 @@ describe('unlimited MTT creation and saved schedules', () => {
       data: { ok: true, schedule_id: 'schedule' },
       error: null,
     } as never);
+    // A schedule satellite names its target; the spawner resolves it by name.
     const config = Object.freeze({
       type: 'satellite',
+      satelliteTargetName: 'Sunday Major',
       maxPlayers: 2,
       max_players: 2,
       minPlayers: 3,
@@ -139,11 +146,23 @@ describe('unlimited MTT creation and saved schedules', () => {
       'fn_upsert_tournament_schedule',
       expect.objectContaining({
         p_schedule: expect.objectContaining({
-          config: { type: 'satellite', maxPlayers: null, max_players: null, minPlayers: 3 },
+          config: {
+            type: 'satellite',
+            satelliteTargetName: 'Sunday Major',
+            maxPlayers: null,
+            max_players: null,
+            minPlayers: 3,
+          },
         }),
       })
     );
-    expect(config).toEqual({ type: 'satellite', maxPlayers: 2, max_players: 2, minPlayers: 3 });
+    expect(config).toEqual({
+      type: 'satellite',
+      satelliteTargetName: 'Sunday Major',
+      maxPlayers: 2,
+      max_players: 2,
+      minPlayers: 3,
+    });
   });
 
   it('normalizes an old SNG satellite schedule in the serializer spelling', async () => {

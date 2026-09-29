@@ -60,7 +60,9 @@ describe('global locator and observer experience', () => {
   it('routes members to the actual cash or tournament table as observers', () => {
     expect(modal).toContain('`/table/${table.table_id}?observer=1`');
     expect(service).toContain("supabase.rpc('fn_get_table_watch_access'");
-    expect(modal).toContain('PlayerSearchService.getTableWatchAccess(table.table_id)');
+    expect(modal).toContain(
+      'PlayerSearchService.getTableWatchAccess(table.table_id, targetUserId)'
+    );
     expect(migration).toContain("'table_id', live.table_id");
     expect(migration).toContain("'tournament_id', live.tournament_id");
     expect(migration).toContain('coalesce(t.is_anonymous, false) = false');

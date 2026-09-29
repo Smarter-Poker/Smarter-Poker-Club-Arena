@@ -60,6 +60,7 @@ export default function DiamondBustPrompt({ clubId }: { clubId: string | null | 
       className="diamond-bust-prompt"
     >
       <SpadeConsole
+        onClose={close}
         crest="diamond"
         title="Diamond Spins"
         eyebrow="Out Of Chips?"

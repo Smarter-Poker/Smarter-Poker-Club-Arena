@@ -418,7 +418,7 @@ export default function ClubDiamondGamesOperationsPage() {
             label="Owner Diamonds"
             value={compactChips(metrics?.owner_diamonds ?? 0)}
             ink="blue"
-            meta="Daily Net Diamonds Arrive In One Settlement"
+            meta="Daily Net Diamonds Arrive In One Settlement After A 20% Platform Burn"
           />
           <Row
             label="Exposure"

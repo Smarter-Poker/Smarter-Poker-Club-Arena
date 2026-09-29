@@ -1,0 +1,357 @@
+/* THE RECEIPT WEARS ITS GAME (2026-09-26).
+
+   The art fills the receipt's prize box (WheelWinReveal.module.css .prize, a
+   1.2 box) and draws in a 360 x 300 viewBox of the same shape, so every
+   percentage below is a point on the drawing. The figure is live text laid
+   over the art in container units, so it scales with the receipt exactly the
+   way the drawing does.
+
+   Inks are the house's: gold #ffd700 for the number a win is about, lit blue
+   #45adff for the line over it, silver #e4e7ec for a loss. All of them sit on
+   the console's black glass at well over 4.5:1.
+
+   Motion is transform, opacity and stroke-dashoffset only, every duration and
+   delay is scaled by --animation-speed (the component writes the player's
+   Animation Speed onto the stage), and reduced motion stops all of it on the
+   final frame: the art and its figure are simply there. */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  container-type: inline-size;
+}
+.art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* ── The figure ─────────────────────────────────────────────────────────── */
+
+.figure {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.6cqw;
+  text-align: center;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  animation: receipt-figure-in calc(620ms * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1)
+    calc(520ms * var(--animation-speed, 1)) both;
+}
+.caption {
+  color: #45adff;
+  font-size: max(9px, 4.2cqw);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(24 119 242 / 60%);
+}
+.value {
+  color: #ffd700;
+  font-size: 13cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 #050607,
+    0 0 14px rgb(255 215 0 / 45%);
+}
+.stage[data-dim] .value {
+  color: #e4e7ec;
+  text-shadow: 0 1px 0 #050607;
+}
+.stage[data-dim] .caption {
+  text-shadow: none;
+}
+
+/* Where each game prints its number, as a point on its own drawing. */
+.stage[data-receipt-art='crash'] .figure {
+  left: 4%;
+  top: 6%;
+  justify-items: start;
+  text-align: left;
+}
+.stage[data-receipt-art='crash'] .value {
+  font-size: 15cqw;
+}
+/* The crowned flight: the 25.00x max, booked. */
+.stage[data-crown] .value {
+  text-shadow:
+    0 1px 0 #050607,
+    0 0 10px rgb(255 215 0 / 70%),
+    0 0 30px rgb(255 165 0 / 55%);
+}
+.stage[data-crown] .caption {
+  color: #ffd700;
+  text-shadow: 0 0 8px rgb(255 215 0 / 55%);
+}
+/* On the sign: x 49..311 and y 179..247 of the drawing. */
+.stage[data-receipt-art='crossing'] .figure {
+  left: 13.6%;
+  right: 13.6%;
+  top: 59.7%;
+  height: 22.6%;
+}
+.stage[data-receipt-art='crossing'] .value {
+  font-size: 11cqw;
+}
+.stage[data-receipt-art='crossing'] .caption {
+  font-size: max(9px, 3.4cqw);
+}
+/* On the bucket plate: x 87..273 and y 209..271. */
+.stage[data-receipt-art='plinko'] .figure {
+  left: 24.2%;
+  right: 24.2%;
+  top: 69.7%;
+  height: 20.6%;
+}
+.stage[data-receipt-art='plinko'] .value {
+  font-size: 11cqw;
+}
+.stage[data-receipt-art='plinko'] .caption {
+  font-size: max(9px, 3.2cqw);
+}
+/* On a small receipt (a phone on its side) the plate is too short for two
+   lines: the figure stands alone on it, and the copy line says the rest. */
+@container (max-width: 220px) {
+  .stage[data-receipt-art='crossing'] .caption,
+  .stage[data-receipt-art='plinko'] .caption {
+    display: none;
+  }
+}
+/* Under the fan. */
+.stage[data-receipt-art='mines'] .figure {
+  left: 20%;
+  right: 20%;
+  top: 64%;
+}
+.stage[data-receipt-art='mines'] .value {
+  font-size: 15cqw;
+}
+
+/* ── Crash ──────────────────────────────────────────────────────────────── */
+
+/* The ribbon draws and the jet flies it together: both are linear between
+   the same keyframe times, which put the arc-length quarters of the curve on
+   an ease-in clock, so the flight launches slowly and leaves at speed. */
+.ribbon,
+.ribbonGlow {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: receipt-draw calc(900ms * var(--animation-speed, 1)) linear
+    calc(200ms * var(--animation-speed, 1)) both;
+}
+.jet {
+  transform-origin: 292px 92px;
+  animation: receipt-jet calc(900ms * var(--animation-speed, 1)) linear
+    calc(200ms * var(--animation-speed, 1)) both;
+}
+.halo {
+  transform-origin: 292px 92px;
+  animation: receipt-halo calc(700ms * var(--animation-speed, 1)) ease-out
+    calc(950ms * var(--animation-speed, 1)) both;
+}
+.crown {
+  animation: receipt-crown calc(700ms * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1)
+    calc(1100ms * var(--animation-speed, 1)) both;
+}
+.stage[data-crown] .ribbonGlow {
+  stroke-opacity: 0.45;
+}
+
+/* ── Donkey Cross ───────────────────────────────────────────────────────── */
+
+.lamp {
+  animation: receipt-fade calc(600ms * var(--animation-speed, 1)) ease-out both;
+}
+.signLed {
+  filter: drop-shadow(0 0 4px #45adff);
+  animation: receipt-flicker calc(700ms * var(--animation-speed, 1)) steps(1, end)
+    calc(250ms * var(--animation-speed, 1)) both;
+}
+.donkey {
+  animation: receipt-hop calc(760ms * var(--animation-speed, 1)) cubic-bezier(0.3, 0, 0.3, 1)
+    calc(150ms * var(--animation-speed, 1)) both;
+}
+
+/* ── Plinko ─────────────────────────────────────────────────────────────── */
+
+.pool {
+  animation: receipt-fade calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(700ms * var(--animation-speed, 1)) both;
+}
+.bucketLed {
+  filter: drop-shadow(0 0 5px var(--receipt-tint));
+}
+.drop {
+  animation: receipt-drop calc(820ms * var(--animation-speed, 1)) linear
+    calc(150ms * var(--animation-speed, 1)) both;
+}
+.trail {
+  opacity: 0.5;
+}
+.sparks {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: receipt-sparks calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(820ms * var(--animation-speed, 1)) both;
+}
+
+/* ── Mines ──────────────────────────────────────────────────────────────── */
+
+.fanGem {
+  transform-origin: 180px 290px;
+  transform: rotate(var(--fan-angle, 0deg));
+  animation: receipt-fan calc(620ms * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1)
+    calc((160ms + var(--fan-i, 0) * 70ms) * var(--animation-speed, 1)) both;
+}
+
+/* ── A lost round: the same art, standing back ─────────────────────────── */
+
+.stage[data-dim] .art {
+  opacity: 0.5;
+  filter: saturate(0.3);
+}
+
+/* ── Reduced motion: the final frame, at once ───────────────────────────── */
+
+.stage[data-reduced] *,
+.stage[data-reduced] .figure {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage *,
+  .stage .figure {
+    animation: none;
+  }
+}
+
+@keyframes receipt-figure-in {
+  from {
+    opacity: 0;
+    transform: translateY(8%) scale(0.7);
+  }
+}
+@keyframes receipt-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  51% {
+    stroke-dashoffset: 0.74;
+  }
+  71% {
+    stroke-dashoffset: 0.5;
+  }
+  86% {
+    stroke-dashoffset: 0.26;
+  }
+}
+@keyframes receipt-fade {
+  from {
+    opacity: 0;
+  }
+}
+/* The jet's offset from its resting point, and the turn off its resting
+   heading, at t = 0, 0.25, 0.5 and 0.75 of the ribbon's own cubic. */
+@keyframes receipt-jet {
+  from {
+    opacity: 0;
+    transform: translate(-266px, 170px) rotate(56deg) scale(0.7);
+  }
+  20% {
+    opacity: 1;
+  }
+  51% {
+    transform: translate(-181px, 156px) rotate(41deg) scale(0.8);
+  }
+  71% {
+    transform: translate(-109px, 122px) rotate(24deg) scale(0.9);
+  }
+  86% {
+    transform: translate(-49px, 70px) rotate(10deg);
+  }
+}
+@keyframes receipt-halo {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes receipt-crown {
+  from {
+    opacity: 0;
+    transform: translate(292px, 6px) scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: translate(292px, 36px) scale(1);
+  }
+}
+@keyframes receipt-flicker {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  35% {
+    opacity: 0.2;
+  }
+  55% {
+    opacity: 1;
+  }
+}
+@keyframes receipt-hop {
+  from {
+    opacity: 0;
+    transform: translate(-60px, -46px);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-6px, -18px);
+  }
+  80% {
+    transform: translate(0, 2px);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes receipt-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-150px);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0, 0.55, 0.45, 1);
+  }
+  78% {
+    transform: translateY(-14px);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes receipt-sparks {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+@keyframes receipt-fan {
+  from {
+    opacity: 0;
+    transform: rotate(0deg) translateY(30px) scale(0.6);
+  }
+}

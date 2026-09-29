@@ -89,9 +89,11 @@ describe('the tracker', () => {
        numbers, not four: the hand count and the sampling window are how the
        floor is enforced, not something a player plays differently for, and
        they were most of what made the old readout a rectangle. */
-    expect(el.textContent).toContain('CURRENT');
+    /* 2026-09-23 (Dan): the frames and the CURRENT caption are gone; the badge
+       is three rows - VPIP, the figure, TABLE MIN N%. */
+    expect(el.textContent).not.toContain('CURRENT');
     expect(el.textContent).toContain('42%');
-    expect(el.textContent).toContain('MIN 30%');
+    expect(el.textContent).toContain('TABLE MIN 30%');
     expect(el.textContent).not.toContain('Hands');
     expect(el.style.left).toBe('50%');
     expect(el.style.top).toBe('100%');
@@ -133,7 +135,7 @@ describe('the tracker', () => {
        against a 30% floor is a FAILING player, and the badge says so with the
        number alone - which is the whole point of the lock. */
     expect(el.className).toBe('hero-vpip');
-    expect(el.textContent).toContain('MIN 30%');
+    expect(el.textContent).toContain('TABLE MIN 30%');
     expect(el.textContent).toContain('25%');
     // ...and on the backstop, without a hand.
     await act(async () => {

@@ -21,3 +21,70 @@
 .stack[data-fit-viewport] .mainStage {
   height: 100%;
 }
+
+/* THE RING WAITS FOR A HAND (owner ruling 2026-09-21, R19). While the upgrade
+   ring is awaiting its gesture the stage is the hit target: a tap, a short
+   swipe, or Enter or Space with the keyboard. It is painted by the wheel art
+   underneath; this adds only the cursor and the keyboard focus ring. */
+.upgradeStage[data-awaiting] {
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+.upgradeStage[data-awaiting]:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: -2px;
+}
+
+/* The flashing instruction. It sits over the lower half of the aperture, above
+   the main wheel's face, and never intercepts the gesture meant for the ring. */
+.instruction {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  z-index: 2;
+  margin: 0;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 6px 14px;
+  pointer-events: none;
+  text-align: center;
+  text-wrap: balance;
+  color: #fff;
+  font:
+    800 clamp(14px, 4.2cqw, 22px) / 1.2 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 6px #000,
+    0 0 14px #000,
+    0 2px 2px #000;
+}
+/* The flash alternates white and brand gold and stays readable in both
+   frames. It follows the player's Animation Speed but never runs faster than
+   one flash a second (WCAG 2.3.1 allows at most three). */
+.instructionText {
+  display: inline-block;
+  animation: wheel-instruction-flash max(1s, calc(1.1s * var(--animation-speed, 1))) steps(1, end)
+    infinite;
+}
+@keyframes wheel-instruction-flash {
+  0%,
+  100% {
+    opacity: 1;
+    color: #fff;
+  }
+  50% {
+    opacity: 0.9;
+    color: #ffd700;
+  }
+}
+/* Reduced motion: the instruction is read, not watched. Static, full contrast. */
+@media (prefers-reduced-motion: reduce) {
+  .instructionText {
+    animation: none;
+    opacity: 1;
+  }
+}

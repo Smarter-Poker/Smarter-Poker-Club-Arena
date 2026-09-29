@@ -1,0 +1,25 @@
+{
+  "_owner": "agent/claude-lightning-p5/lightning/phase5-conversion - migration 20260925204249_lightning_phase_5_remediation_the_halt_is_a_standing_bar",
+  "_comment": "Lightning 2.0 Phase 5 remediation. THE HALT WAS A ONE-SHOT CANCEL, NOT A STANDING BAR: fn_cash_cluster_begin_pending_on cancelled the Cluster's pending cash_seat_moves once, but fn_cash_seat_change_request - SECURITY DEFINER and EXECUTABLE BY authenticated - calls fn_cash_seat_change_plan, which INSERTs a fresh row and gated only on cash_games.must_move, the BOOLEAN CAPABILITY that stays true through a conversion because Phase 10 reverts using those very rules. Neither body mentioned cluster_mode. So a second after PENDING_ON a player taps seat change, gets a pending move the stood-down tick will never reconcile, and the engine's start-up wait loop executes it - writing table_seats mid-conversion, in a design whose whole claim is that it never does. The specification's step 6 is to stop starting NEW nonessential table assignments, which is a standing bar. All four cluster stand-downs - tick, balancer, door and planner - now read the identical predicate. fn_cash_game_join is deliberately NOT barred: F14 requires a player joining between PENDING_ON and the commit to be counted and pooled. fn_cash_cluster_reap_stuck_conversions is the bounded reaper a wedged PENDING_ON had no way out of: commit_lightning returns hands_in_flight without aborting and its three RAISE paths roll back leaving the Cluster in pending_on with every table halted, where the tick and the balancer both stand down, nothing reaped it, and abort_pending_on had no caller anywhere. It runs from fn_cash_clusters_tick_all - the estate driver, which keeps running PRECISELY BECAUSE the per-Cluster tick does not - after its freeze short-circuit and inside its own sub-block, so a lock wait costs the reap and not the pass. fn_cash_cluster_census and fn_cash_game_lobby are re-cut by asserted substitution onto the same coalesced membership predicate Phase 5 gave live_eligible and population, because two definitions of who belongs to a Cluster had been left in the estate: the tick, the balancer and the seat-change planner all read the census while the threshold read the other, and both tables.status and tables.lifecycle are nullable with a CHECK that evaluates to NULL and therefore PASSES. Measured at the time: 0 NULL-lifecycle and 0 NULL-status cluster tables out of 5,875, so armed and not detonated. The nine lightning_pool_session columns are the fields the specification's LIGHTNING POOL SESSION section names and the schema lacked. fn_cash_cluster_live_eligible's pool half is inverted from state = 'active' to a NOT IN exclusion so that a state added later COUNTS BY DEFAULT instead of silently dropping a Lightning Cluster's population past its OFF threshold. Four of 20260921151618's @live-proof expressions were vacuous - a tautology, a count over a column ADD COLUMNed with no default in the same file, a check on a table created empty in the same file, and an estate fact true only until the feature is switched on - and are superseded here with proofs about the code, recorded as a dated Correction rather than quietly reworded.",
+  "functions": [
+    "fn_cash_cluster_reap_stuck_conversions",
+    "fn_cash_cluster_census",
+    "fn_cash_game_lobby",
+    "fn_cash_seat_change_request",
+    "fn_cash_seat_change_plan",
+    "fn_cash_clusters_tick_all"
+  ],
+  "columns": {
+    "lightning_pool_session": [
+      "hands",
+      "fast_folds",
+      "normal_folds",
+      "fold_and_watch",
+      "showdowns",
+      "hands_per_hour",
+      "average_wait",
+      "p95_wait",
+      "p99_wait"
+    ]
+  }
+}

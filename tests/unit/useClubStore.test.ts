@@ -12,7 +12,6 @@ vi.mock('../../src/lib/supabase', () => ({
 
 vi.mock('../../src/services/ClubsService', () => ({
   ClubsService: {
-    discoverNearby: vi.fn().mockResolvedValue([]),
     search: vi.fn().mockResolvedValue([]),
     getMyClubs: vi.fn().mockResolvedValue([]),
   },
@@ -27,18 +26,10 @@ import { useClubStore } from '../../src/stores/useClubStore';
 describe('useClubStore', () => {
   beforeEach(() => {
     useClubStore.setState({
-      nearbyClubs: [],
       searchResults: [],
-      myClubs: [], // Depending on interface, might be activeClubMembers etc, but testing initial is robust
-      isDiscovering: false,
       isSearching: false,
-      userLocation: null,
       activeTab: 'discover',
     });
-  });
-
-  it('should start with empty nearby clubs', () => {
-    expect(useClubStore.getState().nearbyClubs).toEqual([]);
   });
 
   it('should start with empty search results', () => {
@@ -49,11 +40,6 @@ describe('useClubStore', () => {
     expect(useClubStore.getState().activeTab).toBe('discover');
   });
 
-  it('should set user location', () => {
-    useClubStore.getState().setUserLocation({ lat: 36.1, lng: -115.2 } as any);
-    expect(useClubStore.getState().userLocation).toBeDefined();
-  });
-
   it('should set active tab', () => {
     useClubStore.getState().setActiveTab('my-clubs');
     expect(useClubStore.getState().activeTab).toBe('my-clubs');
@@ -61,11 +47,28 @@ describe('useClubStore', () => {
 
   it('should export store with all actions', () => {
     const state = useClubStore.getState();
-    expect(typeof state.setUserLocation).toBe('function');
     expect(typeof state.setActiveTab).toBe('function');
-    expect(typeof state.discoverNearby).toBe('function');
     expect(typeof state.searchClubs).toBe('function');
     expect(typeof state.loadMemberships).toBe('function');
     expect(typeof state.loadClub).toBe('function');
+  });
+
+  /* There is no location-based club discovery. The store used to carry a
+     "nearby" action that ignored the position it was given and a userLocation
+     it persisted to storage, fed by a hook that asked the browser for the
+     player's position. None of it may come back without a real feature. */
+  it('neither asks for, keeps nor persists a player location', () => {
+    const state = useClubStore.getState() as unknown as Record<string, unknown>;
+    for (const key of [
+      'userLocation',
+      'setUserLocation',
+      'discoverNearby',
+      'nearbyClubs',
+      'isDiscovering',
+    ]) {
+      expect(state, key).not.toHaveProperty(key);
+    }
+    const partialize = useClubStore.persist.getOptions().partialize!;
+    expect(Object.keys(partialize(useClubStore.getState()) as object)).toEqual(['activeTab']);
   });
 });

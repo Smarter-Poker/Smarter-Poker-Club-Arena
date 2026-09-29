@@ -9,6 +9,7 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import styles from './DiamondSpinStatements.module.css';
 
 const amount = (value: number) => value.toLocaleString();
+const percent = (bps: number) => `${(bps / 100).toLocaleString()}%`;
 const dateLabel = (day: string) =>
   new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, {
     month: 'short',
@@ -33,6 +34,7 @@ export default function DiamondSpinStatements() {
 }
 function Statements() {
   const [days, setDays] = useState<DiamondStatement[]>([]);
+  const [burnBps, setBurnBps] = useState<number | null>(null);
   const [next, setNext] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ function Statements() {
       const result = await loadDiamondStatements(before);
       if (!active.current) return;
       setDays((rows) => (before ? [...rows, ...result.days] : result.days));
+      setBurnBps(result.profit_burn_bps);
       setNext(result.next_before_day);
     } catch (e) {
       reportError(e, 'DiamondSpinStatements');
@@ -71,9 +74,11 @@ function Statements() {
   return (
     <SpadeConsole eyebrow="Owner Wallet" title="Daily Diamond Statements" foot="foot">
       <p className="sc-copy">
-        Spin Entries And Prize Costs Are Recorded Throughout The Day. Your Net Diamonds Settle To
-        Your Wallet In One Transaction After Midnight, Chicago Time. Chip Prizes Still Use The Promo
-        Wallet First, With The Main Bank Covering Any Shortfall.
+        Spin Entries And Prize Costs Are Recorded Throughout The Day. After Midnight, Chicago Time,
+        Each Day Settles In One Wallet Transaction: The Platform Burns{' '}
+        {burnBps === null ? '20%' : percent(burnBps)} Of A Profitable Day And The Rest Is Credited
+        To Your Wallet. A Day With Zero Or Negative Net Burns Nothing. Chip Prizes Still Use The
+        Promo Wallet First, With The Main Bank Covering Any Shortfall.
       </p>
       <button className={styles.action} disabled={busy} type="button" onClick={() => void load()}>
         Refresh Statements
@@ -120,9 +125,27 @@ function Statements() {
                 </dd>
               </div>
             ))}
-            <div>
-              <dt>Daily Net</dt>
+            <div className={styles.settlementLine}>
+              <dt>Net Diamonds Earned</dt>
               <dd>{amount(row.net_diamonds)}</dd>
+            </div>
+            <div className={styles.settlementLine}>
+              <dt>Platform Burn ({percent(row.profit_burn_bps ?? burnBps ?? 2000)})</dt>
+              <dd>
+                {row.profit_burn === null
+                  ? 'Settles After Midnight'
+                  : `${row.profit_burn > 0 ? '−' : ''}${amount(row.profit_burn)}`}
+              </dd>
+            </div>
+            <div className={styles.settlementLine}>
+              <dt>Credited To Your Wallet</dt>
+              <dd
+                className={
+                  row.credited_net !== null && row.credited_net < 0 ? 'sc-ink--red' : undefined
+                }
+              >
+                {row.credited_net === null ? 'Settles After Midnight' : amount(row.credited_net)}
+              </dd>
             </div>
           </dl>
           {row.hosts.map((host) => (
@@ -138,7 +161,7 @@ function Statements() {
             <p className={styles.note}>
               Settled {new Date(row.settled_at).toLocaleString()}.
               {row.wallet_transaction_id
-                ? ' One Transfer Is Recorded In Your Diamond Wallet.'
+                ? ` One Transfer Of ${amount(row.credited_net ?? row.net_diamonds)} Diamonds Is Recorded In Your Diamond Wallet.`
                 : ' No Wallet Transfer Was Needed For This Zero Net Day.'}
             </p>
           )}

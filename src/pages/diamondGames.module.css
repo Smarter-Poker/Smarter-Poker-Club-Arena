@@ -493,3 +493,18 @@
   font-size: 26px;
   text-shadow: 0 0 12px #5bbaf55c;
 }
+
+/* A PHONE ON ITS SIDE (2026-09-26). A board sized from its width alone
+   (Plinko's cabinet is 1.13 times as tall as it is wide) is held to the width
+   whose height fits the scene budget the console leaves it
+   (GameConsole.module.css), less whatever the page prints above the board in
+   the same playfield (--scene-reserve), and centred in the playfield. */
+.sceneFit {
+  width: 100%;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .sceneFit[data-scene='plinko'] {
+    max-width: calc((var(--scene-budget, 100dvh) - var(--scene-reserve, 0px)) / 1.13);
+    margin-inline: auto;
+  }
+}

@@ -1,6 +1,6 @@
 {
   "_owner": "fix/live-migration-provenance",
-  "_comment": "The final database-only tournament roster and seat authority retires both scheduler mutators, their detector, the stale live-seat trigger, and every remaining amount-trusting public seat-exit door. It records the exact disabled scheduler pair, enforces a deferred reciprocal RUNNING roster-seat invariant, keeps satellite-funded unregistration ticket-only, and exposes one service-only compare-and-set prize-repricing authority.",
+  "_comment": "The final database-only tournament roster and seat authority retires both scheduler mutators, their detector, the stale live-seat trigger, and every remaining amount-trusting public seat-exit door. It records the exact disabled scheduler pair, enforces a deferred reciprocal RUNNING roster-seat invariant, keeps satellite-funded unregistration ticket-only, and exposes one service-only compare-and-set prize-repricing authority. AMENDED 2026-09-26: fn_ca_absent_tournament_players was listed as removed here on 2026-09-10 (#4066) but no migration ever dropped it: it is live, in the base manifest, read hourly by fn_ca_conservation_sweep and referenced by 20260921171311. Migration 20260926023322 redefines it, so the stale removal is withdrawn rather than left to contradict production.",
   "tables": ["tournament_mutator_scheduler_retirement_receipts"],
   "functions": [
     "fn_ca_assert_running_tournament_roster_seat",
@@ -10,7 +10,6 @@
   ],
   "removedTables": ["ca_broke_seat_sightings"],
   "removedFunctions": [
-    "fn_ca_absent_tournament_players",
     "fn_ca_eliminate_absent_tournament_players",
     "fn_ca_release_broke_seats",
     "fn_sync_tournament_live_seat_chips",

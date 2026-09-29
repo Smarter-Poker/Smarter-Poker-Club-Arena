@@ -20,7 +20,8 @@ import {
   getTournamentFormatKind,
   isTournamentEntryUnavailable,
 } from '../utils/tournamentPresentation';
-import { moneySuffixAtUnit } from '../utils/format';
+import { formatPrizeAtUnit, moneySuffixAtUnit, moneyWordAtUnit } from '../utils/format';
+import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../server/src/tournament/tournamentUnit';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -80,6 +81,7 @@ import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsol
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
+import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -1072,6 +1074,17 @@ export default function TournamentPage() {
     () => tournamentRowUnitCents(selectedTournament),
     [selectedTournament]
   );
+  /**
+   * THE HEAD, AT THAT SAME UNIT (2026-09-21). The Bounty and PKO rows printed
+   * `money(...)` and then the word "Chips" whatever the event was, so a Diamond
+   * bounty event advertised a Chip head. At a chip event this is `money`,
+   * character for character, and the word is still "Chips"; at a Diamond event
+   * the head is whole Diamonds and the word follows the unit.
+   */
+  const selectedHeadFigure =
+    normalizeUnitCents(selectedUnitCents) === CHIP_UNIT_CENTS
+      ? money(selectedTournament?.bounty_amount ?? 0)
+      : formatPrizeAtUnit(selectedTournament?.bounty_amount, selectedUnitCents);
   const selectedPayouts = useMemo(
     () => resolvePayoutStructure(selectedTournament) ?? [],
     [selectedTournament]
@@ -1208,6 +1221,8 @@ export default function TournamentPage() {
       return isLateRegOpen(t)
         ? { label: 'Late Reg', ink: 'gold' }
         : { label: 'Running', ink: 'blue' };
+    // Multi-day, between days: live, closed to entry, not done.
+    if (isBaggedStatus(t.status)) return { label: DAY_COMPLETE_LABEL, ink: 'gold' };
     if (t.status === 'COMPLETED') return { label: 'Done', ink: 'muted' };
     if (t.status === 'CANCELLED') return { label: 'Off', ink: 'red' };
     return { label: 'Soon', ink: 'muted' };
@@ -1471,7 +1486,7 @@ export default function TournamentPage() {
                 <div className="tourn-row">
                   <span className="sc-label sc-ink--blue">Bounty</span>
                   <span className="tourn-value sc-ink--silver">
-                    {money(selectedTournament.bounty_amount)} Chips
+                    {selectedHeadFigure} {moneyWordAtUnit(selectedUnitCents)}
                   </span>
                 </div>
               )}
@@ -1481,7 +1496,7 @@ export default function TournamentPage() {
               <div className="tourn-row">
                 <span className="sc-label sc-ink--blue">PKO</span>
                 <span className="tourn-value sc-ink--silver">
-                  {money(selectedTournament.bounty_amount)} Chips Starting Bounty
+                  {selectedHeadFigure} {moneyWordAtUnit(selectedUnitCents)} Starting Bounty
                 </span>
               </div>
             )}
@@ -1799,6 +1814,7 @@ export default function TournamentPage() {
           prize is how a product starts feeling assembled rather than built. */}
       <MysteryBountyChest
         data={lobbyChest}
+        unitCents={selectedUnitCents}
         viewerUserId={user?.id ?? null}
         queuedBehind={lobbyChestQueue.pending}
         onDone={lobbyChestQueue.complete}

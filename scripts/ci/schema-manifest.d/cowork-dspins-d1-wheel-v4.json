@@ -1,0 +1,57 @@
+{
+  "_comment": "Migration 20260922194123 (owner rulings 2026-09-21, R2/R12/R13/R15 and the server half of R18): the v4 prize table and its VIP variant, the symmetric follow-up matrix and the row helpers it is read through, the sealed three-card Diamonds game and its pick, and the multi-spin run. Candidate declarations, not installation evidence.",
+  "_owner": "agent/cowork-dspins/d1-wheel",
+  "tables": ["wheel_card_awards", "wheel_runs"],
+  "functions": [
+    "fn_wheel_is_vip",
+    "fn_wheel_v4_model",
+    "fn_wheel_v4_follow_model",
+    "fn_wheel_v4_weights",
+    "fn_wheel_v4_upgrade_weights",
+    "fn_wheel_v4_segments",
+    "fn_wheel_card_values",
+    "fn_wheel_card_public",
+    "fn_wheel_open_run",
+    "fn_wheel_run_begin",
+    "fn_wheel_run_end",
+    "fn_wheel_diamond_cards_pick"
+  ],
+  "columns": {
+    "wheel_bonus_awards": ["run_id"],
+    "wheel_card_awards": [
+      "id",
+      "spin_id",
+      "run_id",
+      "user_id",
+      "club_id",
+      "host_id",
+      "host_kind",
+      "owner_id",
+      "is_welcome",
+      "risk_diamonds",
+      "half_diamonds",
+      "permutation",
+      "roll",
+      "nonce",
+      "server_seed",
+      "server_seed_hash",
+      "client_seed",
+      "status",
+      "picked_card",
+      "paid_diamonds",
+      "created_at",
+      "picked_at"
+    ],
+    "wheel_runs": [
+      "id",
+      "user_id",
+      "club_id",
+      "host_id",
+      "spins",
+      "spins_done",
+      "status",
+      "created_at",
+      "closed_at"
+    ]
+  }
+}

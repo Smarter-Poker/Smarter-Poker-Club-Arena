@@ -116,9 +116,11 @@ import {
   capBySeatedCount,
   FLEET_POLICY_DEFAULTS,
   getFleetPolicy,
+  HORSE_FLEET_DECISION_LANE_HOLD_MS,
   withheldReason,
   type FleetPolicy,
 } from './HorseFleetPolicy.js';
+import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/lane.js';
 import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
 
 /**
@@ -1951,11 +1953,33 @@ export class HorseFleetManager {
          the console
          can see a quiet floor and the reason for it rather than an engine
          that appears to have died. Nothing here removes a seated horse; the
-         floor drains only through the paths that already exist. */
+         floor drains only through the paths that already exist.
+
+         THE BRAIN IS ASKED TOO (2026-09-26, measured). The fleet re-expanded
+         to 780-880 dealing tables and the one-thread decision lane could not
+         think for them: queue depth 566-986, the oldest queued decision
+         7.4-13.5 s old, 40-68 expiries a second, completedJobs 40,221 against
+         expiredJobs 53,652 in 29 minutes - 57% of all decisions were a seat
+         taking the legal check or fold without thinking. Eight days before,
+         at 85 tables, expiries were 0. This cycle used to seat new horses
+         every 30 s with no regard to whether the lane could serve them. Now
+         the lane is read ONCE per cycle and a lane that is behind, or not
+         ready, withholds every new seat exactly as the pause does. */
+      const lane = liveHorseDecisionWorkerStatus();
       const cycleWithheld = withheldReason(globalPolicy, {
         nowUTCHour: hourUTC,
         seatedHorses: seatedHorseCount,
+        decisionLaneWaitMs: lane.oldestQueuedAgeMs,
+        decisionLanePhase: lane.phase,
       });
+      if (cycleWithheld === 'brain_behind') {
+        console.log(
+          lane.phase !== 'ready'
+            ? `[HorseFleet] the decision lane is ${lane.phase}, not ready - no new seats this cycle`
+            : `[HorseFleet] the decision lane is ${lane.oldestQueuedAgeMs} ms behind ` +
+                `(hold at ${HORSE_FLEET_DECISION_LANE_HOLD_MS} ms) - no new seats this cycle`
+        );
+      }
       /* How many more horses may take a seat anywhere this cycle. Infinity is
          the default and means "no ceiling", which is today's behaviour. */
       /* Tables this cycle has reached the seating stage for. Only used by the

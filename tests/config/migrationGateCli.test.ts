@@ -339,6 +339,11 @@ test('pre-push checks earlier branch migrations on a follow-up push', () => {
       'check-migrations-applied.mjs',
       'schema-manifest.mjs',
       'sql-manifest-identifiers.mjs',
+      // 2026-09-23: the gate consults scripts/ci/recording-only.mjs to tell a
+      // recording of an already-applied migration from new work. A fixture
+      // missing it does not exercise a narrower gate, it crashes on an
+      // unresolved import - which is a gate that did not run at all.
+      'recording-only.mjs',
     ]) {
       put(
         path.join(dir, 'scripts/ci', name),

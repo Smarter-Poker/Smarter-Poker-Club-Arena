@@ -1,0 +1,4 @@
+{
+  "_owner": "Supabase audit: one bounded private account subscriber must remain mounted on every signed-in route to update account names, preferences and canonical diamond balances, including pages without the main header. It reuses the existing private channel and stores; no polling or full profile replication. The shared three-value preference defaults keep the lazy Settings page and this owner consistent without importing its full validation/table-settings module into first paint.",
+  "modules": ["src/hooks/useProfileAccountSync.ts", "src/lib/profilePreferenceDefaults.ts"]
+}

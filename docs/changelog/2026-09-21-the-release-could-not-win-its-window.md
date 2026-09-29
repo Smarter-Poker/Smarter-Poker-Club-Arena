@@ -161,3 +161,40 @@ same commit (CLAUDE.md 5.8).
 - `tests/the-release-enters-the-break-with-time-to-finish.law.test.ts`
 - `docs/laws.d/tests-the-release-enters-the-break-with-time-to-finish.md`
 - `tests/legacyEngineCheckpointAdmission.test.ts`
+
+## Reconciled, later the same day: the budget contains the entry
+
+The ladder above was right about the shape and wrong about the top rung. It
+kept the guard at 285000ms and added the measured entry budget to the
+_admission_ threshold, so after one miss the admission demanded up to
+285000 + 15000 = 300000ms of a countdown that is 300000ms long and costs
+~15000ms to enter. The probe in `legacy-engine-checkpoint.sh` added its
+1500-9000ms boot term on top of 285000 as well. Neither figure is satisfiable
+once the entry has been paid, so the deferral - correct in itself - would have
+fired at every break for ever. Same arithmetic, one gate earlier.
+
+The reconciliation, in "The Legacy Checkpoint Gets The Seconds It Needs"
+(same date), keeps everything here that was right and moves the budget to
+where it can be paid:
+
+- `LEGACY_CHECKPOINT_BUDGET_SECONDS=40`: ~15 s of entry (run 35615604946:
+  detection ~4.7 s, rollback proof ~5.3 s, helper preamble ~5.2 s, then the
+  intent write and the guard's boot), 20 s of publisher work, 5 s of cleanup.
+- The guard's `reserveMs` is 245000 at every check, and the certificate read
+  straight after the checkpoint accepts the same 245000
+  (`LEGACY_MIN_BREAK_REMAINING_MS`). The 135 s rollback reserve is untouched;
+  the candidate proof inside it is 110 s against 51-112 s measured.
+- The admission stays at 285000. `legacy_checkpoint_countdown` keeps its
+  headroom argument and `prove_rollback_readiness` is still timed, but the
+  headroom's ceiling is derived - what the break offers above 285000 minus
+  the entry allowance the budget already holds - and that is 0.
+- The helper's probe demands `245000+40000`, the same 285000 the transaction
+  admitted on, with no boot term added; the boot is measured and reported.
+- `defer()` / exit 75, the filesystem proof of an absent intent, the reset of
+  `LEGACY_CHECKPOINT_ATTEMPTED`, and `EngineReplacementWatchdogBlind` are all
+  kept as written above.
+
+`tests/the-release-enters-the-break-with-time-to-finish.law.test.ts` now pins
+the reconciled contract: entry at 285000, guard at 245000, the 40000 between
+them containing the entry, a ceiling that evaluates to 0 through the real
+constants block, and the deferral exactly as before.

@@ -183,6 +183,7 @@ export function WaitListModal({
         onClick={(e) => e.stopPropagation()}
       >
         <SpadeConsole
+          onClose={onClose}
           as="section"
           family="shark"
           eyebrow={tableName}

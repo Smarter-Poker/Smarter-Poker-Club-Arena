@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/ledger-estate/fix/migration-ledger-and-estate -- ten migration files that RECORD what production applied 2026-09-17..22, byte-exact to schema_migrations.statements, none re-applied here. Every function below was confirmed present in pg_proc (schema public) on 2026-09-22; they are newer than the nightly base snapshot.",
+  "functions": [
+    "ca_can_read_rake_agent",
+    "ca_prune_expired_club_data_exports",
+    "ca_rake_export_start",
+    "fn_diamond_kind_row_label",
+    "fn_diamond_ledger_line",
+    "fn_f06_abort_abandoned_generation",
+    "player_line"
+  ]
+}

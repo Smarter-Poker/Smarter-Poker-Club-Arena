@@ -597,7 +597,7 @@ const sq = (p: Pos, size: Size): Pos => ({ x: p.x, y: (p.y * size.h) / size.w })
 const podFor = (vw: number, seat: Pos) => seatPodPx(vw, seat.y >= 100 && seat.x === 50);
 
 describe('the dealer button never stands on a name plate', () => {
-  it('the defect is real: the module on its own puts 56 pucks on a plate', () => {
+  it('the defect is real: the module on its own puts 50 pucks on a plate', () => {
     // Stated as a measurement rather than prose so that folding this back into
     // tableGeometry.ts (see the note at the top of DealerButton.tsx) fails HERE
     // with a number, rather than leaving a test that quietly stops meaning
@@ -618,7 +618,10 @@ describe('the dealer button never stands on a name plate', () => {
     // twice the chip (7.2% of the table - Dan: "double the size as the chips in
     // pot"). A bigger disc stands on more plates from the same centre; the
     // three `no seat ... on its own plate` cases below are the ones that ship.
-    expect(overlapping).toBe(56);
+    // 50 since 2026-09-23: the marker gap is derived from the two radii plus a
+    // chip of daylight (9%, was a stale 6%) and the masthead keep-out hangs
+    // from its top edge, so the module's own swing already clears six more.
+    expect(overlapping).toBe(50);
   });
 
   for (const { label, vw, size } of TABLES) {
@@ -724,10 +727,11 @@ describe('the dealer button never stands on a name plate', () => {
         }
       }
     }
-    // 36 before 2026-09-04; 56 with the doubled puck - all of them plate
-    // overlaps, because the board keep-out now lives in dealerButtonPosition
-    // itself (tableGeometry.overlapsBoard) and the module never hands the
-    // wrapper a puck on the cards to move.
-    expect(moved, 'exactly the 56 measured overlaps move, and nothing else').toBe(56);
+    // 36 before 2026-09-04; 56 with the doubled puck; 50 since 2026-09-23 (the
+    // derived marker gap and the top-anchored masthead band, see above) - all
+    // of them plate overlaps, because the board keep-out now lives in
+    // dealerButtonPosition itself (tableGeometry.overlapsBoard) and the module
+    // never hands the wrapper a puck on the cards to move.
+    expect(moved, 'exactly the 50 measured overlaps move, and nothing else').toBe(50);
   });
 });

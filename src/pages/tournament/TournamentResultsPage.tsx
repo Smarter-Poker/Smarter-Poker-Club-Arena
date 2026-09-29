@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
+import { useVisibleRead } from '../../hooks/useVisibleRead';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import './TournamentDetails.css';
@@ -160,7 +160,6 @@ export default function TournamentResultsPage() {
     loading: false,
     error: null,
   });
-  const resultsRequestRef = useRef(0);
   const results = resultsRead.tournamentId === selectedTournament?.id ? resultsRead.data : [];
   const deepLinkedRef = useRef(false);
   const [handsRead, setHandsRead] = useState<ArchiveRead<HandHistoryRecord[]>>({
@@ -173,7 +172,6 @@ export default function TournamentResultsPage() {
   const handHistory = handsRead.tournamentId === selectedTournament?.id ? handsRead.data : [];
   const [isLoading, setIsLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const listRequestRef = useRef(0);
   /* DEEP-LINKABLE FILTERS (2026-08-29, round 10). Other surfaces can now
      send a player straight to a filtered view - the hamburger's "My Spin
      Results" links `?filter=mine&type=spin`. Values are validated against
@@ -242,22 +240,22 @@ export default function TournamentResultsPage() {
   } | null>(null);
   const [spinBoardTab, setSpinBoardTab] = useState<'volume' | 'net'>('net');
 
-  // Refs to avoid stale closures
-  const loadTournamentsRef = useRef<() => void>(() => {});
-  const loadResultsRef = useRef<() => void>(() => {});
-  const loadHandHistoryRef = useRef<() => void>(() => {});
   const isMounted = useIsMounted();
 
-  // Load completed tournaments
-  const loadTournaments = async () => {
-    const request = ++listRequestRef.current;
-    setIsLoading(true);
-    setListError(null);
-    try {
+  // These archive tables are deliberately absent from the WAL publication.
+  // Cost follows visible archive readers, rather than every live hand.
+  const loadTournaments = useVisibleRead<CompletedTournament[]>({
+    scopeKey: JSON.stringify([user?.id, filter, typeFilter]),
+    enabled: true,
+    intervalMs: 30_000,
+    onReset: () => {
+      setTournaments([]);
+      setIsLoading(true);
+      setListError(null);
+    },
+    read: async (signal) => {
       if (filter === 'mine' && !user?.id) {
-        setTournaments([]);
-        setListError('Sign In To View Your Tournament Results.');
-        return;
+        throw new Error('Sign In To View Your Tournament Results.');
       }
       /* MINE IS A JOIN, NOT A CLIENT SCAN (2026-08-29, round 12).
          The old shape fetched EVERY tournament_players row the player ever
@@ -286,39 +284,30 @@ export default function TournamentResultsPage() {
         }
       }
 
-      // ROUND 10 (2026-08-29): a resolved error slipped past the catch below
-      // (which only sees throws) and rendered as an empty results board with
-      // the spinner cleared - "no history" invented from a timeout. Throwing
-      // routes it to the existing report + toast.
-      const { data, error: listErr } = await query;
+      const { data, error: listErr } = await query.abortSignal(signal);
       if (listErr) throw listErr;
-      if (!isMounted.current || request !== listRequestRef.current) return;
-      /* Strip the join column so the rest of the page keeps its exact shape.
-         The `unknown` hop is because supabase-js cannot statically parse a
-         ternary select string; the columns are the same literal both ways. */
-      const completedList = (
+      return (
         (data ?? []) as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
       ).map(({ tournament_players: _tp, ...t }) => t as CompletedTournament);
-
-      setTournaments(completedList);
-    } catch (err) {
-      if (!isMounted.current || request !== listRequestRef.current) return;
-      reportError(err, 'TournamentResultsPage.Failed_to_load_tournament_results');
-      setTournaments([]);
-      setListError('Could Not Load Tournament Results. Please Retry.');
+    },
+    onData: (data) => {
+      setTournaments((previous) =>
+        JSON.stringify(previous) === JSON.stringify(data) ? previous : data
+      );
+      setIsLoading(false);
+      setListError(null);
+    },
+    onError: (error) => {
+      reportError(error, 'TournamentResultsPage.Failed_to_load_tournament_results');
+      setListError(
+        filter === 'mine' && !user?.id
+          ? 'Sign In To View Your Tournament Results.'
+          : 'Could Not Load Tournament Results. Please Retry.'
+      );
+      setIsLoading(false);
       toast?.error('Failed to load tournament results');
-    } finally {
-      if (isMounted.current && request === listRequestRef.current) setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadTournamentsRef.current = loadTournaments;
-  }, [filter, typeFilter, user?.id]);
-
-  useEffect(() => {
-    loadTournaments();
-  }, [filter, typeFilter, user?.id]);
+    },
+  });
 
   /* ── BIGGEST HITS (round 11) ─────────────────────────────────────────────
      The ten largest wheel draws that actually completed, 10x and up, most
@@ -474,16 +463,21 @@ export default function TournamentResultsPage() {
     }
   }, [tournaments, searchParams, isLoading]);
 
-  // Load results for selected tournament
-  const loadResults = async () => {
-    const request = ++resultsRequestRef.current;
-    const tournamentId = selectedTournament?.id ?? null;
-    setResultsRead({ tournamentId, data: [], loading: Boolean(tournamentId), error: null });
-    if (!tournamentId) return;
-
-    try {
-      // ROUND 10 (2026-08-29): a resolved error rendered as an EMPTY standings
-      // table for a real event - throwing routes it to the report below.
+  // Completed-event standings may receive a final payout correction later.
+  // Read only the selected event while this view is visible, with one request.
+  const loadResults = useVisibleRead<TournamentResult[]>({
+    scopeKey: JSON.stringify([user?.id, selectedTournament?.id]),
+    enabled: Boolean(selectedTournament?.id),
+    intervalMs: 60_000,
+    onReset: () =>
+      setResultsRead({
+        tournamentId: selectedTournament?.id ?? null,
+        data: [],
+        loading: Boolean(selectedTournament?.id),
+        error: null,
+      }),
+    read: async (signal) => {
+      const tournamentId = selectedTournament!.id;
       const { data, error: standingsErr } = await supabase
         .from('tournament_players')
         /* bounty_winnings / bounties_collected are the record of record for
@@ -502,38 +496,42 @@ export default function TournamentResultsPage() {
            any field this room runs, rather than paging a screen that renders
            one list; the ceiling is now stated as a rendering bound, not
            mistaken for the size of the field. */
-        .limit(50000);
+        .limit(50000)
+        .abortSignal(signal);
       if (standingsErr) throw standingsErr;
-
-      if (isMounted.current && request === resultsRequestRef.current) {
-        setResultsRead({
-          tournamentId,
-          loading: false,
-          error: null,
-          data: (data || []).map((r) => ({
-            user_id: String((r as { user_id: string }).user_id),
-            username: String((r as { username: string | null }).username ?? 'Player'),
-            position: (r as { position: number | null }).position ?? null,
-            prize: Number((r as { prize: number | null }).prize) || 0,
-            bounty_winnings: Number((r as { bounty_winnings: number | null }).bounty_winnings) || 0,
-            bounties_collected:
-              Number((r as { bounties_collected: number | null }).bounties_collected) || 0,
-            status: String((r as { status: string | null }).status ?? ''),
-            chips: (r as { chips: number | null }).chips ?? null,
-          })),
-        });
-      }
-    } catch (err) {
-      if (!isMounted.current || request !== resultsRequestRef.current) return;
-      reportError(err, 'TournamentResultsPage.loadResults_error');
+      return (data || []).map((r) => ({
+        user_id: String((r as { user_id: string }).user_id),
+        username: String((r as { username: string | null }).username ?? 'Player'),
+        position: (r as { position: number | null }).position ?? null,
+        prize: Number((r as { prize: number | null }).prize) || 0,
+        bounty_winnings: Number((r as { bounty_winnings: number | null }).bounty_winnings) || 0,
+        bounties_collected:
+          Number((r as { bounties_collected: number | null }).bounties_collected) || 0,
+        status: String((r as { status: string | null }).status ?? ''),
+        chips: (r as { chips: number | null }).chips ?? null,
+      }));
+    },
+    onData: (data) =>
+      setResultsRead((previous) => {
+        if (
+          previous.tournamentId === selectedTournament?.id &&
+          !previous.error &&
+          !previous.loading &&
+          JSON.stringify(previous.data) === JSON.stringify(data)
+        )
+          return previous;
+        return { tournamentId: selectedTournament!.id, data, loading: false, error: null };
+      }),
+    onError: (error) => {
+      reportError(error, 'TournamentResultsPage.loadResults_error');
       setResultsRead({
-        tournamentId,
+        tournamentId: selectedTournament?.id ?? null,
         data: [],
         loading: false,
         error: 'Could Not Load These Standings. Please Retry.',
       });
-    }
-  };
+    },
+  });
 
   /**
    * The MYSTERY half, broken out (section 37).
@@ -620,20 +618,8 @@ export default function TournamentResultsPage() {
   };
 
   useEffect(() => {
-    loadResultsRef.current = loadResults;
-  }, [selectedTournament?.id]);
-
-  useEffect(() => {
-    loadResults();
-  }, [selectedTournament?.id]);
-
-  useEffect(() => {
     void loadMysteryBounty();
   }, [selectedTournament?.id, selectedTournament?.is_mystery_bounty]);
-
-  useEffect(() => {
-    loadHandHistoryRef.current = loadHandHistory;
-  }, [selectedTournament?.id]);
 
   useEffect(() => {
     loadHandHistory();
@@ -650,66 +636,6 @@ export default function TournamentResultsPage() {
     );
     return () => timers.forEach(clearTimeout);
   }, [results]);
-
-  // Subscribe to tournament results/standings updates
-  useEffect(() => {
-    const channelKey = 'tournament-results-updates';
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'tournaments',
-        /* DB LOAD PASS 2026-08-24: unfiltered, this delivered every update to
-           every tournament on the platform — blind-level ticks, player-count
-           changes, prize-pool movement, across thousands of live events — to a
-           page that lists COMPLETED tournaments only. `status=eq.COMPLETED` is
-           the list's own query predicate, so it is the correct scope. */
-        filter: 'status=eq.COMPLETED',
-      },
-      () => {
-        // When tournament is updated (status change, prize pool finalized, etc.)
-        loadTournamentsRef.current();
-      }
-    );
-
-    /* Player results are only ever rendered for the SELECTED tournament, so
-       there is nothing to listen for until one is selected — and when one is,
-       `tournament_id` scopes it exactly. This used to be an unfiltered
-       subscription to the whole tournament_players table (every registration,
-       elimination and chip update, platform-wide) discarded by a client-side
-       id comparison after delivery. */
-    if (selectedTournament?.id) {
-      channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournament_players',
-          filter: `tournament_id=eq.${selectedTournament.id}`,
-        },
-        () => {
-          // When player results are updated (position, prize finalized, etc.)
-          loadResultsRef.current();
-        }
-      );
-    }
-
-    channel.subscribe((status: string, err?: Error) => {
-      if (status === 'CHANNEL_ERROR') {
-        if (err) reportError(err?.message || err, 'TournamentResultsPage._Realtime_channel_error');
-      }
-      if (status === 'TIMED_OUT') {
-        console.warn('[TournamentResultsPage] Realtime channel timed out');
-      }
-    });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [selectedTournament?.id]);
 
   const formatDuration = (startedAt: string | null, endedAt: string | null) => {
     if (!startedAt || !endedAt) return '-';

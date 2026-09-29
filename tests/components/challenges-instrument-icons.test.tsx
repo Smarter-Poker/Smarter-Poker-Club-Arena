@@ -45,7 +45,9 @@ describe('CasinoControlIcon', () => {
       view.unmount();
     }
 
-    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(19);
+    // 'sign-in' retired with the page's signed-out panel (AuthGuard owns it).
+    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(18);
+    expect(CASINO_CONTROL_ICON_VARIANTS).not.toContain('sign-in');
     expect(signatures.size).toBe(CASINO_CONTROL_ICON_VARIANTS.length);
   });
 

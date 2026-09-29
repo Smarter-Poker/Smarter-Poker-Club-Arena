@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Club, ClubWithDistance, ClubMember, ClubLocation } from '@/types/club.types';
+import type { Club, ClubMember } from '@/types/club.types';
 import type { CreateClubData } from '@/services/ClubsService';
 import { ClubJoinService } from '@/services/ClubJoinService';
 import { reportError } from '../utils/errorReporter';
@@ -19,10 +19,9 @@ const getClubsService = async () => (await import('@/services/ClubsService')).Cl
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface ClubState {
-  // Discovery
-  nearbyClubs: ClubWithDistance[];
+  // Discovery is a name search. There is no location-based discovery, so the
+  // store neither asks for nor keeps a player's position.
   searchResults: Club[];
-  isDiscovering: boolean;
   isSearching: boolean;
 
   // User's clubs
@@ -34,15 +33,10 @@ interface ClubState {
   activeClubMembers: ClubMember[];
   isLoadingClub: boolean;
 
-  // User location
-  userLocation: ClubLocation | null;
-
   // Discovery Tab State
   activeTab: 'discover' | 'my-clubs' | 'create';
 
   // Actions
-  setUserLocation: (location: ClubLocation) => void;
-  discoverNearby: (radiusKm?: number) => Promise<void>;
   searchClubs: (query: string) => Promise<void>;
   loadMemberships: () => Promise<void>;
   loadClub: (identifier: string) => Promise<void>;
@@ -59,16 +53,13 @@ interface ClubState {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const initialState = {
-  nearbyClubs: [],
   searchResults: [],
-  isDiscovering: false,
   isSearching: false,
   memberships: [],
   isLoadingMemberships: false,
   activeClub: null,
   activeClubMembers: [],
   isLoadingClub: false,
-  userLocation: null,
   activeTab: 'discover' as const,
 };
 
@@ -76,29 +67,6 @@ export const useClubStore = create<ClubState>()(
   persist(
     (set, get) => ({
       ...initialState,
-
-      setUserLocation: (location) => {
-        set({ userLocation: location });
-      },
-
-      discoverNearby: async (radiusKm = 50) => {
-        const { userLocation } = get();
-        if (!userLocation) {
-          console.warn('[Store] User location not set for discovery');
-          return;
-        }
-
-        set({ isDiscovering: true });
-        try {
-          const service = await getClubsService();
-          const clubs = await service.discoverNearby(userLocation, radiusKm);
-          set({ nearbyClubs: clubs });
-        } catch (error) {
-          reportError(error, 'useClubStore.Discovery_failed');
-        } finally {
-          set({ isDiscovering: false });
-        }
-      },
 
       searchClubs: async (query) => {
         if (!query.trim()) {
@@ -202,8 +170,7 @@ export const useClubStore = create<ClubState>()(
     {
       name: 'club-engine-store',
       partialize: (state) => ({
-        // Only persist location and tab preference
-        userLocation: state.userLocation,
+        // Only the tab preference is persisted.
         activeTab: state.activeTab,
       }),
     }

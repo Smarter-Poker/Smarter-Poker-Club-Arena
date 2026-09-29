@@ -1,0 +1,177 @@
+{
+  "rule_files": [
+    "../../infra/monitoring/alert-rules.yml"
+  ],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "An hour undealt fires under the ordinary hourly break (the old for: 1h never could)",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_tournaments_running_without_owner{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x59 1x179"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"TournamentRunningWithNoOwnerCritical\",alertstate=\"firing\"})",
+          "eval_time": "100m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"TournamentRunningWithNoOwnerCritical\",alertstate=\"firing\"})",
+          "eval_time": "130m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "A condition that only holds during breaks is never a fault",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_tournaments_running_without_owner{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"TournamentRunningWithNoOwnerCritical\",alertstate=\"firing\"})",
+          "eval_time": "200m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "One unmuted minute that dealt resets the hour",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_tournaments_running_without_owner{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x59 1x80 0 1x98"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"TournamentRunningWithNoOwnerCritical\",alertstate=\"firing\"})",
+          "eval_time": "150m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "Two hours shedding precision fires under the hourly break",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_equity_governor_scale{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "1x29 0.5x210"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"EngineSheddingPrecisionForHours\",alertstate=\"firing\"})",
+          "eval_time": "120m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(ALERTS{alertname=\"EngineSheddingPrecisionForHours\",alertstate=\"firing\"})",
+          "eval_time": "200m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "The release-route alarm fires while the platform sits in a break",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_maintenance_breaks_since_restart_certified{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "6x60"
+        },
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "1x60"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"EngineCannotBeReplaced\",alertstate=\"firing\"})",
+          "eval_time": "20m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Recovery windows back to back freeze the platform too often",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x19 1x9 0x19 1x9 0x19 1x9 0x19 1x9 0x19 1x9 0x19 1x9 0x19 1x9 0x19 1x9"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"PlatformFrozenTooOften\",alertstate=\"firing\"})",
+          "eval_time": "220m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "The ordinary hourly break is not too often",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "poker_maintenance_break_active{job=\"engine_game_server\",instance=\"engine\"}",
+          "values": "0x52 1x6 0x52 1x6 0x52 1x6 0x52 1x6"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(ALERTS{alertname=\"PlatformFrozenTooOften\",alertstate=\"firing\"})",
+          "eval_time": "220m",
+          "exp_samples": []
+        }
+      ]
+    }
+  ]
+}

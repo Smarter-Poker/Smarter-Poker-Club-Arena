@@ -49,9 +49,14 @@ const code = SERVICE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm
  * against 127 characters of interface. `sliceMethod` already handles exactly
  * this; its own comment describes the trap. Use the extractor that fits
  * (tests/unit/noFixedSizeSourceWindows.test.ts says the same thing).
+ *
+ * The anchor follows the signature (2026-09-22): the method gained an optional
+ * `nowMs` so the table HUD can measure the level against the engine's clock,
+ * and Prettier now breaks the parameter list across lines. Every assertion
+ * below still runs against the same body.
  */
 function levelStateBody(src: string): string {
-  return sliceMethod(src, 'getCurrentLevelState(tournament: Tournament)');
+  return sliceMethod(src, 'getCurrentLevelState(\n    tournament: Tournament,');
 }
 
 describe('the canonical reader understands all three spellings', () => {

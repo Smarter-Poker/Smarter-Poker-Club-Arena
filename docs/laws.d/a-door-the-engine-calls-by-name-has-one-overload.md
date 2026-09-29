@@ -1,0 +1,3 @@
+# tests/a-door-the-engine-calls-by-name-has-one-overload.law.test.ts
+
+PostgREST refuses a by-name call (PGRST203) when two overloads accept its named arguments. On 2026-09-28 a CREATE OR REPLACE that added `p_request_id DEFAULT NULL` to fn_consume_time_bank left the old `(uuid, integer)` beside it, every engine time-bank debit was refused from 14:49Z, each refusal tainted its table's custody for the life of the process, and decided SNG/Spin events could not finish. The law pins that every new fn_consume_time_bank signature is followed by the drop of `(uuid, integer)`, that the drop migration keeps its exact pre-image guard and one-door post-image, and that from 20260928154352 on any migration that changes a function's argument list drops the signature it replaced.

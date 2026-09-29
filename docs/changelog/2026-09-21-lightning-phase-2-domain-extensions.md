@@ -241,3 +241,115 @@ the formation function of spec Phase 9.
 migration's objects appeared in the fragment, by substring, and not that the
 fragment contained nothing else. It is now a set equality in both directions on
 exact strings.
+
+## Correction, 2026-09-25: the second `@live-proof` of `20260921025504` was false by construction, and has been restated
+
+The line read:
+
+```sql
+-- @live-proof: (SELECT count(*) = (SELECT count(*) FROM public.cash_games)
+--                 FROM public.cash_cluster_epoch WHERE epoch = 0)
+```
+
+It was never true of anything but a virgin estate, and that is worth stating precisely, because it is not the usual kind of stale proof. It had not drifted away from code that changed under it. It contradicted the backfill standing four lines below it on the day it was written.
+
+The genesis backfill inserts one open epoch row per Cluster **at that Cluster's own epoch** — that is its entire purpose, it is what the migration's own read-back guard asserts, and it is what the harness section named `GENESIS BACKFILL` already said in so many words: "each carrying that cluster's own epoch … rather than three constants". A Cluster that has ever advanced its epoch therefore has no epoch-0 row at all, and never had one to lose. `WHERE epoch = 0` can only ever match Clusters that have not moved.
+
+It went unnoticed for four days because it was accidentally true of production, where all 166 Clusters sit at epoch 0 and nothing has yet converted. That is the tell: it pinned an **estate fact dressed as a fact about the migration**. The same class of mistake was found and removed from two Phase 4 proofs and two Phase 5 proofs in the same week, and it is worth naming as a category, because it is the one kind of false proof that a green production check cannot find — it is true right up until the feature it guards starts working, and then it fails for the first time on the day of the thing it was supposed to protect.
+
+**How it was found.** Three of the six Lightning harnesses — this file's included — had no live-proof section at all, so 47 proof lines across them had never once been put to a database. `-- @live-proof:` lines are comments; nothing evaluates them unless a harness is written to. Giving all three the section that Phase 4 and Phase 5 already had turned this one red on the first run, on a board carrying a Cluster at epoch 2.
+
+**What changed.** The comment only. No applied statement in `20260921025504` is touched, and the migration is not re-applied. The claim is restated as the invariant the backfill really establishes, and which stays true however many Clusters convert:
+
+```sql
+-- @live-proof: (SELECT NOT EXISTS (SELECT 1 FROM public.cash_games g
+--   WHERE (SELECT count(*) FROM public.cash_cluster_epoch e
+--           WHERE e.cluster_id = g.id AND e.ended_at IS NULL) <> 1))
+```
+
+Exactly one open epoch row per Cluster. Verified true against production after the change, and — unlike its predecessor — it will still be true after the first Lightning conversion. The adjacent third proof, which states the same idea over `g.cluster_epoch` rather than over the constant `0`, was true all along and is unchanged.
+
+**Still worth doing, and not done here.** None of this file's thirteen proofs uses the comment-stripping idiom `regexp_replace(pg_get_functiondef(...), '--[^' || chr(10) || ']*', '', 'g')`, and `20260921044045`'s seventh proof forbids the string `DESC` while reading the raw function body. It is true today and one explanatory comment containing the word away from the failure that has already bitten three proofs in this project. That wants a supersession of its own rather than a quiet edit here.
+
+## Correction, 2026-09-25: the eighth `@live-proof` of `20260920235343`, verified false in production and restated in full
+
+Written while shipping Lightning Phase 9
+(`20260925215731_lightning_phase_9_the_hand_formation_barrier_is_atomic_and_t`).
+Migration files are immutable, so nothing above is edited.
+
+The 2026-09-21 Correction above already records that this proof went false, but
+it quotes only the last clause of it and was written before anybody evaluated it
+against production. Both gaps are closed here. **The eighth `@live-proof` line of
+`20260920235343` reads, in full:**
+
+```
+(SELECT count(*) = 2 FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+   JOIN pg_namespace n ON n.oid = t.relnamespace
+  WHERE n.nspname = 'public' AND c.contype = 'f'
+    AND t.relname IN ('lightning_pool_slot','lightning_reservation')
+    AND array_length(c.conkey, 1) = 3)
+```
+
+It asserts that `lightning_pool_slot` and `lightning_reservation` carry
+**exactly two three-column foreign keys** between them. Evaluated read-only
+against production on 2026-09-25, it returns **false**. Production carries
+**zero** three-column foreign keys on those two tables and **two** four-column
+ones: `lightning_pool_slot_belongs_to_its_session` and
+`lightning_reservation_belongs_to_its_slot`, each with `array_length(conkey, 1)
+= 4`.
+
+**Why it is false.** `20260921025504` (Phase 2 remediation) deliberately widened
+the pool family's identity from `(id, player_id, cluster_id)` to
+`(id, player_id, cluster_id, cluster_epoch)` and re-pointed both keys at the whole
+tuple, so that a slot cannot belong to a pool session in another epoch and a
+reservation cannot point at another epoch's slot. The principle this document
+stated - each level exposes its identity and the level below references all of
+it - is unchanged; the identity simply gained a column. Nothing was dropped and
+nothing was weakened.
+
+**What the later migration proves instead.** `20260921025504` carries its own
+proofs of the four-column shape, and all three are true in production today:
+
+- its fifth proof: exactly three foreign keys named
+  `lightning_pool_slot_belongs_to_its_session`,
+  `lightning_reservation_belongs_to_its_slot` and
+  `lightning_hand_player_sits_in_its_own_slot` have
+  `array_length(c.conkey, 1) = 4`;
+- its seventh: all eight of the family's named foreign keys reference a real
+  unique constraint;
+- its tenth: `lightning_pool_session_identity` and `lightning_pool_slot_identity`
+  are both four-column.
+
+**The code is right and the proof was pinning an intermediate state.** It was
+true of the database `20260920235343` produced, which is the only database its
+own harness evaluates it against, and it stopped being true the moment Phase 2's
+remediation landed on top. It is superseded, not repaired: the house practice is
+supersede-and-document, and a proof edited into agreement with later code would
+no longer say anything about the migration it sits in. As the earlier Correction
+says, the line is latent rather than red, because
+`scripts/ci/check-migrations-are-live.mjs` clears this migration at step 1, the
+name match, and evaluates proofs only for a migration it cannot match; it would
+fire on a replay into a database whose `schema_migrations` was not carried over.
+
+**The general lesson.** A proof that pins an exact count or an exact key set of
+an object that a later phase is expected to extend will go false on the day that
+phase lands, and it will do so while the code is correct. This one pinned
+`= 3` on a key the next migration was always going to widen; its Phase 4
+sibling pinned "exactly five" occurrences of a predicate that Phase 5 re-cut, and
+the Phase 4 remediation pinned "exactly ten" keys of a state object that the
+Phase 5 remediation extended to eleven. The durable form is a lower bound or a
+"contains these" assertion - `>= 2`, `@>`, `bool_and` over the members that must
+be present, `NOT EXISTS` over the shape that must never appear - which states
+what the migration guarantees without also forbidding everything that comes
+after it. An exact equality belongs only where the specification itself fixes
+the number.
+
+For the record, the full tally on 2026-09-25: every line-anchored
+`-- @live-proof:` of the eleven Lightning migrations applied to production, from
+`20260920172736` to `20260925215731` - 210 of them - was evaluated read-only
+against production. The Phase 9 remediation, unapplied at the time, is excluded. 207 are true. The three
+that are false are this one, the fourteenth of `20260921064717` (documented in
+`2026-09-21-lightning-phase-4-population.md`) and the fifteenth of
+`20260921142954` (documented in `2026-09-21-lightning-phase-4-remediation.md`),
+and all three are supersessions by a later Lightning migration rather than
+defects in the code they describe.

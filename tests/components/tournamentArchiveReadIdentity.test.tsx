@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
-  playerRefresh: null as null | (() => void),
+  userId: 'hero',
   leaderboard: vi.fn(),
   awards: vi.fn(),
   report: vi.fn(),
@@ -16,7 +16,16 @@ function chain(table: string) {
     then: (ok: (value: Reply) => unknown, fail: (error: unknown) => unknown) =>
       Promise.resolve(mocks.query(table, args)).then(ok, fail),
   };
-  for (const method of ['select', 'eq', 'in', 'gte', 'order', 'limit', 'maybeSingle']) {
+  for (const method of [
+    'select',
+    'eq',
+    'in',
+    'gte',
+    'order',
+    'limit',
+    'maybeSingle',
+    'abortSignal',
+  ]) {
     query[method] = (...values: unknown[]) => {
       if (method === 'eq' || method === 'gte') args[String(values[0])] = values[1];
       else args[method] = values[0];
@@ -33,20 +42,16 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
-    getOrCreateChannel: () => {
-      const channel = {
-        on: (_event: string, options: { table: string }, callback: () => void) => {
-          if (options.table === 'tournament_players') mocks.playerRefresh = callback;
-          return channel;
-        },
-        subscribe: () => channel,
-      };
+    getOrCreateChannel: vi.fn(() => {
+      const channel = { on: () => channel, subscribe: () => channel };
       return channel;
-    },
+    }),
     removeRegisteredChannel: vi.fn(),
   },
 }));
-vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: { id: 'hero' } }) }));
+vi.mock('../../src/hooks/useAuthUser', () => ({
+  useAuthUser: () => ({ user: { id: mocks.userId } }),
+}));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => ({ error: vi.fn() }) }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 vi.mock('../../src/components/rewards/RewardsSurfaceHeader', () => ({ default: () => null }));
@@ -119,9 +124,13 @@ beforeEach(() => {
   mocks.leaderboard.mockReset().mockResolvedValue([]);
   mocks.awards.mockReset().mockResolvedValue({ rows: [] });
   mocks.report.mockClear();
-  mocks.playerRefresh = null;
+  mocks.userId = 'hero';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('recorded satellite qualifier archive', () => {
   const target = 'a1000000-0000-4000-8000-000000000001';
@@ -212,7 +221,7 @@ describe('Tournament archive read identity', () => {
     expect(screen.getByTestId('payment-event').textContent).toBe('B');
   });
 
-  it('keeps the newest same-event realtime refresh when responses arrive out of order', async () => {
+  it('coalesces visibility refreshes and follows an in-flight response with a fresh read', async () => {
     const stale = deferred();
     let reads = 0;
     mocks.query.mockImplementation((table) =>
@@ -227,16 +236,79 @@ describe('Tournament archive read identity', () => {
     mount();
     await select('A');
     await screen.findByText('Initial Winner');
-    act(() => {
-      mocks.playerRefresh!();
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
     });
-    act(() => {
-      mocks.playerRefresh!();
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
     });
-    await screen.findByText('Latest Winner');
+    expect(reads).toBe(2);
     await act(async () => stale.resolve(success([winner('Stale Winner')])));
+    await screen.findByText('Latest Winner');
     expect(screen.queryByText('Stale Winner')).toBeNull();
     expect(screen.getByText('Latest Winner')).toBeTruthy();
+  });
+
+  it('reads completed events and selected standings on visibility without unpublished channels', async () => {
+    let updated = false;
+    mocks.query.mockImplementation((table) =>
+      success(
+        table === 'tournaments'
+          ? [tournament('A'), ...(updated ? [tournament('B')] : [])]
+          : table === 'tournament_players'
+            ? [winner(updated ? 'Paid Winner' : 'Initial Winner')]
+            : []
+      )
+    );
+    mount();
+    await select('A');
+    await screen.findByText('Initial Winner');
+    updated = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await screen.findByText('Event B');
+    await screen.findByText('Paid Winner');
+  });
+
+  it('has bounded visible cadence and stops archive reads while hidden', async () => {
+    vi.useFakeTimers();
+    mount();
+    await act(async () => {});
+    const listReads = () =>
+      mocks.query.mock.calls.filter(([table]) => table === 'tournaments').length;
+    expect(listReads()).toBe(1);
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(listReads()).toBe(2);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    expect(listReads()).toBe(2);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => {});
+    expect(listReads()).toBe(3);
+  });
+
+  it('aborts and ignores a former account archive read', async () => {
+    const stale = deferred();
+    mocks.query.mockImplementation((table) =>
+      table === 'tournaments' ? stale.promise : success([])
+    );
+    const view = mount();
+    await waitFor(() => expect(mocks.query).toHaveBeenCalled());
+    const firstSignal = mocks.query.mock.calls[0][1].abortSignal as AbortSignal;
+    mocks.userId = 'next-account';
+    mocks.query.mockImplementation((table) =>
+      success(table === 'tournaments' ? [tournament('B')] : [])
+    );
+    view.rerender(
+      <MemoryRouter>
+        <TournamentResultsPage />
+      </MemoryRouter>
+    );
+    await screen.findByText('Event B');
+    expect(firstSignal.aborted).toBe(true);
+    await act(async () => stale.resolve(success([tournament('A')])));
+    expect(screen.queryByText('Event A')).toBeNull();
   });
 
   it('reports refused standings without old-event awards and retries without collapsing the event', async () => {

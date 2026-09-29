@@ -59,7 +59,7 @@ const CANARY = 'MonitoringCanary';
 const SPIN_RULE = 'SpinUnfilledBacklog';
 const SPIN_GROUP = 'spin-experience';
 const SPIN_FILE = '/etc/prometheus/spin-rules.yml';
-const SPIN_BLOCK_SHA256 = 'e866c2fd89d9bf3b7d0e68f79a625bd37cb602634c72208fa42b1dc0cdb56c15';
+const SPIN_BLOCK_SHA256 = '53f0555e2fda6fe374a90737a7c6af8d25b389ac4501847aaeee5e9aa951b0e1';
 const SPIN_CONTRACT = {
   query: 'poker_spin_unfilled_waits > 5',
   duration: 1200,
@@ -76,7 +76,7 @@ const SPIN_CONTRACT = {
       'A drawn or played game requires its continuation or settlement\n' +
       'authority. This count alone proves neither that expiry is due\n' +
       'nor that the expiry timer failed.\n',
-    runbook: 'https://monitor.smarter.poker/runbooks/spin-unfilled-backlog',
+    runbook: 'docs/runbooks/spin-unfilled-backlog.md',
   },
 };
 

@@ -20,19 +20,37 @@
  *  2. Every page that saves a wager replays it on its own schedule
  *     (useAutoSettle) and reads the ticket-gone refusal, so a refused ticket is
  *     re-dealt and the wager sent again without a press.
- *  3. A won game starts itself (useAwardAutoStart): a short visible countdown,
- *     then the same Start the button would have pressed. The bonus guard holds
- *     a page for money in flight, and for a won game only while that game can
- *     actually start - never on an award the page cannot start.
+ *  3. A won game waits for the player (owner ruling 2026-09-21, R1 and R9,
+ *     which supersedes the auto-start clause this law carried: "Games can
+ *     NEVER auto start. Remove the countdown clock that triggers an auto
+ *     start", and "the won game must stay on screen until the user selects
+ *     Play Game"). No countdown presses Start; no page imports a hook that
+ *     would. The bonus guard still holds a page for money in flight, and for a
+ *     won game only while that game can actually start - never on an award the
+ *     page cannot start, so waiting is never being trapped.
  *  4. The server never deletes a player's live ticket when dealing another,
  *     and both start functions refuse a dead ticket before the entry whose
  *     foreign key would turn it into an exception. Pinned by the installed
  *     migration text, so a later rewrite of either function must carry the
  *     same guard.
+ *  5. Both start functions answer a ticket this request already used with its
+ *     receipt BEFORE they can call the ticket gone (review finding 8,
+ *     2026-09-22). Reversed, a replay of a start that committed would be
+ *     answered "gone", and the page would deal a fresh ticket and send the
+ *     wager again: a second charge.
+ *  6. An error the database answered is an answer (review finding 2,
+ *     2026-09-22). A SQLSTATE means that execution rolled back, so the service
+ *     refuses it (a passing one after three sends of the same request) and the
+ *     page lets the player go; only an error with no code keeps the wager
+ *     replaying, and never from a background tab. A receipt the browser cannot
+ *     verify stops after three and lets the player go, the wager kept for the
+ *     next visit. A wager that could not be saved was never sent: a refusal.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { BONUS_SENDS_PER_REQUEST, bonusErrorKind } from '../src/services/DiamondBonusService';
+import { spinErrorKind } from '../src/services/DiamondWheelService';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -107,10 +125,14 @@ describe('a saved round settles itself', () => {
     expect(src).toContain('PriorBonusPending');
   });
 
-  it.each(AWARD_PAGES)('%s starts a won game by itself', (file) => {
+  it.each(AWARD_PAGES)('%s never starts a won game by itself', (file) => {
     const src = read(file);
-    expect(src).toContain("from '../hooks/useAwardAutoStart'");
-    expect(src).toMatch(/useAwardAutoStart\(/);
+    // Owner ruling 2026-09-21, R1: the countdown that pressed Start is gone,
+    // and nothing may put one back. Pinned on the source because a clock the
+    // player never sees is exactly what a rendered test misses.
+    expect(src).not.toContain('useAwardAutoStart');
+    expect(src).not.toContain('useIdleSpinCountdown');
+    expect(src).not.toMatch(/Starting In \$\{|Dropping In \$\{/);
   });
 
   it.each(AWARD_PAGES)('%s does not hold a player on a won game that cannot start', (file) => {
@@ -140,9 +162,11 @@ describe('a saved round settles itself', () => {
   });
 
   it('a saved wager is judged by its own game', () => {
+    // Only Plinko plays its entry in drops, and since R6 the player chooses the
+    // value, so only Plinko's saved wager is judged against it.
     const src = code('src/services/diamondBonusRecovery.ts');
     expect(src).toMatch(
-      /v\.game === 'plinko' && bonusTotal\(v\.budget\) % v\.budget\.denomination/
+      /v\.game === 'plinko'\s*\?[\s\S]*bonusTotal\(v\.budget\) % v\.budget\.denomination/
     );
   });
 
@@ -162,6 +186,16 @@ describe('a saved round settles itself', () => {
     const src = read('src/services/diamondBonusRecovery.ts');
     expect(src).not.toContain("throw new Error('The Saved Bonus Needs To Be Checked')");
     expect(src).toContain('class PriorBonusPending');
+  });
+
+  it('a saved wheel spin that cannot be read is discarded, never thrown', () => {
+    // Thrown, it stranded the wheel on "Reconnecting" for good: the save lives in
+    // localStorage and every load retry read it again.
+    const src = read('src/utils/wheelPendingSpin.ts');
+    const reader = src.slice(src.indexOf('export function readWheelPending('));
+    const body = reader.slice(0, reader.indexOf('\n}\n'));
+    expect(body).not.toMatch(/\bthrow\b/);
+    expect(src).toContain('localStorage.removeItem(key)');
   });
 
   it('a failed award read retries itself', () => {
@@ -189,6 +223,87 @@ describe('a saved round settles itself', () => {
       expect(refusal, `${fn} refuses before it inserts`).toBeLessThan(insert);
     }
     expect(sql).toContain("'ticket', 'gone'");
+  });
+
+  it('both start functions answer a used ticket with its receipt before they can call it gone', () => {
+    const sql = read(MIGRATION);
+    /** One function's body, from its signature to its own end. */
+    const body = (fn: string) => {
+      const from = sql.indexOf(`FUNCTION public.${fn}(`);
+      expect(from, `${fn} is defined`).toBeGreaterThan(0);
+      return sql.slice(from, sql.indexOf('END $function$;', from));
+    };
+    for (const [fn, replay] of [
+      [
+        'fn_diamond_bonus_start',
+        'SELECT * INTO prior FROM public.diamond_bonus_entries WHERE commit_id=p_commit_id;',
+      ],
+      ['fn_wheel_bonus_start', "IF a.status='redeemed' THEN"],
+    ]) {
+      const src = body(fn);
+      const lock = src.indexOf('pg_advisory_xact_lock(hashtextextended(p_commit_id::text,94613))');
+      const replayed = src.indexOf(replay);
+      const receipt = src.indexOf("'replayed',true", replayed);
+      const refusal = src.indexOf('public.fn_diamond_ticket_refusal(');
+      expect(lock, `${fn} takes the ticket's lock first`).toBeGreaterThan(0);
+      expect(replayed, `${fn} looks for the request's own round under that lock`).toBeGreaterThan(
+        lock
+      );
+      expect(receipt, `${fn} answers that round with its receipt`).toBeGreaterThan(replayed);
+      expect(refusal, `${fn} still refuses a dead ticket`).toBeGreaterThan(0);
+      // Reversed, a replay would answer 'gone' and the page would send again.
+      expect(receipt, `${fn} replays before it can call the ticket gone`).toBeLessThan(refusal);
+    }
+  });
+
+  it('an error the database answered is an answer, never a wager resent for ever', () => {
+    // One rule for the bonus games and the wheel.
+    for (const code of [
+      '23503',
+      '23514',
+      'P0001',
+      '40001',
+      '40P01',
+      '55P03',
+      '57014',
+      'PGRST000',
+      'PGRST003',
+      'PGRST116',
+      'PGRST301',
+      '',
+    ])
+      expect(bonusErrorKind({ code }), code).toBe(spinErrorKind({ code }));
+    expect(bonusErrorKind({ code: '23503' })).toBe('refused');
+    expect(bonusErrorKind({ code: '40001' })).toBe('transient');
+    expect(bonusErrorKind({ code: 'PGRST002' })).toBe('transient');
+    expect(bonusErrorKind({ code: 'PGRST301' })).toBe('refused');
+    expect(bonusErrorKind({ code: '' })).toBe('unknown');
+    expect(bonusErrorKind(new Error('Connection Lost'))).toBe('unknown');
+    expect(BONUS_SENDS_PER_REQUEST).toBe(3);
+    const service = code('src/services/DiamondBonusService.ts');
+    const start = service.slice(service.indexOf('async start('), service.indexOf('async latest('));
+    // The start door classifies its error; it never rethrows every one.
+    expect(start).not.toMatch(/if \(error\) throw error;/);
+    expect(start).toMatch(/bonusErrorKind\(error\)/);
+    expect(start).toMatch(/throw new BonusRefusal\(BONUS_NOT_TAKEN\)/);
+    // A receipt that will not verify is its own answer, kept, counted, final.
+    expect(start).toMatch(/throw new BonusUnreadable\(/);
+    // A wager that could not be saved was never sent: a refusal.
+    expect(start).toMatch(/throw new BonusRefusal\(BONUS_NOT_SAVED\)/);
+    for (const page of AWARD_PAGES) {
+      const src = code(page);
+      // The page stops on the third unreadable answer and lets the player go.
+      expect(src, page).toMatch(/instanceof BonusUnreadable && \w+\.final/);
+      expect(src, page).toMatch(/useAutoSettle\(\s*uncertain && !saved/);
+      const from = src.indexOf('useLiveBonusGuard(');
+      expect(src.slice(from, src.indexOf(');', from)), page).toMatch(/!saved &&/);
+    }
+    // A background tab replays nothing.
+    expect(code('src/hooks/useAutoSettle.ts')).toMatch(/document\.hidden/);
+    // Crash replays nothing behind its load-error screen, where the guard is off.
+    expect(code('src/pages/DiamondCrashPage.tsx')).toMatch(
+      /uncertain && !saved && !loading && !loadError && Boolean\(state\)/
+    );
   });
 
   it('no later migration reinstates the live-ticket sweep', () => {

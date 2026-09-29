@@ -7,6 +7,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { haptic } from '../../services/SoundService';
+import { TapHaptic } from '../haptics/TapHaptic';
+import '../../styles/table-design-tokens.css';
 import './ActionPanel.css';
 import { formatTableChips } from '../../utils/format';
 
@@ -947,13 +949,17 @@ export default function ActionPanel({
 
   const handleRaiseClick = useCallback(() => {
     if (!canRaise && !canAllIn) return;
-    haptic.light();
+    /* One buzz per tap (2026-09-26): this used to buzz light here and then
+       medium again in the fixed-limit branch below, 30 ms apart, which the
+       60 ms coalescing lets through as two buzzes because the second is
+       heavier. Each branch now buzzes once, at its own weight. */
     /* Dan 2026-08-25 (item 5): the sizing controls open as an OVERLAY above a
        three-button row that never moves, so unlike the old full-panel swap
        this button is still on screen while the overlay is up. It therefore has
        to close it too - otherwise the only way back out is the Back button
        hiding at the top of the overlay. */
     if (isRaiseMode) {
+      haptic.light();
       setIsRaiseMode(false);
       return;
     }
@@ -968,6 +974,7 @@ export default function ActionPanel({
       else onAction('raise', minRaise);
       return;
     }
+    haptic.light();
     setIsRaiseMode(true);
     setRaiseAmount(minRaise);
     lastSnapRef.current = minRaise;
@@ -1215,6 +1222,7 @@ export default function ActionPanel({
               aria-label={`Decrease By ${formatChips(sliderStep)}`}
             >
               −
+              <TapHaptic disabled={raiseAmount <= minRaise} radius="10px" />
             </button>
             <div className="raise-value">
               {amountTyping ? (
@@ -1269,6 +1277,7 @@ export default function ActionPanel({
               aria-label={`Increase By ${formatChips(sliderStep)}`}
             >
               +
+              <TapHaptic disabled={raiseAmount >= maxRaise} radius="10px" />
             </button>
           </div>
 
@@ -1296,6 +1305,7 @@ export default function ActionPanel({
                   aria-label={`${p.label} - ${wagerVerb} ${formatChips(p.value)}`}
                 >
                   {p.label}
+                  <TapHaptic disabled={minRaise > maxRaise} radius="10px" />
                 </button>
               ))}
               <button
@@ -1309,6 +1319,7 @@ export default function ActionPanel({
                 aria-label={`Bet All In For ${formatChips(allInThreshold)}`}
               >
                 ALL IN
+                <TapHaptic disabled={!canAllIn} radius="10px" />
               </button>
             </div>
           )}
@@ -1339,6 +1350,7 @@ export default function ActionPanel({
               }
             >
               {raiseAmount >= allInThreshold ? 'All In' : wagerVerb} {formatChips(raiseAmount)}
+              <TapHaptic radius="14px" />
             </button>
           </div>
         </div>
@@ -1462,6 +1474,7 @@ export default function ActionPanel({
         >
           <span className="action-btn__label">Fold</span>
           {isDesktop && <span className="action-btn__shortcut">F</span>}
+          <TapHaptic disabled={!canFold} radius="10px" />
         </button>
 
         {/* CHECK or CALL — Green, Center */}
@@ -1477,6 +1490,7 @@ export default function ActionPanel({
           >
             <span className="action-btn__label">Check</span>
             {isDesktop && <span className="action-btn__shortcut">C</span>}
+            <TapHaptic radius="10px" />
           </button>
         ) : canCall ? (
           <button
@@ -1499,6 +1513,7 @@ export default function ActionPanel({
               </span>
             )}
             {isDesktop && <span className="action-btn__shortcut">C</span>}
+            <TapHaptic radius="10px" />
           </button>
         ) : (
           <button className="action-btn action-btn--check" disabled>
@@ -1523,6 +1538,7 @@ export default function ActionPanel({
                 kept the trap, and the label is the part the player reads. */}
             <span className="action-btn__amount">{formatChips(allInThreshold)}</span>
             {isDesktop && <span className="action-btn__shortcut">R</span>}
+            <TapHaptic radius="10px" />
           </button>
         ) : (
           <button
@@ -1549,6 +1565,7 @@ export default function ActionPanel({
                 note above) would mean tapping blind, so print it. */}
             {isFixedLimit && <span className="action-btn__amount">{formatChips(minRaise)}</span>}
             {isDesktop && <span className="action-btn__shortcut">R</span>}
+            <TapHaptic disabled={!canRaise} radius="10px" />
           </button>
         )}
       </div>

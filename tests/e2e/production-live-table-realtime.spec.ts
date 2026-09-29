@@ -1,9 +1,18 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import {
+  devices,
+  expect,
+  test,
+  type APIRequestContext,
+  type BrowserContext,
+  type Page,
+  type TestInfo,
+} from '@playwright/test';
 import {
   EngineSocketJournal,
   installLiveTablePresentationJournal,
   liveTablePresentationEvidence,
   whileConnectionBannerStaysHidden,
+  whileInitialTableConnects,
   type CausalHandCycle,
 } from './support/liveTableRealtime';
 import {
@@ -14,7 +23,29 @@ import {
 import { createProgressSilenceGuard } from './support/progressSilence';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { remainingObservationMs } from './support/observationDeadline';
-import { assertInitialTableOwnership } from './support/initialTableOwnership';
+import { assertInitialTableOwnership, classifyUnsubscribes } from './support/initialTableOwnership';
+import {
+  classifyCaseFailure,
+  classifyBoardEnding,
+  decideReselection,
+  HAND_BOUNDARY_EVENT_TYPES,
+  orderByEndurance,
+  selectableWhileRunning,
+  type TournamentBoardFacts,
+} from './support/tournamentBoardEnding';
+import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
+import {
+  createHudClockReader,
+  hudEventObservationMs,
+  MTT_HUD_LEVEL_CAP_MS,
+  mttCaseTimeoutMs,
+  observeHudLevels,
+  selectableHudClock,
+  sharedNaturalLevel,
+  waitForSharedNaturalLevel,
+  type HudClock,
+  type HudLevel,
+} from './support/tournamentHudWitness';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -26,8 +57,14 @@ const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
+/** Cash only: named failures must fire before the case's own timeout can. */
+const CASH_CASE_TAIL_MS = 15_000;
+/** Cash tables raced for the pre-navigation "next hand started" proof. */
+const CASH_PROGRESS_CANDIDATES = 8;
 const PRESENTATION_DEADLINE_MS = 3_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
+
+type BoardReader = Awaited<ReturnType<typeof createHudClockReader>>;
 
 type CertifiableGameFormat = 'cash' | (typeof TOURNAMENT_FORMATS)[number];
 
@@ -213,10 +250,24 @@ async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCan
   return candidates.map((candidate) => ({ ...candidate, gameFormat: 'cash' }));
 }
 
-async function selectOccupiedRunningCashTable(
+interface OccupiedCashTable {
+  candidate: RunningTableCandidate;
+  table: EngineTableLiveness;
+}
+
+/**
+ * Every occupied, running cash table the first productive lobby tab exposes
+ * (at most CASH_PROGRESS_CANDIDATES), each with the liveness it had when it
+ * was chosen. A cash hand is not short: measured 2026-09-29 over 20,488 hands
+ * in three hours, p50 30s, p90 87s, p99 149s, max 300s. One table chosen alone
+ * and asked to deal its NEXT hand inside 90s is in a long hand a large share of
+ * the time through nobody's fault; tournaments already race several tables and
+ * keep whichever deals first, and cash now does the same.
+ */
+async function selectOccupiedRunningCashTables(
   page: Page,
   request: APIRequestContext
-): Promise<{ candidate: RunningTableCandidate; health: EngineHealth; table: EngineTableLiveness }> {
+): Promise<{ tables: OccupiedCashTable[]; health: EngineHealth }> {
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
     throw new Error('Production redirected to auth despite the required authenticated state');
@@ -249,14 +300,19 @@ async function selectOccupiedRunningCashTable(
     }
     const candidates = await visibleRunningCashCandidates(page);
     if (candidates.length === 0) continue;
+    const tables: OccupiedCashTable[] = [];
+    let lastHealth: EngineHealth | null = null;
     for (let offset = 0; offset < candidates.length; offset += 32) {
       const batch = candidates.slice(offset, offset + 32);
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
+      lastHealth = health;
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table) return { candidate, health, table };
+        if (table && tables.length < CASH_PROGRESS_CANDIDATES) tables.push({ candidate, table });
       }
+      if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
     }
+    if (tables.length > 0 && lastHealth) return { tables, health: lastHealth };
   }
 
   throw new Error(
@@ -266,38 +322,55 @@ async function selectOccupiedRunningCashTable(
 
 async function proveTableProgressedBeforeNavigation(
   request: APIRequestContext,
-  candidate: RunningTableCandidate,
+  contenders: readonly OccupiedCashTable[],
   before: EngineHealth,
-  beforeTable: EngineTableLiveness
-): Promise<PreNavigationEngineEvidence> {
+  deadline: number
+): Promise<PreNavigationEngineEvidence & { selected: OccupiedCashTable }> {
   let after = before;
-  let afterTable = beforeTable;
+  let winner: { contender: OccupiedCashTable; table: EngineTableLiveness } | null = null;
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
+  const budget = Math.min(CAUSAL_HAND_TIMEOUT_MS, remainingObservationMs(deadline));
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request, { tableIds: [candidate.id] });
-        if (
-          !continuouslyActive(after.tableLiveness.find((table) => table.tableId === candidate.id))
-        )
-          return -1;
-        const current = healthyRunningTable(after, candidate.id, candidate.gameFormat);
-        if (!current) return -1;
-        afterTable = current;
-        return current.handCount;
+        after = await readEngineHealth(request, {
+          tableIds: contenders.map((contender) => contender.candidate.id),
+        });
+        for (const contender of contenders) {
+          const id = contender.candidate.id;
+          // A table that ever sat silent past the limit is excluded for good,
+          // exactly as a tournament baseline is; it can never be the witness.
+          if (!continuouslyActive(after.tableLiveness.find((table) => table.tableId === id)))
+            continue;
+          const current = healthyRunningTable(after, id, contender.candidate.gameFormat);
+          if (current && current.handCount > contender.table.handCount) {
+            winner = { contender, table: current };
+            return true;
+          }
+        }
+        return false;
       },
       {
-        // A live hand can keep progressing beyond the 45s inactivity limit.
-        // Wait for the next deal using the same full-hand bound as the socket proof.
-        timeout: CAUSAL_HAND_TIMEOUT_MS,
+        // The first of several occupied tables to deal its next hand wins. A
+        // live hand can outlast the 45s inactivity limit; the same full-hand
+        // bound as the socket proof applies to the group, not to one table.
+        timeout: budget,
         intervals: [2_000, 3_000, 5_000, 5_000],
-        message:
-          `table ${candidate.name} (${candidate.id}) existed before observation but did not start its next hand ` +
-          `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+        message: `none of ${contenders.length} occupied cash table(s) (${contenders
+          .map((contender) => contender.candidate.id)
+          .join(', ')}) started their next hand inside ${budget}ms`,
       }
     )
-    .toBeGreaterThan(beforeTable.handCount);
-  return { before, after, beforeTable, afterTable };
+    .toBe(true);
+  const picked = winner as { contender: OccupiedCashTable; table: EngineTableLiveness } | null;
+  if (!picked) throw new Error('cash progress poll completed without table evidence');
+  return {
+    before,
+    after,
+    beforeTable: picked.contender.table,
+    afterTable: picked.table,
+    selected: picked.contender,
+  };
 }
 
 /**
@@ -309,8 +382,50 @@ async function proveTableProgressedBeforeNavigation(
 async function selectProgressingTournamentTable(
   request: APIRequestContext,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number],
-  testInfo: TestInfo
-): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
+  testInfo: TestInfo,
+  options: {
+    /** Read-only database witness; present only where a board can end while watched (SNG). */
+    boardReader?: BoardReader;
+    /**
+     * Read-only clock witness; present only for the MTT. A table is selectable
+     * only if its tournament can yield the eligible natural HUD clock the case
+     * needs after recovery (see selectableHudClock), so the case never chooses
+     * a field that is in its add-on period, on a break or about to break.
+     */
+    hudReader?: BoardReader;
+    /** Boards this case already watched to a natural ending. */
+    excludeTableIds?: readonly string[];
+    /** The case's one fixed deadline; selection may spend only what remains of it. */
+    deadline: number;
+  }
+): Promise<{
+  candidate: RunningTableCandidate;
+  evidence: PreNavigationEngineEvidence;
+  boardFacts: TournamentBoardFacts | null;
+}> {
+  const excluded = new Set(options.excludeTableIds ?? []);
+  const pollBudgetMs = () =>
+    Math.min(CAUSAL_HAND_TIMEOUT_MS, remainingObservationMs(options.deadline));
+  /* A board that already finished, or is one hand from finishing, is not a
+     running board, and the deepest boards are the least likely to finish
+     while the browser is watching. Read the rows; never guess. */
+  const refineByBoard = async (tables: EngineTableLiveness[]): Promise<EngineTableLiveness[]> => {
+    const fresh = tables.filter((table) => !excluded.has(table.tableId));
+    if (options.hudReader && fresh.length > 0) {
+      const clocks = await options.hudReader.clocks(
+        fresh.map((table) => table.tableId),
+        MTT_HUD_LEVEL_CAP_MS,
+        selectableHudClock
+      );
+      return fresh.filter((table) => clocks.has(table.tableId));
+    }
+    if (!options.boardReader || fresh.length === 0) return fresh;
+    const facts = await options.boardReader.boardFacts(fresh.map((table) => table.tableId));
+    return orderByEndurance(
+      fresh.filter((table) => selectableWhileRunning(facts.get(table.tableId))),
+      facts
+    );
+  };
   let before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
@@ -333,7 +448,7 @@ async function selectProgressingTournamentTable(
           a.msSinceProgress - b.msSinceProgress ||
           a.tableId.localeCompare(b.tableId)
       );
-  let baselines = readyTables(before);
+  let baselines = await refineByBoard(readyTables(before));
 
   // A publisher can finish while natural tournament tables are still resuming.
   // Wait only for the same live-table prerequisites, before freezing identities.
@@ -343,16 +458,23 @@ async function selectProgressingTournamentTable(
         .poll(
           async () => {
             before = await readEngineHealth(request, { gameFormat });
-            baselines = readyTables(before);
+            baselines = await refineByBoard(readyTables(before));
             return baselines.length;
           },
           {
-            timeout: CAUSAL_HAND_TIMEOUT_MS,
+            timeout: pollBudgetMs(),
             intervals: [2_000, 3_000, 5_000, 5_000],
             message:
               `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
-              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID} ` +
-              `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID}` +
+              (options.hudReader
+                ? ' whose tournament can yield an eligible natural HUD clock (running, not on a break, ' +
+                  'not in its add-on period, not accelerated, next levels playable)'
+                : '') +
+              ` inside ${CAUSAL_HAND_TIMEOUT_MS}ms` +
+              (excluded.size
+                ? ` (${excluded.size} board(s) already ended naturally this case)`
+                : ''),
           }
         )
         .toBeGreaterThan(0);
@@ -380,10 +502,13 @@ async function selectProgressingTournamentTable(
   let after = before;
   let beforeTable: EngineTableLiveness | null = null;
   let afterTable: EngineTableLiveness | null = null;
+  let acceptedFacts: TournamentBoardFacts | null = null;
   const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   await expect
     .poll(
       async () => {
+        baselines = baselines.filter((table) => !excluded.has(table.tableId));
+        if (baselines.length === 0) return false;
         after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
         for (const baseline of baselines) {
           if (
@@ -394,6 +519,18 @@ async function selectProgressingTournamentTable(
             continue;
           const current = healthyRunningTable(after, baseline.tableId, gameFormat);
           if (current && current.handCount > baseline.handCount) {
+            // Fresh proof at acceptance: a board whose finishing hand was that
+            // very hand is an ended board, not a running one.
+            if (options.boardReader) {
+              const fresh = (await options.boardReader.boardFacts([baseline.tableId])).get(
+                baseline.tableId
+              );
+              if (!selectableWhileRunning(fresh)) {
+                excluded.add(baseline.tableId);
+                continue;
+              }
+              acceptedFacts = fresh ?? null;
+            }
             beforeTable = baseline;
             afterTable = current;
             return true;
@@ -402,7 +539,7 @@ async function selectProgressingTournamentTable(
         return false;
       },
       {
-        timeout: CAUSAL_HAND_TIMEOUT_MS,
+        timeout: pollBudgetMs(),
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
           `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
@@ -424,6 +561,7 @@ async function selectProgressingTournamentTable(
       gameFormat,
     },
     evidence: { before, after, beforeTable: selectedBefore, afterTable: selectedAfter },
+    boardFacts: acceptedFacts,
   };
 }
 
@@ -502,6 +640,17 @@ function isSpectatorParticipationMutation(method: string, rawUrl: string): boole
   );
 }
 
+/** A proven natural ending: the board finished while watched, so this case takes another running board. */
+class NaturalCompletionDuringObservation extends Error {
+  constructor(
+    message: string,
+    readonly evidence: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'NaturalCompletionDuringObservation';
+  }
+}
+
 async function certifyReadOnlyTournamentFormat(
   page: Page,
   request: APIRequestContext,
@@ -511,10 +660,94 @@ async function certifyReadOnlyTournamentFormat(
   // Poker's action clock bounds each turn, not the whole hand. Keep the
   // existing runner's hard case limit and one fixed observation deadline;
   // live poker events still must satisfy the unchanged silence limit.
-  const observationDeadline = Date.now() + testInfo.timeout;
-  const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
+  const caseStartedAt = Date.now();
+  const observationDeadline = caseStartedAt + testInfo.timeout;
+  /* A heads-up Sit & Go can finish its last hand while the browser watches
+     it, and then it is COMPLETED, not broken. Only that format reads the rows
+     that prove it. Every other failure keeps its own message and evidence. */
+  const boardReader = gameFormat === 'sng' ? await createHudClockReader() : undefined;
+  /* The MTT alone needs a natural blind-level clock after recovery, so it alone
+     qualifies its table by that clock at selection instead of by seat count. */
+  const hudReader = gameFormat === 'mtt' ? await createHudClockReader() : undefined;
+  const watched: string[] = [];
+  const endings: Array<Record<string, unknown>> = [];
+  const pages: Page[] = [];
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const attemptPage = attempt === 0 ? page : await page.context().newPage();
+      pages.push(attemptPage);
+      try {
+        await observeTournamentBoard(attemptPage, request, testInfo, gameFormat, {
+          caseStartedAt,
+          observationDeadline,
+          boardReader,
+          hudReader,
+          watched,
+          tag: attempt === 0 ? gameFormat : `${gameFormat}-attempt-${attempt + 1}`,
+        });
+        return;
+      } catch (error) {
+        if (!(error instanceof NaturalCompletionDuringObservation)) throw error;
+        endings.push(error.evidence);
+        const decision = decideReselection({
+          reselectionsUsed: attempt,
+          remainingMs: observationDeadline - Date.now(),
+        });
+        if (!decision.reselect) {
+          throw Object.assign(
+            new Error(
+              `${gameFormat.toUpperCase()} boards ended naturally while under observation and no ` +
+                `further board could be observed: ${decision.reason}. Endings: ${JSON.stringify(endings)}`
+            ),
+            { cause: error }
+          );
+        }
+        // Leave the finished board's page before another board is selected.
+        await attemptPage.goto('about:blank').catch(() => {});
+      }
+    }
+  } finally {
+    for (const extra of pages.slice(1)) await extra.close().catch(() => {});
+    if (endings.length)
+      await testInfo.attach(`${gameFormat}-natural-completions`, {
+        body: Buffer.from(JSON.stringify(endings, null, 2)),
+        contentType: 'application/json',
+      });
+    if (boardReader) await boardReader.close().catch(() => {});
+    if (hudReader) await hudReader.close().catch(() => {});
+  }
+}
+
+async function observeTournamentBoard(
+  page: Page,
+  request: APIRequestContext,
+  testInfo: TestInfo,
+  gameFormat: (typeof TOURNAMENT_FORMATS)[number],
+  clock: {
+    caseStartedAt: number;
+    observationDeadline: number;
+    boardReader: BoardReader | undefined;
+    hudReader: BoardReader | undefined;
+    watched: string[];
+    tag: string;
+  }
+): Promise<void> {
+  const { caseStartedAt, observationDeadline, boardReader, hudReader, watched, tag } = clock;
+  let hudClock: HudClock | undefined;
+  const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo, {
+    boardReader,
+    hudReader,
+    excludeTableIds: watched,
+    deadline: observationDeadline,
+  });
   const { candidate, evidence } = selected;
-  await testInfo.attach(`${gameFormat}-engine-before-navigation`, {
+  watched.push(candidate.id);
+  if (hudReader)
+    await testInfo.attach(`${tag}-mtt-hud-selection-qualification`, {
+      body: Buffer.from(JSON.stringify(hudReader.qualifications.slice(-32), null, 2)),
+      contentType: 'application/json',
+    });
+  await testInfo.attach(`${tag}-engine-before-navigation`, {
     body: Buffer.from(
       JSON.stringify(
         {
@@ -522,6 +755,7 @@ async function certifyReadOnlyTournamentFormat(
           gameFormat,
           before: compactHealthEvidence(evidence.before, evidence.beforeTable),
           after: compactHealthEvidence(evidence.after, evidence.afterTable),
+          boardAtSelection: selected.boardFacts,
         },
         null,
         2
@@ -532,6 +766,20 @@ async function certifyReadOnlyTournamentFormat(
 
   const journal = new EngineSocketJournal(page);
   const context = page.context();
+  const hudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
+  let peerContext: BrowserContext | undefined;
+  let peerPage: Page | undefined;
+  let peerLevels: HudLevel[] = [];
+  let hudBaseline = 0;
+  let hudSince = 0;
+  const hudObservation = new AbortController();
+  const hudLevelBadge = (target: Page) =>
+    target
+      .locator('.tournament-hud-bar')
+      .getByText('Level', { exact: true })
+      .locator('..')
+      .locator('span')
+      .nth(1);
   let offline = false;
   const participationMutations: Array<{ method: string; path: string }> = [];
   page.on('request', (outgoing) => {
@@ -576,7 +824,7 @@ async function certifyReadOnlyTournamentFormat(
       ),
     ]);
 
-    await whileConnectionBannerStaysHidden(
+    await whileInitialTableConnects(
       page,
       (async () => {
         await Promise.all([
@@ -598,11 +846,57 @@ async function certifyReadOnlyTournamentFormat(
           page.locator('.table-surface'),
           `${candidate.name} live felt never rendered`
         ).toBeVisible({ timeout: 20_000 });
+        // Cold entry may honestly say Connecting before its first state. The
+        // actual subscription, snapshot, mounted felt and cleared status must
+        // still finish inside the same original navigation deadline.
+        await expect(banner).toBeHidden({
+          timeout: remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS),
+        });
       })(),
       `${candidate.name} initial live-table connection`
     );
 
     await expect(banner).toBeHidden();
+    if (gameFormat === 'mtt') {
+      const browser = context.browser();
+      if (!browser) throw new Error('HUD witness needs the existing isolated WebKit browser');
+      peerContext = await browser.newContext({
+        ...devices['iPhone 13'],
+        baseURL: testInfo.project.use.baseURL,
+        storageState: await context.storageState(),
+      });
+      peerPage = await peerContext.newPage();
+      peerLevels = observeHudLevels(peerPage);
+      peerPage.on('request', (outgoing) => {
+        if (isSpectatorParticipationMutation(outgoing.method(), outgoing.url()))
+          participationMutations.push({
+            method: outgoing.method(),
+            path: new URL(outgoing.url()).pathname,
+          });
+      });
+      await peerPage.goto(`table/${candidate.id}`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
+      expect(tableIdFromUrl(peerPage)).toBe(candidate.id);
+      await expect(peerPage.locator('.table-surface')).toBeVisible({ timeout: 20_000 });
+      await expect(peerPage.getByTestId('table-connection-banner')).toBeHidden({
+        timeout: CONNECT_DEADLINE_MS,
+      });
+      await expect
+        .poll(
+          async () => {
+            const primary = Number(await hudLevelBadge(page).innerText());
+            const peer = Number(await hudLevelBadge(peerPage!).innerText());
+            return Number.isSafeInteger(primary) && primary > 0 && primary === peer ? primary : 0;
+          },
+          {
+            timeout: 15_000,
+            message: 'the two real HUDs did not agree on their initial display level',
+          }
+        )
+        .toBeGreaterThan(0);
+    }
     await expect
       .poll(() => page.locator('.seat[role="region"]').count(), {
         timeout: 10_000,
@@ -772,15 +1066,89 @@ async function certifyReadOnlyTournamentFormat(
       }
     }
 
-    expect(
+    if (gameFormat === 'mtt') {
+      if (!peerPage) throw new Error('The mandatory second HUD context is unavailable');
+      // All mandatory gameplay, outage and one-owner reconnect assertions are
+      // complete. Neither context goes offline again after this fresh clock.
+      // A level emitted during the outage cannot satisfy this new baseline.
+      const reader = await createHudClockReader();
+      try {
+        hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+      } finally {
+        await testInfo.attach('mtt-hud-clock-qualification', {
+          body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
+          contentType: 'application/json',
+        });
+        await reader.close();
+      }
+      if (!hudClock)
+        throw new Error(
+          'The recovered MTT has no eligible natural HUD clock (absent, paused, terminal, ' +
+            'malformed, or its level is longer than the certifiable cap)'
+        );
+      // Whatever this real clock needs is what the case gets: never a fixed
+      // guess a natural blind level can outrun by luck. This only ever grows
+      // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
+      const mttTimeoutMs = mttCaseTimeoutMs(
+        hudClock.observedAt - caseStartedAt,
+        hudClock,
+        testInfo.timeout
+      );
+      testInfo.setTimeout(mttTimeoutMs);
+      const mttDeadline = caseStartedAt + mttTimeoutMs;
+      hudBaseline = hudClock.levelIndex;
+      hudSince = hudClock.observedAt;
+      const transition = await waitForSharedNaturalLevel(
+        () =>
+          sharedNaturalLevel(hudLevels, peerLevels, hudClock!.tournamentId, hudBaseline, hudSince),
+        hudEventObservationMs(hudClock, mttDeadline),
+        hudObservation.signal
+      );
+      // Actual source contract: payload.level is the zero-based engine index;
+      // TournamentHUD renders levelState.levelIndex + 1.
+      await Promise.all(
+        [page, peerPage].map((target) =>
+          expect(hudLevelBadge(target)).toHaveText(String(transition.levelIndex + 1), {
+            timeout: 15_000,
+          })
+        )
+      );
+      console.log(
+        `[tournament-hud] two isolated spectators received natural level_up index ${transition.levelIndex} and rendered display ${transition.levelIndex + 1} for ${hudClock.tournamentId}`
+      );
+      await readEngineHealth(request, { tableIds: [candidate.id] });
+    }
+
+    /* The only UNSUBSCRIBE tolerated is the same-transport, same-tick handoff
+       the client makes while the felt mounts, before observation begins (the
+       SUBSCRIBE half is already accepted by assertInitialTableOwnership).
+       Everything else, including any UNSUBSCRIBE during or after the observed
+       hand cycle, still fails here. */
+    const unsubscribeVerdict = classifyUnsubscribes(
       journal.matchingFrames({
         direction: 'sent',
         tableId: candidate.id,
         type: 'UNSUBSCRIBE',
         since: navigationStartedAt,
       }),
+      journal.matchingFrames({
+        direction: 'sent',
+        tableId: candidate.id,
+        type: 'SUBSCRIBE',
+        since: navigationStartedAt,
+      }),
+      preOutageTransports[0]!,
+      progressStartedAt
+    );
+    if (unsubscribeVerdict.handoffs.length > 0)
+      await testInfo.attach(`${tag}-initial-handoffs`, {
+        body: Buffer.from(JSON.stringify(unsubscribeVerdict.handoffs, null, 2)),
+        contentType: 'application/json',
+      });
+    expect(
+      unsubscribeVerdict.violations,
       `${candidate.name} was unsubscribed while under observation`
-    ).toHaveLength(0);
+    ).toEqual([]);
     expect(
       journal.matchingFrames({
         direction: 'received',
@@ -803,19 +1171,112 @@ async function certifyReadOnlyTournamentFormat(
       participationMutations,
       `${candidate.name} spectator attempted to join, register, spend or leave`
     ).toEqual([]);
+  } catch (error) {
+    /* Say WHY the case failed, from evidence, before the failure leaves this
+       function. Nothing here turns a failure into a pass: a proven natural
+       ending routes to another running board (bounded, inside the same case
+       deadline), a table rebuilt under the browser is named as the engine
+       defect it is, and every other failure is rethrown untouched. */
+    const original = error instanceof Error ? error : new Error(String(error));
+    const lastGameplayEventType = journal.lastGameplayEventType(candidate.id, navigationStartedAt);
+    let atFailure: TournamentBoardFacts | null = null;
+    if (boardReader) {
+      try {
+        // The bust is written to the rows within seconds of the finishing hand.
+        for (let read = 0; read < 10; read++) {
+          atFailure = (await boardReader.boardFacts([candidate.id])).get(candidate.id) ?? null;
+          if (
+            classifyBoardEnding(atFailure) !== 'running' ||
+            !lastGameplayEventType ||
+            !HAND_BOUNDARY_EVENT_TYPES.has(lastGameplayEventType)
+          )
+            break;
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+        }
+      } catch {
+        atFailure = null;
+      }
+    }
+    const outcome = classifyCaseFailure({
+      engineRestartFrames: journal.countReceivedEvents(
+        candidate.id,
+        'engine_restarting',
+        navigationStartedAt
+      ),
+      atSelection: selected.boardFacts,
+      atFailure,
+      lastGameplayEventType,
+    });
+    await testInfo.attach(`${tag}-failure-classification`, {
+      body: Buffer.from(
+        JSON.stringify(
+          {
+            tableId: candidate.id,
+            outcome,
+            lastGameplayEventType,
+            atSelection: selected.boardFacts,
+            atFailure,
+            failure: original.message.split('\n')[0],
+          },
+          null,
+          2
+        )
+      ),
+      contentType: 'application/json',
+    });
+    if (outcome.kind === 'natural-completion') {
+      throw new NaturalCompletionDuringObservation(`${candidate.name}: ${outcome.reason}`, {
+        tableId: candidate.id,
+        reason: outcome.reason,
+        atSelection: selected.boardFacts,
+        atFailure,
+        failure: original.message.split('\n')[0],
+      });
+    }
+    if (outcome.kind === 'table-engine-restarted') {
+      throw Object.assign(
+        new Error(
+          `${candidate.name} TABLE ENGINE RESTARTED DURING OBSERVATION: ${outcome.reason}. ` +
+            `This is an engine defect, not a browser or transport failure. Original failure: ${original.message}`
+        ),
+        { cause: original }
+      );
+    }
+    throw original;
   } finally {
+    hudObservation.abort();
     if (offline) await context.setOffline(false).catch(() => {});
-    await testInfo.attach(`${gameFormat}-live-table-realtime-summary`, {
+    if (hudClock)
+      await testInfo.attach('mtt-two-context-hud', {
+        body: Buffer.from(
+          JSON.stringify(
+            {
+              tableId: candidate.id,
+              clock: hudClock,
+              baselineIndex: hudBaseline,
+              since: hudSince,
+              primary: hudLevels,
+              peer: peerLevels,
+              completedAt: Date.now(),
+            },
+            null,
+            2
+          )
+        ),
+        contentType: 'application/json',
+      });
+    await peerContext?.close();
+    await testInfo.attach(`${tag}-live-table-realtime-summary`, {
       body: Buffer.from(JSON.stringify(journal.summary(candidate.id), null, 2)),
       contentType: 'application/json',
     });
-    await testInfo.attach(`${gameFormat}-live-table-presentation-summary`, {
+    await testInfo.attach(`${tag}-live-table-presentation-summary`, {
       body: Buffer.from(
         JSON.stringify(await liveTablePresentationEvidence(page).catch(() => []), null, 2)
       ),
       contentType: 'application/json',
     });
-    await testInfo.attach(`${gameFormat}-spectator-mutation-summary`, {
+    await testInfo.attach(`${tag}-spectator-mutation-summary`, {
       body: Buffer.from(JSON.stringify(participationMutations, null, 2)),
       contentType: 'application/json',
     });
@@ -849,18 +1310,28 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     context,
     request,
   }, testInfo) => {
+    /* Cash hands are long (p90 87s, p99 149s over 20,488 hands, measured
+       2026-09-29) and both causal cycles begin mid-hand, so like every
+       tournament case this one gets the base case budget PLUS one full-hand
+       bound for pre-navigation readiness, one fixed deadline, and a reserved
+       tail so a named failure fires before the case's own timeout can. */
+    testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
+    const caseStartedAt = Date.now();
+    const observationDeadline = caseStartedAt + testInfo.timeout - CASH_CASE_TAIL_MS;
     const journal = new EngineSocketJournal(page);
-    const selected = await selectOccupiedRunningCashTable(page, request);
-    const { candidate } = selected;
-    // Keep the exact table identity even when the next-hand proof times out.
+    const selected = await selectOccupiedRunningCashTables(page, request);
+    // Keep the exact table identities even when the next-hand proof times out.
     await testInfo.attach('cash-selected-before-progress', {
       body: Buffer.from(
         JSON.stringify(
           {
             selectedAt: new Date().toISOString(),
             expectedVersion: EXPECTED_ENGINE_SHA,
-            candidate,
-            health: compactHealthEvidence(selected.health, selected.table),
+            candidates: selected.tables.map((entry) => ({
+              candidate: entry.candidate,
+              table: entry.table,
+            })),
+            health: compactHealthEvidence(selected.health, selected.tables[0].table),
           },
           null,
           2
@@ -870,10 +1341,11 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     });
     const engineBeforeNavigation = await proveTableProgressedBeforeNavigation(
       request,
-      candidate,
+      selected.tables,
       selected.health,
-      selected.table
+      observationDeadline
     );
+    const { candidate } = engineBeforeNavigation.selected;
     await testInfo.attach('engine-before-navigation', {
       body: Buffer.from(
         JSON.stringify(
@@ -996,7 +1468,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         journal.waitForCausalHandCycle(
           tableId,
           initialProgressStartedAt,
-          CAUSAL_HAND_TIMEOUT_MS,
+          remainingObservationMs(observationDeadline),
           MAX_GAMEPLAY_SILENCE_MS,
           'the connected table did not progress through a hand and automatically start the next'
         ),
@@ -1059,7 +1531,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           journal.waitForCausalHandCycle(
             tableId,
             recoveredProgressStartedAt,
-            CAUSAL_HAND_TIMEOUT_MS,
+            remainingObservationMs(observationDeadline),
             MAX_GAMEPLAY_SILENCE_MS,
             'the restored table did not progress through a hand and automatically start the next'
           ),

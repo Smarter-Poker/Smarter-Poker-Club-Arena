@@ -34,6 +34,7 @@
  * gets switched off.
  */
 import { describe, it, expect } from 'vitest';
+import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -68,6 +69,31 @@ const BINDS_FROM = '20260911';
  * silently disables itself. Line scoped, and it has to say why.
  */
 const ESCAPE = /--\s*dash-ok:\s*\S/;
+
+/**
+ * AND A RECORDING OF AN ALREADY-APPLIED MIGRATION IS HISTORY TOO (2026-09-23).
+ *
+ * This law's cutoff exists because history cannot be edited. A file recovered
+ * byte-exact from `supabase_migrations.schema_migrations.statements` is history
+ * with a later commit date: production executed that text days ago, and editing
+ * a character of it is precisely what stops it being a record of what ran.
+ *
+ * So a VERIFIED recording is skipped here for the same reason a pre-cutoff
+ * migration is - and only a verified one. `classifyMigration` accepts a file
+ * only when scripts/ci/recorded-migrations.manifest.json holds a row for its
+ * version and the file on disk hashes to the md5 that row records, which
+ * scripts/ci/check-recorded-migrations-evidence.mjs then checks against
+ * production's own md5. A new migration cannot hash to a version production
+ * already has, so this cannot be used to smuggle the character in.
+ *
+ * The runtime half is untouched and is what actually protects production copy:
+ * `fn_ca_banned_copy_characters()` reads the live database and returned 0 rows
+ * on 2026-09-23, with all ten recordings applied. The one recorded file that
+ * carries a banned character carries it in a `--` comment on line 16555 of
+ * 20260917181100, which is never copy anybody reads.
+ */
+const isVerifiedRecording = (file: string): boolean =>
+  classifyMigration(`supabase/migrations/${file}`, { repo: ROOT }).state === 'recorded';
 
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const SQL = read(FIX);
@@ -182,10 +208,24 @@ describe('a banned character must not reach the database', () => {
    */
   it('no migration written after the cutoff carries one', () => {
     const offenders: Record<string, string[]> = {};
+    const recordings: string[] = [];
     for (const file of migrations()) {
       if (file.slice(0, 8) < BINDS_FROM) continue;
       const lines = offendingLines(file);
-      if (lines.length > 0) offenders[file] = lines;
+      if (lines.length === 0) continue;
+      if (isVerifiedRecording(file)) {
+        recordings.push(file);
+        continue;
+      }
+      offenders[file] = lines;
+    }
+    // The exemption is visible, never silent. Each one is a file whose bytes
+    // production already executed, proved by md5 against its manifest row.
+    for (const file of recordings) {
+      expect(
+        classifyMigration(`supabase/migrations/${file}`, { repo: ROOT }).state,
+        `${file} was skipped here, so it has to be a verified recording`
+      ).toBe('recorded');
     }
     expect(
       offenders,

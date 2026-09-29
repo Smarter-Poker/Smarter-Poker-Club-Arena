@@ -413,13 +413,22 @@ describe('the member panel cannot destroy a wallet by deleting its row', () => {
     const kick = sliceMethod(PANEL, 'const kickMember = async');
     const ban = sliceMethod(PANEL, 'const toggleBan = async');
     expect(kick).toContain('await MembershipService.removeMember(resolvedId, member.id)');
-    expect(ban).toContain(".select('user_id')");
-    expect(ban).toContain('if (!data || data.length === 0) {');
+    // Ban and Unban go through the server-owned status door, which confirms
+    // the exact status or throws; the panel no longer writes the row itself.
+    expect(ban).toContain(
+      "await MembershipService.updateStatus(clubId, memberId, currentlyBanned ? 'active' : 'banned')"
+    );
+    expect(ban).not.toContain(".from('club_members')");
+    expect(ban).not.toMatch(/\.update\(/);
 
     const service = readFileSync('src/services/MembershipService.ts', 'utf8');
     const remove = sliceMethod(service, 'async removeMember');
     expect(remove).toContain("rpc('fn_remove_settled_club_member'");
     expect(remove).toContain('if (!result?.success) {');
+    const status = sliceMethod(service, 'async updateStatus');
+    expect(status).toContain("rpc('fn_club_set_member_status'");
+    expect(status).toContain('if (!result?.success) {');
+    expect(status).toContain('if (result.new_status !== status) {');
   });
 
   it('surfaces a failed read instead of an empty roster', () => {

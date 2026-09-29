@@ -49,7 +49,7 @@ groups:
             Check the engine log for ScheduledTournaments.structure_missing
             and for spawn errors, then GameServer's played-but-registering
             sweep.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-never-started
+          runbook: 'docs/runbooks/tournament-never-started.md'
 
       # ── NOBODY IS RUNNING THE TOURNAMENTS (2026-09-09) ────────────────
       # Measured on production 05:52 UTC, and nothing anywhere said it:
@@ -97,7 +97,7 @@ groups:
             then read the engine log for GameServer.running_board_read_failed
             and for tournament admission refusals. Table liveness will look
             perfectly healthy throughout - it is measuring the cash fleet.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-fleet-unserved
+          runbook: 'docs/runbooks/tournament-fleet-unserved.md'
 
       # September 13: all 84 running MTTs were silent while 509 managers
       # renewed leases and cash games continued. Neither global hand rate nor
@@ -123,6 +123,59 @@ groups:
             clear this count. Inspect manager scheduler in-flight work,
             unprocessed knockouts, one-player tables and table adoption.
           runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
+
+      # THE FLEET, NOT THE EVENT (2026-09-26). MttPlayStopped above was loaded
+      # and FIRING for three days (483 five-minute samples, 2026-09-23 02:35 to
+      # 2026-09-26 02:30) at 89-116 stalled MTTs while the whole tournament
+      # fleet stood still, and nobody acted: permanently stuck events keep
+      # poker_mtt_stalled_running near 55 even when the fleet is healthy, so a
+      # count cannot tell one broken event from a stopped fleet, and an alarm
+      # that is always on is an alarm that gets muted (CLAUDE.md 10.84).
+      #
+      # This reads the SHARE of eligible MTTs that dealt a hand in the last 15
+      # minutes, from the same population on both sides of the division.
+      # Measured from hand_history and the live scrape:
+      #   * outage week, 2026-09-21 02:30 to 2026-09-26 01:30: 2-15 MTT events
+      #     dealing per 30 min against 89-116 stalled - a share of at most 0.13
+      #     outside three post-restart bursts;
+      #   * healthy, 2026-09-26 02:45 after the 02:00 restart: 68 progressing,
+      #     60 stalled - a share of 0.53.
+      # 0.25 is about twice the outage ceiling and half the healthy value. The
+      # population floor of 10 keeps a quiet hour with three events from
+      # paging on one slow table. 10 minutes, not longer, because on the outage
+      # night recovery windows raised the break guard every 15-45 minutes and a
+      # longer `for:` never survived the gaps between them.
+      #
+      # poker_mtt_progressing_running is published only by an engine built
+      # from TournamentMetrics.ts at or after this change AND a database
+      # carrying migration 20260926023322. Until both are live the series is
+      # absent and this rule cannot fire - check
+      # `curl -s engine.smarter.poker/metrics | grep poker_mtt_progressing_running`
+      # before relying on it.
+      - alert: MttFleetNotDealing
+        expr: |
+          (
+            poker_mtt_progressing_running
+              / clamp_min(poker_mtt_progressing_running + poker_mtt_stalled_running, 1)
+          ) < 0.25
+          and on(instance) (poker_mtt_progressing_running + poker_mtt_stalled_running) >= 10
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: 'Only {{ $value | humanizePercentage }} of running MTTs dealt a hand in 15 minutes'
+          description: |
+            Most RUNNING MTTs past their startup grace, not on a break and not
+            in an add-on have dealt no hand for their own event in 15 minutes.
+            This is the whole tournament fleet stopping, not one stuck event -
+            MttPlayStopped covers those. Compare poker_tournaments_owned with
+            poker_tournaments_running, read engine /health
+            quarantinedTournamentManagers and tournamentLease, and check
+            whether the last restart adopted its tournaments.
+          runbook: docs/changelog/2026-09-26-board-producers-and-the-fleet-alarm.md
 
       # A break flag must not make a stalled tournament invisible forever.
       # Ten extra minutes exceed the measured longest hand plus ordinary thaw;
@@ -164,18 +217,18 @@ groups:
             refused to — most likely a position collision or a field with no
             dealt-in survivor, both of which it reports rather than guessing.
             Prize money is undistributed until this clears.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-stuck-completing
+          runbook: 'docs/runbooks/tournament-stuck-completing.md'
 
       # ── The 2026-08-30 outage, made alertable ─────────────────────────
       # A player holding chips with no seat anywhere cannot be eliminated, so
       # the event can never reach one survivor and never pays its champion.
       # This is exactly how 10 of 16 RUNNING MTTs hung.
       #
-      # The engine self-heals these after ~2 minutes (the seatless-phantom
-      # backstop), and a restart legitimately produces a burst while tables
-      # rebuild — measured at 47, cleared within three minutes. So the alert
-      # is deliberately slow: 15 minutes of a persistent non-zero count means
-      # the backstop is NOT clearing them.
+      # A restart legitimately produces a burst while tables rebuild -
+      # measured at 47, cleared within three minutes. So the alert is
+      # deliberately slow: 15 minutes of a persistent non-zero count is a
+      # seat-moving path that lost a seat. The engine no longer carries a
+      # seatless-phantom backstop, so nothing clears these on its own.
       - alert: TournamentSeatlessPhantoms
         expr: poker_tournament_seatless_phantoms > 0
         for: 15m
@@ -187,10 +240,10 @@ groups:
           description: |
             Entrants in a RUNNING tournament hold chips but have no open seat
             anywhere in that event. They cannot be eliminated, so the
-            tournament cannot reach a winner and cannot pay out. The
-            seatless-phantom backstop should clear these within ~2 minutes; if
-            this is firing it is not clearing them.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-seatless-phantoms
+            tournament cannot reach a winner and cannot pay out. Nothing
+            sweeps these up: find the table break, rebalance or re-adoption
+            that closed the seat without opening another.
+          runbook: 'docs/runbooks/tournament-seatless-phantoms.md'
 
       # ── A finished tournament that paid nobody ────────────────────────
       # The strongest money signal available: COMPLETED, has a prize pool, and
@@ -221,7 +274,7 @@ groups:
             nobody was paid. The payout sweep and the reconciler both run on a
             schedule; if this persists, both have declined to act and it needs
             a human.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-unpaid
+          runbook: 'docs/runbooks/tournament-unpaid.md'
 
       # ── THE ALERT ABOUT THE ALERTS ───────────────────────────────────
       # Every rule above reads a gauge that is refreshed from the database
@@ -248,7 +301,7 @@ groups:
             TournamentSeatlessPhantoms and TournamentCompletedUnpaid cannot
             fire on anything new. Check the engine log for
             TournamentMetrics.refresh_failed.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-metrics-stale
+          runbook: 'docs/runbooks/tournament-metrics-stale.md'
 
       # ── The board went dark ──────────────────────────────────────────
       # A platform that continuously schedules tournaments should never have
@@ -270,7 +323,7 @@ groups:
             ScheduledTournamentService) should keep a card published days
             ahead. A player looking at the lobby right now sees nothing to
             enter.
-          runbook: https://monitor.smarter.poker/runbooks/tournament-lobby-empty
+          runbook: 'docs/runbooks/tournament-lobby-empty.md'
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  THE FLEET REPORTS WHAT IT CANNOT FINISH (2026-09-17, phase 3 of the

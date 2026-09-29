@@ -11,12 +11,14 @@
 import { Suspense, lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import { StatRow } from './StatRow';
+import { SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import type { OverallStats } from './types';
 
 const EVLuckChart = lazy(() => import('../../components/stats/EVLuckChart'));
 
 export interface PerformanceTabProps {
   overall: OverallStats;
+  /** Display-ready, including the `%`, or Not Yet Measured (the page formats it). */
   showdownWinRate: string;
   isOwnProfile: boolean;
   panelResetKey: string;
@@ -53,18 +55,33 @@ export default function PerformanceTab({
         <div className="stats-section-header">
           <h3>Preflop</h3>
         </div>
+        {/* STATS CONTRACT TRUTH (2026-09-20): every grid on this tab mixes
+            cash-only money with counts over every hand, so each row carries
+            its scope, and an empty sample says Not Yet Measured. */}
         <div className="stats-grid">
-          <StatRow label="VPIP" value={`${(overall.vpip * 100).toFixed(1)}%`} color="#00d4ff" />
-          <StatRow label="PFR" value={`${(overall.pfr * 100).toFixed(1)}%`} color="#8b5cf6" />
+          <StatRow
+            label="VPIP"
+            value={`${(overall.vpip * 100).toFixed(1)}%`}
+            color="#00d4ff"
+            scope={SCOPE_ALL_GAMES}
+          />
+          <StatRow
+            label="PFR"
+            value={`${(overall.pfr * 100).toFixed(1)}%`}
+            color="#8b5cf6"
+            scope={SCOPE_ALL_GAMES}
+          />
           <StatRow
             label="3-Bet %"
             value={`${(overall.three_bet_percent * 100).toFixed(1)}%`}
             color="#f59e0b"
+            scope={SCOPE_ALL_GAMES}
           />
           <StatRow
             label="Fold To 3-Bet"
             value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
             color="#ef4444"
+            scope={SCOPE_ALL_GAMES}
           />
         </div>
       </div>
@@ -78,14 +95,29 @@ export default function PerformanceTab({
             label="C-Bet Flop"
             value={`${(overall.cbet_flop * 100).toFixed(1)}%`}
             color="#8b5cf6"
+            scope={SCOPE_ALL_GAMES}
           />
-          <StatRow label="WTSD" value={`${(overall.wtsd * 100).toFixed(1)}%`} color="#6366f1" />
+          <StatRow
+            label="WTSD"
+            value={`${(overall.wtsd * 100).toFixed(1)}%`}
+            color="#6366f1"
+            scope={SCOPE_ALL_GAMES}
+          />
+          {/* See the Overview tab: the provable empty sample is "no hands". */}
           <StatRow
             label="Aggression Factor"
-            value={overall.aggression_factor.toFixed(2)}
+            value={ratioOrUnmeasured(overall.aggression_factor, overall.total_hands, (v) =>
+              v.toFixed(2)
+            )}
             color="#f59e0b"
+            scope={SCOPE_ALL_GAMES}
           />
-          <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
+          <StatRow
+            label="Showdown Win %"
+            value={showdownWinRate}
+            color="#22c55e"
+            scope={SCOPE_ALL_GAMES}
+          />
         </div>
       </div>
       {/* Results */}
@@ -100,29 +132,48 @@ export default function PerformanceTab({
             color="#22c55e"
             highlight
           />
-          <StatRow label="BB/100" value={overall.bb_per_100.toFixed(2)} color="#4169E1" />
+          <StatRow
+            label="BB/100"
+            value={ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(2))}
+            color="#4169E1"
+            scope={SCOPE_CASH}
+          />
           <StatRow
             label="Total Won"
             value={overall.total_winnings.toLocaleString()}
             color="#10b981"
+            scope={SCOPE_CASH}
           />
           <StatRow
             label="Total Invested"
             value={overall.total_invested.toLocaleString()}
             color="#06b6d4"
+            scope={SCOPE_CASH}
           />
           <StatRow
             label="Biggest Pot Won"
             value={overall.biggest_pot_won.toLocaleString()}
             color="#10b981"
+            scope={SCOPE_CASH}
           />
           <StatRow
             label="Biggest Hand Loss"
             value={overall.biggest_hand_loss.toLocaleString()}
             color="#ef4444"
+            scope={SCOPE_CASH}
           />
-          <StatRow label="Hands Won" value={overall.hands_won.toLocaleString()} color="#22c55e" />
-          <StatRow label="Hands Lost" value={overall.hands_lost.toLocaleString()} color="#ef4444" />
+          <StatRow
+            label="Hands Won"
+            value={overall.hands_won.toLocaleString()}
+            color="#22c55e"
+            scope={SCOPE_ALL_GAMES}
+          />
+          <StatRow
+            label="Hands Lost"
+            value={overall.hands_lost.toLocaleString()}
+            color="#ef4444"
+            scope={SCOPE_ALL_GAMES}
+          />
         </div>
       </div>
     </div>

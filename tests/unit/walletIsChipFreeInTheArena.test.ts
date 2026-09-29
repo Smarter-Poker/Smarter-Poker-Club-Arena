@@ -25,7 +25,7 @@ const wallet = readFileSync(
 
 describe('The wallet asks an arena no chip question', () => {
   it('gates the three chip reads, not merely the rows they feed', () => {
-    const fetch = sliceStatement(wallet, 'const [profileRes, memberRes, agentRes, panelRes]');
+    const fetch = sliceStatement(wallet, 'const fetchData = useVisibleRead(');
     for (const read of ["from('club_members')", "from('agents')", "rpc('fn_club_money_panel'"]) {
       const at = fetch.indexOf(read);
       expect(at, `${read} is no longer inside the fetch`).toBeGreaterThan(-1);

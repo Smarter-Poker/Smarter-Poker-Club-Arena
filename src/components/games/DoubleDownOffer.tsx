@@ -3,19 +3,18 @@ import { Modal } from '../common/Modal';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { WheelPrizeArt } from '../wheel/WheelPrizeArt';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
-import { useIdleSpinCountdown } from '../../hooks/useIdleSpinCountdown';
 import type { BonusBudget } from '../../utils/bonusGameBudget';
 import styles from '../wheel/WheelWinReveal.module.css';
 
-/** How long the offer waits for an answer before it keeps the bonus as it is. */
-export const DOUBLE_DOWN_OFFER_SECONDS = 8;
-
-/** Choosing an offer changes setup only. The existing game admission owns the debit.
- *
- * A won game starts itself (owner ruling, 2026-09-21), so the offer may not be
- * the one thing a player has to press. Left unanswered, it answers itself with
- * the choice that costs nothing: Keep My Bonus. Only a press ever adds the
- * player's own diamonds. */
+/**
+ * SCREEN ONE OF A WON BONUS GAME (Dan 2026-09-21, R9): "The NEXT screen is
+ * where they decide whether to double their diamonds." Two explicit choices,
+ * Add The Diamonds or Play Without, and nothing else closes it: no timer (the
+ * eight-second window that used to answer it with Keep My Bonus is gone with
+ * every other auto start, R1), no overlay tap, no Escape. Choosing changes the
+ * setup only; the existing game admission owns the debit when the player
+ * starts.
+ */
 export default function DoubleDownOffer({
   budget,
   diamonds,
@@ -44,26 +43,20 @@ export default function DoubleDownOffer({
     const timer = setTimeout(() => setReady(true), 1400 * getAnimationSpeed() + 600);
     return () => clearTimeout(timer);
   }, [ready, visible]);
-  const keepIn = useIdleSpinCountdown(
-    ready,
-    ready && visible,
-    budget.award?.id ?? '',
-    () => onChoose(false),
-    DOUBLE_DOWN_OFFER_SECONDS * 1000
-  );
   return (
     <Modal
       isOpen
-      ariaLabel="Double Down Your Bonus"
-      onClose={() => ready && onChoose(false)}
+      ariaLabel="Double Your Diamonds"
+      onClose={() => undefined}
       closeOnOverlay={false}
-      closeOnEscape={ready}
+      closeOnEscape={false}
       showCloseButton={false}
       className={`${styles.dialog} ${styles.offerDialog}`}
     >
       <div
         className={styles.opening}
         data-motion="keep"
+        data-bonus-step="offer"
         style={{
           animationDuration: `${1400 * getAnimationSpeed()}ms`,
           animationPlayState: visible ? 'running' : 'paused',
@@ -74,12 +67,13 @@ export default function DoubleDownOffer({
       >
         <SpadeConsole
           eyebrow="Your Bonus Game"
-          title="Double Down"
-          pill={ready ? `Keeps In ${keepIn}s` : 'Optional'}
+          title="Double Your Diamonds"
+          pill="Your Choice"
           plates={{
-            secondary: { label: 'Keep My Bonus', disabled: !ready, onClick: () => onChoose(false) },
+            secondary: { label: 'Play Without', disabled: !ready, onClick: () => onChoose(false) },
             primary: {
-              label: diamonds === null ? 'Checking Balance' : canAdd ? 'Add Diamonds' : 'Buy More',
+              label:
+                diamonds === null ? 'Checking Balance' : canAdd ? 'Add The Diamonds' : 'Buy More',
               disabled: !ready || diamonds === null,
               onClick: () => (canAdd ? onChoose(true) : onBuyMore()),
             },
@@ -94,12 +88,12 @@ export default function DoubleDownOffer({
             Bonus. Play With {(budget.base + extra).toLocaleString()} Diamonds.
           </p>
           <p className="sc-copy sc-copy--center">
-            Extra Diamonds Are Used Only When You Start The Game. Keeping Your Bonus Costs Nothing
+            Extra Diamonds Are Used Only When You Start The Game. Playing Without Costs Nothing
             Extra.
           </p>
           {diamonds !== null && !canAdd && (
             <p className="sc-copy sc-copy--center sc-ink--gold">
-              You Need {(extra - diamonds).toLocaleString()} More Diamonds To Double Down.
+              You Need {(extra - diamonds).toLocaleString()} More Diamonds To Add Them.
             </p>
           )}
         </SpadeConsole>

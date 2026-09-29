@@ -40,7 +40,8 @@ if (publicRoutes.length === 0) {
   console.error('[route-performance] FAILED: dist/prerender-manifest.json has no routes; the public arena was not prerendered.');
   process.exit(1);
 }
-const routes = [...publicRoutes, '/hub/club-arena/legal', '/hub/club-arena/health'];
+// /legal is prerendered since 2026-09-22 and so already comes from the manifest.
+const routes = [...publicRoutes, '/hub/club-arena/health'];
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 834, height: 1112 },

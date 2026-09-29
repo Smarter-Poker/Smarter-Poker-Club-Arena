@@ -1303,6 +1303,7 @@ function HomePageInner() {
             {/* The dialog role sits on the sheet, not the console: metallic-popups
                 plates every [role='dialog'] > [class*='__head'] with !important. */}
             <SpadeConsole
+              onClose={() => setShowShortcutHint(false)}
               crest="flat"
               eyebrow="Poker Arena"
               title="Keyboard Shortcuts"
@@ -1562,6 +1563,7 @@ function HomePageInner() {
             aria-labelledby="leave-confirm-title"
           >
             <SpadeConsole
+              onClose={() => setLeaveConfirm(null)}
               eyebrow={titleCase(leaveConfirm.club?.name) || 'This Club'}
               title="Leave Club?"
               titleId="leave-confirm-title"

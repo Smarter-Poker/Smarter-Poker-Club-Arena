@@ -107,6 +107,17 @@ export function useTournamentRegistration() {
       if (registeringRef.current) return;
       registeringRef.current = true;
 
+      /* THE UNIT THIS ENTRY IS PRICED IN (2026-09-21), read off the
+         tournament's own arena and started BESIDE the ticket lookup below, so
+         the card opens no later than it did. None of the six callers builds
+         this payload with the arena in it, and the card needs it to name the
+         head in the right currency and to leave a chip wallet out of a Diamond
+         sign-up. `readTournamentUnitCents` never rejects; null is "could not
+         tell" and the card shows its own unknown mark for it. */
+      const unitCentsRead: Promise<number | null> = Promise.resolve()
+        .then(() => tournamentService.readTournamentUnitCents(t.id))
+        .catch(() => null);
+
       // Every human registration surface funnels through this hook. Resolve
       // an exact entry-only ticket before showing the confirmation so a failed
       // selector can never be mistaken for "no ticket" and fall through to a
@@ -152,6 +163,7 @@ export function useTournamentRegistration() {
         buyInAmount: t.buy_in_amount,
         buyInFee: t.buy_in_fee ?? 0,
         bountyAmount: t.bounty_amount ?? 0,
+        unitCents: await unitCentsRead,
         isPko: t.is_pko,
         isMysteryBounty: t.is_mystery_bounty,
         startTime: t.start_time ?? null,

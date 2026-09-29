@@ -15,7 +15,6 @@ export const CASINO_CONTROL_ICON_VARIANTS = [
   'keep',
   'cancel',
   'confirm',
-  'sign-in',
   'continue',
   'sync',
   'cycle-daily',
@@ -200,15 +199,6 @@ function Mechanism({ variant }: { variant: CasinoControlIconVariant }): ReactNod
           <path className={styles.chromeLine} d="M20 10.8v3M20 26.2v3M10.8 20h3M26.2 20h3" />
           <path className={styles.signalLine} d="m15.1 20 3.1 3.2 6.9-7" />
           <circle className={styles.facetDot} cx="20" cy="20" r="6.2" />
-        </>
-      );
-    case 'sign-in':
-      return (
-        <>
-          <path className={styles.chromeFill} d="M19.5 10.5h8v19h-8Z" />
-          <circle className={styles.signalFill} cx="24.7" cy="20" r="0.9" />
-          <path className={styles.signalLine} d="M10 20h11.2M17 15.8l4.2 4.2-4.2 4.2" />
-          <path className={styles.chromeLine} d="m19.5 10.5-5 2.3v4.1M14.5 23v4.7l5 1.8" />
         </>
       );
     case 'continue':

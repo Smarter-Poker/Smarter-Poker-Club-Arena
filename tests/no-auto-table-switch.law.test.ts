@@ -64,3 +64,35 @@ describe('the view never moves itself', () => {
     }
   });
 });
+
+/**
+ * MULTI-DAY: THE DAY 2 SEAT IS AN ALERT, NEVER A MOVE (design section 7).
+ *
+ * When a bagged event resumes, the player's Day 2 chair appears on the
+ * tournament Overview as "Your Day 2 Seat" with an Open Table button. The
+ * panel navigates only from that button's onClick, and the details page's
+ * start-of-event auto-open stands down for any later day.
+ */
+describe('the Day 2 seat never moves the player', () => {
+  const PANEL = read('src/components/tournament/details/MultiDayStagePanel.tsx');
+  const DETAILS = read('src/pages/tournament/TournamentDetails.tsx');
+
+  it('the panel navigates only from the Open Table click', () => {
+    const calls = PANEL.match(/navigate\(/g) ?? [];
+    expect(calls).toHaveLength(1);
+    expect(PANEL).toMatch(/onClick=\{\(\) => navigate\(`\/table\/\$\{tableId\}`\)\}/);
+    expect(PANEL).not.toMatch(/useEffect/);
+    expect(PANEL).not.toMatch(/setActiveIndex|TABLE_SEATED|masterBus/);
+  });
+
+  it('the details auto-open stands down on a later day', () => {
+    const effect = DETAILS.slice(
+      DETAILS.indexOf('if (suppressAutoOpenTable) return;'),
+      DETAILS.indexOf('autoOpenedTableRef.current = true;')
+    );
+    expect(effect).toContain('if (laterDay || stageViewLoading) return;');
+    expect(DETAILS).toMatch(
+      /const laterDay = baggedNow \|\| sawBagged \|\| \(stageView\?\.currentStage\?\.stageNo \?\? 1\) > 1;/
+    );
+  });
+});

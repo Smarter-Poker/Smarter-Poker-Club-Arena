@@ -244,14 +244,20 @@ describe('the action tab starts below the ticker, never above it', () => {
        anchor, so the connection banner moves with the wordmark instead of
        being left behind in a multi-board stack. The fallback in the var() must
        track the declaration, which is the other half of the same bug. */
-    expect(TABLE_PAGE_CSS).toMatch(/--sp-brand-top:\s*62%/);
-    expect(TABLE_PAGE_CSS).toMatch(/top:\s*var\(--sp-brand-top,\s*62%\)/);
+    /* 2026-09-23 (Dan: "THE BOARD CARDS SHOULD NEVER EVER BE OVERLAPPING
+       'SMARTER.POKER'"): the anchor is the block's TOP edge now, 56%, and the
+       block translates on X only, so a taller masthead grows down the felt
+       instead of up into the board. The multi-board tops are re-derived from
+       each stack's bottom edge. */
+    expect(TABLE_PAGE_CSS).toMatch(/--sp-brand-top:\s*56%/);
+    expect(TABLE_PAGE_CSS).toMatch(/top:\s*var\(--sp-brand-top,\s*56%\)/);
+    expect(TABLE_PAGE_CSS).toMatch(/\.table-brand \{[^}]*transform:\s*translate\(-50%,\s*0\)/);
     // The overrides move the SHARED property, not the wordmark's own top.
     expect(TABLE_PAGE_CSS).toMatch(
-      /\.table-page\[data-boards='2'\] \.table-surface \{\s*--sp-brand-top:\s*72%/
+      /\.table-page\[data-boards='2'\] \.table-surface \{\s*--sp-brand-top:\s*59%/
     );
     expect(TABLE_PAGE_CSS).toMatch(
-      /\.table-page\[data-boards='3'\] \.table-surface \{\s*--sp-brand-top:\s*84%/
+      /\.table-page\[data-boards='3'\] \.table-surface \{\s*--sp-brand-top:\s*64%/
     );
     // And nothing sets the wordmark's `top` directly any more, which is how
     // the two drifted apart in the first place.

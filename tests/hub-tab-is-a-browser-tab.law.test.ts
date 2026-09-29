@@ -189,7 +189,15 @@ describe('round 2: every way into a hub tab goes through OPEN_HUB_TAB', () => {
 
   it('the felt Marketplace button opens a hub tab, not a browser tab the felt cannot see', () => {
     expect(TABLE).not.toContain("window.open('/hub/marketplace'");
-    expect(TABLE).toContain("path: '/hub/marketplace'");
+    expect(TABLE).toContain("masterBus.emit('OPEN_HUB_TAB'");
+    /* 2026-09-21: the page it opens is the World Hub marketplace page for this
+       table's club, resolved by the one map every Club Arena marketplace link
+       now uses (src/utils/hubMarketplace.ts). It used to name
+       '/hub/marketplace', which is a 308 to /hub/diamond-store - so the tab's
+       own address stopped matching what opened it and a second press opened a
+       duplicate tab instead of focusing the one already there. */
+    expect(TABLE).toContain("path: hubMarketplaceDestination('', actualClubIdRef.current),");
+    expect(TABLE).not.toContain("path: '/hub/marketplace'");
   });
 
   it('the "+" long-press menu offers the lobby and hub pages in a new tab', () => {

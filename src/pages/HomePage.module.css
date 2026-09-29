@@ -1135,6 +1135,12 @@
 }
 
 .tileImage {
+  /* An inline image sits on the text baseline, so the wrapper's line box added
+     a ~7.7px descender gap under every tile (measured 2026-09-22: 64.2x104 at a
+     393px phone instead of 64.2x96.3). height: 100% then filled that taller box,
+     which stretched the four fill tiles about 8% and letterboxed the native
+     Challenge Vault render. As a block the image is exactly the 2:3 wrapper. */
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: fill;
@@ -1146,38 +1152,65 @@
   object-fit: contain;
 }
 
-/* Live copy prints into the dark leather footer painted into the portal art. */
+/* The Challenge Vault master paints a dark leather title plate across its foot,
+   88.5% to 95.5% of the art's height (rows 1359-1465 of the 1024x1536 render).
+   The live label prints inside that plate and nowhere else: sized by the tile's
+   own width (the wrapper is its container, so a 64px phone tile and a 160px
+   desktop tile get the same picture), always one line, never across the felt or
+   onto the frame rails. The status joins the title only where the plate is tall
+   enough to hold both lines. */
+.tileImageWrapper:has(> .tileImageNative) {
+  container-type: inline-size;
+}
+
 .tileLabel {
   position: absolute;
-  right: 9%;
-  bottom: 3.8%;
-  left: 9%;
-  display: grid;
-  gap: 1px;
+  top: 88.5%;
+  right: 8%;
+  bottom: 4.5%;
+  left: 8%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5cqi;
   color: #f4f7fb;
   text-align: center;
   text-shadow:
     0 1px 0 #050607,
-    0 0 8px rgb(0 212 255 / 42%);
+    0 0 1.6cqi rgb(0 212 255 / 42%);
   z-index: 3;
   pointer-events: none;
 }
 
 .tileLabel strong {
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: clamp(8px, 0.82vw, 11px);
+  font-size: min(8.4cqi, 13px);
   line-height: 1;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .tileLabel small {
+  display: none;
   color: #45adff;
-  font-size: clamp(6px, 0.56vw, 8px);
+  font-size: min(3.5cqi, 7px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@container (min-width: 140px) {
+  .tileLabel strong {
+    font-size: min(6.2cqi, 11px);
+  }
+
+  .tileLabel small {
+    display: block;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

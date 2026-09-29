@@ -42,6 +42,8 @@ const SRC = join(ROOT, 'src');
 const RETAINED: Record<string, string> = {
   'src/prerender/HelpPrerender.tsx':
     'imported only by another retained file (src/prerender/entry-server.tsx)',
+  'src/prerender/LegalPrerender.tsx':
+    'imported only by another retained file (src/prerender/entry-server.tsx)',
   'src/prerender/entry-server.tsx':
     'built by path: vite.prerender.config.ts, run by scripts/prerender-public-routes.mjs at the end of build:ci (the public arena, readable without JavaScript)',
   'src/assets/customization-thumbs/sources.json':

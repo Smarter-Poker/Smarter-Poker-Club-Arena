@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MysteryBountyChest, {
   type MysteryChestData,
 } from '../../src/components/tournament/MysteryBountyChest';
+import { CHIP_UNIT_CENTS } from '../../server/src/tournament/tournamentUnit';
 
 vi.mock('../../src/services/SoundService', () => ({ soundService: {} }));
 vi.mock('../../src/utils/animationSpeed', () => ({
@@ -45,7 +46,13 @@ describe('MysteryBountyChest authoritative amount delivery', () => {
   ])('finishes on the received amount when it arrives %s', (_label, delay) => {
     const onDone = vi.fn();
     const view = (data: MysteryChestData) => (
-      <MysteryBountyChest data={data} viewerUserId="winner" onDone={onDone} playSounds={false} />
+      <MysteryBountyChest
+        data={data}
+        unitCents={CHIP_UNIT_CENTS}
+        viewerUserId="winner"
+        onDone={onDone}
+        playSounds={false}
+      />
     );
     const { container, rerender } = render(view(pending));
     act(() => vi.advanceTimersByTime(700));

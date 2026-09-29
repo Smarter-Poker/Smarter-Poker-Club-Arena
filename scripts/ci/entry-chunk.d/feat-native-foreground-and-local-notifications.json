@@ -1,4 +1,0 @@
-{
-  "_owner": "feat/native-foreground-and-local-notifications: src/lib/audioContexts.ts is a 40-line registry (a Set and two functions, no imports) that SoundService registers its AudioContext with in its constructor - and SoundService is already in the entry chunk. It exists so the native shell can resume every context after a phone call; on the web nothing calls it. Making the registration lazy would mean the first context created before the import resolves is never tracked, which is the exact one that matters.",
-  "modules": ["src/lib/audioContexts.ts"]
-}

@@ -1,0 +1,547 @@
+/*
+ * CASHIER FULL STATEMENT / #ClubArenaConsole
+ *
+ * One page on the approved spade console master through <SpadeConsole>. The
+ * master paints the frame, rails, crest and pill slot; this sheet only lays
+ * live copy and native controls onto the black glass, in the master's own
+ * inks (SpadeConsole.css), mirroring CashierTradePage.module.css.
+ *
+ * Nothing here draws a card, a pill, a button face or a box. Sections and rows
+ * are separated by the engraved rule (a black line with a light lip), every
+ * control is a lit word at least 44px tall, and a field is a single engraved
+ * rule under its text. Date fields are the native control printed on the
+ * glass with its chrome flattened.
+ *
+ * No hover states. Everything on the glass sizes in cqw against the console.
+ */
+
+.page {
+  --ink-blue: #45adff;
+  --ink-blue-glow:
+    0 0 0.9cqw rgb(49 168 255 / 70%), 0 0 2cqw rgb(49 168 255 / 30%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  --ink-silver: #e4e7ec;
+  --ink-silver-bevel:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%), 0 0.25cqw 0 #6d747c, 0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  --ink-white: #f4f7fb;
+  --ink-white-glow:
+    0 0 1cqw rgb(140 210 255 / 90%), 0 0.25cqw 0 rgb(0 0 0 / 70%), 0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+  --ink-green: #c8ffd2;
+  --ink-green-glow:
+    0 0 1cqw rgb(53 217 90 / 80%), 0 0 2cqw rgb(53 217 90 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-red: #ff5b6e;
+  --ink-red-glow:
+    0 0 1cqw rgb(240 40 73 / 80%), 0 0 2cqw rgb(240 40 73 / 35%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-gold: #ffd700;
+  --ink-gold-glow:
+    0 0 1cqw rgb(255 215 0 / 70%), 0 0 2cqw rgb(255 215 0 / 30%), 0 0.25cqw 0 rgb(0 0 0 / 70%);
+  --ink-muted: #9aa5b3;
+  --ink-muted-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  --engraved-rule-lip: inset 0 1px 0 rgb(255 255 255 / 8%);
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1000px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 12px 16px calc(var(--bottom-nav-clearance, 86px) + 24px);
+  overflow-x: clip;
+  color: #e6e9ee;
+  background: #000;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* ── The console and its glass ────────────────────────────────────────── */
+
+.console {
+  --sc-max: 1000px;
+}
+
+.glass {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  min-width: 0;
+}
+
+/* Global element styles must not paint a frame onto the glass. The master's
+   own chassis (.sc__head, .sc__body, .sc__foot and every sc- hook) is excluded
+   and never flattened. */
+.console
+  :where(
+    section,
+    div,
+    button,
+    input,
+    span,
+    p,
+    dl,
+    dt,
+    dd,
+    strong,
+    small,
+    code,
+    h2,
+    h3,
+    label
+  ):where(
+    :not(:global(.sc__head)):not(:global(.sc__body)):not(:global(.sc__foot)):not(
+        :global(.sc-plate)
+      ):not([class^='sc'])
+  ) {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Every control on the glass is a lit word. */
+.console :where(button:not(:global(.sc-plate))) {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 1cqw;
+  color: var(--ink-blue);
+  font:
+    800 3.2cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: var(--ink-blue-glow);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.console :where(button:not(:global(.sc-plate)):active) {
+  transform: none;
+  filter: brightness(1.25);
+}
+
+.console :where(button:not(:global(.sc-plate)):disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.console :where(button:not(:global(.sc-plate)):focus-visible) {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+/* A field is one engraved rule under its text: no box, no well, no spinner. */
+.console input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.2cqw 1cqw;
+  border: 0;
+  border-bottom: 1px solid #000;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: var(--ink-white);
+  font:
+    600 max(16px, 3.6cqw) / 1.3 Inter,
+    system-ui,
+    sans-serif;
+  appearance: none;
+}
+
+.console input::placeholder {
+  color: var(--ink-muted);
+  opacity: 0.8;
+}
+
+.console input:focus-visible {
+  border-bottom-color: var(--ink-blue);
+  box-shadow: 0 1px 0 var(--ink-blue);
+}
+
+/* The native date control, printed on the glass: dark chrome, no field box,
+   the calendar mark kept as the only affordance the platform draws. */
+.console input[type='date'] {
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.console input[type='date']::-webkit-datetime-edit {
+  padding: 0;
+}
+
+.console input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.console input[type='search']::-webkit-search-decoration,
+.console input[type='search']::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* ── Type on the glass ────────────────────────────────────────────────── */
+
+.sectionEyebrow,
+.totalLabel,
+.fieldLabel,
+.groupLabel {
+  color: var(--ink-blue);
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--ink-blue-glow);
+  text-transform: uppercase;
+}
+
+.sectionMeta {
+  color: var(--ink-muted);
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--ink-silver);
+  font-size: 4.6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  text-shadow: var(--ink-silver-bevel);
+  text-transform: uppercase;
+}
+
+.statusLine,
+.empty {
+  margin: 0;
+  color: var(--ink-muted);
+  font:
+    500 3.1cqw/1.5 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.empty {
+  padding: 3cqw 1cqw;
+  text-align: center;
+}
+
+.warn {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+.amtIn {
+  color: var(--ink-green);
+  text-shadow: var(--ink-green-glow);
+}
+
+.amtOut {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────── */
+
+.topBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1cqw 3cqw;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  min-width: 0;
+  padding-top: 2.2cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+.sectionHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1cqw 3cqw;
+  min-width: 0;
+}
+
+.scopeValue {
+  color: var(--ink-silver);
+  font-size: 3.8cqw;
+  font-weight: 800;
+  text-shadow: var(--ink-silver-bevel);
+  overflow-wrap: anywhere;
+}
+
+/* A row of lit words; the chosen one is lit, the rest are muted. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2cqw;
+}
+
+.choice {
+  flex: 1 1 30%;
+  min-height: 44px;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.choiceActive {
+  color: var(--ink-blue);
+  text-shadow: var(--ink-blue-glow);
+}
+
+.customRange {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1cqw 3cqw;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 2cqw;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+}
+
+/* ── Totals ───────────────────────────────────────────────────────────── */
+
+.totals {
+  display: grid;
+  /* Two by two: a seven-figure total with cents must print on one line. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2cqw 3cqw;
+  min-width: 0;
+  padding: 2.2cqw 0.5cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+/* Calculating, or Unavailable For This Range: one lit word across the row. */
+.totalsWide {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 44px;
+}
+
+.totalsWord.warn {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}
+
+.totalsWord {
+  color: var(--ink-muted);
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.totalCell {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  min-width: 0;
+}
+
+.totalValue {
+  color: var(--ink-silver);
+  font-size: 4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-silver-bevel);
+  white-space: nowrap;
+}
+
+/* ── Entries ──────────────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+.entryMain {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  width: 100%;
+  min-width: 0;
+  padding: 2.2cqw 0.5cqw 0.6cqw;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  text-align: left;
+  text-shadow: none;
+  text-transform: none;
+}
+
+.rowInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+}
+
+.rowName {
+  overflow: hidden;
+  color: var(--ink-white);
+  font-size: 3.5cqw;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowSub {
+  color: var(--ink-muted);
+  font-size: 2.8cqw;
+  line-height: 1.45;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.rowAmount {
+  flex: 0 0 auto;
+  color: var(--ink-silver);
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-silver-bevel);
+  white-space: nowrap;
+}
+
+.entryRef {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  padding: 0 0.5cqw 0.6cqw;
+}
+
+.refShort {
+  color: var(--ink-muted);
+  font-size: 2.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.copyWord {
+  flex: 0 0 auto;
+  font-size: 2.8cqw;
+}
+
+/* The receipt: the full reference set, printed on the glass under its row. */
+.facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 1.4cqw;
+}
+
+.facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 1.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+.facts dt {
+  flex: 0 0 auto;
+}
+
+.facts dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-silver);
+  font-size: 3.3cqw;
+  font-weight: 700;
+  text-align: right;
+  text-shadow: var(--ink-silver-bevel);
+  overflow-wrap: anywhere;
+}
+
+/* An immutable reference prints exactly as stored, so it can be matched. */
+.refValue {
+  font:
+    600 2.8cqw/1.4 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.02em;
+}
+
+.loadMore {
+  width: 100%;
+  min-height: 44px;
+  padding: 1.4cqw 1cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+.retryWord {
+  min-height: 44px;
+  padding: 0 1.4cqw;
+}
+
+/* ── Refusal ──────────────────────────────────────────────────────────── */
+
+.refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  padding: 3cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: var(--engraved-rule-lip);
+}
+
+.refusal .sectionEyebrow {
+  color: var(--ink-red);
+  text-shadow: var(--ink-red-glow);
+}

@@ -107,6 +107,14 @@
   content: '';
 }
 
+/* The title scales with the reader's text size; never cap it by the column.
+   WCAG 1.4.4, and the post-deploy accessibility certification, require it to
+   grow at least 1.5x at 200% text. A column cap (18cqi, #5065) held it to
+   1.12x at 320px and failed that certification on production. At 200% text on
+   a phone CHALLENGES cannot fit the column at a size that honours that, so
+   overflow-wrap breaks it where the column ends. Nothing gentler is possible
+   without harming the heading: browsers do not hyphenate capitalised words,
+   and a <wbr> makes Chrome announce it as "Chal lenges". */
 .heroCopy h1 {
   width: 100%;
   max-width: 600px;

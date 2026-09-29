@@ -92,7 +92,9 @@ describe('the overflow small blind keeps its authored share of the big blind', (
     expect(SQL).not.toMatch(/\bCONCURRENTLY\b/);
     expect(SQL).not.toMatch(/\bVACUUM\b/);
     // It creates no catalogue object, so it declares its own liveness proof.
-    expect(SQL).toContain("-- @live-proof: (SELECT position('v_sb_ceiling numeric;' in p.prosrc) > 0");
+    expect(SQL).toContain(
+      "-- @live-proof: (SELECT position('v_sb_ceiling numeric;' in p.prosrc) > 0"
+    );
     expect(SQL).toContain(
       "-- @live-proof: (SELECT position('v_sb_ceiling := v_bb * v_anchor_sb / v_anchor_bb;' in p.prosrc) > 0"
     );
@@ -168,7 +170,9 @@ describe('the TypeScript half of the same shape', () => {
     expect(ESCALATION).toContain('const grown = (Number.isFinite(n) ? n : 0) * factor;');
     // The anchor row is handed over as the share source, because the grown
     // pair are two independently rounded products.
-    expect(ESCALATION).toContain('authoredShareFrom?: { smallBlind?: unknown; bigBlind?: unknown }');
+    expect(ESCALATION).toContain(
+      'authoredShareFrom?: { smallBlind?: unknown; bigBlind?: unknown; ante?: unknown }'
+    );
     expect(ESCALATION).toContain('const shareSource = authoredShareFrom ?? level;');
     // The share ceiling applies only where the ceiling actually bit, so whole
     // chips (2026-09-11) is not mistaken for this defect.
@@ -183,9 +187,13 @@ describe('the TypeScript half of the same shape', () => {
     // three separate Math.min(..., 10_000_000) calls - which is how 25 RUNNING
     // Spin events came to publish 10,000,000/10,000,000 on 2026-09-21.
     expect(MANAGER).not.toContain('smallBlind: Math.min(resolved.smallBlind ?? 0, 10_000_000)');
-    expect(MANAGER).not.toContain('const smallBlind = Math.min(level.smallBlind ?? 0, 10_000_000);');
+    expect(MANAGER).not.toContain(
+      'const smallBlind = Math.min(level.smallBlind ?? 0, 10_000_000);'
+    );
     expect(MANAGER).toContain('const playable = enforcePlayableBlindLevel(resolved);');
-    expect(MANAGER).toContain('const { smallBlind, bigBlind, ante } = enforcePlayableBlindLevel(level);');
+    expect(MANAGER).toContain(
+      'const { smallBlind, bigBlind, ante } = enforcePlayableBlindLevel(level);'
+    );
     expect(MANAGER).toContain('  enforcePlayableBlindLevel,');
   });
 });

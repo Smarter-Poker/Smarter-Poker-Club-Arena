@@ -18,8 +18,10 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
+import { unionService } from '../services/UnionService';
 import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
+import './AdminDashboardPage.css';
 
 interface HubStats {
   totalAlerts: number;
@@ -170,6 +172,37 @@ export default function FinancialAdminHub() {
   const scopeStatus = scope.status;
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
+
+  /* WHICH UNION (2026-09-24). The union operations panel below was rendered
+     with no union and fell back to one hardcoded union (Midway), so this hub
+     previewed, settled and swept that union's books whatever the staff member
+     meant. The union is now chosen here, from the unions this viewer can
+     read, and until one is chosen no panel exists to run anything. */
+  const [unionOptions, setUnionOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [unionOptionsStatus, setUnionOptionsStatus] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
+  const [selectedUnionId, setSelectedUnionId] = useState('');
+  const selectedUnion = unionOptions.find((u) => u.id === selectedUnionId) ?? null;
+
+  const loadUnionOptions = useCallback(async () => {
+    setUnionOptionsStatus('loading');
+    try {
+      const unions = await unionService.getUnions();
+      if (!isMounted.current) return;
+      setUnionOptions(
+        unions.map((u) => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setUnionOptionsStatus('ready');
+    } catch (e) {
+      reportError(e, 'FinancialAdminHub.loadUnionOptions');
+      if (isMounted.current) setUnionOptionsStatus('error');
+    }
+  }, [isMounted]);
+
+  useEffect(() => {
+    if (scopeStatus === 'ready') void loadUnionOptions();
+  }, [scopeStatus, loadUnionOptions]);
 
   // ── loadStats: parallelized queries (~4x faster than sequential) ──
   const loadStats = useCallback(async () => {
@@ -712,7 +745,54 @@ export default function FinancialAdminHub() {
         <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
           Union Integrity & Law
         </h3>
-        <UnionOpsPanel canRun />
+        <label
+          className="admin-label"
+          htmlFor="financial-admin-union"
+          style={{ marginBottom: '6px', color: 'rgba(255,255,255,0.6)' }}
+        >
+          Union
+        </label>
+        <select
+          id="financial-admin-union"
+          className="admin-input"
+          value={selectedUnion ? selectedUnion.id : ''}
+          disabled={unionOptionsStatus !== 'ready'}
+          onChange={(e) => setSelectedUnionId(e.target.value)}
+          style={{ marginBottom: '12px' }}
+        >
+          <option value="">
+            {unionOptionsStatus === 'loading' ? 'Loading Unions' : 'Choose A Union'}
+          </option>
+          {unionOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        {unionOptionsStatus === 'error' ? (
+          <div className="admin-empty-state">
+            <span>Unions Could Not Be Loaded</span>
+            <button
+              type="button"
+              className="admin-btn admin-btn-ghost"
+              onClick={() => void loadUnionOptions()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : unionOptionsStatus === 'ready' && unionOptions.length === 0 ? (
+          <div className="admin-empty-state">
+            <span>No Unions Available</span>
+          </div>
+        ) : selectedUnion ? (
+          // Keyed by union so a preview opened for one union can never be
+          // confirmed after the selector has moved to another.
+          <UnionOpsPanel key={selectedUnion.id} unionId={selectedUnion.id} canRun />
+        ) : (
+          <div className="admin-empty-state">
+            <span>Choose A Union To See Its Operations</span>
+          </div>
+        )}
       </div>
 
       <div

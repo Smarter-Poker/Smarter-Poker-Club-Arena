@@ -140,7 +140,12 @@ export function findDiamondRunnerProblems(root) {
     );
   } else {
     const step = steps[0];
-    if (/^\s+if:/m.test(step)) problems.push(`the ${WRAPPER} step must not be guarded by if:`);
+    // accounting_postgres is four matrix shards (2026-09-26); naming the one
+    // shard that runs this step is its only permitted condition. Anything
+    // else is a guard that can skip the acceptance.
+    const guards = step.match(/^\s+if:.*$/gm) ?? [];
+    if (guards.some((line) => !/^\s+if: matrix\.shard == [1-4]$/.test(line)))
+      problems.push(`the ${WRAPPER} step must not be guarded by if: beyond its shard`);
     if (/continue-on-error/.test(step))
       problems.push(`the ${WRAPPER} step must not set continue-on-error`);
     if (!/PG_BIN:\s*\/usr\/lib\/postgresql\/17\/bin/.test(step))

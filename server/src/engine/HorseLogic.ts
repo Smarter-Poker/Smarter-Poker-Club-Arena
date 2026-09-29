@@ -112,6 +112,7 @@ import {
 import {
   classifyTournamentPreflopBranch,
   tournamentMZone,
+  tournamentNextLevelProjectionApplies,
   tournamentPositionForSeat,
   tournamentPreflopPolicy,
   type TournamentAnteType,
@@ -177,6 +178,8 @@ import {
   omahaDrawQuality,
   type OmahaDrawInfo,
   omahaNutStatus,
+  omahaBoatsAbove,
+  omahaBoatDominated,
   type OmahaNutStatus,
   omahaMadeClass,
   type OmahaMadeInfo,
@@ -942,6 +945,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   maxRaiseTo?: number | null;
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number | null;
+  /**
+   * KILL POT (kill-v1): the hand's effective fixed-limit small bet. Equals
+   * bigBlind except on a kill hand, where it is the kill's raised small bet.
+   * Null or absent off fixed limit (and on older fixtures, meaning bigBlind).
+   */
+  fixedLimitSmallBet?: number | null;
   wagersCapped?: boolean;
   commitmentCapRemaining?: number | null;
   /** Live side-pot layers with exact eligibility, before settlement. */
@@ -1719,6 +1728,11 @@ export interface HorseDecideOpts {
    *  per hole count, plo5/plo6 value sizing plays small ball, and PLO
    *  aggressors are sampled toward board contact (default: enabled) */
   v15?: boolean;
+  /** V15 BOATS (2026-09-28, default OFF until the league resolves it): an
+   *  Omaha full house that a bigger boat or quads beats stops being nut-class,
+   *  and when raised after betting it calls instead of re-raising or jamming.
+   *  Measured by the plo5_v15_boats league matchup. */
+  v15Boats?: boolean;
   /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
    *  overbets + blocker overbet bluffs, extended blocker-aware catches
    *  (defaults to the v12 master flag) */
@@ -1837,8 +1851,12 @@ export interface HorseDecideOpts {
    *  silently, with no miss recorded. Above GTO_MAX_DEPTH_BB (twice the
    *  deepest bucket - the same log-distance this file already tolerates for a
    *  one-bucket fallback) the consult declines and the heuristic layers,
-   *  which scale continuously with depth, play the spot. Disable to ablate
-   *  (default: enabled) */
+   *  which scale continuously with depth, play the spot.
+   *  DEFAULT OFF since 2026-09-28: the v33_depth_ceiling_400bb league
+   *  matchup, pooled over all 23 nightly runs (276,000 hands), measured the
+   *  ceiling at -2.97 +/- 1.09 bb/100 (2.7 stderr) against serving the
+   *  bucketed answer. Spots beyond the ceiling still fire
+   *  gto_served_beyond_depth_ceiling. Set true to measure it again. */
   v33DepthCeiling?: boolean;
   /** V37 (2026-09-02): satellite play — flat prizes are survival, not a
    *  ladder. A locked seat folds everything, a stack below the line jams
@@ -3411,10 +3429,10 @@ export class HorseLogic {
       const voluntaryAllInSeats = new Set(
         history.filter((action) => action.action === 'all_in').map((action) => action.seat)
       );
-      const imminentLevel =
-        typeof tournament.nextBlindInMin === 'number' &&
-        tournament.nextBlindInMin <= 3 &&
-        (tournament.nextBlindMult ?? 1) > 1.15;
+      const imminentLevel = tournamentNextLevelProjectionApplies(
+        tournament.nextBlindInMin,
+        tournament.nextBlindMult
+      );
       const branchMZone = imminentLevel
         ? tournamentMZone(
             Math.min(tournament.m.effectiveM, tournament.m.projectedEffectiveM),
@@ -4846,8 +4864,19 @@ export class HorseLogic {
       for (const n of suitN.values()) if (n >= 3) boardMono15 = true;
       for (const n of rankN.values()) if (n >= 2) boardPaired15 = true;
     }
+    // V15 BOATS (2026-09-28): a full house is not the nuts when a bigger boat
+    // or quads is live. Off by default until plo5_v15_boats resolves.
+    let boatDominated15 = false;
+    if (useV15 && opts.v15Boats === true && vi.isOmaha && cat === 7) {
+      try {
+        boatDominated15 = omahaBoatDominated(omahaBoatsAbove(player.cards, board));
+        if (tele15 && boatDominated15) noteFire('v15_boat_dominated');
+      } catch {
+        boatDominated15 = false;
+      }
+    }
     const nutClass15 =
-      cat >= 7 ||
+      (cat >= 7 && !boatDominated15) ||
       (nuts15 != null &&
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
@@ -5349,11 +5378,13 @@ export class HorseLogic {
           ? Math.min(heroRootStack31, opponentRootStack31)
           : null;
       const stackBB31 = effective31 !== null && gs.bigBlind > 0 ? effective31 / gs.bigBlind : null;
-      const tooDeep31 =
-        stackBB31 !== null &&
-        (opts.v33DepthCeiling ?? true) !== false &&
-        beyondGtoDepthCeiling(stackBB31);
+      // V33 is default OFF since 2026-09-28 (league: 23 runs, -2.97 +/- 1.09
+      // bb/100 with it on). Beyond the ceiling the bucketed answer is served,
+      // and every such spot is still counted so the staleness stays visible.
+      const beyond31 = stackBB31 !== null && beyondGtoDepthCeiling(stackBB31);
+      const tooDeep31 = beyond31 && opts.v33DepthCeiling === true;
       if (tooDeep31 && tele15) noteFire('gto_skip_too_deep');
+      else if (beyond31 && tele15) noteFire('gto_served_beyond_depth_ceiling');
 
       const direct31 =
         context31 &&
@@ -5642,9 +5673,10 @@ export class HorseLogic {
        * 150bb. Above the ceiling the answer would be extrapolated rather than
        * looked up, so the layer declines and the heuristics play the spot.
        */
-      const tooDeep32 =
-        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
+      const beyond32 = beyondGtoDepthCeiling(stackBB32);
+      const tooDeep32 = beyond32 && opts.v33DepthCeiling === true;
       if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+      else if (beyond32 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
       // V34: a drawing hand — no pair yet, but real equity from the runout.
       // It realizes a little better than its raw number (implied odds, and
@@ -5789,9 +5821,10 @@ export class HorseLogic {
 
         // Legacy V29/V30 remains a safe open-only fallback while no certified
         // V31 cell matches. It never answers a response node.
-        const tooDeep29 =
-          (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
+        const beyond29 = beyondGtoDepthCeiling(stackBB29);
+        const tooDeep29 = beyond29 && opts.v33DepthCeiling === true;
         if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+        else if (beyond29 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
         // The open-node consult reads the same warehouse and the same depth
         // buckets, so the ceiling applies to it identically.
@@ -6752,6 +6785,7 @@ export class HorseLogic {
         // shove. The plan the bet made is honored here too.
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
+          (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
         return toCall >= stack || preferFlat15
@@ -6807,6 +6841,13 @@ export class HorseLogic {
         eq15 - dominationPenalty < 0.85
       ) {
         if (tele15) noteFire('v15_raise_gate');
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      // V15 BOATS: a full house that a bigger boat beats, raised after it
+      // bet, calls. The range that raises a boat on a paired board is the
+      // bigger boat; re-raising only ever gets called by it.
+      if (boatDominated15 && raisedAfterAggr) {
+        if (tele15) noteFire('v15_boat_gate');
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // ═══ V21 RIVER RAISE-WAR GOVERNOR ═══ once hero's river aggression

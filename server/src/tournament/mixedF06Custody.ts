@@ -36,6 +36,33 @@ export const custodyJSON = (value: unknown): string =>
       : item
   );
 
+/**
+ * THE BANK EVIDENCE IS READ AS THE PROCESS (2026-09-26).
+ *
+ * `captureMixedF06Custody` runs inside the retiring manager's data authority,
+ * and a mixed transfer is only ever prepared for a manager whose lease is
+ * already stale (the prepare refuses F06_MIXED_OLD_LEASE_CHANGED otherwise).
+ * So the read of `engine_presence_parked` it takes as bank evidence went out
+ * with exactly the lease generation `fn_smarter_data_api_pre_request` fences,
+ * GET included, and every one threw `f06_mixed_bank_evidence_unavailable` -
+ * 100,607 in the sixteen minutes before the 08:55Z restart. No mixed transfer
+ * could ever read its evidence, and in all of production history two exist.
+ *
+ * The rows are immutable evidence the transfer then proves in the database
+ * (f06_mixed_bank_proof compares them FOR SHARE). Reading them corrupts
+ * nothing, so it is not the manager's authority to exercise. The request is
+ * awaited inside the root-bound function because a PostgREST builder only
+ * starts its fetch when consumed: returning the builder would send it from
+ * the caller's context, headers and all.
+ */
+export const readMixedF06PresenceEvidence = bindToProcessRoot(async (tableIds: string[]) => {
+  const { data, error } = await supabase
+    .from('engine_presence_parked')
+    .select('*')
+    .in('table_id', tableIds);
+  return { data, error };
+});
+
 /** The original operation retains this proposal before its first possible write. */
 export const prepareMixedF06Transfer = bindToProcessRoot(
   async (

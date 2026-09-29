@@ -32,7 +32,7 @@ groups:
             pm2-metrics has been unreachable for >1 minute. This means either
             the pm2 process is dead, the node is down, or the metrics module
             crashed. Player-facing impact: active tables cannot tick.
-          runbook: https://monitor.smarter.poker/runbooks/engine-down
+          runbook: 'docs/runbooks/engine-down.md'
 
       - alert: EngineHandsPerSecDropped
         # Hands/sec should average > 0.5 during business hours. A sustained
@@ -187,7 +187,11 @@ groups:
         # production, caught instead of the 57 hours it actually took.
         expr: |
           max_over_time(poker_maintenance_breaks_since_restart_certified[15m]) >= 6
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        # NO BREAK GUARD (2026-09-26). This alarm is ABOUT the break: the
+        # counter only moves when a break ends uncertified. Guarding it with
+        # the break flag muted it for 39% of 2026-09-25/26, when recovery
+        # windows ran every half hour precisely because releases were failing.
+        # tests/theBreakDoesNotSilenceTheAlarmsAboutItself.law.test.ts.
         for: 10m
         labels:
           severity: critical
@@ -207,6 +211,39 @@ groups:
 
             This is NOT repaired by a job, a sweep or a retry (CLAUDE.md 10.12).
             Find the live path that wedged and fix that.
+
+      # THE PLATFORM IS FROZEN TOO MUCH OF THE TIME (2026-09-26).
+      #
+      # The break flag is the same series every fleet alert is guarded by, so
+      # the more often it is on, the less the rest of this file can see - and
+      # the less the players can play. Measured from
+      # engine_maintenance_thaws (announcement -> thaw) in 3-hour windows,
+      # 2026-09-19 .. 2026-09-26: the ordinary hourly break alone is 0.119 of
+      # every window (7 of 60 minutes), minimum 0.119 on every day; single
+      # extra recovery windows reach 0.16-0.28; the three recovery-window
+      # storms (2026-09-21, 09-25, 09-26) reached 0.438, 0.439 and 0.400, and
+      # on 2026-09-25/26 the guard (announcement to thaw plus its 6m tail)
+      # muted 39% of 24 hours. 0.30 fires on all three storms and on none of
+      # the ordinary days. It carries NO break guard: it is about the break.
+      - alert: PlatformFrozenTooOften
+        expr: |
+          max(avg_over_time(poker_maintenance_break_active[3h])) > 0.30
+        for: 15m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'The platform has been frozen for {{ $value | humanizePercentage }} of the last three hours'
+          description: |
+            The maintenance break (announce -> thaw) normally takes 12% of any
+            three-hour window. Above 30% the release route is running recovery
+            windows back to back: players are frozen a third of the time, and
+            every fleet alert guarded by the break flag is muted for at least
+            as long. Read the latest auto-deploy-hetzner runs for why each
+            release is failing, and engine /health maintenance.unparkedReasons.
+            A recovery window is not a fix (CLAUDE.md 10.12): find the failing
+            release step and fix that.
+          runbook: docs/runbooks/maintenance-break-fire-drill.md
 
       # THE DEPLOY-ROUTE WATCHDOG CAN BE BLIND, AND ON 2026-09-21 IT WAS.
       #
@@ -241,7 +278,10 @@ groups:
         expr: |
           absent(poker_maintenance_breaks_since_restart_certified)
           and on() (count(poker_maintenance_break_active) > 0)
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        # NO BREAK GUARD (2026-09-26): whether a series exists does not change
+        # in a break, and a 30m `for` behind the guard could not survive the
+        # half-hourly recovery windows of 2026-09-25/26 (median unmuted gap
+        # 30 minutes). The law named above pins this.
         for: 30m
         labels:
           severity: critical
@@ -1256,9 +1296,15 @@ groups:
       # one that says the platform is trading precision for latency right now.
       - alert: EngineSheddingPrecisionForHours
         expr: |
-          poker_equity_governor_scale < 1
-          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
-        for: 2h
+          count_over_time((poker_equity_governor_scale < 1
+              unless on() max_over_time(poker_maintenance_break_active[6m]) == 1)[2h:1m])
+            >= on() group_left()
+          sum_over_time((max(max_over_time(poker_maintenance_break_active[6m])) == bool 0)[2h:1m])
+          and on() sum_over_time((max(max_over_time(poker_maintenance_break_active[6m])) == bool 0)[2h:1m]) >= 60
+        # Two hours measured inside the expression (2026-09-26): `for: 2h`
+        # behind the break guard could never fire, because no unmuted stretch
+        # lasts longer than 47 minutes. See TournamentRunningWithNoOwnerCritical.
+        for: 5m
         labels:
           severity: warning
           component: engine
@@ -1461,14 +1507,27 @@ groups:
       # thaw; an hour is a tournament that has stopped dealing for its players.
       - alert: TournamentRunningWithNoOwnerCritical
         expr: |
-          poker_tournaments_running_without_owner > 0
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
-        for: 1h
+          count_over_time((poker_tournaments_running_without_owner > 0
+              unless on() max_over_time(poker_maintenance_break_active[6m]) == 1)[1h:1m])
+            >= on() group_left()
+          sum_over_time((max(max_over_time(poker_maintenance_break_active[6m])) == bool 0)[1h:1m])
+          and on() sum_over_time((max(max_over_time(poker_maintenance_break_active[6m])) == bool 0)[1h:1m]) >= 30
+        # AN HOUR IS MEASURED INSIDE THE EXPRESSION, NOT BY `for` (2026-09-26).
+        # This rule was `... unless <break guard>` with `for: 1h`. The guard
+        # mutes from the :53 announcement to six minutes after the :00 thaw,
+        # so the longest unmuted stretch in an ORDINARY hour is :06 -> :53,
+        # 47 minutes, and every break resets a pending alert: `for: 1h` behind
+        # the guard could never fire, on any day. It now fires when the
+        # condition held at EVERY minute the guard did not mute over the last
+        # hour, provided at least 30 such minutes exist. The guard is still
+        # applied per minute, so a break still never counts as a fault.
+        # $value below is the number of unmuted minutes it held.
+        for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: '{{ $value }} RUNNING tournament(s) undealt for an hour'
+          summary: 'RUNNING tournament(s) undealt at every unmuted minute of the last hour ({{ $value }} minutes)'
           description: |
             Players are seated at a tournament that is not dealing and has not
             been for an hour. This is the condition that ran for seven days

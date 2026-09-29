@@ -1,7 +1,20 @@
 /**
  * TABLE CONFIGURATION PAGE - CSS Styles
- * Facebook Color Scheme: Blue (#1877F2), Dark backgrounds, clean look
- * No emojis - text-only indicators
+ *
+ * This form prints inside a painted SpadeConsole (standalone route, or the
+ * Game Management deck), so the art is the frame and nothing here draws one.
+ * Every colour is a schema ink: silver #e4e7ec, white #f4f7fb, blue #45adff,
+ * red #ff5b6e, gold #ffd700, brass #d6ad52, muted #9aa5b3, the brand blue
+ * #1877f2, black, the console's own bevel floor #050607 and the ground the
+ * console pages stand on #020305. Focus rings are the kit's own #8fd4ff (the
+ * ring SpadeConsole.css draws on its plates). No browns, no computed tones,
+ * and no pointer-over rules: feedback is :active and :focus-visible.
+ *
+ * 2026-09-20 (Create A Club phase 2): the brown preset chip, the #1a1a2e
+ * fills, the #dc2626 reds and the dead delete-modal / back-btn / btn-delete
+ * rules went. The dead ones were GLOBAL selectors in a sheet three other
+ * surfaces load through controls.tsx, so they also leaked onto pages that own
+ * a .delete-modal or a .btn-cancel of their own.
  */
 
 .table-config-page__standalone {
@@ -26,6 +39,12 @@
   overflow-x: clip;
   /* keep the in-flow footer above the fixed app bottom nav */
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  /* The form always prints on the console's black glass, in either room: the
+     Diamond Arena publishes html[data-arena-scheme='light'], which sets
+     color-scheme: light (club-engine.css), and a light scheme draws every
+     native part here (select arrows and popups, number spinners, radios,
+     date and time pickers) for a white page, dark on this dark field. */
+  color-scheme: dark;
 }
 
 /* HEADER */
@@ -37,15 +56,6 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.back-btn {
-  background: transparent;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.25rem 0.5rem;
-}
-
 .config-title {
   flex: 1;
   text-align: center;
@@ -55,7 +65,8 @@
   margin: 0;
 }
 
-/* MODE TABS - Facebook Blue */
+/* MODE TABS - a lit word on a rule; the console block at the foot of this
+   sheet gives them their dress */
 .mode-tabs {
   display: flex;
   padding: 0.5rem;
@@ -67,7 +78,7 @@
   padding: 0.5rem 1rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: transparent;
-  color: #888;
+  color: #9aa5b3;
   font-size: 0.9rem;
   cursor: pointer;
   touch-action: manipulation;
@@ -75,18 +86,9 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.mode-tab:first-child {
-}
-
-.mode-tab:last-child {
-}
-
 .mode-tab.active {
-  background: #1877f2;
-  border-color: #1877f2;
-  color: white;
+  color: #f4f7fb;
   font-weight: 600;
-  box-shadow: 0 0 15px rgba(24, 119, 242, 0.4);
 }
 
 /* TABLE NAME INPUT */
@@ -105,13 +107,12 @@
 }
 
 .config-name input::placeholder {
-  color: #666;
+  color: #9aa5b3;
 }
 
 .config-name input:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 /* OPTIONS CONTAINER */
@@ -150,22 +151,21 @@
   width: 22px;
   height: 22px;
   padding: 0;
-  background: rgba(84, 154, 225, 0.13);
-  border: 1px solid rgba(163, 207, 248, 0.55);
+  background: transparent;
+  border: 1px solid rgb(69 173 255 / 55%);
   font: 700 0.75rem/1 var(--font-body, sans-serif);
-  color: #d8edff;
+  color: #45adff;
   cursor: help;
-  box-shadow: inset 0 0 8px rgba(24, 119, 242, 0.16);
 }
 
 .config-help__button[aria-expanded='true'] {
-  color: #ffffff;
-  border-color: #69baff;
-  background: rgba(24, 119, 242, 0.32);
+  color: #f4f7fb;
+  border-color: #45adff;
+  background: rgb(24 119 242 / 32%);
 }
 
 .config-help__button:focus-visible {
-  outline: 2px solid #79c5ff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 3px;
 }
 
@@ -174,14 +174,12 @@
   z-index: 10000;
   width: min(300px, calc(100vw - 24px));
   padding: 0.72rem 0.82rem;
-  border: 1px solid rgba(105, 186, 255, 0.78);
-  background: #07121f;
-  color: #eef7ff;
+  border: 1px solid rgb(69 173 255 / 78%);
+  background: #050607;
+  color: #f4f7fb;
   font: 600 0.78rem/1.48 var(--font-body, sans-serif);
   letter-spacing: 0.015em;
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.62),
-    inset 0 0 18px rgba(24, 119, 242, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.62);
   pointer-events: none;
 }
 
@@ -219,9 +217,8 @@
   flex: 0 0 52px;
   box-sizing: border-box;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: #343942;
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.46);
+  border: 1px solid rgb(154 165 179 / 56%);
+  background: #050607;
   transition:
     background-color 180ms ease,
     border-color 180ms ease,
@@ -234,17 +231,13 @@
   left: 3px;
   width: 20px;
   height: 20px;
-  background: #ffffff;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.42);
+  background: #e4e7ec;
   transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .table-config-switch__input:checked + .table-config-switch__track {
-  border-color: #72c4ff;
-  background: #087bc1;
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.3),
-    0 0 12px rgba(24, 160, 242, 0.38);
+  border-color: #45adff;
+  background: #1877f2;
 }
 
 .table-config-switch__input:checked + .table-config-switch__track .table-config-switch__thumb {
@@ -252,7 +245,7 @@
 }
 
 .table-config-switch__input:focus-visible + .table-config-switch__track {
-  outline: 2px solid #79c5ff;
+  outline: 2px solid #8fd4ff;
   outline-offset: 3px;
 }
 
@@ -265,11 +258,11 @@
 }
 
 .table-config-switch__status.is-on {
-  color: #65c5ff;
+  color: #45adff;
 }
 
 .table-config-switch__status.is-off {
-  color: #aeb5c0;
+  color: #9aa5b3;
 }
 
 .config-inline-help {
@@ -278,16 +271,16 @@
   gap: 0.25rem 0.65rem;
   margin: 0.5rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(105, 186, 255, 0.28);
-  border-left: 3px solid #48b5f4;
-  background: rgba(18, 86, 128, 0.12);
-  color: #c9d8e7;
+  border: 1px solid rgb(69 173 255 / 28%);
+  border-left: 3px solid #45adff;
+  background: transparent;
+  color: #e4e7ec;
   font-size: 0.78rem;
   line-height: 1.45;
 }
 
 .config-inline-help strong {
-  color: #67c7ff;
+  color: #45adff;
   letter-spacing: 0.04em;
 }
 
@@ -298,7 +291,8 @@
   }
 }
 
-/* SLIDER COMPONENT - Facebook Blue accents */
+/* SLIDER COMPONENT - the one control the art does not paint, so the one thing
+   drawn here: a flat track and a flat square thumb, no glow */
 .config-slider {
   padding: 0.75rem 0.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -324,7 +318,7 @@
 .slider-input {
   width: 100%;
   height: 4px;
-  background: #33414e;
+  background: rgb(154 165 179 / 28%);
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
@@ -338,8 +332,7 @@
   height: 24px;
   background: #1877f2;
   cursor: pointer;
-  border: 2px solid #1a1a2e;
-  box-shadow: 0 0 10px rgba(24, 119, 242, 0.4);
+  border: 2px solid #050607;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
@@ -348,19 +341,8 @@
   height: 24px;
   background: #1877f2;
   cursor: pointer;
-  border: 2px solid #1a1a2e;
-  box-shadow: 0 0 10px rgba(24, 119, 242, 0.4);
+  border: 2px solid #050607;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.slider-thumb-icon {
-  display: none;
-}
-
-.buyin-sliders {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
 /* RADIO GROUP (Run It Multi-Times) */
@@ -396,7 +378,7 @@
 }
 
 .radio-option span {
-  color: #ccc;
+  color: #9aa5b3;
   font-size: 0.85rem;
 }
 
@@ -421,7 +403,7 @@
 }
 
 .config-select option {
-  background: #1a1a2e;
+  background: #050607;
   color: white;
 }
 
@@ -451,13 +433,12 @@
 }
 
 .config-textarea-input::placeholder {
-  color: #666;
+  color: #9aa5b3;
 }
 
 .config-textarea-input:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 /* DATETIME INPUT */
@@ -472,53 +453,69 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
+/* THE CALENDAR ICON IS WHITE ON THE DARK FIELD (owner requirement). A native
+   date/time input draws its picker glyph in the UA's scheme colour, which on a
+   light scheme is near-black on this near-black field. color-scheme: dark
+   gives the field the dark UA dress (and a dark native picker); the indicator
+   rule then forces the glyph to pure white whatever the UA drew:
+   brightness(0) flattens it to black first, so invert(1) lands on white from
+   either starting colour. Precedent: PlayerStatisticsPage.css .ps-date.
+   Harmless on anything that is not a native date/time input: a number field or
+   a select has no such pseudo-element. (2026-09-22: the Start Time picker is
+   two dropdowns now, and this class sits on controls.tsx NumberField's number
+   inputs, so today the rule only keeps their spin buttons dark. It stays for
+   the next native date or time input that carries the class.) */
+.config-datetime {
+  color-scheme: dark;
+}
+
+.config-datetime::-webkit-calendar-picker-indicator {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+  cursor: pointer;
+}
+
 .config-datetime:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
-/* FOOTER BUTTONS - Facebook Blue */
+/* FOOTER ACTIONS.
+   The bar is sticky, so while the form scrolls under it it MUST be opaque: a
+   see-through bar prints Save and Start on top of whatever control is passing
+   beneath (it was `transparent` from 2026-09-13 to 2026-09-20). #020305 is the
+   ground the console pages stand on, so the bar is the same tone as the glass
+   beside it. It is in flow at the end of the form, so the last control always
+   scrolls clear above it. */
 .config-footer {
   display: flex;
   gap: 1rem;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.4);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #020305;
+  border-top: 1px solid #000;
   position: sticky;
   z-index: 20;
   /* Stacks on the footer's LIVE height, so it lands on the bottom edge the
      frame the footer scrolls away (Dan 2026-09-04). */
   bottom: var(--bottom-nav-stack-base, 74px);
   flex: 0 0 auto;
-  box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.42);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.btn-save,
+/* Layout only. The dress (a lit word on a rule, no fill, no drawn border) is
+   the console block at the foot of this sheet. Scoped to the form: these are
+   common class names and this sheet is loaded by three other surfaces. */
+.table-config-page .btn-save,
 .table-config-page .btn-start {
   flex: 1;
   padding: 0.75rem 1.5rem;
   font-size: 1rem;
-  font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
   min-height: 44px;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.btn-save {
-  background: transparent;
-  border: 2px solid #1877f2;
-  color: #1877f2;
-}
-
-.table-config-page .btn-start {
-  background: #1877f2;
-  border: 2px solid #1877f2;
-  color: white;
-}
-
-.btn-save:disabled,
+.table-config-page .btn-save:disabled,
 .table-config-page .btn-start:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -547,11 +544,8 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem 0.5rem;
-  background: rgba(24, 119, 242, 0.1);
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  background: transparent;
   border-bottom: 1px solid rgba(24, 119, 242, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .template-label {
@@ -576,11 +570,10 @@
 .template-dropdown:focus {
   outline: none;
   border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 .template-dropdown option {
-  background: #1a1a2e;
+  background: #050607;
   color: white;
 }
 
@@ -591,31 +584,32 @@
   gap: 0.75rem;
   padding: 0.75rem 0.5rem;
   background: transparent;
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
   border-bottom: 1px solid rgba(255, 215, 0, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
+/* Gold INK on a gold rule, not a filled gold pill with a halo. The pulse still
+   plays (animations always play); it lights the ink instead of a box. */
 .spins-badge {
-  background: #ffd700;
-  color: #000;
-  font-weight: 700;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.75rem;
+  background: transparent;
+  color: #ffd700;
+  border-bottom: 2px solid #ffd700;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.25rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   animation: pulse-gold 2s ease-in-out infinite;
 }
 
 @keyframes pulse-gold {
   0%,
   100% {
-    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    text-shadow: 0 0 6px rgba(255, 215, 0, 0.35);
   }
 
   50% {
-    box-shadow: 0 0 16px rgba(255, 215, 0, 0.8);
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.8);
   }
 }
 
@@ -629,104 +623,20 @@
   min-width: 180px;
 }
 
-/* SAVE AS TEMPLATE BUTTON */
-.btn-template {
+/* SAVE AS TEMPLATE BUTTON (layout only, see the console block) */
+.table-config-page .btn-template {
   flex: 0.8;
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
-  font-weight: 500;
   cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #ccc;
+  touch-action: manipulation;
 }
 
-.btn-template:disabled {
+.table-config-page .btn-template:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* DELETE BUTTON */
-.btn-delete {
-  background: transparent;
-  border: 2px solid #dc2626;
-  color: #dc2626;
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-/* DELETE MODAL */
-.delete-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.delete-modal {
-  background: #1a1a2e;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  padding: 2rem;
-  max-width: 400px;
-  text-align: center;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: tableConfigPageSlideUp 0.3s ease-out;
-}
-
-@keyframes tableConfigPageSlideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.delete-modal h3 {
-  color: white;
-  margin-bottom: 1rem;
-}
-
-.delete-modal p {
-  color: #888;
-  margin-bottom: 1.5rem;
-}
-
-.delete-modal-buttons {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-}
-
-.btn-cancel {
-  background: transparent;
-  border: 1px solid #666;
-  color: #ccc;
-  padding: 0.5rem 1.5rem;
-  cursor: pointer;
-}
-
-.btn-confirm-delete {
-  background: #dc2626;
-  border: none;
-  color: white;
-  padding: 0.5rem 1.5rem;
-  cursor: pointer;
-}
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
   from {
@@ -754,37 +664,31 @@
     min-height: 44px;
   }
 
-  .back-btn {
+  .table-config-page .btn-save,
+  .table-config-page .btn-start,
+  .table-config-page .btn-template {
     min-height: 44px;
-    min-width: 44px;
-    touch-action: manipulation;
-  }
-
-  /* .save-btn/.reset-btn never existed on this page — the real footer
-     buttons are .btn-save/.btn-start (kept for safety, corrected below) */
-  .save-btn,
-  .reset-btn,
-  .btn-save,
-  .btn-start,
-  .btn-template {
-    min-height: 44px;
-  }
-
-  .config-section h3 {
-    font-size: 0.9rem;
   }
 }
 
-/* HOST PRESETS (spec 3.2, 2026-08-28): one-tap bomb pot bundles. */
+/* PRESET CHIP: a one-tap choice printed as a lit word on a rule. It was a
+   brown well with an amber rim and cream ink (rgba(38,24,8), #ff9e2c,
+   #ffcf7d), the ramp the colour law forbids. Its only live user is the New
+   Cash Game flow, which sets the state inks in CashGameCreateFlow.css. */
 .config-preset-chip {
+  min-height: 44px;
   padding: 6px 12px;
-  border: 1px solid rgba(255, 158, 44, 0.45);
-  background: rgba(38, 24, 8, 0.6);
-  color: #ffcf7d;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #45adff;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: filter 0.15s ease;
+}
+
+.config-preset-chip:active:not(:disabled) {
+  opacity: 0.72;
 }
 
 /* FREE BUY (Dan 2026-09-02): a 0 buy-in MTT. The badge sits under the buy-in
@@ -805,7 +709,7 @@
   padding: 0.2rem 0.6rem;
   background: rgba(24, 119, 242, 0.18);
   border: 1px solid rgba(24, 119, 242, 0.55);
-  color: #8fc1ff;
+  color: #45adff;
   font: 700 0.72rem/1.2 var(--font-body, sans-serif);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -836,17 +740,7 @@
    remain native and accessible; decorative CSS cards, pills and faux chrome do
    not. Standalone route mode receives the same approved SpadeConsole chassis
    from TableConfigPage.tsx. */
-.table-config-page
-  :is(
-    .mode-tab,
-    .btn-save,
-    .btn-start,
-    .btn-template,
-    .btn-delete,
-    .btn-cancel,
-    .btn-confirm-delete,
-    .config-preset-chip
-  ) {
+.table-config-page :is(.mode-tab, .btn-save, .btn-start, .btn-template, .config-preset-chip) {
   min-height: 44px;
   border: 0;
   border-bottom: 1px solid currentColor;
@@ -875,33 +769,63 @@
     .config-datetime,
     .template-dropdown
   ) {
-  border-color: rgb(94 116 134 / 52%);
+  border-color: rgb(154 165 179 / 40%);
   color: #f4f7fb;
-  background: #05080c;
+  background: #050607;
   box-shadow: none;
 }
 
 .table-config-page
-  :is(.template-selector, .spins-indicator, .config-inline-help, .config-free-buy, .config-footer) {
+  :is(.template-selector, .spins-indicator, .config-inline-help, .config-free-buy) {
   background: transparent;
   box-shadow: none;
 }
 
-.table-config-page .table-config-switch__track {
-  border-color: rgb(94 116 134 / 56%);
-  background: #18212a;
-  box-shadow: none;
+/* A native select sizes itself to its longest option, and as a flex item it
+   will not shrink below that: on a phone "Top 15% Of Field (Standard)" ran
+   the Payout Structure select past the glass and under the frame's rail. Let
+   the control shrink with its row (the UA clips its text inside the box and
+   keeps the arrow), and let the label wrap beside it. */
+.table-config-page .config-toggle > :is(select, input) {
+  min-width: 0;
+  max-width: 100%;
 }
 
-.table-config-page .table-config-switch__input:checked + .table-config-switch__track {
-  border-color: #45adff;
-  background: #0b4f78;
-  box-shadow: none;
+.table-config-page .config-toggle > .toggle-label {
+  min-width: 0;
 }
 
-.table-config-page .table-config-switch__thumb {
-  background: #e4e7ec;
-  box-shadow: none;
+/* Three actions share a phone's glass. At fixed 1rem gaps and 1.5rem pads
+   they needed about 350px where a 393px console has about 310px between its
+   rails, and Start ran 19px under the right rail. Gaps and pads follow the
+   console's width instead (cqw), floored at 0.5rem and capped at what they
+   were, and a label may wrap before its button leaves the glass. */
+.table-config-page .config-footer {
+  gap: clamp(0.5rem, 2cqw, 1rem);
+  padding-inline: clamp(0.5rem, 2cqw, 1rem);
+}
+
+.table-config-page .config-footer > button {
+  min-width: 0;
+  padding-inline: clamp(0.5rem, 2cqw, 1.5rem);
+}
+
+/* The actions read in order of weight: Start is the primary (white ink with
+   the blue glow on a lit blue rule), Save is the lit blue word, Save As
+   Template is muted. Pressed feedback is :active; there is no pointer-over
+   state. */
+.table-config-page .btn-start {
+  color: #f4f7fb;
+  border-bottom: 2px solid #45adff;
+  text-shadow: 0 0 10px rgb(69 173 255 / 58%);
+}
+
+.table-config-page .btn-template {
+  color: #9aa5b3;
+}
+
+.table-config-page :is(.mode-tab, .btn-save, .btn-start, .btn-template):active:not(:disabled) {
+  opacity: 0.72;
 }
 
 .table-config-page :is(button, input, select, textarea):focus-visible {

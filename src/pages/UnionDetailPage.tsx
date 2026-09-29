@@ -1423,7 +1423,12 @@ export default function UnionDetailPage() {
                       </div>
                       <div className={styles.tableCardDetails}>
                         <span>
-                          {describeSchedule(s.days_of_week, s.start_times_utc, s.interval_minutes)}
+                          {describeSchedule(
+                            s.days_of_week,
+                            s.start_times_utc,
+                            s.interval_minutes,
+                            s.time_zone
+                          )}
                         </span>
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>

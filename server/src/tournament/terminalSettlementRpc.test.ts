@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
+  maintenanceSupabase: { rpc: mocks.rpc, from: mocks.from },
 }));
 
 vi.mock('./completionSettlementReceipt.js', () => ({

@@ -9,7 +9,8 @@
     "captured-pnl-metadata.json": "149ebe07f1c16e8bf46c39aa9bb4befa6890b52c7acebaed54fad36b3483e20f",
     "legacy-pnl-wrapper-preimages.sql": "2cf370e0a34dc62a7f853c7c50aa9f1530793bffa92e8145a4b4912002059ad0",
     "hooks-seed.sql": "e455f05f581a19f0eba11eaf93fdcc08db0230ce462d63338186bf31a7c00895",
-    "hooks-regression.sql": "009f4c31f8bcb3ac13f4393be218e4b83914f1cab3264b24c15046bc79e733d1",
+    "hooks-regression.sql": "b2d4beccd70092cfe81f07d5701cf1917d2c7335c8484d083ee83cc822cec486",
     "verify-wrapper-source-binding.py": "a5990f3c35e6cafb1b802720cc7936a291676f87ac19741052b3245a9548b76f"
-  }
+  },
+  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."
 }

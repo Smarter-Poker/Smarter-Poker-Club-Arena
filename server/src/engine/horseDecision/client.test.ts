@@ -1543,13 +1543,16 @@ describe('LiveHorseDecisionWorkerClient', () => {
           undefined,
           true
         ) as Promise<unknown>;
-      for (let i = 0; i <= HORSE_CAPTURE_LANE_MAX_QUEUED; i++) void enqueue(i).catch(() => undefined);
+      for (let i = 0; i <= HORSE_CAPTURE_LANE_MAX_QUEUED; i++)
+        void enqueue(i).catch(() => undefined);
       const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
         (job) => job.request.requestId
       );
       expect(queued).toHaveLength(HORSE_CAPTURE_LANE_MAX_QUEUED + 2);
       expect(queued[0]).toBe(1000);
-      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED - 1]).toBe(1000 + HORSE_CAPTURE_LANE_MAX_QUEUED - 1);
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED - 1]).toBe(
+        1000 + HORSE_CAPTURE_LANE_MAX_QUEUED - 1
+      );
       expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED]).toBe(2);
       expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED + 1]).toBe(1000 + HORSE_CAPTURE_LANE_MAX_QUEUED);
     });

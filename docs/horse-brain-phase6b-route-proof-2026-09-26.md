@@ -310,3 +310,22 @@ Defect found in this tool: `phase6b-route-proof.mjs` opened the shard-0 archive 
 | G8 Performance and replay  | implemented but unverified | 6B's replay is the 6C lane; not run on fa480b9b                                                                                                              |
 | G9 Learning and promotion  | not applicable with reason | No learned or promoted candidate in Phase 6                                                                                                                  |
 | G10 Publication and use    | implemented but unverified | fa480b9b serves; the route proof was not run against it                                                                                                      |
+
+## 2026-09-29 (later): the route proof is not run on c0c986ad, because its capture still loses records
+
+Release `c0c986aded5d25e952cb154c46599b6307f165bd`. The 6B observer was not run: the capture-health rule in the 6A/6D section of `docs/horse-brain-phase6d-serving-release-2026-09-27.md` (2026-09-29, later) stopped the evidence work. The journal itself shed nothing (`queue_capacity` 0, `lock_retry` 0, 888,955 enqueued and 888,955 recorded), but `capture_unavailable` was 55,701 (6.27% of enqueued, 20% in the 05:15Z and 05:30Z bins), so counts of retained records would certify the retained fraction only. Capture table: `docs/evidence/phase6d/capture-health-2026-09-29-c0c986ad.json`. Root cause (capture jobs expiring at the tail of the decision worker's queue) and fix: `docs/changelog/2026-09-29-horse-journal-capture-lane.md`. The observer's per-shard reading (`archive` and `archive-shard-1`) from the previous lane's fix stands and was not exercised on c0c986ad.
+
+### Gate status, 6B on c0c986ad
+
+| Gate                       | Status                     | Evidence                                                                                                                                              |
+| -------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | Cells not observed on c0c986ad; 608 of 5,643 on 763e4cec is historical only                                                                           |
+| G2 Inputs                  | implemented but unverified | Receipts not read on c0c986ad                                                                                                                         |
+| G3 Computation             | implemented but unverified | Not read on c0c986ad                                                                                                                                  |
+| G4 Immutable authority     | implemented but unverified | Domain digest not recomputed on the c0c986ad image; equal to the pin on 763e4cec (historical only)                                                    |
+| G5 Reachability            | defective                  | capture_unavailable 6.27% of enqueued on c0c986ad (20% in the busy bins); a route proof of the retained records certifies the retained fraction only   |
+| G6 Outcome receipts        | defective                  | Same cause as G5                                                                                                                                      |
+| G7 Independent correctness | verified now               | 91 of 91 on the three Phase 6 test files, main a0cf141c, Horse Brain sources equal c0c986ad, rerun 2026-09-29                                         |
+| G8 Performance and replay  | implemented but unverified | 6B's replay is the 6C lane; not run on c0c986ad                                                                                                       |
+| G9 Learning and promotion  | not applicable with reason | No learned or promoted candidate in Phase 6                                                                                                           |
+| G10 Publication and use    | implemented but unverified | c0c986ad serves; the route proof was not run against it                                                                                               |

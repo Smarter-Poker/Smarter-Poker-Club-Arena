@@ -56,6 +56,15 @@
 --   fn_cash_accept_hand_provenance          9e276af576abbcc871e78746c4210fee
 --   fn_union_pnl_capture_accepted_cash      3c1f76f12a6ba30888a1c295a90ddf60
 --   fn_poker_diamond_cash_variant           929c207a922004eb0e764011a2fe386c  (read, not changed)
+--
+-- This migration creates no object of its own, so it states how to see it live:
+-- @live-proof: position('DIAMOND PHASE 9, STEP 0' in pg_get_functiondef('public.fn_ca_supply_snapshot()'::regprocedure)) > 0
+-- @live-proof: position('diamond_guarantee_has_no_chip_bank' in pg_get_functiondef('public.trg_tournaments_guarantee_affordable()'::regprocedure)) > 0
+-- @live-proof: position('diamond_overlay_has_no_chip_bank' in pg_get_functiondef('public.fn_ca_fund_overlay_on_lock()'::regprocedure)) > 0
+-- @live-proof: position('diamond_tournament_money_key_not_read' in pg_get_functiondef('public.fn_poker_diamond_create_tournament(jsonb)'::regprocedure)) > 0
+-- @live-proof: position('OR NOT public.fn_poker_diamond_cash_variant(p_hand_row' in pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure)) > 0
+-- @live-proof: position('WHERE t.id=p_table AND c.asset=''diamonds'') THEN RETURN; END IF;' in pg_get_functiondef('public.fn_cash_accept_hand_provenance(uuid,bigint,uuid,jsonb,numeric,numeric,numeric,text,jsonb)'::regprocedure)) > 0
+-- @live-proof: position('WHERE t.id=NEW.table_id AND c.asset=''diamonds'') THEN RETURN NULL; END IF;' in pg_get_functiondef('public.fn_union_pnl_capture_accepted_cash()'::regprocedure)) > 0
 -- ============================================================================
 
 BEGIN;

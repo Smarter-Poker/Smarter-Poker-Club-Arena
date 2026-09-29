@@ -4,7 +4,7 @@ September 29, 2026. Phase 9 of the Diamond Arena build programme, line "Remove e
 
 ## The Database
 
-Migration `the_chip_legs_refuse_a_diamond_row` (applied as `20260929160000`; recorded text byte-identical to the repo file):
+Migration `the_chip_legs_refuse_a_diamond_row` (applied as `20260929160000`; the recorded text is the repo file without its seven `@live-proof` comment lines, which were added after the apply because a migration that creates no object must say how to see it live):
 
 - The chip supply meter (`fn_ca_supply_snapshot`, a watched guard, redefinition declared) no longer counts a Diamond seat, a Diamond pending add-on or a Diamond event's pools as chips. No Diamond seat or event has ever existed, so every reading the meter has taken is unchanged and its basis stays `pending-addon-v4`. Without this fence, the first busy hour of Diamond play would have looked like unexplained chip supply and paged as a chip leak.
 - The two chip guarantee triggers refuse a Diamond event by name instead of reading the arena's chip treasury: `diamond_guarantee_has_no_chip_bank` (the affordability check) and `diamond_overlay_has_no_chip_bank` (the overlay at start). The overlay refusal applies only when there is a shortfall to fund.

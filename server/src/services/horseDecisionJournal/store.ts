@@ -390,8 +390,39 @@ interface Segment {
   bytes: number;
   decodedBytes: number;
   records: HorseJournalRecord[];
+  /** The canonical JSON of each record: the bytes the digest covers. */
+  lines: string[];
   compressed: Buffer;
 }
+/* A SEGMENT'S BYTES ARE VALIDATED ONCE (2026-09-29). On the serving release
+   (fa480b9b) each Horse decision-shard writer ran at about a tenth of a core
+   and shed 8-18% of decisions at queue_capacity in steady state, because one
+   16-record batch cost about 20 ms of CPU and a writer that has to win the CPU
+   from a busier box could not spend that 130 times a second. Almost all of it
+   was the same check repeated: decodeSegment parses every line, validates the
+   record (which re-parses and re-canonicalises its body) and re-serialises it,
+   and one append decoded the very same segment five times - as built, as
+   reserved in the catalog, as staged, as published, and once more in the
+   catalog - measured 15 canonical serialisations and 5 record validations per
+   record. Validating a line is a pure function of its bytes, and `sha` is the
+   sha256 of exactly those bytes, so a segment whose digest has already passed
+   the full validation cannot fail it again. The digest is still recomputed
+   from the bytes actually read on EVERY decode (the readback proves the disk
+   returned what was staged); only the per-record re-validation of bytes that
+   were already validated is skipped. A segment never seen before, including
+   every one read from disk after a restart or by a review tool, is validated
+   in full. The set is bounded, so it is a cache of recent work and never a
+   record of what is valid. */
+const VALIDATED_SEGMENTS_LIMIT = 256;
+const validatedSegments = new Set<string>();
+const rememberValidated = (sha: string): void => {
+  validatedSegments.delete(sha);
+  validatedSegments.add(sha);
+  if (validatedSegments.size > VALIDATED_SEGMENTS_LIMIT)
+    validatedSegments.delete(validatedSegments.values().next().value as string);
+};
+/** Test seam: forget every validated digest. */
+export const forgetValidatedHorseSegments = (): void => validatedSegments.clear();
 function decodeSegment(
   compressed: Buffer,
   sha: string,
@@ -419,20 +450,24 @@ function decodeSegment(
   if (!Buffer.from(text).equals(decoded)) throw Error('Horse archive original bytes changed');
   const lines = text.slice(0, -1).split('\n');
   if (!lines.length || lines.length > 16) throw Error('Horse archive segment corruption');
+  const alreadyValidated = validatedSegments.has(sha);
   const records = lines.map((line) => {
     const record: unknown = JSON.parse(line);
-    validateHorseJournalRecord(record);
-    if (horseJournalJson(record) !== line) throw Error('Horse archive original bytes changed');
-    return record;
+    if (!alreadyValidated) {
+      validateHorseJournalRecord(record);
+      if (horseJournalJson(record) !== line) throw Error('Horse archive original bytes changed');
+    }
+    return record as HorseJournalRecord;
   });
-  return { sha, compressedSha, bytes, decodedBytes, records, compressed };
+  rememberValidated(sha);
+  return { sha, compressedSha, bytes, decodedBytes, records, lines, compressed };
 }
-function segmentsFor(records: HorseJournalRecord[]): Segment[] {
+function segmentsFor(records: HorseJournalRecord[], canonical?: readonly string[]): Segment[] {
   const groups: string[][] = [];
   let lines: string[] = [],
     size = 0;
-  for (const record of records) {
-    const line = horseJournalJson(record) + '\n',
+  for (const [index, record] of records.entries()) {
+    const line = (canonical?.[index] ?? horseJournalJson(record)) + '\n',
       bytes = Buffer.byteLength(line);
     if (size + bytes > DECODE_BYTES) {
       groups.push(lines);
@@ -446,6 +481,10 @@ function segmentsFor(records: HorseJournalRecord[]): Segment[] {
   return groups.map((group) => {
     const decoded = Buffer.from(group.join('')),
       compressed = gzipSync(decoded);
+    // Every line is the canonical JSON of a record the caller has just
+    // validated (appendBatch and capacityRefusal both validate first), so this
+    // digest is already validated: see VALIDATED_SEGMENTS_LIMIT.
+    rememberValidated(digest(decoded));
     return decodeSegment(
       compressed,
       digest(decoded),
@@ -454,6 +493,86 @@ function segmentsFor(records: HorseJournalRecord[]): Segment[] {
       decoded.length
     );
   });
+}
+
+/** SHARD WRITERS SHARE ONE BASE DIRECTORY'S LEGACY DATABASE, DELIBERATELY
+ * (2026-09-28): it is pre-archive history every shard's reader must still see
+ * (readonlyHorseJournalStoreOptions), so it stays one file rather than being
+ * copied or split per shard. Before sharding, exactly one HorseDecisionJournalStore
+ * ever opened a given directory in its process's lifetime, so "create the v1
+ * legacy database if it is missing" could never run twice at once. Two decision-
+ * worker shards constructing their stores concurrently against a brand-new
+ * directory (a fresh host, a wiped test fixture - never the already-bootstrapped
+ * production archive this change ships onto) broke that assumption: both saw the
+ * file missing, both independently bootstrapped it, and whichever's construction
+ * captured legacyIdentity() before the other's later-settling write finished
+ * persisted a since-stale hash into its own catalog's archive_meta.legacy_sha -
+ * failing assertLegacy() on its very next append and then every future open of
+ * that catalog for good, since the mismatch is written down. That is a startup
+ * race, not the write contention this file's sharding removes, and unlike a
+ * lock-retry it never recovers on its own (fail() has no restart path for a
+ * mismatch this deterministic). Fixed by making the bootstrap itself single-
+ * writer again, with the same exclusive-create primitive this file already
+ * uses for the sqlite files themselves: whichever construction wins a short
+ * lock file performs the one bootstrap; every other one waits for that lock to
+ * clear and the database to exist, then reads the one settled result. Never
+ * taken at all once the legacy database exists, which is every production
+ * open. */
+function bootstrapLegacyJournalOnce(
+  directory: string,
+  limits: { maxBytes?: number; maxRecords?: number; readOnly?: boolean }
+): void {
+  const legacyPath = join(directory, 'horse-decisions.sqlite');
+  const lockPath = `${legacyPath}.bootstrap-lock`;
+  // The legacy file EXISTS the instant its bootstrapper creates it, seconds
+  // before its schema and user_version are written, so "the file exists" is not
+  // "the file is ready": only "the file exists and nobody holds the lock" is.
+  // (The first version of this function returned on existsSync alone, and a
+  // sibling shard that arrived in that window opened a half-written database
+  // and captured its identity before the owner's schema write settled - the
+  // intermittent 'writer_unavailable' this fix exists for.)
+  if (existsSync(legacyPath) && !existsSync(lockPath)) return;
+  // The lock lives inside the directory, so the directory must exist before the
+  // lock can be taken - the legacy constructor used to be what created it, and
+  // it now runs only after this bootstrap. A relative path is refused here with
+  // the constructor's own message rather than creating a directory under cwd.
+  if (!isAbsolute(directory)) throw Error('Invalid Horse journal configuration');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  let owner = false;
+  try {
+    closeSync(openSync(lockPath, 'wx', 0o600));
+    owner = true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+  }
+  if (owner) {
+    try {
+      // Re-check under the lock: a sibling may have finished the whole
+      // bootstrap between the check above and taking the lock. A ready legacy
+      // database is never re-opened for writing by a second bootstrapper.
+      if (!existsSync(legacyPath)) {
+        const initial = new LegacyHorseJournalStore(directory, limits);
+        initial.close();
+      }
+    } finally {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        /* best effort: a lock file that is already gone is not a failure */
+      }
+    }
+    return;
+  }
+  // Another construction (this process or a sibling shard's) is bootstrapping
+  // right now. Block this synchronous constructor path on it rather than
+  // racing it: Atomics.wait works on Node's main thread as well as a worker's.
+  const idle = new Int32Array(new SharedArrayBuffer(4));
+  const deadlineMs = Date.now() + 5000;
+  while ((existsSync(lockPath) || !existsSync(legacyPath)) && Date.now() < deadlineMs) {
+    Atomics.wait(idle, 0, 0, 20);
+  }
+  if (existsSync(lockPath) || !existsSync(legacyPath))
+    throw Error('Horse archive legacy bootstrap timed out');
 }
 
 /** Archive records retain the original v1 envelope. The legacy database is
@@ -506,10 +625,7 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       throw Error('Invalid Horse archive configuration');
     // A fresh installation gets the same empty v1 legacy database once. Existing
     // spools, including a full spool, are opened read-only without a migration.
-    if (archive && !limits.readOnly && !existsSync(join(directory, 'horse-decisions.sqlite'))) {
-      const initial = new LegacyHorseJournalStore(directory, limits);
-      initial.close();
-    }
+    if (archive && !limits.readOnly) bootstrapLegacyJournalOnce(directory, limits);
     super(directory, { ...limits, readOnly: archive ? true : limits.readOnly });
     this.archiveReadOnly = limits.readOnly === true;
     this.legacyPath = join(realpathSync(directory), 'horse-decisions.sqlite');
@@ -762,20 +878,21 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           segment.decodedBytes,
           segment.records.length
         );
-        segment.records.forEach((record, ordinal) =>
-          db
-            .prepare('INSERT INTO archive_events VALUES(?,?,?,?,?,?,?,?)')
-            .run(
-              record.eventId,
-              record.producerId,
-              record.sequence,
-              record.handKey,
-              digest(horseJournalJson(record)),
-              Buffer.byteLength(horseJournalJson(record)),
-              segment.sha,
-              ordinal
-            )
-        );
+        segment.records.forEach((record, ordinal) => {
+          // The segment's own line: validated equal to the canonical JSON of
+          // this record when its bytes were first validated.
+          const json = segment.lines[ordinal]!;
+          db.prepare('INSERT INTO archive_events VALUES(?,?,?,?,?,?,?,?)').run(
+            record.eventId,
+            record.producerId,
+            record.sequence,
+            record.handKey,
+            digest(json),
+            Buffer.byteLength(json),
+            segment.sha,
+            ordinal
+          );
+        });
       }
       db.exec('DELETE FROM archive_pending;');
       if (!inTransaction) db.exec('COMMIT');
@@ -791,8 +908,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     if (!Array.isArray(records) || records.length < 1 || records.length > 16)
       throw Error('Horse journal batch exceeds bounds');
     for (const record of records) validateHorseJournalRecord(record);
-    const captured = records.map((r) => JSON.parse(horseJournalJson(r)) as HorseJournalRecord);
-    if (captured.reduce((n, r) => n + Buffer.byteLength(horseJournalJson(r)), 0) > DECODE_BYTES)
+    // The canonical JSON of each record, computed once: a record's canonical
+    // form is its own canonical form (the capture is a parse of it), so the
+    // identity comparison and the segment reuse these strings.
+    const capturedJson = records.map((r) => horseJournalJson(r));
+    const captured = capturedJson.map((json) => JSON.parse(json) as HorseJournalRecord);
+    if (capturedJson.reduce((n, json) => n + Buffer.byteLength(json), 0) > DECODE_BYTES)
       throw Error('Horse journal batch exceeds bounds');
     this.finishRetired();
     this.finishPending();
@@ -803,8 +924,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       // A competing connection may have reserved a batch after finishPending.
       if (db.prepare('SELECT id FROM archive_pending LIMIT 1').get()) this.finishPending(true);
       const fresh: HorseJournalRecord[] = [];
-      outcomes = captured.map((record) => {
-        const json = horseJournalJson(record);
+      const freshJson: string[] = [];
+      outcomes = captured.map((record, index) => {
+        const json = capturedJson[index]!;
         const old = this.db
           .prepare(
             'SELECT record_json FROM horse_journal_events WHERE event_id=? OR (producer_id=? AND sequence=?)'
@@ -842,9 +964,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           return 'replayed';
         }
         fresh.push(record);
+        freshJson.push(json);
         return 'recorded';
       });
-      const segments = segmentsFor(fresh),
+      const segments = segmentsFor(fresh, freshJson),
         usage = db.prepare('SELECT * FROM archive_meta WHERE id=1').get()!;
       if (
         !usage ||

@@ -21,6 +21,9 @@
  *      every web player and, worse, runs it there.
  *   4. build:native is the only script that sets VITE_NATIVE, and the
  *      publisher (the web) never does.
+ *   5. (2026-09-29) Every import of src/lib/native/* outside the shell sits
+ *      behind IS_NATIVE_BUILD, not the runtime bridge check alone - otherwise
+ *      the web build still emits the module and its plugins.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -82,6 +85,37 @@ describe('the web bundle does not know the native app exists', () => {
       }
     }
     expect(offenders, 'Capacitor code must stay behind IS_NATIVE_BUILD').toEqual([]);
+  });
+
+  it('every native-only module outside the shell is reached behind IS_NATIVE_BUILD', () => {
+    /* 2026-09-29. The phase-5 "native feel" wiring (share sheet, haptics,
+       keep-awake, in-app browser, device push, store purchases) reached
+       src/lib/native/* from shared code behind the RUNTIME check
+       isNativePlatform() alone. On the web that check is always false, so no
+       player ever ran any of it - but Rollup cannot know that, so the web
+       build still emitted those modules and their Capacitor plugins: 6.9kB
+       gzipped and ten chunks of app-only code in the website, which is what
+       this law says cannot happen, and which the whole-app size ceiling paid
+       for. The compile-time constant in front of each import is what lets
+       Rollup drop them. Type positions (import('x').T) are erased and exempt. */
+    const NATIVE_IMPORT =
+      /import\(\s*['"]((?:\.{1,2}\/)+(?:lib\/)?native\/[^'"]+|@(?:capacitor|capacitor-community|capgo|revenuecat)\/[^'"]+)['"]\s*\)/g;
+    // `import('x').SomeType` in a type position is erased; `import('x').then(`
+    // is a real import and is NOT exempt.
+    const TYPE_POSITION = /^\s*\.\s*[A-Za-z_$][\w$]*\b(?!\s*\()/;
+    const offenders: string[] = [];
+    for (const file of walk(join(root, 'src'))) {
+      const rel = file.slice(root.length + 1);
+      if (rel === 'src/lib/nativeShell.ts' || rel.startsWith('src/lib/native/')) continue;
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(NATIVE_IMPORT)) {
+        const at = m.index ?? 0;
+        if (TYPE_POSITION.test(src.slice(at + m[0].length, at + m[0].length + 80))) continue;
+        const lead = src.slice(Math.max(0, at - 600), at);
+        if (!lead.includes('IS_NATIVE_BUILD')) offenders.push(`${rel}: import('${m[1]}')`);
+      }
+    }
+    expect(offenders, 'guard each native import with IS_NATIVE_BUILD').toEqual([]);
   });
 
   it('leaving the bundle goes through one seam: no window.open, no bare /auth/login, outside src/lib', () => {

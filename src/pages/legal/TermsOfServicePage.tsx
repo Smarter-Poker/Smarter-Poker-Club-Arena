@@ -1,6 +1,7 @@
 import LegalDocumentLayout, {
   type LegalDocumentSection,
 } from '../../components/legal/LegalDocumentLayout';
+import { TERMS_LAST_UPDATED } from '../../components/legal/legalDates';
 
 const SECTIONS: LegalDocumentSection[] = [
   {
@@ -132,7 +133,7 @@ export default function TermsOfServicePage() {
       eyebrow="Platform Agreement"
       title="Terms Of Service"
       summary="The Account, Conduct, Social-Play, And Platform Terms That Govern Club Arena Access."
-      lastUpdated="January 29, 2026"
+      lastUpdated={TERMS_LAST_UPDATED}
       sections={SECTIONS}
     />
   );

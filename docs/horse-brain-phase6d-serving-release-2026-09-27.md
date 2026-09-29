@@ -311,3 +311,156 @@ join because a shard had stopped capturing outright.
   (the 6C store-identity lane) before they can be replayed; unchanged limitation from
   2026-09-27.
 - `DECIDE_DEEP` decisions (3 of 137) are not yet supported by the standalone replay tool.
+
+## Correction 2026-09-28: two conclusions above were wrong, and the G5, G6 and G8 statuses change
+
+Written 2026-09-28 at about 19:50Z, against the same release `763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f` that the section above describes (still serving at the time of this read: engine `/health` `releaseSha` 763e4cec, `horseJournal.mode` ready, 2 of 2 publishers). The section above is kept as written; this section supersedes its statements in the places named here. Evidence: `docs/evidence/phase6d/incomplete-chains-diagnosis-2026-09-28-763e4cec.json` and `docs/evidence/phase6d/phase6c-replay-serving-763e4cec-stores-2026-09-28T19-43-08-140Z.{md,json}`. Aggregate only; no hand key, player or table id, card or record content.
+
+### C1. The 75 incomplete chains were shed by the producers' queue, not by the archive's byte cap
+
+The section above (sections 2, 4 and 6) attributed all 75 incomplete chains to "the archive at its configured byte cap ... not a capture-path or writer defect". That is wrong, and the first sentence of its own evidence already contradicts it: both producers shed within a tenth of a second of the window opening, and a ring that is full does not refuse a new record, it retires an old one.
+
+- The archive is a ring. Reaching `maxBytes` is its steady state: the oldest published segment outside the evidence hold is retired to make room, and nothing recently captured is lost by that (`heldSegments` 237,613, 1,485,549,598 of 4,294,967,296 hold-budget bytes, `holdTrimmedSegments` 0). The chains the population admitted were all found; what is missing from the 75 was never archived, the finding the 2026-09-27 diagnosis had already made for `6b6eabb1`.
+- The records that were not archived are the records the producers refused. Over the declared hour (`collected_at` 14:12:00Z to 15:12:00Z, `source_release` 763e4cec, 104 flush receipts) the two decision-shard publishers counted `phase15_journal_queue_capacity` 142,745 against `phase15_journal_enqueued` 362,935: 28.2% of the 505,680 records offered were refused at the queue. The population's own per-producer sequence continuity counts 87,288 and 52,641, together 139,929, not archived in the same hour, within 2.0% of the refusals (the difference is the receipts' flush boundary against the sequence range). `phase15_journal_lock_retry` was 1,876 and `phase15_journal_capture_unavailable` 580 (14:12:29Z to 14:24:57Z), the same contention at smaller size.
+- Cause: every decision-shard writer shared one SQLite archive catalog, so the fleet's batches serialised on one write lock and the 64-record / 4 MiB queue in front of each writer filled and refused. Measured locally, one shared catalog managed 1,368 records per second with a 252 ms p95 batch; one catalog per shard managed 2,204 records per second with 18 ms. The fix is PR #5541 (one archive catalog per shard writer, queue bound 4,096 records / 16 MiB, legacy-bootstrap race closed). It is not on 763e4cec. The section above's "raising `maxBytes` ... is an operational decision" was the wrong remedy for a defect that raising `maxBytes` would not have touched.
+
+The same journal is what 6A/6D (this document) and the 6B route proof read, so the 75 incomplete chains here and the "retained journal records only" caveat on the 6B counts have one cause. It is a Horse Brain capture defect, and 0 of the 137 chains diverged in the replay below because the defect loses evidence, it does not change decisions.
+
+### C2. The 28 chart-store decisions reproduce; only DECIDE_DEEP remains a named exclusion
+
+The section above recorded 28 decisions as `reference_unavailable:chart_store` and called them "unavailable external input" that "need the chart store loaded offline with a verified identity ... before they can be replayed". That was already false when it was written: #5490 and #5513, both inside 763e4cec, load the stores offline by journaled identity (the protocol's sections 11 and 12), and the 763e4cec records carry `solverStoreIdentity`. The replay was run without `--store-snapshot`, so the refusal was the tool being given no store, not an input that could not be had.
+
+Rerun, 2026-09-28T19:43Z, exactly as protocol sections 11 and 12:
+
+- Store rows exported at 19:38:44Z to 19:39:26Z inside `club-arena-engine` by `server/scripts/phase6c-store-export-rows.mjs` (the Mac's database keys are stale), read-only, then passed through the loaders' completeness checks and the production store modules by `phase6c-store-snapshot.mjs --from-rows`: chart store 240 entries `2c8a2d9f448e5dd22f4433faeb40f70ac6a111d6c7e7bacae89e4fbf106a5dbf` revision 2026-07-19T15:11:48.555537Z, postflop store 7747 entries `dff78313b437357d3657fe256fc3b3b82cd4740afffe9125e530dfcc79f57c1d` revision 2026-09-03T18:18:13.594197Z. Both are the identities section 11.1 of the replay protocol pinned and section 12.1 found journaled by d37a7de8, so the stores did not change between then and the read.
+- The 137 admitted decisions were re-exported by journaled `eventId` with `server/scripts/phase6d-chain-export.mjs` against the committed declaration (137 wanted, 137 found, 0 missing, observer image equal to the serving image after).
+- `node scripts/phase6c-replay.mjs <export> --engine-sha 763e4cec... --population docs/evidence/phase6d/population-2026-09-28-763e4cec.json --label serving-763e4cec-stores --store-snapshot <chart> --store-snapshot <postflop> --negative-controls 3`, run from a checkout of the serving release itself: decision-code files that differ from the serving release, none. No pin file is passed; the journaled digest alone selects the store.
+
+| Verdict                                     | Section above | This rerun |
+| ------------------------------------------- | ------------: | ---------: |
+| reproduced (action, route, atlas cell, RNG) |           106 |        134 |
+| diverged                                    |             0 |          0 |
+| refused `reference_unavailable:chart_store` |            28 |          0 |
+| refused `replay_unsupported:DECIDE_DEEP`    |             3 |          3 |
+
+All 134 replayed decisions are clean and every receipt digest equals its original; independent qualification agreed on 134 and disagreed on none. The 28 are the chart routes: 13 `chart_open_jam` and 4 `chart_bb_defend` in mtt, 2 and 3 in spin, 3 and 3 in hu_sng, each identified by the journaled chart-store digest. Negative controls on the batch's own records, three each, all passed: substituted action (diverged `action`), substituted RNG (`rng_stream_mismatch`), stale M state (refused by the independent M-state check), a re-signed record naming a different chart store of the same size (refused by name with the true store loaded), the same record with no pin (reproduced by digest alone), the store with one frequency moved at the same entry count (digest `c202612f0c72`, refused by name) and the untampered snapshot reloaded (reproduced). `DECIDE_DEEP` (3 of 137) stays the one named exclusion of protocol section 11.3.
+
+The private exports (store rows, snapshots, the 137-record export) stayed on the archive volume outside the repository and were removed after this run.
+
+### C3. Corrected gate status for 6A and 6D on 763e4cec
+
+Only the rows named here change from the table in section 5 of the 2026-09-28 section above; every other row stands.
+
+| Gate                      | Was          | Now                         | Basis                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G5 Reachability           | verified now | defective                   | 62 of 137 admitted chains are complete (five links). 75 are not because the journal refused the records that would have completed them (C1): 51 lack the execution witness for the accepted action, 38 lack the accepted hand, 36 the hand binding. Reachability of the request, calculation and reference links is real on 137 of 137; the outcome half of the chain is not, and a capture that loses 28% of decisions cannot be called reached. Fixed in #5541; unverified. |
+| G6 Outcome receipts       | verified now | defective                   | The attribution receipts are counted, but the completed-hand and accepted-action receipts they join to are absent on 75 of 137 chains, every one marked shed within 60 seconds of its decision by its producer. Same cause and same fix as G5.                                                                                                                                                                                                                                |
+| G8 Performance and replay | verified now | verified now (strengthened) | 134 of 134 replayable admitted decisions reproduced on 763e4cec, 0 diverged; the 28 chart-store decisions previously counted as unavailable external input reproduce (C2); 3 `DECIDE_DEEP` are the only named exclusion.                                                                                                                                                                                                                                                      |
+
+G1, G2, G3, G4, G7, G9 and G10 are unchanged. The 6B route proof of the same window rests on the same shedding journal: its G5 and G6 rows in `docs/horse-brain-phase6b-route-proof-2026-09-26.md` ("retained records only") are `defective` on 763e4cec for the same reason, see the correction note there.
+
+### C4. What to do next, and what is not claimed
+
+- The target is a release containing #5541 whose own population shows complete five-link chains and capture continuity with no producer drops (`phase15_journal_queue_capacity` and `phase15_journal_lock_retry` near zero at load comparable to 13:00Z to 15:00Z). That is verified in a later section once such a release serves, not here.
+- Nothing above changes a decision, a route or a payout; the correction is to what this document said about capture and about what could be replayed.
+
+## 2026-09-29: capture health on the serving release fa480b9b stops the evidence run, and the cause is fixed
+
+Release `fa480b9bb99132938aabc7788810e5df5b0bf056` (container started 2026-09-28T21:06:27Z; contains #5541, #5505, #5480, #5530, #5490 and #5513). Aggregate only; no hand key, player or table id, card or record content.
+
+### Capture health first (the rule that stopped the evidence run)
+
+Read 2026-09-29T03:08Z from `public.horse_brain_flush_receipts` (`source_release like 'fa480b9b%'`, fires per feature, collected 21:06Z onward, 15-minute bins). Aggregate only: `docs/evidence/phase6d/capture-health-2026-09-29-fa480b9b.json`.
+
+| Bin start (UTC) | enqueued | queue_capacity | lock_retry | capture_unavailable |
+| --------------- | -------: | -------------: | ---------: | ------------------: |
+| 21:15           |  153,462 |         12,923 |          0 |               8,067 |
+| 21:30           |  133,889 |         13,141 |          0 |              16,163 |
+| 21:45           |   77,266 |         16,772 |          0 |               4,562 |
+| 22:00           |  125,659 |         18,579 |          0 |                   2 |
+| 22:15           |  146,119 |              0 |          0 |                   0 |
+| 22:30           |  165,018 |         18,121 |          0 |                   1 |
+| 22:45           |  102,869 |          7,526 |          0 |                   0 |
+| 23:00           |  146,125 |          5,974 |          0 |                   2 |
+| 23:15           |  144,745 |          7,934 |          0 |               2,259 |
+| 23:30           |  100,246 |         19,746 |          0 |               2,964 |
+| 23:45           |   79,751 |         22,926 |          0 |               3,923 |
+| 00:00           |  114,371 |         16,239 |          0 |                   2 |
+| 00:15           |  144,547 |          6,139 |          0 |                 627 |
+| 00:30           |  148,724 |         20,256 |          0 |                 895 |
+| 00:45           |   76,654 |          6,903 |          0 |               8,701 |
+| 01:00           |  106,431 |         10,320 |          0 |               4,540 |
+| 01:15           |  148,671 |         14,545 |          0 |                   1 |
+| 01:30           |  179,325 |         27,439 |          0 |                   0 |
+| 01:45           |  104,046 |         18,923 |          0 |                   0 |
+| 02:00           |  131,874 |         27,830 |          0 |                   0 |
+| 02:15           |  102,550 |         12,357 |          0 |               4,843 |
+| 02:30           |  170,215 |         11,706 |          0 |                   0 |
+| 02:45           |   87,090 |            223 |          0 |                   2 |
+
+The 21:00 bin (partial, 164 refused of 15,799 offered) and the 03:00 bin (5 minutes, 0 refused) are in the JSON. Over the whole read: 2,907,785 enqueued, 316,686 refused at the queue (9.8% of offered, 22.3% in the worst bin), lock_retry 0 in every bin, capture_unavailable 57,554. #5541 removed the lock contention and the shed remained.
+
+### Root cause and fix
+
+The assignment says that when queue_capacity is still material, the evidence work stops and the cause is fixed. Three causes were read from the running host or reproduced, and are fixed in this branch (details, measurements and pins in `docs/changelog/2026-09-29-horse-journal-capture-cost.md`): the writer validated each segment five times (15 canonical serialisations per record, about 20 ms of writer CPU per 16-record batch on the host); both writer threads inherited nice 10 from their decision workers (about 100 records a second of ceiling against about 120 offered per shard); and the 16 MiB queue held about 1,800 records of 9 KB, fifteen seconds of a shard's traffic. The review tools also read shard 0 only; they now read every shard, pinned by a two-shard law test.
+
+Neither the population, the replay nor the route proof was run on fa480b9b: no declaration was committed and no record was read, because their capture gates cannot be verified on this journal. The fix is delivered to main; the same runs are owed on the first release that contains it and whose own receipts show queue_capacity near zero. Not claimed: any change to a decision, a route or a payout, and any effect of the fix on a serving release.
+
+### Gate status, 6A and 6D on fa480b9b
+
+| Gate                       | Status                     | Evidence                                                                                                                                                                                                                          |
+| -------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | No population was walked on fa480b9b; 64 cells observed on 763e4cec is historical only                                                                                                                                            |
+| G2 Inputs                  | implemented but unverified | Request-link and v2 context-receipt presence not read on fa480b9b; 137 of 137 on 763e4cec is historical only                                                                                                                      |
+| G3 Computation             | implemented but unverified | Calculation link and independent qualification not read on fa480b9b; 106 of 106 (763e4cec) is historical only                                                                                                                     |
+| G4 Immutable authority     | implemented but unverified | No declaration committed for fa480b9b because no record was read; the 763e4cec declaration (committed 15:14:03Z, first read 15:16:55.718Z) is historical only                                                                     |
+| G5 Reachability            | defective                  | queue_capacity refused 316,686 of 3,224,471 offered records (9.8%) on fa480b9b, non-zero in 23 of 25 bins; five-link chains cannot be completed on a shedding journal                                                             |
+| G6 Outcome receipts        | defective                  | Same cause: the completed-hand and execution records that outcome receipts join to are refused at the producer queue                                                                                                              |
+| G7 Independent correctness | verified now               | `TournamentBrainContextCache.test.ts`, `TournamentBlindSnapshot.test.ts`, `HorsePhase6Tournament.test.ts` rerun 2026-09-29 on a tree whose `server/src/engine` and `server/src/services` equal fa480b9b: 3 files, 91 of 91 passed |
+| G8 Performance and replay  | implemented but unverified | Replay not run on fa480b9b (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                             |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                |
+| G10 Publication and use    | implemented but unverified | fa480b9b serves (its receipts run 21:13Z to 03:05Z); its own archive was not read by its own image, so publication and use are not shown                                                                                          |
+
+## 2026-09-29 (later): capture health on the serving release c0c986ad stops the evidence run again, and the cause is a different one
+
+Release `c0c986aded5d25e952cb154c46599b6307f165bd` (container started 2026-09-29T03:55:58Z; contains #5563, #5541, #5530, #5490 and #5513). Aggregate only; no hand key, player or table id, card or record content. `/health` read 2026-09-29T05:45Z and 05:49Z: `releaseSha` c0c986ad, `horseJournal.mode` ready, 2 of 2 publishers, `capture` naming both, stalled 0.
+
+### Capture health first (the rule that stopped the evidence run)
+
+Read 2026-09-29T05:56Z from `public.horse_brain_flush_receipts` (`source_release like 'c0c986ad%'`, collected 03:56Z onward, 15-minute bins by receipt time). Aggregate only: `docs/evidence/phase6d/capture-health-2026-09-29-c0c986ad.json`.
+
+| Bin start (UTC) | enqueued | recorded | queue_capacity | lock_retry | capture_unavailable | % of enqueued |
+| --------------- | -------: | -------: | -------------: | ---------: | ------------------: | ------------: |
+| 04:00           |  122,077 |  122,048 |              0 |          0 |                 547 |          0.45 |
+| 04:15           |  108,248 |  108,251 |              0 |          0 |               6,825 |          6.31 |
+| 04:30           |  143,019 |  143,029 |              0 |          0 |               5,284 |          3.69 |
+| 04:45           |   96,135 |   96,151 |              0 |          0 |                   0 |          0.00 |
+| 05:00           |  109,864 |  109,838 |              0 |          0 |                   0 |          0.00 |
+| 05:15           |  106,646 |  106,657 |              0 |          0 |              21,304 |         19.98 |
+| 05:30           |  105,474 |  105,448 |              0 |          0 |              21,143 |         20.05 |
+| 05:45 (to 05:55) |  97,492 |   97,533 |              0 |          0 |                 598 |          0.61 |
+
+Bins at or above 140,000 enqueued: 04:30 (143,019). Over the whole read: 888,955 enqueued and 888,955 recorded, `queue_capacity` 0 and `lock_retry` 0 in every bin (the previous lane's queue, catalog and validation fixes did what they were for), and `capture_unavailable` 55,701, 6.27% of enqueued, 20% in the worst bins, against the 0.5% line. The 04:45 bin has no receipts from 04:55:28Z to 05:03:27Z, the hourly maintenance break.
+
+### Root cause and fix
+
+Cause, read from the engine log, Prometheus and /health (read only), and the code: the journal did not shed; the records never reached it. `capture_unavailable` here is the client-side `.catch` of a capture job (a finalized execution, a discard execution, or the retirement record of an undispatched request) that expired at the tail of the decision worker's FIFO under the decision deadline of 8 seconds. In the two bursts (04:25Z to 04:45Z and 05:15Z to 05:45Z) the decision worker's queue was 500 to 830 deep with its head 8.5 to 13.7 seconds old, 23 to 48 jobs a second expired, and decisions fell back at 137 to 165 a minute; engine-01 was at 1.0% idle with its two niced decision workers at 22% and 30% of a core. Per minute, `capture_unavailable` correlates with the log's completed-hand observation expiries at 0.949 over 105 minutes (55,701 against 22,794, 2.44 per expiry). The expiry also lost the completed-hand observation itself, which carries the `accepted_hand` record, so the chains would have shown `missing:accepted_hand` and `missing:execution_witness`. The host saturation is a capacity condition and is not fixed here. Full measurements, the mechanism and the code changes: `docs/changelog/2026-09-29-horse-journal-capture-lane.md`.
+
+Fix, in this branch: capture jobs are queued ahead of every unposted decision (a bounded lane of 1,024, behind each other, a barrier commit keeping its place) and they and the completed-hand observation take a 60 second observation deadline instead of the decision's 8 seconds. Six tests in `client.test.ts`, five red on the previous client.
+
+Neither the population, the replay nor the route proof was run on c0c986ad: no declaration was committed and no record was read, because their capture gates cannot be verified on a journal whose capture lost 20% of the offered records in the busy half hours. The runs are owed on the first release that contains the fix and whose own receipts show `capture_unavailable` near zero at comparable load. The fa480b9b `capture_unavailable` bursts (57,554) run the same code and show the same shape; that was not measured against the host.
+
+### Gate status, 6A and 6D on c0c986ad
+
+| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                                   |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | No population was walked on c0c986ad; 64 cells observed on 763e4cec is historical only                                                                                                                                                                    |
+| G2 Inputs                  | implemented but unverified | Request-link and v2 context-receipt presence not read on c0c986ad                                                                                                                                                                                          |
+| G3 Computation             | implemented but unverified | Calculation link and independent qualification not read on c0c986ad                                                                                                                                                                                        |
+| G4 Immutable authority     | implemented but unverified | No declaration committed for c0c986ad because no record was read; the 763e4cec declaration is historical only                                                                                                                                              |
+| G5 Reachability            | defective                  | capture_unavailable 55,701 of 888,955 enqueued (6.27%), 20% in the 05:15Z and 05:30Z bins: execution witnesses and completed-hand observations expire in the decision worker's queue; five-link chains cannot be completed on that capture. Fixed in this branch; unverified |
+| G6 Outcome receipts        | defective                  | Same cause and same fix: the execution and accepted-hand records outcome receipts join to are the ones lost                                                                                                                                                |
+| G7 Independent correctness | verified now               | `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 44, 91 of 91 passed 2026-09-29 on main a0cf141c, whose Horse Brain, brain-context, blind and journal sources equal c0c986ad                 |
+| G8 Performance and replay  | implemented but unverified | Replay not run on c0c986ad (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                                                      |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                                         |
+| G10 Publication and use    | implemented but unverified | c0c986ad serves (its receipts run 04:03Z onward); its own archive was not read by its own image, and the fix is not on it                                                                                                                                  |

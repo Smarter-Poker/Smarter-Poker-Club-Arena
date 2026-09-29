@@ -11877,8 +11877,7 @@
       "error_code",
       "error_msg",
       "raw_meta",
-      "occurred_at",
-      "forwarded_to_sentry"
+      "occurred_at"
     ],
     "signup_errors_archive": [
       "id",
@@ -11890,7 +11889,6 @@
       "error_msg",
       "raw_meta",
       "occurred_at",
-      "forwarded_to_sentry",
       "archived_at"
     ],
     "signup_health_view": [

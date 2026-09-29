@@ -89,6 +89,45 @@ export type HorseJournalFailureReason = (typeof HORSE_JOURNAL_FAILURE_REASONS)[n
  * refused write and never spends the restart budget. */
 export const HORSE_JOURNAL_CAPACITY_PROBE_MS = 60_000;
 
+/* THE QUEUE OUTLIVES A STALL, NOT JUST ONE LOCK RETRY (2026-09-28), AND IS
+   SIZED IN BYTES, WHICH IS WHAT BINDS (2026-09-29). The original bound - 64
+   records, 4 MiB - was sized for a writer that never stalls; every Horse
+   decision worker shard wrote to the SAME catalog file
+   (runtimeHorseJournalArchiveOptions, before 2026-09-28), so a shard's writer
+   routinely met SQLITE_BUSY behind the other's commit, and at the archive's
+   steady-state byte ceiling - where a batch also retires a segment inside the
+   same transaction - that was frequent enough to overflow 64 records in well
+   under a second. On the worst 15-minute window measured on 763e4cec
+   (2026-09-28 14:30Z), one shard enqueued about 120,000 decisions - roughly
+   134 a second - while shedding 20-40% of its attempts at queue_capacity.
+   Splitting the shared catalog per shard (config.ts, #5541) removed that
+   cause and the bound became 4,096 records / 16 MiB.
+
+   That did not stop the shedding, and this is why the second number was
+   wrong. On fa480b9b (2026-09-28 21:06Z onwards, split catalogs in place) both
+   shards still refused 8% and 18% of what they were offered at queue_capacity,
+   steadily, minute after minute, while phase15_journal_lock_retry stayed at
+   zero. A journal record is NOT a few hundred bytes: measured in both
+   archives, a decision record is about 9,000 bytes (8,853 and 9,146 decoded
+   bytes per record, 1,630 compressed). 16 MiB is therefore about 1,800
+   records, not 4,096; the count bound never applied, the byte bound was the
+   limiter, and it held about 15 seconds of a shard's traffic. The rest of the
+   cause is the writer's speed, fixed in store.ts (a segment's bytes are
+   validated once, not five times: 37 to 15 ms of CPU per 16-record batch) and
+   in workerPriority.ts / the decision worker's start (the writer thread was
+   created by a thread already at nice 10 and inherited it: on engine-01, two
+   EPYC cores, load average 12, it got about a tenth of a core and was
+   preempted about a thousand times a second). This bound is what a shard's
+   queue must still survive on its own: HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS's
+   ~7.6 s ladder, a writer restart, or the burst when a maintenance break
+   thaws every table at once, at the measured ~120 records a second offered
+   to each shard (about 230 across both, as a 15-minute mean at peak), about
+   9 KB each. 64 MiB is about 7,000 records, about a minute of that; 8,192
+   records is the count that goes with it. A shard's
+   queue is at most 64 MiB, so two shards hold at most 128 MiB. */
+export const HORSE_JOURNAL_QUEUE_MAX_RECORDS = 8192;
+export const HORSE_JOURNAL_QUEUE_MAX_BYTES = 64 * 1024 * 1024;
+
 /* A LOCK IS NOT A DEAD WRITER (2026-09-27). Every Horse decision worker shard
    runs its own publisher and writer on the one shared archive, so a writer
    routinely finds the catalog locked by the other shard's commit: SQLite
@@ -713,7 +752,10 @@ export class HorseDecisionJournalPublisher {
       // Preflight the same complete envelope bound as the durable writer. A
       // too-large record is a capture gap; it must not poison later writes.
       const bytes = Buffer.byteLength(horseJournalJson(record));
-      if (this.queue.length >= 64 || this.queuedBytes + bytes > 4 * 1024 * 1024) {
+      if (
+        this.queue.length >= HORSE_JOURNAL_QUEUE_MAX_RECORDS ||
+        this.queuedBytes + bytes > HORSE_JOURNAL_QUEUE_MAX_BYTES
+      ) {
         this.count('queue_capacity');
         return;
       }
@@ -1087,7 +1129,86 @@ export function horseDecisionJournalHealth(): HorseJournalHealth {
   if (relayed.size) return combinedRelayedHealth();
   return idleHealth('starting');
 }
-export function startHorseDecisionJournal(): void {
+/* THE WRITER THREAD MUST NOT BE BORN NICE (2026-09-29). Linux gives a new
+   thread the priority of the thread that creates it. Each Horse decision
+   worker lowers its own thread to nice 10 at its first line
+   (workerPriority.ts) so the main loop wins the CPU, and its journal writer
+   was then created from that thread: on fa480b9b both writer threads of
+   engine-01 (tids read from /proc/<pid>/task, nice 10) were preempted about a
+   thousand times a second and got about a tenth of a core on a host whose load
+   average was twelve on two cores. A writer that blocks on an fsync ten times a
+   batch and must queue for a core after each one manages about six batches a
+   second, which is about 100 records a second, whatever the disk can do; the
+   fleet offered about 120 to each shard and the difference was shed at
+   queue_capacity. A thread cannot raise its own priority without
+   CAP_SYS_NICE, which the engine container does not have, so the writer has to
+   be created BEFORE its parent is lowered. The decision worker calls
+   prespawnHorseDecisionJournalWriter() ahead of lowerDecisionWorkerPriority(),
+   and startHorseDecisionJournal() adopts that writer as its first one. A
+   replacement writer (restart after a failure) is still created later and
+   inherits the parent's nice: that is the degraded path, not the steady one. */
+interface PrespawnedWriter {
+  worker: Worker;
+  directory: string;
+  archive: string;
+  onError: () => void;
+}
+let prespawned: PrespawnedWriter | null = null;
+const journalWriterEntry = (): URL =>
+  new URL(
+    import.meta.url.endsWith('.ts')
+      ? './horseDecisionJournal/worker.ts'
+      : './horseDecisionJournal/worker.js',
+    import.meta.url
+  );
+const spawnJournalWriter = (
+  directory: string,
+  archive: ReturnType<typeof runtimeHorseJournalArchiveOptions>
+): Worker => new Worker(journalWriterEntry(), { workerData: { directory, archive } });
+/** Create this shard's writer thread now, at the calling thread's CURRENT
+ * priority, for startHorseDecisionJournal to adopt. Call it before lowering
+ * the thread's priority. A no-op without a journal directory, and never
+ * throws: the journal then simply starts its writer later, as before. */
+export function prespawnHorseDecisionJournalWriter(shard?: { index: number }): void {
+  if (publisher || prespawned) return;
+  const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return;
+  try {
+    const archive = runtimeHorseJournalArchiveOptions(directory, process.env, shard);
+    // Until the publisher adopts it nothing listens for this thread's failure,
+    // and an unhandled 'error' event would take the decision worker down. A
+    // writer that failed before adoption is replaced by the publisher's own
+    // watchdog, exactly as a writer that fails at any other time.
+    const onError = () => {};
+    const worker = spawnJournalWriter(directory, archive);
+    worker.on('error', onError);
+    prespawned = { worker, directory, archive: JSON.stringify(archive), onError };
+  } catch {
+    prespawned = null;
+  }
+}
+/** The prespawned writer, if it was made for exactly this directory and
+ * archive; a writer made for anything else is stopped, never reused. */
+function adoptPrespawnedWriter(
+  directory: string,
+  archive: ReturnType<typeof runtimeHorseJournalArchiveOptions>
+): Worker | null {
+  const held = prespawned;
+  prespawned = null;
+  if (!held) return null;
+  if (held.directory !== directory || held.archive !== JSON.stringify(archive)) {
+    void held.worker.terminate().catch(() => {});
+    return null;
+  }
+  held.worker.off('error', held.onError);
+  return held.worker;
+}
+/** `shard` names this Horse decision worker's position among its peers so its
+ * writer opens its OWN archive/catalog instead of the one every shard shared
+ * until 2026-09-28 (see runtimeHorseJournalArchiveOptions). Absent (a single
+ * decision worker, or a caller that predates sharding), shard 0 is assumed:
+ * byte-for-byte today's one-archive layout. */
+export function startHorseDecisionJournal(shard?: { index: number }): void {
   if (publisher) return;
   const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
   if (!directory) {
@@ -1095,22 +1216,22 @@ export function startHorseDecisionJournal(): void {
     return;
   }
   try {
-    const entry = import.meta.url.endsWith('.ts')
-      ? './horseDecisionJournal/worker.ts'
-      : './horseDecisionJournal/worker.js';
-    const archive = runtimeHorseJournalArchiveOptions(directory);
-    const createWriter = () =>
-      new Worker(new URL(entry, import.meta.url), { workerData: { directory, archive } });
+    const archive = runtimeHorseJournalArchiveOptions(directory, process.env, shard);
+    const createWriter = () => spawnJournalWriter(directory, archive);
     // `lifecycle` says only that construction did not throw. A writer module
     // that cannot load fails later, as an event; the publisher reports that as
     // start_failed and moves the lifecycle with it.
     const owned: { publisher: HorseDecisionJournalPublisher | null } = { publisher: null };
-    owned.publisher = new HorseDecisionJournalPublisher(createWriter(), fireBrainTelemetry, {
-      restart: createWriter,
-      onStartFailed: () => {
-        if (publisher === owned.publisher && lifecycle === 'started') lifecycle = 'start_failed';
-      },
-    });
+    owned.publisher = new HorseDecisionJournalPublisher(
+      adoptPrespawnedWriter(directory, archive) ?? createWriter(),
+      fireBrainTelemetry,
+      {
+        restart: createWriter,
+        onStartFailed: () => {
+          if (publisher === owned.publisher && lifecycle === 'started') lifecycle = 'start_failed';
+        },
+      }
+    );
     publisher = owned.publisher;
     lifecycle = 'started';
   } catch {
@@ -1119,6 +1240,9 @@ export function startHorseDecisionJournal(): void {
   }
 }
 export async function stopHorseDecisionJournal(): Promise<void> {
+  const unclaimed = prespawned;
+  prespawned = null;
+  if (unclaimed) await unclaimed.worker.terminate().catch(() => 0);
   const owned = publisher;
   publisher = null;
   if (owned) lifecycle = 'stopped';

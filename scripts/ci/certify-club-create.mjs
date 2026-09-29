@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
+import { retryTransient } from './transient-retry.mjs';
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -229,10 +230,23 @@ try {
     if (retireError) console.error(`Fixture Retirement Failed: ${retireError.message}`);
 
     for (const clubId of clubIds) {
-      const { data, error } = await admin.rpc('fn_ca_retire_certification_club', {
-        p_club_id: clubId,
-        p_reason: 'cert-cleanup',
-      });
+      // The door is one idempotent transaction (a repeat answers already_gone),
+      // so a statement timeout during a database load spike is retried with
+      // backoff instead of leaking the club: 2026-09-28 one such timeout left a
+      // fixture owned by the reserved identity and wedged every post-deploy
+      // certificate for ten hours. A `success: false` refusal is definitive and
+      // is never retried.
+      const { data, error } = await retryTransient(
+        () =>
+          admin.rpc('fn_ca_retire_certification_club', {
+            p_club_id: clubId,
+            p_reason: 'cert-cleanup',
+          }),
+        {
+          failureOf: (result) => result?.error,
+          label: `retirement of certification club ${clubId}`,
+        }
+      );
       if (error) {
         console.error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`);
       } else if (data && data.success === false) {
@@ -244,8 +258,18 @@ try {
       }
     }
 
-    const { data: leaked } = await admin.from('clubs').select('id').in('id', clubIds);
-    if (leaked?.length) {
+    const { data: leaked, error: leakedError } = await retryTransient(
+      () => admin.from('clubs').select('id').in('id', clubIds),
+      { failureOf: (result) => result?.error, label: 'fixture club verification read' }
+    );
+    if (leakedError) {
+      // An unreadable answer is not an empty one.
+      cleanupFailures.push(
+        new Error(
+          `Certification could not verify its fixture clubs are gone: ${leakedError.message}`
+        )
+      );
+    } else if (leaked?.length) {
       cleanupFailures.push(
         new Error(
           `Certification leaked ${leaked.length} fixture club(s) into Club Arena: ${leaked

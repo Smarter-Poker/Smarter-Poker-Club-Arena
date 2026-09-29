@@ -1,0 +1,44 @@
+-- A UNION CLOSE PROVES ITS P&L EVIDENCE ONCE, AND FAST (2026-09-28).
+--
+-- WHAT WAS SLOW (read-only on production 2026-09-28, Midway Union, week
+-- 2026-09-21 07:00 .. 2026-09-28 07:00 UTC; 355k accepted hands, 84k original
+-- flows, 3,938 + 3,690 open tournament registrations at the two boundaries).
+-- fn_prepare_accounting_week ran 20 minutes and was cancelled inside its one
+-- call of fn_union_pnl_evidence_report (through fn_union_pnl_close_quality);
+-- the close then reaches that report about four more times (close quality,
+-- cascade, qualified clubs, invoices).
+--  * fn_union_pnl_boundary: four queries per open registration, two of them
+--    fn_union_pnl_tournament_returns(t,reg,NULL,at), which scans every
+--    tournament credit (73 ms, 15.8k buffers each): 7,628 registrations x 2 x
+--    73 ms = about 18.5 minutes for the two boundaries. This alone is the
+--    20-minute timeout.
+--  * fn_union_pnl_original_flow_evidence, called twice: its cash-return
+--    lateral reads every buy-in receipt per flow (no table_id index; planner
+--    cost 5.8e10), and its tournament returns probe a frame per credit (28 s).
+--  * the touched-registration test: a nested-loop semi join of every
+--    tournament_players event against every tournaments event (cost 3.9e9),
+--    then two hashed scans of every tournament receipt.
+--  * the week's hands read three times (count with a per-row acceptance call:
+--    over 45 s; participants; accepted rake: 23 s each), plus a sequential
+--    scan of every Union's hands for missing scopes (over 45 s) and of 15 GB of
+--    hand provenance receipts for missing transaction ids (31 s).
+--
+-- WHAT CHANGES (same report, same issues, same order, same refusals)
+--  * fn_union_pnl_boundary reads each open tournament once, as a set, in the
+--    population's order: the same entry, instrument, owner-change and
+--    returned-credit tests per registration (4 queries per registration
+--    become 1 per tournament).
+--  * fn_union_pnl_evidence_report reads the flow proof once (and reuses the
+--    same rows for the P&L), the week's hands once (per club and player
+--    totals, hand count and accepted rake in one pass), counts refused or
+--    resolved hands through a partial index, and finds the week's touched
+--    registrations through their own events.
+--  * Inside one union close attempt (app.accounting_close_memo='on') the first
+--    complete report of a (union, week) is kept in app.union_pnl_evidence_memo
+--    for the rest of the attempt; fn_weekly_accounting_attempt_begin/_end
+--    clear it; a rolled-back subtransaction forgets it. Outside a close every
+--    call computes the report exactly as before.
+--  * STEP 1: eight indexes, built CONCURRENTLY, that the queries above need.
+--
+-- Native qualification: scripts/dev/test-union-pnl-evidence-fast.sh (46 books,
+-- identical values and refusals, old vs new; memo; index use; red control).

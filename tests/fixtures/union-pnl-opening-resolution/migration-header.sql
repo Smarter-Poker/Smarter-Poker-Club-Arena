@@ -1,0 +1,46 @@
+-- AN OPENING REGISTRATION IS RESOLVED FROM ITS LEDGER ENTRY (2026-09-28).
+--
+-- Midway Union's first weekly close (book 2026-09-21 07:00 .. 09-28 07:00 UTC)
+-- is refused with opening_basis_incomplete. Read-only on production
+-- 2026-09-28: at the 09-21 boundary 364 Midway tournaments are open; 45 of
+-- them were created before the original inventory capture (2026-09-18
+-- 00:20:48, first inventory event 'baseline'), and fn_union_pnl_boundary
+-- refuses each of those with open_tournament_precedes_original_population
+-- before it reads a single registration. Of their 2,538 registrations, 1,395
+-- have no tournament_participant_funding_receipts row (entered before receipt
+-- capture began, 00:33:45) and 11 have only a receipt written before
+-- transaction frames began (00:41:12), so no receipt is framed before the
+-- boundary. All 1,406 are horses. Every one of their entries is on the
+-- append-only, hash-chained chip_ledger: a posted tournament_buyin (or, in a
+-- free-buy, no charge at all) from exactly one club wallet to this
+-- tournament's prize_liability at the scheduled price, add-ons at the
+-- scheduled cost, bounty returns each carried by a framed credit receipt to
+-- the same club. Nothing about them is unknown; only the receipt is missing.
+--
+-- This migration does NOT touch tournament_participant_funding_receipts, the
+-- inventory, the checkpoints or any balance. It adds:
+--   * union_pnl_opening_registration_resolutions: immutable per-registration
+--     receipts keyed (boundary, registration_id), bound to md5 of the exact
+--     registration and tournament rows of the sealed checkpoint at that
+--     boundary and to md5 of their own proof;
+--   * fn_union_pnl_prove_opening_registrations: re-proves every such
+--     registration from primary evidence observed before the boundary and
+--     refuses (first failing reason) a missing or unposted ledger row, more
+--     than one funding club, a non-chip instrument (satellite seat, ticket,
+--     qualification), an amount or count off the tournament's schedule, a
+--     post-capture debit or return without its receipt, a receipt that
+--     disagrees with the ledger, or a return credited to another club;
+--   * fn_union_pnl_resolve_opening_registrations: the service-role writer
+--     (dry run by default) that writes a receipt only for a proven one;
+--   * fn_union_pnl_opening_registration_resolution: the one acceptance
+--     predicate;
+--   * fn_union_pnl_boundary (as 20260928211132 installs it): a baseline
+--     tournament is read only when every registration of its original
+--     population has a valid resolution for this boundary, and a resolved
+--     registration is carried at its re-proved entry less returns. Every other
+--     tournament and registration is computed exactly as before.
+-- A registration that cannot be proven keeps its tournament refused.
+--
+-- Native qualification: scripts/dev/test-union-pnl-opening-resolution.sh
+-- (green + RED=1 control). Production dry run (read-only, the proof core byte
+-- for byte): tests/fixtures/union-pnl-opening-resolution/production-dryrun-*.sql.

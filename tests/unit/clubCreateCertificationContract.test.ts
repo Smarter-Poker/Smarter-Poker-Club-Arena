@@ -17,7 +17,9 @@ describe('Create Club production certification contract', () => {
     );
 
     expect(spec).toContain('`Crest Cert ${stamp}`');
-    expect(cleanup).toContain("startsWith('Crest Cert ')");
+    expect(cleanup).toContain("'Crest Cert '");
+    expect(cleanup).toContain("'Preset Crest Cert '");
+    expect(cleanup).toContain('CERTIFICATION_CLUB_NAME_PREFIXES.some');
     expect(retire).toContain("v_club.name NOT LIKE 'Crest Cert %'");
     expect(lifecycle).toContain("OLD.name LIKE 'Crest Cert %'");
     expect(spec).not.toContain('Club Create Cert ');

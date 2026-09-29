@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './StatsShareCard.css';
-import { isNativePlatform } from '../../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 
 interface Props {
   displayName: string;
@@ -263,7 +263,7 @@ export default function StatsShareCard({
 
       // THE APP (2026-09-08): no navigator.share on Android's webview, no
       // <a download> on either. The system share sheet on the written file.
-      if (isNativePlatform()) {
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
         const { nativeShareBlob } = await import('../../lib/native/share');
         await nativeShareBlob(blob, 'smarter-poker-stats.png', 'My Smarter Poker Stats');
         return;

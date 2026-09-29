@@ -18,6 +18,7 @@ import type { HorseDiscardExecutionObservation } from '../../services/horseDecis
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
 import {
   HorseDecisionAbortedError,
+  HORSE_CAPTURE_LANE_MAX_QUEUED,
   HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
@@ -1437,6 +1438,208 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
     worker.emitMessage(fastResult(4, 'successor'));
     await successor;
+  });
+
+  describe('the capture lane (2026-09-29, engine c0c986ad: capture_unavailable was queue expiry)', () => {
+    // A journal-configured client, because OBSERVE_EXECUTION exists only there.
+    const journalClient = (worker: FakeWorker, options: { jobTimeoutMs?: number } = {}) => {
+      const prior = process.env.HORSE_DECISION_JOURNAL_DIR;
+      process.env.HORSE_DECISION_JOURNAL_DIR = '/synthetic-horse-journal';
+      try {
+        return new LiveHorseDecisionWorkerClient({
+          workerFactory: () => worker,
+          maxInFlight: 1,
+          ...options,
+        });
+      } finally {
+        if (prior === undefined) delete process.env.HORSE_DECISION_JOURNAL_DIR;
+        else process.env.HORSE_DECISION_JOURNAL_DIR = prior;
+      }
+    };
+    const settleFold = (result: FastHorseDecisionResult, input: LiveHorseDecisionSnapshot) =>
+      settleHorseExecutionWitness(result.decision.executionWitness, {
+        applied: true,
+        acceptedActions: [
+          {
+            record: {
+              seat: 1,
+              userId: 'horse-1',
+              action: 'fold',
+              amount: 0,
+              stage: input.gameState.stage,
+              timestamp: 1000,
+            },
+            intended: true,
+          },
+        ],
+      });
+    const ack = (requestId: number, fence: string, operation: string) =>
+      ({ type: 'ACK', requestId, generation: 7, fence, operation }) as const;
+
+    it('posts a finalized execution ahead of every unposted decision, not behind them', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      const first = snapshot('cap-first');
+      const firstPending = client.decideFast(first);
+      worker.emitMessage(fastResult(1, first.fence));
+      const firstResult = await firstPending;
+      const active = client.decideFast(snapshot('cap-active')); // 2, posted
+      const waitingA = client.decideFast(snapshot('cap-a')); // 3, queued
+      const waitingB = client.decideFast(snapshot('cap-b')); // 4, queued
+      settleFold(firstResult, first); // 5, the record of a decision already made
+
+      worker.emitMessage(fastResult(2, 'cap-active'));
+      await active;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_EXECUTION', requestId: 5 });
+      worker.emitMessage(ack(5, first.fence, 'OBSERVE_EXECUTION'));
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+      worker.emitMessage(fastResult(3, 'cap-a'));
+      await waitingA;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
+      worker.emitMessage(fastResult(4, 'cap-b'));
+      await waitingB;
+    });
+
+    it('keeps capture jobs in their own order and puts a barrier commit where it was', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const active = client.decideFast(snapshot('order-active')); // 2, posted
+      const older = client.decideFast(snapshot('order-older')); // 3, queued
+      const enqueue = (request: object) =>
+        (client as any).enqueue(request, 'ACK', undefined, true) as Promise<unknown>;
+      void enqueue({ type: 'OBSERVE_EXECUTION', requestId: 100, generation: 7, fence: 'x' });
+      let successor!: ReturnType<typeof client.decideFast>;
+      let committed!: ReturnType<typeof client.commitDecisionEffects>;
+      client.runWithDispatchBarrier(() => {
+        successor = client.decideFast(snapshot('order-successor')); // 4
+        void enqueue({ type: 'OBSERVE_EXECUTION', requestId: 101, generation: 7, fence: 'x' });
+        committed = client.commitDecisionEffects(owned); // 5
+      });
+      const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
+        (job) => job.request.requestId
+      );
+      // captures 100 and 101 first, in the order they arrived; then the work
+      // queued before the barrier (3), the commit (5) and its successor (4).
+      expect(queued).toEqual([100, 101, 3, 5, 4]);
+      void active;
+      void older;
+      void successor;
+      void committed;
+    });
+
+    it('holds the lane to its bound and queues the job past it at the tail', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      void client.decideFast(snapshot('bound-active')); // 1, posted
+      void client.decideFast(snapshot('bound-waiting')); // 2, queued
+      const enqueue = (requestId: number) =>
+        (client as any).enqueue(
+          { type: 'OBSERVE_EXECUTION', requestId: requestId + 1000, generation: 7, fence: 'x' },
+          'ACK',
+          undefined,
+          true
+        ) as Promise<unknown>;
+      for (let i = 0; i <= HORSE_CAPTURE_LANE_MAX_QUEUED; i++)
+        void enqueue(i).catch(() => undefined);
+      const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
+        (job) => job.request.requestId
+      );
+      expect(queued).toHaveLength(HORSE_CAPTURE_LANE_MAX_QUEUED + 2);
+      expect(queued[0]).toBe(1000);
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED - 1]).toBe(
+        1000 + HORSE_CAPTURE_LANE_MAX_QUEUED - 1
+      );
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED]).toBe(2);
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED + 1]).toBe(1000 + HORSE_CAPTURE_LANE_MAX_QUEUED);
+    });
+
+    it('does not expire a finalized execution on the decision deadline while decisions are ahead of the worker', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const first = snapshot('exp-first');
+        const firstPending = client.decideFast(first);
+        worker.emitMessage(fastResult(1, first.fence));
+        const firstResult = await firstPending;
+        const wait = { deadlineMs: 10_000 };
+        const active = client.decideFast(snapshot('exp-active'), undefined, wait); // 2
+        const second = client.decideFast(snapshot('exp-second'), undefined, wait); // 3
+        settleFold(firstResult, first); // 4
+
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(2, 'exp-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200); // past the 1,000 ms decision deadline
+        // On the tail of the FIFO it was 1,100 ms old and expired unposted,
+        // which is what counted phase15_journal_capture_unavailable.
+        expect(client.status().expiredJobs).toBe(0);
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_EXECUTION', requestId: 4 });
+        worker.emitMessage(ack(4, first.fence, 'OBSERVE_EXECUTION'));
+        worker.emitMessage(fastResult(3, 'exp-second'));
+        await second;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('gives the completed-hand observation the observation deadline, not the decision deadline', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const wait = { deadlineMs: 10_000 };
+        const active = client.decideFast(snapshot('hand-active'), undefined, wait); // 1
+        const second = client.decideFast(snapshot('hand-second'), undefined, wait); // 2
+        const observed = client.observeCompletedHand({
+          generation: 7,
+          fence: 'hand-observed',
+          handKey: 'hand-key',
+          committedHandId: 'hand-id',
+          bigBlind: 2,
+          actions: [],
+        } as never); // 3, behind both
+
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(1, 'hand-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200);
+        expect(client.status().expiredJobs).toBe(0);
+        worker.emitMessage(fastResult(2, 'hand-second'));
+        await second;
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_COMPLETED_HAND', requestId: 3 });
+        worker.emitMessage(ack(3, 'hand-observed', 'OBSERVE_COMPLETED_HAND'));
+        await observed;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still expires a decision on the decision deadline', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const active = client.decideFast(snapshot('dl-active'), undefined, { deadlineMs: 10_000 });
+        const waiting = client.decideFast(snapshot('dl-waiting'));
+        const rejection = expect(waiting).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(1, 'dl-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200);
+        await rejection;
+        expect(client.status().expiredJobs).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('refreshes worker-owned governor and solver health after READY', async () => {

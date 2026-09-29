@@ -1826,6 +1826,16 @@ export abstract class TournamentManagerBase {
    */
   protected holdSourceForItsBreak(_tableId: string, _engine: ServerTableEngine): void {}
 
+  /**
+   * Take over the process-local retirement reservations an earlier, retired
+   * generation of this event left behind (2026-09-29). The base manager has
+   * no F06 break door; TournamentManager proves each one against the durable
+   * break row under this generation's lease and GameServer yields it.
+   */
+  protected async adoptAbandonedRetirementCustody(
+    _lifecycle: TournamentLifecycleToken
+  ): Promise<void> {}
+
   /** A manager is not torn down until every table start it launched has settled. */
   protected async startParkedMovementEngine(
     _engine: ServerTableEngine,
@@ -6193,6 +6203,13 @@ export abstract class TournamentManagerBase {
           return;
         }
       }
+
+      // A retirement reservation a retired generation of this event left in
+      // this process is handed to this one before any dealer is built
+      // (adoptAbandonedRetirementCustody). Without it, one such table refused
+      // every successor's resume with f06_retirement_custody_held, forever.
+      await this.adoptAbandonedRetirementCustody(lifecycle);
+      this.assertLifecycleCurrent(lifecycle);
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.

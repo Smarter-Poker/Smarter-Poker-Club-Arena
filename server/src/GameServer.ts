@@ -8,6 +8,7 @@ import { channelHub } from './hub/ChannelHub.js';
 import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 import {
   TournamentRetirementCustody,
+  type AbandonedRetirement,
   type RetirementBinding,
   type RetirementCustody,
 } from './services/TournamentRetirementCustody.js';
@@ -10311,6 +10312,98 @@ export class GameServer {
       work,
       prepare
     );
+  }
+
+  /**
+   * A RETIREMENT RESERVATION OUTLIVES ITS GENERATION ONLY UNTIL THE NEXT ONE
+   * ASKS (2026-09-29).
+   *
+   * `withCustody` keeps a reservation it could not acknowledge so the SAME
+   * generation can replay it (a roster that does not fit yet, a lost close or
+   * ACK reply). A lost lease retires that generation; nothing can present its
+   * identity again, and `admissionAllowed` refused every successor's dealer on
+   * that table forever. Production 2026-09-29 01:14Z: cb8f2dd1 generation
+   * 83b3ec21 held break e487977d (table b6af1747, park_requested, custody
+   * claimed at revision 1), lost its lease, was stopped and released; every
+   * later admission (one every ~20-40 s) resumed, threw
+   * `f06_retirement_custody_held` and was released again, with 171 players
+   * seated and no hand dealt. 87a68e55, 6a18ddaa, 1f918c8c and 4ed38a9f were
+   * in the same loop.
+   *
+   * The live manager asks here before it builds any dealer. A reservation is
+   * yielded only when (a) the asking manager is the one registered for the
+   * event and holds a different generation, (b) nothing of the reservation's
+   * generation is left in this process: no registered, stopping or
+   * quarantined manager, no unconfirmed lease release, and no drained or
+   * mixed transfer (the explicit transfer contract owns those), (c) `confirm`
+   * read the durable break row under the live lease (the receipt: the read is
+   * lease-fenced and locks the row, so the dead generation can no longer
+   * change it) and it names the same break, table and lifecycle, and (d) the
+   * exact identity is still pending with no work running and no engine
+   * registered on the table. Every other case keeps refusing admission.
+   */
+  async yieldAbandonedRetirementCustody(
+    tournamentId: string,
+    manager: TournamentManager,
+    confirm: (reservation: AbandonedRetirement) => Promise<boolean>
+  ): Promise<AbandonedRetirement[]> {
+    const liveGeneration = manager.getTournamentLeaseGeneration();
+    if (!liveGeneration) return [];
+    const yielded: AbandonedRetirement[] = [];
+    for (const reservation of this.tournamentRetirementCustody.abandonedReservations(
+      tournamentId,
+      liveGeneration
+    )) {
+      if (!this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration))
+        continue;
+      let confirmed = false;
+      try {
+        confirmed = await confirm(reservation);
+      } catch (error) {
+        reportError(error, 'GameServer.abandoned_retirement_unconfirmed', {
+          tournamentId,
+          tableId: reservation.tableId,
+          breakId: reservation.breakId,
+          generation: reservation.leaseGeneration,
+        });
+        continue;
+      }
+      if (
+        !confirmed ||
+        manager.getTournamentLeaseGeneration() !== liveGeneration ||
+        !this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration)
+      )
+        continue;
+      if (this.tournamentRetirementCustody.yieldAbandoned(reservation, liveGeneration, this.tableEngines))
+        yielded.push(reservation);
+    }
+    return yielded;
+  }
+
+  /** Nothing of `generation` remains in this process for this tournament. */
+  private retirementGenerationIsGone(
+    tournamentId: string,
+    live: TournamentManager,
+    generation: string
+  ): boolean {
+    if (!generation || this.tournamentEngines.get(tournamentId) !== live) return false;
+    if (live.getTournamentLeaseGeneration() === generation) return false;
+    if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === generation) return false;
+    if (this.tournamentManagerLeaseReleaseOperations.has(tournamentId)) return false;
+    if (
+      this.drainedF06TournamentCustody?.has(tournamentId) ||
+      this.durableMixedF06Custody?.has(tournamentId) ||
+      this.mixedF06AdmissionContinuations?.has(tournamentId)
+    )
+      return false;
+    for (const retiring of this.tournamentDiagnosticRetirements?.get(tournamentId) ?? [])
+      if (retiring.getTournamentLeaseGeneration() === generation) return false;
+    const quarantined = this.tournamentManagerQuarantine?.heldBy(tournamentId) as
+      | TournamentManager
+      | null
+      | undefined;
+    if (quarantined && quarantined.getTournamentLeaseGeneration?.() === generation) return false;
+    return true;
   }
 
   registerTableEngine(tableId: string, engine: ServerTableEngine): boolean {

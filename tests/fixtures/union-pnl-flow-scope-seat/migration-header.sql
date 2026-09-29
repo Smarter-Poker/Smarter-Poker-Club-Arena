@@ -1,0 +1,41 @@
+-- A CASH-OUT, A LOST LINK AND A SATELLITE SEAT ARE PROVED FROM THEIR LEDGER (2026-09-29).
+--
+-- After #5552 (20260928211132 + 20260928222109), #5554 (20260928230637) and
+-- the opening resolution writers, Midway Union's book 2026-09-21 07:00 ..
+-- 09-28 07:00 UTC is still refused (read-only on production 2026-09-28/29):
+--  * original_money_flow_basis_incomplete (4,048 flows): every cash-out is
+--    ledgered 'table_cashout' (fn_ca_declare_ledger('table_cashout',...) in
+--    player_leave_table, the admin kick and atomic_seat_cashout_locked; no
+--    'cashout' row exists), which fn_union_pnl_original_flow_evidence never
+--    accepted; and 723 of them vacate a seat that arrived by a table move,
+--    whose buy-in receipt is on the source occupancy, so the direct owner
+--    match found none. Both are proved here: the same ledger shape
+--    (table_stack -> player_wallet, posted, the wallet's club), and for a
+--    moved seat the occupancy the cash-out vacated (its seat row in the same
+--    original transaction, carrying exactly the cashed-out stack) traced by
+--    fn_cash_original_funding_lineage through its move receipts to one buy-in.
+--    One more (59.70, 2026-09-27 21:53): a pending add-on returned unapplied
+--    by the hand's post-commit obligations. atomic_distribute_rake had already
+--    set that transaction's ledger context, so the wallet credit was audited
+--    as 'player_funding' under the rake settlement. It is accepted only when
+--    the application receipt of the same transaction records exactly that
+--    refund from a funding receipt of the same player, club and table.
+--  * accepted_cash_original_scope_missing (7 hands, 4 on Midway, rake 8.11):
+--    the engine lost the manifest id (captureCashHandProvenance threw after
+--    the database committed the manifest; fixed in the same change: the
+--    identical, idempotent request is asked again), so the signed stacks carry
+--    no funding_manifest_id and the outcome was recognized with no scope.
+--    union_pnl_cash_outcome_link_resolutions re-prove each such hand: roster
+--    from its manifest matched seat by seat to the signed stacks (or, where no
+--    manifest was captured, each seat's own inventory row at the deal), scope
+--    from the table's inventory row at the hand, owners from funding lineage,
+--    conservation as for every hand; hash-bound to the immutable outcome.
+--  * 13 satellite qualifiers (41 events) and a 342.37 award: the entry is the
+--    satellite's award (a seat delivered to the registration, or an
+--    entry-only ticket redeemed at the moment it registered), owned by the one
+--    club whose posted ledger debit funded that player's satellite entry.
+-- The report counts linked hands in the Union their re-proved scope names and
+-- accepts the rest only through these proofs; everything else is unchanged.
+--
+-- Native qualification: scripts/dev/test-union-pnl-flow-scope-seat.sh
+-- (green + RED=1 control); server: cashHandProvenance.test.ts.

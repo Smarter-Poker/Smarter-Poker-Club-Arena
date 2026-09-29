@@ -80,6 +80,12 @@ BEGIN
                 AND column_name IN ('acknowledged_at', 'acknowledged_by', 'resolved_by', 'reopened_at', 'reopened_by')) THEN
     RAISE EXCEPTION 'ca_diamond_incidents already has a reviewer column';
   END IF;
+  -- The identity is read here, before the lock on ca_diamond_incidents is
+  -- taken, and not at the end: it takes seconds, and money-path triggers file
+  -- into that table. Nothing below writes a money table, so it cannot move.
+  IF (SELECT difference FROM public.fn_ca_diamond_register_vs_supply()) <> 0 THEN
+    RAISE EXCEPTION 'the Diamond identity is not whole';
+  END IF;
 END $m$;
 
 -- ---------------------------------------------------------------------------
@@ -604,10 +610,11 @@ BEGIN
   END LOOP;
 
   -- Nothing re-opens a Diamond incident but the review door.
-  SELECT string_agg(p.proname, ', ') INTO v_bad
-    FROM pg_proc p
-   WHERE p.prosrc ~* 'UPDATE\s+(public\.)?ca_diamond_incidents\s[^;]*resolved_at\s*=\s*NULL\y'
-     AND p.proname <> 'fn_ca_diamond_incident_review';
+  SELECT string_agg(x.proname, ', ') INTO v_bad
+    FROM (SELECT p.proname, p.prosrc FROM pg_proc p
+           WHERE strpos(p.prosrc, 'ca_diamond_incidents') > 0 OFFSET 0) x
+   WHERE x.prosrc ~* 'UPDATE\s+(public\.)?ca_diamond_incidents\s[^;]*resolved_at\s*=\s*NULL\y'
+     AND x.proname <> 'fn_ca_diamond_incident_review';
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'something besides the review door re-opens a Diamond incident: %', v_bad;
   END IF;
@@ -619,11 +626,9 @@ BEGIN
     RAISE EXCEPTION 'this migration must not review any incident';
   END IF;
 
+  -- The Diamond identity was read whole at the top, before the lock.
   IF EXISTS (SELECT 1 FROM public.ca_arena_settings WHERE tournaments_enabled OR cash_games_enabled) THEN
     RAISE EXCEPTION 'this migration must not open a switch';
-  END IF;
-  IF (SELECT difference FROM public.fn_ca_diamond_register_vs_supply()) <> 0 THEN
-    RAISE EXCEPTION 'the Diamond identity is not whole';
   END IF;
   SELECT string_agg(w.fn, ', ') INTO v_bad
     FROM unnest(public.fn_ca_guard_watchlist()) AS w(fn)

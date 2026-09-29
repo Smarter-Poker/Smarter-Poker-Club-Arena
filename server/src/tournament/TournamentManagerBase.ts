@@ -119,6 +119,7 @@ import {
 } from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
+import { diamondSpinSettlementProven } from './diamondSpinLaunchProof.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
   tournamentFinishRefusalAlertsSuppressedTotal,
@@ -4717,6 +4718,44 @@ export abstract class TournamentManagerBase {
       if (!this.tableEngines.has(tableId)) {
         return refuse(`table ${tableId.slice(0, 8)} has no inert engine ready for admission`);
       }
+    }
+
+    /* A DIAMOND SPIN'S SETTLEMENT IS ITS OWN DRAW (DIAMOND PHASE 9, 2026-09-29).
+       The chip read below finds a Spin's one jackpot_draw in its owner's
+       reserve ledger; a Diamond Spin has no owner pool and writes none, so it
+       refused every Diamond Spin here, fresh or recovered after a bust. Its
+       settlement is its draw receipt, proved against the row, its ledger legs
+       and the source's register rows by the same proof the launch completion
+       reads (see diamondSpinLaunchProof.ts). The unit is the one read beside
+       the row at start, as the paid gate reads it; a unit that could not be
+       read asks the chip record, as it always did, and a Diamond Spin then
+       stands down until the next pass reads it again. */
+    if (
+      spinLaunch &&
+      Number(tournament.buy_in_amount) > 0 &&
+      this.tournamentUnit() === DIAMOND_UNIT_CENTS
+    ) {
+      const { data: drawProof, error: drawProofErr } = await supabase.rpc(
+        'fn_poker_diamond_spin_draw_proof',
+        { p_tournament_id: this.tournamentId, p_launch_id: null }
+      );
+      this.assertLifecycleCurrent(lifecycle);
+      if (drawProofErr) {
+        return refuse(`the Diamond Spin draw could not be read: ${drawProofErr.message}`);
+      }
+      if (
+        !diamondSpinSettlementProven({
+          proof: drawProof,
+          buyIn: Number(tournament.buy_in_amount),
+          cachedMultiplier: tournament.spin_multiplier,
+          cachedPrizePool: tournament.prize_pool,
+          rowMultiplier: tournamentProof.spin_multiplier,
+          rowPrizePool: tournamentProof.prize_pool,
+        })
+      ) {
+        return refuse('the Spin row and its Diamond draw do not prove the same exact launch');
+      }
+      return true;
     }
 
     if (spinLaunch && Number(tournament.buy_in_amount) > 0) {

@@ -29,6 +29,7 @@
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)):
 --   fn_ca_settlement_lane_doctrine   9508891e4815a9bdb13a51f231a75de5
+-- @live-proof: position('fn_poker_diamond_cancel_tournament' in pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure)) > 0
 -- ============================================================================
 
 DO $m$

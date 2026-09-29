@@ -97,3 +97,98 @@ CREATE OR REPLACE FUNCTION public.fn_ca_escrow_apply(p_tournament_id uuid, p_wha
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$ BEGIN RETURN; END; $function$;
+
+-- The cash-rake bank receipt, the attribution rows and the credit allocator.
+-- (financial_alerts is NOT added here: test_satellite.py and
+--  satellite-split-fixture.sql each create their own inside their own
+--  transaction, and a permanent one in this fixture collides with them.)
+-- These are NOT boundary stubs. atomic_distribute_rake writes all three inside
+-- the same transaction as the chip-journal leg, so they are part of what this
+-- probe proves: if the receipt insert fails, the ledger write must roll back
+-- with it. Stubbing them away would remove the failure this probe exists to
+-- catch. Column shapes are production's, read from pg_attribute on
+-- 2026-09-29, so a column the function writes cannot be silently absent.
+CREATE TABLE public.accounting_cash_bank_receipts(
+  rake_record_id uuid,
+  union_id uuid,
+  club_id uuid,
+  union_transaction_id uuid,
+  club_ledger_id uuid,
+  banked_at timestamptz,
+  amount numeric
+);
+
+CREATE TABLE public.rake_attributions(
+  id uuid DEFAULT gen_random_uuid(),
+  hand_id uuid,
+  player_id uuid,
+  rake_amount numeric,
+  agent_id uuid,
+  created_at timestamptz DEFAULT now(),
+  rake_record_id uuid,
+  table_id uuid,
+  club_id uuid,
+  gross_contribution numeric,
+  returned_uncalled numeric,
+  eligible_contribution numeric,
+  contribution_weight numeric,
+  weighted_rake_credit numeric,
+  bbj_attributed_contribution numeric,
+  rake_method text
+);
+
+
+-- The credit allocator, carried VERBATIM from production rather than stubbed.
+-- It is pure SQL over jsonb and arithmetic with no table dependencies, so the
+-- real body costs the fixture nothing and cannot drift from the rounding the
+-- attribution rows are asserted on. A stub returning invented credits would
+-- make those assertions measure the stub.
+CREATE FUNCTION public.fn_allocate_rake_credits(p_amount numeric, p_contributions jsonb, p_method text)
+RETURNS TABLE(user_id uuid, credit numeric, weight numeric)
+LANGUAGE sql AS $fn$
+  WITH c AS (
+    SELECT (k.key)::uuid AS uid,
+           round((k.value)::numeric * 100)::bigint AS cc
+      FROM jsonb_each(COALESCE(p_contributions, '{}'::jsonb)) k
+     WHERE jsonb_typeof(k.value) = 'number'
+       AND (k.value)::numeric > 0
+       AND k.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  ),
+  t AS (
+    SELECT COALESCE(SUM(cc), 0)::bigint AS total,
+           round(GREATEST(COALESCE(p_amount, 0), 0) * 100)::bigint AS amt,
+           COUNT(*)::bigint AS n
+      FROM c
+  ),
+  weighted AS (
+    SELECT c.uid, c.cc,
+           (t.amt * c.cc) / t.total AS fl,
+           (t.amt * c.cc) % t.total AS rem,
+           t.amt, t.total
+      FROM c CROSS JOIN t
+     WHERE t.total > 0
+  ),
+  weighted_ranked AS (
+    SELECT w.*,
+           row_number() OVER (ORDER BY w.rem DESC, w.uid ASC) AS rn,
+           SUM(w.fl) OVER () AS fl_sum
+      FROM weighted w
+  ),
+  equal_ranked AS (
+    SELECT c.uid, c.cc, t.amt, t.total, t.n,
+           row_number() OVER (ORDER BY c.uid ASC) AS rn
+      FROM c CROSS JOIN t
+     WHERE t.n > 0
+  )
+  SELECT uid,
+         ((fl + CASE WHEN rn <= (amt - fl_sum) THEN 1 ELSE 0 END)::numeric / 100),
+         round(cc::numeric / total, 8)
+    FROM weighted_ranked
+   WHERE COALESCE(p_method, 'WEIGHTED_CONTRIBUTED') = 'WEIGHTED_CONTRIBUTED'
+  UNION ALL
+  SELECT uid,
+         (((amt / n) + CASE WHEN rn <= (amt % n) THEN 1 ELSE 0 END)::numeric / 100),
+         round(cc::numeric / total, 8)
+    FROM equal_ranked
+   WHERE COALESCE(p_method, 'WEIGHTED_CONTRIBUTED') = 'DEALT_EQUAL';
+$fn$;

@@ -3162,7 +3162,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         /* A Diamond Spin advertises the top of the table its creation pinned;
            a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
         const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
-          ...clubTournamentResult.data,
+          /* The cast is the arena embed's: the generated types carry no
+             relationship names, so the typed client cannot resolve the join
+             (TournamentService.getTournaments makes the same one). */
+          ...(clubTournamentResult.data as unknown as TournamentData[]),
         ]);
         if (getIsMounted && !getIsMounted()) return;
 

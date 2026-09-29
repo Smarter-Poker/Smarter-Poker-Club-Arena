@@ -112,7 +112,11 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
-import { tournamentUnitCents, type TournamentUnitClubRow } from './tournamentUnit.js';
+import {
+  DIAMOND_UNIT_CENTS,
+  tournamentUnitCents,
+  type TournamentUnitClubRow,
+} from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -5121,17 +5125,38 @@ export abstract class TournamentManagerBase {
             new Set((regs ?? []).map((r: any) => r.table_id).filter(Boolean) as string[])
           );
 
-          const { data: paidEntitlements, error: entitlementErr } = await supabase
-            .from('tournament_refund_entitlements')
-            // `created_at` is read for the REVEAL ANCHOR, not for the gate:
-            // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
-            // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
-            // moment. See stampSpinRevealAnchor below.
-            .select('user_id, gross, created_at')
-            .eq('tournament_id', this.tournamentId)
-            .eq('entitlement_kind', 'wallet_charge')
-            .eq('charge_category', 'tournament_buyin')
-            .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
+          /* A DIAMOND SPIN'S PAYMENT IS ITS CUSTODY ENTRY (DIAMOND PHASE 9,
+             2026-09-29). A chip entry's evidence is the refund entitlement its
+             wallet charge captures. A Diamond entry is paid into custody and
+             writes the Diamond tournament ledger's entry row instead - no
+             entitlement at all - so this gate would quarantine every Diamond
+             Spin. It reads the record the event's own asset keeps (the unit
+             read beside the tournament row at start says which) and the rest
+             of the gate, and the reveal anchor, are unchanged. A unit that
+             could not be read asks the chip record, as it always did: a
+             Diamond Spin then finds nothing and stands down like any unproven
+             field until the next pass reads its unit again. The draw proves
+             the same three whole entries itself (fn_poker_diamond_spin_draw). */
+          const paidEvidenceIsDiamond = this.tournamentUnit() === DIAMOND_UNIT_CENTS;
+          const payerIds = regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000'];
+          const { data: paidEntitlements, error: entitlementErr } = paidEvidenceIsDiamond
+            ? await supabase
+                .from('poker_diamond_tournament_ledger')
+                .select('user_id, gross:amount, created_at')
+                .eq('tournament_id', this.tournamentId)
+                .eq('kind', 'entry')
+                .in('user_id', payerIds)
+            : await supabase
+                .from('tournament_refund_entitlements')
+                // `created_at` is read for the REVEAL ANCHOR, not for the gate:
+                // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
+                // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
+                // moment. See stampSpinRevealAnchor below.
+                .select('user_id, gross, created_at')
+                .eq('tournament_id', this.tournamentId)
+                .eq('entitlement_kind', 'wallet_charge')
+                .eq('charge_category', 'tournament_buyin')
+                .in('user_id', payerIds);
           this.assertLifecycleCurrent(lifecycle);
 
           if (entitlementErr) {
@@ -5159,7 +5184,7 @@ export abstract class TournamentManagerBase {
           if (unpaid.length > 0) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) without an exact ${buyIn}-chip funded entitlement (${unpaid
+                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) without an exact ${buyIn}-${paidEvidenceIsDiamond ? 'Diamond funded entry' : 'chip funded entitlement'} (${unpaid
                   .map((u) => u.slice(0, 8))
                   .join(
                     ', '

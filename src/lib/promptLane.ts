@@ -40,52 +40,38 @@ export type PromptGate = 'terms' | 'age' | 'welcome' | 'profile';
 export const SOFT_ASK_ORDER = ['daily-bonus', 'analytics-consent', 'push'] as const;
 export type SoftAsk = (typeof SOFT_ASK_ORDER)[number];
 
-/* Counted, not a Set: a host can mount the same prompt twice in passing
-   (the daily bonus lives in two hosts), and one unmount must not release a
-   hold the other still has. */
-const gateHolds = new Map<PromptGate, number>();
-const readyAsks = new Map<SoftAsk, number>();
-let owner: SoftAsk | null = null;
+/* Counted, not flags: a host can mount the same prompt twice in passing (the
+   daily bonus lives in two hosts), and one unmount must not release a hold
+   the other still has. Kept deliberately small - TOSGuard and AppLayout hold
+   the lane, so this module is in the chunk every player downloads first. */
+let gates = 0;
+const ready: Partial<Record<SoftAsk, number>> = {};
+/** The soft ask on screen (or waiting behind a gate to come back), '' for none. */
+let owner: SoftAsk | '' = '';
+let version = 0;
 const listeners = new Set<() => void>();
 
-function bump<K>(map: Map<K, number>, key: K, by: 1 | -1): void {
-  const next = (map.get(key) ?? 0) + by;
-  if (next > 0) map.set(key, next);
-  else map.delete(key);
-}
-
-function settle(): void {
-  if (owner && !readyAsks.has(owner)) owner = null;
-  if (!owner && gateHolds.size === 0) {
-    owner = SOFT_ASK_ORDER.find((ask) => readyAsks.has(ask)) ?? null;
-  }
-}
-
 function publish(): void {
-  settle();
-  for (const listener of [...listeners]) listener();
+  if (owner && !ready[owner]) owner = '';
+  if (!owner && !gates) owner = SOFT_ASK_ORDER.find((ask) => ready[ask]) || '';
+  version++;
+  listeners.forEach((listener) => listener());
 }
 
-function subscribe(listener: () => void): () => void {
+const subscribe = (listener: () => void) => {
   listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** A primitive snapshot, so useSyncExternalStore compares it by value. */
-function snapshot(): string {
-  return `${gateHolds.size > 0 ? 'gated' : 'open'}|${owner ?? ''}`;
-}
+  return () => void listeners.delete(listener);
+};
+const getVersion = () => version;
 
 /** Hold the lane while `holding` - for a gate that owes the player a question. */
 export function useHoldPromptLane(gate: PromptGate, holding: boolean): void {
   useEffect(() => {
     if (!holding) return undefined;
-    bump(gateHolds, gate, 1);
+    gates++;
     publish();
     return () => {
-      bump(gateHolds, gate, -1);
+      gates--;
       publish();
     };
   }, [gate, holding]);
@@ -99,37 +85,31 @@ export interface PromptTurn {
 }
 
 /**
- * For a soft ask. `ready` means it has something to show right now. Render
+ * For a soft ask. `isReady` means it has something to show right now. Render
  * only while `onScreen`; arm any "let the player land" delay only while
  * `clear`.
  */
-export function usePromptTurn(ask: SoftAsk, ready: boolean): PromptTurn {
+export function usePromptTurn(ask: SoftAsk, isReady: boolean): PromptTurn {
   useEffect(() => {
-    if (!ready) return undefined;
-    bump(readyAsks, ask, 1);
+    if (!isReady) return undefined;
+    ready[ask] = (ready[ask] || 0) + 1;
     publish();
     return () => {
-      bump(readyAsks, ask, -1);
+      ready[ask] = (ready[ask] || 1) - 1;
       publish();
     };
-  }, [ask, ready]);
-  const [lane, current] = useSyncExternalStore(subscribe, snapshot, snapshot).split('|');
-  const gated = lane === 'gated';
+  }, [ask, isReady]);
+  useSyncExternalStore(subscribe, getVersion, getVersion);
   return {
-    onScreen: ready && !gated && current === ask,
-    clear: !gated && (current === '' || current === ask),
+    onScreen: isReady && !gates && owner === ask,
+    clear: !gates && (!owner || owner === ask),
   };
-}
-
-/** True while any gate holds the lane. */
-export function usePromptLaneGated(): boolean {
-  return useSyncExternalStore(subscribe, snapshot, snapshot).startsWith('gated');
 }
 
 /** Tests only: forget every hold and turn. */
 export function resetPromptLaneForTests(): void {
-  gateHolds.clear();
-  readyAsks.clear();
-  owner = null;
+  gates = 0;
+  for (const ask of SOFT_ASK_ORDER) delete ready[ask];
+  owner = '';
   publish();
 }

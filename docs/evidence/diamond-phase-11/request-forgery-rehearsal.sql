@@ -32,9 +32,10 @@
 -- MODES (forgery.mode, set below):
 --   baseline - production before 20260930120000: the three holes that
 --              migration closes are asserted AS HOLES (a signed-out staff token
---              passes fourteen staff doors; the Diamond Arena is a club-games
---              host; a non-staff "management" caller reads another host's
---              games), so the run documents exactly what was open.
+--              passes four staff doors - fourteen before 20260930131500 closed
+--              ten of them at 12:08 UTC on 2026-09-30; the Diamond Arena is a
+--              club-games host; a non-staff "management" caller reads another
+--              host's games), so the run documents exactly what was open.
 --   fixed    - with 20260930120000 applied (or rehearsed ahead of this file):
 --              every one of those probes is refused by name.
 -- Every other probe expects the same refusal in both modes.
@@ -45,7 +46,7 @@
 -- ============================================================================
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '30s';
-SELECT set_config('forgery.mode', 'baseline', true);
+SELECT set_config('forgery.mode', 'fixed', true);
 
 CREATE TEMP TABLE res(n serial PRIMARY KEY, grp text, label text, who text, ok boolean, answer text);
 
@@ -206,17 +207,17 @@ CREATE TEMP TABLE base AS SELECT
 CREATE TEMP TABLE doors(k text PRIMARY KEY, sql text, nonstaff text, control text, style text, asked_before boolean);
 INSERT INTO pg_temp.doors VALUES
  ('open a cash table', 'SELECT public.fn_poker_diamond_open_cash_table(''Forgery Probe'', 0, 2, 20, 200)::text',
-   '^42501\|diamond_table_staff_only$', '^22023\|diamond_table_requires_whole_positive_stakes$', 'raise', false),
+   '^42501\|diamond_table_staff_only$', '^22023\|diamond_table_requires_whole_positive_stakes$', 'raise', true),
  ('edit a cash table', format('SELECT public.fn_poker_diamond_edit_cash_table(%L::uuid)::text', gen_random_uuid()),
    '^42501\|diamond_table_staff_only$', '^P0002\|diamond_table_not_found$', 'raise', true),
  ('close a cash table', format('SELECT public.fn_poker_diamond_close_cash_table(%L::uuid)::text', gen_random_uuid()),
    '^42501\|diamond_table_staff_only$', '^P0002\|diamond_table_not_found$', 'raise', true),
  ('switch straddles', format('SELECT public.fn_poker_diamond_set_table_straddle(%L::uuid, NULL, NULL)::text', gen_random_uuid()),
-   '^42501\|diamond_table_staff_only$', '^22023\|diamond_straddle_requires_explicit_flags$', 'raise', false),
+   '^42501\|diamond_table_staff_only$', '^22023\|diamond_straddle_requires_explicit_flags$', 'raise', true),
  ('switch run it twice', format('SELECT public.fn_poker_diamond_set_table_run_it_twice(%L::uuid, NULL)::text', gen_random_uuid()),
-   '^42501\|diamond_table_staff_only$', '^22023\|diamond_run_it_twice_requires_an_explicit_flag$', 'raise', false),
+   '^42501\|diamond_table_staff_only$', '^22023\|diamond_run_it_twice_requires_an_explicit_flag$', 'raise', true),
  ('switch bomb pots', format('SELECT public.fn_poker_diamond_set_table_bomb_pot(%L::uuid, NULL)::text', gen_random_uuid()),
-   '^42501\|diamond_table_staff_only$', '^22023\|diamond_bomb_pot_requires_an_explicit_flag$', 'raise', false),
+   '^42501\|diamond_table_staff_only$', '^22023\|diamond_bomb_pot_requires_an_explicit_flag$', 'raise', true),
  ('create a tournament', 'SELECT public.fn_poker_diamond_create_tournament(''[]''::jsonb)::text',
    '^42501\|diamond_tournament_staff_only$', '^22023\|diamond_tournament_requires_a_configuration$', 'raise', false),
  ('create a seat-first board', 'SELECT public.fn_poker_diamond_create_seat_first_board(''[]''::jsonb)::text',
@@ -226,30 +227,31 @@ INSERT INTO pg_temp.doors VALUES
  ('remove a registered player', 'SELECT public.fn_poker_diamond_remove_tournament_player(NULL::uuid, NULL::uuid, NULL::uuid)::text',
    '^42501\|diamond_tournament_staff_only$', '^22004\|tournament and player ids are required$', 'raise', true),
  ('propose a Diamond correction', 'SELECT public.fn_ca_diamond_adjustment_propose(''chips'', NULL, 1, ''forgery probe'')::text',
-   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_a_diamond_target"', 'ok', false),
+   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_a_diamond_target"', 'ok', true),
  ('approve a Diamond correction', format('SELECT public.fn_ca_diamond_adjustment_approve(%L::uuid, NULL)::text', gen_random_uuid()),
-   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', false),
+   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', true),
  ('reject a Diamond correction', format('SELECT public.fn_ca_diamond_adjustment_reject(%L::uuid, NULL)::text', gen_random_uuid()),
-   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', false),
+   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', true),
  ('settle a Diamond correction', format('SELECT public.fn_ca_diamond_adjustment_settle(%L::uuid)::text', gen_random_uuid()),
-   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', false),
+   '"refused_reason": "platform_staff_only"', '"refused_reason": "not_found"', 'ok', true),
  ('read the staff books', 'SELECT public.fn_ca_diamond_staff_books(''forgery-probe'')::text',
    '"refused_reason": "platform_staff_only"', '"refused_reason": "unknown_view"', 'ok', false),
  ('read the incident board', 'SELECT public.fn_ca_diamond_incident_board(''forgery-probe'')::text',
    '"error": "staff_required"', '"error": "invalid_status"', 'success', false),
  ('review an incident', 'SELECT public.fn_ca_diamond_incident_review(-1, ''forgery-probe'', NULL)::text',
-   '"error": "staff_required"', '"error": "unknown_action"', 'success', false),
+   '"error": "staff_required"', '"error": "unknown_action"', 'success', true),
  ('read an incident trail', 'SELECT public.fn_ca_diamond_incident_trail(-1)::text',
    '"error": "staff_required"', '"error": "incident_not_found"', 'success', false),
  ('resolve an incident family', 'SELECT public.fn_ca_diamond_incident_resolve_family(NULL, NULL, NULL, NULL)::text',
-   '"error": "staff_required"', '"error": "family_required"', 'success', false);
+   '"error": "staff_required"', '"error": "family_required"', 'success', true);
 
 DO $staff$
 DECLARE d record; w text; v_dead text;
 BEGIN
   FOR d IN SELECT * FROM pg_temp.doors ORDER BY k LOOP
     v_dead := CASE d.style WHEN 'raise' THEN '^28000\|diamond_staff_session_required$'
-                           ELSE 'ANSWERED:.*"diamond_staff_session_required"' END;
+                           WHEN 'ok' THEN '"refused_reason": "diamond_staff_session_required"'
+                           ELSE '"error": "authentication_required"' END;
     PERFORM pg_temp.expect('1 staff', d.k || ': no account', 'anon', d.sql, '^42501\|permission denied for function ');
     PERFORM pg_temp.expect('1 staff', d.k || ': a player', 'P', d.sql, d.nonstaff);
     PERFORM pg_temp.expect('1 staff', d.k || ': a chip-club super agent', 'AG', d.sql, d.nonstaff);
@@ -327,9 +329,9 @@ BEGIN
     '^42501\|Cannot rebuy for another player$');
   PERFORM pg_temp.expect('2 money', 'the chip cash-out door at a Diamond table, from a browser', 'P',
     format('SELECT public.fn_cashout_seat_occupancy(%L, %L, 1, %L, %L)::text', P, v_table, gen_random_uuid(), 'voluntary'),
-    'Engine authority required');
+    '^42501\|permission denied for function fn_cashout_seat_occupancy$');
   PERFORM pg_temp.expect('2 money', 'leave-and-refund at a Diamond table where the caller has no seat', 'P',
-    format('SELECT public.fn_leave_seat_and_refund(%L, %L)::text', v_table, gen_random_uuid()), NULL);
+    format('SELECT public.fn_leave_seat_and_refund(%L, %L)::text', v_table, gen_random_uuid()), '"reason": "table_not_found"');
   PERFORM pg_temp.expect('2 money', 'chips minted into the Diamond Arena by a player', 'P',
     format('SELECT public.fn_mint_chips_from_diamonds(%L, 100, %L)::text', v_arena, gen_random_uuid()),
     'Only The Club Owner Or An Admin May Mint Chips');
@@ -348,8 +350,13 @@ BEGIN
     format('SELECT public.fn_poker_diamond_close_cash_table(%L)::text', v_chip_table), '^P0002\|diamond_table_not_found$');
   PERFORM pg_temp.expect('2 money', 'a chip tournament is not a Diamond tournament to any Diamond event door', 'engine',
     format('SELECT public.fn_poker_diamond_tournament(%L)::text', v_chip_event), '^P0001\|ANSWERED:false$');
+  PERFORM pg_temp.expect('2 money', 'a Diamond satellite whose target is a chip tournament', 'S',
+    format('SELECT public.fn_poker_diamond_create_tournament(%L::jsonb)::text',
+           jsonb_build_object('type', 'satellite', 'satelliteTargetId', v_chip_event)),
+    '^22023\|diamond_satellite_target_must_be_a_diamond_tournament$');
   PERFORM pg_temp.expect('2 money', 'a tournament rebuy bought for another player', 'P',
-    format('SELECT public.process_tournament_rebuy(%L, %L, %L, 1, 1)::text', v_chip_event, Q, 'rebuy'), NULL);
+    format('SELECT public.process_tournament_rebuy(%L, %L, %L, 1, 1)::text', v_chip_event, Q, 'rebuy'),
+    '^42501\|process_tournament_rebuy: caller may only transact for themselves$');
   PERFORM pg_temp.expect('2 money', 'a transfer to somebody who is not a friend', 'P',
     format('SELECT public.send_wallet_diamond_transfer(%L, 1, NULL, %L)::text', Q, 'forgery-probe-000001'),
     'accepted_friend_required');
@@ -380,13 +387,15 @@ BEGIN
   -- 3. MEMBERSHIP: joining, approving, inviting, and the hierarchy Phase 2 forbids
   -- --------------------------------------------------------------------------
   PERFORM pg_temp.expect('3 membership', 'the chip join door, pointed at the Diamond Arena', 'P',
-    format('SELECT public.fn_join_club(%L)::text', v_arena), NULL);
+    format('SELECT public.fn_join_club(%L)::text', v_arena), '^23514\|Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy$');
   PERFORM pg_temp.expect('3 membership', 'the atomic join door, pointed at the Diamond Arena', 'P',
-    format('SELECT public.fn_join_club_atomic(%L, %L, NULL)::text', v_arena::text, gen_random_uuid()), NULL);
-  PERFORM pg_temp.expect('3 membership', 'the join preview, pointed at the Diamond Arena', 'P',
-    format('SELECT public.fn_preview_club_join(%L)::text', v_arena::text), NULL);
+    format('SELECT public.fn_join_club_atomic(%L, %L, NULL)::text', v_arena::text, gen_random_uuid()),
+    '^23514\|Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy$');
+  -- The preview is the public card any club shows a nonmember; it grants nothing.
+  PERFORM pg_temp.expect('3 membership', 'the join preview, pointed at the Diamond Arena (the public card, nothing more)', 'P',
+    format('SELECT public.fn_preview_club_join(%L)::text', v_arena::text), '"found": true');
   PERFORM pg_temp.expect('3 membership', 'an invite code redeemed into the Diamond Arena', 'P',
-    format('SELECT public.fn_redeem_club_invite_code(%L, %L, %L)::text', v_arena, P, 'FORGERY01'), NULL);
+    format('SELECT public.fn_redeem_club_invite_code(%L, %L, %L)::text', v_arena, P, 'FORGERY01'), '"code": "unknown_inviter"');
   PERFORM pg_temp.expect('3 membership', 'an invite code redeemed for somebody else', 'P',
     format('SELECT public.fn_redeem_club_invite_code(%L, %L, %L)::text', v_arena, Q, 'FORGERY01'), 'not_your_membership');
   PERFORM pg_temp.expect('3 membership', 'a join request approved in the Diamond Arena by a player', 'P',
@@ -394,7 +403,7 @@ BEGIN
   PERFORM pg_temp.expect('3 membership', 'a join request approved in the Diamond Arena by a chip-club super agent', 'AG',
     format('SELECT public.fn_review_join_request(%L, %L, true)::text', v_arena, P), 'Not authorized to review join requests for this club');
   PERFORM pg_temp.expect('3 membership', 'a join request cancelled in the Diamond Arena', 'P',
-    format('SELECT public.fn_cancel_club_join_request(%L)::text', v_arena), NULL);
+    format('SELECT public.fn_cancel_club_join_request(%L)::text', v_arena), '^P0001\|ANSWERED:false$');
   PERFORM pg_temp.expect('3 membership', 'a membership row written straight through the API (the automatic shape)', 'P',
     format('INSERT INTO public.club_members (club_id, user_id, role, status) VALUES (%L, %L, %L, %L)', v_arena, P, 'player', 'automatic'),
     '(Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy|row-level security)');
@@ -459,7 +468,7 @@ BEGIN
     pg_temp.moded('"ok": true', 'That Club Could Not Be Found'));
   PERFORM pg_temp.expect('5 club games', 'owner terms accepted for the Diamond Arena by staff', 'S',
     format('SELECT public.fn_diamond_spins_owner_terms(%L, true)::text', v_arena),
-    pg_temp.moded(NULL, 'That Club Could Not Be Found'));
+    pg_temp.moded('The Wallet Owner Must Accept This Agreement', 'That Club Could Not Be Found'));
   PERFORM pg_temp.expect('5 club games', 'another host''s game P&L read by a player', 'P',
     format('SELECT public.fn_diamond_game_pnl(%L)::text', v_game_club), 'Only The Host''s Owners And Admins Read This');
   PERFORM pg_temp.expect('5 club games', 'another host''s game P&L read by an incident recipient who is not staff', 'P',
@@ -556,8 +565,8 @@ BEGIN
   SELECT string_agg(format('%s | %s | %s | %s', grp, label, who, answer), E'\n' ORDER BY n)
     INTO v_bad FROM pg_temp.res WHERE NOT ok;
   IF v_bad IS NULL AND v_disc = 0 THEN
-    RAISE EXCEPTION 'REHEARSAL OK [mode %]: % probes, every one as expected%', current_setting('forgery.mode'), v_n,
-      E'\n' || v_table;
+    RAISE EXCEPTION 'REHEARSAL OK [mode %]: % probes, every one as expected, in % ms%', current_setting('forgery.mode'), v_n,
+      round(extract(epoch FROM clock_timestamp() - now()) * 1000), E'\n' || v_table;
   END IF;
   RAISE EXCEPTION 'REHEARSAL NOT OK [mode %]: % probes, % as expected, % unexpected, % discovery%', current_setting('forgery.mode'),
     v_n, v_ok - v_disc, v_n - v_ok, v_disc, E'\n' || COALESCE('UNEXPECTED:' || E'\n' || v_bad || E'\n', '') || 'ALL:' || E'\n' || v_table;

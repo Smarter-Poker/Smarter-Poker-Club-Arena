@@ -7,9 +7,11 @@
  * unauthorized membership/management access"). The attack found three holes
  * and migration 20260930120000 closes them, each by asserted substitution:
  *
- *   1. fourteen Diamond staff doors trusted a signed-out token: each now asks
- *      fn_caller_session_is_live() right after its staff check and refuses
- *      with diamond_staff_session_required, as the five Phase 10 doors do;
+ *   1. four Diamond staff doors still trusted a signed-out token (creating a
+ *      tournament, the staff books, the incident board and an incident's
+ *      trail; migration 20260930131500 closed the other ten the attack found):
+ *      each now asks fn_caller_session_is_live() right after its staff check
+ *      and refuses in its desk's own words, so all nineteen staff doors ask;
  *   2. the Diamond Arena resolved as a club-games host: fn_wheel_host finds no
  *      host for a Diamond club;
  *   3. any club owner, union owner or incident recipient could operate or read
@@ -43,23 +45,23 @@ const FINAL = sliceBetween(
 );
 
 const STAFF_DOORS = [
+  'fn_poker_diamond_create_tournament',
+  'fn_ca_diamond_staff_books',
+  'fn_ca_diamond_incident_board',
+  'fn_ca_diamond_incident_trail',
+];
+/** The fifteen staff doors that already asked: ten since 20260930131500, five since Phase 10. */
+const ALREADY_ASKED = [
   'fn_poker_diamond_open_cash_table',
   'fn_poker_diamond_set_table_straddle',
   'fn_poker_diamond_set_table_run_it_twice',
   'fn_poker_diamond_set_table_bomb_pot',
-  'fn_poker_diamond_create_tournament',
   'fn_ca_diamond_adjustment_propose',
   'fn_ca_diamond_adjustment_approve',
   'fn_ca_diamond_adjustment_reject',
   'fn_ca_diamond_adjustment_settle',
-  'fn_ca_diamond_staff_books',
   'fn_ca_diamond_incident_review',
   'fn_ca_diamond_incident_resolve_family',
-  'fn_ca_diamond_incident_board',
-  'fn_ca_diamond_incident_trail',
-];
-/** The five Phase 10 doors that already asked, and must still ask. */
-const ALREADY_ASKED = [
   'fn_poker_diamond_edit_cash_table',
   'fn_poker_diamond_close_cash_table',
   'fn_poker_diamond_remove_tournament_player',
@@ -111,7 +113,7 @@ describe('LAW: a forged request is refused', () => {
       );
   });
 
-  it('each of the fourteen staff doors asks for a live session right after its staff check', () => {
+  it('each of the four staff doors asks for a live session right after its staff check', () => {
     for (const fn of STAFF_DOORS) {
       const { old, neu } = row(fn);
       expect(old, fn).toContain('fn_is_platform_admin()');
@@ -119,8 +121,7 @@ describe('LAW: a forged request is refused', () => {
       expect(neu.startsWith(`${old}\n`), fn).toBe(true);
       const added = neu.slice(old.length + 1);
       expect(added, fn).toContain('IF NOT public.fn_caller_session_is_live() THEN');
-      expect(added, fn).toContain("'diamond_staff_session_required'");
-      // a door that raised still raises, a door that answered still answers
+      // a door that raised still raises, a door that answered still answers, in its desk's words
       if (/RAISE EXCEPTION/.test(old))
         expect(added, fn).toContain(
           "RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE='28000';"
@@ -131,7 +132,7 @@ describe('LAW: a forged request is refused', () => {
         );
       else
         expect(added, fn).toContain(
-          "RETURN jsonb_build_object('success', false, 'error', 'diamond_staff_session_required');"
+          "RETURN jsonb_build_object('success', false, 'error', 'authentication_required');"
         );
     }
   });
@@ -157,12 +158,12 @@ describe('LAW: a forged request is refused', () => {
 
   it('the end state is asserted for all nineteen staff doors and proved live', () => {
     for (const fn of [...STAFF_DOORS, ...ALREADY_ASKED]) expect(FINAL, fn).toContain(`'${fn}'`);
-    expect(FINAL).toContain('expected nineteen Diamond staff doors');
+    expect(FINAL).toContain('expected nineteen Diamond staff doors, found %');
     expect(FINAL).toContain('does not ask for staff and then a live session');
     expect(FINAL).toContain('is reachable without an account');
     const proofs = MIG.match(/^-- @live-proof: .+$/gm) ?? [];
     expect(proofs).toHaveLength(3);
-    expect(proofs[0]).toContain('count(*) = 14');
+    expect(proofs[0]).toContain('count(*) = 4');
     for (const fn of STAFF_DOORS) expect(proofs[0], fn).toContain(`'${fn}'`);
   });
 });

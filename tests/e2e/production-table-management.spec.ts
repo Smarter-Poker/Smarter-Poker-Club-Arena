@@ -13,28 +13,75 @@
  * reads. It saves nothing, publishes nothing and closes nothing: no Save, no
  * plate, no row action is ever clicked.
  *
- * Signed out, or without management authority on the fixture club, it skips
- * the parts it cannot see and still certifies what it can - a refusal is a
- * shipped surface too, and it wears the shark frame with its one Return plate.
+ * ── WHY TWO CLUBS, AND WHY NOTHING HERE SKIPS (2026-09-29) ──────────────────
+ *
+ * The first version of this file pointed every test at E2E_CLUB_ID and let a
+ * refusal skip. On the 2026-09-29 deploy that is exactly what happened: four
+ * of five tests skipped or failed and the frames were never certified live,
+ * because E2E_CLUB_ID (SHARK CLUB) belongs to a union, and a union's member
+ * club correctly refuses local game management - "This Club Is Managed By Its
+ * Union". The board can never render there, so a suite aimed at it can only
+ * ever report nothing.
+ *
+ * The post-deploy job already provisions the reserved account as an admin of
+ * BOTH clubs (production-e2e-account.mjs: prepare-staff and
+ * prepare-template-staff). So:
+ *
+ *   STANDALONE_CLUB  (E2E_TEMPLATE_CLUB_ID) owns its own games. The board,
+ *                    the ticker, club messages and the Add Table picker are
+ *                    certified here, and a refusal here is a FAILURE, not a
+ *                    skip: it means the fixture drifted and this layer has
+ *                    gone blind again.
+ *   UNION_MEMBER_CLUB (E2E_CLUB_ID) is the refusal. That is a shipped surface
+ *                    too and it gets its own certificate: the shark frame,
+ *                    one Return plate, and no section strip.
+ *
+ * Signed out is the one honest skip: globalSetup can fail to get a session.
  */
 import { expect, test, type Page } from '@playwright/test';
 
-/** The reserved production E2E club (production-e2e-account.mjs). */
-const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
-const BOARD = `clubs/${CLUB_ID}/table-management`;
+/** The standalone reserved club: its own games, so its own board. */
+const STANDALONE_CLUB = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
+/** The reserved club that belongs to a union: management is refused there. */
+const UNION_MEMBER_CLUB = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+
+const BOARD = `clubs/${STANDALONE_CLUB}/table-management`;
 
 /** Every painted frame on the page: SpadeConsole's root always carries `sc`. */
 const FRAMES = '.sc';
 
-async function open(page: Page, path: string) {
+type Outcome = 'board' | 'refused';
+
+const strip = (page: Page) => page.getByRole('navigation', { name: 'Management Sections' });
+const returnPlate = (page: Page) => page.getByRole('button', { name: 'Return' });
+
+/**
+ * Navigate, then wait for the page to reach one of its two real outcomes.
+ *
+ * The previous helper slept 1200ms and then waited for the access-check copy
+ * to DETACH. On a cold first load that copy has not rendered yet, so
+ * "detached" was already true the moment it was asked: the refusal probe read
+ * a still-empty page, reported "not refused", and the test then spent its
+ * whole 30s budget waiting for a section strip on a page that had already
+ * resolved to Locked. Never time a wait against a clock when the outcome
+ * itself is observable.
+ */
+async function open(page: Page, path: string): Promise<Outcome> {
   await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForTimeout(1200);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: Table Management is behind a login');
-  // The access check draws its own console while it runs; wait it out.
-  await page
-    .getByText('Verifying Game-Management Access', { exact: false })
-    .waitFor({ state: 'detached', timeout: 30_000 })
-    .catch(() => {});
+
+  const deadline = Date.now() + 45_000;
+  for (;;) {
+    if ((await strip(page).count()) > 0) return 'board';
+    if ((await returnPlate(page).count()) > 0) return 'refused';
+    if (Date.now() > deadline) {
+      throw new Error(
+        `${path} never resolved to the board or to the refusal within 45s ` +
+          `(still on the access check, or drawing neither surface)`
+      );
+    }
+    await page.waitForTimeout(250);
+  }
 }
 
 async function frameFamilies(page: Page) {
@@ -45,32 +92,28 @@ async function frameFamilies(page: Page) {
   );
 }
 
-async function refused(page: Page) {
-  return (await page.getByRole('button', { name: 'Return' }).count()) > 0;
+/** A refusal on the standalone club is fixture drift, and it is fatal here:
+ *  a silent skip is how this layer went blind on 2026-09-29. */
+function mustSeeBoard(outcome: Outcome, path: string) {
+  expect(
+    outcome,
+    `${path} refused game management on the standalone reserved club ` +
+      `(${STANDALONE_CLUB}). The post-deploy job's prepare-template-staff step ` +
+      `makes the reserved account an admin there, so a refusal means the club ` +
+      `joined a union or the membership was not provisioned - fix the fixture, ` +
+      `do not skip this certificate.`
+  ).toBe('board');
 }
 
 test.describe('Table Management is its own page on its own frame, in production', () => {
   test('the board draws one frame, with the section strip outside it', async ({ page }) => {
-    await open(page, BOARD);
+    mustSeeBoard(await open(page, BOARD), BOARD);
 
     // The strip is navigation, not a display window: it is never inside a frame.
-    const strip = page.getByRole('navigation', { name: 'Management Sections' });
-    if (await refused(page)) {
-      const families = await frameFamilies(page);
-      expect(families).toEqual(['sc--family-shark']);
-      expect(await page.getByRole('button', { name: 'Return' }).count()).toBe(1);
-      test.info().annotations.push({
-        type: 'note',
-        description: 'no management authority on the fixture club: certified the refusal surface',
-      });
-      return;
-    }
+    await expect(strip(page)).toBeVisible();
+    expect(await strip(page).evaluate((node) => Boolean(node.closest('.sc')))).toBe(false);
 
-    await expect(strip).toBeVisible({ timeout: 30_000 });
-    expect(await strip.evaluate((node) => Boolean(node.closest('.sc')))).toBe(false);
-
-    const families = await frameFamilies(page);
-    expect(families).toEqual(['sc--family-spade']);
+    expect(await frameFamilies(page)).toEqual(['sc--family-spade']);
     await expect(page.getByRole('heading', { name: 'Table Management' })).toBeVisible();
     // The other two sections are not printed in this window.
     expect(await page.getByRole('heading', { name: 'Ticker Management' }).count()).toBe(0);
@@ -78,8 +121,8 @@ test.describe('Table Management is its own page on its own frame, in production'
   });
 
   test('the ticker is the shark frame with its one plate', async ({ page }) => {
-    await open(page, `${BOARD}?section=ticker`);
-    test.skip(await refused(page), 'no management authority on the fixture club');
+    const path = `${BOARD}?section=ticker`;
+    mustSeeBoard(await open(page, path), path);
 
     await expect(page.getByRole('heading', { name: 'Ticker Management' })).toBeVisible({
       timeout: 30_000,
@@ -90,8 +133,8 @@ test.describe('Table Management is its own page on its own frame, in production'
   });
 
   test('club messages is the riveted frame with its two plates', async ({ page }) => {
-    await open(page, `${BOARD}?section=messages`);
-    test.skip(await refused(page), 'no management authority on the fixture club');
+    const path = `${BOARD}?section=messages`;
+    mustSeeBoard(await open(page, path), path);
 
     await expect(page.getByRole('heading', { name: 'Club Messages' })).toBeVisible({
       timeout: 30_000,
@@ -112,8 +155,8 @@ test.describe('Table Management is its own page on its own frame, in production'
   });
 
   test('the Add Table picker draws no frame around the painted cards', async ({ page }) => {
-    await open(page, `${BOARD}?create=table`);
-    test.skip(await refused(page), 'no management authority on the fixture club');
+    const path = `${BOARD}?create=table`;
+    mustSeeBoard(await open(page, path), path);
 
     await expect(page.getByRole('heading', { name: 'Choose Game Type' })).toBeVisible({
       timeout: 30_000,
@@ -122,11 +165,29 @@ test.describe('Table Management is its own page on its own frame, in production'
     await expect(page.getByRole('button', { name: 'Back To Table Management' })).toBeVisible();
   });
 
+  test('a union member club is refused on the shark frame, with no section strip', async ({
+    page,
+  }) => {
+    const path = `clubs/${UNION_MEMBER_CLUB}/table-management`;
+    const outcome = await open(page, path);
+    expect(
+      outcome,
+      `${path} drew the board. The reserved club ${UNION_MEMBER_CLUB} belongs to a ` +
+        `union, and a union's member club does not manage its own games - if this ` +
+        `now renders, either the club left its union or the gate was weakened.`
+    ).toBe('refused');
+
+    expect(await frameFamilies(page)).toEqual(['sc--family-shark']);
+    expect(await returnPlate(page).count()).toBe(1);
+    // A refusal is one window. It is not the board with a notice on it.
+    expect(await strip(page).count()).toBe(0);
+    await expect(page.getByText('Game Management Is Restricted')).toBeVisible();
+  });
+
   test('no surface scrolls sideways on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 393, height: 852 });
     for (const path of [BOARD, `${BOARD}?section=ticker`, `${BOARD}?section=messages`]) {
-      await open(page, path);
-      if (await refused(page)) continue;
+      mustSeeBoard(await open(page, path), path);
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       );

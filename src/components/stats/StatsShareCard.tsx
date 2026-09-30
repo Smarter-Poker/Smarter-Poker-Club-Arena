@@ -21,6 +21,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './StatsShareCard.css';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
 
+/**
+ * The system share sheet (src/lib/native/share.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the share
+ * handler's try made the web build emit the share module and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+async function shareOnNative(blob: Blob, filename: string, title: string): Promise<void> {
+  if (!IS_NATIVE_BUILD) return;
+  const { nativeShareBlob } = await import('../../lib/native/share');
+  await nativeShareBlob(blob, filename, title);
+}
+
 interface Props {
   displayName: string;
   stats: {
@@ -264,8 +278,7 @@ export default function StatsShareCard({
       // THE APP (2026-09-08): no navigator.share on Android's webview, no
       // <a download> on either. The system share sheet on the written file.
       if (IS_NATIVE_BUILD && isNativePlatform()) {
-        const { nativeShareBlob } = await import('../../lib/native/share');
-        await nativeShareBlob(blob, 'smarter-poker-stats.png', 'My Smarter Poker Stats');
+        await shareOnNative(blob, 'smarter-poker-stats.png', 'My Smarter Poker Stats');
         return;
       }
 

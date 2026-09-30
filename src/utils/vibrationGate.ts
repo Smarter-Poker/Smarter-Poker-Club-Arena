@@ -358,6 +358,21 @@ function fireIosHaptic(pattern: number | number[]): boolean {
   return true;
 }
 
+/**
+ * The phone's own haptic engine (src/lib/native/haptics.ts), fire-and-forget.
+ * App build only, and a function of its own on purpose: Rollup keeps everything
+ * written inside a `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the try
+ * blocks below made the web build emit the haptics module and its Capacitor
+ * plugin for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+function fireNativeHaptic(pattern: number | number[]): void {
+  if (!IS_NATIVE_BUILD) return;
+  void import('../lib/native/haptics')
+    .then(({ nativeHaptic }) => nativeHaptic(pattern))
+    .catch(() => {});
+}
+
 export function fireVibration(pattern: number | number[]): boolean {
   /* THE PREFERENCE, not the capability. This used to ask
      `isVibrationAllowed()`, which is preference AND `navigator.vibrate`
@@ -383,9 +398,7 @@ export function fireVibration(pattern: number | number[]): boolean {
     // in src/lib/native/haptics.ts. Fire-and-forget; the coalescing above has
     // already decided this buzz is owed.
     if (IS_NATIVE_BUILD && inApp) {
-      void import('../lib/native/haptics')
-        .then(({ nativeHaptic }) => nativeHaptic(pattern))
-        .catch(() => {});
+      fireNativeHaptic(pattern);
       return true;
     }
     // `vibrate()` returns false where the API exists but no motor does - every
@@ -413,9 +426,7 @@ export function fireVibration(pattern: number | number[]): boolean {
 export function fireTestVibration(pattern: number | number[]): boolean {
   try {
     if (IS_NATIVE_BUILD && isNativePlatform()) {
-      void import('../lib/native/haptics')
-        .then(({ nativeHaptic }) => nativeHaptic(pattern))
-        .catch(() => {});
+      fireNativeHaptic(pattern);
       return true;
     }
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')

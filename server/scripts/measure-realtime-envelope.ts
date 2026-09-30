@@ -840,7 +840,11 @@ async function runOrchestrator(): Promise<void> {
     const counts = await call(srv, 'counts');
     await sleep(1500);
 
-    // Fan-out: twenty maintenance presentations, 250 ms apart (what a break sends).
+    // Fan-out: maintenance presentations, 250 ms apart (what a break sends). Twenty
+    // unmeasured ones first, so every socket is warm whatever the join phase sent it
+    // (before the join fix each socket had already carried ~N/2 frames; after it, one).
+    await call(srv, 'lobbyBroadcast', { count: 20, gapMs: 100 });
+    await sleep(1000);
     await all('lobbyLatReset');
     mk = (await call(srv, 'loopMark')).mark;
     const bc = await call(srv, 'lobbyBroadcast', { count: LOBBY_ONLY ? 60 : 20, gapMs: 250 });

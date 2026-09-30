@@ -21,7 +21,7 @@ account.
 a million-hand chip-conservation soak and the engine simulator pass locally, the
 production suite runs only as reserved test identities that cannot move a real
 balance, and the one failure caused by Diamond code on a shared surface is
-fixed here. The production workflow stays red for reasons that are not Diamond:
+fixed here (#5643). The production workflow stays red for reasons that are not Diamond:
 three real chip-side production defects and two properties of the
 certification harness, each named below with its evidence and owner.
 
@@ -127,7 +127,7 @@ identity exact.
 
 ## 5. What was fixed
 
-The mobile lobby spec now settles the Diamond Spins offer before it measures the
+In [#5643](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5643), the mobile lobby spec now settles the Diamond Spins offer before it measures the
 lobby. `tests/e2e/support/diamondInvitationOffer.ts` starts listening for
 `fn_diamond_games_entry` before the spec navigates. Once the lobby is up it reads
 the answer with `DiamondBustPrompt`'s own rule (a successful entry, `bust_prompt`,

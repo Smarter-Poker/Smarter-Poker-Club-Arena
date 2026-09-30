@@ -12,7 +12,7 @@
     "scripts/dev/qualify-held-fee-owner-basis.py": "bbfe050baae4a8e59ae1978f99dce736e4d13374869c4dd45accfeb5729e0f32",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
-    "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql": "2303a0cc695c7c7c052f2205c5ea10dbf1f5053a4b0c4e5383b0c10d0a7de18d",
+    "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql": "394bb56aaac8126e55f99907ff11b03f94dabd046eb16def0171a493396fa20d",
     "tests/fixtures/held-fee-owner-basis/member-lane-production.json": "b28cea6982d8321ed642afb40ce5c9f72dda11907fd3a2927cb9cd25d2f91d45",
     "tests/fixtures/held-fee-owner-basis/member-lane-after.sql": "572a639aec849905c3f45ef596ce13a2e2895cdebc9a64b95f95fdd0b130d157",
     "tests/fixtures/held-fee-owner-basis/qualify-member-lane.py": "5a13d469bcdcd35b59f666af4fc6ddff9c301b2c9ddcf0fbf758605cf844e3c1",

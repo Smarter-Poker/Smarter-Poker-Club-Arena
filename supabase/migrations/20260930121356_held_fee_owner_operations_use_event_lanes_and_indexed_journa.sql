@@ -185,5 +185,8 @@ BEGIN
   'basis_kind','owner_authorized_host_club_fee','event_count',n,'amount',total,'escrow_out',escrow_out,'bank_in',bank_in,
   'recognized_credit',credited,'settlement_suspense_net',0,'journal_rows',journal_count,'journal_settlement_id',journal_tag,'prizes_unchanged',true,'events',results);
 END $$;
--- CREATE OR REPLACE preserves the installed owner, service-only ACL and comment.
+-- Reassert the installed service-only ACL so the migration declares its own
+-- browser boundary and preserves the qualified owner/comment.
+REVOKE ALL ON FUNCTION public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb) TO service_role;
 COMMIT;

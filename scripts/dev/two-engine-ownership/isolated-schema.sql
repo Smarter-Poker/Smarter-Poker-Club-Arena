@@ -111,17 +111,14 @@ CREATE TABLE public.isolated_lease_history (
   acquired_at timestamptz
 );
 CREATE FUNCTION public.isolated_record_lease() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE r record;
+DECLARE r jsonb;
 BEGIN
-  IF TG_OP = 'DELETE' THEN r := OLD; ELSE r := NEW; END IF;
+  IF TG_OP = 'DELETE' THEN r := to_jsonb(OLD); ELSE r := to_jsonb(NEW); END IF;
   INSERT INTO public.isolated_lease_history (scope, subject, op, instance_id, lease_generation, heartbeat_at, acquired_at)
   VALUES (TG_TABLE_NAME,
-          CASE TG_TABLE_NAME WHEN 'engine_leader' THEN 'leader'
-                             WHEN 'engine_table_leases' THEN r.table_id::text
-                             ELSE r.tournament_id::text END,
-          TG_OP, r.instance_id,
-          CASE WHEN TG_TABLE_NAME = 'engine_leader' THEN NULL ELSE r.lease_generation END,
-          r.heartbeat_at, r.acquired_at);
+          COALESCE(r ->> 'table_id', r ->> 'tournament_id', 'leader'),
+          TG_OP, r ->> 'instance_id', (r ->> 'lease_generation')::uuid,
+          (r ->> 'heartbeat_at')::timestamptz, (r ->> 'acquired_at')::timestamptz);
   RETURN NULL;
 END $$;
 CREATE TRIGGER zz_isolated_record AFTER INSERT OR UPDATE OR DELETE ON public.engine_leader

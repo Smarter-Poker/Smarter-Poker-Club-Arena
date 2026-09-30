@@ -54,6 +54,7 @@ REPO = HERE.parents[1]
 FAILURES = []
 SUMMARY = {}
 KILLS = []
+ENGINES = []
 
 
 def verdict(ok, text):
@@ -80,14 +81,16 @@ class Cluster:
 
     def start(self):
         self.sock.mkdir(parents=True)
+        # The macOS postmaster refuses to start multithreaded without a locale.
+        env = dict(os.environ, LC_ALL='C', LANG='C')
         subprocess.run([f'{self.pg_bin}/initdb', '-D', str(self.data), '-U', 'postgres', '-A', 'trust',
-                        '--no-instructions'], check=True, capture_output=True)
+                        '--locale=C', '-E', 'UTF8', '--no-instructions'], check=True, capture_output=True, env=env)
         with open(self.data / 'postgresql.conf', 'a') as conf:
             conf.write(f"\nlisten_addresses = ''\nunix_socket_directories = '{self.sock}'\n"
                        f"port = {self.port}\nmax_connections = 120\nfsync = off\n"
                        "log_min_messages = warning\n")
         subprocess.run([f'{self.pg_bin}/pg_ctl', '-D', str(self.data), '-l', str(self.work / 'postgres.log'),
-                        '-w', 'start'], check=True, capture_output=True)
+                        '-w', 'start'], check=True, capture_output=True, env=env)
         subprocess.run([f'{self.pg_bin}/createdb', '-h', str(self.sock), '-p', str(self.port),
                         '-U', 'postgres', self.db], check=True)
 
@@ -200,6 +203,7 @@ class Engine:
         self.name, self.mode, self.shim, self.fleet, self.work, self.dist = name, mode, shim, fleet, work, dist
         self.boots, self.proc, self.log = 0, None, None
         self.supervise = True
+        ENGINES.append(self)
         self._boot()
         self.thread = threading.Thread(target=self._watch, daemon=True)
         self.thread.start()
@@ -420,7 +424,7 @@ def busy_settlement(cluster):
                  successor_granted=successor.startswith('t|'), settling_commit=settled.strip(),
                  late_commit_after_takeover=late, commits=commits)
     end_scenario('R5 busy settlement', **facts)
-    verdict(granted == 't' and settled.startswith('t|') and waited >= 4.0 and successor.startswith('t|')
+    verdict(granted == 't' and settled.split('|')[0] == 'true' and waited >= 4.0 and successor.startswith('t|')
             and late == 'hand_lease_lost' and len(commits) == 1,
             f'R5: a takeover of a stale Diamond table waited {waited:.1f}s for the settlement holding its lease, '
             'the settlement committed first, the successor was granted after it, and the old generation\'s next '
@@ -575,6 +579,40 @@ def analyse(cluster, fleet, work, kills):
                      for asset in ('chips', 'diamonds')
                      for g in [[h for h in hs if h['asset'] == asset]] if g}
     SUMMARY['handovers'] = per
+
+    # 6. The database's own view: a live row changed hands only after it was stale.
+    takeovers = cluster.json(
+        'select scope, subject, id, instance_id, acquired_at, prev_instance, prev_heartbeat, '
+        "extract(epoch from acquired_at - prev_heartbeat) as stale_for_s from ("
+        '  select h.*, lag(instance_id) over w as prev_instance, lag(heartbeat_at) over w as prev_heartbeat '
+        '  from isolated_lease_history h window w as (partition by scope, subject order by id)'
+        ") x where op = 'UPDATE' and instance_id is distinct from prev_instance order by id")
+    early = [t for t in takeovers if float(t['stale_for_s']) < 30]
+    SUMMARY['database_takeovers'] = {'count': len(takeovers),
+                                     'min_stale_for_s': min((float(t['stale_for_s']) for t in takeovers), default=None)}
+    verdict(takeovers and not early,
+            f'the database let a live lease change hands {len(takeovers)} times, never before the holder had '
+            f'been silent for 30 s (shortest: {SUMMARY["database_takeovers"]["min_stale_for_s"]:.1f} s)')
+    sc = SUMMARY['scenarios']
+    r1 = sc['R1 release cutover']
+    verdict(r1['parked']['handsInFlight'] == 0 and r1['stopped']['handsInFlightAtRelease'] == 0
+            and r1['stopped']['tables'] == {'status': 'confirmed', 'releasedCount': 10, 'attempts': 1}
+            and r1['stopped']['tournaments'] == {'status': 'confirmed', 'releasedCount': 3, 'attempts': 1}
+            and r1['stopped']['leadership'] == 'released'
+            and all(v['max_gap_ms'] < 5000 for v in per['R1 release cutover'].values()),
+            f"R1: the outgoing engine parked with 0 hands in the air, released 10 cash tables, 3 tournaments and "
+            f"leadership, and the replacement held the whole fleet {r1['replacement_held_fleet_after_s']} s later "
+            f"(per-table gap {min(v['min_gap_ms'] for v in per['R1 release cutover'].values())}-"
+            f"{max(v['max_gap_ms'] for v in per['R1 release cutover'].values())} ms)")
+    r2 = per['R2 crash restart']
+    verdict(all(v['from_reasons'] == ['process_killed'] and v['min_gap_ms'] >= 25000 for v in r2.values()),
+            f"R2: after a crash the restarted engine took each table only once its lease was stale "
+            f"(gap {min(v['min_gap_ms'] for v in r2.values())}-{max(v['max_gap_ms'] for v in r2.values())} ms)")
+    r3 = per['R3 partition']
+    verdict(all(v['from_reasons'] == ['proof_expired'] and v['min_gap_ms'] >= 9000 for v in r3.values()),
+            f"R3: the partitioned engine stopped dealing at its own proof deadline, "
+            f"{min(v['min_gap_ms'] for v in r3.values())}-{max(v['max_gap_ms'] for v in r3.values())} ms before "
+            "the second container could take any table")
     negative = [h for h in handovers if h['gap_ms'] < 0]
     verdict(not negative, f'{len(handovers)} handovers between processes, every one after the previous '
             f'holder had stopped (smallest gap {min(h["gap_ms"] for h in handovers)} ms)')
@@ -625,6 +663,10 @@ def main():
         busy_settlement(cluster)
         analyse(cluster, fleet, work, KILLS)
     finally:
+        for engine in ENGINES:
+            engine.supervise = False
+            if engine.alive():
+                engine.proc.kill()
         for shim in shims:
             shim.stop()
         cluster.stop()

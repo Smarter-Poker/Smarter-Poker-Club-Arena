@@ -1,5 +1,7 @@
 # Horse Brain Phase 6B: Route Checks, Mismatch Refusal and Bounded Observed Route Proof
 
+> Current qualification: [September 30 serving qualification](horse-brain-phase6-completion-2026-09-30.md). The older dated statuses below are retained as history; use the current record for remaining gates and measured serving behavior.
+
 Prepared 2026-09-26, observations taken 2026-09-27. Horse Brain Phase 6B (2 of 4). This document builds on the atlas domain descriptor `TOURNAMENT_PREFLOP_ATLAS_DOMAIN` merged in PR #5265 (`docs/horse-brain-phase6b-domain-matrix-2026-09-25.md`) and does not redefine it. Status words are the six fixed statuses: verified now, historical only, implemented but unverified, defective, unavailable external input, not applicable with reason. No percentage is derived from them.
 
 ## Summary
@@ -317,15 +319,15 @@ Release `c0c986aded5d25e952cb154c46599b6307f165bd`. The 6B observer was not run:
 
 ### Gate status, 6B on c0c986ad
 
-| Gate                       | Status                     | Evidence                                                                                                                                              |
-| -------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G1 Domain                  | implemented but unverified | Cells not observed on c0c986ad; 608 of 5,643 on 763e4cec is historical only                                                                           |
-| G2 Inputs                  | implemented but unverified | Receipts not read on c0c986ad                                                                                                                         |
-| G3 Computation             | implemented but unverified | Not read on c0c986ad                                                                                                                                  |
-| G4 Immutable authority     | implemented but unverified | Domain digest not recomputed on the c0c986ad image; equal to the pin on 763e4cec (historical only)                                                    |
-| G5 Reachability            | defective                  | capture_unavailable 6.27% of enqueued on c0c986ad (20% in the busy bins); a route proof of the retained records certifies the retained fraction only   |
-| G6 Outcome receipts        | defective                  | Same cause as G5                                                                                                                                      |
-| G7 Independent correctness | verified now               | 91 of 91 on the three Phase 6 test files, main a0cf141c, Horse Brain sources equal c0c986ad, rerun 2026-09-29                                         |
-| G8 Performance and replay  | implemented but unverified | 6B's replay is the 6C lane; not run on c0c986ad                                                                                                       |
-| G9 Learning and promotion  | not applicable with reason | No learned or promoted candidate in Phase 6                                                                                                           |
-| G10 Publication and use    | implemented but unverified | c0c986ad serves; the route proof was not run against it                                                                                               |
+| Gate                       | Status                     | Evidence                                                                                                                                             |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | Cells not observed on c0c986ad; 608 of 5,643 on 763e4cec is historical only                                                                          |
+| G2 Inputs                  | implemented but unverified | Receipts not read on c0c986ad                                                                                                                        |
+| G3 Computation             | implemented but unverified | Not read on c0c986ad                                                                                                                                 |
+| G4 Immutable authority     | implemented but unverified | Domain digest not recomputed on the c0c986ad image; equal to the pin on 763e4cec (historical only)                                                   |
+| G5 Reachability            | defective                  | capture_unavailable 6.27% of enqueued on c0c986ad (20% in the busy bins); a route proof of the retained records certifies the retained fraction only |
+| G6 Outcome receipts        | defective                  | Same cause as G5                                                                                                                                     |
+| G7 Independent correctness | verified now               | 91 of 91 on the three Phase 6 test files, main a0cf141c, Horse Brain sources equal c0c986ad, rerun 2026-09-29                                        |
+| G8 Performance and replay  | implemented but unverified | 6B's replay is the 6C lane; not run on c0c986ad                                                                                                      |
+| G9 Learning and promotion  | not applicable with reason | No learned or promoted candidate in Phase 6                                                                                                          |
+| G10 Publication and use    | implemented but unverified | c0c986ad serves; the route proof was not run against it                                                                                              |

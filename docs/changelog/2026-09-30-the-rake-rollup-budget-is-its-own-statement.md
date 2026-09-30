@@ -67,3 +67,15 @@ anywhere in these functions.
 `tests/the-rake-rollup-budget-is-its-own-statement.law.test.ts` fails if the
 timeout moves back inside the `DO`, if the `PARTITION BY r.id` window returns,
 or if the per-pass budget is removed.
+
+## Register correction
+
+`check-no-new-band-aids` refused the migration because it redeclares
+`fn_union_rake_rollup_catchup`. That function and its job have been live since
+`20260820121254`, before the guard existed, and are the exact sibling of
+`fn_club_rake_rollup_catchup` / `fn_bbj_rollup_catchup`, which the register
+already carries as TIER 2 debt. The union one was simply never written down.
+It is now: one row in `docs/BAND-AIDS-REGISTER.md` and two entries in
+`scripts/ci/band-aid.allowlist.json`, so a migration that fixes it is not
+blocked. This records existing debt; it does not add any. Retiring it still
+needs the same root fix as its siblings.

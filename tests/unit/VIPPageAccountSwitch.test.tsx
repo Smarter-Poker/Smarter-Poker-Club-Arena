@@ -124,7 +124,19 @@ vi.mock('../../src/components/vip/VIPActivityHistory', () => ({
     return <div data-testid="diamond-activity-state">{props.state}</div>;
   },
 }));
-vi.mock('../../src/components/wallet/DiamondWalletModal', () => ({ default: () => null }));
+/* The DEFAULT export is stubbed; the named `diamondTxLabel` is not.
+   2026-09-30: this used to replace the whole module with `{ default }`, which
+   deleted `diamondTxLabel`. VIPPage now falls back to that label when a ledger
+   row carries no `player_line` - which is exactly the fixture below - so the
+   stub made the call `undefined(...)`, the load threw, and the activity list
+   read 'error' for a read that had in fact succeeded. Stub the component, keep
+   the module's real functions. */
+vi.mock('../../src/components/wallet/DiamondWalletModal', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>(
+    '../../src/components/wallet/DiamondWalletModal'
+  );
+  return { ...actual, default: () => null };
+});
 
 import VIPPage from '../../src/pages/VIPPage';
 

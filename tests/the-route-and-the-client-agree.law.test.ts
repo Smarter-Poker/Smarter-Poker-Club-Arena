@@ -95,7 +95,33 @@ function methodBody(src: string, name: string): string {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
-/** Every `<identifier>.<key>` the given code reads. */
+/**
+ * Every `<identifier>.<key>` the given code reads.
+ *
+ * DELIBERATELY NOT NARROWED TO EXCLUDE THE MAPPER (considered 2026-09-30).
+ * ---------------------------------------------------------------------------
+ * The "selected but never read" rule below could not see the dead
+ * `description` column on the two ledger surfaces, because the only place that
+ * touched it was the mapper - `description: String(tx.description || '')` -
+ * and this function matches `tx.description` wherever it appears. So the
+ * obvious repair is to ignore a `<key>: ...<row>.<key>...` assignment and
+ * count only readers further downstream.
+ *
+ * That is wrong here, and it fails LOUDLY on the first run: on these surfaces
+ * EVERY selected column is touched exactly once, in the mapper, and nowhere
+ * else in the file. `tx.id`, `tx.amount`, `tx.created_at`, `tx.metadata` all
+ * look identical to `tx.description` under that narrowing, and all four are
+ * genuinely printed - by a DIFFERENT file, off the mapped shape. Telling the
+ * two apart means following the mapped row's type into its consumers
+ * (PlayerWalletPage, DiamondFlowPanel, the modal's own JSX), which is a
+ * different check from this one and not a regex.
+ *
+ * So the narrowing would turn a law with three honest outcomes into one that
+ * fails on correct code, which is CLAUDE.md 10.86 in the other direction. The
+ * mapper-assignment case is pinned where it can be stated exactly instead: the
+ * phase-6 law names `description` on these three files and forbids both the
+ * select and the assignment.
+ */
 function keysReadFrom(code: string, identifier: string): string[] {
   return [
     ...new Set(
@@ -144,18 +170,13 @@ interface LedgerRead {
 }
 
 const LEDGER_READS: Record<string, LedgerRead> = {
+  /* `description` left both of these on 2026-09-30. It was this law's own
+     "selected but never read" rule that it broke, and this law could not see
+     it - see the note under `keysReadFrom` below. The absence is pinned here
+     and, as a mapper assignment, in the phase-6 law. */
   'src/hooks/useDiamondLedger.ts': {
     row: 'tx',
-    select: [
-      'id',
-      'type',
-      'transaction_type',
-      'amount',
-      'description',
-      'player_line',
-      'created_at',
-      'metadata',
-    ],
+    select: ['id', 'type', 'transaction_type', 'amount', 'player_line', 'created_at', 'metadata'],
   },
   'src/components/wallet/DiamondWalletModal.tsx': {
     row: 't',
@@ -164,7 +185,6 @@ const LEDGER_READS: Record<string, LedgerRead> = {
       'type',
       'transaction_type',
       'amount',
-      'description',
       'player_line',
       'balance_after',
       'created_at',

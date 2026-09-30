@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -2663,6 +2663,19 @@
     ],
     "reason": "Visible operator reads bind the former ignored AgentPromoPanel balance and profile errors. The reviewed discarded-read ratchet changes only that component from 2 to 0 and adds its explanatory comment; no assertion is removed or weakened. Financial SQL, captured fixtures, component counts, limits and other source pins are unchanged.",
     "verification": "Exact SHA256 computed from the reviewed bytes. Source-binding verifier and focused ratchet checks must pass on this candidate; binding metadata is not native financial execution or production installation evidence."
+  },
+  "diamond_honest_reads_ratchet_rebinding_20260930": {
+    "base_commit": "6a8ee7d8c11408850c50e78234c43397af19745f",
+    "source_branch": "cw-diamond-honest-reads-0930",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+        "sha256": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6"
+      }
+    ],
+    "reason": "The diamond wallet audit lowers this file's baseline for src/pages/VIPPage.tsx from 2 to 0, which is the ratchet TIGHTENING - it now permits fewer discarded-error reads for that file than before, never more - and the test's own third case asks for the lower number in the same commit, which is what turned it red here. Both reads were the shape this ratchet exists to kill, on a money surface: the profiles.diamonds read and the vip_points read discarded their errors, and supabase-js RESOLVES with { data: null, error }, so an RLS denial, a dropped link or a PGRST002 503 reached the player as setDiamonds(profData?.diamonds || 0) - a confident balance of ZERO for a wallet that was merely unreadable, which also greys out every Buy button on the page. Both now bind the error, report it through reportError, and carry a separate 'error' state that prints \"Unavailable\", so a real zero and an unreadable figure are no longer the same pixels (CLAUDE.md 10.86 rules 1 and 2). No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture, production object or accounting assertion is touched.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit, with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(). The edit to this binding is a targeted text replacement of that one hash plus this block, not a JSON round-trip, so every other byte of the file is unchanged; python3 scripts/ci/verify-source-bindings.py then re-read all repository and fixture pins from disk and accepted the complete tree. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. No production data was read or changed by the restamp."
   },
   "settlementAttributionIntegration20260927": {
     "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",

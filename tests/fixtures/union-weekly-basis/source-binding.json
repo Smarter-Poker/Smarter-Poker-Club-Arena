@@ -87,7 +87,7 @@
     "tests/fixtures/club-settlement-floor-behaviour/seed.sql": "d1d7cda2a0c6015a7918a2db911ee6efa3d3af3401558e78bda10340fa0bc05c",
     "tests/fixtures/club-settlement-floor-behaviour/regression.sql": "b5ca1be66f2e1bb0ce022a4c85d088fd16b1e612580e0768c75b8851f6d11042",
     "supabase/migrations/20260926042810_the_period_calculator_reads_one_week_of_attributions.sql": "e59b14a01109bba5c4c38083123772cd8429b1024489a400eccba2eb3f9390cb",
-    "supabase/migrations/20260930232349_a_page_recompute_reads_only_changed_evidence_rederived.sql": "647a44aa98852aad55d9bf6814e4563748c71abedfd78079b5c63aa352a75c51",
+    "supabase/migrations/20260930232349_a_page_recompute_reads_only_changed_evidence_rederived.sql": "0b51f4b340a78c0fe87b337f1632ca62c667742dbb8ea97896a51552b9fecb6a",
     "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "97c8e07642ccbfaf15b8b92eb86f908518eab0592b2e99d1bb23c43934a62c0f",
     "tests/fixtures/union-weekly-basis/page-evidence-regression.sql": "6c6cd0be50d0d2c7d76588c10815ebec418c5f7bf3faba7e155399ec5bc32885"
   }

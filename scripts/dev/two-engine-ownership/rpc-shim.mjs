@@ -30,7 +30,8 @@ const pool = new pg.Pool({
 let mode = 'ok';
 const held = [];
 const meta = new Map();
-const log = (entry) => process.stdout.write(JSON.stringify({ t: Date.now(), shim: name, ...entry }) + '\n');
+const log = (entry) =>
+  process.stdout.write(JSON.stringify({ t: Date.now(), shim: name, ...entry }) + '\n');
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 
 async function functionShape(fn) {
@@ -51,7 +52,8 @@ async function execute(fn, args) {
   const shape = await functionShape(fn);
   if (!shape) return { status: 404, body: { code: 'PGRST202', message: `no function ${fn}` } };
   const names = Object.keys(args);
-  if (!names.every((n) => IDENT.test(n))) return { status: 400, body: { message: 'bad argument name' } };
+  if (!names.every((n) => IDENT.test(n)))
+    return { status: 400, body: { message: 'bad argument name' } };
   const values = names.map((n) =>
     args[n] !== null && typeof args[n] === 'object' ? JSON.stringify(args[n]) : args[n]
   );
@@ -70,7 +72,12 @@ async function execute(fn, args) {
     await client.query('rollback').catch(() => {});
     return {
       status: 400,
-      body: { code: e.code ?? null, message: e.message, details: e.detail ?? null, hint: e.hint ?? null },
+      body: {
+        code: e.code ?? null,
+        message: e.message,
+        details: e.detail ?? null,
+        hint: e.hint ?? null,
+      },
     };
   } finally {
     client.release();
@@ -88,8 +95,17 @@ async function deliver(job, late) {
   const started = Date.now();
   const out = await execute(job.fn, job.args);
   const answered = reply(job.res, out);
-  log({ ev: 'rpc', fn: job.fn, args: job.args, receivedAt: job.receivedAt, deliveredAt: started,
-        late, callerStillWaiting: answered, status: out.status, body: out.body });
+  log({
+    ev: 'rpc',
+    fn: job.fn,
+    args: job.args,
+    receivedAt: job.receivedAt,
+    deliveredAt: started,
+    late,
+    callerStillWaiting: answered,
+    status: out.status,
+    body: out.body,
+  });
 }
 
 const server = http.createServer((req, res) => {
@@ -116,7 +132,12 @@ const server = http.createServer((req, res) => {
     const m = /^\/rest\/v1\/rpc\/([a-z0-9_]+)$/.exec(url.pathname);
     if (req.method !== 'POST' || !m) {
       res.writeHead(404, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ code: 'PGRST125', message: `not served here: ${req.method} ${url.pathname}` }));
+      res.end(
+        JSON.stringify({
+          code: 'PGRST125',
+          message: `not served here: ${req.method} ${url.pathname}`,
+        })
+      );
       return;
     }
     const job = { fn: m[1], args: text ? JSON.parse(text) : {}, res, receivedAt: Date.now() };

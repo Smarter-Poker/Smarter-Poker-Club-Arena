@@ -29,7 +29,12 @@ if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(shim)) {
   console.error('REFUSED: SUPABASE_URL must be the loopback probe shim, never a real project');
   process.exit(2);
 }
-for (const key of ['ENGINE_PG_LISTEN_URL', 'ENGINE_PG_LISTEN_CA_FILE', 'ALERT_WEBHOOK_URL', 'ALERT_WEBHOOK_SECRET']) {
+for (const key of [
+  'ENGINE_PG_LISTEN_URL',
+  'ENGINE_PG_LISTEN_CA_FILE',
+  'ALERT_WEBHOOK_URL',
+  'ALERT_WEBHOOK_SECRET',
+]) {
   delete process.env[key];
 }
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'isolated-probe-placeholder-not-a-credential';
@@ -48,7 +53,9 @@ const { supabase } = await import(`${dist}/services/supabase/client.js`);
 const instance = tl.INSTANCE_ID;
 
 const out = (ev, fields = {}) =>
-  process.stdout.write(JSON.stringify({ t: Date.now(), engine: name, instance, ev, ...fields }) + '\n');
+  process.stdout.write(
+    JSON.stringify({ t: Date.now(), engine: name, instance, ev, ...fields }) + '\n'
+  );
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const wallOf = (mono) => Math.round(Date.now() + (mono - performance.now()));
 
@@ -70,10 +77,13 @@ function endAuthority(scope, id, a, reason) {
 }
 function arm(scope, id, a) {
   clearTimeout(a.timer);
-  a.timer = setTimeout(() => {
-    if (performance.now() >= a.deadlineMono) endAuthority(scope, id, a, 'proof_expired');
-    else arm(scope, id, a);
-  }, Math.max(0, Math.ceil(a.deadlineMono - performance.now())));
+  a.timer = setTimeout(
+    () => {
+      if (performance.now() >= a.deadlineMono) endAuthority(scope, id, a, 'proof_expired');
+      else arm(scope, id, a);
+    },
+    Math.max(0, Math.ceil(a.deadlineMono - performance.now()))
+  );
 }
 
 async function claim(scope, id) {
@@ -84,14 +94,27 @@ async function claim(scope, id) {
     const a = { gen: r.leaseGeneration, deadlineMono: r.proofDeadlineMonotonicMs, ended: false };
     authority.set(key(scope, id), a);
     arm(scope, id, a);
-    out('authority_start', { scope, id, gen: a.gen, startWall: Date.now(), deadlineWall: wallOf(a.deadlineMono) });
+    out('authority_start', {
+      scope,
+      id,
+      gen: a.gen,
+      startWall: Date.now(),
+      deadlineWall: wallOf(a.deadlineMono),
+    });
   } else if (r.status === 'acquired_but_proof_expired') {
     // GameServer exact-releases a grant that outran its proof before re-trying.
     out('claim_outran_proof', { scope, id, gen: r.leaseGeneration });
-    if (scope === 'table') await tl.releaseTables([{ tableId: id, leaseGeneration: r.leaseGeneration }]);
+    if (scope === 'table')
+      await tl.releaseTables([{ tableId: id, leaseGeneration: r.leaseGeneration }]);
     else await tn.releaseTournaments([{ tournamentId: id, leaseGeneration: r.leaseGeneration }]);
   } else {
-    out('claim_refused', { scope, id, status: r.status, holder: r.conflict?.holder ?? null, reason: r.reason ?? null });
+    out('claim_refused', {
+      scope,
+      id,
+      status: r.status,
+      holder: r.conflict?.holder ?? null,
+      reason: r.reason ?? null,
+    });
   }
 }
 
@@ -123,7 +146,10 @@ async function renewal() {
       if (scope === 'table') tables.push({ tableId: id, leaseGeneration: a.gen });
       else tournaments.push({ tournamentId: id, leaseGeneration: a.gen });
     }
-    const [tr, nr] = await Promise.all([tl.heartbeatTables(tables), tn.heartbeatTournaments(tournaments)]);
+    const [tr, nr] = await Promise.all([
+      tl.heartbeatTables(tables),
+      tn.heartbeatTournaments(tournaments),
+    ]);
     apply('table', tr, (p) => p.tableId, tr.lostTableIds);
     apply('tournament', nr, (p) => p.tournamentId, nr.lostTournamentIds);
     await sleep(Math.max(0, RENEWAL_MS - (performance.now() - started)));
@@ -139,9 +165,15 @@ function apply(scope, outcome, idOf, lost) {
     if (!current(a) || a.gen !== proof.leaseGeneration.toLowerCase()) continue;
     a.deadlineMono = Math.max(a.deadlineMono, proof.proofDeadlineMonotonicMs);
     arm(scope, idOf(proof), a);
-    out('authority_extend', { scope, id: idOf(proof), gen: a.gen, deadlineWall: wallOf(a.deadlineMono) });
+    out('authority_extend', {
+      scope,
+      id: idOf(proof),
+      gen: a.gen,
+      deadlineWall: wallOf(a.deadlineMono),
+    });
   }
-  for (const id of lost ?? []) endAuthority(scope, id, authority.get(key(scope, id)), 'heartbeat_lost');
+  for (const id of lost ?? [])
+    endAuthority(scope, id, authority.get(key(scope, id)), 'heartbeat_lost');
 }
 
 async function dealOne(table, scope, subject, a) {
@@ -163,8 +195,17 @@ async function dealOne(table, scope, subject, a) {
     p_lease_generation: a.gen,
   });
   const accepted = !error && data?.success === true;
-  out('commit_result', { scope, subject, table: table.id, hand, gen: a.gen, startWall, endWall: Date.now(),
-                         accepted, reason: error ? `transport:${error.message}` : data?.reason ?? null });
+  out('commit_result', {
+    scope,
+    subject,
+    table: table.id,
+    hand,
+    gen: a.gen,
+    startWall,
+    endWall: Date.now(),
+    accepted,
+    reason: error ? `transport:${error.message}` : (data?.reason ?? null),
+  });
   if (accepted) a.nextHand[table.id] = hand + 1;
   else if (!error && ['hand_lease_lost', 'hand_lease_stale'].includes(data?.reason)) {
     endAuthority(scope, subject, a, `commit_${data.reason}`);
@@ -233,8 +274,13 @@ ld.registerLeadershipShutdownHandler(async (reason) => {
   process.exit(75);
 });
 
-out('boot', { mode, shim, version: tl.INSTANCE_VERSION, proofWindowMs: tl.TABLE_LEASE_PROOF_WINDOW_MS,
-              staleSeconds: tl.LEASE_STALE_SECONDS });
+out('boot', {
+  mode,
+  shim,
+  version: tl.INSTANCE_VERSION,
+  proofWindowMs: tl.TABLE_LEASE_PROOF_WINDOW_MS,
+  staleSeconds: tl.LEASE_STALE_SECONDS,
+});
 if (mode === 'leader') {
   let role = await ld.renewLeadership();
   if (role === 'standby') {

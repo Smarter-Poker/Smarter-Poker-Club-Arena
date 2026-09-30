@@ -134,3 +134,37 @@ non-verdict, not a defect, and the case does not yet distinguish them.
 `/clubs/shark-club` at 13:48-13:50Z, inside the same window in which the
 database was returning 500s broadly. I could not attribute it to a specific
 RPC from the logs retained, and I am not guessing.
+
+## Addendum, 17:11Z: a fourth instance of the same mistake, found by watching
+
+The two fixes above merged as `78cd51a8c7`. The very next runs never reached
+either of them: they died in the **publication gate**, which is the same
+mistake one step further upstream.
+
+`publish-club-arena` cancels in progress when a newer merge arrives, and
+merges were landing every few minutes. Publisher run `36749429418` was
+cancelled **while still queued** and produced ZERO jobs. The gate read the
+jobs API, found no `publish-to-origin`, and threw:
+
+```
+Error: Expected one latest publish-to-origin job, received 0.
+```
+
+Runs `36749436277` and `36749498583` both went red on that within thirty
+seconds of each other, before a single browser started. Nothing had gone
+wrong. A newer publisher had taken over, and its certificate is the one that
+means anything.
+
+So when **no `publish-to-origin` job exists AND every job the source run did
+produce ended `cancelled` or `skipped`**, nothing reached the origin: the gate
+now stands down without writing `should_run`, so every downstream job skips
+and the run occupies no production lock. It is a non-event, not a pass and not
+a failure.
+
+This deliberately cannot hide a real publish. A source run holding any job
+that actually ran with no `publish-to-origin` among them is the
+renamed-or-missing-job hole and still throws, as does a failed origin job and
+a malformed jobs response. The source run's own top-level conclusion is still
+never consulted - an optional Capgo failure must not suppress web E2E, which
+is why `SOURCE_CONCLUSION` remains banned. `postDeployE2EConcurrency` now
+executes the gate's actual node block against all six payload shapes.

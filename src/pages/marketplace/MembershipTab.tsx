@@ -37,6 +37,20 @@ import {
   type WalletInfo,
 } from './marketplaceShared';
 
+/**
+ * The store SDK module (src/lib/native/purchases.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the
+ * handlers' try blocks made the web build emit the store SDK and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+function nativePurchases() {
+  return IS_NATIVE_BUILD
+    ? import('../../lib/native/purchases')
+    : Promise.reject(new Error('The app store lives in the app build only.'));
+}
+
 // This is the established gold VIP card used by the Arena. Membership state,
 // plan names, prices, and actions remain live DOM beside it; Marketplace must
 // not replace it with generated term-specific frames.
@@ -179,9 +193,7 @@ export default function MembershipTab({
       activeOwnerRef.current.userId === userId &&
       activeOwnerRef.current.clubId === clubId;
     try {
-      const { restoreNativePurchases } = await (IS_NATIVE_BUILD
-        ? import('../../lib/native/purchases')
-        : Promise.reject(new Error('The app store lives in the app build only.')));
+      const { restoreNativePurchases } = await nativePurchases();
       const result = await restoreNativePurchases(userId);
       if (!attemptIsCurrent()) return;
       if (result.ok) {
@@ -220,9 +232,7 @@ export default function MembershipTab({
       activeOwnerRef.current.userId === userId &&
       activeOwnerRef.current.clubId === clubId;
     try {
-      const { openNativeSubscriptionManagement } = await (IS_NATIVE_BUILD
-        ? import('../../lib/native/purchases')
-        : Promise.reject(new Error('The app store lives in the app build only.')));
+      const { openNativeSubscriptionManagement } = await nativePurchases();
       await openNativeSubscriptionManagement();
     } catch {
       if (attemptIsCurrent()) toast.error('Could Not Open Subscription Settings.');

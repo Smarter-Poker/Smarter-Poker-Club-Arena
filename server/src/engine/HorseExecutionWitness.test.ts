@@ -10,6 +10,13 @@ import {
 } from './HorseExecutionWitness.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import { horsePolicyOwnership } from './HorsePolicyRegistry.js';
+import { HorseLogic } from './HorseLogic.js';
+import { HorseMind } from './HorseMind.js';
+import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
+import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
+import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
+import { createHash } from 'node:crypto';
+import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
 
 const input = {
   decisionKey: `phase5-v1:${'1'.repeat(64)}`,
@@ -45,6 +52,77 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it('owns a compact immutable commitment to actual utility evidence and its original read frame', () => {
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'preflop');
+    state.legalActions = ['check'];
+    state.minRaiseTo = null;
+    state.maxRaiseTo = null;
+    const rng = saveFastRandom();
+    let decision: HorseDecision;
+    try {
+      seedFastRandom(7300930);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          v27GtoCharts: false,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    const utility = decision.tournamentUtility;
+    if (!utility?.evidence) throw Error('Phase 7 fixture did not evaluate utility');
+    const frame = encodeHorseDecisionReads(
+      HorseMind.createSandbox(),
+      state.players,
+      HorseMind.handKeyOf(state.actionHistory)
+    );
+    utility.readFrameSha256 = frame.sha256;
+    const witness = createHorseExecutionWitness(
+      { ...input, player: hero, gameState: state },
+      decision,
+      {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      }
+    );
+    const expected = {
+      version: 'horse-phase7-accepted-evidence-v1',
+      inputSha256: utility.evidence.inputSha256,
+      evidenceSha256: createHash('sha256').update(horseJournalJson(utility.evidence)).digest('hex'),
+      readFrameSha256: frame.sha256,
+      selectedAction: utility.selectedAction,
+      selectedAmount: utility.selectedAmount,
+    };
+    expect(witness.phase7Evidence).toEqual(expected);
+    expect(Object.isFrozen(witness.phase7Evidence)).toBe(true);
+    utility.evidence = { ...utility.evidence, inputSha256: 'f'.repeat(64) };
+    utility.readFrameSha256 = 'e'.repeat(64);
+    utility.selectedAction = 'fold';
+    expect(witness.phase7Evidence).toEqual(expected);
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [
+        {
+          record: { seat: hero.seat, action: 'check', amount: 0, stage: 'preflop' },
+          intended: true,
+        },
+      ],
+    });
+    expect(witness.executionStatus).toBe('intended');
+    expect(witness.phase7Evidence).toEqual(expected);
+  });
+
   it.each([10, 20])(
     'reconciles a sized call against its selected amount, not just its name (%s)',
     (amount) => {

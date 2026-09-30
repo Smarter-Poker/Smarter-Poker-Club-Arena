@@ -4,7 +4,10 @@ import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
-import { horseDecisionReceiptIsValid } from './responseValidation.js';
+import {
+  horseDecisionReceiptIsValid,
+  horseTournamentUtilityReceiptIsValid,
+} from './responseValidation.js';
 
 function receipt(): HorseDecision {
   const graph = new HorsePolicyGraph(() => 0);
@@ -17,7 +20,118 @@ function receipt(): HorseDecision {
   return graph.finish(decision);
 }
 
+let capturedUtilityDecision: HorseDecision | undefined;
+function utilityReceipt(): HorseDecision {
+  if (!capturedUtilityDecision) {
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'river');
+    seedFastRandom(1500921);
+    capturedUtilityDecision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        decisionTimeMs: 0,
+        phase8Postflop: 'off',
+        phase13Joint: 'off',
+      }
+    );
+    expect(capturedUtilityDecision.tournamentUtility?.evidence).toBeDefined();
+  }
+  return structuredClone(capturedUtilityDecision);
+}
+
 describe('bounded Horse response receipt validation', () => {
+  it('accepts the real single-board tournament utility and its private read-frame binding', () => {
+    const d = utilityReceipt();
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    d.tournamentUtility!.readFrameSha256 = 'a'.repeat(64);
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    d.tournamentUtility!.readFrameSha256 = null;
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+  });
+  it('preserves historical utility without fabricating input or observation provenance', () => {
+    const d = utilityReceipt();
+    delete d.tournamentUtility!.evidence;
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    expect(d.tournamentUtility).not.toHaveProperty('evidence');
+  });
+  it('reconciles a call through its actual investment while candidate amount remains null', () => {
+    const ledger = utilityReceipt().tournamentUtility!;
+    const candidate = ledger.candidates[0];
+    candidate.id = 'call';
+    candidate.action = 'call';
+    candidate.amount = null;
+    candidate.investment = 7;
+    ledger.candidates = [candidate];
+    ledger.selectedAction = 'call';
+    ledger.selectedAmount = 7;
+    expect(horseTournamentUtilityReceiptIsValid(ledger, { action: 'call', amount: 7 })).toBe(true);
+    candidate.investment = 8;
+    expect(horseTournamentUtilityReceiptIsValid(ledger, { action: 'call', amount: 7 })).toBe(false);
+  });
+  it.each([
+    'evidence',
+    'calibration',
+    'window',
+    'model',
+    'unit',
+    'action',
+    'selected_size',
+    'read_frame',
+    'candidate_probability',
+    'candidate_component',
+    'candidate_private',
+    'candidate_duplicate',
+    'candidate_overflow',
+    'candidate_nan',
+    'candidate_amount',
+    'field',
+    'players_behind',
+    'ranges',
+    'execution',
+  ] as const)('rejects malformed or overstated utility %s before witness construction', (fault) => {
+    const d = utilityReceipt(),
+      ledger = d.tournamentUtility! as any;
+    if (fault === 'evidence') ledger.evidence = null;
+    if (fault === 'calibration') ledger.evidence.responseModel.calibration = 'calibrated';
+    if (fault === 'window') ledger.evidence.observations.window.to = 123;
+    if (fault === 'model') ledger.model = 'unrecognized';
+    if (fault === 'unit') ledger.utilityUnit = 'dollars';
+    if (fault === 'action') ledger.selectedAction = 'discard';
+    if (fault === 'selected_size') ledger.selectedAmount = 9_999;
+    if (fault === 'read_frame') ledger.readFrameSha256 = 'not-a-sha256';
+    if (fault === 'candidate_probability') ledger.candidates[0].winProbability = 2;
+    if (fault === 'candidate_component') ledger.candidates[0].combinedUtility += 1;
+    if (fault === 'candidate_private') ledger.candidates[0].cards = ['As'];
+    if (fault === 'candidate_duplicate')
+      ledger.candidates.push(structuredClone(ledger.candidates[0]));
+    if (fault === 'candidate_overflow')
+      ledger.candidates = Array.from({ length: 17 }, () => ledger.candidates[0]);
+    if (fault === 'candidate_nan') ledger.candidates[0].optionEv = NaN;
+    if (fault === 'candidate_amount') {
+      ledger.candidates[0].action = 'call';
+      ledger.candidates[0].amount = 1;
+    }
+    if (fault === 'field') ledger.fieldPlayersModeled++;
+    if (fault === 'players_behind') ledger.playersBehind.push('unrelated-actor');
+    if (fault === 'ranges') ledger.conditionedOpponentRanges = 9;
+    if (fault === 'execution') ledger.executedAction = 'check';
+    expect(horseDecisionReceiptIsValid(d)).toBe(false);
+  });
+  it('rejects a brain-exception fallback carrying a stale utility receipt', () => {
+    const d = utilityReceipt();
+    expect(
+      horseDecisionReceiptIsValid({
+        action: 'fold',
+        thinkTime: 0,
+        policyFallback: 'brain_exception',
+        tournamentUtility: d.tournamentUtility,
+      })
+    ).toBe(false);
+  });
   it('accepts a structured clone of an executable graph without mutating it', () => {
     const d = structuredClone(receipt());
     const before = JSON.stringify(d);

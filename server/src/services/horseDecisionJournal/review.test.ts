@@ -13,6 +13,10 @@ import {
 } from '../../engine/HorseDecisionHandBinding.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import { HorseMind } from '../../engine/HorseMind.js';
+import { HorseLogic } from '../../engine/HorseLogic.js';
+import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../../engine/HorseEval.js';
+import type { HorseDecision } from '../../types.js';
+import { horseTournamentUtilityReceiptIsValid } from '../../engine/horseDecision/responseValidation.js';
 import {
   buildHorseDecisionKey,
   type FastHorseDecisionRequest,
@@ -37,15 +41,27 @@ const turn = (x: any) =>
   );
 function fixture(
   variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh',
-  historyPrefix: readonly Record<string, unknown>[] = []
+  historyPrefix: readonly Record<string, unknown>[] = [],
+  phase7 = false
 ) {
-  const raw = jointPolicyFixture(variant, 1, 'cash', 'preflop');
+  const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
     typeof v === 'string' && /^p[0-9]$/.test(v)
       ? `20000000-0000-4000-8000-00000000000${Number(v.slice(1)) + 1}`
       : v
   );
-  state.toCall = 1;
+  state.toCall = phase7 ? 0 : 1;
+  if (phase7) {
+    state.legalActions = ['check'];
+    state.minRaiseTo = null;
+    state.maxRaiseTo = null;
+    state.tournament.stackByUser = Object.fromEntries(
+      state.players.map((player: { user_id: string; stack: number; totalInvested: number }) => [
+        player.user_id,
+        player.stack + player.totalInvested,
+      ])
+    );
+  }
   const snapshot: FastHorseDecisionRequest = {
     type: 'DECIDE_FAST',
     requestId: 1,
@@ -59,7 +75,31 @@ function fixture(
     handJournalContext: captureHorseHandJournalContext([...historyPrefix, ...state.actionHistory]),
   };
   snapshot.decisionKey = buildHorseDecisionKey(snapshot);
-  const decision = { action: 'call' as const, thinkTime: 50 };
+  let decision: HorseDecision = { action: 'call', thinkTime: 50 };
+  if (phase7) {
+    const rng = saveFastRandom();
+    try {
+      seedFastRandom(7300930);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          v27GtoCharts: false,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    if (!decision.tournamentUtility?.evidence)
+      throw Error('Phase 7 fixture did not evaluate utility');
+  }
   const d = {
     snapshot,
     readFrame: encodeHorseDecisionReads(
@@ -75,6 +115,8 @@ function fixture(
     governorScale: 1,
     runtimePins: 'incomplete',
   };
+  if (decision.tournamentUtility?.evidence)
+    decision.tournamentUtility.readFrameSha256 = d.readFrame.sha256;
   const w = createHorseExecutionWitness(snapshot, decision, {
     requestId: 1,
     lane: 'fast',
@@ -84,8 +126,8 @@ function fixture(
   const record = {
     seat: hero.seat,
     userId: hero.user_id,
-    action: 'call' as const,
-    amount: 1,
+    action: decision.action,
+    amount: phase7 ? (decision.amount ?? 0) : 1,
     timestamp: 1001,
     stage: 'preflop' as const,
   };
@@ -158,6 +200,95 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('reconciles actual Phase 7 utility evidence and its original read frame to acceptance', () => {
+    const f = fixture('nlh', [], true);
+    expect(
+      horseTournamentUtilityReceiptIsValid(f.d.decision.tournamentUtility, f.d.decision),
+      JSON.stringify(f.d.decision.tournamentUtility)
+    ).toBe(true);
+    expect(f.w.phase7Evidence?.inputSha256).toBe(
+      f.d.decision.tournamentUtility!.evidence!.inputSha256
+    );
+    expect(f.w.phase7Evidence?.readFrameSha256).toBe(f.d.readFrame.sha256);
+    expect(f.w.executionStatus).toBe('intended');
+    const persisted = JSON.parse(f.rows()[0]!.body) as typeof f.d;
+    const recovered = createHorseExecutionWitness(persisted.snapshot, persisted.decision, {
+      requestId: 1,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    expect(recovered.phase7Evidence).toEqual(f.w.phase7Evidence);
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      matchedActions: 1,
+      gaps: [],
+      replayVerified: false,
+      gtoVerified: false,
+      activationAllowed: false,
+    });
+  });
+
+  it.each(['inputSha256', 'evidenceSha256'] as const)(
+    'rejects a changed Phase 7 witness %s even when the accepted action still matches',
+    (field) => {
+      const f = fixture('nlh', [], true);
+      f.w = { ...f.w, phase7Evidence: { ...f.w.phase7Evidence!, [field]: 'f'.repeat(64) } };
+      const report = reconcileHorseJournalHand(f.rows(), handKey);
+      expect(report.status).toBe('incomplete');
+      expect(report.matchedActions).toBe(0);
+      expect(report.gaps).toContain('input_mismatch');
+    }
+  );
+
+  it('rejects a different valid read frame whose digest no longer owns the Phase 7 decision', () => {
+    const f = fixture('nlh', [], true);
+    const reads = HorseMind.createSandbox();
+    HorseMind.runInSandbox(reads, () => {
+      HorseMind.importStats([
+        {
+          user_id: f.d.snapshot.gameState.players[1]!.user_id,
+          hands: 50,
+          folds: 20,
+          facedAggr: 30,
+        },
+      ]);
+    });
+    const changed = encodeHorseDecisionReads(
+      reads,
+      f.d.snapshot.gameState.players,
+      HorseMind.handKeyOf(f.d.snapshot.gameState.actionHistory)
+    );
+    expect(changed.sha256).not.toBe(f.d.readFrame.sha256);
+    f.d.readFrame = changed;
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'incomplete',
+      matchedActions: 0,
+      gaps: expect.arrayContaining(['read_frame_unavailable']),
+    });
+  });
+
+  it('retains compatibility with a valid legacy utility ledger without new provenance fields', () => {
+    const f = fixture('nlh', [], true);
+    delete f.d.decision.tournamentUtility!.evidence;
+    delete f.d.decision.tournamentUtility!.readFrameSha256;
+    const records = f.w.acceptedActions;
+    f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+      requestId: 1,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    settleHorseExecutionWitness(f.w, { applied: true, acceptedActions: records });
+    expect(f.w.phase7Evidence).toBeNull();
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      matchedActions: 1,
+      gaps: [],
+      gtoVerified: false,
+    });
+  });
+
   const returned = () => ({
     seat: 1,
     userId: '20000000-0000-4000-8000-000000000001',
@@ -752,6 +883,8 @@ describe('readHorseJournalHandRecords shard fan-out', () => {
 
   it('throws rather than silently returning nothing when no shard can be read at all', () => {
     const dir = join(directory(), 'never-created');
-    expect(() => readHorseJournalHandRecords(dir, journalHash('shard-fanout:no-storage'))).toThrow();
+    expect(() =>
+      readHorseJournalHandRecords(dir, journalHash('shard-fanout:no-storage'))
+    ).toThrow();
   });
 });

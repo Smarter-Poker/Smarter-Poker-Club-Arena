@@ -30,6 +30,10 @@ import { createIcmEquityEstimator, type IcmMethod } from './IcmModel.js';
 import { calculateContestablePot, calculatePots } from './PokerEngine.js';
 import { prepareJointPots, settleJointScores } from './multiway/JointPotDistribution.js';
 import {
+  buildHorseTournamentUtilityEvidence,
+  type HorseTournamentUtilityObservations,
+} from './HorseTournamentUtilityEvidence.js';
+import {
   simulateTournamentFutureHands,
   FUTURE_HAND_POLICY,
   type FutureHandConfig,
@@ -119,6 +123,8 @@ export interface TournamentUtilityContext {
 }
 
 export interface TournamentUtilityInput {
+  /** Original decision-local reads, never a fresh read at action acceptance. */
+  observations?: HorseTournamentUtilityObservations;
   /** Phase13 exact board/odd-chip settlement. The existing Phase7 objective
    * still owns payout, bounty and recovery utility; no second ICM is added. */
   settlement?: { chipUnit: 1; dealerSeat: number; splitLow: boolean };
@@ -1757,7 +1763,10 @@ function evaluateWithWorkspace(
       vector,
       boundedFuture ? FUTURE_HAND_POLICY.maxIcmTrials : undefined
     );
-    if (work) work.estimates++;
+    if (work) {
+      work.estimates++;
+      work.icmMethod = actionIcm.method;
+    }
     const result = {
       vectorKey: key,
       equity: icm.equity,
@@ -1861,6 +1870,7 @@ function evaluateWithWorkspace(
   const decision = decisionFromCandidate(selected, input.toCall);
   const ledger: HorseTournamentUtilityLedger = {
     schemaVersion: 1,
+    evidence: buildHorseTournamentUtilityEvidence(input, input.observations),
     model: input.continuation
       ? 'horse-tournament-utility-phase8-round1'
       : 'horse-tournament-utility-phase7-round1',

@@ -3,6 +3,7 @@ import type { LiveHorseDecisionSnapshot } from './horseDecision/protocol.js';
 import type { HorsePolicyGraphReceipt } from './HorsePolicyGraph.js';
 import { noteFire } from './BrainTelemetry.js';
 import { copyPhase6Attribution } from './HorsePhase6Attribution.js';
+import { horseTournamentUtilityEvidenceSha256 } from './HorseTournamentUtilityEvidence.js';
 import {
   anchorHorseDecisionHand,
   type HorseDecisionHandAnchor,
@@ -61,6 +62,16 @@ export interface HorseExecutionWitness {
   readonly policyGraph: HorsePolicyGraphReceipt | null;
   /** Optional for retained v4 compatibility; absence never proves attribution. */
   readonly phase6Attribution?: HorseDecision['tournamentPreflopAttribution'] | null;
+  /** Compact private commitment to the utility inputs and original read view.
+   * Legacy absence is unavailable provenance, never calibrated-model proof. */
+  readonly phase7Evidence?: Readonly<{
+    version: 'horse-phase7-accepted-evidence-v1';
+    inputSha256: string;
+    evidenceSha256: string;
+    readFrameSha256: string | null;
+    selectedAction: ActionType;
+    selectedAmount: number | null;
+  }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   readonly computeMs: number;
   readonly governorScale: number;
@@ -129,6 +140,16 @@ export function createHorseExecutionWitness(
     policyFallback: decision.policyFallback ?? null,
     phase6Attribution: decision.tournamentPreflopAttribution
       ? copyPhase6Attribution(decision.tournamentPreflopAttribution)
+      : null,
+    phase7Evidence: decision.tournamentUtility?.evidence
+      ? Object.freeze({
+          version: 'horse-phase7-accepted-evidence-v1' as const,
+          inputSha256: decision.tournamentUtility.evidence.inputSha256,
+          evidenceSha256: horseTournamentUtilityEvidenceSha256(decision.tournamentUtility.evidence),
+          readFrameSha256: decision.tournamentUtility.readFrameSha256 ?? null,
+          selectedAction: decision.tournamentUtility.selectedAction,
+          selectedAmount: decision.tournamentUtility.selectedAmount,
+        })
       : null,
     policyOwnership: decision.policyOwnership
       ? Object.freeze({ ...decision.policyOwnership })

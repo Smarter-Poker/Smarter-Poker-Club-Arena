@@ -951,6 +951,11 @@ export interface HorseTournamentUtilityCandidateLedger {
  */
 export interface HorseTournamentUtilityLedger {
   schemaVersion: 1;
+  /** Optional only for retained legacy receipts. New calculations identify the
+   * exact sampled inputs and the actual, uncalibrated observation sources. */
+  evidence?: import('./engine/HorseTournamentUtilityEvidence.js').HorseTournamentUtilityEvidence;
+  /** Worker-owned original private read view; null explicitly means unavailable. */
+  readFrameSha256?: string | null;
   model: 'horse-tournament-utility-phase7-round1' | 'horse-tournament-utility-phase8-round1';
   outcomeModel: 'conditioned_showdown_samples' | 'conditioned_public_street_continuation';
   objective: HorseTournamentUtilityObjective;

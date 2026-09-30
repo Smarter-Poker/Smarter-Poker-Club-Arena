@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366",
+    "scripts/ci/classify-ci-changes.mjs": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
@@ -397,6 +397,13 @@
         "scripts/ci/classify-ci-changes.mjs"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-30 Diamond Phase 11 line 2 concurrency runner (agent/claude-diamond-phase-11/test/one-diamond-cannot-be-spent-twice)",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
+      "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",

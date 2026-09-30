@@ -96,6 +96,8 @@ RUNNERS = [
      'settled earnings coverage and sponsored club insurance qualified in isolation'),
     ('run-diamond-club-commerce-recovery.py',
      'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
+    ('run-diamond-concurrency.py',
+     'checks passed: one Diamond cannot be spent twice under concurrency, duplicate delivery or a crash; isolated PostgreSQL 17, not a production certification.'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -119,6 +121,7 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-club-commerce-recovery.py',
     'run-diamond-club-commerce-refunds.py',
     'run-diamond-club-commerce.py',
+    'run-diamond-concurrency.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

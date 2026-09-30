@@ -198,8 +198,10 @@ export function classifyChangedPaths(paths) {
   // narrowing of that prefix cannot quietly take them out of the job that runs
   // them. The manifests are claimed only here. Nothing is derived from the
   // other lane, so the two cannot disagree - a path matched by either is in.
+  // The diamond-concurrency-* capture, manifest, tables and seed (2026-09-30)
+  // are what run-diamond-concurrency.py loads, named here for the same reason.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);

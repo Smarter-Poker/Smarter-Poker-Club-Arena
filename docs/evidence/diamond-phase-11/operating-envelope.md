@@ -142,9 +142,9 @@ total again when the real value came back. The raw series shows it at each of th
 2,543, 2,856, 3,535 and 5,287 again. Over the 24 h to 12:41 UTC that made 3,577 real deadlocks read as
 17,797, the last hour's 80 as 5,387 and the worst ten minutes' 123 as 5,424, and
 `DatabaseDeadlocksElevated` (critical) fired on a restart alone twice - 18:01 to 18:05 UTC on 09-29 and
-12:01 to 12:05 today, while the real count in those ten minutes was 2 and 3. The counter is now absent
-until the first read, as `ReplicationMetrics` already treats `poker_pg_wal_position_bytes`, so a
-restart is a gap and not a spike (`server/src/services/theFleetReportsWhatItCannotFinish.law.test.ts`,
+12:01 to 12:05 today, while the real count in those ten minutes was 2 and 3. The counter is still declared
+but has no sample until the first read, as `ReplicationMetrics` already withholds
+`poker_pg_wal_position_bytes` while it is unknown, so a restart is a gap and not a spike (`server/src/services/theFleetReportsWhatItCannotFinish.law.test.ts`,
 one new case, red on the old code). Reaches production with the next engine release.
 
 ### Measured and not changed

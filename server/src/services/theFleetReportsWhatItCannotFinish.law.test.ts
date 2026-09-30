@@ -103,6 +103,8 @@ describe('the fleet reports what it cannot finish', () => {
     const published = (): string[] =>
       metrics.toPrometheus().filter((l) => l.startsWith('poker_db_deadlocks_total'));
     expect(published()).toEqual([]);
+    // Declared, so a rule that names it still finds it; only the value waits.
+    expect(metrics.toPrometheus()).toContain('# TYPE poker_db_deadlocks_total counter');
     rpc.mockImplementation(async () => ({ data: null, error: { message: 'starting' } }));
     await metrics.refresh();
     expect(published()).toEqual([]);

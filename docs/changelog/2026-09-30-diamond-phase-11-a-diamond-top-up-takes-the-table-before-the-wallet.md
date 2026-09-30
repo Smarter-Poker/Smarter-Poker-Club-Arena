@@ -60,6 +60,6 @@ of it. Prometheus takes a counter that goes down for a reset, so after every
 restart `increase()` counted the database's whole total again: 3,577 real
 deadlocks in a day read as 17,797, a worst ten minutes of 123 read as 5,424,
 and the critical `DatabaseDeadlocksElevated` fired on a restart alone twice in
-the day. The counter is now absent until the first read, so a restart is a
-gap rather than a spike (one new case in
+the day. The counter now has no sample until its first read, so a restart
+is a gap rather than a spike (one new case in
 `server/src/services/theFleetReportsWhatItCannotFinish.law.test.ts`).

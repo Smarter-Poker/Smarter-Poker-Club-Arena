@@ -8222,6 +8222,16 @@ function LiveTablePage({
   // The services behind them work fine; nothing ever called them. Each panel
   // now loads lazily when it is opened, so a closed panel costs nothing.
 
+  // THE DIAMOND ARENA'S BOARD (Phase 10, line 1; migration 20260930043000).
+  // player_stats never holds a Diamond hand, so a Diamond table asks its own
+  // board, from the one arena source this page already has, and says whether
+  // it is still asking or could not tell. At a chip table this is false and
+  // the board is asked and drawn exactly as before.
+  const leaderboardIsDiamond = tableState.arenaAsset === 'diamonds';
+  const [diamondLeaderboardState, setDiamondLeaderboardState] = useState<
+    'loading' | 'ready' | 'failed'
+  >('loading');
+
   // Leaderboard. Real data only became possible today: player_stats.vpip/pfr
   // and tournaments_played/won had no writer, so this board would have been
   // all zeros even if it had been wired.
@@ -8229,7 +8239,7 @@ function LiveTablePage({
     if (!showLeaderboard) return;
     let cancelled = false;
     const clubId = actualClubIdRef.current;
-    if (!clubId) {
+    if (!clubId && !leaderboardIsDiamond) {
       setLeaderboardPlayers([]);
       return;
     }
@@ -8240,14 +8250,20 @@ function LiveTablePage({
       month: 'monthly',
       allTime: 'all_time',
     };
+    if (leaderboardIsDiamond) setDiamondLeaderboardState('loading');
     (async () => {
       try {
-        const rows = await LeaderboardService.getClubLeaderboard(
-          clubId,
-          'profit',
-          periodMap[leaderboardPeriod] || 'weekly',
-          25
-        );
+        const rows = leaderboardIsDiamond
+          ? await LeaderboardService.getDiamondArenaLeaderboard(
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            )
+          : await LeaderboardService.getClubLeaderboard(
+              clubId as string,
+              'profit',
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            );
         if (cancelled) return;
         setLeaderboardPlayers(
           (rows || []).map((r) => ({
@@ -8260,14 +8276,20 @@ function LiveTablePage({
             isCurrentUser: r.userId === userId,
           }))
         );
+        if (leaderboardIsDiamond) setDiamondLeaderboardState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadLeaderboard');
+        if (cancelled) return;
+        reportError(e, 'TablePage.loadLeaderboard');
+        if (leaderboardIsDiamond) {
+          setLeaderboardPlayers([]);
+          setDiamondLeaderboardState('failed');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showLeaderboard, leaderboardPeriod, userId]);
+  }, [showLeaderboard, leaderboardPeriod, userId, leaderboardIsDiamond]);
 
   // Sound & vibration preferences — extracted to useTableSound hook
   const {
@@ -26741,6 +26763,7 @@ function LiveTablePage({
         showLeaderboard={showLeaderboard}
         leaderboardPlayers={leaderboardPlayers}
         leaderboardPeriod={leaderboardPeriod}
+        leaderboardDiamondState={leaderboardIsDiamond ? diamondLeaderboardState : undefined}
         onCloseLeaderboard={() => setShowLeaderboard(false)}
         onLeaderboardPeriodChange={setLeaderboardPeriod}
         // Leave Confirm

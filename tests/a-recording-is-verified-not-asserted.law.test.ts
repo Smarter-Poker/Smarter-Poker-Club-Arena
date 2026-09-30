@@ -32,7 +32,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,6 +57,8 @@ import {
 } from '../scripts/ci/check-definer-authorization.mjs';
 import { offenders as moneyTriggerOffenders } from '../scripts/ci/check-money-trigger-declared.mjs';
 import { offenders as bandAidOffenders } from '../scripts/ci/check-no-new-band-aids.mjs';
+import { offenders as unqualifiedOffenders } from '../scripts/ci/check-unqualified-writes.mjs';
+import { offenders as leaseOffenders } from '../scripts/ci/check-lease-lock-strength.mjs';
 
 const REPO = join(__dirname, '..');
 const MIGRATIONS = 'supabase/migrations';
@@ -77,7 +86,9 @@ describe('the freeze on the old first-line marker', () => {
   it('is at or after every file on disk that still uses it', () => {
     const marked = readdirSync(join(REPO, MIGRATIONS))
       .filter((f) => f.endsWith('.sql'))
-      .filter((f) => carriesLegacyMarker(readFileSync(join(REPO, MIGRATIONS, f), 'utf8').split('\n', 1)[0]));
+      .filter((f) =>
+        carriesLegacyMarker(readFileSync(join(REPO, MIGRATIONS, f), 'utf8').split('\n', 1)[0])
+      );
 
     // The point of the cutoff is that it refuses nothing that already exists
     // and covers everything written from here on. If a file at or after it
@@ -95,6 +106,7 @@ describe('the freeze on the old first-line marker', () => {
     });
     const verdict = classifyMigration(`${MIGRATIONS}/20260901000000_old.sql`, { repo: root });
     expect(verdict.state).toBe('recorded');
+    expect(verdict.manifestMatched).not.toBe(true); // Legacy prose grants no new exemption.
   });
 
   it('refuses the marker at or after itself, with no manifest row', () => {
@@ -111,34 +123,52 @@ describe('a manifest row is a claim that has to hold', () => {
   const file = `${MIGRATIONS}/20260916111614_recorded.sql`;
 
   it('is accepted when the file hashes to the md5 it records', () => {
-    const root = fixture({ '20260916111614_recorded.sql': RECORDED_SQL }, {
-      recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
-    });
+    const root = fixture(
+      { '20260916111614_recorded.sql': RECORDED_SQL },
+      {
+        recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
+      }
+    );
     expect(classifyMigration(file, { repo: root }).state).toBe('recorded');
+    expect(classifyMigration(file, { repo: root }).manifestMatched).toBe(true);
   });
 
   it('is refused the moment the file is edited', () => {
-    const root = fixture({ '20260916111614_recorded.sql': RECORDED_SQL + '-- one more line\n' }, {
-      recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
-    });
+    const root = fixture(
+      { '20260916111614_recorded.sql': RECORDED_SQL + '-- one more line\n' },
+      {
+        recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
+      }
+    );
     const verdict = classifyMigration(file, { repo: root });
     expect(verdict.state).toBe('new');
     expect(verdict.reason).toMatch(/hashes to/);
+    expect(verdict.manifestMatched).not.toBe(true);
   });
 
   it('is refused when the row points at a different path', () => {
-    const root = fixture({ '20260916111614_recorded.sql': RECORDED_SQL }, {
-      recordings: [
-        { version: '20260916111614', file: `${MIGRATIONS}/20260916111614_elsewhere.sql`, md5: md5(RECORDED_SQL) },
-      ],
-    });
+    const root = fixture(
+      { '20260916111614_recorded.sql': RECORDED_SQL },
+      {
+        recordings: [
+          {
+            version: '20260916111614',
+            file: `${MIGRATIONS}/20260916111614_elsewhere.sql`,
+            md5: md5(RECORDED_SQL),
+          },
+        ],
+      }
+    );
     expect(classifyMigration(file, { repo: root }).state).toBe('new');
   });
 
   it('is ignored when it is malformed, rather than believed', () => {
-    const root = fixture({ '20260916111614_recorded.sql': RECORDED_SQL }, {
-      recordings: [{ version: 'not-a-version', file, md5: 'not-an-md5' }],
-    });
+    const root = fixture(
+      { '20260916111614_recorded.sql': RECORDED_SQL },
+      {
+        recordings: [{ version: 'not-a-version', file, md5: 'not-an-md5' }],
+      }
+    );
     expect(classifyMigration(file, { repo: root }).state).toBe('new');
   });
 });
@@ -170,7 +200,9 @@ describe('this repository is its own fixture', () => {
     expect(rows.size).toBeGreaterThan(0);
     for (const [version, row] of rows) {
       const path = join(REPO, (row as { file: string }).file);
-      expect(existsSync(path), `${version}: ${(row as { file: string }).file} is missing`).toBe(true);
+      expect(existsSync(path), `${version}: ${(row as { file: string }).file} is missing`).toBe(
+        true
+      );
       const actual = createHash('md5').update(readFileSync(path)).digest('hex');
       expect(actual, `${version} no longer matches the md5 the manifest records`).toBe(
         (row as { md5: string }).md5
@@ -184,14 +216,23 @@ describe('this repository is its own fixture', () => {
       'scripts/ci/check-money-trigger-declared.mjs',
       'scripts/ci/check-no-new-band-aids.mjs',
       'scripts/ci/check-migrations-applied.mjs',
+      'scripts/ci/check-unqualified-writes.mjs',
+      'scripts/ci/check-lease-lock-strength.mjs',
+      'tests/a-revoke-from-anon-must-name-public.law.test.ts',
+      'tests/a-retention-pass-never-deletes-a-recorded-earning-source.law.test.ts',
     ]) {
-      expect(readFileSync(join(REPO, guard), 'utf8'), `${guard} stopped reading recording-only`).
-        toContain('recording-only.mjs');
+      expect(
+        readFileSync(join(REPO, guard), 'utf8'),
+        `${guard} stopped reading recording-only`
+      ).toContain('recording-only.mjs');
     }
   });
 
   it('has a live reader, and it is named', () => {
-    const workflow = readFileSync(join(REPO, '.github/workflows/applied-migrations-recorded.yml'), 'utf8');
+    const workflow = readFileSync(
+      join(REPO, '.github/workflows/applied-migrations-recorded.yml'),
+      'utf8'
+    );
     expect(workflow).toContain('check-recorded-migrations-evidence.mjs');
   });
 });
@@ -226,11 +267,14 @@ describe('a genuinely dangerous migration is still refused', () => {
 
   it('cannot buy the exemption with a manifest row, because the hash is of the file', () => {
     const file = `${MIGRATIONS}/20260916111614_looks_innocent.sql`;
-    const root = fixture({ '20260916111614_looks_innocent.sql': DANGEROUS }, {
-      // A forged row: the version is one production really has, but the md5 is
-      // the md5 of the SQL production actually ran, not of this file.
-      recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
-    });
+    const root = fixture(
+      { '20260916111614_looks_innocent.sql': DANGEROUS },
+      {
+        // A forged row: the version is one production really has, but the md5 is
+        // the md5 of the SQL production actually ran, not of this file.
+        recordings: [{ version: '20260916111614', file, md5: md5(RECORDED_SQL) }],
+      }
+    );
     const verdict = classifyMigration(file, { repo: root });
     expect(verdict.state).toBe('new');
 
@@ -254,5 +298,29 @@ describe('a genuinely dangerous migration is still refused', () => {
     expect(evidence).toContain('fn_undeclared_money_triggers');
     // and that it cannot answer green when it could not reach production
     expect(evidence).toContain('return 3');
+  });
+});
+
+describe('a recording does not relax either raw SQL safety predicate', () => {
+  it('still rejects a new or edited unqualified write and lease holder', () => {
+    const sql =
+      'DELETE FROM public.table_seats; SELECT * FROM public.engine_tournament_leases FOR SHARE;';
+    expect(unqualifiedOffenders(sql)).toContainEqual({
+      verb: 'DELETE',
+      table: 'public.table_seats',
+    });
+    expect(leaseOffenders(sql)).toContainEqual({
+      relation: 'engine_tournament_leases',
+      alias: null,
+    });
+    const file = `${MIGRATIONS}/20260930000000_case.sql`;
+    const root = fixture(
+      { '20260930000000_case.sql': sql },
+      {
+        recordings: [{ version: '20260930000000', file, md5: md5(sql + '-- different') }],
+      }
+    );
+    expect(classifyMigration(file, { repo: root }).state).toBe('new');
+    expect(partitionMigrations([file], { repo: root }).judge).toEqual([file]);
   });
 });

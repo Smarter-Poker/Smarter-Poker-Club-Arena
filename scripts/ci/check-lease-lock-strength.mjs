@@ -63,6 +63,7 @@
  * one function, one carrying a comment explaining exactly why the other was
  * wrong. A reviewer reading either branch alone sees nothing.
  */
+import { classifyMigration } from './recording-only.mjs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -328,6 +329,13 @@ function main() {
   for (const file of files) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
+    // A byte-exact installed record cannot be rewritten to satisfy a new-work
+    // prediction. Its ledger bytes and live verdict have the existing hosted reader.
+    const recording = classifyMigration(file);
+    if (recording.manifestMatched === true) {
+      console.log(`[recorded migration] ${file}: ${recording.reason}`);
+      continue;
+    }
     inspected += 1;
     for (const o of offenders(readFileSync(path, 'utf8'))) hits.push({ ...o, file });
   }

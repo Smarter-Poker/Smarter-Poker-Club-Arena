@@ -57,6 +57,7 @@ import {
   writeCachedQuickLinkClubs,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
+import { savedPinnedClubIds } from '../components/home/arenaSelection';
 import ClubEntryActionBar from '../components/home/ClubEntryActionBar';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
@@ -219,9 +220,9 @@ function HomePageInner() {
   // #2: Pinned clubs (persisted in localStorage)
   const [pinnedClubIds, setPinnedClubIds] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.PINNED_CLUBS) || '[]');
+      return savedPinnedClubIds(localStorage.getItem(STORAGE_KEYS.PINNED_CLUBS));
     } catch {
-      return [];
+      return []; // storage itself unavailable
     }
   });
 

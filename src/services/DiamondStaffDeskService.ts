@@ -154,6 +154,7 @@ export interface AdjustmentQueue {
 /** Refusals whose own name would not say enough to the person reading it. */
 const PLAIN: Readonly<Record<string, string>> = {
   platform_staff_only: 'Only Platform Staff Can Do That',
+  diamond_staff_session_required: 'Your Session Has Ended. Sign In Again.',
   diamond_correction_source_not_authorized:
     'Not Settled: What Pays For A Diamond Correction Has Not Been Authorized Yet, So Nothing Moved',
   four_eyes_violated: 'Not Approved: A Different Staff Member Must Approve A Correction',

@@ -167,6 +167,7 @@ import {
   sameCashBuyInIntent,
   type CashBuyInAttempt,
 } from '../services/CashBuyInRecovery';
+import { askToSignInAgain, isDeadSessionRefusal } from '../lib/deadSessionRefusal';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -26664,7 +26665,15 @@ function LiveTablePage({
             if (!stillCurrent()) return false;
             if (outcome.kind === 'unknown') {
               reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
-              toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              if (isDeadSessionRefusal(outcome.error)) {
+                /* Phase 11 line 7: a revoked session is refused again on every
+                   retry. The saved request stays, so signing in and retrying
+                   reuses its key; see lib/deadSessionRefusal. */
+                toast.error('Your Session Has Ended. Sign In Again To Finish This Buy-In.');
+                askToSignInAgain('money:cash_buyin');
+              } else {
+                toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              }
               return false;
             }
             cashBuyInPendingRef.current = null;

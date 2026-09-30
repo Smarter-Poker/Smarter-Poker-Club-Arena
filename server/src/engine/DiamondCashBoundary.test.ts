@@ -518,6 +518,54 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     expect(engine.diamondTopUpIntents.size, 'the intent was dropped mid-hand').toBe(1);
   });
 
+  /* ─── A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5) ──
+     The controller is cleared when a hand ends and its settlement runs on,
+     unawaited, until the dealing loop waits for it. Measured on an isolated
+     cluster with the live doors (docs/evidence/diamond-phase-11/
+     operating-envelope.md), a direct top-up in that window deadlocked against
+     the hand settler, and one that won the race left the settler a stale
+     opening stack. In the window the top-up is an intent, as mid hand. */
+  it('a top-up while the finished hand is still settling is an intent, and moves nothing', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = null;
+    engine.settlementInFlight = new Set([new Promise<void>(() => {})]);
+    const rpc = vi.spyOn(supabase, 'rpc');
+    await expect(engine.addChips('hero', 100, 'after-the-hand')).resolves.toEqual({
+      success: true,
+      queued: true,
+      applied: 100,
+    });
+    expect(rpc, 'a top-up raced the settlement of the hand it followed').not.toHaveBeenCalled();
+    expect(engine.diamondTopUpIntents.size).toBe(1);
+  });
+
+  it('lands no intent while the last hand is still settling, and lands it after', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    await engine.addChips('hero', 100, 'mid-hand');
+    engine.handController = null;
+    engine.settlementInFlight = new Set([new Promise<void>(() => {})]);
+    engine.broadcastCurrentState = () => {};
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { stack: 140 },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: 'OK',
+    });
+    await engine.processPendingAddOns(engine.seatedPlayers);
+    expect(rpc, 'an intent landed under a settlement in flight').not.toHaveBeenCalled();
+    expect(engine.diamondTopUpIntents.size).toBe(1);
+    engine.settlementInFlight = new Set();
+    await engine.processPendingAddOns(engine.seatedPlayers);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(engine.diamondTopUpIntents.size).toBe(0);
+  });
+
   it('leaves chip continuity, idle recovery and horse reload inert', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
     engine.tableInfo = { ...table, arena: diamond };

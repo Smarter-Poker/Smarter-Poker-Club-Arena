@@ -53,7 +53,10 @@
  *   - `poker_horse_fleet_metrics_stale_seconds` always tells the truth about
  *     how old that snapshot is, and is itself alertable;
  *   - a collector that has never succeeded reports a day of staleness, not a
- *     tidy row of zeroes.
+ *     tidy row of zeroes;
+ *   - the deadlock counter is the database's cumulative count, so until the
+ *     first read it is absent, never 0: a 0 is a reset to Prometheus, and the
+ *     next real value would be counted as that many new deadlocks.
  */
 
 import { supabase } from './supabase.js';
@@ -231,9 +234,21 @@ export class HorseFleetMetrics {
       '# HELP poker_settlement_lane_waiters_oldest_ms Longest current wait on any settlement lane at the moment of the sample.',
       '# TYPE poker_settlement_lane_waiters_oldest_ms gauge',
       `poker_settlement_lane_waiters_oldest_ms ${s.laneWaitersOldestMs}`,
-      '# HELP poker_db_deadlocks_total Deadlocks the database has detected, cumulative since its statistics were last reset (pg_stat_database.deadlocks).',
-      '# TYPE poker_db_deadlocks_total counter',
-      `poker_db_deadlocks_total ${s.deadlocksTotal}`,
+      // The database's counter, not the process's: an engine restart does not
+      // reset pg_stat_database.deadlocks, so a 0 published before the first
+      // read is a reset to Prometheus, and increase() counts the whole
+      // cumulative total again when the real value returns. Four restarts on
+      // 2026-09-29/30 (three scrapes of 0 each) made a day of 3,577 deadlocks
+      // read as 17,797 and a worst ten minutes of 123 read as 5,424, and set
+      // DatabaseDeadlocksElevated off after each one. Unknown is absent, as
+      // ReplicationMetrics already publishes poker_pg_wal_position_bytes.
+      ...(s.collectedAt === 0
+        ? []
+        : [
+            '# HELP poker_db_deadlocks_total Deadlocks the database has detected, cumulative since its statistics were last reset (pg_stat_database.deadlocks).',
+            '# TYPE poker_db_deadlocks_total counter',
+            `poker_db_deadlocks_total ${s.deadlocksTotal}`,
+          ]),
       '# HELP poker_horse_fleet_metrics_stale_seconds Age of the fleet snapshot. A failed read keeps the last good values, so THIS is what proves the gauges above are current.',
       '# TYPE poker_horse_fleet_metrics_stale_seconds gauge',
       `poker_horse_fleet_metrics_stale_seconds ${staleSeconds}`,

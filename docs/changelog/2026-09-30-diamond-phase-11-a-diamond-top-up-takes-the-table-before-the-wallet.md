@@ -6,10 +6,10 @@ for a measured operating envelope. The envelope, with every raw number, the
 commands and the machines, is in
 [docs/evidence/diamond-phase-11/operating-envelope.md](../evidence/diamond-phase-11/operating-envelope.md).
 Production was only read (the engine's /health and /ws-metrics every 20 and 60
-seconds for 100 minutes across the busy :35 to :53 stretch and an hourly
+seconds for 81 minutes across the busy :35 to :53 stretch and an hourly
 restart, Prometheus through the estate's monitoring reader, pg_stat_activity,
 pg_locks and pg_stat_statements); everything that needed load ran in
-isolation. Measuring found three defects, all fixed here.
+isolation. Measuring found four defects, all fixed here.
 
 ## A lobby join answered everyone
 
@@ -51,3 +51,15 @@ opening stack that no longer matched the seat, which the settler refuses.
 Until the settlement lands, a Diamond top-up is now an intent exactly as mid
 hand, applied after the settlement and before the next deal
 (`ServerTableEngineSeating`, two cases in `DiamondCashBoundary.test.ts`).
+
+## The deadlock counter counted every engine restart
+
+`poker_db_deadlocks_total` mirrors `pg_stat_database.deadlocks`, which an
+engine restart does not reset, but the engine published 0 until its first read
+of it. Prometheus takes a counter that goes down for a reset, so after every
+restart `increase()` counted the database's whole total again: 3,577 real
+deadlocks in a day read as 17,797, a worst ten minutes of 123 read as 5,424,
+and the critical `DatabaseDeadlocksElevated` fired on a restart alone twice in
+the day. The counter is now absent until the first read, so a restart is a
+gap rather than a spike (one new case in
+`server/src/services/theFleetReportsWhatItCannotFinish.law.test.ts`).

@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/the-diamond-staff-desk",
+  "_comment": "20260929231500 staff_read_the_diamond_books: the one platform-staff read of the Diamond books for the staff desk (adjustments queue with receipts, the health report as the hourly watch last read it, trial balance and register), and the one-row table where the hourly health watch keeps its whole reading.",
+  "tables": ["ca_diamond_health_reading"],
+  "functions": ["fn_ca_diamond_staff_books"],
+  "columns": {}
+}

@@ -56,8 +56,10 @@ const TESTS = join(ROOT, 'tests');
  * src/services/DiamondIncidentReviewService.ts (the incident review doors,
  * migration 20260929211500). The Phase 10 staff surface (audit item 8) imports
  * both and lowers this back to 32.
+ * Lowered back to 32 on 2026-09-29: the Diamond Staff Desk
+ * (src/pages/admin/DiamondStaffDeskPage.tsx) imports both.
  */
-const BASELINE_ORPHANS = 34;
+const BASELINE_ORPHANS = 32;
 
 /** Entry points: reachable by definition, whatever imports them.
  * src/diamond-test.tsx is the module diamond-test.html loads: the standalone

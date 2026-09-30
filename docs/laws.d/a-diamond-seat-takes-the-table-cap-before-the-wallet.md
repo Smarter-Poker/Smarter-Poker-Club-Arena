@@ -14,8 +14,12 @@ with the registration paused inside its reserve while the buy-in arrived.
 
 A Diamond seat acquisition now takes the table-cap lock before the Daily
 Missions lock; the roster trigger's own acquisition is re-entrant and the order
-is one. A chip event takes nothing new - for a chip player the profile is not
-the wallet - and every lock the function already took keeps its old order.
+is one. It left a chip event on the old order, and that made a new pair: one
+player's chip registration and the same player's Diamond registration took the
+two locks in opposite orders and deadlocked. `20260930131333` takes the table
+cap first for every event
+(`every-seat-takes-the-table-cap-before-the-wallet.md`); this law still pins
+what `20260930123828`'s own file says.
 
 The law pins the asserted substitution (live md5, marker found once, reverse
 proved), the Diamond-only condition, the table-cap lock placed before the Daily

@@ -14,7 +14,11 @@
  * The fix takes the table-cap lock for a Diamond event before the Daily
  * Missions lock, by asserted substitution (live md5 pinned, marker found once,
  * reverse proved), and checks that the lock taken is the very lock the roster
- * trigger and the buy-in take. A chip event takes nothing new.
+ * trigger and the buy-in take. It left a chip event on the old order, which made
+ * one player's chip entry and Diamond entry a new deadlocking pair;
+ * 20260930131333 (tests/every-seat-takes-the-table-cap-before-the-wallet.law.test.ts)
+ * takes the table cap first for every event. This law pins what 123828's own
+ * file says; the order production runs is the later law's.
  */
 import { describe, expect, it } from 'vitest';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';

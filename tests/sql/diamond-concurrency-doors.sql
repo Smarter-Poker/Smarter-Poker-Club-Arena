@@ -1964,7 +1964,7 @@ REVOKE ALL ON FUNCTION public.fn_ca_legacy_fee_resolution_write_is_exact(p_table
 -- @@END fn_ca_legacy_fee_resolution_write_is_exact(p_table text, p_operation text, p_old jsonb, p_new jsonb)
 
 -- @@DOOR fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)
--- @@PIN md5=ed7023b1016b5268c50bc962b1cd0f09 len=3203 owner=postgres
+-- @@PIN md5=367488e3f6ef4714b6c2bca3e8068065 len=3027 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1984,18 +1984,14 @@ BEGIN
     RETURN jsonb_build_object('ok',false,'reason','platform_frozen');
   END IF;
 
-  -- DIAMOND PHASE 11: a Diamond seat's player takes the table-cap lock before
-  -- the Daily Missions lock, which locks the player's profile - the Diamond wallet.
-  -- The Diamond cash doors take table_cap first and the wallet after it; taken
-  -- here, the roster trigger's own table_cap is re-entrant and the order is one.
-  IF p_user_id IS NOT NULL AND EXISTS (
-       SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id = t.club_id
-        WHERE c.asset = 'diamonds'
-          AND t.id = COALESCE(p_tournament_id,
-                              (SELECT tb.tournament_id FROM public.tables tb WHERE tb.id = p_table_id))) THEN
-    PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:' || p_user_id::text, 0));
-  END IF;
+  -- DIAMOND PHASE 11: every seat's player takes the table-cap lock before the
+  -- Daily Missions lock, which locks the player's profile row. Every cash seat
+  -- door, chip and Diamond, takes table_cap first; for a Diamond player the
+  -- profile row is the wallet, and one player's chip entry, Diamond entry and
+  -- Diamond cash seat meet on these two locks, so the order is one for every
+  -- event whatever its asset. The roster trigger's own table_cap is re-entrant.
   IF p_user_id IS NOT NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:' || p_user_id::text, 0));
     PERFORM public.fn_lock_daily_mission_user(p_user_id);
   END IF;
 
@@ -10018,7 +10014,7 @@ BEGIN
     ('fn_ca_legacy_fee_custody_requires_terminal()','3f9a6541f8016270ba4faae97765e620'),
     ('fn_ca_legacy_fee_resolution_requires_recognition()','5cacfa2b62b7ecbea69725a8486ae635'),
     ('fn_ca_legacy_fee_resolution_write_is_exact(p_table text, p_operation text, p_old jsonb, p_new jsonb)','0a123d50d4bd6d9364fdceb81c5cce8a'),
-    ('fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)','ed7023b1016b5268c50bc962b1cd0f09'),
+    ('fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)','367488e3f6ef4714b6c2bca3e8068065'),
     ('fn_ca_mint(p_asset text, p_destination text, p_target_id uuid, p_amount numeric, p_reason text, p_op_id text, p_class text)','da9429ce6483c47c7d536582433a1edd'),
     ('fn_ca_original_paid_stack_must_complete()','8e221724e453fe284280f1f72dedaa7d'),
     ('fn_ca_process_tournament_chip_purchase_money_v1(p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text)','9ff346ac60f760311d884c6d63d9001d'),

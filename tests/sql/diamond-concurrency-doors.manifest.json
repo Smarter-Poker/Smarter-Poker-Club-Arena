@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-30T12:48:57Z",
+  "captured_at": "2026-09-30T16:34:28Z",
   "project": "kuklfnapbkmacvwxktbh",
   "what": "every Diamond money door the concurrency, duplicate-delivery and crash-recovery cases execute that the base and the tournament captures do not already hold byte-identical to production, and the trigger functions production fires on the rows those doors write",
   "doors": [
@@ -269,8 +269,8 @@
     },
     {
       "identity": "fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)",
-      "md5": "ed7023b1016b5268c50bc962b1cd0f09",
-      "len": 3203,
+      "md5": "367488e3f6ef4714b6c2bca3e8068065",
+      "len": 3027,
       "owner": "postgres",
       "grants": "NONE",
       "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
@@ -1517,7 +1517,7 @@
     "public.fn_ca_legacy_fee_resolution_write_is_exact(p_table text, p_operation text, p_old jsonb, p_new jsonb)": "0a123d50d4bd6d9364fdceb81c5cce8a",
     "public.fn_ca_lock_mtt_admission_contract()": "10644d522bb50245f76942ecce735cbc",
     "public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id uuid, p_table_id uuid)": "9877846ffabee004690e6b24a3ddcee2",
-    "public.fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)": "ed7023b1016b5268c50bc962b1cd0f09",
+    "public.fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)": "367488e3f6ef4714b6c2bca3e8068065",
     "public.fn_ca_process_tournament_chip_purchase_money_v1(p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text)": "9ff346ac60f760311d884c6d63d9001d",
     "public.fn_ca_record_tournament_participant_funding(p_registration uuid, p_operation text, p_key text, p_amount numeric, p_asset text, p_entitlement uuid, p_wallet uuid, p_custody jsonb)": "6cfd4af7307ce31460fd62c5b3f38bef",
     "public.fn_ca_recovery_fee_cents(p_gross_cents bigint, p_ratio numeric, p_unit_cents integer)": "3960a8bc558ead330e1e47e7a38e31c4",

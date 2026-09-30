@@ -439,7 +439,7 @@ class Suite:
     def players(self, k):
         out = [player(self.next_player + i) for i in range(k)]
         self.next_player += k
-        if self.next_player > 201:
+        if self.next_player > 199:            # 199 and 200 are the chip-entry players
             raise Failure('the scene ran out of fresh players')
         return out
 
@@ -774,11 +774,8 @@ def race_chip_entry_meets(suite, what):
     player's table-cap lock - while the same player's Diamond registration or Diamond
     cash buy-in arrives. Every seat door takes the table cap and the profile row; the
     order has to be one across both assets, or one of the two dies of a deadlock."""
-    x, = suite.players(1)
-    s = suite.session('join_%d' % len(suite.sessions), client_context(x))
-    joined = suite.result(s.step('SELECT public.fn_join_club(%s::uuid)' % q(suite.targets['chip_club'])))
-    s.close()
-    suite.check('error' not in joined, 'a client joins the chip club through fn_join_club', joined)
+    x = player(0xc7 if what == 'registration' else 0xc8)   # joined the chip club in the seed
+    start = suite.wallet(x)
     chip = register(x, suite.targets['mtt_chip'], rid())
     if what == 'registration':
         other, cost = register(x, suite.targets['mtt_race'], rid()), 25
@@ -799,7 +796,7 @@ def race_chip_entry_meets(suite, what):
     suite.check(ra.get('ok') is True and ra.get('asset') == 'chips' and succeeded(other, rb),
                 '%s: the Diamond door waited on it (%s lock), then both completed - no deadlock' % (label, event),
                 (ra, rb))
-    suite.check(suite.wallet(x) == 500 - cost, '%s: the wallet ends at exactly %d' % (label, 500 - cost),
+    suite.check(suite.wallet(x) == start - cost, '%s: the wallet ends at exactly %d' % (label, start - cost),
                 suite.wallet(x))
     suite.invariants('race ' + label)
     suite.close_all()

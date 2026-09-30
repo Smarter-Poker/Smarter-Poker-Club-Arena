@@ -164,6 +164,28 @@ SELECT concurrency_fixture.ok((SELECT count(*) = 1 FROM public.tournaments t JOI
                                   AND t.id = (SELECT id FROM concurrency_fixture.targets WHERE name = 'mtt_chip')),
  'the chip create door opened one chip freeroll in a chip club the staff account owns');
 
+-- The two players the chip-entry races use (199 and 200; the cases draw every
+-- other player from 1 to 198) join the chip club through the join door, as
+-- each of them. Joining is the scene, not the case: the case is the entry.
+DO $join$
+DECLARE v_uid uuid;
+BEGIN
+  FOREACH v_uid IN ARRAY ARRAY['10000000-0000-0000-0000-0000000000c7',
+                               '10000000-0000-0000-0000-0000000000c8']::uuid[] LOOP
+    PERFORM set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'sub', v_uid,
+      'session_id', uuid_in(md5('concurrency-session:' || v_uid::text)::cstring))::text, true);
+    PERFORM set_config('request.jwt.claim.sub', v_uid::text, true);
+    PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+    PERFORM public.fn_join_club('c0000000-0000-0000-0000-0000000000c1');
+  END LOOP;
+END $join$;
+SELECT concurrency_fixture.ok((SELECT count(*) = 2 FROM public.club_members
+                                WHERE club_id = 'c0000000-0000-0000-0000-0000000000c1'
+                                  AND user_id IN ('10000000-0000-0000-0000-0000000000c7',
+                                                  '10000000-0000-0000-0000-0000000000c8')
+                                  AND status = 'active'),
+ 'the two chip-entry players joined the chip club through its join door');
+
 -- ============================================================================
 -- THE HARNESS. Everything below lives in schema concurrency_fixture and is
 -- never a money door: it reads the money state, and it can pause a door at a

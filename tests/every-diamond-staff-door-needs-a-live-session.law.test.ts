@@ -105,14 +105,13 @@ describe('the migration gives ten Diamond staff doors a live-session check, and 
   it('asks for the session once, directly after the staff check, in each door’s own words', () => {
     const expected: Record<string, RegExp> = {};
     for (const fn of TABLE_DOORS)
-      expected[fn] =
-        /RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE ?= ?'28000';\s*END IF;/;
+      expected[fn] = /RAISE EXCEPTION 'diamond_staff_session_required' USING ERRCODE ?= ?'28000';/;
     for (const fn of ADJUSTMENT_DOORS)
       expected[fn] =
-        /RETURN jsonb_build_object\('ok', false, 'refused_reason', 'diamond_staff_session_required'\);\s*END IF;/;
+        /RETURN jsonb_build_object\('ok', false, 'refused_reason', 'diamond_staff_session_required'\);/;
     for (const fn of INCIDENT_DOORS)
       expected[fn] =
-        /RETURN jsonb_build_object\('success', false, 'error', 'authentication_required'\);\s*END IF;/;
+        /RETURN jsonb_build_object\('success', false, 'error', 'authentication_required'\);/;
     for (const fn of EDITED) {
       const [body, ...more] = bodies(MIG, fn);
       expect(more, fn).toEqual([]);
@@ -123,7 +122,8 @@ describe('the migration gives ten Diamond staff doors a live-session check, and 
       // Nothing but the staff check's own refusal sits between the two.
       const between = body.slice(staff, live);
       expect(between.match(/END IF;/g)?.length, fn).toBe(1);
-      expect(body.slice(live, live + 220), fn).toMatch(expected[fn]);
+      // The check's own block: from its IF to its END IF, and nothing else.
+      expect(sliceBetween(body.slice(live), SESSION_CHECK, 'END IF;'), fn).toMatch(expected[fn]);
     }
   });
 

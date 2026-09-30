@@ -75,17 +75,26 @@ Migration `20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_
 the default required run:
 
 - `held-fee-owner-basis`: over the retained Early Bird event (27 original fee
-  rows, 2.70), the owner path is first brought to the 30 captured production
+  rows, 2.70), the owner path is first brought to the 31 captured production
   bodies. Synthetic agreements exist at completion only. The installed
   predecessor refuses; the candidate installs; the operation resolves the fee
   once and the weekly quality gate, union earned plan and rakeback joins verify
-  it. 33 assertions, including refusals, replays and append-only records.
+  it. 34 assertions, including refusals, replays, append-only records and the
+  unchanged weekly-close memo wrapper.
 - `held-fee-spin-retention`: after the complete Sept-8 Spin phase, the
   predecessor refuses all five terminal receipts once retention retires the
   horse hand; the candidate returns the identical receipt, while a changed,
   half-retired or in-window missing hand still refuses. 52 assertions.
 
 ## Operation
+
+The September 30 integration preserves the September 28 accounting optimization:
+the public union earned-plan function is now a transaction-scoped memo wrapper,
+and its existing verifier lives in `fn_accounting_union_earned_plan_v3`. The
+migration pins both current definitions and extends only the verifier. The
+qualification installs both captured definitions, preserves their permissions,
+and verifies that the memo wrapper retains and returns the owner-basis result.
+The settlement rules, rates and original held-fee amounts are unchanged.
 
 Installed separately from the run. The run is one call with a fixed operation
 id after 2026-09-28 10:30Z, so the fees are recognized in the week that starts

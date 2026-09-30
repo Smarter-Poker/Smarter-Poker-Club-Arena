@@ -31,7 +31,7 @@ const SQL = readFileSync(
   ),
   'utf8'
 );
-const VOID_MD5 = '49f45101006d8b94d192ac826ad7327f';
+const VOID_MD5 = '618d61ed59a8aef999767c802469949f';
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
 
 function body(sql: string): string {
@@ -103,6 +103,20 @@ describe('a stranded mixed original hand is voided with every stack unchanged', 
     expect(VOID).toContain('PERFORM smarter_private.f06_try_lane(t);');
     expect(VOID).not.toMatch(/pg_advisory_xact_lock\(/);
     expect(SQL).toContain('WHEN serialization_failure OR lock_not_available THEN');
-    expect(SQL).toContain("interval '4 seconds'");
+    expect(SQL).toContain("interval '6 seconds'");
+  });
+
+  it('admits only the never-admitted successor as a holder, in the void and in its post-image', () => {
+    // First apply (2026-09-27 16:17 UTC) refused: the restarted engine was
+    // claiming the successor generation while the void ran.
+    expect(VOID).toMatch(
+      /lease_generation IS DISTINCT FROM xfer\.successor_generation\) THEN\s+RAISE EXCEPTION 'F06_STRANDED_EVENT_OWNED' USING ERRCODE = '40001';/
+    );
+    expect(SQL).toContain(
+      'WHERE l.tournament_id = v.id AND l.lease_generation IS DISTINCT FROM lx.successor_generation)'
+    );
+    expect(SQL).not.toMatch(
+      /OR EXISTS \(SELECT 1 FROM public\.engine_tournament_leases l WHERE l\.tournament_id = v\.id\)\n/
+    );
   });
 });

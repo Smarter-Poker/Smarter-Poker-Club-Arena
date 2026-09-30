@@ -19,6 +19,17 @@ export interface RetirementCustody<E extends RetirementEngine> {
   /** Call only after exact global CAS and local/H4H removal. */
   confirmAbsent(): void;
 }
+/** One reservation a retired lease generation left in this process. */
+export interface AbandonedRetirement {
+  readonly identity: string;
+  readonly tournamentId: string;
+  readonly breakId: string;
+  readonly tableId: string;
+  readonly tableIncarnation: string;
+  readonly leaseGeneration: string;
+  readonly custodyId: string;
+  readonly durableRevision: string;
+}
 /** Process-local admission reservation. Durable source exclusion and exact
  * lease/incarnation validation are mandatory caller inputs, not supplied here. */
 export class TournamentRetirementCustody<E extends RetirementEngine> {
@@ -124,6 +135,75 @@ export class TournamentRetirementCustody<E extends RetirementEngine> {
         })
       );
     return Object.freeze({ reservations: Object.freeze(reservations), current });
+  }
+
+  /**
+   * Reservations for one tournament that an EARLIER lease generation left
+   * behind and that no work in this process is running under (2026-09-29).
+   *
+   * `withCustody` keeps a reservation it could not acknowledge, by design: a
+   * break whose roster does not fit yet, or whose close/ACK reply was lost, is
+   * replayed by the same generation under the same identity. That replay needs
+   * the generation to still exist. When the lease is lost and the manager is
+   * retired, nothing in the process can ever present that identity again, and
+   * `admissionAllowed` refused every successor's dealer on that table for the
+   * life of the process. On 2026-09-29 that held the $100 Freeroll 6:00 PM
+   * (cb8f2dd1, 171 players) off the felt from 01:15Z: every admission resumed,
+   * met `f06_retirement_custody_held` on table b6af1747, and was released.
+   *
+   * These are only listed here. `yieldAbandoned` releases one exact entry, and
+   * only after the caller has proved the generation is gone.
+   */
+  abandonedReservations(tournamentId: string, liveGeneration: string): AbandonedRetirement[] {
+    const found: AbandonedRetirement[] = [];
+    if (!tournamentId || !liveGeneration) return found;
+    for (const [tableId, identity] of this.pending) {
+      const binding = JSON.parse(identity) as string[];
+      if (binding[0] !== tournamentId || binding[4] === liveGeneration) continue;
+      if (this.active.has(tableId) || this.mixedHeld.has(tableId) || !this.held.has(tableId))
+        continue;
+      found.push(
+        Object.freeze({
+          identity,
+          tournamentId: binding[0],
+          breakId: binding[1],
+          tableId: binding[2],
+          tableIncarnation: binding[3],
+          leaseGeneration: binding[4],
+          custodyId: binding[5],
+          durableRevision: binding[6],
+        })
+      );
+    }
+    return found.sort((a, b) => a.tableId.localeCompare(b.tableId));
+  }
+
+  /**
+   * Release one exact abandoned reservation to the live generation. The
+   * caller must already have proved, under the live generation's lease, that
+   * the reservation's generation is gone (no manager, stop, quarantine,
+   * release or transfer of it remains) and that the durable break row names
+   * the same break, table and lifecycle. The durable pending-source guard
+   * (`fn_f06_hand_number_state` -> `source_excluded`) keeps refusing a hand on
+   * that table until the break is acknowledged; the live generation claims
+   * the break's custody through `fn_f06_claim_custody` (revision CAS) and
+   * finishes it. Every other case refuses: a different identity, work still
+   * running, a mixed transfer, the live generation's own reservation, or an
+   * engine still registered on the table.
+   */
+  yieldAbandoned(
+    reservation: AbandonedRetirement,
+    liveGeneration: string,
+    global: ReadonlyMap<string, E>
+  ): boolean {
+    const { tableId, identity } = reservation;
+    if (!liveGeneration || reservation.leaseGeneration === liveGeneration) return false;
+    if (this.pending.get(tableId) !== identity || !this.held.has(tableId)) return false;
+    if (this.active.has(tableId) || this.mixedHeld.has(tableId) || global.has(tableId))
+      return false;
+    this.held.delete(tableId);
+    this.pending.delete(tableId);
+    return true;
   }
 
   /** Local reopen/admission work shares the custody reservation. SQL's durable

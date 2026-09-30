@@ -238,7 +238,10 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     const clientOptions: LiveHorseDecisionWorkerClientOptions = { ...options };
     delete (clientOptions as LiveHorseDecisionLaneOptions).workers;
     this.clients = Object.freeze(
-      Array.from({ length: count }, () => new LiveHorseDecisionWorkerClient(clientOptions))
+      Array.from(
+        { length: count },
+        (_, index) => new LiveHorseDecisionWorkerClient({ ...clientOptions, shard: { index } })
+      )
     );
     this.readyPromise = this.awaitAllReady();
     void this.readyPromise.catch(() => undefined);

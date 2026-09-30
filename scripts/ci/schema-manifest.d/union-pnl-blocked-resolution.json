@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/union-pnl-blocked-funding-resolution. NOT YET APPLIED when pushed (2026-09-28 ~05:45 UTC): migration 20260928050509_a_late_seat_credit_is_resolved_from_its_receipts_not_forgive is applied to production by the accounting coordinator after review. Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": ["union_pnl_cash_outcome_resolutions"],
+  "functions": [
+    "fn_union_pnl_cash_outcome_accepted",
+    "fn_union_pnl_prove_late_seat_credit",
+    "fn_union_pnl_resolve_blocked_cash_outcome",
+    "fn_union_pnl_resolve_blocked_cash_week"
+  ]
+}

@@ -55,6 +55,8 @@ import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../utils/multiDaySchedule';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
+import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
+import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
@@ -173,6 +175,18 @@ export interface LobbyTournamentRow {
   label_as_new?: boolean | null;
   hide_club_name?: boolean | null;
   is_pinned?: boolean | null;
+  /**
+   * The event's arena as TOURNAMENT_ARENA_EMBED reads it (#5050): the one
+   * source of which asset a Spin is drawn in. A row read without it (the fast
+   * path, a realtime insert) reads as chips, as it always has.
+   */
+  arena?: TournamentArenaEmbed['arena'];
+  /**
+   * DIAMOND PHASE 9: the top multiplier of the table a Diamond Spin's creation
+   * pinned, read by fn_poker_diamond_spin_ceilings (withDiamondSpinCeilings).
+   * Never set on a chip row.
+   */
+  diamond_spin_ceiling?: number | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -1556,6 +1570,25 @@ export function levelRemainingMs(t: LobbyTournamentRow, now: number): number | n
 export const SPIN_MAX_MULTIPLIER = SPIN_TIERS.reduce((max, t) => Math.max(max, t.multiplier), 0);
 
 /**
+ * THE CEILING A SPIN ADVERTISES BEFORE ITS DRAW (DIAMOND PHASE 9, 2026-09-29).
+ *
+ * A chip Spin draws from the one compiled ladder, so its ceiling is
+ * SPIN_MAX_MULTIPLIER, exactly as before. A Diamond Spin draws from the table
+ * its creation pinned, which may top out elsewhere; its ceiling is that
+ * table's top, read by fn_poker_diamond_spin_ceilings. Until that has been
+ * read the answer is null and the card prints no figure, never the chip
+ * ladder's (#5050: an unread arena prints no figure). Which asset a Spin is
+ * drawn in is the arena embed's answer, through tournamentRowUnitCents.
+ */
+export function spinCeilingMultiplier(
+  t: Pick<LobbyTournamentRow, 'arena' | 'diamond_spin_ceiling'>
+): number | null {
+  if (tournamentRowUnitCents(t) !== DIAMOND_UNIT_CENTS) return SPIN_MAX_MULTIPLIER;
+  const own = Number(t.diamond_spin_ceiling);
+  return t.diamond_spin_ceiling != null && Number.isFinite(own) && own > 0 ? own : null;
+}
+
+/**
  * A Spin's headline prize. The multiplier is NOT drawn until the game starts
  * (TournamentManagerBase writes spin_multiplier at start, and the row carries
  * null before that) — so a game still filling advertises the ceiling of the
@@ -1570,7 +1603,8 @@ export function spinPayoutLabel(entry: LobbyEntry): string | null {
      thing to shop by and gives nothing away. */
   const revealed = spinMultiplierLabel(entry.raw as Parameters<typeof spinMultiplierLabel>[0]);
   if (revealed) return revealed;
-  return `Win Up To ${SPIN_MAX_MULTIPLIER}x`;
+  const ceiling = spinCeilingMultiplier(entry.raw as LobbyTournamentRow);
+  return ceiling === null ? null : `Win Up To ${ceiling}x`;
 }
 
 /**
@@ -1600,7 +1634,9 @@ export function spinPrizeLabel(entry: LobbyEntry): string | null {
     const derived = (Number(t.buy_in_amount) || 0) * (Number(t.spin_multiplier) || 0);
     return derived > 0 ? `Prize Pool ${derived.toLocaleString()}` : null;
   }
-  const top = (Number(t.buy_in_amount) || 0) * SPIN_MAX_MULTIPLIER;
+  const ceiling = spinCeilingMultiplier(t);
+  if (ceiling === null) return null;
+  const top = (Number(t.buy_in_amount) || 0) * ceiling;
   return top > 0 ? `Top Prize ${top.toLocaleString()}` : null;
 }
 

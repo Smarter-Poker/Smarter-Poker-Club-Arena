@@ -29,6 +29,7 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
+  isVerifiedRecording,
   migrationCorpus,
   migrationsMentioning,
   type MigrationFile,
@@ -185,6 +186,11 @@ describe('a declared guard change is recorded, not raised', () => {
     for (const m of migrationCorpus()) {
       if (m.name < LAW) continue; // history: the declaration did not exist yet
       if (m.sql.includes(DECLARE)) continue;
+      // A verified recording of an applied migration cannot declare anything
+      // now: its redefinition already ran, and fn_ca_guard_defs_watch has
+      // already raised or cleared it live. Judging the file would only keep
+      // the repository from recording what production holds (2026-09-28).
+      if (isVerifiedRecording(m.name)) continue;
       for (const g of guards) {
         // history for THIS guard: it was not on the list when the migration ran
         if (m.name < (from.get(g) ?? LAW)) continue;

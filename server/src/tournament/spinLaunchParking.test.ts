@@ -48,6 +48,10 @@ const LIVE_REASONS = [
   'legacy_spin_rules_unproven',
   'projected_spin_draw_has_no_funding_proof',
   'spin_rule_manifest_invalid',
+  'diamond_spin_reserve_source_not_authorized',
+  'diamond_spin_reserve_over_its_authorized_cap',
+  'diamond_spin_reserve_cannot_cover_the_table',
+  'diamond_spin_contract_missing',
 ];
 
 class AbortedForTest extends Error {}

@@ -579,6 +579,26 @@ export const LeaderboardService = {
   },
 
   /**
+   * THE DIAMOND ARENA'S TABLE BOARD (Phase 10, line 1; migration
+   * 20260930043000): the club board's profit ranking, window and population
+   * over the Diamond running totals, in whole Diamonds. It throws when the
+   * server cannot answer, so a Diamond table says it could not tell instead
+   * of showing an empty board.
+   */
+  async getDiamondArenaLeaderboard(
+    period: LeaderboardPeriod,
+    limit: number
+  ): Promise<LeaderboardEntry[]> {
+    const { data, error } = await supabase.rpc('fn_diamond_arena_leaderboard_period', {
+      p_period: period,
+      p_limit: limit,
+      p_offset: 0,
+    });
+    if (error || !Array.isArray(data)) throw error ?? new Error('Diamond Board Returned No Rows');
+    return decorateWithProfiles(data as PlayerStatsRow[], 'profit');
+  },
+
+  /**
    * Get GLOBAL leaderboard across all clubs (per-user stats summed).
    * Supports profit, hands_played, tournaments_won, roi for every period
    * including all_time. Ratio metrics are per-club and not supported here.

@@ -47,7 +47,11 @@ interface Zone {
  * zone the paint does not have is how text ends up over a bevel.
  */
 const bay = (cx: number) => ({
-  label: { x: cx - 66, y: 70, width: 132, height: 44 } as Zone,
+  /* The free strip between the gem (ends at y 65) and the window's chrome
+     (starts at y 123): 56px, room for a label on two lines. At 44px a wrapped
+     label ("Total Charged", "Wallet Balance") lost its second line to the
+     zone's overflow (measured 2026-09-21 on the rebuy and the add-on). */
+  label: { x: cx - 66, y: 66, width: 132, height: 56 } as Zone,
   value: { x: cx - 67, y: 150, width: 134, height: 130 } as Zone,
 });
 
@@ -128,10 +132,27 @@ export function DeckConsole({
         {bays.map((b, i) => (
           <DeckBayPrint key={i} zone={DECK_ZONES.bays[i]} bay={b} />
         ))}
+        {/* The deck is the buy-in family's, and a buy-in's labels are long and
+            honest ("Buy In With Diamonds", "Retry Original Buy-In" - pinned by
+            tests). A label that would shrink under 72% on one line takes two
+            (useFitText's wrapBelow); the plates are 128 of 627 tall, so two
+            lines at the wrapped size sit comfortably on the face. */}
         {secondary && (
-          <PlateButton zone={DECK_ZONES.secondaryAction} canvasH={DECK_H} {...secondary} />
+          <PlateButton
+            zone={DECK_ZONES.secondaryAction}
+            canvasH={DECK_H}
+            wrapBelow={0.72}
+            {...secondary}
+          />
         )}
-        {primary && <PlateButton zone={DECK_ZONES.primaryAction} canvasH={DECK_H} {...primary} />}
+        {primary && (
+          <PlateButton
+            zone={DECK_ZONES.primaryAction}
+            canvasH={DECK_H}
+            wrapBelow={0.72}
+            {...primary}
+          />
+        )}
       </div>
     </section>
   );
@@ -144,6 +165,7 @@ function DeckBayPrint({ zone, bay: b }: { zone: { label: Zone; value: Zone }; ba
       <ZoneText
         text={b.label}
         className="dk__bay-label sc-ink--blue"
+        wrapBelow={0.8}
         style={zonePct(zone.label, SPADE_CONSOLE_W, DECK_H)}
       />
       {b.onPress ? (

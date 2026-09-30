@@ -195,7 +195,10 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         if (relation === 'tables') rows = tables;
         else if (relation === 'table_seats') rows = seats;
         else if (relation === 'tournament_players') {
-          rows = [...seats.map((seat) => ({ ...seat, status: 'playing' })), ...reserved];
+          rows = [
+            ...seats.map((seat) => ({ ...seat, status: 'playing', chips: seat.stack })),
+            ...reserved,
+          ];
           rosterSnapshots.push(
             seats.map((seat) => `${seat.user_id}:${seat.table_id}:${seat.seat_number}`)
           );
@@ -737,7 +740,7 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       if (relation === 'tables') rows = tables;
       else if (relation === 'table_seats') rows = seats;
       else if (relation === 'tournament_players')
-        rows = seats.map((seat) => ({ ...seat, status: 'playing' }));
+        rows = seats.map((seat) => ({ ...seat, status: 'playing', chips: seat.stack }));
       else throw new Error(`Unexpected relation: ${relation}`);
       const query = {
         select: () => query,

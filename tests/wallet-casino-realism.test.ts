@@ -7,6 +7,10 @@ const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerWalletPage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(ROOT, 'src/pages/PlayerWalletPage.css'), 'utf8');
 const LEDGER = readFileSync(resolve(ROOT, 'src/hooks/useDiamondLedger.ts'), 'utf8');
+/* Phase 7: the paged tail both diamond panes render. The Load Older control
+   and the failed-page retry moved OUT of the page and into here, so the pins
+   below read this file for the control and the page only for its copy. */
+const MORE = readFileSync(resolve(ROOT, 'src/components/wallet/DiamondLedgerMore.tsx'), 'utf8');
 const HEADER = readFileSync(resolve(ROOT, 'src/components/navigation/GlobalHeader.tsx'), 'utf8');
 const MEMBERSHIP = readFileSync(resolve(ROOT, 'src/pages/marketplace/MembershipTab.tsx'), 'utf8');
 const STORE = readFileSync(resolve(ROOT, 'src/pages/marketplace/StoreTab.tsx'), 'utf8');
@@ -81,8 +85,13 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(LEDGER).toContain(".gt('amount', 0)");
     // `metadata` carries the other player's id (recipient_id / sender_id),
     // which the page resolves to a name through the friend list (2026-09-13).
+    // Pinned as the column LIST, not as `select('...')` on one line: with
+    // `player_line` in it (phase 6) the call is over the print width, so the
+    // formatter wraps the argument onto its own line and a pin that spelled
+    // out `select(` would fail on correctly formatted code.
+    expect(LEDGER).toContain('.select(');
     expect(LEDGER).toContain(
-      "select('id, type, transaction_type, amount, description, created_at, metadata')"
+      "'id, type, transaction_type, amount, description, player_line, created_at, metadata'"
     );
     expect(PAGE).toContain("useDiamondLedger(user?.id, 'in', isMounted)");
   });
@@ -156,6 +165,30 @@ describe('the ledger has no floor, and a send leaves a record', () => {
     expect(LEDGER).toContain('setHasMore(page.length === DIAMOND_LEDGER_PAGE)');
     expect(PAGE).toContain('Load Older Diamonds');
     expect(PAGE).toContain('Load Older Sends');
+    /* Both panes get the tail from ONE component, so neither can drift, and
+       the control inside it is a real button rather than a prop string. */
+    expect(PAGE.match(/<DiamondLedgerMore\b/g)).toHaveLength(2);
+    expect(MORE).toContain("{loadingMore ? 'Loading...' : moreLabel}");
+  });
+
+  it('starts the next page before the player reaches the bottom, without walking the table', () => {
+    /* Phase 7. An IntersectionObserver sentinel at the foot of the list asks
+       for the next page a screenful early. The runway is the whole guard
+       against a chain of .range() calls: it must stay well under the height
+       of one landed page, or every page re-arms the sentinel. Behaviour, so
+       the depth is in tests/unit/theLedgerFetchesBeforeYouAsk.test.tsx. */
+    expect(MORE).toContain('new IntersectionObserver(');
+    expect(MORE).toContain('rootMargin: `0px 0px ${LEDGER_PREFETCH_RUNWAY_PX}px 0px`');
+    const runway = Number(/LEDGER_PREFETCH_RUNWAY_PX = (\d+)/.exec(MORE)?.[1]);
+    expect(runway).toBeGreaterThan(0);
+    expect(runway).toBeLessThan(1000);
+    // One page at a time, latched on a ref because the prop is still stale.
+    expect(MORE).toContain('if (firedRef.current || loadingRef.current) return;');
+    // No leaked observers: the sentinel unmounts, and so does its observer.
+    expect(MORE).toContain('observerRef.current.disconnect();');
+    // The sentinel is decoration. The button is the affordance, and it stays.
+    expect(MORE).toContain('aria-hidden="true"');
+    expect(CSS).toContain('.ledger-prefetch-sentinel');
   });
 
   it('orders by a UNIQUE key, or a page seam serves one row twice and skips another', () => {
@@ -190,6 +223,10 @@ describe('the ledger has no floor, and a send leaves a record', () => {
     );
     expect(PAGE).toContain('Could Not Load Older Diamonds');
     expect(PAGE).toContain('Could Not Load Older Sends');
+    /* And the retry is a control the player presses, not another observer
+       pass: a prefetch that failed disarms the sentinel (`armed`). */
+    expect(MORE).toContain('const armed = hasMore && !error;');
+    expect(MORE).toContain('Retry');
   });
 
   it('the send side is read by KIND, because a refund of a gift is positive', () => {

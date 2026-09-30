@@ -12,8 +12,9 @@
  * - (2026-09-23) The owner's skips and the completion latch live on the
  *   server. The checklist waits for the latch to be read, a latched club never
  *   shows it (nor the layout attribute, the wizard or the setup read), the
- *   latch is asked for once when every step is resolved, and any failure falls
- *   back to today's local behaviour.
+ *   latch is asked for once when every step is resolved. The panel stays
+ *   visible until that durable latch succeeds; after a refusal, a later
+ *   unresolved-to-resolved transition may safely retry it.
  *
  * The harness is the reduced shape of clubHomeRecoveryOwnership.test.tsx.
  */
@@ -271,10 +272,9 @@ describe('the lobby and the checklist resolve skips from one state', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip Configure Your First Agent' }));
 
-    expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
-    expect(lobby().hasAttribute('data-opening-checklist')).toBe(false);
-
-    /* Every step is resolved: the server is asked, once, to latch it. */
+    /* The panel remains mounted until the server has accepted the durable
+       completion latch. After that answer, the panel and layout marker drop
+       together. */
     await settle();
     expect(h.skipCalls.at(-1)).toEqual({
       p_club_id: 'club-a',
@@ -283,6 +283,8 @@ describe('the lobby and the checklist resolve skips from one state', () => {
     });
     expect(h.latchCalls).toBe(1);
     expect(h.latch).toBe(LATCHED_AT);
+    expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
+    expect(lobby().hasAttribute('data-opening-checklist')).toBe(false);
   });
 
   it('counts the placeholder crest as no picture, so the picture step stays open', async () => {
@@ -409,7 +411,7 @@ describe('the checklist is finished once (server latch, 2026-09-23)', () => {
     expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
   });
 
-  it('a failed latch is reported, asked once, and leaves today behaviour in place', async () => {
+  it('a failed latch is reported, remains visible, and retries only after a later transition', async () => {
     h.setupReads = [DONE];
     h.serverSkips = [...OPTIONAL];
     h.latchReplies = [
@@ -426,8 +428,23 @@ describe('the checklist is finished once (server latch, 2026-09-23)', () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(h.latchCalls).toBe(1);
-    /* Every step is resolved, so it is hidden exactly as before the latch. */
+    /* A refused latch cannot make completion look durable. It stays visible,
+       and time alone never retries. */
+    expect(screen.getByText('New Club Opening Checklist')).toBeTruthy();
+    expect(lobby().getAttribute('data-opening-checklist')).toBe('true');
+
+    /* A later real state transition may retry. This is user-driven rather
+       than a timer or repair loop. */
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Skip Configure Your First Agent' }));
+    await settle();
+    expect(h.latchCalls).toBe(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip Configure Your First Agent' }));
+    await settle();
+
+    expect(h.latchCalls).toBe(2);
+    expect(h.latch).toBe(LATCHED_AT);
     expect(screen.queryByText('New Club Opening Checklist')).toBeNull();
+    expect(lobby().hasAttribute('data-opening-checklist')).toBe(false);
   });
 
   it('writes a skip to the server, and the skip survives a reload', async () => {

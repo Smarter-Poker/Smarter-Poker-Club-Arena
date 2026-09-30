@@ -34,6 +34,7 @@ import {
   verifyCashSourceRefusal,
   type CashSourceReceipt,
 } from './cashSourceReceipts.js';
+import { SETTLER_READ_HORIZON_RPC, readSettlerHorizon } from './rakebackReadHorizon.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -1733,6 +1734,22 @@ export class RakebackSettlerService {
       return 'halted';
     }
 
+    // THE SETTLER READS ONLY WHAT EVERY WRITER HAS COMMITTED (2026-09-27).
+    // created_at is the writer's transaction START, so a row can commit after
+    // later-stamped rows were read and the cursor moved past it; it was then
+    // never reached (51 cash sources stranded 2026-09-26/27). Read only
+    // below the instant every open transaction started after, asked BEFORE the
+    // page so nothing below it can still be in flight when the page reads.
+    let horizon: string;
+    try {
+      const { data, error } = await supabase.rpc(SETTLER_READ_HORIZON_RPC);
+      if (error) throw new Error('Settler read horizon failed', { cause: error });
+      horizon = readSettlerHorizon(data);
+    } catch (error) {
+      reportError(error, 'RakebackSettler.read_horizon_holds_cursor');
+      return 'halted';
+    }
+
     // Keep PostgreSQL microseconds unchanged. Complete the remaining timestamp
     // ties before moving to later timestamps: both queries are index ranges.
     // A widened >= page with a client-side prefix filter can fill entirely
@@ -1751,6 +1768,7 @@ export class RakebackSettlerService {
           'id, is_tournament, tournament_id, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
         )
         .gt('rake_amount', 0)
+        .lt('created_at', horizon)
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
         .limit(FETCH_LIMIT);

@@ -147,6 +147,17 @@ DO $$ DECLARE r jsonb;q record;k record;receipt jsonb;winner uuid;BEGIN
  PERFORM held_fee_fixture.assert((r->>'earned_rake')::numeric=(r->>'period_rake')::numeric AND (r->>'earned_rake')::numeric>=2.70
   AND (SELECT sum(s.rake_credit)=2.70 FROM public.accounting_payable_earning_sources s WHERE s.tournament_id=held_fee_fixture.event() AND s.earned_at=q.recognized_at),
   'Union earned plan verifies every owner-basis agreement and conserves the bank');
+ -- The installed public door memoizes the verifier only during a weekly close.
+ -- The owner-basis change must reach that verifier without replacing its door.
+ PERFORM set_config('app.accounting_close_memo','on',true);
+ PERFORM public.fn_accounting_union_earned_plan(held_fee_fixture.union_id(),
+  (SELECT starts_at FROM public.accounting_cash_accrual_cutover WHERE singleton),q.recognized_at+interval '1 hour');
+ PERFORM held_fee_fixture.assert(
+  EXISTS(SELECT 1 FROM jsonb_each(NULLIF(current_setting('app.accounting_earned_plan_memo',true),'')::jsonb) m WHERE m.value=r)
+  AND public.fn_accounting_union_earned_plan(held_fee_fixture.union_id(),
+   (SELECT starts_at FROM public.accounting_cash_accrual_cutover WHERE singleton),q.recognized_at+interval '1 hour')=r,
+  'The unchanged weekly-close memo door returns and retains the owner-basis verifier result');
+ PERFORM set_config('app.accounting_close_memo','off',true);
 END $$;
 COMMIT;
 -- Rakeback period reader: the calculator joins each source's recorded

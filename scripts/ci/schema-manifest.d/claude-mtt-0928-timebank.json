@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-mtt-0928/fix/timebank-idempotent-custody-release",
+  "tables": ["time_bank_consume_receipts"],
+  "functions": []
+}

@@ -82,7 +82,12 @@ import {
   withClubLabel,
   withClusterFigures,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
+import {
+  TOURNAMENT_ARENA_EMBED,
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../services/TournamentService';
+import { withDiamondSpinCeilings } from '../services/diamondSpinCeilings';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -1056,19 +1061,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       cancelled = true;
     };
   }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible, openingSetupReadRevision]);
-  /* THE LATCH IS ASKED FOR ONCE (2026-09-23). The first render in which every
+  /* THE LATCH IS ASKED FOR ONCE AT A TIME (2026-09-23). The first render in which every
      step is complete or validly skipped asks the server to record the list as
      finished, so it never comes back when a table closes or a member leaves.
-     One request per club per page, guarded while it is in flight; a refusal
-     or a failure is reported by the hook and today's behaviour stands. No
-     timer, no polling, no retry loop. */
+     A refusal clears the in-flight guard: a later unresolved -> resolved
+     transition may retry after the missing server state arrives. No timer,
+     polling or automatic retry loop. */
   const launchLatchRequestedRef = useRef<string | null>(null);
   const completeLaunchChecklist = launchSkips.complete;
   const latchOpeningChecklist = useCallback(() => {
     const latchClubId = club?.id;
     if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;
     launchLatchRequestedRef.current = latchClubId;
-    void completeLaunchChecklist();
+    void completeLaunchChecklist().then((completed) => {
+      if (!completed && launchLatchRequestedRef.current === latchClubId) {
+        launchLatchRequestedRef.current = null;
+      }
+    });
   }, [club?.id, completeLaunchChecklist]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
@@ -2991,8 +3000,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // get_club_home carried, vanished from the board here until now.
       const clubTournamentQuery = supabase
         .from('tournaments')
+        /* The arena embed (#5050) says which asset each event is drawn in, so
+           a Diamond Spin's card can advertise its own table's top
+           (withDiamondSpinCeilings below). */
         .select(
-          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed, ' +
+            TOURNAMENT_ARENA_EMBED
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3146,7 +3159,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
       if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
-        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
+        /* A Diamond Spin advertises the top of the table its creation pinned;
+           a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
+        const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
+          /* The cast is the arena embed's: the generated types carry no
+             relationship names, so the typed client cannot resolve the join
+             (TournamentService.getTournaments makes the same one). */
+          ...(clubTournamentResult.data as unknown as TournamentData[]),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
 
         // The warm fast path cannot remove old rows. A confirmed empty read
         // may do so, but a failed or cache-only scope cannot prove absence.
@@ -4855,10 +4876,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* THE OWNER'S OPENING JOURNEY, SHOWN TO THE OWNER. The wizard state and the
      agent state are read for the owner alone, so a staff viewer could never
      finish the list and was left with a permanent Owner Required row. */
-  const showLaunchChecklist =
-    openingChecklistEligible &&
-    isOwner &&
-    launchTasks.some((task) => !task.complete && !task.skipped);
+  const showLaunchChecklist = openingChecklistEligible && isOwner;
   /* Every step complete or validly skipped: the one moment the lobby asks the
      server to latch the list finished (latchOpeningChecklist above). */
   const launchChecklistFinished =
@@ -5555,6 +5573,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             openingBank={Number(club.chip_treasury) || 0}
             tasks={launchTasks}
             skips={launchSkips}
+            waitForCompletion
           />
         )}
         <ClubLaunchCompletionLatch

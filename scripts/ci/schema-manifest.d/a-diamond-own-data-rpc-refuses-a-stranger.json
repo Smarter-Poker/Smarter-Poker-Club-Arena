@@ -1,0 +1,8 @@
+{
+  "_owner": "cw-diamond-db-0930 (2026-09-30), migration 20260930054954. Three functions REPLACED, none created: fn_diamond_lifetime_totals gains the own-only guard its three siblings already carry and stops answering four zeros for a user it cannot read; fn_diamond_wallet_summary stops reporting open tables and a cheapest seat for an arena whose cash_games_enabled is false; fn_diamond_kind_row_label stops rendering the operator string 'Test Entry' to a player. Declared here so the manifest names the versions this branch ships even though all three already exist in the base snapshot.",
+  "functions": [
+    "fn_diamond_kind_row_label",
+    "fn_diamond_lifetime_totals",
+    "fn_diamond_wallet_summary"
+  ]
+}

@@ -68,6 +68,14 @@ export const SPIN_DRAW_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'projected_spin_draw_has_no_funding_proof',
   // The engine's own manifest failed the authority's rule validation.
   'spin_rule_manifest_invalid',
+  // DIAMOND PHASE 9: a Diamond Spin's arm of the authority. Each lifts only
+  // when its data changes: a reserve source is authorized (a values migration
+  // that quotes Dan), the source's cap is raised, the source is funded to the
+  // table's cover, or the pinned contract row is found.
+  'diamond_spin_reserve_source_not_authorized',
+  'diamond_spin_reserve_over_its_authorized_cap',
+  'diamond_spin_reserve_cannot_cover_the_table',
+  'diamond_spin_contract_missing',
 ]);
 
 /** Refusals that resolve on their own: retry inside the attempt, as before. */

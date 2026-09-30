@@ -44,7 +44,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
+import {
+  isVerifiedRecording,
+  migrationCorpus,
+  type MigrationFile,
+} from './helpers/migrationCorpus';
 import { sliceSqlStatement } from './helpers/sourceWindow';
 
 /** The version-and-variant-checked pattern, as it appears in SQL. */
@@ -133,14 +137,21 @@ function scanAfterPreviouslyApprovedInstalledObligationCheck(
 
 function migrationsWithUnapprovedVersionChecks(migrations: MigrationFile[]): string[] {
   const approval = migrations.find((migration) => migration.name === PLATFORM_ID_APPROVAL);
-  return migrations
-    .filter((migration) =>
-      scanAfterPreviouslyApprovedInstalledObligationCheck(migration, approval).includes(
-        VERSION_CHECKED
+  return (
+    migrations
+      .filter((migration) =>
+        scanAfterPreviouslyApprovedInstalledObligationCheck(migration, approval).includes(
+          VERSION_CHECKED
+        )
       )
-    )
-    .map((migration) => migration.name)
-    .filter((name) => !HISTORICAL.has(name));
+      .map((migration) => migration.name)
+      .filter((name) => !HISTORICAL.has(name))
+      // A verified recording of an applied migration introduces nothing: the
+      // check it carries already ran in production before the file existed.
+      // 2026-09-28: 20260904031919 and 20260904032904, both applied before this
+      // law, were the first two recordings to reach the corpus.
+      .filter((name) => !isVerifiedRecording(name))
+  );
 }
 
 describe('a player id is a uuid, not a uuid of a particular version', () => {

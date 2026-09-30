@@ -179,7 +179,7 @@ describe('Table Management content panels fail closed', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Message Editing Is Locked');
     expect(screen.getByLabelText('Club Tag Line')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save Club Messages' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Identity' })).toBeDisabled();
   });
 
   it('does not clobber a dirty identity draft when realtime reports a newer version', async () => {
@@ -206,7 +206,7 @@ describe('Table Management content panels fail closed', () => {
     await waitFor(() => expect(tagline).toBeEnabled());
     await userEvent.clear(tagline);
     await userEvent.type(tagline, 'Still Local');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Club Messages' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Identity' }));
 
     expect(await screen.findByText('A Newer Version Is Available')).toBeInTheDocument();
     expect(tagline).toHaveValue('Still Local');

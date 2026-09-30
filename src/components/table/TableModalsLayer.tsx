@@ -402,6 +402,9 @@ export interface TableModalsLayerProps {
     isCurrentUser?: boolean;
   }>;
   leaderboardPeriod: 'session' | 'day' | 'week' | 'month' | 'allTime';
+  /** A Diamond table's board (Phase 10, line 1): still asking, answered, or
+   *  could not tell. A chip table passes nothing and renders as it always has. */
+  leaderboardDiamondState?: 'loading' | 'ready' | 'failed';
   onCloseLeaderboard: () => void;
   onLeaderboardPeriodChange: (p: 'session' | 'day' | 'week' | 'month' | 'allTime') => void;
 
@@ -671,6 +674,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showLeaderboard,
     leaderboardPlayers,
     leaderboardPeriod,
+    leaderboardDiamondState,
     onCloseLeaderboard,
     onLeaderboardPeriodChange,
     // Leave Confirm
@@ -1212,6 +1216,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         players={leaderboardPlayers}
         period={leaderboardPeriod}
         onPeriodChange={onLeaderboardPeriodChange}
+        isLoading={leaderboardDiamondState === 'loading'}
+        unavailable={leaderboardDiamondState === 'failed'}
+        currency={leaderboardDiamondState ? 'Diamonds' : undefined}
       />
 
       {/* Leave Table Confirmation */}

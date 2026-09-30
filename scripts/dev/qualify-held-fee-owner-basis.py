@@ -38,6 +38,8 @@ for row in captured:
  if hashlib.md5(row['definition'].encode()).hexdigest()!=row['md5']:raise AssertionError('Captured definition corrupt: '+row['identity'])
  if row['owner']!='postgres':raise AssertionError('Unexpected captured owner: '+row['identity'])
  sql+=row['definition']+';\n'
+ if row['identity']=='public.fn_accounting_union_earned_plan_v3(uuid,timestamptz,timestamptz)':
+  sql+='REVOKE ALL ON FUNCTION '+row['identity']+' FROM PUBLIC,anon,authenticated,service_role;\n'
 sql+='COMMIT;\n'
 run(sql,'held-fee-production-owner-path')
 parity={row['identity']:md5_of(row['identity']) for row in captured}
@@ -84,9 +86,9 @@ run("ALTER FUNCTION public.fn_accounting_union_earned_plan(uuid,timestamptz,time
 # 3. Install, then the owner operation and its refusals, replays and weekly readers.
 run(candidate,'held-fee-install')
 run((fix/'after.sql').read_text(),'held-fee-owner-operation')
-query="SELECT jsonb_agg(to_jsonb(x) ORDER BY identity) FROM (SELECT p.oid::regprocedure::text identity,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.proacl::text acl,p.proconfig config FROM pg_proc p WHERE p.oid IN('public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)'::regprocedure,'public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_union_earned_plan(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure,'public.fn_ca_legacy_fee_resolution_write_is_exact(text,text,jsonb,jsonb)'::regprocedure,'smarter_private.spin_original_standings_witness(uuid,uuid)'::regprocedure,'public.fn_accounting_tournament_source_terms_at(uuid,timestamptz,jsonb)'::regprocedure,'public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb)'::regprocedure))x"
+query="SELECT jsonb_agg(to_jsonb(x) ORDER BY identity) FROM (SELECT p.oid::regprocedure::text identity,md5(pg_get_functiondef(p.oid)) definition_md5,pg_get_userbyid(p.proowner) owner,p.proacl::text acl,p.proconfig config FROM pg_proc p WHERE p.oid IN('public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)'::regprocedure,'public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_union_earned_plan(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_accounting_union_earned_plan_v3(uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure,'public.fn_ca_legacy_fee_resolution_write_is_exact(text,text,jsonb,jsonb)'::regprocedure,'smarter_private.spin_original_standings_witness(uuid,uuid)'::regprocedure,'public.fn_accounting_tournament_source_terms_at(uuid,timestamptz,jsonb)'::regprocedure,'public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb)'::regprocedure))x"
 rows=json.loads(subprocess.check_output(cmd+['-At','-c',query],text=True))
-modified={'public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)','public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)','public.fn_accounting_union_earned_plan(uuid,timestamptz,timestamptz)','public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])','public.fn_ca_legacy_fee_resolution_write_is_exact(text,text,jsonb,jsonb)','smarter_private.spin_original_standings_witness(uuid,uuid)'}
+modified={'public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)','public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)','public.fn_accounting_union_earned_plan_v3(uuid,timestamptz,timestamptz)','public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])','public.fn_ca_legacy_fee_resolution_write_is_exact(text,text,jsonb,jsonb)','smarter_private.spin_original_standings_witness(uuid,uuid)'}
 for c in captured:
  if c['identity'] not in modified:
   if md5_of(c['identity'])!=c['md5']:raise AssertionError('Candidate changed an unlisted owner-path body: '+c['identity'])

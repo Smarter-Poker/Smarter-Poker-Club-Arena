@@ -8222,6 +8222,16 @@ function LiveTablePage({
   // The services behind them work fine; nothing ever called them. Each panel
   // now loads lazily when it is opened, so a closed panel costs nothing.
 
+  // THE DIAMOND ARENA'S BOARD (Phase 10, line 1; migration 20260930043000).
+  // player_stats never holds a Diamond hand, so a Diamond table asks its own
+  // board, from the one arena source this page already has, and says whether
+  // it is still asking or could not tell. At a chip table this is false and
+  // the board is asked and drawn exactly as before.
+  const leaderboardIsDiamond = tableState.arenaAsset === 'diamonds';
+  const [diamondLeaderboardState, setDiamondLeaderboardState] = useState<
+    'loading' | 'ready' | 'failed'
+  >('loading');
+
   // Leaderboard. Real data only became possible today: player_stats.vpip/pfr
   // and tournaments_played/won had no writer, so this board would have been
   // all zeros even if it had been wired.
@@ -8229,7 +8239,7 @@ function LiveTablePage({
     if (!showLeaderboard) return;
     let cancelled = false;
     const clubId = actualClubIdRef.current;
-    if (!clubId) {
+    if (!clubId && !leaderboardIsDiamond) {
       setLeaderboardPlayers([]);
       return;
     }
@@ -8240,14 +8250,20 @@ function LiveTablePage({
       month: 'monthly',
       allTime: 'all_time',
     };
+    if (leaderboardIsDiamond) setDiamondLeaderboardState('loading');
     (async () => {
       try {
-        const rows = await LeaderboardService.getClubLeaderboard(
-          clubId,
-          'profit',
-          periodMap[leaderboardPeriod] || 'weekly',
-          25
-        );
+        const rows = leaderboardIsDiamond
+          ? await LeaderboardService.getDiamondArenaLeaderboard(
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            )
+          : await LeaderboardService.getClubLeaderboard(
+              clubId as string,
+              'profit',
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            );
         if (cancelled) return;
         setLeaderboardPlayers(
           (rows || []).map((r) => ({
@@ -8260,14 +8276,20 @@ function LiveTablePage({
             isCurrentUser: r.userId === userId,
           }))
         );
+        if (leaderboardIsDiamond) setDiamondLeaderboardState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadLeaderboard');
+        if (cancelled) return;
+        reportError(e, 'TablePage.loadLeaderboard');
+        if (leaderboardIsDiamond) {
+          setLeaderboardPlayers([]);
+          setDiamondLeaderboardState('failed');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showLeaderboard, leaderboardPeriod, userId]);
+  }, [showLeaderboard, leaderboardPeriod, userId, leaderboardIsDiamond]);
 
   // Sound & vibration preferences — extracted to useTableSound hook
   const {
@@ -14728,11 +14750,16 @@ function LiveTablePage({
     const s = payload?.settings || payload;
     if (!s) return;
     // Apply sound preference if changed
-    if (typeof s.soundEnabled === 'boolean') {
-      // Through the engine, not a raw storage write (2026-09-26): setEnabled
-      // writes both sound keys AND returns the Safari audio session to
-      // "ambient" when sound goes off, so a player's music is not left paused.
-      soundService.setEnabled(s.soundEnabled);
+    // MUTE ONLY (2026-09-27). This payload is the Settings page's cached copy,
+    // re-sent on every tab return and theme change, and it goes stale the
+    // moment the player mutes at the table or in the menu (those write the
+    // sound keys, not this cache). So it may only ever turn sound OFF: a stale
+    // `true` here must never un-mute a player. Sound ON from the Settings page
+    // already arrives through useTableSettings (applyGateChanges -> setEnabled).
+    // Off goes through the engine, which also returns the Safari audio session
+    // to "ambient", so a player's music is not left paused.
+    if (s.soundEnabled === false) {
+      soundService.setEnabled(false);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read
@@ -26736,6 +26763,7 @@ function LiveTablePage({
         showLeaderboard={showLeaderboard}
         leaderboardPlayers={leaderboardPlayers}
         leaderboardPeriod={leaderboardPeriod}
+        leaderboardDiamondState={leaderboardIsDiamond ? diamondLeaderboardState : undefined}
         onCloseLeaderboard={() => setShowLeaderboard(false)}
         onLeaderboardPeriodChange={setLeaderboardPeriod}
         // Leave Confirm

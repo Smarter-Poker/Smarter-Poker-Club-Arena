@@ -989,6 +989,20 @@
   list-style: none;
 }
 
+/* THE PREFETCH SENTINEL.
+   An invisible 1px marker at the foot of a paged diamond ledger. When it
+   comes within LEDGER_PREFETCH_RUNWAY_PX of the viewport, the next page is
+   fetched (src/components/wallet/DiamondLedgerMore.tsx). It is aria-hidden,
+   never focusable and never a control: the "Load Older" button beside it is
+   the affordance, and it stays. Height must be non-zero so an observer has a
+   box to intersect. */
+.ledger-prefetch-sentinel {
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
 .incoming-row {
   display: flex;
   align-items: center;

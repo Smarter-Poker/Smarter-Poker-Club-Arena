@@ -26,6 +26,7 @@ import {
   HorseDecisionJournalStore,
   horseJournalCapacityReason,
 } from './horseDecisionJournal/store.js';
+import { horseJournalFailureKind } from './horseDecisionJournal/failure.js';
 import {
   horseJournalJson,
   journalHash,
@@ -37,6 +38,7 @@ import {
   HorseDecisionJournalPublisher,
   horseDecisionJournalHealth,
   relayHorseDecisionJournalHealth,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
   type HorseJournalWorker,
 } from './HorseDecisionJournal.js';
 import {
@@ -301,9 +303,12 @@ describe('bounded isolated Horse journal publisher', () => {
     const w = new FakeWorker(),
       notes: string[] = [],
       p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
-    for (let i = 0; i < 65; i++) p.record('decision', 'hand', 'turn', {});
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS + 1; i++)
+      p.record('decision', 'hand', 'turn', {});
     p.record('decision', null, 'turn', {});
-    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(64);
+    expect(notes.filter((x) => x === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     expect(notes).toContain('phase15_journal_capture_unavailable');
     w.emit({ type: 'UNAVAILABLE' });
@@ -1248,7 +1253,7 @@ describe('the archive is a ring: the oldest published segments make room, unpubl
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_segments with no published segment left to retire (only unpublished segments remain); asks again every minute; retained=1 published=1 held=0 unpublished=0 retired=4'
       );
       w.emit({ type: 'CAPACITY', room: false, reason: 'archive_storage_capacity' });
       expect(p.health().capture).toBe(
@@ -1324,25 +1329,31 @@ describe('the ring holds the Phase 6A/6B evidence: held segments are never retir
     expect(readdirSync(join(dir, 'archive', 'segments'))).toHaveLength(5);
     native.close();
   });
-  it('never retires a held segment: with only held segments left the quota refuses by name, the probe agrees, and nothing is lost', () => {
+  it('never retires a held segment, and a hold cannot fill the ring: past its budget it keeps its oldest segments and capture runs', () => {
     const dir = folder();
     archiveOfFive(dir);
+    // 2026-09-28: a hold of every segment used to leave the ring nothing to
+    // retire, so the quota refused and capture stopped. The hold may keep at
+    // most half of each quota (here 2 of 5 segments): it keeps its oldest two.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const s = store(dir, {
       archive: options(dir, { maxSegments: 5, hold: { fromMs: 1, untilMs: 1000 } }),
     });
-    expect(s.storageStats().archive).toMatchObject({ heldSegments: 5 });
-    expect(s.capacityRefusal([at(6, 600)])).toBe('archive_segments');
-    expect(() => s.append(at(6, 600))).toThrow('horse_archive_segment_capacity');
-    expect(s.readHand(journalHash('hand'))).toHaveLength(5);
-    expect(s.storageStats().archive).toMatchObject({ segments: 5, retiredSegments: 0 });
+    warn.mockRestore();
+    expect(s.storageStats().archive).toMatchObject({ heldSegments: 2, holdTrimmedSegments: 3 });
+    expect(s.capacityRefusal([at(6, 600)])).toBeNull();
+    expect(s.append(at(6, 600))).toBe('recorded');
+    // t=300 (the oldest segment outside the kept hold) went; t=100, t=200 stayed.
+    expect(s.readHand(journalHash('hand')).map((r) => r.sequence)).toEqual([1, 2, 4, 5, 6]);
+    expect(s.storageStats().archive).toMatchObject({ segments: 5, retiredSegments: 1 });
     s.close();
     // Released (the env var reads "none"): the ring reclaims them oldest first.
     const released = store(dir, { archive: options(dir, { maxSegments: 5, hold: null }) });
     expect(released.storageStats().archive).toMatchObject({ heldSegments: 0 });
-    expect(released.capacityRefusal([at(6, 600)])).toBeNull();
-    expect(released.append(at(6, 600))).toBe('recorded');
+    expect(released.capacityRefusal([at(7, 700)])).toBeNull();
+    expect(released.append(at(7, 700))).toBe('recorded');
     expect(released.readHand(journalHash('hand'))).toEqual(
-      [2, 3, 4, 5, 6].map((n) => at(n, n * 100))
+      [2, 4, 5, 6, 7].map((n) => at(n, n * 100))
     );
   });
   it('the held set is resolved once per window and does not grow with later capture', () => {
@@ -1433,7 +1444,7 @@ describe('the ring holds the Phase 6A/6B evidence: held segments are never retir
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_bytes' });
       expect(p.health().capture).toBe(
-        'not running: paused since 2026-09-25T19:34:05.000Z at archive_bytes with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute; retained=500000 published=500000 held=237613 unpublished=0 retired=0'
+        'not running: paused since 2026-09-25T19:34:05.000Z at archive_bytes: the evidence hold is crowding capture, no published segment outside it is left to retire (only held or unpublished segments remain); asks again every minute; retained=500000 published=500000 held=237613 unpublished=0 retired=0'
       );
       void p.stop();
     } finally {
@@ -1574,10 +1585,16 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
       p.record('decision', 'hand', 'turn', {});
       w.emit({ type: 'READY' });
       w.emit({ type: 'UNAVAILABLE', reason: 'archive_segments' });
-      for (let i = 0; i < 70; i++) p.record('decision', 'hand', 'turn', { i });
-      expect(p.health().queued).toBe(64);
-      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(7);
-      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(70);
+      // Queue starts at 1 (the batch in flight when the pause landed); fill it
+      // to its bound and run a fixed 7 more past it.
+      const overflow = 7;
+      const iterations = HORSE_JOURNAL_QUEUE_MAX_RECORDS - 1 + overflow;
+      for (let i = 0; i < iterations; i++) p.record('decision', 'hand', 'turn', { i });
+      expect(p.health().queued).toBe(HORSE_JOURNAL_QUEUE_MAX_RECORDS);
+      expect(notes.filter((x) => x === 'phase15_journal_queue_capacity')).toHaveLength(overflow);
+      expect(notes.filter((x) => x === 'phase15_journal_capture_paused_capacity')).toHaveLength(
+        iterations
+      );
       // Stopping while paused is prompt and names the gap it leaves.
       const stopping = p.stop();
       expect(w.sent.at(-1)).toEqual({ type: 'STOP' });
@@ -1772,6 +1789,107 @@ describe('/health reads the journal from the thread that runs it', () => {
   });
 });
 
+describe('/health shows every decision shard, never only the one that answered last', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+  // Two shards as /health saw them on e6b9dc5d at 21:53 UTC on 2026-09-27:
+  // one capturing, one stopped for good since 21:22:51.
+  const report = (mode: 'ready' | 'failed', patch: Record<string, unknown> = {}) => ({
+    mode,
+    lastFailureReason: null,
+    pausedReason: null,
+    pausedSince: null,
+    failedSince: null,
+    queued: 6,
+    ...STATS_ARCHIVE,
+    records: 4886577,
+    maxRowid: 4935653,
+    statsAgeMs: 1087,
+    reportAgeMs: null,
+    capture: 'copied text is never shown',
+    ...patch,
+  });
+  const failed = report('failed', {
+    lastFailureReason: 'termination_unverified',
+    failedSince: '2026-09-27T21:22:51.994Z',
+    queued: 64,
+    records: 4774445,
+    maxRowid: 4823521,
+    statsAgeMs: 1971018,
+  });
+  it('reports the least healthy shard and counts the shards by mode', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    m.relayHorseDecisionJournalHealth(failed, 'shard-2');
+    // The running shard answers last; the stopped one must still show.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-1');
+    const health = m.horseDecisionJournalHealth();
+    expect(health).toMatchObject({
+      mode: 'failed',
+      lastFailureReason: 'termination_unverified',
+      failedSince: '2026-09-27T21:22:51.994Z',
+      queued: 70,
+      publishers: { total: 2, byMode: { ready: 1, failed: 1 } },
+    });
+    // The catalog is one shared archive: its figures are the freshest shard's.
+    expect(health.records).toBe(4886577);
+    expect(health.maxRowid).toBe(4935653);
+    expect(health.statsAgeMs).toBeLessThan(1971018);
+    expect(health.capture).toMatch(
+      /^1 of 2 decision-shard publishers running; least healthy: not running: capture stopped at termination_unverified since 2026-09-27T21:22:51\.994Z; a fresh writer is started every minute until one captures;/
+    );
+    // Every shard capturing again: ready, and the sentence says all of them.
+    m.relayHorseDecisionJournalHealth(report('ready'), 'shard-2');
+    expect(m.horseDecisionJournalHealth()).toMatchObject({
+      mode: 'ready',
+      lastFailureReason: null,
+      publishers: { total: 2, byMode: { ready: 2 } },
+    });
+    expect(m.horseDecisionJournalHealth().capture).toMatch(
+      /^2 of 2 decision-shard publishers running; least healthy: running:/
+    );
+  });
+  it('keeps the single-shard sentence unchanged', async () => {
+    vi.resetModules();
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/unused-fixture-horse-journal');
+    const m = await import('./HorseDecisionJournal.js');
+    m.relayHorseDecisionJournalHealth(failed);
+    const health = m.horseDecisionJournalHealth();
+    expect(health.publishers).toEqual({ total: 1, byMode: { failed: 1 } });
+    expect(health.capture).toMatch(
+      /^not running: capture stopped at termination_unverified since .*; a fresh writer is started every minute until one captures;/
+    );
+  });
+});
+
+describe('a competing writer on the shared archive is a lock, not a dead writer', () => {
+  it('refuses as RETRYABLE while the other shard holds the catalog, and the same store then succeeds', () => {
+    const dir = folder(),
+      options = { directory: join(dir, 'archive'), maxBytes: 1024 * 1024, maxSegments: 100 };
+    const a = store(dir, { archive: options }),
+      b = store(dir, { archive: options });
+    const catalogA = (a as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    catalogA.exec('BEGIN IMMEDIATE');
+    let refused: unknown = null;
+    try {
+      b.appendBatch([record(1)]);
+    } catch (error) {
+      refused = error;
+    }
+    expect(horseJournalFailureKind(refused)).toBe('RETRYABLE');
+    catalogA.exec('ROLLBACK');
+    // Nothing was half written: the same writer, asked again, records it, and
+    // the other writer sees the same record as a replay.
+    expect(b.appendBatch([record(1)])).toEqual(['recorded']);
+    expect(a.appendBatch([record(1)])).toEqual(['replayed']);
+    expect(b.storageStats().archive).toMatchObject({ records: 1, pendingSegments: 0 });
+  });
+});
+
 describe('the journal says why it stopped and shows itself to /health', () => {
   it('names the publisher fence that gave up when the writer never said', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -1815,6 +1933,9 @@ describe('the journal says why it stopped and shows itself to /health', () => {
       retiredSegments: null,
       retiredRecords: null,
       heldSegments: null,
+      heldBytes: null,
+      holdBudgetBytes: null,
+      holdTrimmedSegments: null,
       compressedBytes: null,
       maxBytes: null,
       records: null,

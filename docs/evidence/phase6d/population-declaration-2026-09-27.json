@@ -1,0 +1,95 @@
+{
+  "declarationVersion": 1,
+  "stage": "6D",
+  "declaredAt": "2026-09-27T16:49:00Z",
+  "declaredBefore": "any journal record, segment or hand row was read for this declaration; only /health, docker inspect of club-arena-engine and the host release audit (/var/lib/club-arena/engine-release-audit.jsonl) were consulted to write this file",
+  "window": {
+    "startMs": 1790525160000,
+    "endMs": 1790527740000,
+    "start": "2026-09-27T16:06:00Z",
+    "end": "2026-09-27T16:49:00Z",
+    "basis": "from 16:06:00Z, the minute club-arena-engine started on 6b6eabb1 (docker StartedAt 2026-09-27T16:06:56Z; release audit commit event at 1790525289), to the minute this declaration was committed"
+  },
+  "servingRelease": {
+    "sha": "6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4",
+    "readFrom": "ssh root@5.161.252.33 curl -s http://127.0.0.1:8080/health (releaseSha) and docker inspect club-arena-engine (sp.release.sha label), read 2026-09-27T16:47:12Z",
+    "containerStartedAt": "2026-09-27T16:06:56Z"
+  },
+  "admittedReleases": [
+    {
+      "sha": "6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4",
+      "served": "2026-09-27T16:06:56Z (container start) to window end",
+      "source": "serving; engine-release-audit.jsonl commit event at 1790525289 (generation 74), previous 4946473bb65a27d964a3ad9401eaf4948014a0a8 is not admitted"
+    }
+  ],
+  "releaseRule": "Only 6b6eabb1 is admitted. A record whose sourceRelease is anything else (including 4946473b, which served until the 6b6eabb1 container started) is counted as rejected:release and fills no cell.",
+  "evidenceSource": {
+    "journal": "/var/lib/club-arena/horse-decisions archive (archive/horse-journal-archive.sqlite and archive/segments), read through the serving image's compiled HorseDecisionJournalStore in a read-only, network-none, throwaway container, exactly as the 2026-09-26 declaration",
+    "reader": "/app/dist/services/horseDecisionJournal/{store,config,review,record,lifecycle}.js and the image's validators, from the 6b6eabb1 image",
+    "writes": "none; the observer mounts the journal read-only and is removed after the run",
+    "knownStateAtDeclaration": "health.horseJournal.mode=ready, capture running as a ring of 500000 segments (retired 1127 segments at the read), catalog maxRowid 4156289. The archive is a ring since #5355, so the lowest catalog rowid is above 1; the selector starts its binary search at min(rowid). The declaration does not assume how many window records exist; the run reports it."
+  },
+  "population": {
+    "unit": "one Horse betting decision (a decision journal record) whose request snapshot stage is preflop, joined to its request lifecycle, execution witness and completed hand",
+    "street": "preflop only; Phase 6 is the tournament preflop atlas and postflop decisions never consult it. Postflop decisions are counted as rejected:postflop and fill no cell.",
+    "axes": {
+      "format": ["cash", "mtt", "sng", "spin", "hu_sng"],
+      "branch": [
+        "none",
+        "unopened",
+        "limp_facing",
+        "open_facing",
+        "three_bet_facing",
+        "cold_call",
+        "overcall",
+        "squeeze",
+        "reshove",
+        "blind_vs_blind",
+        "bb_defense",
+        "multiway_all_in"
+      ],
+      "size": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "anteMode": ["none", "per_player", "big_blind"],
+      "path": ["normal", "bypass", "fallback"]
+    },
+    "cells": "the product of the axes with one exclusion: format cash admits branch none only, because the atlas coordinate exists only in tournament mode. 81 cash cells plus 4 x 12 x 9 x 3 x 3 = 3888 tournament cells; 3969 declared cells in total",
+    "targetPerCell": 3,
+    "classification": {
+      "format": "snapshot.gameState.format, else 'mtt' when gameMode is 'tournament' (or, without gameMode, when a tournament object is present or bigBlind >= 10), else 'cash'; this mirrors HorseLogic",
+      "branch": "phase6Attribution.lookup.coordinate.branch when a lookup was recorded, else 'none'",
+      "size": "phase6Attribution.lookup.coordinate.tableSize when a lookup was recorded, else tournament.playersAtTable, else max(2, snapshot.gameState.players.length)",
+      "anteMode": "phase6Attribution.lookup.coordinate.anteType when a lookup was recorded, else tournament.anteType, else big_blind when bigBlindAnte is true, else per_player when ante > 0, else none",
+      "path": "fallback when decision.policyFallback is set, the execution witness policyFallback is set, or the bound accepted action carries origin horse_fallback; otherwise bypass when phase6Attribution.status is 'bypassed'; otherwise normal when status is 'atlas_evaluated' or when status is 'unavailable' with reason 'outside_tournament' (cash never consults the atlas); otherwise fallback when status is 'unavailable' with any other reason (incomplete_context, unsupported_variant, invalid_coordinate, m_unavailable, lookup_unavailable, tournament_schema_unavailable); a preflop decision without a phase6Attribution is rejected:unclassified_path and fills no cell",
+      "outsideDeclaration": "any decision whose classified cell is not one of the declared cells is counted as rejected:undeclared_cell and never fills a cell"
+    }
+  },
+  "selection": {
+    "order": "ascending archive_events rowid inside the window, in hourly strata",
+    "strata": "one stratum per started hour from window.startMs (stratum h starts at window.startMs + h * 3600000 and ends one hour later or at window.endMs, whichever is first); its first rowid is found by binary search on record atMs over the existing archive_events rowids from min(rowid) to max(rowid) (each probe decodes exactly one segment); a stratum with no archived record is reported as 'stratum empty: no archived records'",
+    "handsPerStratum": 400,
+    "handRule": "the first 400 distinct hand_keys at or after the stratum's first rowid, in rowid order; each hand is read once with HorseDecisionJournalStore.readHand and every preflop decision record in it is classified; a hand whose custody is still pending is counted as pendingCustody and skipped",
+    "fillRule": "a classified decision is admitted to its cell only while that cell's observed count is below targetPerCell; decisions beyond the target are counted per cell as overflow and are not listed; nothing is drawn from outside the strata, no cell is filled from a neighbouring cell, and no unobserved cell is inferred from any other",
+    "stop": "after all strata are walked; the run also stops early and says so if the observer's 600 second deadline is reached (stopReason=deadline)",
+    "bounds": {
+      "maxHandsInspected": 9600,
+      "observerDeadlineSeconds": 600,
+      "maxRecordsPerHand": 256
+    }
+  },
+  "chain": {
+    "links": ["request", "calculation", "reference", "acceptedAction", "completedHand"],
+    "request": "present when a request_lifecycle record with phase 'requested' exists for the decision's producer and turnKey and its requestDigest equals horseLifecycleRequestDigest of the decision snapshot; otherwise missing:request_lifecycle or missing:request_digest",
+    "calculation": "present when the decision record carries a valid decision receipt for the snapshot's variant, valid rngBefore/rngAfter sampling state and valid compute metadata; otherwise missing:calculation_receipt",
+    "reference": "present when the decision carries a phase6Attribution that validates and matches the snapshot (horsePhase6AttributionMatchesSnapshot); otherwise missing:reference",
+    "acceptedAction": "present when an execution witness exists for the same producer and turnKey with executionStatus intended or coerced and exactly one accepted action that is intended; retired decisions (not_executed with a retirement reason) report missing:accepted_action:<retirementReason>; a witness with no accepted action reports missing:accepted_action; no witness reports missing:execution_witness",
+    "completedHand": "present when the hand has an accepted_hand record whose completed-hand key equals the hand key and bindHorseDecisionToCommittedHand binds the witness to an action ordinal of that hand; otherwise missing:accepted_hand or missing:hand_binding:<reason>",
+    "review": "reconcileHorseJournalHand from the serving image runs on every read hand; its status and gaps are copied beside the chain and never replace the per-link marks",
+    "complete": "a chain is complete only when all five links are present"
+  },
+  "prohibitions": [
+    "no record is written anywhere on the engine host",
+    "no cell is filled, averaged, extrapolated or expressed as a percentage",
+    "no decision outside the strata or outside the declared cells is admitted",
+    "the window, strata, hands per stratum, target, axes and admitted releases cannot change after this file is committed; the selector refuses a run whose declaration digest differs from the one recorded in the population output"
+  ]
+}

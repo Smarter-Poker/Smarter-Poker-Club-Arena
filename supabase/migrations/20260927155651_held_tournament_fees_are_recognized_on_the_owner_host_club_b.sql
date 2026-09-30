@@ -76,7 +76,7 @@
 
 -- @live-proof: (SELECT to_regprocedure('public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb)') IS NOT NULL AND to_regclass('public.accounting_tournament_fee_owner_bases') IS NOT NULL)
 -- @live-proof: (SELECT position('accounting_tournament_fee_owner_bases' in pg_get_functiondef('public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)'::regprocedure)) > 0)
--- @live-proof: (SELECT position('fn_accounting_tournament_source_terms_at' in pg_get_functiondef('public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)) > 0)
+-- @live-proof: (SELECT position('fn_accounting_tournament_source_terms_at' in pg_get_functiondef('public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)) > 0)
 -- @live-proof: (SELECT position('horse_retention_days' in pg_get_functiondef('smarter_private.spin_original_standings_witness(uuid,uuid)'::regprocedure)) > 0)
 BEGIN;
 SET LOCAL lock_timeout='2s';
@@ -162,7 +162,8 @@ BEGIN
  FOR f IN SELECT * FROM (VALUES
   ('public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid)',ARRAY['b7e0c1cae9d65b9a0b3560dc3280991a'],'{postgres=X/postgres,service_role=X/postgres}'),
   ('public.fn_accounting_tournament_week_quality(uuid,timestamp with time zone,timestamp with time zone)',ARRAY['15496db2b1026a92fedee86502028b95'],'{postgres=X/postgres}'),
-  ('public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)',ARRAY['c4e909aebc4228ff1d93695ed92f0368'],'{postgres=X/postgres}'),
+  ('public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)',ARRAY['409eade1f18decea288db84784f127b2'],'{postgres=X/postgres}'),
+  ('public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)',ARRAY['e16d7ddd96e4d349d15973bb71a19036'],'{postgres=X/postgres}'),
   ('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])',ARRAY['2fffb5add208db1eb1e6b66c9df15220'],'{postgres=X/postgres}'),
   ('public.fn_ca_legacy_fee_resolution_write_is_exact(text,text,jsonb,jsonb)',ARRAY['54ca630d2363a5ac17041d79931e301c'],'{postgres=X/postgres}'),
   ('smarter_private.spin_original_standings_witness(uuid,uuid)',ARRAY['f291f307d5357cac11a4d57d1757cf72'],'{postgres=X/postgres}')
@@ -229,8 +230,10 @@ BEGIN$new$);
  EXECUTE replace(source,$old$(s.contract->>'terms_at')::timestamptz IS DISTINCT FROM s.charged_at$old$,
   $new$(s.contract->>'terms_at')::timestamptz IS DISTINCT FROM public.fn_accounting_tournament_source_terms_at(s.tournament_id,s.charged_at,s.contract)$new$);
 
- -- 3b. Union earned plan.
- source:=pg_get_functiondef('public.fn_accounting_union_earned_plan(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure);
+ -- 3b. Union earned plan. The September 28 close optimization moved the
+ -- unchanged verifier into _v3. Extend that verifier and preserve the
+ -- transaction-scoped memo wrapper byte-for-byte; both predecessors are pinned.
+ source:=pg_get_functiondef('public.fn_accounting_union_earned_plan_v3(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure);
  changed:=replace(source,$old$WHERE f.id=s.source_id AND f.charged_at=s.terms_at))$old$,
   $new$WHERE f.id=s.source_id AND public.fn_accounting_tournament_source_terms_at(f.tournament_id,f.charged_at,f.contract)=s.terms_at))$new$);
  IF changed=source THEN RAISE EXCEPTION '%', PROCEDURE_GUARD||'union earned plan terms' USING ERRCODE='55000'; END IF;

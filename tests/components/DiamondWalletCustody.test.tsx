@@ -111,11 +111,16 @@ describe('wallet custody integration', () => {
 });
 
 describe('wallet history request ownership', () => {
+  /* `player_line` is what the read returns and what the modal prints since
+     phase 6 (the ledger speaks to the player): the raw `description` is the
+     operator's record and never reaches a player, so a fixture that omits
+     the computed column is not the row production serves. */
   const row = (id: string) => ({
     id,
     type: 'purchase',
     amount: 10,
     description: id,
+    player_line: id,
     created_at: '2026-09-09T12:00:00Z',
   });
   it('ignores a previous account response that arrives after the new account history', async () => {

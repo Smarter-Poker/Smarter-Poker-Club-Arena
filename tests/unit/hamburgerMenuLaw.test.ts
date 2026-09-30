@@ -134,6 +134,11 @@ describe('4. Table Studio takes control from the command drawer', () => {
       closed.indexOf('  return (\n    <>')
     );
     expect(MENU.split('<DeviceCheck').length - 1).toBe(1);
+    // Reopening the menu over an open check dismisses it, so closing the menu
+    // never resurrects a blank check.
+    expect(MENU).toContain(`useEffect(() => {
+    if (isOpen) setShowDeviceCheck(false);
+  }, [isOpen]);`);
   });
 });
 

@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/union-opening-registration-resolution. NOT YET APPLIED when pushed (2026-09-28): migration 20260928222109_an_opening_registration_is_resolved_from_its_ledger_entry is applied to production by the accounting coordinator after migration 20260928211132 (#5551), whose fn_union_pnl_boundary it replaces (its preimage guard refuses any other order). Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": ["union_pnl_opening_registration_resolutions"],
+  "functions": [
+    "fn_union_pnl_opening_registration_resolution",
+    "fn_union_pnl_prove_opening_registrations",
+    "fn_union_pnl_resolve_opening_registrations"
+  ]
+}

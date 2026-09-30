@@ -1,15 +1,15 @@
 {
   "migration": "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql",
-  "assertions": 33,
+  "assertions": 34,
   "repository_files": {
     "tests/fixtures/held-fee-owner-basis/spin-retention.sql": "5931059d0af1eb5fa79b498f921f01e445dfb0161a13b7ae15654fd7998ef337",
-    "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "34f0adac71603a4ad0ff0af66c7484a7d900a8fb08a7f9ead6572eeb939addca",
+    "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "97c8e07642ccbfaf15b8b92eb86f908518eab0592b2e99d1bb23c43934a62c0f",
     "tests/fixtures/held-fee-owner-basis/setup.sql": "3655c9d23c3437ab0671ed82862530703e123f1cd7be0015a785ae95ac4ed629",
     "tests/fixtures/held-fee-owner-basis/terms.sql": "c4e422c94f49d033833959116cdd37b8d8aff90f24fbf1500eee3e78a90e5aa7",
     "tests/fixtures/held-fee-owner-basis/before.sql": "f5b7bdcd8f42f28e4a47e340a51154b68660c3979df3beb12d87299604310881",
-    "tests/fixtures/held-fee-owner-basis/after.sql": "cf380c2132fc577cd210574c988fb8fd9e5a141eb8360dfaad9e65d3ba3d9641",
-    "tests/fixtures/held-fee-owner-basis/production-owner-path.json": "1c038dfad0379f7a0a6061a4e2599162d957dc829ef2f70790b74a50c0746279",
-    "scripts/dev/qualify-held-fee-owner-basis.py": "d83dd990f5146756d63bd9d8c90e55fe008f5fc1f37895c6dae0a3cb4a952d7b",
+    "tests/fixtures/held-fee-owner-basis/after.sql": "04ba131483cc6491c7318bfd60f8dfd778e1621a28c7b3f2e0be81ffbaf80207",
+    "tests/fixtures/held-fee-owner-basis/production-owner-path.json": "2ed43c7b261fe76b47567891f3b1033b567d71d9e27fa03bbb99afd5b6ee249f",
+    "scripts/dev/qualify-held-fee-owner-basis.py": "cbf3820cd9e54f52b1b62fe098ab54a3cd94a772c6e44fdf7bf194c1c578ff35",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62"
   },

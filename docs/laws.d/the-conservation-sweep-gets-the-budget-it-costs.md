@@ -1,0 +1,3 @@
+# tests/the-conservation-sweep-gets-the-budget-it-costs.law.test.ts
+
+The pg_cron job that runs fn_ca_conservation_sweep() sets its own statement budget of at least three times the sweep's measured cost (107 s) and under the hourly period, so a whole-state conservation sweep is never cancelled by the postgres login's 2-minute default (a cancel is QUERY_CANCELED, which the sweep's per-check handler cannot catch, so every cancelled run lost its findings and its detector-run record and no sweep incident could close). Negative proof: without migration 20260927164653 the latest job definition is the 2026-09-02 command with no budget, and the budget assertion fails.

@@ -41,9 +41,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useDebounce } from '../hooks/useDebounce';
+import { COUNT_UNKNOWN } from '../lib/countFigure';
 import {
   DIAMOND_ARENA_COUNTS_PENDING,
   DIAMOND_ARENA_COUNTS_UNKNOWN,
+  DIAMOND_ONLINE_RECHECK_MS,
   diamondCountsStatus,
   diamondFigureText,
   type DiamondArenaCounts,
@@ -92,21 +94,41 @@ export default function DiamondPlayersPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let recheck: ReturnType<typeof setTimeout> | undefined;
     setCounts(DIAMOND_ARENA_COUNTS_PENDING);
     setCountsPhase('loading');
-    DiamondArenaRosterService.getCounts(controller.signal)
-      .then((next) => {
-        if (controller.signal.aborted) return;
-        setCounts(next);
-        setCountsPhase('ready');
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbort(error)) return;
-        reportError(error, 'DiamondPlayersPage.counts');
-        setCounts(DIAMOND_ARENA_COUNTS_UNKNOWN);
-        setCountsPhase('failed');
-      });
-    return () => controller.abort();
+    /* Online is asked once more before it is shown as Unavailable: a page
+       loaded cold can ask before its own live feeds have registered, and the
+       server counts only while it can see the player asking. The second
+       answer is final, and it changes Online alone. */
+    const ask = (first: boolean) =>
+      DiamondArenaRosterService.getCounts(controller.signal)
+        .then((next) => {
+          if (controller.signal.aborted) return;
+          if (!first) {
+            setCounts((shown) => ({ ...shown, online: next.online }));
+            return;
+          }
+          const recheckOnline = next.online === COUNT_UNKNOWN;
+          setCounts(recheckOnline ? { ...next, online: null } : next);
+          setCountsPhase('ready');
+          if (recheckOnline) recheck = setTimeout(() => void ask(false), DIAMOND_ONLINE_RECHECK_MS);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted || isAbort(error)) return;
+          reportError(error, 'DiamondPlayersPage.counts');
+          if (!first) {
+            setCounts((shown) => ({ ...shown, online: COUNT_UNKNOWN }));
+            return;
+          }
+          setCounts(DIAMOND_ARENA_COUNTS_UNKNOWN);
+          setCountsPhase('failed');
+        });
+    void ask(true);
+    return () => {
+      controller.abort();
+      clearTimeout(recheck);
+    };
   }, [refreshes]);
 
   useEffect(() => {

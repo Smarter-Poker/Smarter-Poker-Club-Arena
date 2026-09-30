@@ -23,8 +23,17 @@ import { dirname } from 'node:path';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const FILE = 'docs/attestation/cron-roster.tsv';
-/** 20260910073355 restored two bust-sweep rows disabled; that is source, not measurement. */
-const RETAINED_INACTIVE = 2;
+/**
+ * Rows that are IN cron.job but not active, so fn_ca_cron_health() never
+ * returns them and the body below cannot hold them.
+ *
+ * 20260910073355 restored two bust-sweep rows disabled; that is source, not
+ * measurement. 2026-09-30 added a third: union-weekly-rakeback-close (jobid
+ * 272) was stood down, not unscheduled, while 20260928164258 reworked the
+ * weekly close. Moving this number is the same reviewed edit as moving the
+ * active count, and docs/attestation/cron-roster.tsv records which row moved.
+ */
+const RETAINED_INACTIVE = 3;
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -64,7 +73,7 @@ const header = [
   '# pins the count, and the count is supposed to be argued about.',
   `# observed_at: ${observed}`,
   `# active: ${rows.length}`,
-  `# retained-inactive: ${RETAINED_INACTIVE}\tthe two bust sweeps, restored disabled by 20260910073355`,
+  `# retained-inactive: ${RETAINED_INACTIVE}\tthe two bust sweeps restored disabled by 20260910073355, and union-weekly-rakeback-close`,
   '# jobname\tschedule',
 ].join('\n');
 

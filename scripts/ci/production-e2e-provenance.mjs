@@ -4,6 +4,9 @@ import { execFileSync } from 'node:child_process';
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
+/** "I could not tell" is a third outcome with its own code (CLAUDE.md 10.86 rule 1). */
+export const UNKNOWN_EXIT_CODE = 3;
+
 /** The publisher selects current main after its trigger; its artifact records that choice. */
 export function readPublisherArtifactSha(raw, runId, triggerSha, repositoryId) {
   if (
@@ -118,6 +121,27 @@ export function requireUnchangedBuildInfoSha(raw, expected) {
   return actual;
 }
 
+/**
+ * THREE LINEAGES, NOT TWO, BECAUSE PRODUCTION MOVES FORWARD WHILE WE WATCH.
+ *
+ * `ancestor` is deploy LAG: production is behind this checkout, and the
+ * assertions must be taken from the deployed commit or a new spec asks an old
+ * page a question it cannot answer. That is the case this guard was written
+ * for and it is unchanged.
+ *
+ * `descendant` is the opposite and was, until 2026-09-30, a hard refusal
+ * reading `Production SHA X is not an ancestor of checkout Y`. It is not a
+ * divergence: it means another publisher merged and published while this
+ * certificate was being assembled, so production is a LATER commit on the same
+ * protected main. At the merge rate this repo actually runs at - twenty runs
+ * in the sample, every one of them started within minutes of the next merge -
+ * that is the ordinary case, not an anomaly, and calling it a failure told
+ * nobody anything about the live site. The caller re-targets onto the live
+ * commit instead; the lineage is still proved, in the other direction.
+ *
+ * Anything that shares no lineage with the checkout, or does not resolve at
+ * all, is still refused: a mismatched assertion set cannot produce a verdict.
+ */
 export function classifyTrustedLineage(live, here, evidence) {
   if (!FULL_SHA.test(live) || !FULL_SHA.test(here)) {
     throw new Error('Production and checkout provenance must both be full lowercase SHAs.');
@@ -126,10 +150,47 @@ export function classifyTrustedLineage(live, here, evidence) {
   if (!evidence.commitExists(live)) {
     throw new Error(`Production SHA ${live} does not resolve to a trusted repository commit.`);
   }
-  if (!evidence.isAncestor(live, here)) {
-    throw new Error(`Production SHA ${live} is not an ancestor of checkout ${here}.`);
+  if (evidence.isAncestor(live, here)) return 'ancestor';
+  if (evidence.isAncestor(here, live)) return 'descendant';
+  throw new Error(`Production SHA ${live} shares no lineage with checkout ${here}.`);
+}
+
+/**
+ * WAS THE RELEASE STILL THE ONE WE TESTED, AND IF NOT, IS THAT A DEFECT?
+ *
+ * `requireUnchangedBuildInfoSha` above answers a different question and keeps
+ * answering it: the PUBLISHER calls it immediately after swapping its own
+ * symlink, where any change at all really is wrong. Do not merge the two.
+ *
+ * Here the window is forty minutes of browsers. Demanding one frozen SHA
+ * across it made a normal forward publish indistinguishable from a rollback,
+ * a divergence or an unreadable origin - and since the publisher fires on
+ * every merge, the frozen-SHA demand could essentially never hold. Twelve of
+ * the last twenty runs died on it.
+ *
+ * So classify instead of refusing:
+ *   certified  - production never left the SHA this run recorded.
+ *   superseded - production advanced to a LATER trusted commit on this
+ *                lineage. The run could not tell for any assertion that
+ *                straddled the switch; it is a non-verdict, not a red.
+ * Anything else - a rollback, an off-lineage SHA, an unreadable document -
+ * still throws, because those are the states worth waking somebody for.
+ */
+export function classifyReleaseWindow(raw, expected, evidence) {
+  if (!FULL_SHA.test(expected)) {
+    throw new Error('The expected production provenance must be one full lowercase SHA.');
   }
-  return 'ancestor';
+  const actual = readBuildInfoSha(raw);
+  if (actual === expected) return { verdict: 'certified', sha: actual };
+  if (!evidence.commitExists(actual)) {
+    throw new Error(`Production SHA ${actual} does not resolve to a trusted repository commit.`);
+  }
+  if (!evidence.isAncestor(expected, actual)) {
+    throw new Error(
+      `Production moved from ${expected} to ${actual}, which is not a forward release on this lineage.`
+    );
+  }
+  return { verdict: 'superseded', sha: actual };
 }
 
 function gitSucceeds(args) {
@@ -141,12 +202,18 @@ function gitSucceeds(args) {
   }
 }
 
+const REPOSITORY_EVIDENCE = {
+  commitExists: (sha) => gitSucceeds(['cat-file', '-e', `${sha}^{commit}`]),
+  isAncestor: (ancestor, descendant) =>
+    gitSucceeds(['merge-base', '--is-ancestor', ancestor, descendant]),
+};
+
 export function classifyRepositoryLineage(live, here) {
-  return classifyTrustedLineage(live, here, {
-    commitExists: (sha) => gitSucceeds(['cat-file', '-e', `${sha}^{commit}`]),
-    isAncestor: (ancestor, descendant) =>
-      gitSucceeds(['merge-base', '--is-ancestor', ancestor, descendant]),
-  });
+  return classifyTrustedLineage(live, here, REPOSITORY_EVIDENCE);
+}
+
+export function classifyRepositoryReleaseWindow(raw, expected) {
+  return classifyReleaseWindow(raw, expected, REPOSITORY_EVIDENCE);
 }
 
 async function readStdin() {
@@ -181,8 +248,18 @@ async function main() {
     process.stdout.write(`${classifyRepositoryLineage(args[0], args[1])}\n`);
     return;
   }
+  // Exit 3 is UNKNOWN and is deliberately not shared with 0 (certified) or 1
+  // (a real anomaly). CLAUDE.md 10.86 rule 1: a run whose release moved under
+  // it could not tell, and "could not tell" needs its own name and its own
+  // code, or it gets folded into a red nobody reads.
+  if (command === 'release-window' && args.length === 1) {
+    const window = classifyRepositoryReleaseWindow(await readStdin(), args[0]);
+    process.stdout.write(`${window.verdict} ${window.sha}\n`);
+    if (window.verdict !== 'certified') process.exitCode = UNKNOWN_EXIT_CODE;
+    return;
+  }
   throw new Error(
-    'Usage: production-e2e-provenance.mjs publisher-artifact <run-id> <trigger-sha> <repository-id> | build-info | unchanged <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
+    'Usage: production-e2e-provenance.mjs publisher-artifact <run-id> <trigger-sha> <repository-id> | build-info | unchanged <expected-sha> | release-window <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
   );
 }
 

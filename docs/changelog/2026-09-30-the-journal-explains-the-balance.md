@@ -155,3 +155,13 @@ every row per user, and marking every row `journal_backfill`.
 Those two rule rows and their triggers are the hard-coded fix. Softening one
 would un-fix the defect while the guards still read as present, which is the
 failure mode CLAUDE.md 10.86 exists to prevent.
+
+---
+
+**Correction, 2026-09-30 (same day).** The out-of-scope note above is wrong in
+two ways and the next agent should not go looking for missing money on its
+account. The 1,068 wallets do **not** net to zero: they differ by 1,021,092 and
+every one of them leans the same way, because the difference is the 2026-09-03
+opening baseline that was deliberately booked as a single `circulation` row and
+never attributed per holder. It is not a defect. Read
+[`2026-09-30-the-register-is-a-supply-ledger-not-a-wallet.md`](./2026-09-30-the-register-is-a-supply-ledger-not-a-wallet.md).

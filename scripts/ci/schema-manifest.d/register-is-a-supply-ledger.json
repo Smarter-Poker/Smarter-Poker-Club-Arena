@@ -1,0 +1,5 @@
+{
+  "_owner": "cw-diamond-register-1001. Migration 20260930164146_the_register_is_a_supply_ledger_and_says_so_per_wallet adds two read-only reporting functions over the diamond register. No table, no money, no schedule.",
+  "tables": [],
+  "functions": ["fn_ca_mint_wallet_attribution", "fn_ca_mint_register_attribution"]
+}

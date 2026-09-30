@@ -1,0 +1,1103 @@
+{
+  "captured_at": "2026-09-30T11:38:24Z",
+  "project": "kuklfnapbkmacvwxktbh",
+  "what": "every Diamond money door the concurrency, duplicate-delivery and crash-recovery cases execute that the base and the tournament captures do not already hold byte-identical to production, and the trigger functions production fires on the rows those doors write",
+  "doors": [
+    {
+      "identity": "add_diamonds_to_balance(p_user_id uuid, p_amount integer, p_type text, p_description text, p_reference_id text, p_counterparty_id uuid)",
+      "md5": "5d356b15727558df9c498dbb05a745d0",
+      "len": 9612,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "atomic_credit_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid, p_idempotency_key text)",
+      "md5": "ffc49583c6142ea0929f247edc65e219",
+      "len": 5543,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "atomic_seat_cashout_locked(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_leave_mode text)",
+      "md5": "e1b0b9702e75378ecac634c3a879502e",
+      "len": 7059,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "atomic_table_buyin(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_amount numeric, p_auto_rebuy boolean, p_club_id uuid, p_idempotency_key uuid)",
+      "md5": "2f8b47a714db3f297aff3f7a2e814c44",
+      "len": 2782,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "atomic_table_buyin_before_maintenance_announcement_gate(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_amount numeric, p_auto_rebuy boolean, p_club_id uuid, p_idempotency_key uuid)",
+      "md5": "b329fed556008cf1a9a4b8fe7727ac9e",
+      "len": 10670,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "deduct_diamonds(p_user_id uuid, p_amount integer, p_description text, p_transaction_type text, p_source text, p_metadata jsonb, p_reference_id text, p_cooldown_seconds integer)",
+      "md5": "bfd93c5a09301f87e8afca6da0240061",
+      "len": 7096,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_a_closed_account_cannot_rewrite_itself()",
+      "md5": "9552ec6c29dc58e1e34221c542ce4bc9",
+      "len": 377,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_accounting_mixed_cutover_spin_proof_valid(p_rake_record_id uuid)",
+      "md5": "f660a8b47bf88a86f2e236a4794ed4e6",
+      "len": 1091,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_accounting_tournament_bank_proof(p_tournament_id uuid, p_recognized_at timestamp with time zone, p_bank_club_id uuid, p_union_id uuid, p_net_fee numeric, p_union_wallet_transaction_id uuid, p_bank_journal_id uuid)",
+      "md5": "e56aa8c8280c59e2f0406ea6c504dc4e",
+      "len": 2599,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_accounting_tournament_fee_fingerprint(p_row rake_records)",
+      "md5": "dd55cceba87b1578472171e1c80ba1fb",
+      "len": 676,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_accounting_tournament_fee_net_plan(p_tournament_id uuid)",
+      "md5": "9b1147a5b373e2a01e3374b8dd2cc2fa",
+      "len": 7967,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_accounting_tournament_terminal_fee_receipt(p_tournament_id uuid)",
+      "md5": "b73bac5809d0e042837fcc32bacc0769",
+      "len": 2910,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_bounty_obligation_has_complete_marker(p_obligation_id uuid)",
+      "md5": "d51a53c3ad6d45edb5e431c43641dc57",
+      "len": 5704,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_arena_diamonds()",
+      "md5": "86863a1208455e92803777829bc9a668",
+      "len": 370,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_assert_satellite_cohort_standings(p_tournament_id uuid)",
+      "md5": "12b83a02a4057025e153f07bad9d8919",
+      "len": 2255,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_assert_tournament_chip_grant(p_tournament_id uuid, p_user_id uuid, p_seat_id uuid, p_new_stack numeric, p_source text)",
+      "md5": "c49fa16f6be47ed9ca2e72b2f2b9da07",
+      "len": 1493,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_cash_buyin_receipt(p_idempotency_key uuid, p_table_id uuid)",
+      "md5": "82e0c070a873103964f597a1968745c7",
+      "len": 1606,
+      "owner": "postgres",
+      "grants": "authenticated",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_consume_purchase_lots(p_user_id uuid, p_amount bigint)",
+      "md5": "d8674a23766c140fa3e85834d540a4ac",
+      "len": 1292,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_diamond_engine_of(p_type text, p_transaction_type text, p_source text, p_description text, p_reference_id text)",
+      "md5": "44a39c35cc96801b5aa22a6ac930ee17",
+      "len": 4049,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_diamond_journal_origin(p_type text, p_transaction_type text, p_source text, p_issuance_class text, p_amount numeric)",
+      "md5": "373b32a1f7b88bd38277e808a5700256",
+      "len": 4190,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_diamond_register_vs_supply()",
+      "md5": "4831173c57fc3d4e2bc0fa5eea346ee2",
+      "len": 878,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_diamond_transfer_names_its_counterparty()",
+      "md5": "ffd2026beded5edfde9726d4fde77cbf",
+      "len": 1487,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_fund_overlay_on_lock()",
+      "md5": "54d60d5b8e51a523f610c72b40c1fbaa",
+      "len": 9700,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_guard_seat_creation()",
+      "md5": "b3e14f411d43b01e84fd614c87f8bf6a",
+      "len": 3234,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_incident_notify(p_incident_id uuid, p_kind text, p_headline text, p_senior_only boolean)",
+      "md5": "12db60ac332870e31d1c713c3fe4c099",
+      "len": 9328,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_journal_append_only()",
+      "md5": "ac9d66e60d077d886981c428c71e5c3c",
+      "len": 8932,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_legacy_fee_custody_cohort(p_tournament_id uuid)",
+      "md5": "1a0321e70d38708ff96db5fd6ebe0067",
+      "len": 2170,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_legacy_fee_resolution_write_is_exact(p_table text, p_operation text, p_old jsonb, p_new jsonb)",
+      "md5": "54ca630d2363a5ac17041d79931e301c",
+      "len": 6321,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_process_tournament_chip_purchase_money_v1(p_tournament_id uuid, p_user_id uuid, p_rebuy_type text, p_cost numeric, p_chips numeric, p_current_level integer, p_client_token text)",
+      "md5": "9ff346ac60f760311d884c6d63d9001d",
+      "len": 14926,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_raise_drift_incident(p_source text, p_classification text, p_severity text, p_dedupe_key text, p_discrepancy numeric, p_expected numeric, p_actual numeric, p_layer text, p_entity_type text, p_entity_id uuid, p_club_id uuid, p_union_id uuid, p_table_id uuid, p_tournament_id uuid, p_hand_id uuid, p_settlement_id text, p_wallet_ids uuid[], p_transaction_ids uuid[], p_suspected_cause text, p_ledger_balanced boolean, p_metadata jsonb)",
+      "md5": "e6dac566804430737ee80da0a1801b40",
+      "len": 10437,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_sep8_spin_original_fee_proof(p_tournament_id uuid)",
+      "md5": "3224402eb784a60fbbc129135df632fb",
+      "len": 8482,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_bust_at(p_tournament_id uuid, p_user_id uuid)",
+      "md5": "e15bc842a96da68626db64b2b5dcbd9e",
+      "len": 1565,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_chip_supply(p_tournament_id uuid)",
+      "md5": "c29dfa4a0ebef95fddeb8a0982ef07e1",
+      "len": 916,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_fee_custody_receipt(p_tournament_id uuid)",
+      "md5": "5bde7ab09e8fe7da8dd11cc9e581e504",
+      "len": 4554,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_felt_may_not_exceed_supply()",
+      "md5": "81fda5e596905c96a07bebfcff7f32b3",
+      "len": 5148,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_felt_total(p_tournament_id uuid)",
+      "md5": "a2698ca8bafd2a3b76c7ac156d654276",
+      "len": 378,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_place_amounts(p_tournament_id uuid)",
+      "md5": "a660188273312037c813a0d3d0fb807c",
+      "len": 9817,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_terminal_receipt(p_tournament_id uuid, p_observed_winner_id uuid)",
+      "md5": "0063a1bf2739d27f52e7f5111b1e67ad",
+      "len": 32198,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_verify_terminal_final_deal_batch(p_tournament_id uuid, p_require_terminal boolean)",
+      "md5": "bd50e5dfb791252dd1c5731fa6254d00",
+      "len": 14773,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cancel_cash_seat_moves_on_table_close()",
+      "md5": "15c4186eb80013ea8907e73f80f4a096",
+      "len": 887,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_capability_available(p_capability_id text)",
+      "md5": "43d415cfb6fbb9c289e98b12b5de925c",
+      "len": 399,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cash_game_roster_track()",
+      "md5": "1ce40780d8a8b510b88549de225a9b25",
+      "len": 3219,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cash_record_original_funding(p_kind text, p_key text, p_user uuid, p_table uuid, p_ledger uuid, p_wallet uuid, p_club uuid, p_amount numeric, p_after numeric, p_pending uuid)",
+      "md5": "7ee6659572a38ef014952b4559f6167a",
+      "len": 2196,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cash_session_open(p_user_id uuid, p_table_id uuid, p_buy_in numeric)",
+      "md5": "bbc08d039928fa122d3cc1846ee1c2ec",
+      "len": 2183,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cashout_seat_occupancy(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_occupancy_id uuid, p_leave_mode text)",
+      "md5": "2e60c4b66468b51061018a9058e9a395",
+      "len": 4271,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_clear_seats_on_game_end()",
+      "md5": "9660c076fa2d1739a01ed360933f3c26",
+      "len": 675,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_clear_sitout_on_turnover()",
+      "md5": "0047b57eef2386cece21471486e8579c",
+      "len": 637,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_clear_table_seats(p_table_id uuid, p_reopen boolean)",
+      "md5": "66923ea85a2278f0992b5e802f3340a7",
+      "len": 1100,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_concurrent_game_load(p_user_id uuid, p_exclude_seat_id uuid, p_exclude_table_id uuid, p_exclude_tournament_id uuid)",
+      "md5": "3c3cefbad667a51bd13caf5e1beaaf8b",
+      "len": 2844,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_diamond_spin_wallet_reserve()",
+      "md5": "f13ec6ac7915261efc4170ac3f16a655",
+      "len": 994,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_enforce_four_table_limit()",
+      "md5": "817fb0550497afd5347b936a3cbb5bb9",
+      "len": 2352,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_enforce_tournament_capacity()",
+      "md5": "c89a358115c8cd06ff93cfffc2aab84f",
+      "len": 2967,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ensure_late_registration_capacity(p_tournament_id uuid, p_reserved_entries integer)",
+      "md5": "cee652fdd8962e43b8e2861bf5c5407e",
+      "len": 10495,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_get_seat_cashout_receipt(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_occupancy_id uuid)",
+      "md5": "49d452fa253d5ac059a199284f4ce806",
+      "len": 1058,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_guard_horse_profile_authority()",
+      "md5": "515acecbbd2af70b7d3384c83c468fad",
+      "len": 1320,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_guard_managed_game_lifecycle()",
+      "md5": "b90cc1cb27839211a82715c4741410c1",
+      "len": 4263,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_guard_profile_privileged_columns()",
+      "md5": "5ec21958ce25b6a88a0f370b4050b542",
+      "len": 3088,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_guard_tournament_completed_certificate()",
+      "md5": "8a05956d1fd25d649f1f80b133ed3ed0",
+      "len": 3763,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_guard_tournament_completing_claim()",
+      "md5": "311ed77e7726f0c7515859a9140d526c",
+      "len": 1975,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_kill_pot_configuration_refusal(p_kill_mode text, p_variant text, p_game_type text, p_tournament_id uuid, p_bomb_pot_enabled boolean, p_big_blind numeric, p_club_id uuid)",
+      "md5": "c5f1d7f6361676b0ed0780e8ca9394a2",
+      "len": 1801,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_lightning_anchor_is_live_eligible(p_seat_id uuid, p_cluster_id uuid, p_player_id uuid)",
+      "md5": "a121611dd69437875e82a06832715981",
+      "len": 795,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_lightning_player_in_hand(p_player_id uuid, p_cluster_id uuid)",
+      "md5": "36e38991a83968c97a8d69f5e7ee0549",
+      "len": 529,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_lightning_pool_enter(p_seat_id uuid, p_now timestamp with time zone)",
+      "md5": "5a4547a38c09b1823a8f0d6e1d4ef13d",
+      "len": 2837,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_lightning_pool_slot_open(p_pool_session_id uuid, p_now timestamp with time zone)",
+      "md5": "115bd4194acc7d337e13d6eb6e699a9a",
+      "len": 4338,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_log_seat_stack_exit()",
+      "md5": "9ef7dad056ad5b5e745200ca83170c04",
+      "len": 1854,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_nit_check(p_table_id uuid, p_user_id uuid, p_since timestamp with time zone)",
+      "md5": "7254da1baec76082f8de928199f58c48",
+      "len": 4141,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_only_close_account_closes_an_account()",
+      "md5": "f8696524b52366d303d2f45f20d69e8e",
+      "len": 385,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_player_needs_a_started_game()",
+      "md5": "b007e153e4bd41fb664255668c408831",
+      "len": 1426,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_audit_tournament_created(p_result jsonb)",
+      "md5": "d18fe890c687f84edb61980a7d612e2d",
+      "len": 768,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_buyin(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_amount numeric, p_auto_rebuy boolean, p_club_id uuid, p_idempotency_key uuid)",
+      "md5": "2f76148f74df8766a958cdd403582e24",
+      "len": 5801,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_cash_variant(p_variant text)",
+      "md5": "929c207a922004eb0e764011a2fe386c",
+      "len": 745,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_cashout(p_user_id uuid, p_table_id uuid, p_seat_number integer)",
+      "md5": "86a1c1ed0233ef041695241509514c32",
+      "len": 2976,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_cashout_receipt(p_table_id uuid, p_occupancy_id uuid)",
+      "md5": "85993bfb0f425ebcd16416ec89b9a9cf",
+      "len": 1285,
+      "owner": "postgres",
+      "grants": "authenticated",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_create_tournament(p_config jsonb)",
+      "md5": "6a607f496ce39df2835a38f0bf6d62e8",
+      "len": 17223,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_open_cash_table(p_name text, p_small_blind integer, p_big_blind integer, p_min_buy_in integer, p_max_buy_in integer, p_max_players integer, p_game_variant text)",
+      "md5": "2138b087d05ff2d955f094e386b79bc1",
+      "len": 3699,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_plain_cash_table(p_t tables)",
+      "md5": "94fb4dd7359850d388262de813c0caf1",
+      "len": 880,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_staff_audit(p_action text, p_target_type text, p_target_id uuid, p_before jsonb, p_after jsonb, p_details jsonb)",
+      "md5": "14bcef64645d1ca77f5243ca4bd1b428",
+      "len": 1626,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_top_up(p_user_id uuid, p_table_id uuid, p_amount numeric, p_expected_stack numeric, p_request_id uuid)",
+      "md5": "fe1cf0ce225ef0977ceef3dd8bfb4598",
+      "len": 7514,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_publish_profile_account_change()",
+      "md5": "84dcc945b3e6d19254a5b901d365eca6",
+      "len": 1698,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_publish_profile_appearance_change()",
+      "md5": "64cc449327fe6d17bc0ba9c51144196a",
+      "len": 1028,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_raise_server_financial_alert(p_severity text, p_source text, p_message text, p_context jsonb, p_dedupe_key text, p_entity_id text)",
+      "md5": "264d32bcba8f6430ea68b7ca9738fbc8",
+      "len": 2060,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_rank_survivors(p_tournament_id uuid)",
+      "md5": "ef53b38023c2cc3dd223c344c6c82dcb",
+      "len": 1956,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_refuse_new_entries_while_frozen()",
+      "md5": "7d7bd629403539eb069ac20afc62b547",
+      "len": 4852,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_register_for_tournament(p_tournament_id uuid, p_seat_first_internal boolean)",
+      "md5": "0f3b104a1bf9431d70053c656fedc081",
+      "len": 792,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_register_for_tournament_request(p_tournament_id uuid, p_request_id uuid)",
+      "md5": "9d174770c0de981532c2d35d58743397",
+      "len": 2114,
+      "owner": "postgres",
+      "grants": "authenticated",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_reject_horse_name_on_human()",
+      "md5": "ff58f7bb658731e107393cd94bd594c7",
+      "len": 1746,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_release_seats_on_tournament_finish()",
+      "md5": "7e9ab84b48a96dda6029414f889ab39f",
+      "len": 669,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_require_live_seat_parent()",
+      "md5": "799eb3f8788b5ee10e98da69cf52c12e",
+      "len": 1849,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_satellite_target_contract_is_immutable()",
+      "md5": "68f353273fb27d0eee5021481192e902",
+      "len": 1845,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_satellite_target_player_provenance_is_immutable()",
+      "md5": "68f98d4ec2cb186aae11787f1666cffc",
+      "len": 5401,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_seat_change_syncs_seat_first_count()",
+      "md5": "3d222458b40d5aec09f8f1e88bf60d53",
+      "len": 948,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_seat_club_for_user(p_user_id uuid, p_table_id uuid, p_preferred_club uuid)",
+      "md5": "821ddcdf4478a6cc6355499fd15e2b32",
+      "len": 1507,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_active_seat_game_scope()",
+      "md5": "d271007d2e1b1f4daa83bfc295d47c1e",
+      "len": 1316,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_seat_club()",
+      "md5": "467104f7e791b76328ce5e20b42ba81b",
+      "len": 920,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_seat_occupancy()",
+      "md5": "4d2645a24bd3b88d7ffc51097b37d640",
+      "len": 664,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_table_game_scope()",
+      "md5": "30cd14f9ff42850835c1f0bb624a0873",
+      "len": 319,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_table_seat_admission()",
+      "md5": "9c5d3aee9f48697db3ea08807df46527",
+      "len": 525,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_stamp_tournament_elimination_sequence()",
+      "md5": "1da72fa956566502be6d6c8d46ba6d2a",
+      "len": 1768,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_sync_seat_first_player_count(p_tournament_id uuid)",
+      "md5": "24b79979406ecba84423fd5da05c102f",
+      "len": 3797,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_sync_tournament_current_players()",
+      "md5": "3fd8f2c2f0866754467266a6bc5b6d80",
+      "len": 2394,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_table_seats_lightning_anchor_guard()",
+      "md5": "fe1678bae7a7973b2a9bcaf6ade83156",
+      "len": 2572,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_table_seats_lightning_pool_follows_seat()",
+      "md5": "d1e10013c5a044a6dd82e9a99755e4f4",
+      "len": 2664,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tables_kill_pot_guard()",
+      "md5": "837823de88843f8045bf37a120417585",
+      "len": 1437,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tables_stakes_follows_its_own_blinds()",
+      "md5": "fb440f8eb09cdddfe941f5d3fbeef7f0",
+      "len": 648,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_terminal_tournament_evidence_is_immutable()",
+      "md5": "5eb12239ece45d08eb32dbaa9e3028dd",
+      "len": 3807,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_terminal_tournament_seat_is_immutable()",
+      "md5": "10a5d9082f7770127359f9eca7068ed6",
+      "len": 3985,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_elimination_has_a_place()",
+      "md5": "8995e4364a00e5bae077701c1185bf8b",
+      "len": 1615,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_finish_readiness(p_tournament_id uuid, p_winner_user_id uuid)",
+      "md5": "3209cfadeb8a36eccf0f75d7d58cabd9",
+      "len": 18882,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_live_seat_acquisition_requires_authority()",
+      "md5": "2039e26a8513bba99c057a28b79f44e5",
+      "len": 3220,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_payout_terms_committed_v1(p_tournament_id uuid)",
+      "md5": "918c62cbcc182d43a6a27edeb2c1c107",
+      "len": 1817,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_players_bagged_custody_fence()",
+      "md5": "7f2c2b24929ac233f1fa250a6f1911df",
+      "len": 1230,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_record_conclusion()",
+      "md5": "ff1dc28602058962abea8d8dbd3cdb9b",
+      "len": 484,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_table_inherits_committed_blinds()",
+      "md5": "0386e9eb7f88d7e783c8cec1dbf5f5e8",
+      "len": 1442,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "generate_referral_code()",
+      "md5": "3ac2d5529de95863764ddca919ddfda3",
+      "len": 1344,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "log_wallet_transaction(p_user_id uuid, p_wallet_type text, p_amount numeric, p_type text, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid)",
+      "md5": "8316c567cd3517cc391c11f7b7059c4b",
+      "len": 2377,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "send_wallet_diamond_transfer(p_recipient_id uuid, p_amount integer, p_message text, p_reference_id text)",
+      "md5": "8d5b95d8ad2a74c1ba85339168349606",
+      "len": 7394,
+      "owner": "postgres",
+      "grants": "authenticated",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.breakfast_roster(p_tournament uuid)",
+      "md5": "4140be66012a9c16b19b61db8fd8d784",
+      "len": 994,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.breakfast_standings_witness(p_tournament uuid, p_winner uuid)",
+      "md5": "93a1e3e0f2677eebffc61ac7667d99e2",
+      "len": 2282,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.f06_new_lifecycle()",
+      "md5": "dca29a92ad46c6adb6e561f639e5a208",
+      "len": 221,
+      "owner": "postgres",
+      "grants": "anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.f06_source_guard()",
+      "md5": "082cf45040f08f8ea533e0c21d7cd4e3",
+      "len": 8364,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.f06_table_guard()",
+      "md5": "d8775467cf3f807b1992be752638d308",
+      "len": 1456,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.f06_try_lane(t uuid)",
+      "md5": "78a3a191b9991b0a3a343db39de335aa",
+      "len": 469,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.spin_archived_first_manifest()",
+      "md5": "8e1e270ca5dadbb043eda951df97ab53",
+      "len": 39946,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.spin_archived_first_standings(p_tournament uuid, p_winner uuid)",
+      "md5": "268eb783e2ae723896acd222e80c57af",
+      "len": 3415,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.spin_original_retained_case(p_tournament uuid)",
+      "md5": "04b3878353013cd51a1136efda49a17e",
+      "len": 940966,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.spin_original_sorted(p_array jsonb, p_key text)",
+      "md5": "f02ae7a06e604940154a84ab2f539f68",
+      "len": 347,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "smarter_private.spin_original_standings_witness(p_tournament uuid, p_winner uuid)",
+      "md5": "f291f307d5357cac11a4d57d1757cf72",
+      "len": 3504,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_atomic_final_table_deal_completion_guard()",
+      "md5": "38bf96ba348994fd40264584c26107d8",
+      "len": 1191,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_fn_close_session_when_seat_vacated()",
+      "md5": "7e27f560b34e0d3b3e5688195c1b9b3b",
+      "len": 1011,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_fn_close_sessions_when_table_closes()",
+      "md5": "5cff41ed8d0fc0c0aaa75661f6a28a2a",
+      "len": 784,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_lock_and_validate_tournament_live_seat()",
+      "md5": "ddcd580bb32b2b953a5b45df5d29068e",
+      "len": 4028,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_lock_atomic_final_table_deal_status()",
+      "md5": "b16256830158e669defcff8751cb5be7",
+      "len": 2080,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_seat_parent_keys_match()",
+      "md5": "9060bc3173c812e142d40612ad973f1a",
+      "len": 1853,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_table_parent_keys_guard()",
+      "md5": "903859ebc0b396942e7507e72b796ef9",
+      "len": 860,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_table_scope_cascade()",
+      "md5": "20b1bb2cdc7a82c600050b68679b8706",
+      "len": 452,
+      "owner": "postgres",
+      "grants": "PUBLIC,anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_tournament_atomic_place_completion_guard()",
+      "md5": "18cf8159e315f322ac7cc09e1f913671",
+      "len": 15462,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_tournaments_guarantee_affordable()",
+      "md5": "df859238ed5ef32a565a44b6bd7143ea",
+      "len": 3803,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    }
+  ]
+}

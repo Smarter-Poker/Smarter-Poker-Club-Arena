@@ -111,9 +111,16 @@ function newestProjectionBody(): { file: string; sql: string } {
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .reverse();
+  /* The DECLARATION, not the name and a projection number: an edit by
+     substitution can quote both (20260930043000 adds a "Projection 4b" for
+     the Diamond leaderboard's running totals) without carrying the body. */
+  const declares = new RegExp(
+    `CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${PROJECTION}\\s*\\(`,
+    'i'
+  );
   for (const file of candidates) {
     const sql = readFileSync(join(dir, file), 'utf8');
-    if (sql.includes(PROJECTION) && /Projection 4/i.test(sql)) return { file, sql };
+    if (declares.test(sql) && /Projection 4/i.test(sql)) return { file, sql };
   }
   throw new Error(`no migration in supabase/migrations/ carries the body of ${PROJECTION}`);
 }

@@ -106,8 +106,12 @@ describe('the ledger speaks to the player', () => {
         "'id, type, transaction_type, amount, description, player_line, created_at, metadata'",
       'src/components/wallet/DiamondWalletModal.tsx':
         "'id, type, transaction_type, amount, description, player_line, balance_after, created_at'",
+      /* VIPPage stopped ASKING for `description` on 2026-09-29 (phase 8): it
+         prints `player_line` and nothing else, so the column was weight on a
+         money query with no reader. tests/the-route-and-the-client-agree.law.test.ts
+         is what found it and is what keeps the two lists honest from here. */
       'src/pages/VIPPage.tsx':
-        "'id, type, transaction_type, amount, description, player_line, balance_after, created_at'",
+        "'id, type, transaction_type, amount, player_line, balance_after, created_at'",
     };
     for (const [file, select] of Object.entries(surfaces)) {
       const src = read(file);

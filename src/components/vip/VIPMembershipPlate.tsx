@@ -35,6 +35,14 @@ interface VIPMembershipPlateProps {
   expiresAt: Date | null;
   limits: VIPMonthlyLimits;
   points: { current: number; lifetime: number; monthly: number; activeStreak: number };
+  /**
+   * Whether the `vip_points` read behind `points.current` and `points.lifetime`
+   * actually answered. 'error' means it did not, and those two figures print
+   * "Unavailable" rather than a zero the player would read as a settled
+   * balance (CLAUDE.md 10.86 rule 1). Optional, and absent behaves as 'ready',
+   * so a caller holding points from somewhere else is unaffected.
+   */
+  pointsState?: 'loading' | 'ready' | 'error';
 }
 
 const MEMBERSHIP_LABEL: Record<VipStatus, string> = {
@@ -54,9 +62,14 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
   expiresAt,
   limits,
   points,
+  pointsState = 'ready',
 }) => {
   const isMember = status !== 'none';
   const isLifetime = status === 'lifetime';
+  /* The two figures the vip_points read owns. When that read could not answer,
+     they say so: a zero here is a player who has spent everything they earned,
+     which is a different and much more discouraging statement. */
+  const pointsUnknown = pointsState === 'error';
 
   const allowances = [
     {
@@ -192,7 +205,7 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
           <dl className="vmp__points" aria-label="VIP Points">
             <div>
               <dt>Points</dt>
-              <dd>{fmt(points.current)}</dd>
+              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.current)}</dd>
             </div>
             <div>
               <dt>This Month</dt>
@@ -200,7 +213,7 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
             </div>
             <div>
               <dt>Lifetime</dt>
-              <dd>{fmt(points.lifetime)}</dd>
+              <dd>{pointsUnknown ? 'Unavailable' : fmt(points.lifetime)}</dd>
             </div>
             <div>
               <dt>Active Streak</dt>

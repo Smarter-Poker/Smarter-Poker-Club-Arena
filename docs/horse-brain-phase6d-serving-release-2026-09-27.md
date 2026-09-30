@@ -1,5 +1,7 @@
 # Horse Brain Phase 6D on the Serving Release e6b9dc5d (2026-09-27)
 
+> Current qualification: [September 30 serving qualification](horse-brain-phase6-completion-2026-09-30.md). The older dated statuses below are retained as history; use the current record for remaining gates and measured serving behavior.
+
 Phase 6D (4 of 4) evidence on the release the engine serves at the time of writing,
 `e6b9dc5d472a040a118f537f65203a6cae45ce80` (container `club-arena-engine` started
 2026-09-27T20:56:03Z, image `sha256:9ae87ba8cf21`). Horse Brain only. Every status uses the
@@ -429,16 +431,16 @@ Release `c0c986aded5d25e952cb154c46599b6307f165bd` (container started 2026-09-29
 
 Read 2026-09-29T05:56Z from `public.horse_brain_flush_receipts` (`source_release like 'c0c986ad%'`, collected 03:56Z onward, 15-minute bins by receipt time). Aggregate only: `docs/evidence/phase6d/capture-health-2026-09-29-c0c986ad.json`.
 
-| Bin start (UTC) | enqueued | recorded | queue_capacity | lock_retry | capture_unavailable | % of enqueued |
-| --------------- | -------: | -------: | -------------: | ---------: | ------------------: | ------------: |
-| 04:00           |  122,077 |  122,048 |              0 |          0 |                 547 |          0.45 |
-| 04:15           |  108,248 |  108,251 |              0 |          0 |               6,825 |          6.31 |
-| 04:30           |  143,019 |  143,029 |              0 |          0 |               5,284 |          3.69 |
-| 04:45           |   96,135 |   96,151 |              0 |          0 |                   0 |          0.00 |
-| 05:00           |  109,864 |  109,838 |              0 |          0 |                   0 |          0.00 |
-| 05:15           |  106,646 |  106,657 |              0 |          0 |              21,304 |         19.98 |
-| 05:30           |  105,474 |  105,448 |              0 |          0 |              21,143 |         20.05 |
-| 05:45 (to 05:55) |  97,492 |   97,533 |              0 |          0 |                 598 |          0.61 |
+| Bin start (UTC)  | enqueued | recorded | queue_capacity | lock_retry | capture_unavailable | % of enqueued |
+| ---------------- | -------: | -------: | -------------: | ---------: | ------------------: | ------------: |
+| 04:00            |  122,077 |  122,048 |              0 |          0 |                 547 |          0.45 |
+| 04:15            |  108,248 |  108,251 |              0 |          0 |               6,825 |          6.31 |
+| 04:30            |  143,019 |  143,029 |              0 |          0 |               5,284 |          3.69 |
+| 04:45            |   96,135 |   96,151 |              0 |          0 |                   0 |          0.00 |
+| 05:00            |  109,864 |  109,838 |              0 |          0 |                   0 |          0.00 |
+| 05:15            |  106,646 |  106,657 |              0 |          0 |              21,304 |         19.98 |
+| 05:30            |  105,474 |  105,448 |              0 |          0 |              21,143 |         20.05 |
+| 05:45 (to 05:55) |   97,492 |   97,533 |              0 |          0 |                 598 |          0.61 |
 
 Bins at or above 140,000 enqueued: 04:30 (143,019). Over the whole read: 888,955 enqueued and 888,955 recorded, `queue_capacity` 0 and `lock_retry` 0 in every bin (the previous lane's queue, catalog and validation fixes did what they were for), and `capture_unavailable` 55,701, 6.27% of enqueued, 20% in the worst bins, against the 0.5% line. The 04:45 bin has no receipts from 04:55:28Z to 05:03:27Z, the hourly maintenance break.
 
@@ -452,15 +454,15 @@ Neither the population, the replay nor the route proof was run on c0c986ad: no d
 
 ### Gate status, 6A and 6D on c0c986ad
 
-| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                                   |
-| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G1 Domain                  | implemented but unverified | No population was walked on c0c986ad; 64 cells observed on 763e4cec is historical only                                                                                                                                                                    |
-| G2 Inputs                  | implemented but unverified | Request-link and v2 context-receipt presence not read on c0c986ad                                                                                                                                                                                          |
-| G3 Computation             | implemented but unverified | Calculation link and independent qualification not read on c0c986ad                                                                                                                                                                                        |
-| G4 Immutable authority     | implemented but unverified | No declaration committed for c0c986ad because no record was read; the 763e4cec declaration is historical only                                                                                                                                              |
+| Gate                       | Status                     | Evidence                                                                                                                                                                                                                                                                     |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1 Domain                  | implemented but unverified | No population was walked on c0c986ad; 64 cells observed on 763e4cec is historical only                                                                                                                                                                                       |
+| G2 Inputs                  | implemented but unverified | Request-link and v2 context-receipt presence not read on c0c986ad                                                                                                                                                                                                            |
+| G3 Computation             | implemented but unverified | Calculation link and independent qualification not read on c0c986ad                                                                                                                                                                                                          |
+| G4 Immutable authority     | implemented but unverified | No declaration committed for c0c986ad because no record was read; the 763e4cec declaration is historical only                                                                                                                                                                |
 | G5 Reachability            | defective                  | capture_unavailable 55,701 of 888,955 enqueued (6.27%), 20% in the 05:15Z and 05:30Z bins: execution witnesses and completed-hand observations expire in the decision worker's queue; five-link chains cannot be completed on that capture. Fixed in this branch; unverified |
-| G6 Outcome receipts        | defective                  | Same cause and same fix: the execution and accepted-hand records outcome receipts join to are the ones lost                                                                                                                                                |
-| G7 Independent correctness | verified now               | `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 44, 91 of 91 passed 2026-09-29 on main a0cf141c, whose Horse Brain, brain-context, blind and journal sources equal c0c986ad                 |
-| G8 Performance and replay  | implemented but unverified | Replay not run on c0c986ad (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                                                      |
-| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                                         |
-| G10 Publication and use    | implemented but unverified | c0c986ad serves (its receipts run 04:03Z onward); its own archive was not read by its own image, and the fix is not on it                                                                                                                                  |
+| G6 Outcome receipts        | defective                  | Same cause and same fix: the execution and accepted-hand records outcome receipts join to are the ones lost                                                                                                                                                                  |
+| G7 Independent correctness | verified now               | `TournamentBrainContextCache.test.ts` 25, `TournamentBlindSnapshot.test.ts` 22, `HorsePhase6Tournament.test.ts` 44, 91 of 91 passed 2026-09-29 on main a0cf141c, whose Horse Brain, brain-context, blind and journal sources equal c0c986ad                                  |
+| G8 Performance and replay  | implemented but unverified | Replay not run on c0c986ad (stopped by the capture-health rule); 134 of 134 reproduced on 763e4cec is historical only                                                                                                                                                        |
+| G9 Learning and promotion  | not applicable with reason | Phase 6 activates no learned or promoted candidate                                                                                                                                                                                                                           |
+| G10 Publication and use    | implemented but unverified | c0c986ad serves (its receipts run 04:03Z onward); its own archive was not read by its own image, and the fix is not on it                                                                                                                                                    |

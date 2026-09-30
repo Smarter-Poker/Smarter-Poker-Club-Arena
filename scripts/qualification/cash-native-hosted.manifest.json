@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 174461,
-      "sha256": "8b7116b7c4f285ce2cb3a6345e2872962cf2eb276c8f966e03282e2873e80faa"
+      "bytes": 176139,
+      "sha256": "f24fb6e224f50b84265a9c8aebeda86c46078c25491e32ae64be68faae4d7e67"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 28573,
-      "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
+      "bytes": 28594,
+      "sha256": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1127,5 +1127,23 @@
       "sha256": "7513401792ce6846705d46c6cb37f013cf82d39aa6222e296ea11eb09f811209"
     },
     "scope": "Adds one CI step (accounting_postgres shard 4) running scripts/ci/test-rakeback-settler-read-horizon-postgres.py, the native harness for the rakeback settler committed read horizon (migration 20260927144455, applied as 20260927220353). No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
+  },
+  "heldFeeOwnerBasisIntegration20260927": {
+    "integration": "2026-09-27 held tournament fee owner-basis native phases",
+    "why": "Route tests/fixtures/held-fee-owner-basis/ to the existing required accounting job so the new native phases run for their own input edits; no captured fixture, assertion or route removed.",
+    "files": [
+      {
+        "binding": "scripts/qualification/cash-native-hosted.manifest.json",
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27640,
+          "sha256": "f83b535bd9b1725de7524d1ae807d6de395380f724da777eec8a8c707df424dc"
+        }
+      }
+    ]
   }
 }

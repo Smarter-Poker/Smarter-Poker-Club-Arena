@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "150d9ad12b69aee1d25636d758ae69432c8bd4adac3c1d7decd4035973e2fb1a",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "d091d8c668ae4660248e2c2b77ee9f8cd8826ea5b4fef5b641f9dff02e9c3a36",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f",
+    "scripts/ci/classify-ci-changes.mjs": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "940bc5157237c190679b2c6c510e3e3cc4024c7a39ede28e3c943757a7893854",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "f5663b226922840b7b909d65daa0a8063044a584f75e0d4a84b276448663faf6",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "dddcd001d044e098a60a02915d75ecb6dd0a255f95b88ceda232489dc13db779",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "f36f3e10515bdef8ed2ac23faf12b260be1504a349f3dfeac1e873bffd3c7f4e",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "103a6c5b078e845e9b105b2b3d363938623bc64aa1823a08d99e921a100c031e",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "c950ca930c69c46fd3544f35237f5900fff56ef8670c2981981518fcfa767f4d",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -2664,6 +2664,19 @@
     "reason": "Visible operator reads bind the former ignored AgentPromoPanel balance and profile errors. The reviewed discarded-read ratchet changes only that component from 2 to 0 and adds its explanatory comment; no assertion is removed or weakened. Financial SQL, captured fixtures, component counts, limits and other source pins are unchanged.",
     "verification": "Exact SHA256 computed from the reviewed bytes. Source-binding verifier and focused ratchet checks must pass on this candidate; binding metadata is not native financial execution or production installation evidence."
   },
+  "diamond_honest_reads_ratchet_rebinding_20260930": {
+    "base_commit": "6a8ee7d8c11408850c50e78234c43397af19745f",
+    "source_branch": "cw-diamond-honest-reads-0930",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+        "sha256": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6"
+      }
+    ],
+    "reason": "The diamond wallet audit lowers this file's baseline for src/pages/VIPPage.tsx from 2 to 0, which is the ratchet TIGHTENING - it now permits fewer discarded-error reads for that file than before, never more - and the test's own third case asks for the lower number in the same commit, which is what turned it red here. Both reads were the shape this ratchet exists to kill, on a money surface: the profiles.diamonds read and the vip_points read discarded their errors, and supabase-js RESOLVES with { data: null, error }, so an RLS denial, a dropped link or a PGRST002 503 reached the player as setDiamonds(profData?.diamonds || 0) - a confident balance of ZERO for a wallet that was merely unreadable, which also greys out every Buy button on the page. Both now bind the error, report it through reportError, and carry a separate 'error' state that prints \"Unavailable\", so a real zero and an unreadable figure are no longer the same pixels (CLAUDE.md 10.86 rules 1 and 2). No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture, production object or accounting assertion is touched.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit, with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(). The edit to this binding is a targeted text replacement of that one hash plus this block, not a JSON round-trip, so every other byte of the file is unchanged; python3 scripts/ci/verify-source-bindings.py then re-read all repository and fixture pins from disk and accepted the complete tree. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. No production data was read or changed by the restamp."
+  },
   "settlementAttributionIntegration20260927": {
     "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",
     "changes": [
@@ -2996,5 +3009,9 @@
     "added_repository_inputs": ["tests/fixtures/union-weekly-basis/page-evidence-regression.sql"],
     "reason": "Every page-scoped fn_rakeback_recompute_periods call the unaccrued-hand door did not answer read the whole club-week: on 2026-09-27 60 s of evidence counts and 9 s of tournament gate per call, 830-1,350 s of database time an hour, every one refused by batchless hands older than the door reads. 20260927160709 gives the page path a per club-week checkpoint of the frozen evidence shares (a batch and everything it covers are immutable), advanced under the calculator's own lock to a commit horizon, and reads only the batches recorded since and the records with no batch; the whole-period path keeps its full verification byte for byte. The union weekly basis cluster installs 20260926042810 (the body production runs), keeps it beside the successor as fixture.predecessor_page_calculator, applies 20260927160709 as the door does, and page-evidence-regression.sql proves the counts against the whole-period query lifted from the installed calculator over the cluster book and three randomized seeded weeks before and after they move, the page receipts and certificates against the whole-period call, the before/after gate and read costs, and the two insert guards.",
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py (LANG=en_US.UTF-8, no LC_ALL): exit 0, 84 PASS steps. page-evidence-regression: 955 assertions; oracle lifted from the installed calculator equals fn_cash_period_evidence_since for 50 cluster club-weeks (120 checkpoint splits) and 70 seeded club-weeks (448 splits) and for 15 seeded club-weeks after the week moved under a checkpoint; page receipts and certificates equal the whole-period call for 30 cluster and 14 seeded club-weeks; the predecessor calls the gate once for a stale batchless hand and the page path does not; a checkpointed page reads 6 attribution rows against 6,015; both insert guards refuse and the real writer passes; period-coverage-regression's page drain runs on the page path."
+  },
+  "heldFeeOwnerBasisIntegration20260927": {
+    "scope": "Add the held-fee-owner-basis and held-fee-spin-retention native phases (owner-authorized host-club basis for held tournament fees; Sept-8 Spin witness under horse retention). The runner and the child bindings that pin it are rebound; no existing phase, fixture or assertion is removed or weakened.",
+    "migration": "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql"
   }
 }

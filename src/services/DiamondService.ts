@@ -59,7 +59,6 @@ export interface DiamondWalletSummary {
   arena: DiamondArenaInfo | null;
   lifetimeEarned: number;
   lifetimeSpent: number;
-  readAt: string;
 }
 
 /**
@@ -88,7 +87,6 @@ export interface DiamondArenaStatement {
   netResultSettled: number;
   unmatched: DiamondArenaUnmatched[];
   balanced: boolean;
-  readAt: string;
 }
 
 export interface DiamondLifetimeStats {
@@ -118,13 +116,20 @@ export interface DiamondFlow {
   earnedTotal: number;
   spentLast30: number;
   earnedLast30: number;
-  readAt: string;
 }
+
+/* NOTE ON `readAt`, REMOVED FROM THE THREE SHAPES ABOVE ON 2026-09-30.
+   Each of the three RPCs still returns `read_at`, and all three shapes used
+   to carry it parsed into `readAt`. Nothing in src/ ever rendered any of
+   them, while useDiamondWalletSummary's own comment described its result as
+   "the truth as of `readAt`" - a staleness promise no surface kept. Carried
+   on a money-read shape, an unread field is an invitation to print it as
+   though it had always been shown. If a pane should date its figures later
+   (ChipStatement prints "Generated ..." and is the precedent), re-add the
+   one parse line beside the surface that renders it, in the same commit. */
 
 export interface DiamondWallet {
   balance: number;
-  lifetimeEarned: number;
-  lifetimeSpent: number;
 }
 
 /* `DiamondTransaction` lived here and was the return type of `getTransactions`
@@ -182,9 +187,19 @@ export const DiamondService = {
   /**
    * Get user's diamond wallet balance.
    * Source of truth: profiles.diamonds column.
-   * NOTE: The wallets table constraint only allows PLAYER and BUSINESS types —
+   * NOTE: The wallets table constraint only allows PLAYER and BUSINESS types -
    * there is no DIAMOND wallet type, so we read directly from profiles.
-   * Also computes lifetimeEarned/lifetimeSpent from wallet_transactions.
+   *
+   * It returns the BALANCE AND NOTHING ELSE. This line used to read "Also
+   * computes lifetimeEarned/lifetimeSpent from wallet_transactions", which
+   * had been untrue since those two reads were deleted (see the block in the
+   * body): the method went on returning a hardcoded `lifetimeEarned: 0,
+   * lifetimeSpent: 0` under a comment promising real figures. No caller ever
+   * rendered them, so no player saw the zero - but a doc claiming a figure
+   * is computed, sitting over a literal 0, is how the next reader ships it
+   * to a screen. Both fields are gone from `DiamondWallet` as of 2026-09-30.
+   * Lifetime totals come from `getLifetimeStats` (fn_diamond_lifetime_totals),
+   * which answers null when it could not read rather than zero.
    */
   async getBalance(userId: string): Promise<DiamondWallet> {
     // Read diamond balance from profiles (the actual source of truth)
@@ -209,11 +224,7 @@ export const DiamondService = {
      * actually records diamonds, via `getLifetimeStats`, and only when a
      * surface asks for them.
      */
-    return {
-      balance: balance || 0,
-      lifetimeEarned: 0,
-      lifetimeSpent: 0,
-    };
+    return { balance: balance || 0 };
   },
 
   /**
@@ -309,7 +320,6 @@ export const DiamondService = {
         arena,
         lifetimeEarned: num(row.lifetime_earned),
         lifetimeSpent: num(row.lifetime_spent),
-        readAt: String(row.read_at || ''),
       };
     } catch (err) {
       reportError(err, 'DiamondService.getWalletSummary');
@@ -358,7 +368,6 @@ export const DiamondService = {
         netResultSettled: num(row.net_result_settled),
         unmatched,
         balanced: row.balanced,
-        readAt: String(row.read_at || ''),
       };
     } catch (err) {
       reportError(err, 'DiamondService.getArenaStatement');
@@ -413,7 +422,6 @@ export const DiamondService = {
         earnedTotal: num(row.earned_total),
         spentLast30: num(row.spent_last30),
         earnedLast30: num(row.earned_last30),
-        readAt: String(row.read_at || ''),
       };
     } catch (err) {
       reportError(err, 'DiamondService.getDiamondFlow');

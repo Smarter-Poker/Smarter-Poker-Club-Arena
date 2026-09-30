@@ -57,7 +57,6 @@ describe('DiamondService.getWalletSummary', () => {
       },
       lifetimeEarned: 4095,
       lifetimeSpent: 12,
-      readAt: '2026-09-13T18:00:00Z',
     });
   });
 

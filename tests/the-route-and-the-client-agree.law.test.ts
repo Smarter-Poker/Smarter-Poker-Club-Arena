@@ -306,6 +306,23 @@ interface RpcContract {
   unread: Record<string, string>;
 }
 
+/**
+ * All three diamond RPCs date their own answer with `read_at`, and until
+ * 2026-09-30 DiamondService parsed all three into a `readAt` field on the
+ * returned shape. No surface in src/ ever rendered any of them, while
+ * useDiamondWalletSummary's comment described its result as "the truth as
+ * of readAt" - a staleness promise nothing kept. The parse was removed
+ * rather than a fourth unrendered figure left sitting on a money shape,
+ * where the next reader would reasonably assume it had always been shown.
+ * The SQL still emits it and costs nothing to emit, so if a pane should
+ * date its figures later (ChipStatement prints "Generated ..." and is the
+ * precedent), restore the one parse line together with the surface that
+ * renders it, and move this key back into `readers` in the same commit.
+ */
+const READ_AT_UNREAD =
+  'the RPC dates its own answer; no diamond surface prints that timestamp today, ' +
+  'so it is fetched and deliberately dropped rather than parsed and forgotten';
+
 const RPC_CONTRACTS: RpcContract[] = [
   {
     rpc: 'fn_diamond_wallet_summary',
@@ -323,7 +340,6 @@ const RPC_CONTRACTS: RpcContract[] = [
         'lifetime_earned',
         'lifetime_spent',
         'on_hand',
-        'read_at',
         'sendable',
       ],
       arenaRaw: [
@@ -338,7 +354,10 @@ const RPC_CONTRACTS: RpcContract[] = [
       ],
       t: ['big_blind', 'id', 'name', 'small_blind'],
     },
-    unread: { user_id: 'the caller is the only user this function will answer for' },
+    unread: {
+      user_id: 'the caller is the only user this function will answer for',
+      read_at: READ_AT_UNREAD,
+    },
   },
   {
     rpc: 'fn_diamond_flow_by_kind',
@@ -347,18 +366,13 @@ const RPC_CONTRACTS: RpcContract[] = [
     method: 'getDiamondFlow',
     call: "supabase.rpc('fn_diamond_flow_by_kind')",
     readers: {
-      row: [
-        'earned',
-        'earned_last30',
-        'earned_total',
-        'read_at',
-        'spent',
-        'spent_last30',
-        'spent_total',
-      ],
+      row: ['earned', 'earned_last30', 'earned_total', 'spent', 'spent_last30', 'spent_total'],
       r: ['bucket', 'label', 'last30', 'last30_count', 'lifetime', 'lifetime_count'],
     },
-    unread: { user_id: 'the caller is the only user this function will answer for' },
+    unread: {
+      user_id: 'the caller is the only user this function will answer for',
+      read_at: READ_AT_UNREAD,
+    },
   },
   {
     rpc: 'fn_diamond_arena_reconciliation',
@@ -373,13 +387,15 @@ const RPC_CONTRACTS: RpcContract[] = [
         'in_play',
         'net_result_settled',
         'open_sessions',
-        'read_at',
         'sessions',
         'unmatched',
       ],
       r: ['custody_id', 'reason', 'request_id'],
     },
-    unread: { user_id: 'the caller is the only user this function will answer for' },
+    unread: {
+      user_id: 'the caller is the only user this function will answer for',
+      read_at: READ_AT_UNREAD,
+    },
   },
   {
     rpc: 'fn_diamond_lifetime_totals',

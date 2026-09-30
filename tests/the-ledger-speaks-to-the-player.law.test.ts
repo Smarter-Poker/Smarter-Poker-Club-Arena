@@ -135,16 +135,31 @@ describe('the ledger speaks to the player', () => {
     ]);
   });
 
+  /* REPOINTED 2026-09-30, and it is the same law one notch further on.
+     ===========================================================================
+     When this pin was written, `description` was still on two of the three
+     selects: the copy had just moved to `player_line`, and keeping the old
+     column asked-for was how the law showed it was PRESENT but no longer
+     printed. That has since become the opposite of a guard. Phase 8's sibling
+     law (tests/the-route-and-the-client-agree.law.test.ts) holds that a column
+     "selected but never read is dead weight on a money query", and every
+     `description` on these paths was exactly that - assigned by the mapper and
+     read by nobody. PlayerWalletPage.describeRow takes `row.line || row.label`,
+     DiamondWalletModal renders `formatPopupText(tx.line || label)`, and VIPPage
+     takes `player_line` or the kind's row label. Three surfaces, zero readers.
+
+     CLAUDE.md 10.8: apply the later rule rather than write a third one. So this
+     is not weakened, it is repointed - `description` must now be ABSENT from
+     all three selects and from their row shapes and mappers, which is a
+     stricter claim than "present but unprinted". What the law has always
+     protected, that a player reads `player_line` and never an operator's note,
+     is unchanged and still asserted below. */
   it('every surface that prints a diamond ledger row reads player_line and never the raw description', () => {
     const surfaces = {
       'src/hooks/useDiamondLedger.ts':
-        "'id, type, transaction_type, amount, description, player_line, created_at, metadata'",
+        "'id, type, transaction_type, amount, player_line, created_at, metadata'",
       'src/components/wallet/DiamondWalletModal.tsx':
-        "'id, type, transaction_type, amount, description, player_line, balance_after, created_at'",
-      /* VIPPage stopped ASKING for `description` on 2026-09-29 (phase 8): it
-         prints `player_line` and nothing else, so the column was weight on a
-         money query with no reader. tests/the-route-and-the-client-agree.law.test.ts
-         is what found it and is what keeps the two lists honest from here. */
+        "'id, type, transaction_type, amount, player_line, balance_after, created_at'",
       'src/pages/VIPPage.tsx':
         "'id, type, transaction_type, amount, player_line, balance_after, created_at'",
     };
@@ -154,6 +169,11 @@ describe('the ledger speaks to the player', () => {
       // The description is never the thing printed.
       expect(src, file).not.toMatch(/formatPopupText\((?:tx|row|entry)\.description/);
       expect(src, file).not.toMatch(/(?:row|tx|entry)\.description\s*\|\|\s*(?:row\.)?label/);
+      /* And it is not carried either. A mapper that keeps assigning a field no
+         render site reads is how the column stays on the query: it looks like
+         a reader to any check that greps for one. So the SHAPE is pinned as
+         well as the select. */
+      expect(src, file).not.toMatch(/\b(?:tx|row|entry|t)\.description\b/);
     }
     expect(read('src/hooks/useDiamondLedger.ts')).toContain(
       "line: typeof tx.player_line === 'string' ? tx.player_line : ''"

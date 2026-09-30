@@ -48,3 +48,59 @@ describe('VIPMembershipPlate Lifetime contract', () => {
     expect(container.textContent).not.toContain('Included Each Month');
   });
 });
+
+/**
+ * Added 2026-09-30 with the fix for the discarded `vip_points` read on VIPPage.
+ * The two figures that read owns must be able to say they are UNKNOWN, and a
+ * real zero must keep printing as a zero - CLAUDE.md 10.86 rule 1. Both halves
+ * are asserted, because only the pair proves the two are distinguishable.
+ */
+describe('VIPMembershipPlate points that could not be read', () => {
+  const zeroPoints = { current: 0, lifetime: 0, monthly: 0, activeStreak: 0 };
+  const pointCells = (container: HTMLElement) =>
+    [...container.querySelectorAll('.vmp__points div')].map((d) => d.textContent || '');
+
+  it('prints Unavailable for Points and Lifetime when the read failed', () => {
+    const { container } = render(
+      <VIPMembershipPlate
+        status="vip"
+        expiresAt={null}
+        limits={limits}
+        points={zeroPoints}
+        pointsState="error"
+      />
+    );
+
+    const cells = pointCells(container);
+    expect(cells[0]).toContain('Unavailable');
+    expect(cells[2]).toContain('Unavailable');
+  });
+
+  it('prints 0 when the read succeeded and the player really has none', () => {
+    const { container } = render(
+      <VIPMembershipPlate
+        status="vip"
+        expiresAt={null}
+        limits={limits}
+        points={zeroPoints}
+        pointsState="ready"
+      />
+    );
+
+    expect(container.textContent).not.toContain('Unavailable');
+    const cells = pointCells(container);
+    expect(cells[0]).toContain('0');
+    expect(cells[2]).toContain('0');
+  });
+
+  it('an omitted pointsState behaves as ready, so existing callers are unchanged', () => {
+    const { container } = render(
+      <VIPMembershipPlate status="vip" expiresAt={null} limits={limits} points={points} />
+    );
+
+    expect(container.textContent).not.toContain('Unavailable');
+    const cells = pointCells(container);
+    expect(cells[0]).toContain('100');
+    expect(cells[2]).toContain('200');
+  });
+});

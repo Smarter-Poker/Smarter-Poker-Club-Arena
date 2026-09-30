@@ -127,13 +127,10 @@ export interface DiamondWallet {
   lifetimeSpent: number;
 }
 
-export interface DiamondTransaction {
-  id: string;
-  type: string;
-  amount: number;
-  description: string;
-  createdAt: string;
-}
+/* `DiamondTransaction` lived here and was the return type of `getTransactions`
+   and of nothing else. Both are gone (2026-09-30); see the note where the
+   method was. A diamond ledger row's shape is `DiamondLedgerRow` in
+   src/hooks/useDiamondLedger.ts. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIAMOND PACKAGES — Available for purchase
@@ -424,35 +421,24 @@ export const DiamondService = {
     }
   },
 
-  /**
-   * Get transaction history
-   */
-  async getTransactions(userId: string, limit = 20): Promise<DiamondTransaction[]> {
-    const { data, error } = await supabase
-      .from('wallet_transactions')
-      .select('id, type, amount, description, created_at')
-      .eq('user_id', userId)
-      .in('category', [
-        'diamond_purchase',
-        'diamond_deduction',
-        'vip_purchase',
-        'mint',
-        'diamond_reward',
-        'diamond_refund',
-      ])
-      .order('created_at', { ascending: false })
-      .limit(limit);
+  /* DELETED 2026-09-30: `getTransactions(userId, limit)`, and the
+     `DiamondTransaction` shape that existed only to be its return type.
+     It had ZERO callers anywhere in this repo - the one `getTransactions`
+     mock in the suite belongs to WalletService - and it was a landmine for
+     whoever wired it next, twice over:
 
-    if (error || !data) return [];
+       1. `if (error || !data) return [];` turned an unreadable answer into
+          "this player has no transactions" (CLAUDE.md 10.86 rules 1 and 2);
+       2. it read the CHIP ledger. It filtered `wallet_transactions` on six
+          category values, five of which `wallet_transactions_category_check`
+          rejects outright, and the sixth (`mint`) records chips minted into
+          a treasury - a five-figure chip movement printed onto a diamond
+          statement. DiamondWalletModal removed exactly this query from the
+          wallet for exactly that reason; this was the same query, still
+          loaded, waiting for a caller.
 
-    return data.map((t: any) => ({
-      id: t.id,
-      type: t.type,
-      amount: t.amount,
-      description: t.description,
-      createdAt: t.created_at,
-    }));
-  },
+     Diamonds live in `diamond_transactions`, and the surfaces that read them
+     are useDiamondLedger, DiamondWalletModal and VIPPage. */
 
   /**
    * Purchase diamonds with Stripe payment verification.

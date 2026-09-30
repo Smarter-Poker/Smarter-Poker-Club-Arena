@@ -1,0 +1,117 @@
+{
+  "verifiedAt": "2026-09-30T11:29:12.927032+00:00",
+  "serving": "f92ef5798bbc968f19a33f8515a5025a62e840d5",
+  "protectedMain": "52addc2502a878012a9a6571078cbca60a12eb35",
+  "mergedDelivery": [
+    {
+      "pr": 4868,
+      "merge": "f1059b991c720e940ef118aa3e864784793dd0cf",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 4897,
+      "merge": "563fac93cb4b8bb7fea33b7822b08979a4b5bc1c",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5265,
+      "merge": "399d59f8a09e0efc8e49aa8c409e91cb4bd86708",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5417,
+      "merge": "c8cbe6e6854fbf8015c430ad5baa39e0d10c07e2",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5480,
+      "merge": "75a88f724fe029baf1f319033d91fe5e86008f6d",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5412,
+      "merge": "4946473bb65a27d964a3ad9401eaf4948014a0a8",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5490,
+      "merge": "48e85e9860a7385de2ec898c2129f6a62248ce52",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5513,
+      "merge": "1c7e99935fcb8cbe2d40593b86c5b7abfb199977",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5416,
+      "merge": "6a07e861f960b0d84c5ea2d27f64c66da32076c6",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5415,
+      "merge": "e859f0832a136182298be04c0550a9d50c37e676",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5485,
+      "merge": "73d0e93467405d1ab71b5af90cf3eb271f73c304",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5505,
+      "merge": "eb6ce0e62effb176d912cbe3230515d613fa3a4c",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5541,
+      "merge": "fa480b9bb99132938aabc7788810e5df5b0bf056",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5547,
+      "merge": "f2eeab92c39ccf04f47576530d1004c82dc12745",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5563,
+      "merge": "d7c578b94ad3301437b20a2d49753d923ccdbc0f",
+      "inServing": true,
+      "inProtectedMain": true
+    },
+    {
+      "pr": 5588,
+      "merge": "4211ed0daf2d8b75d040c0be9ef4cdc4146375c8",
+      "inServing": true,
+      "inProtectedMain": true
+    }
+  ],
+  "comparedPaths": [
+    "server/src/engine",
+    "server/src/gto",
+    "server/src/services/horseDecisionJournal",
+    "server/src/services/HorseDecisionJournal.ts",
+    "server/src/services/TournamentBrainContextCache.ts",
+    "server/scripts/phase6b-route-proof.mjs",
+    "server/scripts/phase6b-route-proof-observe.py",
+    "server/scripts/phase6c-replay.mjs",
+    "server/scripts/phase6d-population.mjs",
+    "server/scripts/phase6d-chain-export.mjs"
+  ],
+  "differentPaths": [],
+  "validationReuse": "Maintained source-specific passed tests, red-before cases, and original-input negative controls retained; no changed runtime source and no duplicate suite run in this evidence delivery."
+}

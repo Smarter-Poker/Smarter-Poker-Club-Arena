@@ -1,5 +1,5 @@
 """Narrow forward repair on the retained native owner-basis estate."""
-import hashlib,json,re,subprocess
+import hashlib,json,re,subprocess,runpy
 
 def qualify(root,fix,out,cmd,run,schema):
  forward=json.loads((fix/'source-binding.json').read_text())['member_lane_migration']
@@ -61,6 +61,8 @@ END $$;ROLLBACK;
   if r.returncode==0 or 'held fee member lane predecessor changed' not in r.stderr or schema()!=before:raise AssertionError('Member lane full-definition guard must refuse atomically')
   run("ALTER FUNCTION public.fn_ca_recognize_held_tournament_fees_by_owner_basis(uuid,jsonb) SET lock_timeout='5s';",'lane-predecessor-restored')
   run(candidate,'lane-install')
+  admission=runpy.run_path(str(fix/'qualify-projection-admission.py'))['qualify'](root,fix,out,cmd,run,schema)
+  cmd[cmd.index('-c')+1]=cmd[cmd.index('-c')+1].replace("statement_timeout='60s'","statement_timeout='5s'")
   # Keep the reused source scene in this single rolled-back connection so
   # its extra unresolved events cannot affect the original weekly assertions.
   scene=re.sub(r'^(?:BEGIN|COMMIT);\s*$', '',scene,flags=re.M)
@@ -72,4 +74,4 @@ END $$;ROLLBACK;
   if locker.poll() is None:locker.communicate('ROLLBACK;\n',timeout=10)
  # The rollback above preserves the original scene for every maintained owner
  # refusal/replay/weekly-reader assertion that follows.
- return {'events':2,'amount':'2.94','original_shared_g_refusal':True,'patched_shared_g_concurrency':True,'full_definition_drift_refusal':True}
+ return {'events':2,'amount':'2.94','original_shared_g_refusal':True,'patched_shared_g_concurrency':True,'full_definition_drift_refusal':True,'projection_admission':admission}

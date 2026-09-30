@@ -15,13 +15,16 @@
     "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql": "394bb56aaac8126e55f99907ff11b03f94dabd046eb16def0171a493396fa20d",
     "tests/fixtures/held-fee-owner-basis/member-lane-production.json": "b28cea6982d8321ed642afb40ce5c9f72dda11907fd3a2927cb9cd25d2f91d45",
     "tests/fixtures/held-fee-owner-basis/member-lane-after.sql": "572a639aec849905c3f45ef596ce13a2e2895cdebc9a64b95f95fdd0b130d157",
-    "tests/fixtures/held-fee-owner-basis/qualify-member-lane.py": "5a13d469bcdcd35b59f666af4fc6ddff9c301b2c9ddcf0fbf758605cf844e3c1",
-    "tests/fixtures/held-fee-owner-basis/member-lane-refusals.sql": "753a1456b0b0b378ca91ff28a12fe192ba0f46a99acfb9d04f50f2275c26c195"
+    "tests/fixtures/held-fee-owner-basis/qualify-member-lane.py": "5107095da21c6c915b6dc3bd24d6675d5b01d11c6f8a8ff435725d69bd0b0535",
+    "tests/fixtures/held-fee-owner-basis/member-lane-refusals.sql": "753a1456b0b0b378ca91ff28a12fe192ba0f46a99acfb9d04f50f2275c26c195",
+    "tests/fixtures/held-fee-owner-basis/qualify-projection-admission.py": "d5a50b025f8d557e035dd1ea4a34c4db50c2babc501620305c25ad7e1198efa7",
+    "supabase/migrations/20260930162226_held_fee_owner_admits_shared_projections_before_writes.sql": "8b081f47f202127691062ad4c01660c915a9d79f6c1299823ea120b17470efd7"
   },
   "spin_assertions": 52,
   "member_lane_migration": "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql",
   "member_lane_20260930": {
     "why": "Forward operation removes G/B-exclusive hand conflict and whole-journal suspense scans; maintained native phase now exercises original refusal, exact full-definition guard, two original union/standalone events under concurrent shared-G and inherited context preservation. Original34 assertions and52 retention assertions retained.",
     "migration": "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql"
-  }
+  },
+  "projection_admission_migration": "supabase/migrations/20260930162226_held_fee_owner_admits_shared_projections_before_writes.sql"
 }

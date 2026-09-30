@@ -16,15 +16,42 @@
  * dash, glyph, uuid and operator note before a player sees it.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
-const MIGRATION = 'supabase/migrations/20260920142916_the_ledger_speaks_to_the_player.sql';
+const MIGRATIONS_DIR = 'supabase/migrations';
+
+/**
+ * THE LAW READS WHAT PRODUCTION RAN, NOT A FILE THAT LOOKS LIKE IT (2026-09-30).
+ *
+ * This constant used to be one hard-coded path,
+ * `20260920142916_the_ledger_speaks_to_the_player.sql`. Two files on main
+ * carried that base name, identical but for a 54-line header, and only the
+ * OTHER one - `20260920143152` - has a row in
+ * `supabase_migrations.schema_migrations`. So the law pinned a migration the
+ * database never applied, and any change to the twin production does run left
+ * it green. Resolving the LATEST migration that declares each function is what
+ * the sibling law `the-route-and-the-client-agree` already does, and it cannot
+ * go stale: redefine one of these three tomorrow and this reads the new file.
+ */
+function latestDeclaring(needle: string): string {
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (let i = files.length - 1; i >= 0; i -= 1) {
+    const text = read(`${MIGRATIONS_DIR}/${files[i]}`);
+    if (text.includes(needle)) return text.slice(text.indexOf('BEGIN;'));
+  }
+  throw new Error(`no migration declares ${needle}`);
+}
 
 describe('the ledger speaks to the player', () => {
-  const migration = read(MIGRATION);
-  const body = migration.slice(migration.indexOf('BEGIN;'));
+  const body = latestDeclaring('CREATE OR REPLACE FUNCTION public.fn_diamond_ledger_line');
+  const labelBody = latestDeclaring('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_row_label');
+  const columnBody = latestDeclaring(
+    'CREATE OR REPLACE FUNCTION public.player_line(t public.diamond_transactions)'
+  );
   const line = body.slice(
     body.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_ledger_line'),
     body.indexOf('COMMENT ON FUNCTION public.fn_diamond_ledger_line')
@@ -58,9 +85,9 @@ describe('the ledger speaks to the player', () => {
   });
 
   it('the row labels are Title Case, carry no em dash, and name the arena as diamonds', () => {
-    const labels = body.slice(
-      body.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_row_label'),
-      body.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_row_label')
+    const labels = labelBody.slice(
+      labelBody.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_row_label'),
+      labelBody.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_row_label')
     );
     const found = [...labels.matchAll(/THEN '([A-Z][^']*)'/g)].map((m) => m[1]);
     expect(found.length).toBeGreaterThan(60);
@@ -70,6 +97,12 @@ describe('the ledger speaks to the player', () => {
         if (word) expect(word[0], `${label}: ${word}`).toMatch(/[A-Z]/);
       }
     }
+    /* NO OPERATOR COPY ON A PLAYER'S SCREEN (2026-09-30). `test%` mapped to
+       'Test Entry', and four production rows rendered it - kinds test,
+       test_verify and test_ref_id, one Diamond each. They are corrections, so
+       they take the label the platform already uses for one. */
+    expect(found).not.toContain('Test Entry');
+    expect(labels).toMatch(/LIKE 'test%'\s+THEN 'Balance Adjustment'/);
     expect(labels).toMatch(/'arena_deposit'\s+THEN 'Diamond Arena Buy-In'/);
     expect(labels).toMatch(/'arena_withdraw'\s+THEN 'Diamond Arena Cash-Out'/);
     expect(labels).not.toMatch(/arena[^\n]*chip/i);
@@ -78,18 +111,20 @@ describe('the ledger speaks to the player', () => {
   });
 
   it("is a computed column under the row's own RLS, pure, and refused to anon", () => {
-    expect(body).toContain(
+    expect(columnBody).toContain(
       'CREATE OR REPLACE FUNCTION public.player_line(t public.diamond_transactions)'
     );
-    expect(body).toMatch(
+    expect(columnBody).toMatch(
       /RETURNS text\s+LANGUAGE sql\s+IMMUTABLE\s+PARALLEL SAFE\s+AS \$fn\$\s+SELECT public\.fn_diamond_ledger_line\(t\.type, t\.transaction_type, t\.source, t\.amount::bigint, t\.description\);/
     );
-    expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
-    expect(body).toContain(
+    expect(columnBody).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+    expect(columnBody).toContain(
       'REVOKE ALL ON FUNCTION public.player_line(public.diamond_transactions) FROM PUBLIC, anon;'
     );
-    expect(body.match(/^BEGIN;/gm)).toHaveLength(1);
-    expect(body.match(/^COMMIT;/gm)).toHaveLength(1);
+    for (const one of [body, labelBody, columnBody]) {
+      expect(one.match(/^BEGIN;/gm)).toHaveLength(1);
+      expect(one.match(/^COMMIT;/gm)).toHaveLength(1);
+    }
     const fragment = JSON.parse(
       read('scripts/ci/schema-manifest.d/cw-wallet-the-ledger-speaks-to-the-player.json')
     );

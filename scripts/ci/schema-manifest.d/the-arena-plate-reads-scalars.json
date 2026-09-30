@@ -1,0 +1,4 @@
+{
+  "_owner": "cw-diamond-db-0930 (2026-09-30), migration 20260930060822. fn_diamond_wallet_summary REPLACED again, minutes after 20260930054954: that one held the cheapest-seat figures in a plpgsql record, and skipping the scan on a closed arena left the record unassigned, which raises 55000 for every caller. The figures are scalars now. No new object.",
+  "functions": ["fn_diamond_wallet_summary"]
+}

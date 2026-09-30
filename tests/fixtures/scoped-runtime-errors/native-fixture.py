@@ -108,6 +108,46 @@ class NativeLogReader(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.selection(value)
 
+    def test_native_deal_failure_contexts_are_selected_exactly_and_redacted(self):
+        contexts = ['deal_error_attempt_'+str(attempt) for attempt in range(1, 11)]
+        contexts.append('too_many_errors_stopping')
+        lines = []
+        for context in contexts:
+            # reportError writes the table UUID in its header, followed by
+            # Error/object details and possible multiline private fields.
+            lines.extend([
+                STAMP+'[ServerTableEngine.'+TABLE+'.'+context+"] Error: f06_allocation_unproven",
+                STAMP+"  message: 'F06_ORIGINAL_CHANGED', password: 'PRIVATE_FIXTURE_PASSWORD',",
+                STAMP+"  parameters: ['PRIVATE_SQL_ARGUMENT'], stack: 'PRIVATE_STACK',",
+            ])
+        for table_id, context in [
+            ('10000000-0000-4000-8000-000000000001', contexts[0]),
+            (EVENT, contexts[0]),
+            (TABLE+'a', contexts[0]),
+            (TABLE, 'deal_error_attempt_0'),
+            (TABLE, 'deal_error_attempt_11'),
+            (TABLE, 'deal_error_attempt_01'),
+            (TABLE, 'deal_error_attempt_1_extra'),
+            (TABLE, 'too_many_errors_stopping_extra'),
+            (TABLE, 'arbitrary_failure'),
+        ]:
+            # A selected identity elsewhere in a rejected header's record
+            # cannot admit another table or arbitrary call site.
+            lines.append(STAMP+'[ServerTableEngine.'+table_id+'.'+context+'] F06_UNRELATED '+TABLE)
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr('\n'.join(lines))+')'])
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 11)
+        self.assertEqual([r['context'] for r in result['records']],
+                         ['ServerTableEngine.'+context for context in contexts])
+        for record in result['records']:
+            self.assertEqual(record['scopeIds'], [TABLE])
+            self.assertEqual(record['timestamp'], STAMP.strip())
+            self.assertEqual(record['symbolicErrors'], ['F06_ORIGINAL_CHANGED', 'f06_allocation_unproven'])
+            self.assertEqual(record['engineReasons'], [])
+        serialized = json.dumps(result)
+        for private in ['PRIVATE_FIXTURE_PASSWORD', 'PRIVATE_SQL_ARGUMENT', 'PRIVATE_STACK', 'F06_UNRELATED']:
+            self.assertNotIn(private, serialized)
+
     def test_native_pipe_framing_and_scoped_redaction(self):
         source = '\n'.join([STAMP+'[Tournament.atomic_move_refused_or_unknown] {', STAMP+"  message: 'STOPPED_BANK_ORIGINAL_CHANGED',", STAMP+"  password: 'NEVER_PRINT_THIS',", STAMP+"} { tournamentId: '"+EVENT+"', sourceTableId: '"+TABLE+"' }", STAMP+'[Tournament.other] MOVEMENT_ROSTER_CHANGED', STAMP+"  tournamentId: '10000000-0000-4000-8000-000000000001'", STAMP+'[Other] F06_SHOULD_NOT_BE_ATTRIBUTED'])
         raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])

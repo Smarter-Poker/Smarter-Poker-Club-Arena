@@ -124,13 +124,22 @@ describe('A lobby join answers only the joiner (Diamond Phase 11 line 5)', () =>
 
 describe('A ChannelHub fan-out serializes once (TableStateHub C16, ported)', () => {
   let hub: ChannelHub;
-  let stringify: ReturnType<typeof vi.spyOn>;
+  /** Restored after every case, so a failed assertion cannot leave JSON.stringify spied. */
+  let restore: (() => void) | null = null;
+  const spyStringify = () => {
+    const spy = vi.spyOn(JSON, 'stringify');
+    restore = () => spy.mockRestore();
+    return spy;
+  };
 
   beforeEach(() => {
     hub = new ChannelHub();
     hub.close();
   });
-  afterEach(() => stringify?.mockRestore());
+  afterEach(() => {
+    restore?.();
+    restore = null;
+  });
 
   it('a lobby broadcast to N sockets stringifies once and every socket gets the same frame', () => {
     const socks: FakeWs[] = [];
@@ -140,7 +149,7 @@ describe('A ChannelHub fan-out serializes once (TableStateHub C16, ported)', () 
       hub.addConnection(`u${i}`, ws as never);
       hub.joinLobby(`u${i}`);
     }
-    stringify = vi.spyOn(JSON, 'stringify');
+    const stringify = spyStringify();
     hub.broadcastToLobby({
       type: 'LOBBY_UPDATE',
       kind: 'maintenance',
@@ -163,7 +172,7 @@ describe('A ChannelHub fan-out serializes once (TableStateHub C16, ported)', () 
     const joiner = new FakeWs();
     hub.addConnection('newcomer', joiner as never);
     for (const ws of socks) ws.sent.length = 0;
-    stringify = vi.spyOn(JSON, 'stringify');
+    const stringify = spyStringify();
     hub.joinClub('newcomer', 'club-1');
     // One for the joiner's sync, one for everyone else's join event.
     expect(stringify).toHaveBeenCalledTimes(2);
@@ -185,7 +194,7 @@ describe('A ChannelHub fan-out serializes once (TableStateHub C16, ported)', () 
     hub.broadcastToLobby({ type: 'LOBBY_UPDATE', kind: 'maintenance', payload: {} } as never);
     expect(open.sent).toHaveLength(1);
     expect(closed.sent).toHaveLength(0);
-    stringify = vi.spyOn(JSON, 'stringify');
+    const stringify = spyStringify();
     hub.broadcastToTournament('no-such-tournament', { type: 'TOURNAMENT_EVENT' } as never);
     expect(stringify).not.toHaveBeenCalled();
   });

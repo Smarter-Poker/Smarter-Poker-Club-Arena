@@ -1,0 +1,9 @@
+# Legacy fee capture reuses its transaction-owned validation
+
+The retained 18-event fee operation includes 182 uncaptured original rake records. Its admission writer fully validates each terminal tournament while holding the existing settlement lanes and tournament/escrow rows. The per-record capture predicate repeated that whole tournament validation for every record, consuming the bounded transaction budget.
+
+The predicate now reuses the private immutable admission from the exact same transaction, requiring its original obligation ID, fingerprint, amount and unresolved terminal header. Missing or mismatched admissions and already resolved/recognized fees refuse. The initial full validation and both deferred constraints remain unchanged: the admission must acquire its exact resolution in the same transaction, and the resolution must carry exact recognition, bank proof and the full final terminal receipt before commit. No amount, destination, agreement, player outcome, lock or timeout changes.
+
+The existing required native qualification compares 27 complete receipt calls before the change with zero repeated calls after it. It also checks predecessor drift, admission access/immutability, transaction/obligation/fingerprint/amount/header mismatches and refusal after resolution. A fault injected after the real owner operation proves the unchanged deferred full receipt rejects altered evidence and rolls back every financial effect. Existing owner and two-event union/standalone assertions continue against the final predicate.
+
+This source change does not itself settle production fees. The existing 18-event operation retains identity ba59496d-9291-4df3-bdaa-a2721b054e81 and amount 741.86; rollback qualification, one committed execution and separate reconciliation are required before financial closure is reported.

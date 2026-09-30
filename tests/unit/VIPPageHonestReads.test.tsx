@@ -168,9 +168,11 @@ afterEach(() => {
   mocks.activityProps = null;
 });
 
-/* The big diamond figure, read off the element that owns it. A plain
-   `getByText('0')` is ambiguous on this page: the header carries a Monthly
-   metric that is also 0. */
+/* The big diamond figure, read off the element that owns it, never by a
+   plain `getByText('0')`. Until 2026-09-30 the ambiguity was a Monthly
+   header metric that was also permanently 0; that metric has been deleted
+   (nothing computed it), but reading the figure off its own element is the
+   correct habit regardless of what else happens to be on the page. */
 const balanceText = (container: HTMLElement) =>
   container.querySelector('.diamond-count')?.textContent ?? '';
 
@@ -236,6 +238,48 @@ describe('the VIP page keeps a failed read apart from a real zero', () => {
     render(<VIPPage />);
 
     await waitFor(() => expect(mocks.platePoints?.pointsState).toBe('ready'));
+    expect(screen.getByTestId('metric-Current Points').textContent).toBe('0');
+  });
+});
+
+/**
+ * 2026-09-30. The header carried a "Monthly" and an "Active Streak" metric,
+ * and the plate a "This Month" and an "Active Streak" cell. Nothing wrote
+ * any of them: `vip_points` returns only current_points and lifetime_points,
+ * and no other writer existed, so all four printed a permanent fabricated
+ * zero. They are gone, and the state fields behind them are gone with them
+ * so a later reader cannot resurrect the zero.
+ *
+ * The removal assertions below are deliberately paired with a genuine-zero
+ * assertion. A suite that only proved the fabricated figures were absent
+ * would pass just as happily against a page that had stopped reporting real
+ * figures at all, which is the opposite failure and just as dishonest.
+ */
+describe('the VIP page offers no figure the platform does not compute', () => {
+  it('has no Monthly or Active Streak metric, and passes neither to the plate', async () => {
+    render(<VIPPage />);
+
+    await waitFor(() => expect(mocks.platePoints?.pointsState).toBe('ready'));
+
+    expect(screen.queryByTestId('metric-Monthly')).toBeNull();
+    expect(screen.queryByTestId('metric-Active Streak')).toBeNull();
+
+    const passed = mocks.platePoints?.points as Record<string, unknown> | undefined;
+    expect(passed).toBeTruthy();
+    expect(Object.keys(passed as Record<string, unknown>).sort()).toEqual(['current', 'lifetime']);
+  });
+
+  it('still reports the two figures it does compute, including real zeros', async () => {
+    mocks.vipPointsResponse.mockImplementation(() =>
+      Promise.resolve({ data: { current_points: 0, lifetime_points: 0 }, error: null })
+    );
+
+    render(<VIPPage />);
+
+    // A player who genuinely holds nothing is still told so, by both figures.
+    await waitFor(() => expect(mocks.platePoints?.points.current).toBe(0));
+    expect(mocks.platePoints?.points.lifetime).toBe(0);
+    expect(mocks.platePoints?.pointsState).toBe('ready');
     expect(screen.getByTestId('metric-Current Points').textContent).toBe('0');
   });
 });

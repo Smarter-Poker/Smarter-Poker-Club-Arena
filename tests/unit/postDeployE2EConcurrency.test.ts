@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync(
@@ -86,6 +88,101 @@ describe('post-deploy E2E concurrency', () => {
     expect(realtimeCertification).toContain(
       '[customization-realtime] second player remained isolated'
     );
+  });
+
+  // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
+  //
+  // publish-club-arena cancels in progress when a newer merge arrives. Run
+  // 36749429418 was cancelled while still queued and produced ZERO jobs, so
+  // this gate read `Expected one latest publish-to-origin job, received 0`
+  // and the certificate went red twice in thirty seconds (36749436277,
+  // 36749498583) before a single browser started. These execute the gate's
+  // ACTUAL node block against the payload shapes that produce each verdict.
+  describe('the gate block itself, executed', () => {
+    const script = (() => {
+      const start = workflow.indexOf('node - "$JOBS_JSON"');
+      const body = workflow.slice(
+        workflow.indexOf('\n', start) + 1,
+        workflow.indexOf('\n          NODE', start)
+      );
+      return body.replace(/^ {10}/gm, '');
+    })();
+
+    const verdict = (payload: unknown) => {
+      const directory = mkdtempSync(join(tmpdir(), 'post-deploy-gate-'));
+      const jobsFile = join(directory, 'jobs.json');
+      const output = join(directory, 'output');
+      writeFileSync(jobsFile, JSON.stringify(payload));
+      writeFileSync(output, '');
+      const run = spawnSync(process.execPath, ['-', jobsFile, output], {
+        input: script,
+        encoding: 'utf8',
+      });
+      return { status: run.status, output: readFileSync(output, 'utf8'), stderr: run.stderr };
+    };
+
+    const originJob = (publish: string, proof: string, standDown = 'success') => ({
+      name: 'publish-to-origin',
+      status: 'completed',
+      conclusion: 'success',
+      steps: [
+        {
+          name: 'Stand down if the origin already serves a newer bundle',
+          status: 'completed',
+          conclusion: standDown,
+        },
+        {
+          name: 'Publish through the host-owned immutable transaction',
+          status: 'completed',
+          conclusion: publish,
+        },
+        { name: 'Verify the origin serves this bundle', status: 'completed', conclusion: proof },
+      ],
+    });
+
+    it.each([
+      ['a publisher cancelled before any job started', { jobs: [] }],
+      [
+        'a publisher whose every job was cancelled or skipped',
+        {
+          jobs: [
+            { name: 'tests', conclusion: 'cancelled' },
+            { name: 'x', conclusion: 'skipped' },
+          ],
+        },
+      ],
+    ])('stands down without a verdict for %s', (_label, payload) => {
+      const result = verdict(payload);
+      expect(result.status, result.stderr).toBe(0);
+      // No should_run at all, so every downstream job skips and this run takes
+      // no production lock. It is a non-event, not a pass and not a failure.
+      expect(result.output).toBe('');
+    });
+
+    it('still certifies a real publish and a safe forward stand-down', () => {
+      for (const payload of [
+        { jobs: [originJob('success', 'success')] },
+        { jobs: [originJob('skipped', 'skipped')] },
+      ]) {
+        const result = verdict(payload);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.output).toBe('should_run=true\n');
+      }
+    });
+
+    // The stand-down must never become a way to skip certification when a
+    // publish really happened. A source run holding jobs that actually ran,
+    // with no publish-to-origin among them, is the renamed-job hole.
+    it.each([
+      [
+        'jobs ran but none is publish-to-origin',
+        { jobs: [{ name: 'publish-to-hetzner', status: 'completed', conclusion: 'success' }] },
+      ],
+      ['the origin job failed', { jobs: [originJob('failure', 'failure')] }],
+      ['the jobs response is malformed', { total_count: 1 }],
+    ])('still refuses %s', (_label, payload) => {
+      expect(verdict(payload).status).toBe(1);
+    });
   });
 
   it('rehydrates realtime settings with one bounded Studio navigation', () => {

@@ -89,12 +89,25 @@ export default function VIPPage() {
     return () => document.body.classList.remove('marketplace-color-scope');
   }, []);
 
-  // VIP Points System
+  /* VIP POINTS - ONLY THE TWO FIGURES THE PLATFORM ACTUALLY COMPUTES.
+     `monthly` and `activeStreak` used to sit in this object too, and NOTHING
+     ever wrote either one. `vip_points` has exactly four columns (user_id,
+     current_points, lifetime_points, updated_at), so the read below could
+     never have filled them, and no other writer existed anywhere in src/.
+     They reached the screen as their own initial state: every player was
+     shown a confident "0" and "0 Days" for two figures the platform does
+     not calculate.
+
+     Deleted rather than given the "Unavailable" treatment `current` and
+     `lifetime` get. That word means "the read could not answer THIS TIME",
+     which invites a player to refresh; these two had no source to read
+     from at all, so the honest act is to stop making the claim. Removing
+     them from the state shape (not merely from the JSX) is deliberate:
+     it is what stops the zero being reintroduced by the next reader.
+     docs/changelog/2026-09-30-the-vip-page-stops-inventing-two-figures.md */
   const [vipPoints, setVipPoints] = useState({
     current: 0,
     lifetime: 0,
-    monthly: 0,
-    activeStreak: 0,
   });
 
   const [recentDiamondActivities, setRecentDiamondActivities] = useState<DiamondActivity[]>([]);
@@ -409,7 +422,7 @@ export default function VIPPage() {
       throwables: { used: 0, limit: 0 },
     });
     setDiamonds(0);
-    setVipPoints({ current: 0, lifetime: 0, monthly: 0, activeStreak: 0 });
+    setVipPoints({ current: 0, lifetime: 0 });
     setRecentDiamondActivities([]);
     setDiamondActivityState('loading');
     setDiamondBalanceState('loading');
@@ -502,11 +515,10 @@ export default function VIPPage() {
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           crest="vip"
-          metrics={[
-            { label: 'Current Points', value: 'Syncing', tone: 'attention' },
-            { label: 'Monthly', value: 'Syncing', tone: 'live' },
-            { label: 'Active Streak', value: 'Syncing' },
-          ]}
+          /* Two further metrics, "Monthly" and "Active Streak", used to sit
+             beside this one in both header states. Neither had a writer.
+             See the vipPoints comment above. */
+          metrics={[{ label: 'Current Points', value: 'Syncing', tone: 'attention' }]}
         />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
@@ -532,8 +544,6 @@ export default function VIPPage() {
             value: vipPointsState === 'error' ? 'Unavailable' : vipPoints.current.toLocaleString(),
             tone: 'attention',
           },
-          { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
-          { label: 'Active Streak', value: `${vipPoints.activeStreak} Days` },
         ]}
       />
       {/* MEMBERSHIP, ALLOWANCES, POINTS.

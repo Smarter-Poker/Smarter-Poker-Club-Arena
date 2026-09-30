@@ -293,9 +293,7 @@ export default function VIPPage() {
            read instead of presenting an empty history as fact. */
         const { data: ledgerData, error: ledgerError } = await supabase
           .from('diamond_transactions')
-          .select(
-            'id, type, transaction_type, amount, description, player_line, balance_after, created_at'
-          )
+          .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
           .eq('user_id', requestedUserId)
           .order('created_at', { ascending: false })
           .limit(10);

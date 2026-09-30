@@ -31,13 +31,15 @@ import StatsFactsService, {
   type NemesisPayload,
   type OpponentFlow,
 } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 import './NemesisPanel.css';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
 
 interface Props {
   userId?: string;
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
 }
 
 function initials(name: string | null): string {
@@ -105,7 +107,7 @@ function FlowCard({
   );
 }
 
-export default function NemesisPanel({ userId, days = null }: Props) {
+export default function NemesisPanel({ userId, days = null, scope = CHIP_STATS }: Props) {
   const navigate = useNavigate();
   const [data, setData] = useState<NemesisPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +121,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getNemesis(userId, CHIP_STATS, { days })
+    StatsFactsService.getNemesis(userId, scope, { days })
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -131,7 +133,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, days, attempt]);
+  }, [userId, days, attempt, scope]);
 
   const rows = useMemo(() => {
     if (!data) return [];

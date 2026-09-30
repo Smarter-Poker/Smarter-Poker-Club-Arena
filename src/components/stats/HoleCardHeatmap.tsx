@@ -34,12 +34,14 @@ import StatsFactsService, {
   type HandGridCell,
   type ClassHand,
 } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 import './HoleCardHeatmap.css';
 
 interface Props {
   userId?: string;
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
 }
 
 const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -89,7 +91,7 @@ function signedColor(value: number, scale: number, confidence: number): string {
     : `rgba(239, 68, 68, ${alpha.toFixed(3)})`;
 }
 
-export default function HoleCardHeatmap({ userId, days = null }: Props) {
+export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STATS }: Props) {
   const [cells, setCells] = useState<HandGridCell[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
@@ -112,7 +114,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     setLoading(true);
     setHovered(null); // a key from the previous filter would read "never dealt"
     setSelected(null);
-    StatsFactsService.getHandGrid(userId, CHIP_STATS, { position, variant, days })
+    StatsFactsService.getHandGrid(userId, scope, { position, variant, days })
       .then((payload) => {
         if (cancelled) return;
         // Cells with no hands are noise for "classes seen" and for the scale.
@@ -125,7 +127,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, position, variant, days, attempt]);
+  }, [userId, position, variant, days, attempt, scope]);
 
   useEffect(() => {
     if (!userId || !selected) {
@@ -139,7 +141,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     let cancelled = false;
     setHandsLoading(true);
     setDrillError(null);
-    StatsFactsService.getClassHands(userId, CHIP_STATS, selected, { position, variant, days })
+    StatsFactsService.getClassHands(userId, scope, selected, { position, variant, days })
       .then((p) => {
         if (cancelled) return;
         setClassHands(p.hands ?? []);
@@ -151,7 +153,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, selected, position, variant, days]);
+  }, [userId, selected, position, variant, days, scope]);
 
   const byClass = useMemo(() => {
     const m = new Map<string, HandGridCell>();

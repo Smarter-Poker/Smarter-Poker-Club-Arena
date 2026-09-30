@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS,
+  HORSE_JOURNAL_QUEUE_MAX_RECORDS,
   HorseDecisionJournalPublisher,
   type HorseJournalWorker,
 } from '../HorseDecisionJournal.js';
@@ -113,8 +114,10 @@ describe('bounded private Horse journal retry ownership', () => {
   it('bounds the queue while a writer is recovering', async () => {
     const { a, b, p, notes } = fixture();
     a.exit();
-    for (let i = 0; i < 64; i++) p.record('decision', 'hand', 'turn', {});
-    expect(notes.filter((n) => n === 'phase15_journal_enqueued')).toHaveLength(64);
+    for (let i = 0; i < HORSE_JOURNAL_QUEUE_MAX_RECORDS; i++) p.record('decision', 'hand', 'turn', {});
+    expect(notes.filter((n) => n === 'phase15_journal_enqueued')).toHaveLength(
+      HORSE_JOURNAL_QUEUE_MAX_RECORDS
+    );
     expect(notes).toContain('phase15_journal_queue_capacity');
     await tick(250);
     b.emit({ type: 'READY' });

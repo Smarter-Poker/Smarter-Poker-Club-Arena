@@ -217,3 +217,42 @@ describe('simulateEquity under the governor', () => {
     expect(typeof snap.enabled).toBe('boolean');
   });
 });
+
+describe('one decision, one governor scale (Phase 6C, 2026-09-27)', () => {
+  afterEach(() => equityGovernor.__setScaleForTest(null));
+
+  it('planted red: a reading that falls due inside a decision does not change its sample, and the scale returned is the one it used', () => {
+    const hero = [c('A', 's'), c('K', 's')];
+    equityGovernor.__setScaleForTest(0.6);
+    const sizes: number[] = [];
+    const run = equityGovernor.withDecisionScale(() => {
+      seedFastRandom(7);
+      simulateEquity(hero, [], 1, variantInfo('nlh'), 400);
+      sizes.push(equitySampleSizeOfLastCall());
+      // A new reading arrives while the decision is still running.
+      equityGovernor.__setScaleForTest(0.35);
+      simulateEquity(hero, [], 1, variantInfo('nlh'), 400);
+      sizes.push(equitySampleSizeOfLastCall());
+      return equityGovernor.current();
+    });
+    expect(run).toEqual({ value: 0.6, scale: 0.6 });
+    expect(sizes).toEqual([governedIterations(400, 0.6), governedIterations(400, 0.6)]);
+    // Outside the decision the new reading is the answer again.
+    expect(equityGovernor.current()).toBe(0.35);
+  });
+
+  it('keeps the outer scale for a nested decision and releases it after a throw', () => {
+    equityGovernor.__setScaleForTest(0.2);
+    const inner = equityGovernor.withDecisionScale(() => {
+      equityGovernor.__setScaleForTest(1);
+      return equityGovernor.withDecisionScale(() => equityGovernor.current());
+    });
+    expect(inner).toEqual({ value: { value: 0.2, scale: 0.2 }, scale: 0.2 });
+    expect(() =>
+      equityGovernor.withDecisionScale(() => {
+        throw new Error('decision failed');
+      })
+    ).toThrow('decision failed');
+    expect(equityGovernor.current()).toBe(1);
+  });
+});

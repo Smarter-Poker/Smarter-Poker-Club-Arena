@@ -10,6 +10,7 @@
  */
 import { lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 import type { playerStyleFromStats } from '../../components/stats/playerStyleFromStats';
 import { StatRow } from './StatRow';
@@ -21,6 +22,8 @@ const BenchmarkPanel = lazy(() => import('../../components/stats/BenchmarkPanel'
 const StatsShareCard = lazy(() => import('../../components/stats/StatsShareCard'));
 
 export interface OverviewTabProps {
+  /** The asset the page reads: chips, or Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
   overall: OverallStats;
   full: FullStats | null;
   rangeKey: string;
@@ -40,6 +43,7 @@ export interface OverviewTabProps {
 }
 
 export default function OverviewTab({
+  scope = CHIP_STATS,
   overall,
   full,
   rangeKey,
@@ -201,7 +205,7 @@ export default function OverviewTab({
           is private, and ca_player_nemesis refuses a cross-user read. */}
       {isOwnProfile && (
         <PanelBoundary name="Rivals" resetKey={panelResetKey}>
-          <NemesisPanel userId={targetUserId} days={windowDays} />
+          <NemesisPanel userId={targetUserId} days={windowDays} scope={scope} />
         </PanelBoundary>
       )}
 

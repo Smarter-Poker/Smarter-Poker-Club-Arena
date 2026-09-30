@@ -191,6 +191,18 @@ async function boot(): Promise<void> {
       });
     }
   }
+  if (IS_NATIVE_BUILD) {
+    try {
+      // Before ANY picture renders: a root-relative picture the bundle does not
+      // hold loads from smarter.poker (src/lib/native/hubPictureShim).
+      const { installHubPictureShim } = await import('./lib/native/hubPictureShim');
+      installHubPictureShim();
+    } catch (err) {
+      reportWarning('Native picture shim skipped', 'main.Native_picture_shim_skipped', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   bootReactTree();
 }
 

@@ -18,7 +18,7 @@
  * rather than assume it worked.
  */
 
-import { isNativePlatform } from '../lib/appBase';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 
 /** RFC 4180: quote anything containing a quote, comma or newline. */
 export function csvEscape(value: unknown): string {
@@ -66,7 +66,7 @@ export function downloadBlob(
 
   // THE APP (2026-09-08): a webview does not honour the download attribute,
   // so the file goes to the system share sheet (src/lib/native/share.ts).
-  if (isNativePlatform()) {
+  if (IS_NATIVE_BUILD && isNativePlatform()) {
     const sharing = import('../lib/native/share').then(({ nativeShareBlob }) => {
       check();
       return nativeShareBlob(blob, filename, undefined, isCurrent);

@@ -965,6 +965,45 @@ jobs:
             exit 1
           fi
 
+      # AN ACCRUAL SHARES THE WEEKLY ACCOUNTING LANE (2026-09-29).
+      #
+      # fn_accrue_cash_hand_commissions, fn_settle_tournament_rake,
+      # fn_lock_cash_bank_accounting_week and
+      # fn_lock_accounting_tournament_recognition_week all guard the weekly
+      # period with an advisory lock keyed on (club-or-union, week). All four
+      # took it EXCLUSIVELY, so for a whole week every cash hand and every
+      # tournament rake settle in a club queued behind one lock in FIFO order.
+      # Measured 2026-09-29: 74.4% of all advisory waiting on the platform sat
+      # on these keys, queues seven deep, while the per-table hand locks that
+      # fan out correctly carried 0.80.
+      #
+      # The lock exists to exclude the weekly CLOSE - a reader/writer contract,
+      # built as writer/writer. Shared for the accrual, exclusive for the close,
+      # keeps the exclusion exactly and drops the convoy.
+      #
+      # All four move together: fn_settle_tournament_rake calls
+      # fn_lock_accounting_tournament_recognition_week on the SAME key, so one
+      # of them going back to exclusive is a lock upgrade, and this repo already
+      # learned those deadlock (2026-09-10).
+      - name: Supabase Invariants - An Accrual Shares The Weekly Accounting Lane
+        run: |
+          set -o pipefail
+          echo "## Weekly Accounting Lock Mode" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-accounting-week-lock-mode.mjs 2>&1 | tee /tmp/weeklane.log; then
+            echo "OK - no accrual takes the weekly accounting lane exclusively." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "An accrual takes the weekly accounting lane exclusively. That serialises" >> $GITHUB_STEP_SUMMARY
+              echo "a week of one club's hands behind a single lock. Use" >> $GITHUB_STEP_SUMMARY
+              echo "pg_advisory_xact_lock_shared; the close keeps the exclusive side." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
       # A TRIGGER ON A MONEY TABLE DECLARES ITSELF (2026-09-12).
       # UndeclaredTriggerOnAMoneyTable is critical and pages by SMS, and it read
       # 76 on 2026-09-12 having read 74 ninety minutes earlier: saturated, and
@@ -1434,6 +1473,12 @@ jobs:
       - name: Settlement conservation preserves full results through a narrow online index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
+
+      - name: The rakeback settler reads only what every writer has committed
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rakeback-settler-read-horizon-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1

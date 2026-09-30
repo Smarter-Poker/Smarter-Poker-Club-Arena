@@ -10,58 +10,76 @@ import {
 import { useToast } from '../common/Toast';
 import { isManagementContentConflict } from '../../services/ManagementContentError';
 import { confirmDialog } from '../common/confirmDialog';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { titleCase } from '../../utils/titleCase';
 import styles from './TickerManagementPanel.module.css';
 
 const SOURCE_OPTIONS: Array<{ key: TickerSource; label: string; detail: string }> = [
   {
     key: 'overlays',
     label: 'Overlay Alerts',
-    detail: 'Promote real late-registration overlays players can still enter.',
+    detail: 'Promote Real Late-Registration Overlays Players Can Still Enter.',
   },
   {
     key: 'starting_soon',
     label: 'Tournament Starting Soon',
-    detail: 'Countdown scheduled MTTs during their final five minutes.',
+    detail: 'Count Down Scheduled MTTs During Their Final Five Minutes.',
   },
   {
     key: 'custom_messages',
     label: 'Custom Messages',
-    detail: 'Rotate operator-written messages with live game notices.',
+    detail: 'Rotate Operator-Written Messages With Live Game Notices.',
   },
   {
     key: 'registration_closing',
     label: 'Registration Closing',
-    detail: 'Call out late-registration doors before they close.',
+    detail: 'Call Out Late-Registration Doors Before They Close.',
   },
   {
     key: 'guarantees',
     label: 'Guaranteed Events',
-    detail: 'Feature upcoming guaranteed tournaments.',
+    detail: 'Feature Upcoming Guaranteed Tournaments.',
   },
   {
     key: 'table_openings',
     label: 'New Table Openings',
-    detail: 'Tell players when fresh cash tables become available.',
+    detail: 'Tell Players When Fresh Cash Tables Become Available.',
   },
   {
     key: 'maintenance',
     label: 'Maintenance & Service',
-    detail: 'Reserve the ticker for planned service notices.',
+    detail: 'Reserve The Ticker For Planned Service Notices.',
   },
   {
     key: 'winner_results',
     label: 'Winners & Results',
-    detail: 'Celebrate recently completed events and results.',
+    detail: 'Celebrate Recently Completed Events And Results.',
   },
 ];
 
+/**
+ * TICKER MANAGEMENT IS ITS OWN PAGE (Dan 2026-09-20: "DO NOT ATTACH EVERYTHING
+ * TOGETHER WITH THE SAME DISPLAY WINDOWS").
+ *
+ * This panel used to print as frameless content inside the Game Board's
+ * console, one of three interchangeable screens. It now draws its own frame:
+ * the shark family - a thinner chamfered chassis than the board's spade, its
+ * own diamond crest - whose foot carries exactly ONE plate, which is exactly
+ * the one action this page has: Save Ticker. The on-air preview leads the page
+ * like a broadcast monitor; sources, pace and rotations sit under it as rows
+ * on the glass. Every load, draft, conflict and save rule below is unchanged.
+ */
 export default function TickerManagementPanel({
   scope,
   scopeId,
+  scopeName,
   onDirtyChange,
 }: {
   scope: 'club' | 'union';
   scopeId: string;
+  /** The club or union the ticker belongs to, printed under the title. */
+  scopeName?: string;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const toast = useToast();
@@ -121,8 +139,9 @@ export default function TickerManagementPanel({
       dirtyRef.current = false;
     } catch (error) {
       if (!isCurrent()) return;
+      // A plain Title Case sentence on the glass, never the raw error text.
       setLoadError(
-        error instanceof Error ? error.message : 'Could not load the authoritative ticker settings.'
+        titleCase(safeErrorMessage(error, 'Could Not Load The Authoritative Ticker Settings.'))
       );
       setRevision(null);
     } finally {
@@ -195,27 +214,78 @@ export default function TickerManagementPanel({
     }
   };
 
+  // The pill reports what players see NOW - the saved state - never the draft.
+  const onAir = savedSettings?.enabled ?? null;
+  const pill = onAir === null ? (loadError ? 'Locked' : 'Loading') : onAir ? 'On Air' : 'Off Air';
+  const pillInk: ConsoleInk =
+    onAir === null ? (loadError ? 'red' : 'muted') : onAir ? 'green' : 'muted';
+
   return (
-    <section
+    <SpadeConsole
+      family="shark"
       className={styles.panel}
+      eyebrow="Broadcast Control"
+      title="Ticker Management"
+      titleId="ticker-management-title"
+      /* The club or union name alone: with the suffix the shark's narrow
+         subtitle zone fitted a long name down to nine pixels. The heading
+         below the head says what the rail is. */
+      subtitle={scopeName || 'Live Message Rail'}
+      pill={pill}
+      pillInk={pillInk}
       aria-labelledby="ticker-management-title"
       aria-busy={loading || saving}
+      plates={{
+        primary: {
+          label: saving ? 'Saving…' : 'Save Ticker',
+          type: 'button',
+          onClick: () => void save(),
+          disabled: loading || saving || revision === null || !dirty || Boolean(contrastError),
+          ink: 'white',
+        },
+      }}
     >
+      <div className={styles.monitor}>
+        <span className={`${styles.sectionLabel} sc-ink--blue`}>On-Air Preview</span>
+        <div
+          className={styles.preview}
+          role="img"
+          aria-label="Ticker Preview: Live Alert, Tournament Starting Soon, Custom Messages, Overlay Alerts"
+          style={{
+            background: settings.backgroundColor,
+            color: settings.textColor,
+            borderColor: settings.accentColor,
+            fontFamily: settings.fontFamily === 'System' ? 'system-ui' : settings.fontFamily,
+          }}
+        >
+          <strong style={{ color: settings.accentColor }}>LIVE ALERT</strong>
+          <div>
+            <span style={{ animationDuration: `${settings.speedSeconds}s` }}>
+              Your Ticker Preview · Tournament Starting Soon · Custom Messages · Overlay Alerts
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className={styles.heading}>
         <div>
-          <span>Ticker Management</span>
-          <h2 id="ticker-management-title">Control The Live Message Rail</h2>
-          <p>Choose What Earns The Top Strip, Then Tune Its Pace And Visual Treatment.</p>
+          <h3 className="sc-ink--silver">Control The Live Message Rail</h3>
+          <p className="sc-copy">
+            Choose What Earns The Top Strip, Then Tune Its Pace And Visual Treatment.
+          </p>
         </div>
-        <label className={styles.master}>
+        <label className={`${styles.master} sc-check${settings.enabled ? ' sc-check--on' : ''}`}>
           <input
             type="checkbox"
+            className="sc-check__box"
             aria-label="Ticker Enabled"
             checked={settings.enabled}
             onChange={(e) => update('enabled', e.target.checked)}
             disabled={loading || saving || revision === null || Boolean(loadError)}
           />
-          <span>{settings.enabled ? 'Ticker On' : 'Ticker Off'}</span>
+          <span className={settings.enabled ? 'sc-ink--green' : 'sc-ink--muted'}>
+            {settings.enabled ? 'Ticker On' : 'Ticker Off'}
+          </span>
         </label>
       </div>
       {loadError && (
@@ -243,29 +313,18 @@ export default function TickerManagementPanel({
         aria-label="Ticker Settings"
         disabled={loading || saving || revision === null || Boolean(loadError)}
       >
-        <div
-          className={styles.preview}
-          role="img"
-          aria-label="Ticker Preview: Live Alert, Tournament Starting Soon, Custom Messages, Overlay Alerts"
-          style={{
-            background: settings.backgroundColor,
-            color: settings.textColor,
-            borderColor: settings.accentColor,
-            fontFamily: settings.fontFamily === 'System' ? 'system-ui' : settings.fontFamily,
-          }}
-        >
-          <strong style={{ color: settings.accentColor }}>LIVE ALERT</strong>
-          <div>
-            <span style={{ animationDuration: `${settings.speedSeconds}s` }}>
-              Your Ticker Preview · Tournament Starting Soon · Custom Messages · Overlay Alerts
-            </span>
-          </div>
-        </div>
+        <span className={`${styles.sectionLabel} sc-ink--blue`}>Message Sources</span>
         <div className={styles.sourceGrid}>
           {SOURCE_OPTIONS.map((source) => (
-            <label key={source.key} className={settings.sources[source.key] ? styles.sourceOn : ''}>
+            <label
+              key={source.key}
+              className={`${styles.source} sc-check${
+                settings.sources[source.key] ? ' sc-check--on' : ''
+              }`}
+            >
               <input
                 type="checkbox"
+                className="sc-check__box"
                 aria-label={source.label}
                 checked={settings.sources[source.key]}
                 onChange={(e) =>
@@ -279,8 +338,9 @@ export default function TickerManagementPanel({
             </label>
           ))}
         </div>
+        <span className={`${styles.sectionLabel} sc-ink--blue`}>Pace And Treatment</span>
         <div className={styles.customizer}>
-          <label>
+          <label className={styles.speed}>
             Scroll Speed <span>{settings.speedSeconds} Seconds</span>
             <input
               type="range"
@@ -367,6 +427,7 @@ export default function TickerManagementPanel({
                   <span>{message}</span>
                   <button
                     type="button"
+                    className={styles.remove}
                     onClick={() =>
                       update(
                         'customMessages',
@@ -416,6 +477,7 @@ export default function TickerManagementPanel({
                   <span>{message}</span>
                   <button
                     type="button"
+                    className={styles.remove}
                     onClick={() =>
                       update(
                         'serviceMessages',
@@ -431,24 +493,19 @@ export default function TickerManagementPanel({
           )}
         </div>
       </fieldset>
-      <div className={styles.footer}>
-        <span role="status" aria-live="polite">
-          {loading
-            ? 'Loading Current Ticker…'
-            : contrastError
-              ? contrastError
-              : dirty
-                ? 'Unsaved Ticker Changes Are Staged Locally.'
-                : 'All Ticker Changes Are Saved.'}
-        </span>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={loading || saving || revision === null || !dirty || Boolean(contrastError)}
-        >
-          {saving ? 'Saving…' : 'Save Ticker'}
-        </button>
-      </div>
-    </section>
+      <p
+        className={`${styles.status} ${contrastError ? 'sc-ink--red' : 'sc-ink--muted'}`}
+        role="status"
+        aria-live="polite"
+      >
+        {loading
+          ? 'Loading Current Ticker…'
+          : contrastError
+            ? contrastError
+            : dirty
+              ? 'Unsaved Ticker Changes Are Staged Locally.'
+              : 'All Ticker Changes Are Saved.'}
+      </p>
+    </SpadeConsole>
   );
 }

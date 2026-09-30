@@ -34,7 +34,7 @@
     },
     "scripts/qualification/spin-first-archived-concurrency.py": {
       "bytes": 18715,
-      "sha256": "64c21fde5fd5f2d54dcf6c87e8834d6b4a7d1d7becda0bbd42183ba0d58db4aa"
+      "sha256": "097c2750c954d4659a8abf408ff17632b318315186f7c5707c3c724579c2ac22"
     },
     "scripts/qualification/test_first_archived_concurrency.py": {
       "bytes": 6790,
@@ -42,7 +42,7 @@
     },
     "scripts/qualification/spin-first-archived-locks.py": {
       "bytes": 20050,
-      "sha256": "68d6b67148658468f15545a383f298c224ec42182af8f4df7564507315ed4e6e"
+      "sha256": "a63068ad7d7f2599a9b05c6305c398305063e2abdcdf6c77cb818d67098fdcc4"
     },
     "scripts/qualification/test_first_archived_locks.py": {
       "bytes": 4822,
@@ -50,7 +50,7 @@
     },
     "scripts/qualification/spin-first-archived-production-probe.py": {
       "bytes": 33057,
-      "sha256": "9f4278792e49574c3a2957786bd2d1d4cf3031b1cc958976f1e31f293a80d233"
+      "sha256": "c3f0ea7e93ce14f121b5da20acd36fcfebc297c55cf5b89a86c9672cb55436d3"
     },
     "scripts/qualification/test_first_archived_production_probe.py": {
       "bytes": 16349,
@@ -58,7 +58,7 @@
     },
     "scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql": {
       "bytes": 27807,
-      "sha256": "491db971d2cdab0ea734bbbe5470904462d6f2b42c079dd14cab68318bda1b6d"
+      "sha256": "12d7f7e671f586f62a71f59b1488460f9d075f6c2802ba574e82af50ac9a681a"
     },
     "scripts/qualification/test_first_archived_oracle.py": {
       "bytes": 13214,
@@ -178,15 +178,15 @@
     },
     "scripts/qualification/fixtures/archived-spin/first-connected-probe.sql": {
       "bytes": 7544,
-      "sha256": "7f85c9f217b8b56db97425eb25de700a7768f1b25e61212e8202b45206399f29"
+      "sha256": "49dd3b28803059e02bb519d305a4a044f71b4232edbed8ed5f09258434557431"
     },
     "scripts/qualification/fixtures/archived-spin/first-temporal-state.json": {
       "bytes": 5963,
-      "sha256": "29dea53b23a1a0f88f5d422861bd973a75f6273ad737344c3fc57649096954b8"
+      "sha256": "23a6e745f793b5bbbf8fdffab1d185a5b48ffaf27074d3e6977ef179bdc3f7b0"
     },
     "scripts/qualification/fixtures/archived-spin/first-temporal-refusal.sql": {
       "bytes": 4313,
-      "sha256": "3b8d39a94ce5a4340bc35d761ee2b7f268267ce3cfca08121ebf695b82e01809"
+      "sha256": "e56fce2d638873a2f4bdb78052bc8505541b871e37b1adcd0b6778b12fa1c7bf"
     },
     "scripts/qualification/fixtures/archived-spin/first-manager-state.json": {
       "bytes": 1202,
@@ -206,7 +206,7 @@
     },
     "scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql": {
       "bytes": 6955,
-      "sha256": "dc225a794f80ff8694aad9039fa22e6b649a190246047f9b2350fd327eb9feac"
+      "sha256": "9fe771bee9bf0d6fc129c8ac79b6044af718c0589e1fd17abbb1b55a84bfe6aa"
     },
     "scripts/qualification/fixtures/archived-spin/first-preimage-drift.sql": {
       "bytes": 4631,

@@ -83,6 +83,7 @@ describe('the park writes the active bank too', () => {
     expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank', {
       p_user_id: user,
       p_seconds: 20,
+      p_request_id: expect.any(String),
     });
   });
 

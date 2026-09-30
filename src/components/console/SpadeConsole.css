@@ -229,6 +229,14 @@
   background-image: url('/assets/club-buttons/console/riveted-console-v2/bottom.png');
 }
 
+/* The riveted plates carry a rivet in each inner corner (x 82 and 305 of
+   the left face, 385 and 635 of the right, in the master's 729). The label
+   may use 84% of the plate: that stops 8px short of the rivets on either
+   side, where 70% left "Play It Out" at 9px on a 375px phone. */
+.sc--family-riveted .sc-plate__well {
+  width: 84%;
+}
+
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */
 
 .sc-zone {
@@ -308,6 +316,20 @@
   left: 50%;
   top: 50%;
   width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* THE HAND GETS 44px (2026-09-29). A plate is a fixed slice of its master, so
+   on a phone the shark's single plate came out 39px tall and the spade's pair
+   little better. The painted face keeps its size; the button reaches out to
+   44px through a transparent pad, exactly as the close word above does. */
+.sc-plate::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
   height: max(100%, 44px);
   transform: translate(-50%, -50%);
 }
@@ -396,7 +418,12 @@
   place-items: center;
   min-width: 0;
   margin: 0;
-  padding: 0 4%;
+  /* In cqw, not a percentage: the button is absolutely positioned, so a
+     percentage pads it by its containing block - the whole foot - and "4%"
+     took 30px off a 123px plate at 375px (measured 2026-09-14; the labels
+     then hit the floor and clipped). 1cqw of the console is 10 canvas px on
+     the spade master, 7 on the riveted. */
+  padding: 0 1cqw;
   border: 0;
   background: transparent;
   color: inherit;
@@ -432,6 +459,18 @@
   white-space: nowrap;
 }
 
+/* A plate label that would shrink under its family's wrapBelow on one line
+   takes two (useFitText marks the span data-fit-wrap): its own smaller base,
+   tight-leaded, centred on the paint. Two lines at 3cqw sit in 6.3cqw of a
+   plate face; the riveted plates are 13.4cqw tall, the deck's 12.8. */
+.sc-plate__text[data-fit-wrap] {
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  font-size: calc(3cqw * var(--fit, 1));
+  line-height: 1.04;
+}
+
 .sc-plate:active .sc-plate__text {
   filter: brightness(1.25);
 }
@@ -449,10 +488,24 @@
   outline-offset: -1.6cqw;
 }
 
+/* Every heading inside a console is set in the console's own face. Inside a
+   dialog, metallic-popups.css gives any h1-h3 or any class containing
+   "title" the Rajdhani face (a zero-specificity :where rule), and the kit's
+   .sc__title sets no family of its own - so every console title in a dialog
+   printed in Rajdhani, not the master's Roboto Condensed (measured
+   2026-09-21 by four agents independently). One class of specificity is
+   enough to win; `inherit` takes the .sc face above. Colour, weight and the
+   engraved shadow are already the kit's (.sc__title and the inks). */
+.sc :where(h1, h2, h3, h4, h5, h6, [class*='title'], [class*='Title']) {
+  font-family: inherit;
+}
+
 /* Inside a dialog the global popup chassis (metallic-popups.css) bevels,
    recolours and rounds every button with !important, and its primary /
    danger rule is a `background` shorthand at specificity 0,2,1. The plate
    is painted in the master; the button over it paints nothing. */
+[role='dialog'] .sc__close.sc__close,
+[aria-modal='true'] .sc__close.sc__close,
 [role='dialog'] .sc-plate.sc-plate,
 [aria-modal='true'] .sc-plate.sc-plate {
   min-width: 0;

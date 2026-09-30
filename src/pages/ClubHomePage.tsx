@@ -82,7 +82,12 @@ import {
   withClubLabel,
   withClusterFigures,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
+import {
+  TOURNAMENT_ARENA_EMBED,
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../services/TournamentService';
+import { withDiamondSpinCeilings } from '../services/diamondSpinCeilings';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -2995,8 +3000,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // get_club_home carried, vanished from the board here until now.
       const clubTournamentQuery = supabase
         .from('tournaments')
+        /* The arena embed (#5050) says which asset each event is drawn in, so
+           a Diamond Spin's card can advertise its own table's top
+           (withDiamondSpinCeilings below). */
         .select(
-          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed, ' +
+            TOURNAMENT_ARENA_EMBED
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3150,7 +3159,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
       if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
-        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
+        /* A Diamond Spin advertises the top of the table its creation pinned;
+           a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
+        const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
+          /* The cast is the arena embed's: the generated types carry no
+             relationship names, so the typed client cannot resolve the join
+             (TournamentService.getTournaments makes the same one). */
+          ...(clubTournamentResult.data as unknown as TournamentData[]),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
 
         // The warm fast path cannot remove old rows. A confirmed empty read
         // may do so, but a failed or cache-only scope cannot prove absence.

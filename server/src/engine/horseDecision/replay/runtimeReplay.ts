@@ -46,11 +46,16 @@ export interface HorseRuntimeReplayOutcome {
   work: { equityCalls: number; equitySamples: number; telemetryFires: number };
 }
 
-const readiness = (): HorseDecisionWorkerReadiness => ({
-  solverStores: currentReplaySolverStores(),
-  solverPolicyArtifact: solverPolicyArtifactStatus(),
-  governor: equityGovernor.snapshot(),
-});
+const readiness = (): HorseDecisionWorkerReadiness => {
+  const { identity, charts, postflop, postflopV31, postflopV31Dataset } =
+    currentReplaySolverStores();
+  return {
+    solverStores: { charts, postflop, postflopV31, postflopV31Dataset },
+    solverStoreIdentity: identity,
+    solverPolicyArtifact: solverPolicyArtifactStatus(),
+    governor: equityGovernor.snapshot(),
+  };
+};
 
 /** Drives one FAST request through a fresh runtime and returns its terminal message. */
 export async function replayThroughWorkerRuntime(
@@ -84,6 +89,7 @@ export async function replayThroughWorkerRuntime(
     saveRng: saveFastRandom,
     restoreRng: restoreFastRandom,
     governorScale: () => equityGovernor.current(),
+    atGovernorScale: (fn) => equityGovernor.withDecisionScale(fn),
     workerReadiness: readiness,
     observeCompletedHand: () => {},
     noteDecision: () => {},

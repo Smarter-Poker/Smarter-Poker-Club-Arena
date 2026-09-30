@@ -544,6 +544,13 @@ jobs:
           run_suite club-members.json tests/e2e/production-club-members.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           club_members_rc=$?; [ $club_members_rc -ne 0 ] && rc=$club_members_rc
 
+          # Table Management: each section is its own page on its own approved
+          # frame family. Proved on a harness and in the served bundle when it
+          # shipped, and then watched by nothing. Read-only: it navigates and
+          # reads, and skips itself without management authority.
+          run_suite table-management.json tests/e2e/production-table-management.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          table_management_rc=$?; [ $table_management_rc -ne 0 ] && rc=$table_management_rc
+
           run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
 
@@ -606,6 +613,7 @@ jobs:
           e2e-report/stats.json
           e2e-report/lobby.json
           e2e-report/club-members.json
+          e2e-report/table-management.json
           e2e-report/customization-realtime.json
           e2e-report/customization-commerce.json
           e2e-report/daily-missions.json
@@ -664,8 +672,8 @@ jobs:
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
-    # 12m prerequisite + 3 x 6.5m tournament cases + 5m cash case leaves
-    # 23.5m for checkout/setup, fixture lifecycle, provenance and reports.
+    # 12m prerequisite + 3 x 6.5m tournament cases + 6.5m cash case leaves
+    # 22m for checkout/setup, fixture lifecycle, provenance and reports.
     # Preserve the existing job envelope; MTT shares the original case limit.
     timeout-minutes: 60
     permissions:

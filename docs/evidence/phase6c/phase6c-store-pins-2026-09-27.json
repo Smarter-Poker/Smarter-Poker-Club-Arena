@@ -1,0 +1,35 @@
+{
+  "version": "phase6c-store-pin-v1",
+  "writtenAt": "2026-09-27T22:19:30Z",
+  "purpose": "Pins the chart store and the postflop open-node store by content identity for Horse decisions whose journal record carries only a row count (every release before the store identity was journaled, including the serving release e6b9dc5d). A decision is matched to a pin only if it was made inside the window by a release committed inside the window, whose worker cannot therefore have loaded its store before the window opened.",
+  "pins": [
+    {
+      "store": "chart_store",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 240,
+        "digest": "2c8a2d9f448e5dd22f4433faeb40f70ac6a111d6c7e7bacae89e4fbf106a5dbf",
+        "revision": "2026-07-19T15:11:48.555537+00:00"
+      },
+      "source": "memory_charts_gold, 240 rows, fetched 2026-09-27T22:18:16.947Z to 22:18:17.572Z with the loader query (fetchGtoChartRows) from inside club-arena-engine, identity computed by GtoCharts.setGtoCharts on load",
+      "unchangedFrom": "2026-09-10T02:34:36.095Z",
+      "unchangedTo": "2026-09-27T22:18:52.902Z",
+      "witnessShort": "pg_stat ins/upd/del 0 since postmaster start 2026-09-10T02:34:36Z, read 22:13:57Z and 22:18:52Z",
+      "witness": "Read twice through the Supabase SQL interface, at 2026-09-27T22:13:57.415Z (before the fetch) and 22:18:52.902Z (after it): pg_postmaster_start_time 2026-09-10T02:34:36.095Z; pg_stat_user_tables n_tup_ins 0, n_tup_upd 0, n_tup_del 0 on both reads; relfilenode 82206 on both reads; count 240 and max(created_at) 2026-07-19T15:11:48.555537Z on both reads and in the fetched rows. Cumulative table statistics are reset only by a crash restart (which moves the postmaster start) or an explicit reset, so zero writes on both reads means no row was inserted, updated or deleted between the postmaster start and the second read."
+    },
+    {
+      "store": "solver_store:postflop",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 7747,
+        "digest": "dff78313b437357d3657fe256fc3b3b82cd4740afffe9125e530dfcc79f57c1d",
+        "revision": "2026-09-03T18:18:13.594197+00:00"
+      },
+      "source": "gto_postflop_compact, 7747 rows, fetched 2026-09-27T22:18:18.975Z to 22:18:37.081Z with the loader queries (fetchGtoPostflopSnapshot: 500-row pages in full unique-key order, exact count and latest built_at 7747 @ 2026-09-03T18:18:13.594197Z before and after) from inside club-arena-engine, identity computed by GtoPostflop.replaceGtoPostflop on load",
+      "unchangedFrom": "2026-09-10T02:34:36.095Z",
+      "unchangedTo": "2026-09-27T22:18:52.902Z",
+      "witnessShort": "pg_stat ins/upd/del 0 since postmaster start 2026-09-10T02:34:36Z, read 22:13:57Z and 22:18:52Z",
+      "witness": "Read twice through the Supabase SQL interface, at 2026-09-27T22:13:57.415Z and 22:18:52.902Z: pg_postmaster_start_time 2026-09-10T02:34:36.095Z; pg_stat_user_tables n_tup_ins 0, n_tup_upd 0, n_tup_del 0 on both reads; relfilenode 17187839 on both reads; count 7747 and max(built_at) 2026-09-03T18:18:13.594197Z on both reads and at both ends of the paged fetch."
+    }
+  ]
+}

@@ -56,6 +56,20 @@ import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 import { getAnalyticsConsent, setAnalyticsConsent } from '../lib/consent';
 
+/**
+ * The system share sheet (src/lib/native/share.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the share
+ * handler's try made the web build emit the share module and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+async function shareOnNative(blob: Blob, filename: string, title: string): Promise<void> {
+  if (!IS_NATIVE_BUILD) return;
+  const { nativeShareBlob } = await import('../lib/native/share');
+  await nativeShareBlob(blob, filename, title);
+}
+
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(8px)',
@@ -542,9 +556,8 @@ export default function SettingsPage() {
       const exportName = `club-arena-export-${new Date().toISOString().split('T')[0]}.json`;
       // THE APP (2026-09-08): a webview honours no <a download>; the share
       // sheet on the written file (src/lib/native/share.ts).
-      if (isNativePlatform()) {
-        const { nativeShareBlob } = await import('../lib/native/share');
-        await nativeShareBlob(blob, exportName, 'Club Arena Data Export');
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
+        await shareOnNative(blob, exportName, 'Club Arena Data Export');
         toast.success('Data exported successfully!');
         return;
       }

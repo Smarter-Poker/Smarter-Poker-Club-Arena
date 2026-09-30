@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 import { retryTransient } from './transient-retry.mjs';
+import { awaitPlatformThaw, describeThaw, freezeBudgetMs } from './platform-freeze-window.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
@@ -21,6 +22,55 @@ const STALE_ACCOUNT_LIMIT = 20;
 // re-checks them, but this side refuses first so an unrecognized club is never
 // even offered to it.
 const CERTIFICATION_CLUB_NAME_PREFIXES = ['Crest Cert ', 'Preset Crest Cert '];
+
+/**
+ * How many separate freezes one cleanup may sit through. Section 13 schedules
+ * exactly one break an hour, and the September 17 owner update allows a
+ * corrected release one extra certified recovery window - so two is every
+ * freeze this job can legitimately meet, and a third refusal is a defect
+ * rather than the schedule.
+ */
+const PLATFORM_FREEZE_MAX_WAITS = 2;
+
+/**
+ * Wait for the freeze to END. Never a tick count: 0 of the 435 breaks measured
+ * between 2026-09-16 and 2026-09-30 finished inside the 370s this loop used to
+ * allow. `scripts/ci/platform-freeze-window.mjs` carries the whole measurement
+ * and derives the budget from the break row itself.
+ */
+async function waitOutPlatformFreeze(configuration, fetchImpl, wait) {
+  let breakRow = null;
+  try {
+    const rows = await serviceRequest(
+      configuration,
+      '/rest/v1/engine_maintenance_break' +
+        '?select=phase,break_started_at,break_ends_at,enforce_freeze&limit=1',
+      {},
+      fetchImpl
+    );
+    breakRow = Array.isArray(rows) ? rows[0] || null : null;
+  } catch (error) {
+    // 10.86 rule 2: unreadable is not empty. Fall back to the ceiling the
+    // database itself enforces, and say that is what happened.
+    console.log(
+      `[production-e2e-account] the maintenance break row could not be read (${error.message}); ` +
+        "sizing the wait from the database's own 15 minute freeze ceiling."
+    );
+  }
+  const result = await awaitPlatformThaw({
+    isFrozen: async () =>
+      (await serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_platform_frozen',
+        { method: 'POST', body: '{}' },
+        fetchImpl
+      )) === true,
+    budgetMs: freezeBudgetMs(breakRow, Date.now()),
+    sleep: wait,
+  });
+  console.log(`[production-e2e-account] ${describeThaw(result)}`);
+  return result;
+}
 
 function headers(key, hasBody = false) {
   return supabaseServerHeaders(key, {
@@ -143,7 +193,7 @@ export async function cleanupProductionE2EAccount({
 
   const configuration = requireEnvironment(environment);
   let result;
-  for (let attempt = 0; attempt < 37; attempt += 1) {
+  for (let freezesWaited = 0; ; ) {
     result = await serviceRequest(
       configuration,
       '/rest/v1/rpc/cleanup_reserved_certification_account',
@@ -151,13 +201,26 @@ export async function cleanupProductionE2EAccount({
       fetchImpl
     );
     if (result?.success === true || result?.reason === 'auth_soft_delete_required') break;
-    if (result?.reason !== 'platform_is_frozen' || attempt === 36) {
+    if (result?.reason !== 'platform_is_frozen') {
       throw new Error(
         `Guarded test-account sweep refused ${account.id}: ${String(result?.reason || 'unknown')}`
       );
     }
-    console.log('[production-e2e-account] platform freeze is active; cleanup will retry.');
-    await wait(10_000);
+    if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+      throw new Error(
+        `Guarded test-account sweep refused ${account.id}: platform_is_frozen across ` +
+          `${freezesWaited} complete freezes, which is more than section 13 schedules.`
+      );
+    }
+    freezesWaited += 1;
+    console.log('[production-e2e-account] the platform freeze is active; waiting for the thaw.');
+    const thaw = await waitOutPlatformFreeze(configuration, fetchImpl, wait);
+    if (thaw.outcome !== 'thawed') {
+      throw new Error(
+        `Guarded test-account sweep refused ${account.id}: platform_is_frozen; ` +
+          describeThaw(thaw)
+      );
+    }
   }
   if (result?.reason === 'auth_soft_delete_required') {
     if (result.user_id !== account.id || result.email !== account.email) {

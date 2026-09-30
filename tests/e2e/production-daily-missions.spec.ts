@@ -20,6 +20,7 @@ import {
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   deleteServiceRows,
   insertServiceRows,
@@ -297,13 +298,20 @@ test.describe('production Daily Missions certification', () => {
     !CERTIFICATION_ENABLED,
     'Set DAILY_MISSIONS_CERTIFICATION=1 to create one isolated production fixture.'
   );
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('cold-loads once, settles every action exactly once, recovers, and leaves no fixture', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();

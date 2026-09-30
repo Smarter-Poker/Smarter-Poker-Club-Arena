@@ -17,6 +17,7 @@ import { installAccountRealtimeInterruption } from './support/accountRealtimeInt
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -432,13 +433,20 @@ test.describe('production Table Studio realtime contract', () => {
   // This test performs and verifies durable production writes on two reserved
   // identities, then hard-deletes both. Restoring disposable cosmetics before
   // deletion adds no evidence and can hide the original journey failure.
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();

@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PLATFORM_FREEZE_POLL_MS } from '../../scripts/ci/platform-freeze-window.mjs';
 
 import {
   cleanupProductionE2EAccount,
@@ -535,6 +536,7 @@ describe('post-deploy production account', () => {
       email: 'ca-customization-cert-postdeploy-freeze@example.invalid',
     };
     let sweepAttempts = 0;
+    let freezeReads = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
@@ -542,6 +544,21 @@ describe('post-deploy production account', () => {
         return Response.json(
           sweepAttempts === 1 ? { success: false, reason: 'platform_is_frozen' } : { success: true }
         );
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        // The break row sizes the wait: this freeze has five minutes left to run.
+        return Response.json([
+          {
+            phase: 'counting_down',
+            break_started_at: new Date(Date.now() - 60_000).toISOString(),
+            break_ends_at: new Date(Date.now() + 300_000).toISOString(),
+            enforce_freeze: true,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) {
+        freezeReads += 1;
+        return Response.json(freezeReads === 1);
       }
       if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
         return new Response(null, { status: 404 });
@@ -555,7 +572,36 @@ describe('post-deploy production account', () => {
       cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
     ).resolves.toBe(true);
     expect(sweepAttempts).toBe(2);
-    expect(wait).toHaveBeenCalledWith(10_000);
+    // The freeze's own end condition released it, not a tick count.
+    expect(freezeReads).toBe(2);
+    expect(wait).toHaveBeenCalledWith(PLATFORM_FREEZE_POLL_MS);
+    expect(wait).not.toHaveBeenCalledWith(10_000);
+  });
+
+  it('refuses honestly when the freeze outlives the budget the break row gave it', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-frozen-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-stuck@example.invalid',
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        return Response.json({ success: false, reason: 'platform_is_frozen' });
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        return Response.json([{ phase: 'counting_down', break_ends_at: null }]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) return Response.json(true);
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
+    ).rejects.toThrow(/platform_is_frozen; the platform freeze was still enforced/);
   });
 
   it('uses the locked reserved cleanup with current trigger and rate-limit ordering', () => {

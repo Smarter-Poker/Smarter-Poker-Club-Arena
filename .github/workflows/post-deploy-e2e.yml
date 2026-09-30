@@ -97,6 +97,37 @@ jobs:
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
           const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
+          //
+          // publish-club-arena cancels in progress when a newer merge arrives,
+          // and on 2026-09-30 merges were landing every few minutes. Run
+          // 36749429418 was cancelled while still queued and produced ZERO
+          // jobs, so this read said `Expected one latest publish-to-origin
+          // job, received 0` and the certificate went red - twice in thirty
+          // seconds (36749436277, 36749498583), both before a single browser
+          // started. Nothing had gone wrong: a newer publisher had taken over,
+          // and its own certificate is the one that means anything.
+          //
+          // So when no publish-to-origin job exists AND every job the source
+          // run did produce ended cancelled or skipped, nothing reached the
+          // origin and there is nothing to certify. Stand down without a
+          // verdict: should_run is never written, so every downstream job
+          // skips and this run occupies no production lock.
+          //
+          // This deliberately cannot hide a real publish. A source run holding
+          // any job that actually ran, with no publish-to-origin among them,
+          // is the renamed-or-missing-job hole and still throws below. The
+          // source run's own top-level conclusion is still never consulted -
+          // an optional Capgo failure must not suppress web E2E.
+          const inconclusive = (entry) =>
+            entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
+          const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
+          if (superseded) {
+            console.log(
+              'The source publisher was superseded before it reached the origin; ' +
+                'nothing was published, so this run has nothing to certify.'
+            );
+          } else {
           if (jobs.length !== 1) {
             throw new Error(`Expected one latest publish-to-origin job, received ${jobs.length}.`);
           }
@@ -132,6 +163,7 @@ jobs:
             );
           }
           fs.appendFileSync(output, 'should_run=true\n');
+          }
           NODE
 
       # The publisher selects current main, which can be newer than its trigger.

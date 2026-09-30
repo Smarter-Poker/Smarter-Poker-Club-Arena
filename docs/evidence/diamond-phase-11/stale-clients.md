@@ -7,8 +7,8 @@
 this branch. The matrix found four defects (ten Diamond staff doors obeyed a
 revoked session; the money screens told a dead session to retry; a Diamond
 figure with no owner was painted as the player's; a stored pinned-clubs value
-of the wrong shape broke the Poker Arena home). All four are fixed in PR
-**PR** and the database half is applied and recorded. Three observations are
+of the wrong shape broke the Poker Arena home). All four are fixed in
+PR #5652 and the database half is applied and recorded. Three observations are
 left for Dan (end of file); none blocks the line.
 
 Date: 2026-09-30. Branch `agent/claude-diamond-phase-11/test/an-old-client-lands-somewhere-true`
@@ -164,7 +164,7 @@ through the refresh endpoint before the probe asked `/user`); with the
 assertion corrected to accept either, that case passed 3 of 3. Every other
 cell passed in the final run and in the runs before it.
 
-## Defects found and fixed (PR **PR**)
+## Defects found and fixed (PR #5652)
 
 1. Ten Diamond Staff Desk writers obeyed a revoked session (database; migration
    `20260930131500`; law test `tests/every-diamond-staff-door-needs-a-live-session.law.test.ts`).

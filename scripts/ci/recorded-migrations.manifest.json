@@ -281,6 +281,32 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Recording of 2026-09-28. Applied to production from PR #5522 before it merged; the engine half of #5522 was never merged, so nothing calls these objects: smarter_private.time_bank_consume_unconfirmed holds 0 rows and fn_record_unconfirmed_time_bank_consume is service_role-only (proacl read live {postgres=X/postgres,service_role=X/postgres}) and refuses any caller whose auth.role() is not service_role. Byte length 9470 and md5 ac0edf96... read live the same day from public.fn_ca_migration_text('20260928142429') equal the file. check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding."
+    },
+    {
+      "version": "20260927231300",
+      "name": "a_stale_lease_yields_to_its_named_successor",
+      "file": "supabase/migrations/20260927231300_a_stale_lease_yields_to_its_named_successor.sql",
+      "md5": "24b96480b6d1d6cb327e60aa7958bc5c",
+      "appliedToProductionAt": "2026-09-27T23:13:00Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5493",
+      "refusedBy": [],
+      "liveVerdict": "Production read September30 confirms exact history SQL MD5. The four tournament lease doors are SECURITY DEFINER, postgres-owned, with ACL {postgres=X/postgres,service_role=X/postgres}; anon/authenticated cannot execute and service_role can. claim_tournament_lease_v2 retains search_path=public, pg_temp, full definition MD5 14f4ed4a7659d42188f57da0a54af421 and body MD5 e3397fe6782ed685d3aba81f547bb42c. The separate forward migration20260928032017 restricts the broad same-generation takeover. This is immutable historical evidence; never replay or edit installed SQL to add a live-proof comment."
+    },
+    {
+      "version": "20260927231603",
+      "name": "the_tournament_lease_doors_state_that_only_the_engine_opens_them",
+      "file": "supabase/migrations/20260927231603_the_tournament_lease_doors_state_that_only_the_engine_opens_them.sql",
+      "md5": "842a04852d8016de6d097a88ae08ee7f",
+      "appliedToProductionAt": "2026-09-27T23:16:03Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5493",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: grants-only history requires verified recording"
+      ],
+      "liveVerdict": "Production read September30 confirms exact history SQL MD5. The four tournament lease doors are SECURITY DEFINER, postgres-owned, with ACL {postgres=X/postgres,service_role=X/postgres}; anon/authenticated cannot execute and service_role can. claim_tournament_lease_v2 retains search_path=public, pg_temp, full definition MD5 14f4ed4a7659d42188f57da0a54af421 and body MD5 e3397fe6782ed685d3aba81f547bb42c. The separate forward migration20260928032017 restricts the broad same-generation takeover. This is immutable historical evidence; never replay or edit installed SQL to add a live-proof comment."
     }
   ]
 }

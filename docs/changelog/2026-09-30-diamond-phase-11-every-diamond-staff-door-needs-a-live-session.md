@@ -37,7 +37,10 @@ session passes to each door's next check, nothing written), applied once by
 `apply.sh` (APPLIED AND RECORDED), every `@live-proof` true.
 `tests/every-diamond-staff-door-needs-a-live-session.law.test.ts` pins the
 migration and the law: every door the desk's service files call that writes
-must ask for a live session in its latest definition.
+must ask for a live session in its latest definition. The desk's three reads
+and tournament creation were closed minutes later by line 1's migration
+`20260930120000` (a forged request is refused), built on this one, so all
+seventeen desk doors now refuse a revoked session.
 
 ## 2. The money screens told a dead session to retry
 

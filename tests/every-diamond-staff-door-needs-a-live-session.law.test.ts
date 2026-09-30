@@ -16,7 +16,9 @@
  * The migration half of this file pins that edit. The law half reads the Staff
  * Desk's own service files for every door it calls and requires the latest
  * definition of each WRITER in the migration corpus to ask for a live session,
- * so a door added to the desk later cannot arrive without it.
+ * so a door added to the desk later cannot arrive without it. The desk's three
+ * reads were closed the same day by line 1's migration 20260930120000, built on
+ * this one and pinned by its own law.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -45,13 +47,6 @@ const ADJUSTMENT_DOORS = [
 const INCIDENT_DOORS = ['fn_ca_diamond_incident_review', 'fn_ca_diamond_incident_resolve_family'];
 const EDITED = [...TABLE_DOORS, ...ADJUSTMENT_DOORS, ...INCIDENT_DOORS];
 
-/** The doors the desk only READS through: a dead session reads what it could. */
-const READS = new Set([
-  'fn_ca_diamond_incident_board',
-  'fn_ca_diamond_incident_trail',
-  'fn_ca_diamond_staff_books',
-]);
-
 /** The body of one CREATE of `fn` in `sql`, or '' when there is none. */
 function bodies(sql: string, fn: string): string[] {
   const head = new RegExp(
@@ -73,6 +68,19 @@ function latestBody(fn: string): string {
   if (!body) throw new Error(`${fn} has no definition in the corpus`);
   return body;
 }
+
+/**
+ * The desk's three reads. Line 1's migration 20260930120000 (a forged request
+ * is refused) guards them by asserted substitution, so their latest LITERAL
+ * body in the corpus predates the check; tests/a-forged-request-is-refused
+ * .law.test.ts pins that edit. This law holds every door the desk writes
+ * through, whose guard is written out in full.
+ */
+const READS = new Set([
+  'fn_ca_diamond_incident_board',
+  'fn_ca_diamond_incident_trail',
+  'fn_ca_diamond_staff_books',
+]);
 
 const SESSION_CHECK = 'IF NOT public.fn_caller_session_is_live() THEN';
 const STAFF_CHECK = 'IF NOT public.fn_is_platform_admin() THEN';

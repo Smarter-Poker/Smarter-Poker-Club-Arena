@@ -6,8 +6,11 @@ session revoked on another device (whose access token still verifies until it
 expires) is refused by name rather than obeyed. The door list is read from the
 desk's own service files (`DiamondStaffDeskService`, `DiamondAdjustmentService`,
 `DiamondIncidentReviewService`), so a door added later arrives with the check or
-fails here; only the three reads (incident board, incident trail, staff books)
-are exempt, by name. Migration `20260930131500` is pinned too: ten doors, each
+fails here. Migration `20260930131500` guarded ten writers; the desk's three
+reads (incident board, incident trail, staff books) were guarded by line 1's
+`20260930120000` by asserted substitution on top of it, and are pinned by
+`tests/a-forged-request-is-refused.law.test.ts`, so they are exempt here by
+name. Migration `20260930131500` is pinned too: ten doors, each
 pinned to its live md5 before any redefinition, each redefined from that exact
 text plus one check placed directly after its staff check and refusing in the
 door's own style (the table doors raise `diamond_staff_session_required` with

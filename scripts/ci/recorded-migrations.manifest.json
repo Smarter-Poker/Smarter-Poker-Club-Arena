@@ -281,6 +281,83 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Recording of 2026-09-28. Applied to production from PR #5522 before it merged; the engine half of #5522 was never merged, so nothing calls these objects: smarter_private.time_bank_consume_unconfirmed holds 0 rows and fn_record_unconfirmed_time_bank_consume is service_role-only (proacl read live {postgres=X/postgres,service_role=X/postgres}) and refuses any caller whose auth.role() is not service_role. Byte length 9470 and md5 ac0edf96... read live the same day from public.fn_ca_migration_text('20260928142429') equal the file. check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding."
+    },
+    {
+      "version": "20260927231524",
+      "name": "a_recorded_bust_that_nobody_can_record_stops_the_whole_event",
+      "file": "supabase/migrations/20260927231524_a_recorded_bust_that_nobody_can_record_stops_the_whole_event.sql",
+      "md5": "0ec3f5a321239325998e413c6ef0d891",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: fn_ca_drain_recorded_bust_backlog ACL is postgres/service_role only; anon and authenticated cannot execute. The historical split REVOKEs include a separate PUBLIC revoke. Definition md5 c1d44baedaa6e41b12cad7ec16ec5111. This records the existing operator drain, adds no recurring caller; current engine bust-stage ordering is separately fixed by #5596."
+    },
+    {
+      "version": "20260927231551",
+      "name": "the_bust_backlog_detectors_can_see_a_candidate_with_no_rebuy_prompt",
+      "file": "supabase/migrations/20260927231551_the_bust_backlog_detectors_can_see_a_candidate_with_no_rebuy_prompt.sql",
+      "md5": "b55526b524f1a23fd2e49655eebba6ea",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: both fn_ca_knockout_door_stalled and fn_ca_bust_backlog_stalled have postgres/service_role-only ACLs; anon and authenticated cannot execute. The detector split REVOKEs include a separate PUBLIC revoke. No scheduler or new observation loop is introduced."
+    },
+    {
+      "version": "20260928001934",
+      "name": "a_hand_the_table_has_already_dealt_past_is_disposed",
+      "file": "supabase/migrations/20260928001934_a_hand_the_table_has_already_dealt_past_is_disposed.sql",
+      "md5": "efed85f40c64d77ad54a37943e0b5bc3",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final fn_ca_dispose_superseded_hand_submissions definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. The historical temporary-table DELETE was superseded by recorded 20260928133817 and 20260928134553; current body has WHERE true. Original receipt/resume and immutable snapshot behavior remains qualified in the native disposal fixture."
+    },
+    {
+      "version": "20260928031344",
+      "name": "retention_closes_the_settlement_request_it_prunes",
+      "file": "supabase/migrations/20260928031344_retention_closes_the_settlement_request_it_prunes.sql",
+      "md5": "f364f221dda49dd8f13f9e32873c1cbf",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: sp_prune_hand_history definition md5 ca8dabd9856cf1be6136d7a6f5dd8158 still reads horse_retention_days; retention helper ACL postgres/service_role only, definition md5 b30df5d8cfc7ac1eb9c9dff69d29a0a4. Recorded anchored patch adds only disposal call and leaves the config-driven pruner intact; native retention fixture proves the preserved body/config."
+    },
+    {
+      "version": "20260928033651",
+      "name": "a_transfer_its_event_will_never_complete_still_closes",
+      "file": "supabase/migrations/20260928033651_a_transfer_its_event_will_never_complete_still_closes.sql",
+      "md5": "a61f2ee326a334454941e93c9afa4949",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5517",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: fn_f06_close_abandoned_manager_transfer definition md5 7b24537a5e81e79fe95ba55ef2ec7928, anon cannot execute; authenticated has EXECUTE but first statement rejects every non-service_role or non-service actor before any mutation. Lease FOR SHARE is followed immediately by IF FOUND THEN RAISE: any successful path finds no lease row and retains no lease-row lock. This is historical source recording, not a new holder lock or invocation."
+    },
+    {
+      "version": "20260928133817",
+      "name": "the_disposal_batch_says_which_rows_it_clears",
+      "file": "supabase/migrations/20260928133817_the_disposal_batch_says_which_rows_it_clears.sql",
+      "md5": "be206b2cd1e142371c775b4a5140bcc4",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b includes DELETE FROM _hand_disposal_batch WHERE true. This records the historical anchored scope correction; final 20260928134553 preserves it. No replay performed."
+    },
+    {
+      "version": "20260928134553",
+      "name": "a_request_that_can_never_apply_is_disposed_and_an_accepted_permit_is_settlement",
+      "file": "supabase/migrations/20260928134553_a_request_that_can_never_apply_is_disposed_and_an_accepted_permit_is_settlement.sql",
+      "md5": "d162d9581bd7455f6a963b5b676edf10",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)) || chr(10), byte for byte; version is ledger identity, actual applied timestamp unknown",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. Original final door recorded exactly, with qualification extended to accepted-permit evidence and inapplicable requests plus refusal controls. Version timestamp is retained as history identity, not asserted as observed installation time."
     }
   ]
 }

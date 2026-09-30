@@ -170,8 +170,22 @@ jobs:
       # Its unique same-run dist artifact binds that selection. Never substitute
       # a PR artifact or whichever newer SHA happens to be live now. If a later
       # publisher has superseded it, the exact live comparison still refuses.
+      # A STAND-DOWN HAS NO ARTIFACT TO RESOLVE (2026-09-30).
+      #
+      # The step above learned that a publisher cancelled before it reached the
+      # origin is not a defect: it writes no `should_run`, so every downstream
+      # job skips. This step did not learn it. It ran anyway, asked a run that
+      # produced ZERO jobs for its client bundle, and died on `Expected one
+      # publisher client artifact, received 0` - run 36763398494, whose source
+      # publisher 36762652944 was cancelled while still queued. The gate stood
+      # down correctly and then failed one line later, which is CLAUDE.md 10.86
+      # rule 4: a fix that leaves the same trap one level up has not landed.
+      #
+      # Resolve the artifact only when there is a publication to certify. A
+      # publisher that really published still reaches this step unchanged, and
+      # a renamed or missing origin job is still a hard error above.
       - name: Resolve the exact client artifact selected by this publisher
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'workflow_run' && steps.origin.outputs.should_run == 'true'
         id: client-target
         env:
           GH_TOKEN: ${{ github.token }}

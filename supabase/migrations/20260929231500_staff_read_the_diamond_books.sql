@@ -15,25 +15,28 @@
 --     correction could be proposed, approved and settled on screen and never
 --     seen there again.
 --   * The books. fn_ca_diamond_health(), fn_ca_diamond_trial_balance() and
---     fn_ca_diamond_register_vs_supply() are granted to the service role only,
---     and the health report also refuses every caller whose role is not the
---     service role.
+--     fn_ca_diamond_register_vs_supply() are granted to the service role
+--     only. The health report also takes longer than a signed-in request is
+--     allowed to run: it read in 4.0, 5.5, 7.8 and 19.1 seconds this evening,
+--     against the 8 second statement timeout of the authenticated role. Only
+--     the hourly watch (fn_ca_diamond_health_watch, pg_cron at minute 35, as
+--     the owner) can read it reliably, and the watch kept only the areas that
+--     read critical or unknown.
 --
 -- What this adds:
---   1. fn_ca_diamond_health() admits platform staff as well as the service
---      role. Its one guard changes by asserted substitution and nothing else
---      in it moves. Its grant is unchanged (the owner and the service role),
---      so a signed-in account reaches it only through a SECURITY DEFINER door
---      that asks fn_is_platform_admin() first.
+--   1. ca_diamond_health_reading: one row, the whole report as the hourly
+--      watch last read it (every area, its status and its detail) and when.
+--      The watch writes it from the one reading it already takes, by asserted
+--      substitution; nothing else in the watch moves, and a reading that
+--      cannot be kept is a warning, never a failed watch. No client grant.
 --   2. fn_ca_diamond_staff_books(p_view text): one platform-staff read with
---      three views, each its own call, so the slow health report never holds
---      up the queue:
+--      three views, each its own call:
 --        adjustments - every Diamond row of ca_manual_adjustments, newest
 --                      first (at most 200), each with its receipt once
 --                      settled; the count per status; and what pays for a
 --                      correction (the row of ca_diamond_correction_source,
 --                      or null, when every settlement is refused by name).
---        health      - fn_ca_diamond_health() as it reads now, in its order.
+--        health      - the watch's last reading and when it was read.
 --        books       - fn_ca_diamond_trial_balance() over its own default
 --                      window, in its order, and
 --                      fn_ca_diamond_register_vs_supply().
@@ -41,12 +44,14 @@
 --      other caller by name (platform_staff_only); a view it does not know is
 --      refused by name (unknown_view). It is STABLE and writes nothing.
 --
--- No table, policy, switch or other function changes, and no grant but the
--- new door's own. Nothing is reviewed, proposed, approved, settled or
--- authorized. tournaments_enabled and cash_games_enabled stay false.
+-- No policy, switch or other function changes, and no grant but the new
+-- door's own and the service role's read of the new table. Nothing is
+-- reviewed, proposed, approved, settled or authorized. The health report
+-- itself is not touched. tournaments_enabled and cash_games_enabled stay
+-- false.
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)):
---   fn_ca_diamond_health()                     3ed2ac4e441befea2072b3c3e941b37e  changed: one guard
+--   fn_ca_diamond_health_watch()               8189230a24fa058a634bee6f4130b12c  changed: keeps its reading
 --   fn_ca_diamond_trial_balance(timestamptz)   f744e044e7575283be20f73cd1f2f7d5  called, not changed
 --   fn_ca_diamond_register_vs_supply()         4831173c57fc3d4e2bc0fa5eea346ee2  called, not changed
 -- ============================================================================
@@ -59,11 +64,12 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.ca_arena_settings WHERE tournaments_enabled OR cash_games_enabled) THEN
     RAISE EXCEPTION 'a Diamond Arena switch is already on; this migration expects both closed';
   END IF;
-  IF to_regprocedure('public.fn_ca_diamond_staff_books(text)') IS NOT NULL THEN
-    RAISE EXCEPTION 'fn_ca_diamond_staff_books already exists; this migration creates it';
+  IF to_regprocedure('public.fn_ca_diamond_staff_books(text)') IS NOT NULL
+     OR to_regclass('public.ca_diamond_health_reading') IS NOT NULL THEN
+    RAISE EXCEPTION 'the staff read or the health reading already exists; this migration creates them';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('public.fn_ca_diamond_health()', '3ed2ac4e441befea2072b3c3e941b37e'),
+      ('public.fn_ca_diamond_health_watch()', '8189230a24fa058a634bee6f4130b12c'),
       ('public.fn_ca_diamond_trial_balance(timestamptz)', 'f744e044e7575283be20f73cd1f2f7d5'),
       ('public.fn_ca_diamond_register_vs_supply()', '4831173c57fc3d4e2bc0fa5eea346ee2')
     ) AS p(sig, pin)
@@ -75,30 +81,57 @@ BEGIN
 END $m$;
 
 -- ---------------------------------------------------------------------------
--- 1. THE HEALTH REPORT ADMITS PLATFORM STAFF
+-- 1. THE HOURLY WATCH KEEPS ITS READING
 -- ---------------------------------------------------------------------------
--- The report refused any caller whose role was not the service role, so a
--- staff door could not read it for a staff member. It now also admits a
--- caller for whom fn_is_platform_admin() is true. The service role and the
--- hourly watch (the owner, no role) are admitted exactly as before.
+CREATE TABLE public.ca_diamond_health_reading (
+  id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  read_at timestamptz NOT NULL,
+  areas jsonb NOT NULL CHECK (jsonb_typeof(areas) = 'array')
+);
+COMMENT ON TABLE public.ca_diamond_health_reading IS
+  'THE DIAMOND HEALTH REPORT AS THE HOURLY WATCH LAST READ IT (Diamond Phase 10). One row: every area of fn_ca_diamond_health() with '
+  'its status and detail, in the report''s order, and when it was read. Written only by fn_ca_diamond_health_watch from the one '
+  'reading it takes (pg_cron, minute 35, as the owner). The report takes longer than a signed-in request may run, so staff read this '
+  'row through fn_ca_diamond_staff_books(''health''). No client grant.';
+ALTER TABLE public.ca_diamond_health_reading ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.ca_diamond_health_reading FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.ca_diamond_health_reading TO service_role;
+
 DO $m$
 DECLARE
-  c_pin constant text := '3ed2ac4e441befea2072b3c3e941b37e';
-  c_old constant text := E'  IF COALESCE(auth.role(), ''service_role'') <> ''service_role'' THEN\n    RAISE EXCEPTION ''service_role required'';';
-  c_new constant text := E'  IF COALESCE(auth.role(), ''service_role'') <> ''service_role'' AND NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION ''service_role or platform staff required'';';
+  c_pin constant text := '8189230a24fa058a634bee6f4130b12c';
+  c_old_decl constant text := 'v_statuses jsonb; v_resolved integer;';
+  c_new_decl constant text := 'v_statuses jsonb; v_resolved integer; v_areas jsonb;';
+  c_old_read constant text := E'         COALESCE(jsonb_object_agg(h.area, h.status), ''{}''::jsonb)\n'
+    || E'    INTO v_bad, v_detail, v_read, v_bad_areas, v_statuses\n'
+    || E'    FROM public.fn_ca_diamond_health() h;';
+  c_new_read constant text := E'         COALESCE(jsonb_object_agg(h.area, h.status), ''{}''::jsonb),\n'
+    || E'         COALESCE(jsonb_agg(jsonb_build_object(''area'', h.area, ''status'', h.status, ''detail'', h.detail)), ''[]''::jsonb)\n'
+    || E'    INTO v_bad, v_detail, v_read, v_bad_areas, v_statuses, v_areas\n'
+    || E'    FROM public.fn_ca_diamond_health() h;\n'
+    || E'\n'
+    || E'  -- DIAMOND PHASE 10: the whole reading is kept for the staff desk, which may\n'
+    || E'  -- not run the report itself (it outlasts a signed-in request). A reading\n'
+    || E'  -- that cannot be kept is a warning; the watch goes on.\n'
+    || E'  BEGIN\n'
+    || E'    INSERT INTO public.ca_diamond_health_reading (id, read_at, areas) VALUES (1, now(), v_areas)\n'
+    || E'    ON CONFLICT (id) DO UPDATE SET read_at = EXCLUDED.read_at, areas = EXCLUDED.areas;\n'
+    || E'  EXCEPTION WHEN OTHERS THEN\n'
+    || E'    RAISE WARNING ''fn_ca_diamond_health_watch could not keep its reading: %'', SQLERRM;\n'
+    || E'  END;';
   v_def text; v_new text; v_n integer;
 BEGIN
-  v_def := pg_get_functiondef('public.fn_ca_diamond_health()'::regprocedure);
+  v_def := pg_get_functiondef('public.fn_ca_diamond_health_watch()'::regprocedure);
   IF md5(v_def) <> c_pin THEN
-    RAISE EXCEPTION 'fn_ca_diamond_health is not the pinned text (md5 %)', md5(v_def);
+    RAISE EXCEPTION 'fn_ca_diamond_health_watch is not the pinned text (md5 %)', md5(v_def);
   END IF;
-  v_n := (length(v_def) - length(replace(v_def, c_old, ''))) / length(c_old);
-  IF v_n <> 1 THEN
-    RAISE EXCEPTION 'the health report: its guard occurs % times, expected 1', v_n;
-  END IF;
-  v_new := replace(v_def, c_old, c_new);
-  IF md5(replace(v_new, c_new, c_old)) <> c_pin THEN
-    RAISE EXCEPTION 'the health report: the reverse substitution does not reproduce the pinned text';
+  v_n := (length(v_def) - length(replace(v_def, c_old_decl, ''))) / length(c_old_decl);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'the health watch: its declarations occur % times, expected 1', v_n; END IF;
+  v_n := (length(v_def) - length(replace(v_def, c_old_read, ''))) / length(c_old_read);
+  IF v_n <> 1 THEN RAISE EXCEPTION 'the health watch: its one reading occurs % times, expected 1', v_n; END IF;
+  v_new := replace(replace(v_def, c_old_decl, c_new_decl), c_old_read, c_new_read);
+  IF md5(replace(replace(v_new, c_new_read, c_old_read), c_new_decl, c_old_decl)) <> c_pin THEN
+    RAISE EXCEPTION 'the health watch: the reverse substitution does not reproduce the pinned text';
   END IF;
   EXECUTE v_new;
 END $m$;
@@ -108,7 +141,7 @@ END $m$;
 -- ---------------------------------------------------------------------------
 INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES
   ('fn_ca_diamond_staff_books', 'system',
-   'Diamond Phase 10. Platform-staff read for the staff desk (fn_is_platform_admin): the Diamond adjustments queue with its receipts and what pays for a correction, the health report, and the trial balance with the register against supply. STABLE; writes nothing. Moves no money.')
+   'Diamond Phase 10. Platform-staff read for the staff desk (fn_is_platform_admin): the Diamond adjustments queue with its receipts and what pays for a correction, the health report as the hourly watch last read it, and the trial balance with the register against supply. STABLE; writes nothing. Moves no money.')
 ON CONFLICT (proname) DO NOTHING;
 
 CREATE FUNCTION public.fn_ca_diamond_staff_books(p_view text)
@@ -161,10 +194,8 @@ BEGIN
   IF v_view = 'health' THEN
     RETURN jsonb_build_object(
       'ok', true, 'view', v_view, 'as_of', now(),
-      'areas', (
-        SELECT COALESCE(jsonb_agg(jsonb_build_object('area', h.area, 'status', h.status, 'detail', h.detail)
-                                  ORDER BY h.n), '[]'::jsonb)
-          FROM public.fn_ca_diamond_health() WITH ORDINALITY AS h(area, status, detail, n)));
+      'read_at', (SELECT h.read_at FROM public.ca_diamond_health_reading h WHERE h.id = 1),
+      'areas', COALESCE((SELECT h.areas FROM public.ca_diamond_health_reading h WHERE h.id = 1), '[]'::jsonb));
   END IF;
 
   IF v_view = 'books' THEN
@@ -195,14 +226,20 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_staff_books(text) TO authenticate
 DO $m$
 DECLARE v_oid oid; v_txt text; v_bad text;
 BEGIN
-  -- the health report: one guard changed, and still no client grant
-  v_oid := 'public.fn_ca_diamond_health()'::regprocedure;
-  v_txt := pg_get_functiondef(v_oid);
-  IF position(E'<> ''service_role'' AND NOT public.fn_is_platform_admin() THEN\n    RAISE EXCEPTION ''service_role or platform staff required'';' IN v_txt) = 0 THEN
-    RAISE EXCEPTION 'the health report does not admit platform staff as this migration states';
+  -- the watch keeps its whole reading and still files and closes as it did
+  v_txt := pg_get_functiondef('public.fn_ca_diamond_health_watch()'::regprocedure);
+  IF position('INTO v_bad, v_detail, v_read, v_bad_areas, v_statuses, v_areas' IN v_txt) = 0
+     OR position('INSERT INTO public.ca_diamond_health_reading (id, read_at, areas) VALUES (1, now(), v_areas)' IN v_txt) = 0
+     OR position('''DR0:health_critical'', ''critical''' IN v_txt) = 0
+     OR position('WHERE i.rule = ''DR0:health_critical'' AND i.resolved_at IS NULL' IN v_txt) = 0 THEN
+    RAISE EXCEPTION 'the health watch is not as this migration states';
   END IF;
-  IF has_function_privilege('anon', v_oid, 'EXECUTE') OR has_function_privilege('authenticated', v_oid, 'EXECUTE') THEN
-    RAISE EXCEPTION 'the health report is reachable by a client without a staff door';
+  -- the reading is no client's to read or write
+  IF has_table_privilege('anon', 'public.ca_diamond_health_reading', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.ca_diamond_health_reading', 'SELECT')
+     OR has_table_privilege('service_role', 'public.ca_diamond_health_reading', 'INSERT')
+     OR NOT (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'public.ca_diamond_health_reading'::regclass) THEN
+    RAISE EXCEPTION 'the health reading is open to a client';
   END IF;
   -- the read: a stable definer that asks for staff first, signed-in only
   v_oid := 'public.fn_ca_diamond_staff_books(text)'::regprocedure;
@@ -217,7 +254,7 @@ BEGIN
      OR position(E'BEGIN\n  IF NOT public.fn_is_platform_admin() THEN' IN v_txt) = 0 THEN
     RAISE EXCEPTION 'the staff read is not a stable definer that asks for staff first';
   END IF;
-  -- the called readers are the text they were
+  -- the readers it calls are the text they were
   IF md5(pg_get_functiondef('public.fn_ca_diamond_trial_balance(timestamptz)'::regprocedure)) <> 'f744e044e7575283be20f73cd1f2f7d5'
      OR md5(pg_get_functiondef('public.fn_ca_diamond_register_vs_supply()'::regprocedure)) <> '4831173c57fc3d4e2bc0fa5eea346ee2' THEN
     RAISE EXCEPTION 'a reader this migration only calls has moved';
@@ -241,5 +278,5 @@ BEGIN
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'watched guards off their baseline: %', v_bad;
   END IF;
-  RAISE NOTICE 'staff read the Diamond books: one staff read with three views, and the health report admits platform staff; nothing opened to players';
+  RAISE NOTICE 'staff read the Diamond books: one staff read with three views, and the hourly health watch keeps its reading; nothing opened to players';
 END $m$;

@@ -32,7 +32,28 @@ interface HubStats {
   lastCheckPassed: boolean | null;
 }
 
-const NAV_ITEMS = [
+/* staffOnly: shown to platform staff only (scope.isPlatformStaff); the route
+   behind it is closed by PlatformStaffGuard and every door checks again. */
+const NAV_ITEMS: Array<{
+  icon: string;
+  label: string;
+  description: string;
+  path: string;
+  color: string;
+  bg: string;
+  border: string;
+  staffOnly?: boolean;
+}> = [
+  {
+    icon: '♦',
+    label: 'Diamond Staff Desk',
+    description: 'Diamond Games, Incidents, Books And Adjustments',
+    path: '/diamond-staff-desk',
+    color: '#38bdf8',
+    bg: 'rgba(56,189,248,0.1)',
+    border: 'rgba(56,189,248,0.3)',
+    staffOnly: true,
+  },
   {
     icon: '◆',
     label: 'Financial Alerts',
@@ -696,39 +717,41 @@ export default function FinancialAdminHub() {
         Financial Tools
       </h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {NAV_ITEMS.map((item, idx) => (
-          <Link
-            key={item.label}
-            to={item.path}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              padding: '14px 16px',
-              background: item.bg,
-              borderRadius: '12px',
-              border: `1px solid ${item.border}`,
-              textDecoration: 'none',
-              color: 'inherit',
-              opacity: visibleNavs.has(idx) ? 1 : 0,
-              transform: visibleNavs.has(idx) ? 'translateX(0)' : 'translateX(-12px)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>{item.icon}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: item.color }}>
-                {item.label}
+        {NAV_ITEMS.map((item, idx) =>
+          item.staffOnly && !scope.isPlatformStaff ? null : (
+            <Link
+              key={item.label}
+              to={item.path}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                padding: '14px 16px',
+                background: item.bg,
+                borderRadius: '12px',
+                border: `1px solid ${item.border}`,
+                textDecoration: 'none',
+                color: 'inherit',
+                opacity: visibleNavs.has(idx) ? 1 : 0,
+                transform: visibleNavs.has(idx) ? 'translateX(0)' : 'translateX(-12px)',
+                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            >
+              <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>{item.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: item.color }}>
+                  {item.label}
+                </div>
+                <div
+                  style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}
+                >
+                  {item.description}
+                </div>
               </div>
-              <div
-                style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}
-              >
-                {item.description}
-              </div>
-            </div>
-            <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '1rem' }}>→</span>
-          </Link>
-        ))}
+              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '1rem' }}>→</span>
+            </Link>
+          )
+        )}
       </div>
 
       {/* Footer Status */}

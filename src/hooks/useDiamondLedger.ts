@@ -61,8 +61,10 @@ export interface DiamondLedgerRow {
    * did not return it, and then the surface falls back to `label`.
    */
   line: string;
-  /** The raw description, for the send/receive naming path only. */
-  description: string;
+  /* NO `description`. It was carried here "for the send/receive naming path
+     only" and that path has read `counterpartyId` and `line || label` since
+     phase 6, so the raw description was selected on a money query and printed
+     by nothing. Dropped 2026-09-30 with the column itself. */
   amount: number;
   createdAt: string;
   /**
@@ -133,9 +135,7 @@ export function useDiamondLedger(
           /* `type` AND `transaction_type`: the older rows carry their kind in
              `type` (signup_bonus, reconciliation), the newer in
              `transaction_type`. Reading one column blanks half the ledger. */
-          .select(
-            'id, type, transaction_type, amount, description, player_line, created_at, metadata'
-          )
+          .select('id, type, transaction_type, amount, player_line, created_at, metadata')
           .eq('user_id', userId);
 
         if (direction === 'in') {
@@ -163,7 +163,6 @@ export function useDiamondLedger(
             id: String(tx.id),
             label: diamondTxLabel(kind),
             line: typeof tx.player_line === 'string' ? tx.player_line : '',
-            description: String(tx.description || ''),
             amount: Number(tx.amount) || 0,
             createdAt: String(tx.created_at),
             counterpartyId: typeof other === 'string' && other ? other : null,

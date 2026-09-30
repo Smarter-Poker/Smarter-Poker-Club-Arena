@@ -22,10 +22,12 @@
  * and the chip roster prints "..." while it loads; so does this page, so that
  * loading, a real zero and unknown are three different things on the screen.
  *
- * ONLINE is usually unknown today, and that is the truth rather than a fault
- * here: nothing in Club Arena writes `profiles.is_online`/`last_seen` (World
- * Hub's messenger and social page do), so the server gives a number only when
- * the presence feed can see the person asking (see the migration header).
+ * ONLINE counts the players who are here right now by three live sources:
+ * a live Realtime table feed (every signed-in page holds one), the
+ * messenger's presence and a live arena seat (migration 20260930044500). The
+ * server gives a number only while those sources can see the person asking,
+ * and a page loaded cold can ask before its own feeds have registered, so the
+ * Players page asks an unknown Online once more before it prints Unavailable.
  */
 import { COUNT_UNKNOWN, COUNT_UNKNOWN_TEXT, type CountFigure } from './countFigure';
 
@@ -58,6 +60,9 @@ export const DIAMOND_ARENA_COUNTS_UNKNOWN: Readonly<DiamondArenaCounts> = Object
 
 /** What the Players page prints while a figure has not been asked yet. */
 export const DIAMOND_FIGURE_LOADING_TEXT = '...';
+
+/** How long the Players page waits before asking an unknown Online again. */
+export const DIAMOND_ONLINE_RECHECK_MS = 3_000;
 
 /** A count is a whole number of people or tables, never negative. */
 function readFigure(value: unknown): CountFigure {

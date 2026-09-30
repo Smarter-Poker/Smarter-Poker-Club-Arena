@@ -9,9 +9,10 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { Suspense } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COUNT_UNKNOWN } from '../../src/lib/countFigure';
+import { DIAMOND_ONLINE_RECHECK_MS } from '../../src/lib/diamondArenaCounts';
 
 const state = vi.hoisted(() => ({
   getCounts: vi.fn(),
@@ -78,10 +79,14 @@ beforeEach(() => {
   state.getRosterPage.mockReset();
   state.automatic = false;
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('the Diamond Arena Players page', () => {
   it('shows loading, then real figures, a real zero, and Unavailable for what it could not tell', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const counts = deferred<Record<string, unknown>>();
     state.getCounts.mockReturnValue(counts.promise);
     state.getRosterPage.mockResolvedValue({
@@ -99,7 +104,14 @@ describe('the Diamond Arena Players page', () => {
 
     counts.resolve({ members: 1149, online: COUNT_UNKNOWN, seated: 0, tables: 17 });
     await waitFor(() => expect(figure('Members')).toBe((1149).toLocaleString()));
-    expect(figure('Online Now')).toBe('Unavailable');
+    expect(figure('Online Now'), 'an unknown Online is asked once more first').toBe('...');
+    expect(state.getCounts).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DIAMOND_ONLINE_RECHECK_MS);
+    });
+    await waitFor(() => expect(figure('Online Now')).toBe('Unavailable'));
+    expect(state.getCounts).toHaveBeenCalledTimes(2);
+    expect(figure('Members')).toBe((1149).toLocaleString());
     expect(figure('At Tables'), 'nobody seated is a real zero').toBe('0');
     expect(figure('Tables')).toBe('17');
     expect(
@@ -112,6 +124,50 @@ describe('the Diamond Arena Players page', () => {
     expect(state.getRosterPage).toHaveBeenCalledWith(
       expect.objectContaining({ filter: 'all', search: '' })
     );
+  });
+
+  it('asks Online once more, since a cold load can ask before its own live feeds register', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    state.getCounts
+      .mockResolvedValueOnce({ members: 2, online: COUNT_UNKNOWN, seated: 0, tables: 17 })
+      .mockResolvedValueOnce({ members: 3, online: 1, seated: 1, tables: 18 });
+    state.getRosterPage.mockResolvedValue({
+      items: PLAYERS,
+      next_cursor: null,
+      has_more: false,
+      filtered_total: 2,
+    });
+    render(<DiamondPlayersPage />);
+
+    await waitFor(() => expect(figure('Members')).toBe('2'));
+    expect(figure('Online Now')).toBe('...');
+    expect(screen.queryByText(/Unavailable Means/)).not.toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DIAMOND_ONLINE_RECHECK_MS);
+    });
+    await waitFor(() => expect(figure('Online Now')).toBe('1'));
+    expect(state.getCounts).toHaveBeenCalledTimes(2);
+    expect(figure('Members'), 'the second answer changes Online alone').toBe('2');
+    expect(figure('At Tables')).toBe('0');
+    expect(figure('Tables')).toBe('17');
+    expect(screen.queryByText(/Unavailable Means/)).not.toBeInTheDocument();
+  });
+
+  it('a known Online is not asked again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    state.getCounts.mockResolvedValue({ members: 2, online: 0, seated: 0, tables: 17 });
+    state.getRosterPage.mockResolvedValue({
+      items: PLAYERS,
+      next_cursor: null,
+      has_more: false,
+      filtered_total: 2,
+    });
+    render(<DiamondPlayersPage />);
+    await waitFor(() => expect(figure('Online Now'), 'a real zero').toBe('0'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DIAMOND_ONLINE_RECHECK_MS * 2);
+    });
+    expect(state.getCounts).toHaveBeenCalledTimes(1);
   });
 
   it('a failed read says Unavailable everywhere and that the players could not load, never 0', async () => {

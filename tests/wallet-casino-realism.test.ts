@@ -90,8 +90,11 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     // formatter wraps the argument onto its own line and a pin that spelled
     // out `select(` would fail on correctly formatted code.
     expect(LEDGER).toContain('.select(');
+    // `description` left this list on 2026-09-30: nothing had read it since
+    // phase 6 moved the copy to `player_line`, so it was an unread column on a
+    // money query. See tests/the-ledger-speaks-to-the-player.law.test.ts.
     expect(LEDGER).toContain(
-      "'id, type, transaction_type, amount, description, player_line, created_at, metadata'"
+      "'id, type, transaction_type, amount, player_line, created_at, metadata'"
     );
     expect(PAGE).toContain("useDiamondLedger(user?.id, 'in', isMounted)");
   });

@@ -1,0 +1,154 @@
+{
+  "observedAt": "2026-09-30T11:24:00Z",
+  "source": "public.horse_brain_flush_receipts",
+  "sourceRelease": "f92ef5798bbc968f19a33f8515a5025a62e840d5",
+  "window": {
+    "start": "2026-09-30T08:00:00Z",
+    "endExclusive": "2026-09-30T11:15:00Z"
+  },
+  "method": "Exact source_release equality; date_bin15minutes; sum fires array by feature; independent count receipts/distinct workers. Missing feature keys represent no fired counter in nonempty receipts, not unavailable rows. No hand or player data read.",
+  "captureUnavailableThresholdPercent": 0.5,
+  "comparableLoadFloorPer15Minutes": 140000,
+  "sums": {
+    "phase15_journal_enqueued": 1912722,
+    "phase15_journal_recorded": 1912712,
+    "phase15_journal_capture_unavailable": 18,
+    "phase15_journal_queue_capacity": 0,
+    "phase15_journal_lock_retry": 0
+  },
+  "captureUnavailablePercent": 0.0009410672329800149,
+  "busyBins": 8,
+  "bins": [
+    {
+      "bin": "2026-09-30 08:00:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 134656,
+        "phase15_journal_recorded": 134619,
+        "phase15_journal_capture_unavailable": 4
+      },
+      "receiptCount": 38,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 08:15:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 158048,
+        "phase15_journal_recorded": 158065
+      },
+      "receiptCount": 45,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 08:30:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 168714,
+        "phase15_journal_recorded": 168704,
+        "phase15_journal_capture_unavailable": 2
+      },
+      "receiptCount": 45,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 08:45:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 94570,
+        "phase15_journal_recorded": 94600,
+        "phase15_journal_capture_unavailable": 2
+      },
+      "receiptCount": 28,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 09:00:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 122055,
+        "phase15_journal_recorded": 122036,
+        "phase15_journal_capture_unavailable": 3
+      },
+      "receiptCount": 39,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 09:15:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 156938,
+        "phase15_journal_recorded": 156931,
+        "phase15_journal_capture_unavailable": 2
+      },
+      "receiptCount": 44,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 09:30:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 184222,
+        "phase15_journal_recorded": 184226,
+        "phase15_journal_capture_unavailable": 1
+      },
+      "receiptCount": 45,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 09:45:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 109258,
+        "phase15_journal_recorded": 109280,
+        "phase15_journal_capture_unavailable": 1
+      },
+      "receiptCount": 30,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 10:00:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 155378,
+        "phase15_journal_recorded": 155373
+      },
+      "receiptCount": 39,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 10:15:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 177949,
+        "phase15_journal_recorded": 177943
+      },
+      "receiptCount": 45,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 10:30:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 175597,
+        "phase15_journal_recorded": 175585
+      },
+      "receiptCount": 45,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 10:45:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 104020,
+        "phase15_journal_recorded": 104043,
+        "phase15_journal_capture_unavailable": 1
+      },
+      "receiptCount": 31,
+      "workerCount": 3
+    },
+    {
+      "bin": "2026-09-30 11:00:00+00",
+      "totals": {
+        "phase15_journal_enqueued": 171317,
+        "phase15_journal_recorded": 171307,
+        "phase15_journal_capture_unavailable": 2
+      },
+      "receiptCount": 39,
+      "workerCount": 3
+    }
+  ],
+  "limitations": [
+    "Recorded/enqueued counters cross flush boundaries, hence10record difference is not individual chain-loss proof.",
+    "Capture failures are not zero; five-link population is still required.",
+    "Maintenance creates known gaps; partial and empty observations are not silently treated as success."
+  ]
+}

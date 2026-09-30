@@ -1,0 +1,284 @@
+{
+  "captured_at": "2026-09-30T11:34:19+00:00",
+  "how": "pg_get_functiondef / information_schema read passively with supabase db query --linked",
+  "functions": [
+    {
+      "signature": "fn_engine_lease_stale_seconds()",
+      "md5": "483a7e0ee940744fd557f1f2144d9eba",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "claim_engine_leadership(text,text,integer)",
+      "md5": "935c9d79f348a7cd1adf27d1a5b1ebc6",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "release_engine_leadership(text)",
+      "md5": "9faf8a29ad5d75078d04b04aa36569cf",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "claim_table_lease_v2(uuid,text,text,uuid,integer)",
+      "md5": "2c6a2555d927c8dbbad47b8ac7b60552",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "heartbeat_table_leases_v4(text,jsonb,integer)",
+      "md5": "d41240dd1791c6ea8b38c717a04689ab",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "release_table_leases_v2(text,jsonb)",
+      "md5": "a08340dd1708cd37530e8b66e3c2a1d9",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "claim_tournament_lease_v2(uuid,text,text,uuid,integer)",
+      "md5": "14f4ed4a7659d42188f57da0a54af421",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "heartbeat_tournament_leases_v4(text,jsonb,integer)",
+      "md5": "01fa17de7097d3c42748e6879b478411",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "release_tournament_leases_v2(text,jsonb)",
+      "md5": "2c92f4af8b6f14b8cdc0a5af7e98fcf8",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)",
+      "md5": "c555fb7b83c889312995bc0038c1b275",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "smarter_private.f06_generation_aborted(uuid,uuid)",
+      "md5": "3530559a94372866bf3baec006a8fd3c",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "smarter_private.f06_aborted_generation_guard()",
+      "md5": "78bdb7fde133088800446a0da7dddc57",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    }
+  ],
+  "columns": [
+    {
+      "column_default": "true",
+      "column_name": "id",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "table_name": "engine_leader"
+    },
+    {
+      "column_default": null,
+      "column_name": "instance_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "table_name": "engine_leader"
+    },
+    {
+      "column_default": null,
+      "column_name": "engine_version",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "table_name": "engine_leader"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "acquired_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_leader"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "heartbeat_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_leader"
+    },
+    {
+      "column_default": null,
+      "column_name": "table_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": null,
+      "column_name": "instance_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": null,
+      "column_name": "engine_version",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "acquired_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "heartbeat_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": "gen_random_uuid()",
+      "column_name": "lease_generation",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": "1",
+      "column_name": "protocol_version",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "table_name": "engine_table_leases"
+    },
+    {
+      "column_default": null,
+      "column_name": "tournament_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": null,
+      "column_name": "instance_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": null,
+      "column_name": "engine_version",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "acquired_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": "now()",
+      "column_name": "heartbeat_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": "gen_random_uuid()",
+      "column_name": "lease_generation",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    },
+    {
+      "column_default": "1",
+      "column_name": "protocol_version",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "table_name": "engine_tournament_leases"
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "engine_leader_id_check",
+      "def": "CHECK (id)",
+      "rel": "engine_leader"
+    },
+    {
+      "conname": "engine_leader_pkey",
+      "def": "PRIMARY KEY (id)",
+      "rel": "engine_leader"
+    },
+    {
+      "conname": "engine_table_leases_pkey",
+      "def": "PRIMARY KEY (table_id)",
+      "rel": "engine_table_leases"
+    },
+    {
+      "conname": "engine_table_leases_protocol_version_check",
+      "def": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))",
+      "rel": "engine_table_leases"
+    },
+    {
+      "conname": "engine_tournament_leases_pkey",
+      "def": "PRIMARY KEY (tournament_id)",
+      "rel": "engine_tournament_leases"
+    },
+    {
+      "conname": "engine_tournament_leases_protocol_version_check",
+      "def": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))",
+      "rel": "engine_tournament_leases"
+    },
+    {
+      "conname": "engine_tournament_leases_tournament_id_fkey",
+      "def": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE",
+      "rel": "engine_tournament_leases"
+    }
+  ],
+  "indexes": [
+    {
+      "def": "CREATE UNIQUE INDEX engine_leader_pkey ON public.engine_leader USING btree (id)",
+      "rel": "engine_leader"
+    },
+    {
+      "def": "CREATE INDEX engine_table_leases_instance_idx ON public.engine_table_leases USING btree (instance_id)",
+      "rel": "engine_table_leases"
+    },
+    {
+      "def": "CREATE UNIQUE INDEX engine_table_leases_pkey ON public.engine_table_leases USING btree (table_id)",
+      "rel": "engine_table_leases"
+    },
+    {
+      "def": "CREATE INDEX idx_engine_tournament_leases_heartbeat ON public.engine_tournament_leases USING btree (heartbeat_at)",
+      "rel": "engine_tournament_leases"
+    },
+    {
+      "def": "CREATE UNIQUE INDEX engine_tournament_leases_pkey ON public.engine_tournament_leases USING btree (tournament_id)",
+      "rel": "engine_tournament_leases"
+    }
+  ],
+  "triggers": [
+    {
+      "def": "CREATE TRIGGER a00_f06_retired_origin_claim BEFORE INSERT OR UPDATE OF tournament_id, lease_generation, instance_id, engine_version, acquired_at, protocol_version ON public.engine_tournament_leases FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_retired_origin_claim_guard()",
+      "rel": "engine_tournament_leases",
+      "tgname": "a00_f06_retired_origin_claim"
+    },
+    {
+      "def": "CREATE TRIGGER f06_aborted_generation AFTER INSERT OR UPDATE ON public.engine_tournament_leases FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_aborted_generation_guard()",
+      "rel": "engine_tournament_leases",
+      "tgname": "f06_aborted_generation"
+    }
+  ]
+}

@@ -159,13 +159,15 @@ describe('V38 PLO stack-off tags judge the hand hero held when the stack went in
   });
 
   it('a one-pair TURN commit with no draw shape is still plo_toppair_no_redraw_stackoff', () => {
-    // Aces, rainbow disconnected turn board, no flush draw and no wrap.
+    // Top pair kings, rainbow disconnected turn board, no flush draw and no
+    // wrap. (Was an overpair of aces until 2026-09-30: an overpair is not top
+    // pair and no longer carries this tag.)
     const tags = detectLeaks({
       netBB: -160,
       invested: 320,
       bigBlind: 2,
       variant: 'plo4',
-      holeCards: [c('As'), c('Ad'), c('Jc'), c('4h')],
+      holeCards: [c('Ks'), c('7d'), c('5c'), c('3h')],
       board: [c('Kh'), c('8s'), c('2c'), c('Td'), c('6s')],
       heroActions: [
         { action: 'raise', stage: 'preflop', amount: 7, isFullRaise: true },

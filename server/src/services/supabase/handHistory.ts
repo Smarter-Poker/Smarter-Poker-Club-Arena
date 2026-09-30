@@ -717,6 +717,14 @@ export async function logHandHistory(params: {
       playedAt: endedAtIso,
       potSize: params.potSize,
       board: params.communityCards ?? null,
+      // 2026-09-30: every board, so a double-board bomb pot or a run-it-twice
+      // hand is not judged on board 1 alone.
+      boards: [
+        params.communityCards,
+        params.communityCards2,
+        params.communityCards3,
+        ...(params.ritBoards ?? []),
+      ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
       holeCardsAll: params.holeCardsAll,
       contributions: params.contributions,
       winners: params.winners,

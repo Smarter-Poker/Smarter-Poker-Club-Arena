@@ -24,7 +24,7 @@ import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, type DiamondActivity } from '../components/vip/VIPActivityHistory';
 import { useToast } from '../components/common/Toast';
-import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
+import DiamondWalletModal, { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -101,6 +101,15 @@ export default function VIPPage() {
   const [diamondActivityState, setDiamondActivityState] = useState<'loading' | 'ready' | 'error'>(
     'loading'
   );
+  /* CLAUDE.md 10.86 rule 1: "I could not tell" is a distinct outcome and must
+     have its own name. The balance and the points figures were both read with
+     the error discarded, so a failed read landed on the player as a confident
+     zero - the estate's signature failure mode, on a money surface. These two
+     states are what keep an unreadable figure apart from a real zero. */
+  const [diamondBalanceState, setDiamondBalanceState] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
+  const [vipPointsState, setVipPointsState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const membershipPerks = useMemo(() => {
     const isLifetime = vipGrade === 'lifetime';
@@ -218,7 +227,10 @@ export default function VIPPage() {
       'DIAMOND_BALANCE_CHANGED',
       (event: any) => {
         if (event?.payload?.newBalance !== undefined) {
+          // A balance that arrived from a completed movement is a real read,
+          // so it also clears an earlier "could not tell".
           setDiamonds(event.payload.newBalance);
+          setDiamondBalanceState('ready');
         }
       },
       500
@@ -258,6 +270,8 @@ export default function VIPPage() {
         setLoading(true);
         setRecentDiamondActivities([]);
         setDiamondActivityState('loading');
+        setDiamondBalanceState('loading');
+        setVipPointsState('loading');
       }
       try {
         const vipStatus = await vipService.checkVIPStatus(requestedUserId);
@@ -267,26 +281,47 @@ export default function VIPPage() {
         setVipExpiresAt(vipStatus.expiresAt);
         setMonthlyLimits(vipStatus.monthlyLimits);
 
-        const { data: profData } = await supabase
+        /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
+           Both reads below discarded the error, so an RLS denial, a dropped
+           connection or a PGRST 503 became `profData?.diamonds || 0` and the
+           player was shown a balance of 0 for money that was still there. The
+           error is now bound, reported, and kept as its own state. */
+        const { data: profData, error: profError } = await supabase
           .from('profiles')
           .select('diamonds')
           .eq('id', requestedUserId)
           .maybeSingle();
 
         if (!isCurrent()) return;
-        setDiamonds(profData?.diamonds || 0);
+        if (profError) {
+          reportError(profError, 'VIPPage.Diamond_balance_load_failed', {
+            userId: requestedUserId,
+          });
+          setDiamonds(0);
+          setDiamondBalanceState('error');
+        } else {
+          setDiamonds(Number(profData?.diamonds ?? 0));
+          setDiamondBalanceState('ready');
+        }
 
-        const { data: vp } = await supabase
+        const { data: vp, error: vpError } = await supabase
           .from('vip_points')
           .select('current_points, lifetime_points')
           .eq('user_id', requestedUserId)
           .maybeSingle();
         if (!isCurrent()) return;
-        setVipPoints((prev) => ({
-          ...prev,
-          current: Number(vp?.current_points || 0),
-          lifetime: Number(vp?.lifetime_points || 0),
-        }));
+        if (vpError) {
+          reportError(vpError, 'VIPPage.Vip_points_load_failed', { userId: requestedUserId });
+          setVipPoints((prev) => ({ ...prev, current: 0, lifetime: 0 }));
+          setVipPointsState('error');
+        } else {
+          setVipPoints((prev) => ({
+            ...prev,
+            current: Number(vp?.current_points || 0),
+            lifetime: Number(vp?.lifetime_points || 0),
+          }));
+          setVipPointsState('ready');
+        }
 
         /* Diamonds live in diamond_transactions. Read both transaction type
            columns because older rows use `type`, and report a failed money
@@ -313,12 +348,17 @@ export default function VIPPage() {
               id: entry.id,
               date: new Date(entry.created_at),
               action: amount > 0 ? 'earned' : 'spent',
-              // Phase 6: the ledger's own player line (player_line), never the
-              // raw description an operator wrote.
+              /* Phase 6: the ledger's own player line (player_line), never the
+                 raw description an operator wrote. The fallback is the kind's
+                 row label, the same one PlayerWalletPage and DiamondWalletModal
+                 use - NOT the bare `kind`, which would have printed a player a
+                 snake_case enum ("arena_deposit") where every other surface
+                 says "Diamond Arena Buy-In". `diamondTxLabel` never returns
+                 blank: an unknown kind is Title Cased and an empty one reads
+                 "Diamond Movement". */
               description:
                 (typeof entry.player_line === 'string' && entry.player_line) ||
-                kind ||
-                (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
+                diamondTxLabel(kind),
               diamonds: Math.abs(amount),
               balanceAfter: Number(entry.balance_after ?? 0),
             } as DiamondActivity;
@@ -333,6 +373,10 @@ export default function VIPPage() {
         if (isCurrent()) {
           setRecentDiamondActivities([]);
           setDiamondActivityState('error');
+          // Whatever threw, every figure this load owns is unread. None of
+          // them may be left reading as a settled zero.
+          setDiamondBalanceState('error');
+          setVipPointsState('error');
           toast.error('Failed To Load VIP Status');
         }
       } finally {
@@ -368,6 +412,8 @@ export default function VIPPage() {
     setVipPoints({ current: 0, lifetime: 0, monthly: 0, activeStreak: 0 });
     setRecentDiamondActivities([]);
     setDiamondActivityState('loading');
+    setDiamondBalanceState('loading');
+    setVipPointsState('loading');
     setStateUserId(undefined);
     setLoading(true);
 
@@ -479,7 +525,13 @@ export default function VIPPage() {
         status="VIP TELEMETRY // LIVE"
         crest="vip"
         metrics={[
-          { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
+          {
+            label: 'Current Points',
+            // A points read that failed says so. It never borrows the look of a
+            // player who has spent every point they earned.
+            value: vipPointsState === 'error' ? 'Unavailable' : vipPoints.current.toLocaleString(),
+            tone: 'attention',
+          },
           { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
           { label: 'Active Streak', value: `${vipPoints.activeStreak} Days` },
         ]}
@@ -494,6 +546,7 @@ export default function VIPPage() {
           expiresAt={vipExpiresAt}
           limits={monthlyLimits}
           points={vipPoints}
+          pointsState={vipPointsState}
         />
       )}
 
@@ -654,7 +707,17 @@ export default function VIPPage() {
               aria-hidden="true"
             />
             <div className="diamond-balance__copy">
-              <span className="diamond-count">{diamonds.toLocaleString()}</span>
+              {/* An unreadable balance reads "Unavailable", never "0". A player
+                  who is told they hold zero diamonds stops trying to spend
+                  them, and this figure was a discarded read away from saying
+                  that to somebody with a full wallet. */}
+              <span
+                className={`diamond-count${
+                  diamondBalanceState === 'error' ? ' diamond-count--unknown' : ''
+                }`}
+              >
+                {diamondBalanceState === 'error' ? 'Unavailable' : diamonds.toLocaleString()}
+              </span>
               <span className="diamond-label">Diamonds</span>
             </div>
           </div>
@@ -727,7 +790,10 @@ export default function VIPPage() {
       <DiamondTopUpModal
         isOpen={showTopUpModal}
         onClose={() => setShowTopUpModal(false)}
-        onPurchaseComplete={(newBal) => setDiamonds(newBal)}
+        onPurchaseComplete={(newBal) => {
+          setDiamonds(newBal);
+          setDiamondBalanceState('ready');
+        }}
       />
 
       {/* Diamond Wallet History Modal */}

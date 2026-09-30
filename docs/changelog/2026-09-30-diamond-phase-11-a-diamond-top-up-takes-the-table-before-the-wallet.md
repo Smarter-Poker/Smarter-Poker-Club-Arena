@@ -6,8 +6,8 @@ for a measured operating envelope. The envelope, with every raw number, the
 commands and the machines, is in
 [docs/evidence/diamond-phase-11/operating-envelope.md](../evidence/diamond-phase-11/operating-envelope.md).
 Production was only read (the engine's /health and /ws-metrics every 20 and 60
-seconds for 81 minutes across the busy :35 to :53 stretch and an hourly
-restart, Prometheus through the estate's monitoring reader, pg_stat_activity,
+seconds for 81 minutes across the busy :35 to :53 stretch and an engine
+restart in the hourly break, Prometheus through the estate's monitoring reader, pg_stat_activity,
 pg_locks and pg_stat_statements); everything that needed load ran in
 isolation. Measuring found four defects, all fixed here (PR #5651).
 

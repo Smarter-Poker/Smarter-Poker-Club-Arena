@@ -5,7 +5,7 @@ The phase exit asks for "reproducible evidence, measured operating envelope and 
 build defects".
 
 **Verdict: tick.** All five were measured - production passively over 81 minutes that
-included the busy :35 to :53 UTC stretch and an hourly engine restart, and everything that needed load
+included the busy :35 to :53 UTC stretch and an engine restart in the hourly break, and everything that needed load
 on isolated copies of the engine's real transport and the live Diamond database doors. The envelope is
 the table below. Measuring found four defects and all four are fixed in the pull request that carries
 this file (#5651): a lobby join that answered every subscriber (a reconnect storm cost N(N+1)/2 messages), a
@@ -140,7 +140,7 @@ release.
 cumulative count that an engine restart does not reset, but until its first read it published `0`.
 Prometheus reads a counter that goes down as a reset, so `increase()` counted the database's whole
 total again when the real value came back. The raw series shows it at each of the four restarts in the
-26 hours read (17:56, 19:55 and 22:56 UTC on 09-29, 11:56 today): three scrapes of 0 (45 s), then
+26 hours to 12:45 UTC (17:56, 19:55 and 22:56 UTC on 09-29, 11:56 today): three scrapes of 0 (45 s), then
 2,543, 2,856, 3,535 and 5,287 again. Over the 24 h to 12:41 UTC that made 3,577 real deadlocks read as
 17,797, the last hour's 80 as 5,387 and the worst ten minutes' 123 as 5,424, and
 `DatabaseDeadlocksElevated` (critical) fired on a restart alone twice - 18:01 to 18:05 UTC on 09-29 and
@@ -213,9 +213,9 @@ in the half hour after a break, when tournaments launch and the tables resume.
 
 77 samples every 60 s: table sockets max 3, channel sockets max 3, lobby subscribers max 2, soft/hard backpressure drops 0/0. Table-connection authorization since the process started: 96 completed, 0 failed, slowest 960 ms, 0 over 1,200 ms (first sample: 754 completed, 14 over 1,200 ms).
 
-### The hourly restart, which is the reconnect storm production will have
+### A restart in the hourly break, which is the reconnect storm production will have
 
-The hourly break is when the engine is replaced, and so the moment every connected client loses its sockets at once. What /health showed through the break at 11:53 (every change of state):
+The engine is replaced only in the hourly break, when a release lands - 5 times in the 26 hours to 13:02 UTC (17:55, 19:55 and 22:55 on 09-29, 11:55 and 12:55 today, from `up` and the resets of `poker_hands_dealt_total`) - and each replacement is the moment every connected client loses its sockets at once. What /health showed through the break at 11:53 (every change of state):
 
 - 11:19:30: HTTP 200, instance 1-6f46b646, maintenance False (idle), hands in flight 299, resume waves 8 of 8, 361 tables
 - 11:53:08: HTTP 200, instance 1-6f46b646, maintenance True (last_hand), hands in flight 0

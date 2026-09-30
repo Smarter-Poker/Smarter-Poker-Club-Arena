@@ -49,12 +49,34 @@ describe('the arena plate agrees with the switch', () => {
   it('a closed arena therefore reports no open tables and no cheapest seat', () => {
     // v_open starts at zero and only the gated scan ever moves it.
     expect(decl).toMatch(/v_open\s+integer\s*:=\s*0;/);
-    expect(decl.match(/v_open := COALESCE\(v_cheapest\.open_count, 0\);/g)).toHaveLength(1);
     // Both seat figures are NULL when the gated scan did not find a table.
-    expect(decl).toContain("'min_cash_buy_in',     CASE WHEN v_cheapest.id IS NULL THEN NULL");
+    expect(decl).toContain("'min_cash_buy_in',     CASE WHEN v_seat_id IS NULL THEN NULL");
     expect(decl).toContain(
-      "'cheapest_table',      CASE WHEN v_cheapest.id IS NULL THEN NULL ELSE jsonb_build_object("
+      "'cheapest_table',      CASE WHEN v_seat_id IS NULL THEN NULL ELSE jsonb_build_object("
     );
+  });
+
+  /*
+   * A RECORD THAT NOTHING ASSIGNED HAS NO STRUCTURE (2026-09-30).
+   *
+   * The first cut of the gate kept the seat figures in a plpgsql `record`.
+   * Skipping the scan left it unassigned, and plpgsql needs a record's tuple
+   * structure to evaluate ANY reference to it - including the `IS NULL` test
+   * meant to handle exactly that case - so the whole summary raised
+   * `55000 record "v_cheapest" is not assigned yet` for every caller, open
+   * arena or closed. The own-read probe caught it minutes after it was applied.
+   * Scalars are NULL from the start, which is the answer a closed arena owes.
+   */
+  it('the seat figures are scalars, so a skipped scan leaves nothing unassigned', () => {
+    const code = decl
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n');
+    expect(code, 'no plpgsql record may hold the cheapest seat').not.toContain('v_cheapest');
+    expect(code).toMatch(/v_seat_id\s+uuid;/);
+    expect(code).toContain('INTO v_seat_id, v_seat_name, v_seat_sb, v_seat_bb, v_seat_min, v_open');
+    // A scan that finds no eligible table must leave a readable zero, not NULL.
+    expect(code).toContain('v_open := COALESCE(v_open, 0);');
   });
 
   it('the two flags are still reported as they are, so the surface can say Opens Soon', () => {

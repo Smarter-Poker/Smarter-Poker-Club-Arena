@@ -123,12 +123,50 @@ two flags (`arenaOpen`). This makes the RPC agree with its surfaces instead of
 relying on every future reader to remember the rule. Nothing starts offering a
 seat, and nothing that was offered is withdrawn.
 
+### The gate broke the function, and the probe caught it
+
+Worth recording in full, because it is the argument for 11.5 in one morning.
+
+`20260930054954` was applied at 05:49 UTC and the own-read probe run
+immediately after returned, for every caller:
+
+```
+ERROR: 55000: record "v_cheapest" is not assigned yet
+DETAIL: The tuple structure of a not-yet-assigned record is indeterminate.
+CONTEXT: PL/pgSQL function fn_diamond_wallet_summary(uuid) line 80 at RETURN
+```
+
+The seat figures lived in a plpgsql `record`. A record has no tuple structure
+until something assigns it, and plpgsql needs that structure to evaluate ANY
+reference to it - including the `v_cheapest.id IS NULL` test that exists to
+handle precisely the no-row case. While the scan always ran, `SELECT INTO`
+assigned the record even when it found nothing. Gating the scan removed the
+only assignment, so the answer could no longer be built at all, open arena or
+closed. The wallet plate would have read Unavailable for everybody.
+
+`20260930060822` is the repair, applied at 06:08 UTC, 19 minutes later. The
+five seat figures are plain scalars, which are NULL from the start - exactly
+the state a closed arena has to report. The gated scan is otherwise unchanged,
+and its OPEN branch was re-proved against production in a rolled-back `DO`
+block whose `RAISE EXCEPTION` is the success case (11.5): `open=17
+id=22a9bc88 name=NLH 1/2 sb=1.00 bb=2.00 min_bigint=80`, the same figures the
+function reported before any of this. Nothing was committed by that probe and
+neither arena switch was touched to run it.
+
+Both migrations are recorded under the versions
+`scripts/new-migration.mjs` reserved, `20260930054954` and `20260930060822`,
+against which the repo file is the same statements plus its section banners
+(the recorded `statements` is the executable SQL the transport ran).
+
 ### The pin
 
 `tests/unit/theArenaPlateAgreesWithTheSwitch.test.ts`: one gate, on the scan,
 in the latest migration declaring the function; the two seat figures NULL when
-the gated scan found nothing; the flags still reported as they are; and the
-wallet surface still reading the seat figures only behind `arenaOpen`.
+the gated scan found nothing; the flags still reported as they are; the wallet
+surface still reading the seat figures only behind `arenaOpen`; and - the
+regression - no plpgsql `record` may hold the cheapest seat, the six INTO
+targets are named, and a scan that finds nothing must still leave a readable
+zero rather than NULL.
 
 ---
 

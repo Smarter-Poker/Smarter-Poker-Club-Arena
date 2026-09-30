@@ -108,6 +108,56 @@ class NativeLogReader(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.selection(value)
 
+    def test_canonical_short_event_marker_is_explicitly_inferred_and_redacted(self):
+        source = '\n'.join([
+            STAMP+'[Tournament.entry_window_close_refused] Error: [Tournament:'+EVENT[:8]+'] F06_ORIGINAL_CHANGED PRIVATE_ERROR',
+            STAMP+"  password: 'PRIVATE_PASSWORD', parameters: ['PRIVATE_SQL_ARGUMENT']",
+            STAMP+'[TournamentManagerBase.manager_refused] Error: [Tournament:'+EVENT[:8]+'] f06_allocation_unproven',
+        ])
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 2)
+        for record in result['records']:
+            self.assertEqual(record['scopeIds'], [])
+            self.assertEqual(record['inferredScopeIds'], [EVENT])
+            self.assertEqual(record['scopeAttribution'], 'canonical_event_prefix_inferred')
+        self.assertEqual(result['records'][0]['symbolicErrors'], ['F06_ORIGINAL_CHANGED'])
+        self.assertEqual(result['records'][1]['symbolicErrors'], ['f06_allocation_unproven'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+
+    def test_short_event_marker_rejects_wrong_ambiguous_and_arbitrary_positions(self):
+        context = '[Tournament.entry_window_close_refused] '
+        prefix = EVENT[:8]
+        sources = [
+            context+'Error: [Tournament:deadbeef] F06_WRONG',
+            context+'Error: arbitrary [Tournament:'+prefix+'] F06_WRONG',
+            context+'Error: [Tournament:'+prefix+'a] F06_WRONG',
+            context+'Error: [Tournament:'+prefix+']suffix F06_WRONG',
+            context+'Error: unscoped\n  [Tournament:'+prefix+'] F06_WRONG',
+            '[Other] Error: [Tournament:'+prefix+'] F06_WRONG',
+            '[GameServer.Tournament_resume_failed_for_t] Error: [Tournament:'+prefix+'] F06_WRONG',
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertEqual(reader.extract((STAMP+source).encode(), SCOPES)['records'], [])
+        other = {'tournamentId': '00000000-0000-4000-8000-000000000003',
+                 'tableIds': ['10000000-0000-4000-8000-000000000004']}
+        ambiguous = context+'Error: [Tournament:'+prefix+'] F06_AMBIGUOUS'
+        self.assertEqual(reader.extract((STAMP+ambiguous).encode(), SCOPES+[other])['records'], [])
+
+    def test_full_uuid_attribution_precedes_short_event_inference(self):
+        other = {'tournamentId': '00000000-0000-4000-8000-000000000003',
+                 'tableIds': ['10000000-0000-4000-8000-000000000004']}
+        source = (STAMP+'[Tournament.entry_window_close_refused] Error: [Tournament:'+EVENT[:8]+'] '
+                  'F06_ORIGINAL_CHANGED '+EVENT)
+        for scopes in [SCOPES, SCOPES+[other]]:
+            with self.subTest(scopes=scopes):
+                records = reader.extract(source.encode(), scopes)['records']
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]['scopeIds'], [EVENT])
+                self.assertNotIn('inferredScopeIds', records[0])
+                self.assertNotIn('scopeAttribution', records[0])
+
     def test_native_deal_failure_contexts_are_selected_exactly_and_redacted(self):
         contexts = ['deal_error_attempt_'+str(attempt) for attempt in range(1, 11)]
         contexts.append('too_many_errors_stopping')

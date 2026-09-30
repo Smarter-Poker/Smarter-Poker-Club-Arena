@@ -21,6 +21,9 @@ STAMP = re.compile(r'^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s+')
 # player objects, credentials, SQL parameters, or stack traces.
 ERROR = re.compile(r'\b(?:F06|STOPPED_BANK|MOVEMENT|DRAINED_CUSTODY)_[A-Z0-9_]{1,80}\b|\bf06_[a-z0-9_]{1,80}\b')
 CONTEXT = re.compile(r'^\[(Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80})\]')
+# Managers emit this marker immediately after the Error label. A prefix is
+# inferred attribution only, never evidence that the full UUID was logged.
+EVENT_PREFIX = re.compile(r'^\[Tournament(?:ManagerBase)?\.[a-zA-Z0-9_]{1,80}\] Error: \[Tournament:([0-9a-f]{8})\](?:[ \t]|$)')
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
 ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping)\]')
@@ -139,6 +142,9 @@ def selection(value):
 def extract(raw, scopes):
     allowed = {x for s in scopes for x in [s['tournamentId'], *s['tableIds']]}
     allowed_tables = {x for s in scopes for x in s['tableIds']}
+    event_prefixes = {}
+    for scope in scopes:
+        event_prefixes.setdefault(scope['tournamentId'][:8], []).append(scope['tournamentId'])
     records, block, context, stamp = [], [], None, None
     oversized = 0
 
@@ -149,11 +155,21 @@ def extract(raw, scopes):
             return
         text = '\n'.join(block)
         matched = sorted(i for i in allowed if re.search(r"(?<![0-9a-f-])" + i + r"(?![0-9a-f-])", text))
-        if context and matched:
-            records.append({'timestamp': stamp, 'context': context, 'scopeIds': matched,
-                            'symbolicErrors': sorted(set(ERROR.findall(text))),
-                            'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
-                            if context == 'ServerTableEngine.watchdog_kill' else []})
+        inferred = []
+        if context and not matched and block:
+            marker = EVENT_PREFIX.match(block[0])
+            candidates = event_prefixes.get(marker.group(1), []) if marker else []
+            if len(candidates) == 1:
+                inferred = candidates
+        if context and (matched or inferred):
+            record = {'timestamp': stamp, 'context': context, 'scopeIds': matched,
+                      'symbolicErrors': sorted(set(ERROR.findall(text))),
+                      'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
+                      if context == 'ServerTableEngine.watchdog_kill' else []}
+            if inferred:
+                record.update(inferredScopeIds=inferred,
+                              scopeAttribution='canonical_event_prefix_inferred')
+            records.append(record)
 
     for line in raw.decode('utf-8', errors='replace').splitlines():
         ts = STAMP.match(line)

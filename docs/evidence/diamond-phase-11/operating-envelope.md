@@ -8,7 +8,7 @@ build defects".
 included the busy :35 to :53 UTC stretch and an hourly engine restart, and everything that needed load
 on isolated copies of the engine's real transport and the live Diamond database doors. The envelope is
 the table below. Measuring found four defects and all four are fixed in the pull request that carries
-this file: a lobby join that answered every subscriber (a reconnect storm cost N(N+1)/2 messages), a
+this file (#5651): a lobby join that answered every subscriber (a reconnect storm cost N(N+1)/2 messages), a
 Diamond top-up that locked the wallet before the table (it deadlocked against the settlement of the hand
 it followed), an engine that let a top-up race that settlement, and an engine deadlock counter that read
 every engine restart as thousands of deadlocks (on its own it set off the critical deadlock alert twice
@@ -61,6 +61,8 @@ first thing the numbers say gives way as load grows.
 | **Reconnect storms**                               | No human sockets, so no storm yet. The restart at 11:55 refused upgrades for about 80 s (502, then 503, then 200). Table-socket authorization since the old process started: 754, 14 over 1.2 s, slowest 3281 ms. Reconnect counters over 7 days: 0.                                                                         | 2,000 lobby clients drop and return: before the fix 15,817 ms, 2,001,000 frames, 10.7 s of CPU, 653 failed connects; after it 440 ms, 2,000 frames, 0.72 s of CPU, none. 4,800 table sockets: all back in 2.2 to 4.0 s, none failed, loop p99 41 to 57 ms.   | `PlayersReconnectingRepeatedly` (> 6 in an hour for one client, 10 min); `EngineRefusingSessions`; `TablesAreReloadingThemselves`.        | The transport brings 4,800 sockets back in seconds.                                                                                                                             | The round trips each upgrade makes: a GoTrue check per socket, and per table socket a database access check and an audit insert (slowest 3.3 s at today's trickle).                         |
 
 ## What was found, and what was done
+
+All four fixes ship in PR #5651, with this file.
 
 ### Fixed: a lobby join answered every subscriber
 

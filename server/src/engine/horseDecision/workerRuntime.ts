@@ -1210,6 +1210,18 @@ export class HorseDecisionWorkerRuntime {
     }
     if (
       status === 'complete' &&
+      Number.isSafeInteger(gs.dealerSeat) &&
+      (gs.dealerSeat as number) >= 1 &&
+      (gs.dealerSeat as number) <= 10 &&
+      gs.players.length > 2 &&
+      !gs.players.some((seat) => seat.seat === gs.dealerSeat)
+    ) {
+      // The public hand is valid, but the occupied-button atlas cannot
+      // represent this coordinate. Require the producer's labeled fallback.
+      throw new Error('Phase 6 complete tournament context has dead_button_atlas_unsupported');
+    }
+    if (
+      status === 'complete' &&
       (typeof tournament.tournamentId !== 'string' ||
         tournament.tournamentId.length === 0 ||
         !tournament.tournamentType ||
@@ -1222,6 +1234,8 @@ export class HorseDecisionWorkerRuntime {
         tournament.medianStackChips <= 0 ||
         (tournament.currentLevel as number) < 0 ||
         !Number.isSafeInteger(gs.dealerSeat) ||
+        (gs.dealerSeat as number) < 1 ||
+        (gs.dealerSeat as number) > 10 ||
         !gs.players.some((seat) => seat.seat === gs.dealerSeat) ||
         tournament.gameVariant !== gs.gameVariant ||
         !['mtt', 'sng', 'spin', 'hu_sng'].includes(gs.format ?? '') ||

@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/cowork-claude-disposal-0928/fix/a-superseded-retained-hand-is-disposed",
+  "_comment": "Mirror of recorded migration 20260928001934_a_hand_the_table_has_already_dealt_past_is_disposed, applied to production before this branch existed. Verified against production on 2026-09-28: the repo file is byte-identical to supabase_migrations.schema_migrations.statements (file md5 efed85f40c64d77ad54a37943e0b5bc3), public.fn_ca_dispose_superseded_hand_submissions(uuid,uuid,text,integer) body md5 322bf23a033aa1eeb0b53e18ae28d583 and smarter_private.hand_submission_snapshot_guard() body md5 a08b3de2dd259283b0057a69e029380b both match pg_proc.prosrc, and the in-place edit to public.fn_ca_resume_hand_submission(uuid,text,uuid) is present exactly once in the live definition. The migration also CREATE OR REPLACEs hand_submission_snapshot_guard and fn_ca_resume_hand_submission, both already declared by retained-hand-submission.json.",
+  "tables": ["smarter_private.hand_submission_disposals"],
+  "functions": ["fn_ca_dispose_superseded_hand_submissions"]
+}

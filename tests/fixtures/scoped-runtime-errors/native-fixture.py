@@ -108,6 +108,96 @@ class NativeLogReader(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.selection(value)
 
+    def test_canonical_short_event_marker_is_explicitly_inferred_and_redacted(self):
+        source = '\n'.join([
+            STAMP+'[Tournament.entry_window_close_refused] Error: [Tournament:'+EVENT[:8]+'] F06_ORIGINAL_CHANGED PRIVATE_ERROR',
+            STAMP+"  password: 'PRIVATE_PASSWORD', parameters: ['PRIVATE_SQL_ARGUMENT']",
+            STAMP+'[TournamentManagerBase.manager_refused] Error: [Tournament:'+EVENT[:8]+'] f06_allocation_unproven',
+        ])
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 2)
+        for record in result['records']:
+            self.assertEqual(record['scopeIds'], [])
+            self.assertEqual(record['inferredScopeIds'], [EVENT])
+            self.assertEqual(record['scopeAttribution'], 'canonical_event_prefix_inferred')
+        self.assertEqual(result['records'][0]['symbolicErrors'], ['F06_ORIGINAL_CHANGED'])
+        self.assertEqual(result['records'][1]['symbolicErrors'], ['f06_allocation_unproven'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+
+    def test_short_event_marker_rejects_wrong_ambiguous_and_arbitrary_positions(self):
+        context = '[Tournament.entry_window_close_refused] '
+        prefix = EVENT[:8]
+        sources = [
+            context+'Error: [Tournament:deadbeef] F06_WRONG',
+            context+'Error: arbitrary [Tournament:'+prefix+'] F06_WRONG',
+            context+'Error: [Tournament:'+prefix+'a] F06_WRONG',
+            context+'Error: [Tournament:'+prefix+']suffix F06_WRONG',
+            context+'Error: unscoped\n  [Tournament:'+prefix+'] F06_WRONG',
+            '[Other] Error: [Tournament:'+prefix+'] F06_WRONG',
+            '[GameServer.Tournament_resume_failed_for_t] Error: [Tournament:'+prefix+'] F06_WRONG',
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertEqual(reader.extract((STAMP+source).encode(), SCOPES)['records'], [])
+        other = {'tournamentId': '00000000-0000-4000-8000-000000000003',
+                 'tableIds': ['10000000-0000-4000-8000-000000000004']}
+        ambiguous = context+'Error: [Tournament:'+prefix+'] F06_AMBIGUOUS'
+        self.assertEqual(reader.extract((STAMP+ambiguous).encode(), SCOPES+[other])['records'], [])
+
+    def test_full_uuid_attribution_precedes_short_event_inference(self):
+        other = {'tournamentId': '00000000-0000-4000-8000-000000000003',
+                 'tableIds': ['10000000-0000-4000-8000-000000000004']}
+        source = (STAMP+'[Tournament.entry_window_close_refused] Error: [Tournament:'+EVENT[:8]+'] '
+                  'F06_ORIGINAL_CHANGED '+EVENT)
+        for scopes in [SCOPES, SCOPES+[other]]:
+            with self.subTest(scopes=scopes):
+                records = reader.extract(source.encode(), scopes)['records']
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]['scopeIds'], [EVENT])
+                self.assertNotIn('inferredScopeIds', records[0])
+                self.assertNotIn('scopeAttribution', records[0])
+
+    def test_native_deal_failure_contexts_are_selected_exactly_and_redacted(self):
+        contexts = ['deal_error_attempt_'+str(attempt) for attempt in range(1, 11)]
+        contexts.append('too_many_errors_stopping')
+        lines = []
+        for context in contexts:
+            # reportError writes the table UUID in its header, followed by
+            # Error/object details and possible multiline private fields.
+            lines.extend([
+                STAMP+'[ServerTableEngine.'+TABLE+'.'+context+"] Error: f06_allocation_unproven",
+                STAMP+"  message: 'F06_ORIGINAL_CHANGED', password: 'PRIVATE_FIXTURE_PASSWORD',",
+                STAMP+"  parameters: ['PRIVATE_SQL_ARGUMENT'], stack: 'PRIVATE_STACK',",
+            ])
+        for table_id, context in [
+            ('10000000-0000-4000-8000-000000000001', contexts[0]),
+            (EVENT, contexts[0]),
+            (TABLE+'a', contexts[0]),
+            (TABLE, 'deal_error_attempt_0'),
+            (TABLE, 'deal_error_attempt_11'),
+            (TABLE, 'deal_error_attempt_01'),
+            (TABLE, 'deal_error_attempt_1_extra'),
+            (TABLE, 'too_many_errors_stopping_extra'),
+            (TABLE, 'arbitrary_failure'),
+        ]:
+            # A selected identity elsewhere in a rejected header's record
+            # cannot admit another table or arbitrary call site.
+            lines.append(STAMP+'[ServerTableEngine.'+table_id+'.'+context+'] F06_UNRELATED '+TABLE)
+        raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr('\n'.join(lines))+')'])
+        result = reader.extract(raw, SCOPES)
+        self.assertEqual(result['matchingRecords'], 11)
+        self.assertEqual([r['context'] for r in result['records']],
+                         ['ServerTableEngine.'+context for context in contexts])
+        for record in result['records']:
+            self.assertEqual(record['scopeIds'], [TABLE])
+            self.assertEqual(record['timestamp'], STAMP.strip())
+            self.assertEqual(record['symbolicErrors'], ['F06_ORIGINAL_CHANGED', 'f06_allocation_unproven'])
+            self.assertEqual(record['engineReasons'], [])
+        serialized = json.dumps(result)
+        for private in ['PRIVATE_FIXTURE_PASSWORD', 'PRIVATE_SQL_ARGUMENT', 'PRIVATE_STACK', 'F06_UNRELATED']:
+            self.assertNotIn(private, serialized)
+
     def test_native_pipe_framing_and_scoped_redaction(self):
         source = '\n'.join([STAMP+'[Tournament.atomic_move_refused_or_unknown] {', STAMP+"  message: 'STOPPED_BANK_ORIGINAL_CHANGED',", STAMP+"  password: 'NEVER_PRINT_THIS',", STAMP+"} { tournamentId: '"+EVENT+"', sourceTableId: '"+TABLE+"' }", STAMP+'[Tournament.other] MOVEMENT_ROSTER_CHANGED', STAMP+"  tournamentId: '10000000-0000-4000-8000-000000000001'", STAMP+'[Other] F06_SHOULD_NOT_BE_ATTRIBUTED'])
         raw = reader.capture([sys.executable, '-c', 'import sys;sys.stdout.write('+repr(source)+')'])

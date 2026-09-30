@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "observedAt": "2026-09-30T11:43:15.264Z",
+  "scope": "Read-only exact UTC time range database aggregates; hand created_at differs from journal record time, so this is matching aggregate count evidence rather than individual-ID join.",
+  "project": "kuklfnapbkmacvwxktbh",
+  "wholeWindowAttempt": {
+    "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:00:00Z' and created_at < '2026-09-30T11:00:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+    "result": {
+      "error": {
+        "name": "Error",
+        "message": "Failed to run sql query: ERROR:  57014: canceling statement due to statement timeout\n"
+      }
+    },
+    "recovery": "Split into bounded five-minute reads; did not increase statement timeout."
+  },
+  "batches": [
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:00:00Z' and created_at < '2026-09-30T10:05:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 4443,
+          "hand_id_matches": 4443,
+          "ordinal_matches": 4443
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:05:00Z' and created_at < '2026-09-30T10:10:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 8626,
+          "hand_id_matches": 8626,
+          "ordinal_matches": 8626
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:10:00Z' and created_at < '2026-09-30T10:15:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7561,
+          "hand_id_matches": 7561,
+          "ordinal_matches": 7561
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:15:00Z' and created_at < '2026-09-30T10:20:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7897,
+          "hand_id_matches": 7897,
+          "ordinal_matches": 7897
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:20:00Z' and created_at < '2026-09-30T10:25:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7375,
+          "hand_id_matches": 7375,
+          "ordinal_matches": 7375
+        },
+        {
+          "identity_status": "unavailable",
+          "identity_reason": "unavailable_public_node",
+          "node_status": "unavailable",
+          "node_reason": "invalid_public_state",
+          "count": 21,
+          "hand_id_matches": 0,
+          "ordinal_matches": 0
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:25:00Z' and created_at < '2026-09-30T10:30:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7140,
+          "hand_id_matches": 7140,
+          "ordinal_matches": 7140
+        },
+        {
+          "identity_status": "unavailable",
+          "identity_reason": "unavailable_public_node",
+          "node_status": "unavailable",
+          "node_reason": "invalid_public_state",
+          "count": 9,
+          "hand_id_matches": 0,
+          "ordinal_matches": 0
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:30:00Z' and created_at < '2026-09-30T10:35:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 6987,
+          "hand_id_matches": 6987,
+          "ordinal_matches": 6987
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:35:00Z' and created_at < '2026-09-30T10:40:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7374,
+          "hand_id_matches": 7374,
+          "ordinal_matches": 7374
+        },
+        {
+          "identity_status": "unavailable",
+          "identity_reason": "unavailable_public_node",
+          "node_status": "unavailable",
+          "node_reason": "invalid_public_state",
+          "count": 7,
+          "hand_id_matches": 0,
+          "ordinal_matches": 0
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:40:00Z' and created_at < '2026-09-30T10:45:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7162,
+          "hand_id_matches": 7162,
+          "ordinal_matches": 7162
+        },
+        {
+          "identity_status": "unavailable",
+          "identity_reason": "unavailable_public_node",
+          "node_status": "unavailable",
+          "node_reason": "invalid_public_state",
+          "count": 6,
+          "hand_id_matches": 0,
+          "ordinal_matches": 0
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:45:00Z' and created_at < '2026-09-30T10:50:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 7328,
+          "hand_id_matches": 7328,
+          "ordinal_matches": 7328
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:50:00Z' and created_at < '2026-09-30T10:55:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": [
+        {
+          "identity_status": "bound",
+          "identity_reason": null,
+          "node_status": "captured",
+          "node_reason": null,
+          "count": 5071,
+          "hand_id_matches": 5071,
+          "ordinal_matches": 5071
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='15s';\nwith hands as materialized (\n select id, actions from public.hand_history\n where created_at >= '2026-09-30T10:55:00Z' and created_at < '2026-09-30T11:00:00Z'\n and tournament_id is not null\n), actions as (\n select h.id, a.value as a, a.ordinality - 1 as ordinal\n from hands h cross join lateral jsonb_array_elements(h.actions) with ordinality a(value,ordinality)\n where jsonb_typeof(h.actions)='array'\n and a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy'\n)\nselect a->'observationIdentity'->>'status' as identity_status,\na->'observationIdentity'->>'reason' as identity_reason,\na->'publicNode'->>'status' as node_status,\na->'publicNode'->>'reason' as node_reason,\ncount(*) as count,\ncount(*) filter(where a->'observationIdentity'->>'handId' = id::text) as hand_id_matches,\ncount(*) filter(where a->'observationIdentity'->>'actionOrdinal' = ordinal::text) as ordinal_matches\nfrom actions group by 1,2,3,4 order by count(*) desc;",
+      "result": []
+    }
+  ],
+  "deadButtonDetails": [
+    {
+      "query": "set statement_timeout='12s'; with hands as materialized (select id,game_variant,button_seat,players,actions,small_blind,big_blind from public.hand_history where created_at >= '2026-09-30T10:20:00Z' and created_at < '2026-09-30T10:25:00Z' and tournament_id is not null), bad as (select h.*,a.value as action from hands h cross join lateral jsonb_array_elements(h.actions) a(value) where a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy' and a.value->'observationIdentity'->>'status'='unavailable')\nselect game_variant, button_seat, small_blind,big_blind,jsonb_array_length(players) as player_count, exists(select 1 from jsonb_array_elements(players) p where p->>'seat'=button_seat::text) as button_in_players, action->>'action' as action,count(*) from bad group by 1,2,3,4,5,6,7 order by count(*) desc;",
+      "result": [
+        {
+          "game_variant": "nlh",
+          "button_seat": 2,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 7,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 5
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 4,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 6,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 5
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 8,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 5,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 4
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 7,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 5,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 3
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 2,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 7,
+          "button_in_players": false,
+          "action": "all_in",
+          "count": 2
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 7,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 5,
+          "button_in_players": false,
+          "action": "call",
+          "count": 1
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 7,
+          "small_blind": "200.00",
+          "big_blind": "400.00",
+          "player_count": 5,
+          "button_in_players": false,
+          "action": "raise",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='12s'; with hands as materialized (select id,game_variant,button_seat,players,actions,small_blind,big_blind from public.hand_history where created_at >= '2026-09-30T10:25:00Z' and created_at < '2026-09-30T10:30:00Z' and tournament_id is not null), bad as (select h.*,a.value as action from hands h cross join lateral jsonb_array_elements(h.actions) a(value) where a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy' and a.value->'observationIdentity'->>'status'='unavailable')\nselect game_variant, button_seat, small_blind,big_blind,jsonb_array_length(players) as player_count, exists(select 1 from jsonb_array_elements(players) p where p->>'seat'=button_seat::text) as button_in_players, action->>'action' as action,count(*) from bad group by 1,2,3,4,5,6,7 order by count(*) desc;",
+      "result": [
+        {
+          "game_variant": "nlh",
+          "button_seat": 5,
+          "small_blind": "300.00",
+          "big_blind": "600.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 3
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 8,
+          "small_blind": "300.00",
+          "big_blind": "600.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 3
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 3,
+          "small_blind": "500.00",
+          "big_blind": "1000.00",
+          "player_count": 3,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 2
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 5,
+          "small_blind": "300.00",
+          "big_blind": "600.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "all_in",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='12s'; with hands as materialized (select id,game_variant,button_seat,players,actions,small_blind,big_blind from public.hand_history where created_at >= '2026-09-30T10:35:00Z' and created_at < '2026-09-30T10:40:00Z' and tournament_id is not null), bad as (select h.*,a.value as action from hands h cross join lateral jsonb_array_elements(h.actions) a(value) where a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy' and a.value->'observationIdentity'->>'status'='unavailable')\nselect game_variant, button_seat, small_blind,big_blind,jsonb_array_length(players) as player_count, exists(select 1 from jsonb_array_elements(players) p where p->>'seat'=button_seat::text) as button_in_players, action->>'action' as action,count(*) from bad group by 1,2,3,4,5,6,7 order by count(*) desc;",
+      "result": [
+        {
+          "game_variant": "nlh",
+          "button_seat": 1,
+          "small_blind": "750.00",
+          "big_blind": "1500.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 3
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 5,
+          "small_blind": "750.00",
+          "big_blind": "1500.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 3
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 1,
+          "small_blind": "750.00",
+          "big_blind": "1500.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "all_in",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "query": "set statement_timeout='12s'; with hands as materialized (select id,game_variant,button_seat,players,actions,small_blind,big_blind from public.hand_history where created_at >= '2026-09-30T10:40:00Z' and created_at < '2026-09-30T10:45:00Z' and tournament_id is not null), bad as (select h.*,a.value as action from hands h cross join lateral jsonb_array_elements(h.actions) a(value) where a.value->>'stage'='preflop' and a.value->>'origin'='horse_policy' and a.value->'observationIdentity'->>'status'='unavailable')\nselect game_variant, button_seat, small_blind,big_blind,jsonb_array_length(players) as player_count, exists(select 1 from jsonb_array_elements(players) p where p->>'seat'=button_seat::text) as button_in_players, action->>'action' as action,count(*) from bad group by 1,2,3,4,5,6,7 order by count(*) desc;",
+      "result": [
+        {
+          "game_variant": "nlh",
+          "button_seat": 4,
+          "small_blind": "2000.00",
+          "big_blind": "4000.00",
+          "player_count": 3,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 2
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 4,
+          "small_blind": "2000.00",
+          "big_blind": "4000.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "all_in",
+          "count": 2
+        },
+        {
+          "game_variant": "nlh",
+          "button_seat": 4,
+          "small_blind": "2000.00",
+          "big_blind": "4000.00",
+          "player_count": 4,
+          "button_in_players": false,
+          "action": "fold",
+          "count": 2
+        }
+      ]
+    }
+  ]
+}

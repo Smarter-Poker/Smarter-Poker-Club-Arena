@@ -120,7 +120,15 @@ const BASELINE = new Map<string, number>([
      accident. Kept at 0 rather than deleted so a reintroduction is a diff on
      this line. */
   ['src/pages/tournament/TournamentLobbyPage.tsx', 0],
-  ['src/pages/VIPPage.tsx', 2],
+  /* ZERO SINCE 2026-09-30 (was 2). Both were on the diamond wallet's own page
+     and both were the shape this ratchet exists for: the `profiles.diamonds`
+     read and the `vip_points` read discarded their errors, so a failed read
+     became `profData?.diamonds || 0` and a player was shown a balance of 0 for
+     money that was still in their wallet. Both now bind the error, report it,
+     and carry a separate 'error' state that prints "Unavailable" - a real zero
+     and an unreadable figure are no longer the same pixels. Kept at 0 rather
+     than deleted so a reintroduction is a diff on this line. */
+  ['src/pages/VIPPage.tsx', 0],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],

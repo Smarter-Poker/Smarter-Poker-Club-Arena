@@ -62,16 +62,23 @@ describe('useDiamondLedger carries the player line', () => {
     const { result } = renderHook(() => useDiamondLedger('u-1', 'in', isMounted));
     await act(() => result.current.load('reset'));
     await waitFor(() => expect(result.current.rows).not.toBeNull());
+    /* `description` left the select on 2026-09-30. It had been kept "for the
+       send/receive naming path", but that path has read `counterpartyId` and
+       `line || label` since phase 6, so it was an unread column on a money
+       query (tests/the-route-and-the-client-agree.law.test.ts). */
     expect(chain.selected).toBe(
-      'id, type, transaction_type, amount, description, player_line, created_at, metadata'
+      'id, type, transaction_type, amount, player_line, created_at, metadata'
     );
     const rows = result.current.rows!;
     expect(rows.map((r) => r.line)).toEqual([
       'PvP match abandoned, 10 diamonds refund',
       'Daily Challenge Reward',
     ]);
-    // The raw description is still carried, but it is not what a surface prints.
-    expect(rows[0].description).toContain('—');
+    /* The row this hook hands out carries NO raw description at all. The
+       fixture above still has one, em dash and all, because that is what the
+       column holds - the point is that it now stops at the query. The line the
+       player reads is the cleaned one, and it is the only copy on the row. */
+    expect(rows[0]).not.toHaveProperty('description');
     expect(rows[0].line).not.toContain('—');
   });
 

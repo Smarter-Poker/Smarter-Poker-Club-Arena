@@ -104,7 +104,9 @@ for (const file of sourceFiles) {
   for (const match of text.matchAll(SPECIFIER)) {
     const spec = match[1];
     if (!spec.startsWith('.') && !spec.startsWith('@/')) continue; // package import
-    const base = spec.startsWith('@/') ? join(SRC, spec.slice(2)) : resolve(dirname(file), spec);
+    const base = spec.startsWith('@/')
+      ? join(SRC, spec.slice(2))
+      : resolve(dirname(file), spec);
 
     for (const candidate of [
       base,
@@ -151,12 +153,8 @@ const ratchet = process.argv.includes('--ratchet');
 if (json) {
   console.log(JSON.stringify({ orphans, guardedOrphans, baseline: BASELINE_ORPHANS }, null, 2));
 } else {
-  console.log(
-    `[orphan-modules] ${orphans.length} behavioural file(s) in src/ that nothing in src/ imports.`
-  );
-  console.log(
-    `[orphan-modules] (plus ${barrels.length} unimported re-export barrels, not ratcheted.)`
-  );
+  console.log(`[orphan-modules] ${orphans.length} behavioural file(s) in src/ that nothing in src/ imports.`);
+  console.log(`[orphan-modules] (plus ${barrels.length} unimported re-export barrels, not ratcheted.)`);
   console.log('[orphan-modules] These ship to no one. Route them or delete them.');
   for (const o of orphans) console.log(`  ${o}`);
 
@@ -165,9 +163,7 @@ if (json) {
     console.log(
       `[orphan-modules] ${guardedOrphans.length} of them are ASSERTED AGAINST BY TESTS, which is the trap:`
     );
-    console.log(
-      '[orphan-modules] a fix there ships nothing, and a failure there blocks the publisher.'
-    );
+    console.log('[orphan-modules] a fix there ships nothing, and a failure there blocks the publisher.');
     for (const { orphan, guards } of guardedOrphans) {
       console.log(`  ${orphan}`);
       for (const g of guards) console.log(`      guarded by ${g}`);
@@ -182,8 +178,6 @@ if (ratchet && orphans.length > BASELINE_ORPHANS) {
   );
   console.error('                  A file nothing imports ships to nobody. Either route it from');
   console.error('                  App.tsx, import it where it belongs, or delete it - and if a');
-  console.error(
-    '                  test guards it, retarget that test at the LIVE equivalent first.'
-  );
+  console.error('                  test guards it, retarget that test at the LIVE equivalent first.');
   process.exit(1);
 }

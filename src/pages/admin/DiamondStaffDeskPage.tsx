@@ -686,6 +686,7 @@ function Incidents() {
   const [families, setFamilies] = useState<IncidentFamilyCount[]>([]);
   const [next, setNext] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
 
@@ -697,6 +698,7 @@ function Incidents() {
         setFamilies(b.families);
         setNext(b.next_before_id);
         setError(null);
+        setLoaded(true);
       } catch (e) {
         setError(words(e));
       }
@@ -713,7 +715,10 @@ function Incidents() {
       <h2 className="admin-section-title">Open Diamond Incidents By Family</h2>
       {error && <div className="admin-error-banner">Could Not Be Read: {error}</div>}
       <div style={LIST}>
-        {families.length === 0 && <div className="admin-empty-state">Nothing Is Open</div>}
+        {!loaded && !error && <div className="admin-skeleton" style={{ height: 60 }} />}
+        {loaded && families.length === 0 && (
+          <div className="admin-empty-state">Nothing Is Open</div>
+        )}
         {families.map((f) => (
           <div key={f.family} className="admin-panel-soft">
             <div style={ROW}>
@@ -787,7 +792,9 @@ function Incidents() {
         )}
       </div>
       <div style={LIST}>
-        {rows.length === 0 && !error && <div className="admin-empty-state">No Incidents Match</div>}
+        {loaded && rows.length === 0 && !error && (
+          <div className="admin-empty-state">No Incidents Match</div>
+        )}
         {rows.map((i) => (
           <div key={i.id} className="admin-panel-soft">
             <div style={ROW}>
@@ -1075,7 +1082,7 @@ function Adjustments() {
                   </select>
                 </label>
                 <label className="admin-label">
-                  Player Id (Wallet Only)
+                  Player ID (Wallet Only)
                   <input className="admin-input" name="player" />
                 </label>
                 <Num label="Diamonds (Minus To Take)" name="amount" />

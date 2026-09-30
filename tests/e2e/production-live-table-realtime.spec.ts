@@ -35,6 +35,12 @@ import {
 } from './support/tournamentBoardEnding';
 import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
+  classifyMissingTournamentSubject,
+  scopedStalledTables,
+  type StalledSubject,
+} from './support/certifiableSubject';
+import { recordNonVerdict } from './support/nonVerdict';
+import {
   createHudClockReader,
   hudEventObservationMs,
   MTT_HUD_LEVEL_CAP_MS,
@@ -63,6 +69,20 @@ const CASH_CASE_TAIL_MS = 15_000;
 const CASH_PROGRESS_CANDIDATES = 8;
 const PRESENTATION_DEADLINE_MS = 3_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
+
+/**
+ * Production was running nothing this case could observe. Not a defect on the
+ * live site, and not a pass either: a named non-verdict (10.86 rule 1).
+ */
+class AbsentCertifiableSubject extends Error {
+  constructor(
+    message: string,
+    readonly evidence: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'AbsentCertifiableSubject';
+  }
+}
 
 type BoardReader = Awaited<ReturnType<typeof createHudClockReader>>;
 
@@ -95,6 +115,8 @@ interface EngineHealth {
   stalledTableCount: number;
   deadStalledCount: number;
   wholeFleetStalled: boolean;
+  /** The engine already names them (GameServer `stalledTables`); read them. */
+  stalledTables?: { tableId: string; dealable: number; secsIdle: number }[];
   maintenance?: { active?: boolean; phase?: string | null } | null;
   equityGovernor?: { scale?: number; p50Ms?: number; p99Ms?: number } | null;
   telemetry?: { avgHandDurationMs?: number; avgHandsPerHour?: number } | null;
@@ -163,8 +185,31 @@ async function readEngineHealth(
   expect(response.status(), 'the public engine health endpoint did not answer 200').toBe(200);
   const health = (await response.json()) as EngineHealth;
   expect(health.liveness, 'the production engine did not report liveness=ok').toBe('ok');
-  expect(health.stalledTableCount, 'production had stalled tables before observation').toBe(0);
-  expect(health.deadStalledCount, 'production had dead stalled tables before observation').toBe(0);
+  /* THE FLEET IS NOT THIS CERTIFICATE'S SUBJECT, AND ONE WEDGED TABLE IS NOT
+     THIS RELEASE (2026-09-30).
+
+     These two lines used to be `stalledTableCount === 0` and
+     `deadStalledCount === 0`. Both are FLEET-WIDE aggregates: /health computes
+     them across every table the engine owns, whatever scope the caller asked
+     for. So on 2026-09-30 one wedged MTT table - `916a88ea`, 8 dealable, last
+     hand 17:15:58Z - failed all four cases of every post-deploy run after
+     17:20Z with `Expected: 0 / Received: 1` and no table named, including the
+     cash network-loss case, which shares nothing with it.
+
+     The engine had already learned this. `wholeFleetStalled` exists precisely
+     "so that one stalled table cannot condemn" the rest, after
+     `poker_engine_liveness` sat at zero for 136 of 139 minutes on the strength
+     of one table out of 312 (server/src/GameServer.ts). And the fleet number
+     is not going unwatched: `PokerTablesFrozen` in
+     infra/monitoring/engine-freeze-rules.yml pages critical on
+     `poker_stalled_tables > 0 for 1m`, and
+     scripts/ci/check-alert-rules-match.mjs refuses to be silently green about
+     whether it is loaded. That alarm is the reader (10.86 rule 3).
+
+     So: the fleet verdict stays a hard red; a stall on a table this case has
+     actually SELECTED stays a hard red and is named (below); and a stall
+     anywhere else is reported as what it is - an observation this certificate
+     did not make, about a table it is not testing. */
   expect(health.wholeFleetStalled, 'production reported the whole fleet stalled').toBe(false);
   const observedReleaseSha = String(health.releaseSha || '').trim();
   expect(
@@ -218,7 +263,61 @@ async function readEngineHealth(
       );
     }
   }
+  /* A READ BY TABLE ID IS THE SUBJECT; A READ BY FORMAT IS A CANDIDATE SEARCH.
+     When this case has named the tables it is tracking, one of them going
+     silent past the engine's own two-minute stall threshold is production
+     failing in front of the certificate, and it is named and red. A
+     format-wide read is the engine's own sample of up to 32 tables the case
+     has not chosen: a wedged table in there is not this certificate's subject,
+     it disqualifies itself as a candidate, and if it turns out to be the
+     reason no candidate exists at all, classifyMissingTournamentSubject turns
+     it back into a red with the table named. */
+  if ('tableIds' in scope) {
+    expect(
+      scopedStalledTables(health.tableLiveness),
+      'a table this case is certifying had stopped dealing'
+    ).toEqual([]);
+  }
+  reportStallsThisCertificateIsNotJudging(health, scope);
   return health;
+}
+
+/**
+ * Say the fleet number out loud without charging it to this release.
+ *
+ * Deduplicated by content: `readEngineHealth` runs on every poll, and an
+ * observation repeated two hundred times is noise, which is how a real signal
+ * gets ignored (10.83).
+ */
+const reportedFleetStalls = new Set<string>();
+function reportStallsThisCertificateIsNotJudging(health: EngineHealth, scope: LivenessScope): void {
+  if (health.stalledTableCount === 0 && health.deadStalledCount === 0) return;
+  const judged = 'tableIds' in scope ? new Set(scope.tableIds) : new Set<string>();
+  const elsewhere = [
+    ...(health.stalledTables ?? []).filter((table) => !judged.has(table.tableId)),
+    ...scopedStalledTables(health.tableLiveness)
+      .filter((table) => !judged.has(table.tableId))
+      .map((table) => ({
+        tableId: table.tableId,
+        dealable: table.dealable,
+        secsIdle: table.secsIdle,
+      })),
+  ].filter(
+    (table, index, all) => all.findIndex((other) => other.tableId === table.tableId) === index
+  );
+  const named = elsewhere
+    .map((table) => `${table.tableId} (${table.dealable} dealable, idle ${table.secsIdle}s)`)
+    .join('; ');
+  const signature = `${health.stalledTableCount}|${health.deadStalledCount}|${named}`;
+  if (reportedFleetStalls.has(signature)) return;
+  reportedFleetStalls.add(signature);
+  console.log(
+    `::warning::The production engine reports ${health.stalledTableCount} stalled and ` +
+      `${health.deadStalledCount} dead-stalled table(s) of ${health.activeTables} active, ` +
+      'outside the scope this certificate observed' +
+      (named ? `: ${named}. ` : '. ') +
+      'PokerTablesFrozen (infra/monitoring/engine-freeze-rules.yml) owns that alarm.'
+  );
 }
 
 function healthyRunningTable(
@@ -480,23 +579,54 @@ async function selectProgressingTournamentTable(
         .toBeGreaterThan(0);
     }
   } catch (error) {
+    /* WAS PRODUCTION BROKEN, OR WAS THERE NOTHING TO WATCH? (2026-09-30)
+       Both used to arrive here as the same red. They are not the same thing,
+       and the scoped health that was just read says which one it is. */
+    const classification = classifyMissingTournamentSubject({
+      rows: before.tableLiveness,
+      gameFormat,
+      clubIds: [CLUB_ID, UNION_ID],
+      minimumStableSeats,
+      maxGameplaySilenceMs: MAX_GAMEPLAY_SILENCE_MS,
+    });
+    const evidence = {
+      expectedVersion: EXPECTED_ENGINE_SHA,
+      gameFormat,
+      minimumStableSeats,
+      fixtureClubIds: [CLUB_ID, UNION_ID],
+      requiresNaturalHudClock: Boolean(options.hudReader),
+      boardsAlreadyEndedThisCase: [...excluded],
+      classification,
+      lastScopedHealth: before,
+    };
     await testInfo.attach(`${gameFormat}-baseline-readiness-refusal`, {
-      body: Buffer.from(
-        JSON.stringify(
-          {
-            expectedVersion: EXPECTED_ENGINE_SHA,
-            gameFormat,
-            minimumStableSeats,
-            fixtureClubIds: [CLUB_ID, UNION_ID],
-            lastScopedHealth: before,
-          },
-          null,
-          2
-        )
-      ),
+      body: Buffer.from(JSON.stringify(evidence, null, 2)),
       contentType: 'application/json',
     });
-    throw error;
+    if (classification.verdict === 'stalled') {
+      const named = classification.stalled
+        .map(
+          (table: StalledSubject) =>
+            `${table.tableId} (${table.dealable} dealable, idle ${table.secsIdle}s, ${table.loopPhase})`
+        )
+        .join('; ');
+      throw new Error(
+        `production has ${classification.stalled.length} ${gameFormat.toUpperCase()} table(s) in ` +
+          `fixture scope ${CLUB_ID}/${UNION_ID} that are seated and dealable but have stopped ` +
+          `dealing: ${named}`
+      );
+    }
+    throw new AbsentCertifiableSubject(
+      `production was running no ${gameFormat.toUpperCase()} table this case could observe: ` +
+        `${classification.inScope} in fixture scope, ${classification.runningShape} with ` +
+        `${minimumStableSeats}+ dealable seats and a hand in progress, none stalled` +
+        (options.hudReader
+          ? ', and none whose tournament can yield an eligible natural HUD clock (running, not on ' +
+            'a break, not in its add-on period, not accelerated, next levels playable)'
+          : '') +
+        `, inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+      evidence
+    );
   }
 
   let after = before;
@@ -1301,7 +1431,23 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     }, testInfo) => {
       // Baseline readiness must not consume the existing continuity proof budget.
       testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
-      await certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat);
+      try {
+        await certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat);
+      } catch (error) {
+        if (!(error instanceof AbsentCertifiableSubject)) throw error;
+        /* Nothing was observed, so nothing is certified AND nothing is
+           condemned. Recorded as a named non-verdict, never as a defect on the
+           live site and never silently as a pass. If every case in this file
+           reaches here, `scripts/ci/assert-e2e-actually-ran.mjs` still fails
+           the run: a file that verified nothing must not report success. */
+        const description = await recordNonVerdict(testInfo, {
+          title: `The ${gameFormat.toUpperCase()} live-table certificate had no subject`,
+          detail: error.message,
+          evidence: error.evidence,
+          tag: `${gameFormat}-absent-subject`,
+        });
+        test.skip(true, description);
+      }
     });
   }
 

@@ -48,6 +48,8 @@ import { fileURLToPath } from 'node:url';
 const ROLE = process.argv[2] ?? 'orchestrator';
 const SELF = fileURLToPath(import.meta.url);
 const QUICK = process.argv.includes('--quick');
+/** Only the lobby phases: the A/B of a ChannelHub change without the table runs. */
+const LOBBY_ONLY = process.argv.includes('--lobby-only');
 const now = () => performance.timeOrigin + performance.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -509,10 +511,16 @@ async function runClients(): Promise<void> {
   let tableLat: Array<[number, number]> = [];
   let deltaBytes: number[] = [];
   let failures = 0;
+  let retries = 0;
+  // EngineStateClient's ladder: base 1 s doubling to 30 s, plus up to 30% jitter.
+  const backoff = (attempt: number) => {
+    const b = Math.min(30_000, 1000 * 2 ** attempt);
+    return b + Math.random() * b * 0.3;
+  };
 
-  const openChan = (c: Chan, delay: number) =>
+  const openChan = (c: Chan, delay: number, attempt = 0): NodeJS.Timeout =>
     setTimeout(() => {
-      c.openedAt = now();
+      if (attempt === 0) c.openedAt = now();
       c.connectedAt = c.joinedAt = c.firstLobbyAt = 0;
       const ws = new WebSocket(`${base}/ws/channel`, ['bearer', tokenFor(c.user)]);
       c.ws = ws;
@@ -542,12 +550,25 @@ async function runClients(): Promise<void> {
           ws.send(JSON.stringify({ type: 'PONG' }));
         }
       });
-      ws.on('error', () => failures++);
+      // A socket that dies before it is back retries on the client's ladder;
+      // one that was back and is closed on purpose (a drop) does not.
+      let settled = false;
+      const retry = () => {
+        if (settled || c.firstLobbyAt > 0) return;
+        settled = true;
+        retries++;
+        openChan(c, backoff(attempt), attempt + 1);
+      };
+      ws.on('error', () => {
+        failures++;
+        retry();
+      });
+      ws.on('close', retry);
     }, delay);
 
-  const openTab = (tb: Tab, delay: number) =>
+  const openTab = (tb: Tab, delay: number, attempt = 0): NodeJS.Timeout =>
     setTimeout(() => {
-      tb.openedAt = now();
+      if (attempt === 0) tb.openedAt = now();
       tb.snapAt = 0;
       const ws = new WebSocket(`${base}/ws/table/${tb.table}`, ['bearer', tokenFor(tb.user)]);
       tb.ws = ws;
@@ -570,7 +591,18 @@ async function runClients(): Promise<void> {
           ws.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
         }
       });
-      ws.on('error', () => failures++);
+      let settled = false;
+      const retry = () => {
+        if (settled || tb.snapAt > 0) return;
+        settled = true;
+        retries++;
+        openTab(tb, backoff(attempt), attempt + 1);
+      };
+      ws.on('error', () => {
+        failures++;
+        retry();
+      });
+      ws.on('close', retry);
     }, delay);
 
   const waitUntil = async (done: () => boolean, timeoutMs: number) => {
@@ -589,6 +621,7 @@ async function runClients(): Promise<void> {
     startedAt,
     lobbyMessages: lobbyMessages - lobbyBefore,
     failures,
+    retries,
   });
   const tabStats = (startedAt: number) => ({
     n: tabs.length,
@@ -597,6 +630,7 @@ async function runClients(): Promise<void> {
     lastSnapshotAt: Math.max(0, ...tabs.map((t) => t.snapAt)),
     startedAt,
     failures,
+    retries,
   });
 
   process.on('message', async (m: Msg) => {
@@ -611,7 +645,7 @@ async function runClients(): Promise<void> {
       case 'chanOpen':
       case 'chanReconnect': {
         const before = lobbyMessages;
-        failures = 0;
+        failures = retries = 0;
         if (m.type === 'chanOpen') {
           chans = (m.users as string[]).map((user) => ({
             user,
@@ -646,7 +680,7 @@ async function runClients(): Promise<void> {
         return;
       case 'tabOpen':
       case 'tabReconnect': {
-        failures = 0;
+        failures = retries = 0;
         if (m.type === 'tabOpen') {
           tabs = (m.assign as Array<{ table: string; user: string }>).map((a) => ({
             ...a,
@@ -726,17 +760,24 @@ async function runOrchestrator(): Promise<void> {
   const outFile = outIdx > 0 ? process.argv[outIdx + 1] : null;
   const DRIVERS = 4;
   const LOBBY_N = QUICK ? [100, 300] : [250, 1000, 2000];
-  const TABLE_RUNS: Array<{ K: number; asset: 'chips' | 'diamonds'; storm: boolean }> = QUICK
-    ? [
-        { K: 50, asset: 'chips', storm: true },
-        { K: 50, asset: 'diamonds', storm: false },
-      ]
-    : [
-        { K: 100, asset: 'chips', storm: false },
-        { K: 300, asset: 'chips', storm: true },
-        { K: 300, asset: 'diamonds', storm: true },
-        { K: 600, asset: 'chips', storm: true },
-      ];
+  const TABLE_RUNS: Array<{ K: number; asset: 'chips' | 'diamonds'; storm: boolean }> = LOBBY_ONLY
+    ? []
+    : QUICK
+      ? [
+          { K: 50, asset: 'chips', storm: true },
+          { K: 50, asset: 'diamonds', storm: false },
+        ]
+      : [
+          { K: 100, asset: 'chips', storm: false },
+          // Chip and Diamond alternate twice at the same size, so the difference
+          // between two runs of the same code is on the page beside the
+          // difference between the two assets.
+          { K: 300, asset: 'chips', storm: true },
+          { K: 300, asset: 'diamonds', storm: true },
+          { K: 300, asset: 'chips', storm: false },
+          { K: 300, asset: 'diamonds', storm: false },
+          { K: 600, asset: 'chips', storm: true },
+        ];
   const SUBS_PER_TABLE = 8; // six seats and two spectators
   const RUN_MS = QUICK ? 8000 : 20000;
 
@@ -752,6 +793,7 @@ async function runOrchestrator(): Promise<void> {
       loadavgAtStart: os.loadavg().map((x) => Math.round(x * 10) / 10),
       clientDrivers: DRIVERS,
       quick: QUICK,
+      lobbyOnly: LOBBY_ONLY,
     },
   };
   const log = (...a: unknown[]) => console.log('[envelope]', ...a);
@@ -801,7 +843,7 @@ async function runOrchestrator(): Promise<void> {
     // Fan-out: twenty maintenance presentations, 250 ms apart (what a break sends).
     await all('lobbyLatReset');
     mk = (await call(srv, 'loopMark')).mark;
-    const bc = await call(srv, 'lobbyBroadcast', { count: 20, gapMs: 250 });
+    const bc = await call(srv, 'lobbyBroadcast', { count: LOBBY_ONLY ? 60 : 20, gapMs: 250 });
     await sleep(1500);
     const lat = await all('lobbyLat');
     const bySeq = new Map<number, number[]>();
@@ -839,6 +881,8 @@ async function runOrchestrator(): Promise<void> {
         spreadMs: paced,
         lobbyReceived: opened.reduce((a, r) => a + Number(r.lobbyReceived), 0),
         lobbyMessagesSentToClients: pacedMessages,
+        failedAttempts: opened.reduce((a, r) => a + Number(r.failures), 0),
+        retries: opened.reduce((a, r) => a + Number(r.retries), 0),
         serverCpuMs: pacedCpu,
         loop: pacedLoop,
         serverCounts: counts,
@@ -863,7 +907,8 @@ async function runOrchestrator(): Promise<void> {
         serverCpuMs: stormCpu,
         loop: stormLoop,
         authRequests: stormAuth,
-        failures: storm.reduce((a, r) => a + Number(r.failures), 0),
+        failedAttempts: storm.reduce((a, r) => a + Number(r.failures), 0),
+        retries: storm.reduce((a, r) => a + Number(r.retries), 0),
       },
     };
     lobby.push(row);
@@ -935,7 +980,8 @@ async function runOrchestrator(): Promise<void> {
         openToSnapshotMs: storm.map((r) => r.openToSnapshotMs),
         serverCpuMs: (await call(srv, 'cpuRead')).cpuMs,
         loop: (await call(srv, 'loopRead', { mark: mk })).loop,
-        failures: storm.reduce((a, r) => a + Number(r.failures), 0),
+        failedAttempts: storm.reduce((a, r) => a + Number(r.failures), 0),
+        retries: storm.reduce((a, r) => a + Number(r.retries), 0),
         stubRequests: await stubCounts(true),
       };
     }

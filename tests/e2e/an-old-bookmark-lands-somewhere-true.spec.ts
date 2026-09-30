@@ -15,11 +15,14 @@
  * Diamond URLs are the arena club by slug and by id, its invite, its doors,
  * the Diamond tables, Stats, the Staff Desk and the wallet.
  *
- * Runs signed out, as ci.yml's daily live-e2e runs every spec here against
- * production with no credentials. Signed out, today's arena URLs must reach
- * the World Hub sign-in door WITH the route, so the selection survives the
- * door. The World Hub cells need the World Hub, so against a local server they
- * say so and skip.
+ * Runs signed out in ci.yml's daily live-e2e (every spec here, against
+ * production, no credentials), and signed in as post-deploy-e2e.yml's isolated
+ * account in its sweep. Signed out, today's arena URLs must reach the World Hub
+ * sign-in door WITH the route, so the selection survives the door. Signed in,
+ * they must stay inside the arena and never land on its not-found page: a
+ * door the account may not open (the Staff Desk) sends it to the arena's home,
+ * /hub/club-arena, which is still inside. The World Hub cells need the World
+ * Hub, so against a local server they say so and skip.
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -62,6 +65,11 @@ const ARENA_ROUTES = [
   'diamond-staff-desk',
   'wallet',
 ];
+
+/** The router's basename has no trailing slash, so Navigate('/') lands on it bare. */
+function insideTheArena(pathname: string): boolean {
+  return pathname === '/hub/club-arena' || pathname.startsWith('/hub/club-arena/');
+}
 
 function onProduction(baseURL: string | undefined): boolean {
   return !!baseURL && new URL(baseURL).hostname === 'smarter.poker';
@@ -145,6 +153,8 @@ test.describe('inside the app, a Diamond URL lands on the arena or its sign-in d
 
   for (const route of ARENA_ROUTES) {
     test(`${route} carries itself through the sign-in door`, async ({ page }) => {
+      /* settle() may poll for 30s and then wait up to 10s for the network. */
+      test.setTimeout(60_000);
       await page.goto(route);
       const url = await settle(page);
       if (url.pathname.startsWith('/auth/')) {
@@ -158,9 +168,9 @@ test.describe('inside the app, a Diamond URL lands on the arena or its sign-in d
         );
         return;
       }
-      /* Signed in (a local run with a session): on the route, and not the
-         app's not-found. */
-      expect(url.pathname.startsWith('/hub/club-arena/'), url.href).toBe(true);
+      /* Signed in (post-deploy's isolated account, or a local run with a
+         session): inside the arena, and not the app's not-found. */
+      expect(insideTheArena(url.pathname), url.href).toBe(true);
       await expect(page.locator('body')).not.toContainText('Route Not Found');
     });
   }

@@ -29,8 +29,18 @@ be: the operator's note is the operator's record.
 ## What shipped
 
 **One place, next to the one kind map** (migration
-`20260920142916_the_ledger_speaks_to_the_player.sql`, applied and
+`20260920143152_the_ledger_speaks_to_the_player.sql`, applied and
 recorded as `the_ledger_speaks_to_the_player`):
+
+> **Corrected 2026-09-30.** This line named `20260920142916`. That version was
+> reserved, written, and never applied: the same change went in at
+> `20260920143152` twenty-three minutes later, and only `20260920143152` has a
+> row in `supabase_migrations.schema_migrations`. Both files sat on `main`,
+> identical but for this one's 54-line header, and
+> `tests/the-ledger-speaks-to-the-player.law.test.ts` pinned the un-applied
+> twin, so the law guarded a file production never ran. The twin is deleted and
+> the law now resolves the latest migration that declares each function:
+> [`docs/changelog/2026-09-30-a-diamond-own-data-rpc-refuses-a-stranger.md`](./2026-09-30-a-diamond-own-data-rpc-refuses-a-stranger.md).
 
 - `fn_diamond_kind_row_label(kind, amount)`: the player-facing row label
   for a kind ("Daily Challenge Reward", "Diamond Arena Buy-In", "PvP

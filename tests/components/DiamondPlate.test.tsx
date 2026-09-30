@@ -29,7 +29,6 @@ const summary = (over: Partial<DiamondWalletSummary> = {}): DiamondWalletSummary
   },
   lifetimeEarned: 0,
   lifetimeSpent: 0,
-  readAt: '2026-09-14T00:00:00Z',
   ...over,
 });
 

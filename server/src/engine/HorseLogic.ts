@@ -13,6 +13,7 @@ import { horseVariantRulesFor } from './VariantRules.js';
 import { jointPlayersBehind } from './multiway/JointActionModel.js';
 import { horsePolicyDealtPlayers } from './multiway/DealtSeatCensus.js';
 import { tournamentSampleEquity } from './HorseTournamentUtility.js';
+import { captureHorseTournamentUtilityObservations } from './HorseTournamentUtilityEvidence.js';
 import {
   evaluateRemainingVariantPolicy,
   type RemainingVariantMode,
@@ -2051,6 +2052,7 @@ export function vpipFloorMul(gs: {
 let difficultyHint = 0;
 
 interface Phase7EquityEvidence {
+  observations?: TournamentUtilityInput['observations'];
   equity: number;
   sampleSize: number;
   standardError: number;
@@ -2101,15 +2103,18 @@ function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string
   const ordered = dealt.slice(start).concat(dealt.slice(0, start));
   const heroIndex = ordered.findIndex((player) => player.seat === hero.seat);
   if (heroIndex < 0) return new Set<string>();
+  const later = new Set(ordered.slice(heroIndex + 1).map((player) => player.seat));
   return new Set(
     ordered
-      .slice(heroIndex + 1)
       .filter(
         (player) =>
           !player.is_folded &&
           !player.is_sitting_out &&
           !player.is_all_in &&
-          player.user_id !== hero.user_id
+          player.user_id !== hero.user_id &&
+          // A re-raise returns around the ring. Earlier callers/raisers still
+          // owe the new price even though their opening position precedes us.
+          (later.has(player.seat) || player.bet < gs.currentBet)
       )
       .map((player) => player.user_id)
   );
@@ -2154,6 +2159,7 @@ function capturePhase7Equity(
     });
   }
   phase7EquityEvidence = {
+    observations: captureHorseTournamentUtilityObservations(active, useMind),
     equity: boundedEquity,
     sampleSize: n,
     standardError: n > 0 ? Math.sqrt((boundedEquity * (1 - boundedEquity)) / n) : 0,
@@ -2189,6 +2195,13 @@ function buildPhase7UtilityInput(
   if (!gs.pots || !gs.legalActions) throw new Error('joint_utility_canonical_state_unavailable');
   const toCall = Math.max(0, gs.currentBet - player.bet);
   return {
+    // Tournament stacks and awards use whole chips. Model the same button-
+    // ordered odd-chip and unmatched-contribution rules as final settlement.
+    settlement: {
+      chipUnit: 1,
+      dealerSeat: gs.dealerSeat!,
+      splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+    },
     street: gs.stage,
     hero: player,
     players: gs.players,
@@ -2209,6 +2222,7 @@ function buildPhase7UtilityInput(
     opponents: evidence7.opponents,
     sampledOpponentIds: evidence7.sampledOpponentIds,
     showdownSamples: evidence7.showdownSamples,
+    observations: evidence7.observations,
     context: {
       format:
         gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',

@@ -569,8 +569,13 @@ export class ChannelWebSocketServer {
 
       case 'JOIN_LOBBY':
         channelHub.joinLobby(userId);
-        // Send an immediate lobby update to the joining client
-        channelHub.broadcastLobbyUpdate();
+        // Send an immediate lobby update to the joining client - and ONLY to
+        // it. This called broadcastLobbyUpdate(), which sends to every lobby
+        // subscriber: every page holds the lobby (the maintenance banner) and
+        // every reconnect replays JOIN_LOBBY, so an engine restart's reconnect
+        // storm of N clients cost N(N+1)/2 sends on the main loop. See
+        // ChannelHub.sendLobbyUpdateTo.
+        channelHub.sendLobbyUpdateTo(userId);
         return;
 
       case 'LEAVE_LOBBY':

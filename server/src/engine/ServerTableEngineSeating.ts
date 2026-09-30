@@ -96,7 +96,24 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // it takes the chip tournament path below and is refused there exactly as
     // a chip tournament seat is: a tournament table has no buy-in headroom.
     if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
-      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+      /* A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5).
+         The controller is cleared when a hand ends, but its settlement runs
+         on after it (postHandTasks is not awaited; the dealing loop waits for
+         it before the next deal). A direct top-up in that window raced the
+         settlement of the same seat: measured on an isolated cluster with the
+         live doors, the top-up door deadlocked against the hand settler, and a
+         top-up that won the race left the settler an opening stack that no
+         longer matched the seat, which it refuses. Until the settlement lands
+         the top-up is an intent, exactly as mid hand, and it is applied after
+         the settlement and before the next deal. */
+      return this.addDiamonds(
+        userId,
+        amount,
+        maxBuyIn,
+        midHand || this.hasSettlementInFlight(),
+        player,
+        opId
+      );
     }
 
     /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
@@ -421,7 +438,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
     if (this.diamondTopUpIntents.size === 0) return;
-    if (this.handController) return;
+    // Not while a hand is dealt, and not while the last one is still settling:
+    // the settler checks the seat's opening stack, and a top-up landing under it
+    // would make that stack wrong. The next sweep lands it.
+    if (this.handController || this.hasSettlementInFlight()) return;
     const maxBuyIn = Math.floor(this.getMaxBuyIn());
     for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
       const player = players.find((p) => p.user_id === intent.userId);

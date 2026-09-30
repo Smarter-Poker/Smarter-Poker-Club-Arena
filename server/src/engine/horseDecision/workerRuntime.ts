@@ -1457,6 +1457,15 @@ export class HorseDecisionWorkerRuntime {
       // decision. A later second look will explicitly retain that decision.
       this.deps.noteFeature('phase15_second_look_reads_unavailable');
     }
+    if (captured.value.tournamentUtility?.evidence) {
+      captured.value = {
+        ...captured.value,
+        tournamentUtility: {
+          ...captured.value.tournamentUtility,
+          readFrameSha256: readFrame?.sha256 ?? null,
+        },
+      };
+    }
     const at = startedAt;
     for (const [key, entry] of this.secondLookReads) {
       if (at - entry.at > HorseDecisionWorkerRuntime.SECOND_LOOK_READ_TTL_MS)
@@ -1606,6 +1615,15 @@ export class HorseDecisionWorkerRuntime {
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
+    if (decision.tournamentUtility?.evidence) {
+      decision = {
+        ...decision,
+        tournamentUtility: {
+          ...decision.tournamentUtility,
+          readFrameSha256: retained.frame.sha256,
+        },
+      };
+    }
     try {
       if (this.deps.journalEnabled?.() ?? true)
         this.deps.journalDecision?.(request, {

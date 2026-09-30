@@ -542,6 +542,7 @@ export function reconcileHorseJournalHand(
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
+          !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
           w.expectedExecutionAmount !== expectedWitness.expectedExecutionAmount ||
           w.computeMs !== d.computeMs ||
@@ -559,6 +560,11 @@ export function reconcileHorseJournalHand(
             horsePlanHandKey(s.gameState.actionHistory, planContext),
             planContext
           );
+          if (
+            d.decision.tournamentUtility?.evidence &&
+            d.decision.tournamentUtility.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 7 original observation read frame does not match');
         } catch {
           gap('read_frame_unavailable');
           continue;
@@ -641,7 +647,10 @@ export function readHorseJournalHandRecords(
   for (const name of candidates) {
     let store: HorseDecisionJournalStore | undefined;
     try {
-      store = new HorseDecisionJournalStore(directory, readonlyHorseJournalStoreOptions(directory, name));
+      store = new HorseDecisionJournalStore(
+        directory,
+        readonlyHorseJournalStoreOptions(directory, name)
+      );
       const records = store.readHand(handKey);
       if (records.length) return records;
     } catch (error) {

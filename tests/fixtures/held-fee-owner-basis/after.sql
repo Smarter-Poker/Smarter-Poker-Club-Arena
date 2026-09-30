@@ -128,9 +128,9 @@ DO $$ DECLARE r jsonb;q record;k record;receipt jsonb;winner uuid;BEGIN
    WHERE ac.source_type='tournament_fee_accrual' AND s.tournament_id=held_fee_fixture.event()),
   'Only the recorded hierarchy at completion earns commission (the agent''s own play and its member); no rate is invented for anyone else');
  PERFORM held_fee_fixture.assert((SELECT count(*)=1 FROM public.accounting_tournament_fee_owner_bases b JOIN public.tournament_terminal_settlements h USING(tournament_id)
-   WHERE b.operation_id=held_fee_fixture.operation() AND b.completed_at=h.completed_at AND b.amount=2.70 AND b.authorized_on='2026-09-27'
+   WHERE b.operation_id=held_fee_fixture.operation() AND b.completed_at=h.completed_at AND b.amount=2.70 AND b.authorized_on='2026-09-30'
     AND b.hosting_club_id=(SELECT club_id FROM public.tournaments WHERE id=held_fee_fixture.event()) AND b.union_id=held_fee_fixture.union_id()
-    AND b.basis_kind='owner_authorized_host_club_fee' AND b.reason LIKE 'Owner-authorized recognition basis:%' AND b.owner_instruction LIKE 'Dan, 2026-09-27:%')
+    AND b.basis_kind='owner_authorized_host_club_fee' AND b.reason LIKE 'Owner-authorized recognition basis:%' AND b.owner_instruction LIKE 'Agent decision, 2026-09-30,%')
   AND (SELECT to_jsonb(h) FROM public.tournament_terminal_settlements h WHERE tournament_id=held_fee_fixture.event())=(SELECT header FROM held_fee_before),
   'The basis records reason, owner instruction, date and operation; the immutable player terminal header is untouched');
  -- The normal weekly accounting of the recognition week reads these sources.

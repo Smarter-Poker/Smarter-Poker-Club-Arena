@@ -1,8 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react';
 import DiamondWalletTransfer from '../../src/components/wallet/DiamondWalletTransfer';
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), probe: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: mocks }));
+vi.mock('../../src/lib/sessionRevoked', () => ({ handleEngineAuthRejection: mocks.probe }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 const sender = '10000000-0000-0000-0000-000000000001';
 const recipient = '10000000-0000-0000-0000-000000000002';
@@ -123,7 +124,10 @@ it('preserves a lost-response identity through session refusal and returns its o
   });
   fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
   await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
-  await screen.findByText(/Transfer Not Yet Confirmed/);
+  // Diamond Phase 11 line 7: a dead session is a sign-in, not a retry. The
+  // request is kept and the page is handed to lib/sessionRevoked.
+  await screen.findByText(/Your Session Has Ended\. Sign In Again, Then Retry This Transfer/);
+  await waitFor(() => expect(mocks.probe).toHaveBeenCalledWith('money:diamond_transfer'));
   expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
   expect(done).not.toHaveBeenCalled();
   view.unmount();

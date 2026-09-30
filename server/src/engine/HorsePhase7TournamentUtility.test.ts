@@ -3,7 +3,9 @@ import { dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as jointSampler from './multiway/JointRangeSampler.js';
+import * as tournamentUtility from './HorseTournamentUtility.js';
 
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import { HorseMind } from './HorseMind.js';
@@ -1834,6 +1836,129 @@ describe('Phase 7 live action-clock wiring', () => {
     expect(features).toContain('phase7_unavailable_multi_board');
   });
 
+  function jointRiverState(boardCount: number, dealerSeat: number) {
+    const { hero, state } = decisionState('complete');
+    Object.assign(hero, {
+      stack: 1,
+      bet: 2,
+      totalInvested: 2,
+      cards: [card('2', 'clubs'), card('3', 'clubs')],
+    });
+    state.players = [
+      { ...hero, cards: [] },
+      seat('live-villain', 2, 0, 3),
+      seat('folded-dead-money', 3, 100, 1, { is_folded: true }),
+    ];
+    const royal = (suit: Card['suit']) =>
+      ['T', 'J', 'Q', 'K', 'A'].map((rank) => card(rank as Card['rank'], suit));
+    Object.assign(state, {
+      stage: 'river',
+      dealerSeat,
+      dealtSeatIds: [1, 2, 3],
+      boardCount,
+      chipUnit: 1,
+      asset: 'chips',
+      bbjConfig: null,
+      bombPot: true,
+      currentBet: 3,
+      toCall: 1,
+      pot: 6,
+      contestablePot: 6,
+      pots: calculatePots(state.players),
+      legalActions: ['fold', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      communityCards: royal('hearts'),
+      communityCards2: royal('spades'),
+      communityCards3: boardCount === 3 ? royal('diamonds') : [],
+      actionHistory: [],
+    });
+    Object.assign(state.tournament!, {
+      playersAtTable: 3,
+      playersLeft: 3,
+      stacks: [3, 3, 101],
+      stackByUser: { 'live-hero': 3, 'live-villain': 3, 'folded-dead-money': 101 },
+    });
+    return { hero, state };
+  }
+
+  it.each([
+    [2, 1, 2],
+    [2, 2, 3],
+    [3, 1, 2],
+    [3, 2, 3],
+  ])(
+    'P7.2 consumes %s joint boards with button %s and exact net award %s while Phase13 is off',
+    (boardCount, dealerSeat, chipEv) => {
+      const { hero, state } = jointRiverState(boardCount, dealerSeat);
+      seedFastRandom(710923);
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+          phase13EvidenceMode: true,
+        }
+      );
+      const utility = decision.tournamentUtility!;
+      expect(utility).toBeDefined();
+      expect(utility.candidates.find((c) => c.action === 'all_in')?.chipEv).toBeCloseTo(chipEv, 8);
+      expect(utility.candidates.every((c) => c.stackConservationError === 0)).toBe(true);
+      expect(utility.evidence?.sampler).toMatchObject({
+        layout: 'independent',
+        boardCount,
+        sharedPrefixLength: 0,
+      });
+      expect(utility.evidence?.sampler?.completedSamples).toBeGreaterThanOrEqual(8);
+      expect(utility.evidence?.sampler?.stateKey).toBe(jointSampler.jointStateKey(hero, state));
+      expect(horseDecisionReceiptIsValid(decision)).toBe(true);
+      expect(decision.jointPolicy).toBeUndefined();
+    }
+  );
+
+  it('P7.2 refuses a result that exhausts its budget after the utility loop has finished', () => {
+    const { hero, state } = jointRiverState(2, 1);
+    let elapsed = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => elapsed);
+    const original = tournamentUtility.evaluateTournamentUtilityDetailed;
+    const utility = vi
+      .spyOn(tournamentUtility, 'evaluateTournamentUtilityDetailed')
+      .mockImplementation((input) => {
+        const result = original(input);
+        expect(result.result).not.toBeNull();
+        elapsed = 4;
+        return result;
+      });
+    try {
+      enableBrainTelemetry();
+      drainFires();
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: true,
+          mind: false,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+      expect(utility).toHaveBeenCalledTimes(1);
+      expect(decision.tournamentUtility).toBeUndefined();
+      expect(drainFires().map((row) => row.feature)).toContain('phase7_unavailable_work_budget');
+    } finally {
+      utility.mockRestore();
+      clock.mockRestore();
+    }
+  });
+
   it('preserves the nested utility receipt across the live worker boundary', async () => {
     const messages: HorseDecisionWorkerResponse[] = [];
     const readiness = {
@@ -1894,6 +2019,183 @@ describe('Phase 7 live action-clock wiring', () => {
     expect(cloned.decision.tournamentUtility?.selectedAction).toBe(cloned.decision.action);
     expect(cloned.decision.tournamentUtility?.candidates.length).toBeGreaterThan(1);
   });
+
+  it.each(['off', 'shadow'] as const)(
+    'P7.2 joins one physical acquisition to the real worker and controller with Phase13 %s',
+    async (phase13Joint) => {
+      // Freeze only the local qualification clock. Production admission still
+      // rejects evidence-clock worker options; acquisition budget tests cover
+      // real refusal boundaries separately. This is not a latency benchmark.
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+      const sampler = vi.spyOn(jointSampler, 'sampleJointRanges');
+      const messages: HorseDecisionWorkerResponse[] = [];
+      const captures: Array<{ decision: HorseDecision; readFrame: HorseDecisionReadFrame }> = [];
+      const executions: HorseExecutionWitness[] = [];
+      const ready = defaults.workerReadiness();
+      const runtime = new HorseDecisionWorkerRuntime(
+        (message) => messages.push(structuredClone(message)),
+        {
+          ...defaults,
+          startServices: async () => ready,
+          stopServices: async () => undefined,
+          journalEnabled: () => true,
+          journalDecision: (_request, capture) =>
+            captures.push(structuredClone(capture) as (typeof captures)[number]),
+          journalExecution: (witness) => executions.push(structuredClone(witness)),
+          journalAcceptedHand: undefined,
+          journalLifecycle: undefined,
+          journalDiscard: undefined,
+          journalDiscardExecution: undefined,
+          noteDecision: () => undefined,
+          noteFeature: () => undefined,
+        }
+      );
+      try {
+        const tableId = '44444444-4444-4444-8444-444444444447';
+        const heroId = '11111111-1111-4111-8111-111111111117';
+        const opponentId = '22222222-2222-4222-8222-222222222227';
+        const hc = new HandController(
+          {
+            tableId,
+            handNumber: 700001,
+            gameVariant: 'nlh',
+            smallBlind: 50,
+            bigBlind: 100,
+            isTournament: true,
+            bombPot: { anteMultiplier: 1, boardCount: 2 },
+            rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+          },
+          [seat(heroId, 1, 201), seat(opponentId, 2, 101)],
+          1
+        );
+        hc.start();
+        for (let actions = 0; hc.getState().stage !== 'river' && actions < 6; actions++) {
+          expect(hc.performAction(hc.getState().currentPlayerSeat!, 'check')).toBe(true);
+        }
+        expect(hc.getState().stage).toBe('river');
+        expect(hc.getState().currentPlayerSeat).toBe(2);
+        expect(hc.performAction(2, 'all_in')).toBe(true);
+        const live = hc.getState();
+        const hero = live.players.find((p) => p.user_id === heroId)!;
+        const legal = hc.getAuthoritativeActionState(heroId)!;
+        const template = decisionState('complete').state;
+        const request: FastHorseDecisionRequest = {
+          type: 'DECIDE_FAST',
+          requestId: 700,
+          generation: 7,
+          fence: `${tableId}:700001:1:55555555-5555-4555-8555-555555555557:7`,
+          decisionTimeMs: 1700000100000,
+          decisionKey: '',
+          handJournalContext: captureHorseHandJournalContext(live.actionHistory),
+          player: hero,
+          style: 'balanced',
+          mods: {},
+          opts: { mind: false, phase8Postflop: 'off', phase13Joint },
+          gameState: {
+            ...template,
+            heroSeat: hero.seat,
+            currentPlayerSeat: live.currentPlayerSeat,
+            players: live.players.map((p) => ({ ...p, cards: [] })),
+            dealtSeatIds: [1, 2],
+            boardCount: hc.getActiveBoardCount(),
+            bombPot: true,
+            chipUnit: 1,
+            asset: 'chips',
+            bbjConfig: null,
+            communityCards: live.communityCards,
+            communityCards2: live.communityCards2,
+            communityCards3: live.communityCards3,
+            stage: live.stage,
+            currentBet: live.currentBet,
+            minRaise: live.minRaise,
+            pot: live.pot,
+            actionHistory: live.actionHistory,
+            pots: hc.computeLivePots(),
+            contestablePot: hc.getContestablePotForCall(heroId)!,
+            legalActions: legal.legalActions,
+            toCall: legal.toCall,
+            minRaiseTo: legal.minRaiseTo,
+            maxRaiseTo: legal.maxRaiseTo,
+            bettingStructure: legal.structure,
+            fixedBetSize: legal.fixedBetSize,
+            wagersCapped: legal.wagersCapped,
+            tournament: {
+              ...template.tournament!,
+              playersLeft: 2,
+              spotsPaid: 1,
+              payoutPct: [100],
+              stacks: [201, 101],
+              stackByUser: { [heroId]: 201, [opponentId]: 101 },
+              m: buildTournamentMState({
+                stackChips: hero.stack,
+                smallBlind: 50,
+                bigBlind: 100,
+                ante: 0,
+                anteType: 'none',
+                playersAtTable: 2,
+                nextSmallBlind: 75,
+                nextBigBlind: 150,
+                nextAnte: 0,
+                minutesToNextLevel: 5,
+                opponentStacks: live.players
+                  .filter((p) => p.user_id !== heroId)
+                  .map((p) => ({ userId: p.user_id, stackChips: p.stack })),
+              }),
+            },
+          },
+        };
+        request.decisionKey = buildHorseDecisionKey(request);
+        runtime.receive(structuredClone(request));
+        await runtime.drain();
+        const fast = messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(messages));
+        expect(sampler).toHaveBeenCalledTimes(1);
+        expect(horseDecisionReceiptIsValid(fast.decision)).toBe(true);
+        const utility = fast.decision.tournamentUtility!;
+        expect(utility).toBeDefined();
+        expect(utility.evidence?.sampler).toMatchObject({ boardCount: 2, layout: 'independent' });
+        expect(utility.readFrameSha256).toBe(captures[0].readFrame.sha256);
+        if (phase13Joint === 'off') expect(fast.decision.jointPolicy).toBeUndefined();
+        else expect(fast.decision.jointPolicy?.mode).toBe('shadow');
+        const witness = createHorseExecutionWitness(request, fast.decision, {
+          requestId: request.requestId,
+          lane: 'fast',
+          computeMs: fast.computeMs,
+          governorScale: fast.governorScale,
+        });
+        const accepted: Readonly<ActionRecord>[] = [];
+        const applied = hc.performAction(
+          hero.seat,
+          fast.decision.action,
+          fast.decision.amount,
+          'horse_policy',
+          (record) => accepted.push(record)
+        );
+        expect(applied).toBe(true);
+        settleHorseExecutionWitness(witness, {
+          applied,
+          acceptedActions: accepted.map((record) => ({ record, intended: true })),
+        });
+        expect(witness.executionStatus).toBe('intended');
+        expect(witness.phase7Evidence?.inputSha256).toBe(utility.evidence!.inputSha256);
+        runtime.receive({
+          type: 'OBSERVE_EXECUTION',
+          requestId: 701,
+          generation: request.generation,
+          fence: request.fence,
+          witness,
+        });
+        await runtime.drain();
+        expect(executions).toHaveLength(1);
+        expect(executions[0]).toEqual(witness);
+      } finally {
+        runtime.receive({ type: 'SHUTDOWN' });
+        await runtime.drain();
+        sampler.mockRestore();
+        clock.mockRestore();
+      }
+    }
+  );
 
   it('P7.1 connects completed observations, original worker reads and utility to a real accepted controller action', async () => {
     const heroId = '11111111-1111-4111-8111-111111111111';

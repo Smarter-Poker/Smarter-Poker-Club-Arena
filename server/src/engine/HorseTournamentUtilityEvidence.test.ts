@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { HorseMind, type ReadScope } from './HorseMind.js';
 import type { TournamentUtilityInput } from './HorseTournamentUtility.js';
 import type { SeatPlayer } from '../types.js';
+import { acquireJointSamples } from './multiway/JointSampleAcquisition.js';
+import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import {
   buildHorseTournamentUtilityEvidence,
   captureHorseTournamentUtilityObservations,
   horseTournamentUtilityEvidenceIsValid,
   horseTournamentUtilityInputSha256,
+  horseTournamentJointSamplerProvenanceIsValid,
+  type HorseTournamentJointSamplerProvenance,
 } from './HorseTournamentUtilityEvidence.js';
 
 function input(): TournamentUtilityInput {
@@ -115,6 +119,167 @@ function reads(scopedHands = 40, scope: ReadScope = 'holdem:hu') {
   });
   return view;
 }
+
+describe('Phase 7B bounded joint sampler provenance', () => {
+  const provenance = (): HorseTournamentJointSamplerProvenance => ({
+    version: 'horse-joint-sampler-provenance-v1',
+    samplerVersion: 'joint-public-range-round1-v1',
+    stateKey: `phase5-v1:${'a'.repeat(64)}`,
+    layout: 'independent',
+    sharedPrefixLength: 0,
+    boardCount: 1,
+    requestedSamples: 16,
+    completedSamples: 16,
+    sampleBudgetExhausted: false,
+    uniformEscapes: 0,
+    physicalCardsPerSample: 9,
+    unknownDealtCardsPerSample: 2,
+    rangeModel: {
+      version: 'joint-public-range-round1-v1',
+      source: 'explicit_public_line_heuristic',
+      confidence: 'heuristic_uncalibrated',
+    },
+  });
+  const jointInput = (): TournamentUtilityInput => ({
+    ...input(),
+    equitySampleSize: 16,
+    samplerProvenance: provenance(),
+  });
+
+  it.each([
+    ['nlh', 2],
+    ['plo6', 3],
+  ] as const)('accepts the actual %s %i-board acquisition contract', (variant, boards) => {
+    const { hero, state } = jointPolicyFixture(variant, boards, 'tournament', 'river');
+    const acquired = acquireJointSamples(hero, state, { now: () => 0 });
+    expect(acquired.status, acquired.reason).toBe('acquired');
+    if (acquired.status !== 'acquired') throw new Error(acquired.reason);
+    expect(horseTournamentJointSamplerProvenanceIsValid(acquired.provenance)).toBe(true);
+    expect(acquired.provenance.boardCount).toBe(boards);
+    expect(acquired.provenance.completedSamples).toBe(acquired.evidence.samples.length);
+  });
+
+  it('preserves the predecessor digest and absent evidence for legacy callers', () => {
+    // Captured before adding sampler provenance, from the Phase 7A fixture.
+    expect(horseTournamentUtilityInputSha256(input())).toBe(
+      '673841512d3bbec62d2d8f8e513168d0836f71a7e8a1f474a51d570efc2b02e9'
+    );
+    const value = input();
+    value.samplerProvenance = undefined;
+    expect(horseTournamentUtilityInputSha256(value)).toBe(
+      horseTournamentUtilityInputSha256(input())
+    );
+    expect(buildHorseTournamentUtilityEvidence(value)).not.toHaveProperty('sampler');
+  });
+
+  it('copies and freezes the actual sampler receipt without upgrading heuristic confidence', () => {
+    const value = jointInput();
+    const receipt = buildHorseTournamentUtilityEvidence(value);
+    expect(receipt.sampler).toEqual(provenance());
+    expect(receipt.sampler).not.toBe(value.samplerProvenance);
+    expect(Object.isFrozen(receipt.sampler)).toBe(true);
+    expect(Object.isFrozen(receipt.sampler!.rangeModel)).toBe(true);
+    expect(horseTournamentUtilityEvidenceIsValid(structuredClone(receipt))).toBe(true);
+    expect(receipt.responseModel.modelErrorBound).toBe(null);
+    (value.samplerProvenance as any).stateKey = `phase5-v1:${'b'.repeat(64)}`;
+    (value.samplerProvenance!.rangeModel as any).confidence = 'calibrated';
+    expect(receipt.sampler!.stateKey).toBe(provenance().stateKey);
+    expect(receipt.sampler!.rangeModel.confidence).toBe('heuristic_uncalibrated');
+  });
+
+  it('retains bounded attempted escapes when a partial last sample was discarded', () => {
+    const value = jointInput();
+    value.showdownSamples = value.showdownSamples.slice(0, 8);
+    value.equitySampleSize = 8;
+    value.samplerProvenance = {
+      ...provenance(),
+      completedSamples: 8,
+      sampleBudgetExhausted: true,
+      uniformEscapes: 73,
+    };
+    expect(buildHorseTournamentUtilityEvidence(value).sampler).toEqual(value.samplerProvenance);
+  });
+
+  it.each(['sample_count', 'equity_count', 'board_count', 'mixed_boards'] as const)(
+    'refuses provenance whose %s disagrees with the economic input',
+    (fault) => {
+      const value = jointInput();
+      if (fault === 'sample_count') value.showdownSamples.pop();
+      if (fault === 'equity_count') value.equitySampleSize = 320;
+      if (fault === 'board_count')
+        value.samplerProvenance = { ...provenance(), boardCount: 2, physicalCardsPerSample: 14 };
+      if (fault === 'mixed_boards')
+        value.showdownSamples[0].boards.push(structuredClone(value.showdownSamples[0].boards[0]));
+      expect(() => buildHorseTournamentUtilityEvidence(value)).toThrow('evidence is invalid');
+    }
+  );
+
+  it.each([
+    ['stateKey', `phase5-v1:${'b'.repeat(64)}`],
+    ['requestedSamples', 15],
+    ['completedSamples', 8],
+    ['sampleBudgetExhausted', true],
+    ['uniformEscapes', 1],
+    ['physicalCardsPerSample', 11],
+    ['unknownDealtCardsPerSample', 4],
+    ['boardCount', 2],
+  ])('commits %s into the economic input digest', (key, changed) => {
+    const value = jointInput(),
+      original = horseTournamentUtilityInputSha256(value);
+    (value.samplerProvenance as any)[key as string] = changed;
+    expect(horseTournamentUtilityInputSha256(value)).not.toBe(original);
+  });
+
+  it('refuses malformed, unbounded, inconsistent or falsely calibrated provenance', () => {
+    const faults = [
+      { version: 'other' },
+      { samplerVersion: 'other' },
+      { stateKey: 'a'.repeat(64) },
+      { layout: 'marginal_zipped' },
+      { layout: 'shared_prefix' },
+      { sharedPrefixLength: 3 },
+      { boardCount: 0 },
+      { boardCount: 4 },
+      { boardCount: 1.5 },
+      { requestedSamples: 7 },
+      { requestedSamples: 17 },
+      { requestedSamples: 15.5 },
+      { completedSamples: 7 },
+      { completedSamples: 17 },
+      { completedSamples: 8.5 },
+      { completedSamples: 8 },
+      { sampleBudgetExhausted: true },
+      { sampleBudgetExhausted: 'false' },
+      { uniformEscapes: -1 },
+      { uniformEscapes: 145 },
+      { uniformEscapes: Number.NaN },
+      { physicalCardsPerSample: 53 },
+      { physicalCardsPerSample: 8 },
+      { physicalCardsPerSample: 9.5 },
+      { unknownDealtCardsPerSample: 0 },
+      { unknownDealtCardsPerSample: 3 },
+      { unknownDealtCardsPerSample: Number.POSITIVE_INFINITY },
+      { rangeModel: { ...provenance().rangeModel, confidence: 'calibrated' } },
+      { rangeModel: { ...provenance().rangeModel, errorBound: 0 } },
+      { privateCards: ['As'] },
+    ];
+    expect(horseTournamentJointSamplerProvenanceIsValid(provenance())).toBe(true);
+    for (const fault of faults) {
+      const malformed = { ...provenance(), ...fault };
+      expect(horseTournamentJointSamplerProvenanceIsValid(malformed), JSON.stringify(fault)).toBe(
+        false
+      );
+      const receipt = structuredClone(buildHorseTournamentUtilityEvidence(jointInput())) as any;
+      receipt.sampler = malformed;
+      expect(horseTournamentUtilityEvidenceIsValid(receipt), JSON.stringify(fault)).toBe(false);
+    }
+    for (const absent of [null, undefined]) {
+      const receipt = structuredClone(buildHorseTournamentUtilityEvidence(input())) as any;
+      receipt.sampler = absent;
+      expect(horseTournamentUtilityEvidenceIsValid(receipt)).toBe(false);
+    }
+  });
+});
 
 describe('Phase 7 actual utility input and read provenance', () => {
   it('copies only detached statistics during active intent capture without weakening full-frame ownership', () => {

@@ -31,6 +31,7 @@ import { calculateContestablePot, calculatePots } from './PokerEngine.js';
 import { prepareJointPots, settleJointScores } from './multiway/JointPotDistribution.js';
 import {
   buildHorseTournamentUtilityEvidence,
+  type HorseTournamentJointSamplerProvenance,
   type HorseTournamentUtilityObservations,
 } from './HorseTournamentUtilityEvidence.js';
 import {
@@ -123,6 +124,8 @@ export interface TournamentUtilityContext {
 }
 
 export interface TournamentUtilityInput {
+  /** Optional actual joint acquisition. Absent preserves historical callers. */
+  samplerProvenance?: HorseTournamentJointSamplerProvenance;
   /** Original decision-local reads, never a fresh read at action acceptance. */
   observations?: HorseTournamentUtilityObservations;
   /** Phase13 exact board/odd-chip settlement. The existing Phase7 objective

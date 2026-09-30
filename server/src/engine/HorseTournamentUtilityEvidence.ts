@@ -18,6 +18,30 @@ export interface HorseTournamentUtilityObservations {
   mindEnabled: boolean;
 }
 
+/** Acquisition attribution for the bounded live joint population. Independent
+ * boards share retained opponent hands and one physical deck in each sample.
+ * This receipt is not a calibration claim or an acquisition ownership token. */
+export interface HorseTournamentJointSamplerProvenance {
+  readonly version: 'horse-joint-sampler-provenance-v1';
+  readonly samplerVersion: 'joint-public-range-round1-v1';
+  readonly stateKey: string;
+  readonly layout: 'independent';
+  readonly sharedPrefixLength: 0;
+  readonly boardCount: 1 | 2 | 3;
+  readonly requestedSamples: number;
+  readonly completedSamples: number;
+  readonly sampleBudgetExhausted: boolean;
+  /** Includes attempted range draws in a discarded partial final sample. */
+  readonly uniformEscapes: number;
+  readonly physicalCardsPerSample: number;
+  readonly unknownDealtCardsPerSample: number;
+  readonly rangeModel: Readonly<{
+    version: 'joint-public-range-round1-v1';
+    source: 'explicit_public_line_heuristic';
+    confidence: 'heuristic_uncalibrated';
+  }>;
+}
+
 /** Decision-local statistics only. The complete replay frame includes plans
  * and cannot be exported while an intent capture is open. Copy the existing
  * read getters without touching plans, dirty flags or observation ownership. */
@@ -45,6 +69,8 @@ export function captureHorseTournamentUtilityObservations(
 export interface HorseTournamentUtilityEvidence {
   readonly version: 'horse-tournament-utility-evidence-v1';
   readonly inputSha256: string;
+  /** Present only for an actual bounded joint acquisition, never zipped marginals. */
+  readonly sampler?: HorseTournamentJointSamplerProvenance;
   readonly responseModel: Readonly<{
     id: 'mdf-strength-v1';
     calibration: 'uncalibrated';
@@ -97,6 +123,52 @@ const fail = (): never => {
   throw Error('Horse tournament utility evidence is invalid');
 };
 
+/** Receipt shape only. The acquisition owner separately checks the exact
+ * state key, variant deck size and module-private sample ownership. */
+export function horseTournamentJointSamplerProvenanceIsValid(
+  value: unknown
+): value is HorseTournamentJointSamplerProvenance {
+  const whole = (n: unknown, min: number, max: number): n is number =>
+    typeof n === 'number' && Number.isSafeInteger(n) && n >= min && n <= max;
+  return (
+    exact(value, [
+      'version',
+      'samplerVersion',
+      'stateKey',
+      'layout',
+      'sharedPrefixLength',
+      'boardCount',
+      'requestedSamples',
+      'completedSamples',
+      'sampleBudgetExhausted',
+      'uniformEscapes',
+      'physicalCardsPerSample',
+      'unknownDealtCardsPerSample',
+      'rangeModel',
+    ]) &&
+    value.version === 'horse-joint-sampler-provenance-v1' &&
+    value.samplerVersion === 'joint-public-range-round1-v1' &&
+    typeof value.stateKey === 'string' &&
+    /^phase5-v1:[a-f0-9]{64}$/.test(value.stateKey) &&
+    value.layout === 'independent' &&
+    value.sharedPrefixLength === 0 &&
+    whole(value.boardCount, 1, 3) &&
+    whole(value.requestedSamples, 8, 16) &&
+    whole(value.completedSamples, 8, value.requestedSamples) &&
+    value.sampleBudgetExhausted === value.completedSamples < value.requestedSamples &&
+    whole(value.uniformEscapes, 0, value.requestedSamples * 9) &&
+    whole(value.physicalCardsPerSample, 9, 52) &&
+    whole(value.unknownDealtCardsPerSample, 2, 52) &&
+    // Complete independent boards, at least two hero cards and every retained
+    // unknown dealt card must fit. Folded cards remain physically reserved.
+    value.boardCount * 5 + 2 + value.unknownDealtCardsPerSample <= value.physicalCardsPerSample &&
+    exact(value.rangeModel, ['version', 'source', 'confidence']) &&
+    value.rangeModel.version === value.samplerVersion &&
+    value.rangeModel.source === 'explicit_public_line_heuristic' &&
+    value.rangeModel.confidence === 'heuristic_uncalibrated'
+  );
+}
+
 /** Explicit inputs, including the actual joint samples, are hashed privately.
  * Wall-clock callbacks, accounting of work performed, previous receipts and
  * think time cannot relabel the sampled economic model. Object key order is
@@ -145,6 +217,10 @@ export function horseTournamentUtilityInputSha256(input: TournamentUtilityInput)
     sampledOpponentIds: input.sampledOpponentIds,
     showdownSamples: input.showdownSamples,
     context: input.context,
+    // Do not add even a null field to the predecessor's input commitment.
+    ...(input.samplerProvenance === undefined
+      ? {}
+      : { samplerProvenance: input.samplerProvenance }),
   };
   return utilityMaterialSha256(material);
 }
@@ -188,6 +264,15 @@ export function buildHorseTournamentUtilityEvidence(
     (!scopeValid(observations.scope) || typeof observations.mindEnabled !== 'boolean')
   )
     return fail();
+  const sampler = input.samplerProvenance;
+  if (
+    sampler !== undefined &&
+    (!horseTournamentJointSamplerProvenanceIsValid(sampler) ||
+      sampler.completedSamples !== input.showdownSamples.length ||
+      sampler.completedSamples !== input.equitySampleSize ||
+      input.showdownSamples.some((sample) => sample.boards.length !== sampler.boardCount))
+  )
+    return fail();
   const status = observations
     ? observations.mindEnabled
       ? 'captured'
@@ -197,6 +282,14 @@ export function buildHorseTournamentUtilityEvidence(
   const evidence: HorseTournamentUtilityEvidence = {
     version: VERSION,
     inputSha256: horseTournamentUtilityInputSha256(input),
+    ...(sampler === undefined
+      ? {}
+      : {
+          sampler: Object.freeze({
+            ...sampler,
+            rangeModel: Object.freeze({ ...sampler.rangeModel }),
+          }),
+        }),
     responseModel: Object.freeze({
       id: 'mdf-strength-v1',
       calibration: 'uncalibrated',
@@ -283,7 +376,10 @@ export function horseTournamentUtilityEvidenceIsValid(
       'confidence',
       'observations',
       'opponents',
+      ...(object(value) && Object.hasOwn(value, 'sampler') ? ['sampler'] : []),
     ]) ||
+    (Object.hasOwn(value, 'sampler') &&
+      !horseTournamentJointSamplerProvenanceIsValid(value.sampler)) ||
     value.version !== VERSION ||
     typeof value.inputSha256 !== 'string' ||
     !/^[a-f0-9]{64}$/.test(value.inputSha256) ||

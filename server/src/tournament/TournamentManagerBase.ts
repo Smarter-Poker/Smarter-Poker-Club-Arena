@@ -1760,6 +1760,12 @@ export abstract class TournamentManagerBase {
     return !claimed;
   }
 
+  /** Layer three owns the exact original permit's no-start/retirement receipt. */
+  protected async recoverStoppedOriginalAdmission(
+    _tableId: string,
+    _engine: ServerTableEngine
+  ): Promise<void> {}
+
   private async performManagedTableEngineRecovery(
     tableId: string,
     engine: ServerTableEngine,
@@ -1782,6 +1788,12 @@ export abstract class TournamentManagerBase {
         reason,
       });
     }
+    if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+    // A retained unknown BEGIN belongs to this failed original. Resolve it
+    // through its existing custody owner now, rather than waiting for this
+    // table's turn in the ordinary balance pass. Retirement may remove or
+    // continue the table, so the same exact-owner check follows the await.
+    await this.recoverStoppedOriginalAdmission(tableId, engine);
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
     if (!(await this.resolveTournamentSeatMoveQuarantine(tableId, engine))) {
       this.requestEliminationSweep('seat_move_outcome_pending');
@@ -1873,6 +1885,10 @@ export abstract class TournamentManagerBase {
       !this.gameServer.ownsTournamentTableEngine(tableId, engine)
     )
       throw new Error('F06 continued source owner changed');
+    // If this original's restart event requested the disposition, that
+    // exact recovery will replace it after the receipt returns. Joining it
+    // here would make the continuation await its own caller.
+    if (this.tableEngineRecoveries.has(engine)) return;
     await this.recoverManagedTableEngine(
       tableId,
       engine,

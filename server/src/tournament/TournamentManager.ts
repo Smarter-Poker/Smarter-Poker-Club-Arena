@@ -1172,9 +1172,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       .in('status', ['playing', 'registered']);
     if (!this.eliminationMutationAllowed()) return refuse('mutation_not_allowed');
     if (registrationError || !registrationData)
-      return refuse(
-        `source_registrations_unread:${registrationError?.message ?? 'no data'}`
-      );
+      return refuse(`source_registrations_unread:${registrationError?.message ?? 'no data'}`);
     const disagreement = compareBreakSourceRoster(
       rows,
       registrationData as BreakSourceRegistration[]
@@ -1496,6 +1494,7 @@ export class TournamentManager extends TournamentManagerEliminations {
   private readonly stoppedOriginalBreaks = new Map<string, ServerTableEngine>();
   private readonly activeStoppedOriginalCustody = new Set<string>();
   private originalAdmissionCursor = 0;
+  private readonly originalAdmissionRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
 
   /** One original admission decision per RUNNING sweep; never a dealer restart. */
   protected async recoverF06OriginalAdmissions(): Promise<void> {
@@ -1504,6 +1503,32 @@ export class TournamentManager extends TournamentManagerEliminations {
     const entries = [...this.tableEngines.entries()];
     if (!entries.length || !this.eliminationMutationAllowed()) return;
     const [tableId, engine] = entries[this.originalAdmissionCursor++ % entries.length];
+    await this.recoverStoppedOriginalAdmission(tableId, engine);
+  }
+
+  /** The balance pass and this original's restart event join one disposition. */
+  protected override recoverStoppedOriginalAdmission(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
+    // A positive no-start continuation has already cleared this permit and
+    // can re-enter dealer admission while its original disposition unwinds.
+    if (!engine.getF06RecoverablePermit?.()) return Promise.resolve();
+    const existing = this.originalAdmissionRecoveries.get(engine);
+    if (existing) return existing;
+    let tracked!: Promise<void>;
+    tracked = this.performStoppedOriginalAdmission(tableId, engine).finally(() => {
+      if (this.originalAdmissionRecoveries.get(engine) === tracked)
+        this.originalAdmissionRecoveries.delete(engine);
+    });
+    this.originalAdmissionRecoveries.set(engine, tracked);
+    return tracked;
+  }
+
+  private async performStoppedOriginalAdmission(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
     const token = this.captureLifecycleToken();
     const generation = this.getTournamentLeaseGeneration();
     if (!token || !generation) return;

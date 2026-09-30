@@ -61,7 +61,7 @@ expected, in 6284 ms`.
 Every edit is an asserted substitution against a pinned live md5. The first fix
 rehearsal refused itself when the stale-client migration moved ten of its pins
 mid-morning; the change was rebuilt on the new live text and rehearsed again.
-PR: see "Shipped" below.
+Shipped in PR #5646.
 
 ## How it was tested (re-runnable)
 
@@ -360,6 +360,6 @@ every overload.
 ## Shipped
 
 - Branch `agent/claude-diamond-phase-11/test/a-forged-request-is-refused`,
-  migration `20260930120000`, applied and recorded. PR: filled in on merge.
+  migration `20260930120000`, applied and recorded: PR #5646.
 - Migration `20260930131500` (the ten staff doors) is Phase 11 line 7's, shipped
   on its own branch.

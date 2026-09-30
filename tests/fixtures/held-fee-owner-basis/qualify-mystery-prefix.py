@@ -45,6 +45,21 @@ def qualify(root,fix,out,cmd,run,schema):
    if data['code']!=expected:raise AssertionError(name+': '+str(data))
    observations[name]=data
   return observations
+ def require_bound_queries(definition):
+  # Bind the plan probes to the installed reader, including both obligation
+  # joins. Equivalent results alone cannot detect removal of a performance fix.
+  compact=re.sub(r"\s+",'',definition)
+  pairs=[("'mb:' || a.id::text || ':'", "'mb:' || a.id::text || ';'", "'mb:' || a.id::text || ':%'",1),
+   ("'mb-residual:' || p_tournament_id::text", "'mb-residual:' || left(p_tournament_id::text,35) || chr(ascii(right(p_tournament_id::text,1))+1)", "'mb-residual:' || p_tournament_id::text || '%'",1),
+   ("'tourney:' || p_tournament_id::text || ':obl:' || o.id::text || ':'", "'tourney:' || p_tournament_id::text || ':obl:' || o.id::text || ';'", "'tourney:' || p_tournament_id::text || ':obl:' || o.id::text || ':%'",2)]
+  for low,high,like,count in pairs:
+   clause=re.sub(r"\s+",'',"k.key ~>=~ ("+low+") AND k.key ~<~ ("+high+") AND k.key LIKE "+like)
+   if compact.count(clause)!=count:raise AssertionError('Installed mystery reader lost bounded prefix clauses: '+low)
+ definition_query="SELECT pg_get_functiondef('public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid)'::regprocedure);"
+ original_definition=sql(definition_query,'mystery-prefix-original-definition').stdout
+ try:require_bound_queries(original_definition)
+ except AssertionError:pass
+ else:raise AssertionError('Original full-scan regression no longer reproduced')
  before=exercise('before')
  # The complete definition/ACL guard fails before any index or code can land.
  sql("ALTER FUNCTION public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid) SET statement_timeout='29s';",'mystery-prefix-drift')
@@ -52,6 +67,8 @@ def qualify(root,fix,out,cmd,run,schema):
  if r.returncode==0 or 'mystery credit prefix predecessor changed' not in r.stderr or schema()!=previous:raise AssertionError('Predecessor drift did not preserve schema')
  sql("ALTER FUNCTION public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid) SET statement_timeout='30s';",'mystery-prefix-restored')
  sql(candidate,'mystery-prefix-install')
+ installed_definition=sql(definition_query,'mystery-prefix-installed-definition').stdout
+ require_bound_queries(installed_definition)
  after=exercise('after')
  if after!=before:raise AssertionError('Prefix bounds changed financial validation results')
  # Three prefix families, including the default-ICU collation and generic
@@ -71,6 +88,8 @@ def qualify(root,fix,out,cmd,run,schema):
  r=sql("SELECT bool_and((k LIKE p||'%') IS NOT DISTINCT FROM (k ~>=~ p AND k ~<~ hi)) FROM (SELECT 'mb-residual:00000000-0000-0000-0000-00000000000'||digit p,'mb-residual:00000000-0000-0000-0000-00000000000'||chr(ascii(digit)+1) hi FROM unnest(string_to_array('0,1,2,3,4,5,6,7,8,9,a,b,c,d,e,f',',')) digit) p CROSS JOIN LATERAL (SELECT p||suffix k FROM unnest(ARRAY['',':','0','z',chr(233),chr(1114111)]) suffix UNION ALL SELECT hi UNION ALL SELECT p||'x'||chr(1114111)) candidates;",'mystery-prefix-successor')
  if not re.search(r'\bt\b',r.stdout):raise AssertionError('Prefix successor lost malformed keys')
  identity=sql("SELECT jsonb_build_object('definition_md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig) FROM pg_proc p WHERE oid='public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid)'::regprocedure;",'mystery-prefix-installed-identity')
- result={'status':'passed','before_after_cases':after,'runtime_prefix_plans':plans,'source_guard_rollback':True,'uuid_successor_boundaries':True,'installed_identity_output':identity.stdout,'migration_sha256':hashlib.sha256(candidate.encode()).hexdigest(),'scope':'Read-only mystery completion validator; synthetic evidence only, no production money or wider gameplay suite'}
+ installed=json.loads(identity.stdout)
+ if installed['owner']!='postgres' or installed['acl']!='{postgres=X/postgres}' or installed['config']!=['search_path=public','statement_timeout=30s']:raise AssertionError('Mystery validator access/config changed')
+ result={'status':'passed','before_after_cases':after,'runtime_prefix_plans':plans,'source_guard_rollback':True,'installed_reader_bounds':4,'uuid_successor_boundaries':True,'installed_identity_output':identity.stdout,'migration_sha256':hashlib.sha256(candidate.encode()).hexdigest(),'scope':'Read-only mystery completion validator; synthetic evidence only, no production money or wider gameplay suite'}
  (out/'mystery-prefix-evidence.json').write_text(json.dumps(result,indent=2)+'\n')
  return result

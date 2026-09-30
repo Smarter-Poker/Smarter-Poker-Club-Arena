@@ -21,8 +21,8 @@
     "supabase/migrations/20260930162226_held_fee_owner_admits_shared_projections_before_writes.sql": "8b081f47f202127691062ad4c01660c915a9d79f6c1299823ea120b17470efd7",
     "supabase/migrations/20260930172029_legacy_fee_capture_reuses_transaction_owned_terminal_admissi.sql": "37b7363b3f87f8abe25fd184502d4f4ce1552b71916e421873baed83f1942039",
     "tests/fixtures/held-fee-owner-basis/qualify-capture-validation.py": "e34c56057c979c627f173bb95a2909321e724023eccaea44df6e4881d4ddd235",
-    "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql": "d942cf47d342e79e63b01f895907ecc335cfc83879b1e925405e600912886e32",
-    "tests/fixtures/held-fee-owner-basis/qualify-mystery-prefix.py": "adf41287a4bd64e37184c84167e787de2e8b396366945cc185d5514785be0a65",
+    "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql": "ef9694fe9a513d4ad5f93dc58d296960de1baa39fcd8394dac6f0b8dd2860a04",
+    "tests/fixtures/held-fee-owner-basis/qualify-mystery-prefix.py": "cc0a635eb2302fd88f9e3ec17243140aedbf24d79fea86902843d5503571f828",
     "tests/fixtures/held-fee-owner-basis/mystery-prefix-scene.sql": "96afc496d7ec1c396e2bff6719d6cffa1cd66371ea48d039f8366b20369de5c7"
   },
   "spin_assertions": 52,

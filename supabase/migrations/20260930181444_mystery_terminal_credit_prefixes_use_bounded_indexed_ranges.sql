@@ -344,4 +344,6 @@ BEGIN
 END;
 $function$
 ;
+-- Preserve the guarded owner-only ACL explicitly for fresh-source review.
+REVOKE ALL ON FUNCTION public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

@@ -1,0 +1,19 @@
+{
+  "exportedAt": "2026-09-30T11:25:57.935Z",
+  "finishedAt": "2026-09-30T11:26:22.206Z",
+  "release": "f92ef5798bbc968f19a33f8515a5025a62e840d5",
+  "declarationFile": "population-declaration-2026-09-30-f92ef579.json",
+  "populationFile": "population-2026-09-30-f92ef579.json",
+  "chainsInPopulation": 198,
+  "wanted": 198,
+  "foundOnHost": 198,
+  "handsWalked": 743,
+  "exported": 198,
+  "missing": 0,
+  "sameServingIdentityAfter": true,
+  "observerRemoved": true,
+  "exitCode": 0,
+  "containerExitCode": 0,
+  "oomKilled": false,
+  "scriptSha256": "80f1eabc365e147a01a3e9d0622f704959910b157cabdef87f8b9e6ed85ebcad"
+}

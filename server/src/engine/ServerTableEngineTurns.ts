@@ -2504,11 +2504,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       localIssues.push('live_blinds_invalid');
     }
     if (dealtPlayers.length < 2) localIssues.push('live_seat_state_incomplete');
+    const dealerOccupied = dealtPlayers.some((candidate) => candidate.seat === dealerSeat);
     if (
       !Number.isSafeInteger(dealerSeat) ||
-      !dealtPlayers.some((candidate) => candidate.seat === dealerSeat)
+      (dealerSeat as number) < 1 ||
+      (dealerSeat as number) > 10 ||
+      (dealtPlayers.length <= 2 && !dealerOccupied)
     ) {
       localIssues.push('dealer_seat_missing');
+    } else if (!dealerOccupied) {
+      // A multiway tournament may have a valid empty physical button. The
+      // current atlas assumes an occupied BTN; do not label the last live
+      // seat BTN or turn an unsupported coordinate into missing live facts.
+      localIssues.push('dead_button_atlas_unsupported');
     }
     if (
       tctx &&

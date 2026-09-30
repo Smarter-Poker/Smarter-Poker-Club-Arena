@@ -1,5 +1,7 @@
 # Horse Brain Phase 6: Gate Reconciliation Across 6A, 6B, 6C and 6D
 
+> Current qualification: [September 30 serving qualification](horse-brain-phase6-completion-2026-09-30.md). The older dated statuses below are retained as history; use the current record for remaining gates and measured serving behavior.
+
 First written 2026-09-27 against the Phase 6D declaration of 2026-09-26, and updated the same
 day after journal capture resumed on the serving release 6b6eabb1 and the 6B and 6C lanes
 reported. The file name keeps its first date. Horse Brain only. Every cell carries exactly one

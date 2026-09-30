@@ -9,6 +9,12 @@ import { HorsePolicyGraph } from './HorsePolicyGraph.js';
 import { horsePolicyRegistration, horsePolicyOwnership } from './HorsePolicyRegistry.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
+import {
+  acquireJointSamples,
+  jointSampleAcquisitionMatches,
+  JOINT_SAMPLE_WORK_BUDGET_MS,
+  type JointSampleAcquisition,
+} from './multiway/JointSampleAcquisition.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import { jointPlayersBehind } from './multiway/JointActionModel.js';
 import { horsePolicyDealtPlayers } from './multiway/DealtSeatCensus.js';
@@ -2053,6 +2059,7 @@ let difficultyHint = 0;
 
 interface Phase7EquityEvidence {
   observations?: TournamentUtilityInput['observations'];
+  samplerProvenance?: TournamentUtilityInput['samplerProvenance'];
   equity: number;
   sampleSize: number;
   standardError: number;
@@ -2223,6 +2230,7 @@ function buildPhase7UtilityInput(
     sampledOpponentIds: evidence7.sampledOpponentIds,
     showdownSamples: evidence7.showdownSamples,
     observations: evidence7.observations,
+    samplerProvenance: evidence7.samplerProvenance,
     context: {
       format:
         gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',
@@ -2747,6 +2755,15 @@ export class HorseLogic {
     decision = variants.decision;
     const { phase10, phase11, phase12 } = variants;
     const variantPolicy = phase10 ?? phase11 ?? phase12;
+    // Decision-local acquisition is independent of Phase 13 proposal authority.
+    // Its immutable population may be reused below; marginal board draws never
+    // enter this path. The existing offline clock control remains offline only.
+    let phase7JointAcquisition: JointSampleAcquisition | undefined;
+    const jointNow = opts.phase13EvidenceMode && !tele ? () => 0 : () => performance.now();
+    const multiBoard =
+      (gs.communityCards2?.length ?? 0) > 0 ||
+      (gs.communityCards3?.length ?? 0) > 0 ||
+      (gs.boardCount ?? 1) > 1;
 
     const arbitration = graph.run('tournament_utility', decision, () => {
       let phase8UtilityInput: TournamentUtilityInput | null = null;
@@ -2757,7 +2774,51 @@ export class HorseLogic {
         gs.tournament?.schemaVersion === 1
       ) {
         const tournament = trustedTournamentContext(gs);
-        const evidence7 = currentPhase7Equity();
+        let evidence7 = currentPhase7Equity();
+        let jointUnavailable: string | null = null;
+        let jointWithinBudget: (() => boolean) | undefined;
+        if (tournament && multiBoard) {
+          // Protect an existing commitment/continuation refusal before any
+          // joint utility may replace it. Phase 13 applies the same ownership.
+          if (decision.action === 'fold' && decision.continuationGuard) {
+            evidence7 = null;
+            jointUnavailable = `protected_${decision.continuationGuard}`;
+          } else {
+            const jointStarted = jointNow();
+            phase7JointAcquisition = acquireJointSamples(player, gs, { now: jointNow });
+            evidence7 = null;
+            if (
+              phase7JointAcquisition.status === 'acquired' &&
+              jointSampleAcquisitionMatches(player, gs, phase7JointAcquisition)
+            ) {
+              const acquisition = phase7JointAcquisition;
+              const joint = acquisition.evidence;
+              jointWithinBudget = () => jointNow() - jointStarted < JOINT_SAMPLE_WORK_BUDGET_MS;
+              const behind = new Set(jointPlayersBehind(player, gs));
+              const opponents = gs.players.filter((p) => joint.opponentIds.includes(p.user_id));
+              const useMind = opts.mind !== false;
+              evidence7 = {
+                ...tournamentSampleEquity({
+                  hero: player,
+                  sampledOpponentIds: joint.opponentIds,
+                  showdownSamples: joint.samples,
+                }),
+                samplerProvenance: acquisition.provenance,
+                observations: captureHorseTournamentUtilityObservations(opponents, useMind),
+                sampledOpponentIds: joint.opponentIds,
+                showdownSamples: joint.samples,
+                opponents: joint.opponentIds.map((userId) => ({
+                  userId,
+                  range: null,
+                  foldMul: useMind ? HorseMind.exploit(userId).bluffMod : 1,
+                  actsAfterHero: behind.has(userId),
+                })),
+              };
+            } else {
+              jointUnavailable = phase7JointAcquisition.reason ?? 'joint_samples_unavailable';
+            }
+          }
+        }
         if (!tournament) {
           if (tele) noteFire('phase7_utility_skip_incomplete');
         } else if (
@@ -2765,16 +2826,7 @@ export class HorseLogic {
           Array.isArray(gs.legalActions) &&
           gs.legalActions.some((action) => action !== 'discard') &&
           Array.isArray(gs.pots) &&
-          // Round 1 requires one coherent joint showdown sample per utility
-          // branch.  The existing multi-board strategy still prices those
-          // hands, but Phase 7 must not consume the independent per-board
-          // samples as though they came from one shared-deck deal.  Keep the
-          // baseline and expose the unavailable receipt until the later depth
-          // pass supplies that sampler.  Guard here as well as at capture time:
-          // preflop fixtures and restored hands can already carry extra boards.
-          !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
-          !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
-          (gs.boardCount ?? 1) <= 1 &&
+          (!multiBoard || evidence7?.samplerProvenance) &&
           evidence7
         ) {
           try {
@@ -2786,7 +2838,9 @@ export class HorseLogic {
               tournament,
               evidence7
             );
+            if (jointWithinBudget) phase8UtilityInput.withinBudget = jointWithinBudget;
             const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
+            const jointExpired = jointWithinBudget?.() === false;
             if (variantPolicy) {
               if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
                 const shadowStart = performance.now();
@@ -2819,8 +2873,10 @@ export class HorseLogic {
                     evaluation.unavailableReason ?? 'unknown';
               }
             }
-            phase8ReuseUtility = evaluation.continuePostflop;
-            const result = evaluation.result;
+            // The final receipt/hash work is charged too. Never accept an
+            // over-budget result just because the last loop check was timely.
+            phase8ReuseUtility = multiBoard ? undefined : evaluation.continuePostflop;
+            const result = jointExpired ? null : evaluation.result;
             if (result) {
               const selected = this.legalize(result.decision, player, gs, vi);
               const selectedAmount =
@@ -2852,7 +2908,9 @@ export class HorseLogic {
               }
             } else if (tele) {
               noteFire('phase7_utility_unavailable');
-              noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
+              noteFire(
+                `phase7_unavailable_${jointExpired ? 'work_budget' : (evaluation.unavailableReason ?? 'unknown')}`
+              );
             }
           } catch (error) {
             reportError(error, 'HorseLogic.phase7_tournament_utility');
@@ -2875,6 +2933,7 @@ export class HorseLogic {
                 ? 'phase7_unavailable_state_contract'
                 : 'phase7_unavailable_equity_evidence'
           );
+          if (jointUnavailable) noteFire(`phase7_unavailable_joint_${jointUnavailable}`);
         }
       }
       return { decision, phase8UtilityInput, phase8ReuseUtility };
@@ -3040,7 +3099,8 @@ export class HorseLogic {
               gs,
               decision,
               opts.phase13Joint ?? 'shadow',
-              opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase13EvidenceMode && !tele ? () => 0 : undefined,
+              phase7JointAcquisition
             );
       if (jointPolicy) {
         let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);

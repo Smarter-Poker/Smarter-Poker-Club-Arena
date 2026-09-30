@@ -194,6 +194,9 @@ export function horseTournamentUtilityReceiptIsValid(
     return false;
   const opponentIds = new Set(value.evidence.opponents.map((row) => row.userId));
   if (
+    (value.evidence.sampler !== undefined &&
+      (value.evidence.sampler.completedSamples !== value.utilityOutcomeSamples ||
+        value.evidence.sampler.completedSamples !== value.equitySampleSize)) ||
     (value.conditionedOpponentRanges as number) !==
       value.evidence.opponents.filter((row) => row.range !== null).length ||
     (value.playersBehind as string[]).some((id) => !opponentIds.has(id)) ||

@@ -7,7 +7,7 @@ This is the Phase 7 execution breakdown of [P7.1 and P7.2 in the maintained comp
 | Ordered stage    | Existing package | Status           | Result required before closure                                                                                                                                                                |
 | ---------------- | ---------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 7A, stage 1 of 2 | P7.1             | **Implementing** | Correct current single-board economics and response ordering, truthful original-input/model attribution, and a demonstrated path through the real worker to authoritative accepted execution. |
-| 7B, stage 2 of 2 | P7.2             | **Not started**  | Physically coherent shared-deck multi-board outcomes consumed by the same Phase 7 utility owner, with independent settlement controls and source-matched accepted-use evidence.               |
+| 7B, stage 2 of 2 | P7.2             | **Implementing** | Physically coherent shared-deck multi-board outcomes consumed by the same Phase 7 utility owner, with independent settlement controls and source-matched accepted-use evidence.               |
 
 Complete and report each stage in order. Do not report either stage complete before its required protected publication and natural affected-behavior proof. Report “Phase 7A, stage 1 of 2, complete; ready for Phase 7B, stage 2 of 2” only when the evidence supports it. A plan, a local regression result, an evaluated proposal or a successful enqueue is not that evidence.
 
@@ -66,7 +66,7 @@ Before closure, run the required checks for the final changed inputs, protected-
 
 ## 7B: coherent multi-board input to the same utility owner
 
-Start after 7A's applicable closure gates are satisfied. The ordinary Phase 7 caller currently refuses multi-board inputs because its per-board equity draws are marginal samples. Preserve that refusal until a sample is one common physical deal across all boards, opponents and pot layers.
+Source implementation and required checks may proceed in a separate owned checkout while 7A's provider delivery runs, under the owner's productive-overlap instruction. Preserve the qualified 7A candidate and its separate acceptance record. A newer protected release containing both qualified stages may supply publication evidence for both; do not force a second engine replacement solely to obtain separate version numbers. Close and report each stage only after its own applicable live proof. The ordinary Phase 7 caller previously refused multi-board inputs because its per-board equity draws are marginal samples. Preserve refusal of those marginal inputs; the new boundary requires one common physical deal across all boards, opponents and pot layers.
 
 1. Consume the existing `JointCardLayout` and `JointRangeSampler` boundary with verified card occupancy, shared prefixes, hero/folded dead cards and opponent identities. Never zip independent board arrays and relabel them joint.
 2. Reuse `JointPotDistribution` and `JointDeductions` for actual side-pot eligibility, uncalled refunds, board allocation, high/low where supported, whole chips and odd remainders. Feed the resulting coherent population into the same Phase 7 economic owner. Do not apply ICM twice.

@@ -305,4 +305,8 @@ end $function$
 ;
 -- Existing function owner, ACL, signature and SECURITY DEFINER are retained.
 -- No table grants, RLS or policies change; legacy rows are not backfilled.
+REVOKE ALL ON FUNCTION public.upsert_horse_mind_stats(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_horse_mind_stats(jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.upsert_horse_mind_stats_scoped(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_horse_mind_stats_scoped(jsonb) TO service_role;
 COMMIT;

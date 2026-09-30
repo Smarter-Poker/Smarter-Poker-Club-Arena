@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { portFor } from './scripts/ci/e2e-port.mjs';
 
 /**
  * THE STALE-CLIENT SUITE (Diamond Phase 11, line 7) - a real browser, a real
@@ -15,7 +16,9 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * One worker: the origin has ONE current release, and a deploy is global.
  */
-const PORT = Number(process.env.STALE_CLIENT_PORT || 4610);
+// Per-runner port (scripts/ci/e2e-port.mjs; tests/no-two-runners-share-a-port):
+// base 4610 ends in 0, which no other suite's base does, so no two collide.
+const PORT = portFor(4610);
 const A = process.env.STALE_CLIENT_DIST_A || '';
 const B = process.env.STALE_CLIENT_DIST_B || '';
 

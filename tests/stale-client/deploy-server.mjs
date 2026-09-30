@@ -30,17 +30,19 @@
  * pages are on production.
  *
  * Usage: node tests/stale-client/deploy-server.mjs <distA> <distB> [port]
+ * (the port defaults to this runner's portFor(4610), as the config's does)
  */
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
+import { portFor } from '../../scripts/ci/e2e-port.mjs';
 
 const [distA, distB, portArg] = process.argv.slice(2);
 if (!distA || !distB) {
   console.error('usage: node deploy-server.mjs <distA> <distB> [port]');
   process.exit(2);
 }
-const PORT = Number(portArg || process.env.STALE_CLIENT_PORT || 4610);
+const PORT = Number(portArg) || portFor(4610);
 const BASE = '/hub/club-arena';
 const DIST = { a: distA, b: distB };
 const state = { current: 'a', pool: ['a'], shellDelayMs: 0 };

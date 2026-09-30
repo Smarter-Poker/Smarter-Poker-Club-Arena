@@ -18,7 +18,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DIAMOND_TABLE, PLAYER, newBackend, signIn, type Backend } from './mock-backend';
 
-const ORIGIN = `http://127.0.0.1:${process.env.STALE_CLIENT_PORT || 4610}`;
 const PORTRAIT = { width: 390, height: 844 };
 const LANDSCAPE = { width: 844, height: 390 };
 const LOBBY = 'clubs/diamond-arena';
@@ -31,7 +30,8 @@ test.skip(
 test.use({ viewport: PORTRAIT, hasTouch: true, isMobile: true });
 
 test.beforeEach(async ({ request }) => {
-  expect((await request.get(`${ORIGIN}/__deploy?to=b&pool=prune`)).ok()).toBe(true);
+  // A root path resolves against the configured origin, whatever its port.
+  expect((await request.get('/__deploy?to=b&pool=prune')).ok()).toBe(true);
 });
 
 async function sideways(page: Page): Promise<number> {
@@ -184,7 +184,7 @@ test.describe('an expired, refused, signed-out-elsewhere or revoked session', ()
     await expect(page.getByText(CLOSED_NOTICE)).toBeVisible({ timeout: 30_000 });
     /* Exactly what the World Hub's signOut does to a shared-key client. */
     const hub = await context.newPage();
-    await hub.goto(`${ORIGIN}/auth/login`);
+    await hub.goto('/auth/login');
     await hub.evaluate(() => {
       localStorage.removeItem('smarter-poker-auth');
       new BroadcastChannel('smarter-poker-auth').postMessage({
@@ -247,10 +247,18 @@ test.describe('an expired, refused, signed-out-elsewhere or revoked session', ()
   }) => {
     const backend = newBackend();
     backend.tables.friendships = [{ id: 'friendship' }];
-    backend.rpc.send_wallet_diamond_transfer = () => ({
-      status: 403,
-      body: { code: '42501', message: 'authentication_required', details: null, hint: null },
-    });
+    /* Signed out on another device at the moment the transfer is sent: the
+       door refuses it, and GoTrue refuses the session from then on. Revoking
+       any earlier lets a background check find it first (correctly, but then
+       the transfer is never sent). */
+    backend.rpc.send_wallet_diamond_transfer = () => {
+      backend.session = 'revoked';
+      backend.refresh = 'revoked';
+      return {
+        status: 403,
+        body: { code: '42501', message: 'authentication_required', details: null, hint: null },
+      };
+    };
     await signIn(page, backend);
     await page.goto(LOBBY);
     await expect(page.getByText(CLOSED_NOTICE)).toBeVisible({ timeout: 30_000 });
@@ -259,9 +267,6 @@ test.describe('an expired, refused, signed-out-elsewhere or revoked session', ()
     await page.getByLabel('Friend Player ID').fill('10000000-0000-4000-8000-000000000002');
     await page.getByLabel('Diamond Amount').fill('25');
     await page.getByRole('button', { name: 'Review Transfer' }).click();
-    /* Signed out on another device between reviewing and confirming. */
-    backend.session = 'revoked';
-    backend.refresh = 'revoked';
     await page.getByRole('button', { name: 'Confirm Transfer' }).click();
     await expect(
       page.getByText(

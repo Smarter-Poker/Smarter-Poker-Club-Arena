@@ -26,7 +26,6 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 
 const DIST_A = process.env.STALE_CLIENT_DIST_A || '';
 const DIST_B = process.env.STALE_CLIENT_DIST_B || '';
-const ORIGIN = `http://127.0.0.1:${process.env.STALE_CLIENT_PORT || 4610}`;
 
 interface Build {
   entry: string;
@@ -57,7 +56,8 @@ async function deploy(
     pool: opts.pool ?? 'keep',
     shellDelayMs: String(opts.shellDelayMs ?? 0),
   });
-  expect((await request.get(`${ORIGIN}/__deploy?${q}`)).ok()).toBe(true);
+  // A root path resolves against the configured origin, whatever its port.
+  expect((await request.get(`/__deploy?${q}`)).ok()).toBe(true);
 }
 
 /**
@@ -244,7 +244,7 @@ test('no worker serves a retired Diamond page, and an alias inside the app is a 
 }) => {
   await becomeReturningClient(page, A);
 
-  const retired = await page.goto(`${ORIGIN}/hub/diamond-arena`);
+  const retired = await page.goto('/hub/diamond-arena');
   expect(retired?.status()).toBe(404);
   await expect(page.locator('[data-stub="world-hub-404"]')).toBeVisible();
 

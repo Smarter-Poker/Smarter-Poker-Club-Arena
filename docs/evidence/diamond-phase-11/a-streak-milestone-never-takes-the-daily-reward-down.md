@@ -96,7 +96,8 @@ horse is owed a reward it cannot claim." No area read critical.
 
 Tick: milestones pay on their own line, a refused milestone can no longer take
 a reward down or block the sweep, the sweep finishes inside its timeout, and
-the whole backlog was paid within 31 minutes of the second apply. The 47 open
+the whole backlog was paid 32 minutes after the second apply (00:19:58 to
+00:52:21). The 47 open
 `DR0:health_critical` rows (all `horse claims`) close at the next hourly watch
 by its own rule, which resolves a row once every area it names reads other than
 critical; that closure is reported with its numbers in the line's final report.

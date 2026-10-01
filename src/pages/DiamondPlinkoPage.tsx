@@ -45,6 +45,8 @@ import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
 import plinkoStyles from './diamondPlinko.module.css';
+// The real game pages install the scene-health writer; the test page never does.
+import '../services/DiamondSceneRecorder';
 
 /** What the page says while it mends something by itself. */
 const RECONNECTING = 'Reconnecting To Plinko';

@@ -8,6 +8,9 @@ const analytics = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../../src/lib/analytics', () => analytics);
 const db = vi.hoisted(() => ({ rpc: vi.fn(() => Promise.resolve({ data: null, error: null })) }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: db }));
+// The app's writer, installed exactly as the game pages install it.
+import '../../src/services/DiamondSceneRecorder';
+import { readFileSync } from 'node:fs';
 import {
   createSceneTelemetry,
   deviceKind,
@@ -125,5 +128,23 @@ describe('a scene that could not draw', () => {
         p_frames: 0,
       })
     );
+  });
+});
+
+describe('the standalone test page stays away from accounts', () => {
+  it('the telemetry reaches the database only through the hook the game pages install', () => {
+    const telemetry = readFileSync('src/components/games/sceneTelemetry.ts', 'utf8');
+    const hook = readFileSync('src/components/games/sceneRecorder.ts', 'utf8');
+    expect(telemetry).not.toMatch(/lib\/supabase/);
+    expect(hook).not.toMatch(/^import /m);
+    for (const page of [
+      'DiamondCrashPage',
+      'DiamondPlinkoPage',
+      'DiamondChoicePage',
+      'DiamondWheelPage',
+    ])
+      expect(readFileSync(`src/pages/${page}.tsx`, 'utf8')).toContain(
+        "import '../services/DiamondSceneRecorder';"
+      );
   });
 });

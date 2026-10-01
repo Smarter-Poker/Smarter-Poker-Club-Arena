@@ -74,6 +74,8 @@ import {
   type WheelPendingSpin,
   type WheelSpinMode,
 } from '../utils/wheelPendingSpin';
+// The real game pages install the scene-health writer; the test page never does.
+import '../services/DiamondSceneRecorder';
 
 /** A prize as the player reads it. Chips under one stay exact: they ARE the prize. */
 function prizeLabel(seg: WheelSpinResult['outcome']): string {

@@ -1,5 +1,5 @@
 import { capture } from '../../lib/analytics';
-import { supabase } from '../../lib/supabase';
+import { recordScene } from './sceneRecorder';
 import { isNativePlatform, nativePlatform } from '../../lib/appBase';
 import { iosWebkitVersion, vibrationPath } from '../../utils/vibrationGate';
 
@@ -29,8 +29,10 @@ import { iosWebkitVersion, vibrationPath } from '../../utils/vibrationGate';
  * the same numbers also go to the platform's own database through
  * fn_record_diamond_scene: a daily rollup per game, device kind, renderer and
  * final tier with no user in it, read by platform admins as Diamond Scene
- * Health on the admin dashboard (fn_diamond_scene_health). Fire and forget:
- * a lost report never touches the game.
+ * Health on the admin dashboard (fn_diamond_scene_health). The writer is
+ * installed by the real game pages (src/services/DiamondSceneRecorder.ts)
+ * through sceneRecorder.ts, so the standalone test page never reaches the
+ * database. Fire and forget: a lost report never touches the game.
  */
 /** The 3D scenes, and the wheel, whose spins are drawn frame by frame too (Phase 4). */
 export type SceneGame = 'crash' | 'plinko' | 'crossing' | 'wheel';
@@ -61,42 +63,20 @@ function pixelRatio(): number {
   }
 }
 
-type SceneRecord = {
-  game: SceneGame;
-  device: ReturnType<typeof deviceKind>;
-  software: boolean;
-  endTier: number;
-  frames: number;
-  ms: number;
-  slow: number;
-  failure: SceneFailure | null;
-};
-
-/** The database copy of one summary or one failure. Never throws, never awaits in the caller. */
-function record(r: SceneRecord): void {
-  try {
-    void Promise.resolve(
-      supabase.rpc('fn_record_diamond_scene', {
-        p_game: r.game,
-        p_device: r.device,
-        p_software: r.software,
-        p_end_tier: r.endTier,
-        p_frames: Math.round(r.frames),
-        p_ms: Math.round(r.ms),
-        p_slow: Math.round(r.slow),
-        p_failure: r.failure,
-      })
-    ).catch(() => undefined);
-  } catch {
-    /* A lost report is a lost report. It never becomes the player's problem. */
-  }
-}
-
 /** One scene that could not draw. */
 export function reportSceneFailure(game: SceneGame, reason: SceneFailure): void {
   const device = deviceKind();
   capture('diamond_scene_failed', { game, reason, device, dpr: pixelRatio() });
-  record({ game, device, software: false, endTier: 0, frames: 0, ms: 0, slow: 0, failure: reason });
+  recordScene({
+    game,
+    device,
+    software: false,
+    endTier: 0,
+    frames: 0,
+    ms: 0,
+    slow: 0,
+    failure: reason,
+  });
 }
 
 export interface SceneTelemetry {
@@ -154,7 +134,7 @@ export function createSceneTelemetry(
       }
       if (sent || movingFrames < MIN_MOVING_FRAMES || movingMs <= 0) return;
       sent = true;
-      record({
+      recordScene({
         game,
         device: deviceKind(),
         software: options.software,

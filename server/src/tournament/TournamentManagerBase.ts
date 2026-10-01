@@ -2494,16 +2494,17 @@ export abstract class TournamentManagerBase {
   protected declareFieldDecidedIfOneStackRemains(
     finalStacks: readonly { user_id: string; stack: number }[]
   ): void {
-    if (this.fieldDecidedDeclared || this.tableEngines.size !== 1) return;
+    // A scheduling hint: nothing here may ever stop the wake that follows it.
     try {
+      if (this.fieldDecidedDeclared || this.tableEngines?.size !== 1) return;
       const [engine] = this.tableEngines.values();
       // The stacks must describe the whole table, not a partial bust list.
       if (finalStacks.length < engine.getOccupiedSeatNumbers().length) return;
+      const live = finalStacks.filter((player) => Number(player.stack) > 0).length;
+      if (live <= 1) this.declareFieldDecided();
     } catch {
-      return;
+      /* unknown shape: the ordinary wake still runs */
     }
-    const live = finalStacks.filter((player) => Number(player.stack) > 0).length;
-    if (live <= 1) this.declareFieldDecided();
   }
 
   /** A recovery that has read the field as decided wakes it through the decided lane. */

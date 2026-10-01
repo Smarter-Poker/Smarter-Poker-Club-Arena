@@ -143,6 +143,14 @@ describe('who declares a field decided', () => {
     );
   });
 
+  it('the hint is guarded, so the ordinary wake can never be lost to it', () => {
+    const hint = base.slice(
+      base.indexOf('protected declareFieldDecidedIfOneStackRemains('),
+      base.indexOf('requestDecidedEliminationSweep(reason: string)')
+    );
+    expect(hint.indexOf('try {')).toBeLessThan(hint.indexOf('this.tableEngines'));
+  });
+
   it('both GameServer recoveries of a decided game wake it through the decided lane', () => {
     expect(server).toContain("requestDecidedEliminationSweep('stalled_decided_survivor')");
     expect(server).toContain("requestDecidedEliminationSweep('seat_first_terminal_stack')");

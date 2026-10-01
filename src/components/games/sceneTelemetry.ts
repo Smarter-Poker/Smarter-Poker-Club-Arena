@@ -23,7 +23,8 @@ import { iosWebkitVersion, vibrationPath } from '../../utils/vibrationGate';
  * Nothing personal is sent: no account, no club, no amounts. A visit with too
  * little motion to measure (under MIN_MOVING_FRAMES) sends nothing.
  */
-export type SceneGame = 'crash' | 'plinko' | 'crossing';
+/** The 3D scenes, and the wheel, whose spins are drawn frame by frame too (Phase 4). */
+export type SceneGame = 'crash' | 'plinko' | 'crossing' | 'wheel';
 export type SceneFailure = 'renderer' | 'context_lost' | 'stalled';
 
 /** Fewer moving frames than this say nothing about smoothness. */

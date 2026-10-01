@@ -508,7 +508,9 @@ describe('the discovery pass reads the decided board through the batch', () => {
     const unknownAt = body.indexOf("if (verdict.kind === 'unknown') {");
     const liveAt = body.indexOf("if (verdict.kind === 'live') continue;");
     const logAt = body.indexOf('is decided (${playingCount} playing) - recovering the winner');
-    const wakeAt = body.indexOf("idleTm.requestEliminationSweep('stalled_decided_survivor');");
+    const wakeAt = body.indexOf(
+      "idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');"
+    );
     const admitAt = body.indexOf('this.ensureTournamentManagerAdmission(');
     expect(unknownAt).toBeGreaterThan(-1);
     expect(liveAt).toBeGreaterThan(unknownAt);
@@ -527,7 +529,7 @@ describe('the discovery pass reads the decided board through the batch', () => {
     );
     expect(body).toContain('const idleTm = this.tournamentEngines.get(String(t.id));');
     expect(body).toMatch(
-      /if \(idleTm\) \{\s*idleTm\.requestEliminationSweep\('stalled_decided_survivor'\);\s*\} else \{\s*this\.launchDiscoveryJob\(\s*this\.ensureTournamentManagerAdmission\(\s*String\(t\.id\),\s*'resume',\s*`Resuming decided tournament through its finish owner: \$\{t\.name\}`,\s*generation\s*\),\s*'GameServer\.stalled_decided_resume_failed',\s*\{ tournamentId: String\(t\.id\) \}\s*\);/
+      /if \(idleTm\) \{\s*idleTm\.requestDecidedEliminationSweep\('stalled_decided_survivor'\);\s*\} else \{\s*this\.launchDiscoveryJob\(\s*this\.ensureTournamentManagerAdmission\(\s*String\(t\.id\),\s*'resume',\s*`Resuming decided tournament through its finish owner: \$\{t\.name\}`,\s*generation\s*\),\s*'GameServer\.stalled_decided_resume_failed',\s*\{ tournamentId: String\(t\.id\) \}\s*\);/
     );
   });
 

@@ -316,7 +316,10 @@ describe('the seat-first watchdog leaves terminal ownership with the tournament 
     const sweep = sliceMethod(gameServer, 'private async finishSeatFirstGamesThatAreOver()');
     const decided = sweep.indexOf('if (liveStacks > 1) continue;');
     const lookup = sweep.indexOf('this.tournamentEngines.get(id)', decided);
-    const wake = sweep.indexOf("requestEliminationSweep('seat_first_terminal_stack')", lookup);
+    const wake = sweep.indexOf(
+      "requestDecidedEliminationSweep('seat_first_terminal_stack')",
+      lookup
+    );
     const admit = sweep.indexOf('ensureTournamentManagerAdmission(', lookup);
     expect(decided).toBeGreaterThanOrEqual(0);
     expect(lookup).toBeGreaterThan(decided);

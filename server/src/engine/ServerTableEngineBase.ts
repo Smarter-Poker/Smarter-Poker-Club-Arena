@@ -5691,7 +5691,18 @@ export abstract class ServerTableEngineBase {
       msg.includes('F06_RETRY_CANONICAL_LANE') ||
       /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
       msg.includes('could not serialize access') ||
-      msg.includes('deadlock detected')
+      msg.includes('deadlock detected') ||
+      /* A LOCK TIMEOUT IS A ROLLBACK, NOT A DECISION (2026-10-01).
+         55P03 aborts the statement before it commits anything, exactly as
+         a deadlock does: Postgres gave up waiting for a lock, it did not
+         refuse the work. The list above carried the deadlock and left out
+         its twin, so a post-hand step whose budget exists for "the
+         database blinked" (leave_pending, 2 retries) threw on the first
+         lock timeout as if the database had meant it - 8 of the 14
+         leave_pending_failed criticals on the board between 09-28 and
+         09-30 were this, every one a read that had written nothing. */
+      /^55P03$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('canceling statement due to lock timeout')
     );
   }
 

@@ -1728,6 +1728,40 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       // Retry only the original captured request inside logHandHistory.
       // This mutable callback also contains reflection and must run once.
     };
+    /* A STEP THAT CANNOT LOSE A CHIP DOES NOT PAGE AS IF IT HAD (2026-10-01).
+       `leave_pending` is moneyCritical because it is the step that returns
+       a leaver's whole stack to their wallet - and that is why its FAILURE
+       is not a money event. Read the step: the only things that can throw
+       out of it are the departures ENUMERATION read (table_seats, before any
+       write), the seat-move read and the seat-move execution (a move is not
+       a leave: no cash-out, no money). The cash-out itself,
+       fn_cashout_seat_occupancy, is one transaction per seat and
+       processLeavePending swallows its failure per seat (atomicCashout's
+       onFailed), so a refused cash-out never throws here; the seat simply
+       keeps leave_pending = true, and the next boundary - this generation's
+       or a successor's - re-reads it and tries again. Every path that throws
+       leaves every pending seat exactly where it was.
+
+       Measured 2026-09-28 to 2026-09-30: 14 leave_pending_failed criticals,
+       14 drift incidents, 6 of them supabase_timeout and 8 lock timeout, all
+       on the enumeration or move READ; fn_unaccounted_seat_exits(4 days)
+       returned 0 rows and no live seat on any of the 14 tables still
+       carried leave_pending. Nothing was owed. The board carried fourteen
+       criticals for fourteen deferred boundaries.
+
+       So the step's failure alert is a warning that says what it is - a
+       boundary deferred, no chips at stake - and asserts moves_chips:false,
+       which fn_ca_financial_alert_to_incident reads as "do not file a
+       critical drift incident". A persistent cash-out refusal has its own
+       witness: the seat stays leave_pending with its stack intact and
+       atomicCashout logs every refusal; a leave that never completes is
+       visible on the table, not lost. */
+    const STEP_FAILURE_SEVERITY: Record<string, 'critical' | 'warning'> = {
+      leave_pending: 'warning',
+    };
+    const STEP_FAILURE_MOVES_CHIPS: Record<string, boolean> = {
+      leave_pending: false,
+    };
     /* Two short waits, inside one hand boundary. The felt already holds for
        2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
        and a stall longer than that is not a blip. */
@@ -1805,18 +1839,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             handNumber: snap.handNumber,
           });
           if (moneyCritical) {
+            const movesChips = STEP_FAILURE_MOVES_CHIPS[stepName] ?? true;
             await raiseFinancialAlert(
-              'critical',
+              STEP_FAILURE_SEVERITY[stepName] ?? 'critical',
               `postHandTasks.${stepName}_failed`,
               `Post-hand step ${stepName} threw for hand #${snap.handNumber}` +
                 (attempts > 1 ? ` after ${attempts} attempts` : '') +
-                '; later steps continued',
+                (movesChips
+                  ? '; later steps continued'
+                  : '; later steps continued. No chips moved and none can be lost on this path: every pending departure stays leave_pending with its stack and is re-read at the next hand boundary'),
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
                 error: describeError(err),
                 attempts,
                 retry_budget: budget,
+                moves_chips: movesChips,
                 ...(stepName === 'hand_history'
                   ? { hand_request_identity_v1: handRequestIdentity }
                   : {}),

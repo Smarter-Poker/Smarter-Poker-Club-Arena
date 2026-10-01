@@ -1,0 +1,3 @@
+# server/src/tournament/aRefusedBreakRosterIsReread.law.test.ts
+
+A table break whose `fn_f06_begin_break` is refused `F06_WHOLE_ROSTER_REQUIRED` or `F06_SOURCE_NOT_EXACT` (both reached only while the manifest is still NULL, both rolled back) releases that proposal to history and reads the source roster again in the same pass, instead of re-sending the dead roster on every pass for ever with its source parked and unmergeable; a capacity-rejected roster that has since lost a player no longer pins the break; every other error still keeps the exact proposal for replay, reconciliation still adopts a delayed commit of any proposal this manager sent and refuses one it did not, and every guard in `prepareParkedTournamentBreak` that does nothing names itself once per change.

@@ -779,6 +779,77 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(receipt.lookup!.policy.source).toBe('deterministic_baseline');
   });
 
+  it('Phase 6B: refuses a complete dead-button coordinate and keeps its named fallback usable', async () => {
+    const request = phase6TournamentRequest(73);
+    const tournament = request.gameState.tournament!;
+    const players = [
+      ...request.gameState.players,
+      {
+        ...request.gameState.players[1],
+        seat: 4,
+        user_id: 'horse-4',
+        username: 'Horse Four',
+        stack: 500,
+        bet: 0,
+        totalInvested: 0,
+        is_folded: true,
+        is_sitting_out: true,
+      },
+    ];
+    const withContext = (complete: boolean) =>
+      rekey({
+        ...request,
+        gameState: {
+          ...request.gameState,
+          dealerSeat: 1,
+          players,
+          tournament: {
+            ...tournament,
+            seatsPerTable: 3,
+            playersAtTable: 3,
+            contextStatus: complete ? 'complete' : 'incomplete',
+            contextIssues: complete
+              ? []
+              : [TOURNAMENT_CONTEXT_INCOMPLETE, 'dead_button_atlas_unsupported'],
+            m: buildTournamentMState({
+              stackChips: request.player.stack,
+              smallBlind: tournament.currentSmallBlind!,
+              bigBlind: tournament.currentBigBlind!,
+              ante: tournament.currentAnte!,
+              anteType: tournament.anteType!,
+              playersAtTable: 3,
+              nextSmallBlind: tournament.nextSmallBlind,
+              nextBigBlind: tournament.nextBigBlind,
+              nextAnte: tournament.nextAnte,
+              minutesToNextLevel: tournament.nextBlindInMin,
+              opponentStacks: [{ userId: 'horse-3', stackChips: 96 }],
+            }),
+          },
+        },
+      });
+    const refused = harness();
+    refused.runtime.receive(withContext(true));
+    await refused.runtime.drain();
+    expect(refused.decisionsAtRng).toEqual([]);
+    expect(refused.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 complete tournament context has dead_button_atlas_unsupported',
+    });
+    const fallback = harness(true);
+    fallback.runtime.receive(withContext(false));
+    await fallback.runtime.drain();
+    const result = fallback.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    expect(result.decision.tournamentPreflopAttribution).toMatchObject({
+      reason: 'incomplete_context',
+      status: 'unavailable',
+      lookup: { policy: { source: 'labeled_fallback', fallbackReason: 'incomplete_context' } },
+    });
+    expect(
+      Object.values(result.decision.tournamentPreflopAttribution!.lookup!.policy.shifts)
+    ).toEqual([0, 0, 0, 0, 0]);
+  });
+
   it('Phase 6B: a dealt sit-out counts in the census but never as a covering stack', async () => {
     const request = phase6TournamentRequest(72);
     const sitOut = {
@@ -1560,34 +1631,57 @@ describe('HorseDecisionWorkerRuntime', () => {
     }
   });
 
-  it('refuses a corrupted private frame before changing the canonical RNG or invoking a second decision', async () => {
-    const h = harness(),
-      request = fastRequest(1);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
-    const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
-    expect(entry.frame.version).toBe('horse-decision-reads-v2');
-    expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-v2');
-    entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
-    const restores = h.restored.length;
-    h.runtime.receive({
-      ...request,
-      type: 'DECIDE_DEEP',
-      requestId: 2,
-      rngBefore: fast.rngBefore,
-      deepEquity: 2,
-    });
-    await h.runtime.drain();
-    expect(h.messages.at(-1)).toMatchObject({
-      type: 'ERROR',
-      recoverable: true,
-      message: 'Horse decision read frame is invalid',
-    });
-    expect(h.decisionsAtRng).toHaveLength(1);
-    expect(h.restored).toHaveLength(restores);
-  });
+  it.each([false, true])(
+    'refuses a corrupted private frame before changing the canonical RNG or invoking a second decision (windows=%s)',
+    async (windows) => {
+      HorseMind.reset();
+      if (windows)
+        HorseMind.importStats([
+          {
+            user_id: 'horse-3',
+            hands: 20,
+            sourceWindow: { version: 1, coverage: 'complete', fromMs: 100, toMs: 200 },
+          },
+        ]);
+      try {
+        const h = harness(),
+          request = fastRequest(1);
+        h.runtime.receive(request);
+        await h.runtime.drain();
+        const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+        const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+        expect(entry.frame.version).toBe(
+          windows ? 'horse-decision-reads-v3' : 'horse-decision-reads-v2'
+        );
+        if (windows)
+          expect(JSON.parse(entry.frame.json).statsWindows[0][1]).toMatchObject({
+            fromMs: 100,
+            toMs: 200,
+          });
+        expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-');
+        entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
+        const restores = h.restored.length;
+        h.runtime.receive({
+          ...request,
+          type: 'DECIDE_DEEP',
+          requestId: 2,
+          rngBefore: fast.rngBefore,
+          deepEquity: 2,
+        });
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ERROR',
+          recoverable: true,
+          message: 'Horse decision read frame is invalid',
+        });
+        expect(h.decisionsAtRng).toHaveLength(1);
+        expect(h.restored).toHaveLength(restores);
+      } finally {
+        HorseMind.reset();
+      }
+    }
+  );
 
   it('keeps the actual second-look opponent reads pinned after other table observations', async () => {
     const { hero, state } = jointPolicyFixture('nlh', 1, 'cash', 'flop');
@@ -2303,6 +2397,63 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
       baseKey
     );
+  });
+
+  it('planted red: journals the governor scale the decision ran at, not a reading taken after it (Phase 6C)', async () => {
+    const h = harness();
+    // Each read of the live governor may take a new reading (one a second).
+    const readings = [0.6, 1, 0.35, 0.2];
+    let pinned: number | null = null;
+    const live = () => pinned ?? readings.shift() ?? 0.08;
+    const seenByDecision: number[] = [];
+    const journaled: number[] = [];
+    h.deps.governorScale = live;
+    h.deps.atGovernorScale = <T>(fn: () => T) => {
+      const scale = live();
+      pinned = scale;
+      try {
+        return { value: fn(), scale };
+      } finally {
+        pinned = null;
+      }
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      // Two Monte Carlo reads inside the one decision.
+      seenByDecision.push(live(), live());
+      return decide(...args);
+    };
+    h.deps.journalEnabled = () => true;
+    h.deps.journalDecision = (_request, payload) => {
+      journaled.push((payload as { governorScale: number }).governorScale);
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    expect(seenByDecision).toEqual([0.6, 0.6]);
+    expect(journaled).toEqual([0.6]);
+    expect(result).toMatchObject({ governorScale: 0.6 });
+  });
+
+  it('without a decision-scale hook, reads the governor once, before the decision', async () => {
+    const h = harness();
+    const reads: string[] = [];
+    let phase = 'before';
+    h.deps.governorScale = () => {
+      reads.push(phase);
+      return 0.35;
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      phase = 'during';
+      const out = decide(...args);
+      phase = 'after';
+      return out;
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    expect(reads).toEqual(['before']);
+    expect(h.messages.find((m) => m.type === 'FAST_RESULT')).toMatchObject({ governorScale: 0.35 });
   });
 
   it('captures actual fast/deep journal inputs privately and retains decisions when capture fails', async () => {

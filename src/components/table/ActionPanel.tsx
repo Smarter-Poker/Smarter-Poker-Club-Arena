@@ -949,13 +949,17 @@ export default function ActionPanel({
 
   const handleRaiseClick = useCallback(() => {
     if (!canRaise && !canAllIn) return;
-    haptic.light();
+    /* One buzz per tap (2026-09-26): this used to buzz light here and then
+       medium again in the fixed-limit branch below, 30 ms apart, which the
+       60 ms coalescing lets through as two buzzes because the second is
+       heavier. Each branch now buzzes once, at its own weight. */
     /* Dan 2026-08-25 (item 5): the sizing controls open as an OVERLAY above a
        three-button row that never moves, so unlike the old full-panel swap
        this button is still on screen while the overlay is up. It therefore has
        to close it too - otherwise the only way back out is the Back button
        hiding at the top of the overlay. */
     if (isRaiseMode) {
+      haptic.light();
       setIsRaiseMode(false);
       return;
     }
@@ -970,6 +974,7 @@ export default function ActionPanel({
       else onAction('raise', minRaise);
       return;
     }
+    haptic.light();
     setIsRaiseMode(true);
     setRaiseAmount(minRaise);
     lastSnapRef.current = minRaise;
@@ -1217,6 +1222,7 @@ export default function ActionPanel({
               aria-label={`Decrease By ${formatChips(sliderStep)}`}
             >
               −
+              <TapHaptic disabled={raiseAmount <= minRaise} radius="10px" />
             </button>
             <div className="raise-value">
               {amountTyping ? (
@@ -1271,6 +1277,7 @@ export default function ActionPanel({
               aria-label={`Increase By ${formatChips(sliderStep)}`}
             >
               +
+              <TapHaptic disabled={raiseAmount >= maxRaise} radius="10px" />
             </button>
           </div>
 
@@ -1298,6 +1305,7 @@ export default function ActionPanel({
                   aria-label={`${p.label} - ${wagerVerb} ${formatChips(p.value)}`}
                 >
                   {p.label}
+                  <TapHaptic disabled={minRaise > maxRaise} radius="10px" />
                 </button>
               ))}
               <button

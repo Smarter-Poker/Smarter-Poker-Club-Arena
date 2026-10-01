@@ -14,7 +14,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import ArenaGameCard from '../components/lobby/game-cards/ArenaGameCard';
 import type { ArenaGameFamily } from '../components/lobby/game-cards/arenaGameCardTypes';
-import { SpadeConsole } from '../components/console/SpadeConsole';
 import './CreateTablePage.css';
 
 interface GameType {
@@ -150,9 +149,15 @@ export default function CreateTablePage({
     else navigate(`/clubs/${clubId}`);
   };
 
+  /* THE LAUNCH DECK (Dan 2026-09-20: "DO NOT ATTACH EVERYTHING TOGETHER WITH
+     THE SAME DISPLAY WINDOWS"). The variants are the lobby's own painted game
+     cards, and a frame never sits around painted cards, so no console is drawn
+     here - embedded in Table Management or on its own route. The header prints
+     straight on the black in the master's own inks, over an engraved rule. */
   const selector = (
     <div className="create-table-page">
-      {/* Back. A printed word, not a font glyph: the console standard
+      <div className="create-table-page__deck">
+        {/* Back. A printed word, not a font glyph: the console standard
           forbids a generic glyph standing in for a control ("seat the icon in
           the painted art or remove it and use a clear text label"), and one
           action on its own is a lit word on the glass, not a plate (the foot
@@ -161,25 +166,33 @@ export default function CreateTablePage({
           name says where Back goes, and starts with the visible word so voice
           control can target it. Two literals, not a computed string: only
           Table Management's creator deck passes onBack. */}
-      {onBack ? (
-        <button
-          type="button"
-          className="create-table-page__back"
-          onClick={handleBack}
-          aria-label="Back To Table Management"
-        >
-          Back
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="create-table-page__back"
-          onClick={handleBack}
-          aria-label="Back To The Club"
-        >
-          Back
-        </button>
-      )}
+        {onBack ? (
+          <button
+            type="button"
+            className="create-table-page__back"
+            onClick={handleBack}
+            aria-label="Back To Table Management"
+          >
+            Back
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="create-table-page__back"
+            onClick={handleBack}
+            aria-label="Back To The Club"
+          >
+            Back
+          </button>
+        )}
+        <div className="create-table-page__heading">
+          <p className="create-table-page__eyebrow">Add Table</p>
+          <h2 className="create-table-page__title">Choose Game Type</h2>
+          <p className="create-table-page__meta">
+            Select A Variant To Configure · {GAME_TYPES.length} Games
+          </p>
+        </div>
+      </div>
 
       {/* Game Type List */}
       <div className="create-table-page__list">
@@ -222,17 +235,5 @@ export default function CreateTablePage({
 
   if (onSelectGameType) return selector;
 
-  return (
-    <main className="create-table-page__standalone">
-      <SpadeConsole
-        eyebrow="Table Management"
-        title="Choose Game Type"
-        subtitle="Select A Variant To Configure"
-        pill={`${GAME_TYPES.length} Games`}
-        crest="club"
-      >
-        {selector}
-      </SpadeConsole>
-    </main>
-  );
+  return <main className="create-table-page__standalone">{selector}</main>;
 }

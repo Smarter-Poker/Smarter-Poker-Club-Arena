@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/claude-diamond-phase-10/feat/a-diamond-hand-keeps-its-own-statistics. Applied to production as migration 20260920065728_a_diamond_hand_keeps_its_own_statistics on 2026-09-29: the asset column on the two stat tables, the trigger that sets it from the hand, and p_asset on the eight stats readers.",
+  "functions": ["fn_ca_hand_player_row_takes_its_hands_asset"],
+  "columns": {
+    "ca_hand_player_stat": ["asset"],
+    "ca_hand_player_idx": ["asset"]
+  }
+}

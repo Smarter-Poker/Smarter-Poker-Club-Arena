@@ -4,11 +4,14 @@ import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import {
   classifyTrustedLineage,
+  classifyReleaseWindow,
+  UNKNOWN_EXIT_CODE,
   readBuildInfoSha,
   requireUnchangedBuildInfoSha,
   requireReadyEngineSha,
   readReadyEngineSha,
 } from '../scripts/ci/production-e2e-provenance.mjs';
+import { readEngineRelease } from '../scripts/ci/read-engine-release.mjs';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -202,8 +205,12 @@ describe('production E2E uses exact trusted provenance', () => {
     );
     const stanza = workflow.slice(gate, workflow.indexOf('- name: Install Chromium and WebKit'));
     expect(stanza).toContain('set -euo pipefail');
-    expect(stanza).toContain('curl -fsS --max-time 20');
-    expect(stanza).toContain('engine-ready "$EXPECTED_ENGINE_SHA"');
+    // The read waits through the engine's own announced :55 restart instead of
+    // calling a scheduled 502 a production failure (run 36717851302), but the
+    // gate it feeds is still an exact equality that the job cannot pass past.
+    expect(stanza).toContain('scripts/ci/read-engine-release.mjs');
+    expect(stanza).toContain('[ "$READY_SHA" = "$EXPECTED_ENGINE_SHA" ]');
+    expect(stanza).toContain('exit 1');
     expect(stanza).not.toContain('continue-on-error');
     expect(stanza).not.toContain('|| true');
   });
@@ -298,12 +305,147 @@ describe('production E2E uses exact trusted provenance', () => {
     ).toThrow('does not resolve');
   });
 
-  it('rejects a divergent production SHA', () => {
+  // 2026-09-30. Production being AHEAD of the checkout used to land here and
+  // read `is not an ancestor`, which was true and useless: it is the ordinary
+  // shape of a repository whose publisher fires on every merge. Run
+  // 36673263757 died on it. It is now its own lineage, and the caller
+  // re-targets the suite onto the live commit instead of refusing.
+  it('names a live commit that is AHEAD of the checkout as a forward release', () => {
+    expect(
+      classifyTrustedLineage(A, B, {
+        commitExists: () => true,
+        isAncestor: (ancestor) => ancestor === B,
+      })
+    ).toBe('descendant');
+  });
+
+  it('still rejects a production SHA that shares no lineage with the checkout', () => {
     expect(() =>
       classifyTrustedLineage(A, B, {
         commitExists: () => true,
         isAncestor: () => false,
       })
-    ).toThrow('is not an ancestor');
+    ).toThrow('shares no lineage');
+  });
+
+  it('certifies a release window that never left the recorded SHA', () => {
+    expect(
+      classifyReleaseWindow(JSON.stringify({ ca_sha: A }), A, {
+        commitExists: () => true,
+        isAncestor: () => true,
+      })
+    ).toEqual({ verdict: 'certified', sha: A });
+  });
+
+  // A forward publish during forty minutes of browsers is a NON-VERDICT, not a
+  // defect report. Twelve of the twenty runs sampled on 2026-09-30 were red
+  // for this and nothing else.
+  it('calls a forward publish during certification superseded, not failed', () => {
+    expect(
+      classifyReleaseWindow(JSON.stringify({ ca_sha: B }), A, {
+        commitExists: () => true,
+        isAncestor: (ancestor, descendant) => ancestor === A && descendant === B,
+      })
+    ).toEqual({ verdict: 'superseded', sha: B });
+  });
+
+  it.each([
+    [
+      'a rollback or an off-lineage release',
+      { commitExists: () => true, isAncestor: () => false },
+      'not a forward release',
+    ],
+    [
+      'a release that resolves to no trusted commit',
+      { commitExists: () => false, isAncestor: () => true },
+      'does not resolve',
+    ],
+  ])('still refuses %s outright', (_label, evidence, message) => {
+    expect(() => classifyReleaseWindow(JSON.stringify({ ca_sha: B }), A, evidence)).toThrow(
+      message
+    );
+  });
+
+  // CLAUDE.md 10.86 rule 1: UNKNOWN gets its own code. Sharing one with GREEN
+  // would certify a run that could not tell; sharing one with a real anomaly
+  // would put a rollback and an ordinary publish in the same bucket again.
+  // THE ENGINE'S OWN :55 RESTART IS NOT A PRODUCTION FAILURE.
+  //
+  // Run 36717851302 started at 12:54:24Z and died 72 seconds later on a bare
+  // `curl: (22) The requested URL returned error: 502` from an engine that was
+  // keeping the maintenance schedule CLAUDE.md section 13 sets for it. These
+  // pin the three outcomes the reader must keep apart, and in particular that
+  // an answer it CAN read is never polled past.
+  describe('reading the engine release through its announced break', () => {
+    const healthy = JSON.stringify({ releaseSha: A, running: true, liveness: 'ok' });
+
+    it('waits through a scheduled restart and returns the release that comes back', async () => {
+      let clock = 0;
+      let attempts = 0;
+      const result = await readEngineRelease('https://engine.invalid/health', {
+        now: () => clock,
+        pollMs: 0,
+        budgetMs: 60_000,
+        fetchImpl: async () => {
+          attempts += 1;
+          clock += 5_000;
+          if (attempts < 3) return { ok: false, status: 502 };
+          return { ok: true, text: async () => healthy };
+        },
+      });
+      expect(result).toEqual({ verdict: 'ready', sha: A });
+      expect(attempts).toBe(3);
+    });
+
+    it('calls a permanently silent engine UNKNOWN rather than healthy or broken', async () => {
+      let clock = 0;
+      const result = await readEngineRelease('https://engine.invalid/health', {
+        now: () => clock,
+        pollMs: 0,
+        budgetMs: 30_000,
+        fetchImpl: async () => {
+          clock += 5_000;
+          return { ok: false, status: 502 };
+        },
+      });
+      expect(result.verdict).toBe('unknown');
+      expect(result.reason).toContain('502');
+    });
+
+    // 10.86 rule 2: an answer that arrived is a verdict, and an unhealthy one
+    // must never be retried until the engine happens to agree with us.
+    it('refuses an engine that answers, but not with one healthy release', async () => {
+      let calls = 0;
+      await expect(
+        readEngineRelease('https://engine.invalid/health', {
+          now: () => 0,
+          pollMs: 0,
+          budgetMs: 600_000,
+          fetchImpl: async () => {
+            calls += 1;
+            return {
+              ok: true,
+              text: async () => JSON.stringify({ releaseSha: A, running: false, liveness: 'ok' }),
+            };
+          },
+        })
+      ).rejects.toThrow('not running with healthy liveness');
+      expect(calls).toBe(1);
+    });
+  });
+
+  it('gives UNKNOWN an exit code of its own, distinct from certified and from error', () => {
+    expect(UNKNOWN_EXIT_CODE).toBe(3);
+    const run = (raw: string) =>
+      spawnSync(process.execPath, [CLI, 'release-window', A], { input: raw, encoding: 'utf8' });
+
+    const certified = run(JSON.stringify({ ca_sha: A }));
+    expect(certified.status, certified.stderr).toBe(0);
+    expect(certified.stdout.trim()).toBe(`certified ${A}`);
+
+    // `B` is not a real commit in this repository, so the CLI's git evidence
+    // refuses it as unresolvable - a 1, never a 3 and never a 0.
+    expect(run(JSON.stringify({ ca_sha: B })).status).toBe(1);
+    expect(run('not-json').status).toBe(1);
   });
 });

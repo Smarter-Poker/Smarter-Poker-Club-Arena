@@ -94,7 +94,6 @@ describe('DiamondService.getDiamondFlow', () => {
       earnedTotal: 5719,
       spentLast30: 170,
       earnedLast30: 1705,
-      readAt: '2026-09-14T11:15:00Z',
     });
   });
 

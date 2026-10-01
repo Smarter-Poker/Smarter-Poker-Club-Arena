@@ -1,0 +1,11 @@
+{
+  "_owner": "perf/rakeback-incremental-recompute, re-derived on fix/migration-record-gaps-0930. Migration 20260930232349_a_page_recompute_reads_only_changed_evidence_rederived (supersedes the never-applied 20260927160709): the page path of fn_calculate_cash_rakeback_periods reads a per club-week checkpoint of frozen evidence shares plus what changed since. Promised until installed through the apply door and read back.",
+  "tables": ["accounting_rakeback_period_evidence_checkpoints"],
+  "functions": [
+    "fn_cash_period_evidence_since",
+    "fn_accounting_commit_horizon",
+    "fn_accounting_clubs_scope_digest",
+    "fn_accounting_cash_batch_is_placed_in_time",
+    "fn_accounting_cash_source_matches_its_batch"
+  ]
+}

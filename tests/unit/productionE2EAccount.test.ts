@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PLATFORM_FREEZE_POLL_MS } from '../../scripts/ci/platform-freeze-window.mjs';
 
 import {
   cleanupProductionE2EAccount,
@@ -503,6 +504,7 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/rpc/fn_ca_stale_certification_accounts')) {
         return Response.json([{ id: USER_ID, email, created_at: '2026-01-01T00:00:00.000Z' }]);
       }
+      if (url.includes('/rest/v1/clubs?')) return Response.json([]);
       if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
         return Response.json({ success: true });
       }
@@ -534,6 +536,7 @@ describe('post-deploy production account', () => {
       email: 'ca-customization-cert-postdeploy-freeze@example.invalid',
     };
     let sweepAttempts = 0;
+    let freezeReads = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
@@ -541,6 +544,21 @@ describe('post-deploy production account', () => {
         return Response.json(
           sweepAttempts === 1 ? { success: false, reason: 'platform_is_frozen' } : { success: true }
         );
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        // The break row sizes the wait: this freeze has five minutes left to run.
+        return Response.json([
+          {
+            phase: 'counting_down',
+            break_started_at: new Date(Date.now() - 60_000).toISOString(),
+            break_ends_at: new Date(Date.now() + 300_000).toISOString(),
+            enforce_freeze: true,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) {
+        freezeReads += 1;
+        return Response.json(freezeReads === 1);
       }
       if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
         return new Response(null, { status: 404 });
@@ -554,7 +572,36 @@ describe('post-deploy production account', () => {
       cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
     ).resolves.toBe(true);
     expect(sweepAttempts).toBe(2);
-    expect(wait).toHaveBeenCalledWith(10_000);
+    // The freeze's own end condition released it, not a tick count.
+    expect(freezeReads).toBe(2);
+    expect(wait).toHaveBeenCalledWith(PLATFORM_FREEZE_POLL_MS);
+    expect(wait).not.toHaveBeenCalledWith(10_000);
+  });
+
+  it('refuses honestly when the freeze outlives the budget the break row gave it', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-frozen-'));
+    const env = environment(directory);
+    const record = {
+      id: USER_ID,
+      email: 'ca-customization-cert-postdeploy-stuck@example.invalid',
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        return Response.json({ success: false, reason: 'platform_is_frozen' });
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        return Response.json([{ phase: 'counting_down', break_ends_at: null }]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) return Response.json(true);
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock, wait, record })
+    ).rejects.toThrow(/platform_is_frozen; the platform freeze was still enforced/);
   });
 
   it('uses the locked reserved cleanup with current trigger and rate-limit ordering', () => {
@@ -575,5 +622,277 @@ describe('post-deploy production account', () => {
     expect(CLEANUP_MIGRATION).toContain(
       'GRANT EXECUTE ON FUNCTION public.cleanup_reserved_certification_account(uuid) TO service_role'
     );
+  });
+});
+
+describe('a certification fixture that leaked must not wedge the next certificate (2026-09-28)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const STALE_EMAIL = 'ca-customization-cert-postdeploy-direct-stale@example.invalid';
+  const STALE = { id: USER_ID, email: STALE_EMAIL, created_at: '2026-01-01T00:00:00.000Z' };
+  const NOW = Date.parse('2026-09-05T00:00:00.000Z');
+  const STATEMENT_TIMEOUT = {
+    code: '57014',
+    message: 'canceling statement due to statement timeout',
+  };
+  // The real refusal: PostgREST answers 500 for the guard's RAISE (SQLSTATE 55000).
+  const HAS_CUSTODY = {
+    code: '55000',
+    message: 'CERTIFICATION_RETIREMENT_HAS_AUTHORITY_OR_CUSTODY',
+  };
+
+  /**
+   * A model of production: the stale sweep refuses while the identity still
+   * owns a club, the retire door retires a club (or replays as already_gone),
+   * and every request is recorded in order.
+   */
+  function world(
+    clubs: Array<{ id: string; name: string }>,
+    retireBehaviour: (call: number, clubId: string) => Response = () =>
+      Response.json({ success: true, chips_retired: 100000 })
+  ) {
+    const owned = new Map(clubs.map((club) => [club.id, club]));
+    const calls: string[] = [];
+    const retireBodies: unknown[] = [];
+    let retireCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rpc/fn_ca_stale_certification_accounts')) {
+        calls.push('stale-inventory');
+        return Response.json([STALE]);
+      }
+      if (url.includes('/rest/v1/clubs?')) {
+        calls.push('clubs-read');
+        return Response.json([...owned.values()].map((club) => ({ ...club, owner_id: USER_ID })));
+      }
+      if (url.includes('/rpc/fn_ca_retire_certification_club')) {
+        calls.push('retire');
+        const body = JSON.parse(String(init?.body));
+        retireBodies.push(body);
+        retireCalls += 1;
+        const response = retireBehaviour(retireCalls, body.p_club_id);
+        if (response.ok) {
+          const parsed = await response.clone().json();
+          if (parsed?.success === true) owned.delete(body.p_club_id);
+        }
+        return response;
+      }
+      if (url.includes('/rpc/cleanup_reserved_certification_account')) {
+        calls.push('account-sweep');
+        return owned.size
+          ? Response.json(HAS_CUSTODY, { status: 500 })
+          : Response.json({ success: true });
+      }
+      if (url.includes(`/auth/v1/admin/users/${USER_ID}`))
+        return new Response(null, { status: 404 });
+      return new Response('unexpected request ' + url, { status: 500 });
+    });
+    return { fetchImpl, calls, retireBodies, retireCallCount: () => retireCalls };
+  }
+
+  function stale(fetchImpl: unknown, wait = vi.fn().mockResolvedValue(undefined)) {
+    return {
+      wait,
+      run: () =>
+        cleanupStaleProductionE2EAccounts({
+          environment: environment(mkdtempSync(join(tmpdir(), 'production-e2e-leaked-'))),
+          fetchImpl: fetchImpl as typeof fetch,
+          now: NOW,
+          wait,
+        }),
+    };
+  }
+
+  it.each(['Crest Cert 1790000000000-abc', 'Preset Crest Cert 1790000000000'])(
+    'recovers a stale identity that still owns the certification club %s, retiring it before the sweep',
+    async (name) => {
+      const model = world([{ id: '11111111-1111-4111-8111-111111111111', name }]);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      await expect(stale(model.fetchImpl).run()).resolves.toBe(1);
+
+      expect(model.calls).toEqual([
+        'stale-inventory',
+        'clubs-read',
+        'retire',
+        'clubs-read',
+        'account-sweep',
+      ]);
+      expect(model.retireBodies).toEqual([
+        { p_club_id: '11111111-1111-4111-8111-111111111111', p_reason: 'stale-cert-recovery' },
+      ]);
+    }
+  );
+
+  it('recovers both fixture clubs of a run that died between creating and retiring them', async () => {
+    const model = world([
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' },
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Preset Crest Cert 1790000000000' },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await expect(stale(model.fetchImpl).run()).resolves.toBe(1);
+    expect(model.retireCallCount()).toBe(2);
+    expect(model.calls.at(-1)).toBe('account-sweep');
+  });
+
+  it('still refuses a stale identity that owns a club outside the fixture prefixes, and retires nothing', async () => {
+    const model = world([
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' },
+      { id: '33333333-3333-4333-8333-333333333333', name: 'Real Player Club' },
+    ]);
+
+    await expect(stale(model.fetchImpl).run()).rejects.toThrow(
+      'Refusing to retire unrecognized club 33333333-3333-4333-8333-333333333333'
+    );
+
+    // Neither the recognized club nor the identity was touched: the whole batch
+    // is validated before the first retirement, and the sweep never ran.
+    expect(model.calls).toEqual(['stale-inventory', 'clubs-read']);
+    expect(model.retireCallCount()).toBe(0);
+  });
+
+  it('refuses a name that merely contains the prefix', async () => {
+    const model = world([
+      { id: '44444444-4444-4444-8444-444444444444', name: 'My Crest Cert Club' },
+    ]);
+    await expect(stale(model.fetchImpl).run()).rejects.toThrow('unrecognized club');
+    expect(model.retireCallCount()).toBe(0);
+  });
+
+  it('retries a statement timeout with backoff and then succeeds', async () => {
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      (call) =>
+        call <= 2
+          ? Response.json(STATEMENT_TIMEOUT, { status: 500 })
+          : Response.json({ success: true, chips_retired: 100000 })
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const run = stale(model.fetchImpl);
+
+    await expect(run.run()).resolves.toBe(1);
+
+    expect(model.retireCallCount()).toBe(3);
+    expect(run.wait.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([2_000, 4_000]);
+    expect(model.calls.at(-1)).toBe('account-sweep');
+  });
+
+  it('gives up loudly after the bounded attempts, never passing on a database that keeps timing out', async () => {
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      () => Response.json(STATEMENT_TIMEOUT, { status: 500 })
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(stale(model.fetchImpl).run()).rejects.toThrow(/statement timeout/);
+    expect(model.retireCallCount()).toBe(5);
+    expect(model.calls).not.toContain('account-sweep');
+  });
+
+  it('does not retry a definitive refusal from the door', async () => {
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      () => Response.json({ success: false, error: 'this club has played: it is not a fixture' })
+    );
+    const run = stale(model.fetchImpl);
+
+    await expect(run.run()).rejects.toThrow('retirement was refused: this club has played');
+    expect(model.retireCallCount()).toBe(1);
+    expect(run.wait).not.toHaveBeenCalled();
+    expect(model.calls).not.toContain('account-sweep');
+  });
+
+  it('does not retry a guard that speaks through an HTTP 500 with an application SQLSTATE', async () => {
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      () => Response.json(HAS_CUSTODY, { status: 500 })
+    );
+    const run = stale(model.fetchImpl);
+
+    await expect(run.run()).rejects.toThrow(/55000/);
+    expect(model.retireCallCount()).toBe(1);
+    expect(run.wait).not.toHaveBeenCalled();
+  });
+
+  it('treats a replayed retirement as success (the door answers already_gone)', async () => {
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      (call) =>
+        call === 1
+          ? Response.json(STATEMENT_TIMEOUT, { status: 500 })
+          : Response.json({ success: true, already_gone: true })
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await expect(stale(model.fetchImpl).run()).resolves.toBe(1);
+    expect(model.retireCallCount()).toBe(2);
+  });
+
+  it('retries a statement timeout in the per-run retirement too, keeping its own reason', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-run-retire-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({ id: USER_ID, email: STALE_EMAIL })
+    );
+    const model = world(
+      [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],
+      (call) =>
+        call === 1
+          ? Response.json(STATEMENT_TIMEOUT, { status: 500 })
+          : Response.json({ success: true })
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: model.fetchImpl, wait })
+    ).resolves.toBe(1);
+    expect(model.retireBodies).toEqual([
+      { p_club_id: '11111111-1111-4111-8111-111111111111', p_reason: 'ui-cert-cleanup' },
+      { p_club_id: '11111111-1111-4111-8111-111111111111', p_reason: 'ui-cert-cleanup' },
+    ]);
+  });
+
+  it('refuses an explicit record outside the reserved namespace without a request', async () => {
+    const fetchMock = vi.fn();
+    await expect(
+      retireProductionCreateClubFixtures({
+        environment: environment(mkdtempSync(join(tmpdir(), 'production-e2e-outside-'))),
+        fetchImpl: fetchMock,
+        record: { id: USER_ID, email: 'real-player@example.com' },
+      })
+    ).rejects.toThrow('outside the reserved post-deploy namespace');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails when the owned-club readback is unreadable instead of reading it as empty', async () => {
+    let reads = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?')) {
+        reads += 1;
+        return reads === 1
+          ? Response.json([
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: 'Crest Cert 1',
+                owner_id: USER_ID,
+              },
+            ])
+          : Response.json({ message: 'unreadable' });
+      }
+      return Response.json({ success: true });
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    await expect(
+      retireProductionCreateClubFixtures({
+        environment: environment(mkdtempSync(join(tmpdir(), 'production-e2e-unreadable-'))),
+        fetchImpl: fetchMock,
+        record: { id: USER_ID, email: STALE_EMAIL },
+      })
+    ).rejects.toThrow('unreadable number of owned club fixture');
   });
 });

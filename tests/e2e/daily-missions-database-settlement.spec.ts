@@ -361,6 +361,14 @@ async function installHistoricalBoostedMilestone(
 ): Promise<void> {
   const boostedBalance = currentBalance + HISTORICAL_MILESTONE_ACTUAL_DIAMONDS;
   const historicalRunId = randomUUID();
+  // 2026-10-01: since #5680 (20260930233000) a milestone claim is paid exactly when the journal
+  // holds a credit under its own reference, 'daily_mission_milestones:<user>:<run>:<days>'
+  // (fn_award_daily_mission_milestones step 2). Every one of the 2,491 milestone credits in
+  // production carries that reference and no other shape exists. A historical fixture journaled
+  // under any other reference is, by that contract, an unpaid debt, and the next claim pays it,
+  // which is what the live path did: 10 more Diamonds on the first prior claim. The fixture now
+  // records its payment the way a paid milestone is recorded.
+  const historicalReference = `daily_mission_milestones:${account.id}:${historicalRunId}:777`;
   // 2026-09-07 (Diamond Accounting Standard DR2, DR6): the 15 historical diamonds reach the balance
   // through the Mint, which registers and journals the movement, never through a direct write to
   // profiles.diamonds. A direct write moved the balance with no register row and filed DR6 on every
@@ -414,9 +422,9 @@ async function installHistoricalBoostedMilestone(
     source: 'the_mint',
     description: 'Historical Daily Missions Streak Circuit [1.5x Boost]',
     balance_after: boostedBalance,
-    reference_id: `daily-missions-historical-multiplier:${historicalRunId}`,
+    reference_id: historicalReference,
     metadata: {
-      reference_id: `daily-missions-historical-multiplier:${historicalRunId}`,
+      reference_id: historicalReference,
       raw_amount: HISTORICAL_MILESTONE_RAW_DIAMONDS,
       multiplier: 1.5,
       exact_value: false,

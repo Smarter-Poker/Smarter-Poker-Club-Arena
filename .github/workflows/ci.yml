@@ -965,6 +965,45 @@ jobs:
             exit 1
           fi
 
+      # AN ACCRUAL SHARES THE WEEKLY ACCOUNTING LANE (2026-09-29).
+      #
+      # fn_accrue_cash_hand_commissions, fn_settle_tournament_rake,
+      # fn_lock_cash_bank_accounting_week and
+      # fn_lock_accounting_tournament_recognition_week all guard the weekly
+      # period with an advisory lock keyed on (club-or-union, week). All four
+      # took it EXCLUSIVELY, so for a whole week every cash hand and every
+      # tournament rake settle in a club queued behind one lock in FIFO order.
+      # Measured 2026-09-29: 74.4% of all advisory waiting on the platform sat
+      # on these keys, queues seven deep, while the per-table hand locks that
+      # fan out correctly carried 0.80.
+      #
+      # The lock exists to exclude the weekly CLOSE - a reader/writer contract,
+      # built as writer/writer. Shared for the accrual, exclusive for the close,
+      # keeps the exclusion exactly and drops the convoy.
+      #
+      # All four move together: fn_settle_tournament_rake calls
+      # fn_lock_accounting_tournament_recognition_week on the SAME key, so one
+      # of them going back to exclusive is a lock upgrade, and this repo already
+      # learned those deadlock (2026-09-10).
+      - name: Supabase Invariants - An Accrual Shares The Weekly Accounting Lane
+        run: |
+          set -o pipefail
+          echo "## Weekly Accounting Lock Mode" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-accounting-week-lock-mode.mjs 2>&1 | tee /tmp/weeklane.log; then
+            echo "OK - no accrual takes the weekly accounting lane exclusively." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "An accrual takes the weekly accounting lane exclusively. That serialises" >> $GITHUB_STEP_SUMMARY
+              echo "a week of one club's hands behind a single lock. Use" >> $GITHUB_STEP_SUMMARY
+              echo "pg_advisory_xact_lock_shared; the close keeps the exclusive side." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
       # A TRIGGER ON A MONEY TABLE DECLARES ITSELF (2026-09-12).
       # UndeclaredTriggerOnAMoneyTable is critical and pages by SMS, and it read
       # 76 on 2026-09-12 having read 74 ninety minutes earlier: saturated, and
@@ -1380,9 +1419,19 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Horse original observation windows survive atomic persistence
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-observation-window.py
+
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
+
+      - name: Backed payout discovery preserves every conservation term
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-backed-payout-scan-postgres.py
 
       - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
         if: matrix.shard == 4
@@ -1391,6 +1440,10 @@ jobs:
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
+      - name: Player search enforces global discovery and private account boundaries
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-search-privacy-postgres.py
 
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
@@ -1412,13 +1465,26 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-cumulative-reads.py
 
+      - name: Chip store coverage preserves results with one ledger read
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-chip-store-coverage.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
 
+      - name: Stranded player reads preserve every event and latest stack
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-stranded-player-read-postgres.py
       - name: Settlement conservation preserves full results through a narrow online index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
+
+      - name: The rakeback settler reads only what every writer has committed
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rakeback-settler-read-horizon-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
@@ -1568,6 +1634,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-club-weekly-summary.sh
+      - name: Owner accounting copies reach Production Alerts, never the owner's phone
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-accounting-push-bridge.sh
       - name: One weekly accounting coordinator rolls back all financial stages and invoices
         if: matrix.shard == 1
         env:
@@ -1689,6 +1760,34 @@ jobs:
         with:
           name: hand-submission-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/hand-submission/
+          if-no-files-found: error
+          retention-days: 7
+      - name: A hand the table has already dealt past is disposed, and stops blocking the start
+        id: hand_submission_disposal
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-disposal
+      - name: Retain superseded hand disposal proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_disposal.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-disposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission-disposal/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retention closes the settlement request it prunes
+        id: hand_submission_retention_disposal
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission-retention-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-retention-disposal
+      - name: Retain retention disposal proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_retention_disposal.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-retention-disposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission-retention-disposal/
           if-no-files-found: error
           retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency

@@ -5,6 +5,8 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } f
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { retryTransient } from './transient-retry.mjs';
+import { awaitPlatformThaw, describeThaw, freezeBudgetMs } from './platform-freeze-window.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
@@ -16,6 +18,59 @@ export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
+// The exact names fn_ca_retire_certification_club itself accepts. The door
+// re-checks them, but this side refuses first so an unrecognized club is never
+// even offered to it.
+const CERTIFICATION_CLUB_NAME_PREFIXES = ['Crest Cert ', 'Preset Crest Cert '];
+
+/**
+ * How many separate freezes one cleanup may sit through. Section 13 schedules
+ * exactly one break an hour, and the September 17 owner update allows a
+ * corrected release one extra certified recovery window - so two is every
+ * freeze this job can legitimately meet, and a third refusal is a defect
+ * rather than the schedule.
+ */
+const PLATFORM_FREEZE_MAX_WAITS = 2;
+
+/**
+ * Wait for the freeze to END. Never a tick count: 0 of the 435 breaks measured
+ * between 2026-09-16 and 2026-09-30 finished inside the 370s this loop used to
+ * allow. `scripts/ci/platform-freeze-window.mjs` carries the whole measurement
+ * and derives the budget from the break row itself.
+ */
+async function waitOutPlatformFreeze(configuration, fetchImpl, wait) {
+  let breakRow = null;
+  try {
+    const rows = await serviceRequest(
+      configuration,
+      '/rest/v1/engine_maintenance_break' +
+        '?select=phase,break_started_at,break_ends_at,enforce_freeze&limit=1',
+      {},
+      fetchImpl
+    );
+    breakRow = Array.isArray(rows) ? rows[0] || null : null;
+  } catch (error) {
+    // 10.86 rule 2: unreadable is not empty. Fall back to the ceiling the
+    // database itself enforces, and say that is what happened.
+    console.log(
+      `[production-e2e-account] the maintenance break row could not be read (${error.message}); ` +
+        "sizing the wait from the database's own 15 minute freeze ceiling."
+    );
+  }
+  const result = await awaitPlatformThaw({
+    isFrozen: async () =>
+      (await serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_platform_frozen',
+        { method: 'POST', body: '{}' },
+        fetchImpl
+      )) === true,
+    budgetMs: freezeBudgetMs(breakRow, Date.now()),
+    sleep: wait,
+  });
+  console.log(`[production-e2e-account] ${describeThaw(result)}`);
+  return result;
+}
 
 function headers(key, hasBody = false) {
   return supabaseServerHeaders(key, {
@@ -67,9 +122,18 @@ async function serviceRequest(configuration, path, init = {}, fetchImpl = fetch)
   });
   const body = await responseBody(response);
   if (!response.ok) {
-    throw new Error(
-      `Supabase service request ${init.method || 'GET'} ${path} failed (${response.status}): ` +
-        JSON.stringify(body).slice(0, 400)
+    // status/code/body ride on the error so a caller can tell a slow database
+    // (retry) from a guard speaking (refuse) without parsing the message.
+    throw Object.assign(
+      new Error(
+        `Supabase service request ${init.method || 'GET'} ${path} failed (${response.status}): ` +
+          JSON.stringify(body).slice(0, 400)
+      ),
+      {
+        status: response.status,
+        code: body && typeof body === 'object' ? body.code : undefined,
+        body,
+      }
     );
   }
   return body;
@@ -129,7 +193,7 @@ export async function cleanupProductionE2EAccount({
 
   const configuration = requireEnvironment(environment);
   let result;
-  for (let attempt = 0; attempt < 37; attempt += 1) {
+  for (let freezesWaited = 0; ; ) {
     result = await serviceRequest(
       configuration,
       '/rest/v1/rpc/cleanup_reserved_certification_account',
@@ -137,13 +201,26 @@ export async function cleanupProductionE2EAccount({
       fetchImpl
     );
     if (result?.success === true || result?.reason === 'auth_soft_delete_required') break;
-    if (result?.reason !== 'platform_is_frozen' || attempt === 36) {
+    if (result?.reason !== 'platform_is_frozen') {
       throw new Error(
         `Guarded test-account sweep refused ${account.id}: ${String(result?.reason || 'unknown')}`
       );
     }
-    console.log('[production-e2e-account] platform freeze is active; cleanup will retry.');
-    await wait(10_000);
+    if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+      throw new Error(
+        `Guarded test-account sweep refused ${account.id}: platform_is_frozen across ` +
+          `${freezesWaited} complete freezes, which is more than section 13 schedules.`
+      );
+    }
+    freezesWaited += 1;
+    console.log('[production-e2e-account] the platform freeze is active; waiting for the thaw.');
+    const thaw = await waitOutPlatformFreeze(configuration, fetchImpl, wait);
+    if (thaw.outcome !== 'thawed') {
+      throw new Error(
+        `Guarded test-account sweep refused ${account.id}: platform_is_frozen; ` +
+          describeThaw(thaw)
+      );
+    }
   }
   if (result?.reason === 'auth_soft_delete_required') {
     if (result.user_id !== account.id || result.email !== account.email) {
@@ -341,6 +418,7 @@ export async function cleanupStaleProductionE2EAccounts({
   environment = process.env,
   fetchImpl = fetch,
   now = Date.now(),
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
 } = {}) {
   const configuration = requireEnvironment(environment);
   const cutoff = new Date(now - STALE_ACCOUNT_AGE_MS).toISOString();
@@ -363,7 +441,21 @@ export async function cleanupStaleProductionE2EAccounts({
     ) {
       throw new Error('Refusing an invalid stale post-deploy account candidate.');
     }
-    await cleanupProductionE2EAccount({ environment, fetchImpl, record: account });
+    // A certification run that died between creating its fixture clubs and
+    // retiring them leaves an identity that still owns a club, and the guarded
+    // account sweep refuses exactly that (CERTIFICATION_RETIREMENT_HAS_AUTHORITY_
+    // OR_CUSTODY). Refusing is right; wedging every later certificate on it is
+    // not. Retire the clubs this identity owns through the same guarded door the
+    // run itself uses, THEN sweep the identity. A club that is not a recognized
+    // fixture still throws here and is never retired.
+    await retireProductionCreateClubFixtures({
+      environment,
+      fetchImpl,
+      wait,
+      record: account,
+      reason: 'stale-cert-recovery',
+    });
+    await cleanupProductionE2EAccount({ environment, fetchImpl, wait, record: account });
   }
   if (accounts.length) {
     console.log(`[production-e2e-account] recovered ${accounts.length} stale account(s).`);
@@ -372,16 +464,53 @@ export async function cleanupStaleProductionE2EAccounts({
 }
 
 /**
- * Retire only clubs owned by the current reserved Create A Club certificate.
+ * Retire one certification club through the sanctioned door, surviving a slow
+ * database. The door is idempotent (a club that is already gone answers
+ * `success: true, already_gone: true`) and runs as one transaction, so a
+ * statement timeout rolled it back and a replay is safe. Transient failures
+ * are retried with backoff; a `success: false` refusal is definitive.
+ */
+export async function retireCertificationClubWithRetry({
+  configuration,
+  clubId,
+  reason,
+  fetchImpl = fetch,
+  wait,
+}) {
+  const result = await retryTransient(
+    () =>
+      serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_ca_retire_certification_club',
+        { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
+        fetchImpl
+      ),
+    { wait, label: `retirement of certification club ${clubId}` }
+  );
+  if (result?.success === false) {
+    throw new Error(`Certification club ${clubId} retirement was refused: ${result.error}`);
+  }
+  return result;
+}
+
+/**
+ * Retire only clubs owned by a reserved Create A Club certificate identity.
  * The account namespace and club-name prefix are both mandatory so this door
  * can never be pointed at a player or a pre-existing club by mistake.
+ *
+ * Without `record` it reads the current job's fixture file. A stale-account
+ * recovery passes the stale identity's own `record` explicitly; every guard
+ * below applies to it unchanged.
  */
 export async function retireProductionCreateClubFixtures({
   environment = process.env,
   fetchImpl = fetch,
+  wait,
+  record,
+  reason = 'ui-cert-cleanup',
 } = {}) {
   const path = fixturePath(environment);
-  const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  const account = record || (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
   if (!account) {
     console.log(
       '[production-e2e-account] no fixture record exists; Create Club retirement is a no-op.'
@@ -404,22 +533,25 @@ export async function retireProductionCreateClubFixtures({
   );
   if (!Array.isArray(clubs))
     throw new Error('Create Club fixture query returned a non-array body.');
+  // Validate EVERY owned club before retiring ANY, so one unrecognized club
+  // refuses the whole batch instead of leaving it half retired.
   for (const club of clubs) {
-    if (club.owner_id !== account.id || !String(club.name || '').startsWith('Crest Cert ')) {
+    const name = String(club.name || '');
+    if (
+      club.owner_id !== account.id ||
+      !CERTIFICATION_CLUB_NAME_PREFIXES.some((prefix) => name.startsWith(prefix))
+    ) {
       throw new Error(`Refusing to retire unrecognized club ${String(club.id || 'unknown')}.`);
     }
-    const result = await serviceRequest(
+  }
+  for (const club of clubs) {
+    await retireCertificationClubWithRetry({
       configuration,
-      '/rest/v1/rpc/fn_ca_retire_certification_club',
-      {
-        method: 'POST',
-        body: JSON.stringify({ p_club_id: club.id, p_reason: 'ui-cert-cleanup' }),
-      },
-      fetchImpl
-    );
-    if (result?.success === false) {
-      throw new Error(`Certification club ${club.id} retirement was refused: ${result.error}`);
-    }
+      clubId: club.id,
+      reason,
+      fetchImpl,
+      wait,
+    });
   }
   const remaining = await serviceRequest(
     configuration,
@@ -427,8 +559,10 @@ export async function retireProductionCreateClubFixtures({
     {},
     fetchImpl
   );
-  if (Array.isArray(remaining) && remaining.length) {
-    throw new Error(`Certification left ${remaining.length} owned club fixture(s) behind.`);
+  if (!Array.isArray(remaining) || remaining.length) {
+    throw new Error(
+      `Certification left ${Array.isArray(remaining) ? remaining.length : 'an unreadable number of'} owned club fixture(s) behind.`
+    );
   }
   console.log(
     `[production-e2e-account] retired and verified ${clubs.length} Create Club fixture(s).`

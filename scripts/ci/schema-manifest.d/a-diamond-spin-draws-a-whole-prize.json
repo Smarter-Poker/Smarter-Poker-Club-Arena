@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/claude-diamond-phase-9/feature/spin-draw-and-reserve",
+  "_comment": "20260929163000 a_diamond_spin_draws_a_whole_prize: the Diamond Spin reserve source (one row or none, written only by a values migration that quotes Dan) and the pinned Spin contract; the rule, the Spin branch of the creation door, the Diamond arm of the one Spin draw authority and its read-back proof, and the contract's immutability trigger.",
+  "tables": ["poker_diamond_spin_contracts", "poker_diamond_spin_reserve_source"],
+  "functions": [
+    "fn_poker_diamond_create_spin",
+    "fn_poker_diamond_spin_contract",
+    "fn_poker_diamond_spin_contract_is_immutable",
+    "fn_poker_diamond_spin_draw",
+    "fn_poker_diamond_spin_draw_proof"
+  ],
+  "columns": {}
+}

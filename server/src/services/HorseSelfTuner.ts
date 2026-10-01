@@ -593,6 +593,24 @@ export function fleetQuartile(
  */
 export const TUNER_STUDY_FORMAT = 'cash';
 
+/** The last hand_history row a stream page returned. */
+export interface HandHistoryCursor {
+  createdAt: string;
+  id: string;
+}
+
+/**
+ * The PostgREST filter for "strictly older than the cursor" in the stream's
+ * (created_at DESC, id DESC) order. Values are double-quoted because a
+ * timestamptz carries ':' and '+', which the logic-tree parser would
+ * otherwise split on.
+ */
+export function handHistorySeekFilter(c: HandHistoryCursor): string {
+  const ts = `"${c.createdAt}"`;
+  const id = `"${c.id}"`;
+  return `created_at.lt.${ts},and(created_at.eq.${ts},id.lt.${id})`;
+}
+
 async function loadPlayRows(
   into: Map<string, PlayStats>,
   tracked: Set<string>,
@@ -960,32 +978,72 @@ export async function runSelfTune(
     // batched — so every row sharing the page-boundary timestamp that did not
     // fit was skipped and never read. A stable secondary sort plus range()
     // paging cannot drop or repeat a row.
-    for (let offset = 0; offset < MAX_HANDS_TO_STUDY; offset += PAGE_SIZE) {
-      if (!shouldContinue()) return { studied: 0, tuned: 0 };
-      const { data, error } = await supabase
-        .from('hand_history')
-        .select('actions, players, winners, big_blind, button_seat, created_at')
-        .is('tournament_id', null) // cash only: tournament strategy differs by design
-        .gt('created_at', since)
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (!shouldContinue()) return { studied: 0, tuned: 0 };
-      if (error) throw new Error(error.message);
-      if (!data || data.length === 0) break;
-      // The same ruler rule as loadPlayRows: a heads-up hand (two dealt in)
-      // is not measured against the six-max bands. The stream is only the
-      // gap-filler for a horse with no play rows, and it must not hand the
-      // bands the blend the play rows now refuse. (Floored tables cannot be
-      // told apart here - hand_history carries no floor - which is one more
-      // reason the play rows are the primary source.)
-      const ring = (data as unknown as HandRow[]).filter(
-        (h) => Array.isArray(h.players) && h.players.length >= 3
-      );
-      accumulatePlayStats(ring, tracked, streamed);
-      fetched += data.length;
-      oldestSeen = (data[data.length - 1] as { created_at: string }).created_at;
-      if (data.length < PAGE_SIZE) break;
+    /*
+     * ═══ THE STREAM SEEKS, IT DOES NOT SKIP (2026-09-28, measured) ═══════
+     *
+     * This loop used to page with .range(offset). OFFSET makes Postgres read
+     * and throw away every row before the page, so page k costs k pages of
+     * work, and on this table the work per page is not 1,000 rows: cash is a
+     * minority of hand_history, and the planner walks created_at and filters
+     * tournament hands out one at a time. Measured on production 2026-09-28:
+     * page 1 kept 1,000 cash rows after discarding 5,447 tournament rows
+     * (29 ms); the page at offset 20,000 ran past 25 s; the page at 119,000
+     * never finished. The engine's service role times out at 8 s.
+     *
+     * The tournament swing of 2026-09-26 (decide_tournament 1.72M -> 2.22M)
+     * thinned cash rows enough to push the deep pages over that limit. The
+     * throw had no local catch, so it unwound runSelfTune before a roster was
+     * prepared: the job claimed its date, wrote nothing, and the fleet went
+     * untuned on 2026-09-26, 09-27 and 09-28.
+     *
+     * A keyset page costs the same at any depth (~40 ms measured at depth
+     * 5,000; 1.1 s at a five-day depth with cold pages). The cursor is the last row's (created_at, id), kept as the raw
+     * string Postgres sent so microseconds survive - a JS Date would truncate
+     * them and re-read or skip rows sharing the boundary millisecond.
+     */
+    let cursor: HandHistoryCursor | null = null;
+    try {
+      while (fetched < MAX_HANDS_TO_STUDY) {
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
+        let q = supabase
+          .from('hand_history')
+          .select('id, actions, players, winners, big_blind, button_seat, created_at')
+          .is('tournament_id', null) // cash only: tournament strategy differs by design
+          .gt('created_at', since);
+        // The OR alone is a filter, not an index bound: measured 5.2 s at a
+        // depth of 15,000 because the scan still started at the newest row.
+        // The plain <= beside it is what the index can seek to (1.1 s at a
+        // five-day depth, cold). Keep both.
+        if (cursor) q = q.lte('created_at', cursor.createdAt).or(handHistorySeekFilter(cursor));
+        const { data, error } = await q
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(PAGE_SIZE);
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        // The same ruler rule as loadPlayRows: a heads-up hand (two dealt in)
+        // is not measured against the six-max bands. The stream is only the
+        // gap-filler for a horse with no play rows, and it must not hand the
+        // bands the blend the play rows now refuse. (Floored tables cannot be
+        // told apart here - hand_history carries no floor - which is one more
+        // reason the play rows are the primary source.)
+        const ring = (data as unknown as HandRow[]).filter(
+          (h) => Array.isArray(h.players) && h.players.length >= 3
+        );
+        accumulatePlayStats(ring, tracked, streamed);
+        fetched += data.length;
+        const last = data[data.length - 1] as { created_at: string; id: string };
+        oldestSeen = last.created_at;
+        cursor = { createdAt: last.created_at, id: last.id };
+        if (data.length < PAGE_SIZE) break;
+      }
+    } catch (err) {
+      // The stream only fills gaps for horses with no play rows. Losing it
+      // must cost those horses their study, not every horse's: the play rows
+      // already read stay, and the night still completes.
+      reportError(err, 'HorseSelfTuner.stream');
+      streamed.clear();
     }
     // What the sample ACTUALLY covered, for the log line and the audit rows.
     const coveredHours = oldestSeen

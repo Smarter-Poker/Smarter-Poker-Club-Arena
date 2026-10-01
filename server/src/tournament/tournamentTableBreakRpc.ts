@@ -39,6 +39,25 @@ export class TournamentTableBreakCapacityError extends Error {
     super('F06_CAPACITY_UNAVAILABLE');
   }
 }
+/**
+ * A BEGIN THAT NAMED THE WRONG ROSTER CAN NEVER BE ACCEPTED (2026-09-28).
+ *
+ * `fn_f06_begin_break` reaches these two refusals only after it has read the
+ * operation row FOR UPDATE and found its manifest still NULL, and each is a
+ * RAISE, so the whole transaction rolled back: nothing was begun. The source's
+ * live roster simply is not the one this proposal names (a bust landed between
+ * the read and the call, or a seat changed). Re-sending the same proposal gets
+ * the same answer for ever; the caller must re-read the roster instead. Every
+ * other error keeps meaning "outcome unproven" and keeps the exact proposal.
+ */
+export class TournamentTableBreakRosterChangedError extends Error {
+  constructor(
+    readonly code: 'F06_WHOLE_ROSTER_REQUIRED' | 'F06_SOURCE_NOT_EXACT',
+    readonly parameters: Readonly<Record<string, unknown>>
+  ) {
+    super(code);
+  }
+}
 export class TournamentTableBreakRefusedError extends Error {
   constructor(readonly reason: string) {
     super(`F06 refused: ${reason}`);
@@ -261,6 +280,15 @@ export class TournamentTableBreakRpc {
         error.message === 'F06_CAPACITY_UNAVAILABLE'
       )
         throw new TournamentTableBreakCapacityError(name, Object.freeze({ ...parameters }));
+      if (
+        name === 'fn_f06_begin_break' &&
+        ((error.code === '22023' && error.message === 'F06_WHOLE_ROSTER_REQUIRED') ||
+          (error.code === '55000' && error.message === 'F06_SOURCE_NOT_EXACT'))
+      )
+        throw new TournamentTableBreakRosterChangedError(
+          error.message,
+          Object.freeze({ ...parameters })
+        );
       throw new Error(`F06 ${name} outcome unproven: ${String(error.message ?? error)}`);
     }
     return data;

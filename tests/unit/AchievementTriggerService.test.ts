@@ -36,7 +36,11 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      // The owner door (ruling 25) is a builder like a table read; every other
+      // rpc resolves as before.
+      rpc: vi.fn((name: string) =>
+        name === 'get_my_full_profile' ? buildChain() : Promise.resolve({ data: null, error: null })
+      ),
     },
   };
 });

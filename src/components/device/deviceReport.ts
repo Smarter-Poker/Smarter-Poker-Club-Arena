@@ -67,9 +67,10 @@ export function isTouchDevice(): boolean {
 export function silentSwitchSummary(session: string | null, soundOn: boolean): string {
   if (session === null) return 'Not Applicable On This Browser';
   if (!soundOn) return 'Sounds Are Off In Settings';
+  // The engine switches to "playback" with its first sound, not before.
   return session === 'playback'
     ? 'Heard With The Silent Switch On'
-    : 'Muted When The Silent Switch Is On';
+    : 'Heard With The Silent Switch On From The First Game Sound';
 }
 
 const TIER_NAMES = ['Full', 'High', 'Standard', 'Low (No Shadows)'];

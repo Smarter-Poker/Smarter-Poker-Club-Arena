@@ -1,0 +1,3 @@
+# server/src/tournament/aQualifierRefusedByABreakFinishesTheBreak.law.test.ts
+
+A cohort satellite whose qualifier settlement is refused `F06_SOURCE_EXCLUDED` (a table break still open on one of its tables) answers 'continue', keeping the qualifier boundary held and every table parked, so the sweep reaches the balance stage that finishes the break and the next pass settles; every other refusal still answers 'pending'; the refusal names its event; and every guard in `dispatchTournamentBreakMembers` (and the reconcile and amendment refusals before it) that moves nobody names itself once per change, forgotten when the break is acknowledged.

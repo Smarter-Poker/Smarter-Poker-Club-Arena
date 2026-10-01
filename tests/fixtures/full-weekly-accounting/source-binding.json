@@ -147,7 +147,7 @@
     "tests/fixtures/cashier-document-authority/regression.sql": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
-    "tests/components/agent-dashboard-durable-transfers.test.tsx": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
+    "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
     "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "20061d3f457d7fb6a82db9dd4c1837b1d5ae4b5342396e8d6cb6d7eba4d89e6a",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac",
+    "scripts/dev/test-union-weekly-basis.py": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -384,7 +384,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "150d9ad12b69aee1d25636d758ae69432c8bd4adac3c1d7decd4035973e2fb1a",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "d091d8c668ae4660248e2c2b77ee9f8cd8826ea5b4fef5b641f9dff02e9c3a36",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d",
+    "scripts/ci/classify-ci-changes.mjs": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "983ee8c208596be291e58f8215ed074c08d32df71c754fd60eaf868a9c9f40fd",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "f7e2bd884761a255044d43275fe42ac2517c16a3bca301407f74a304b384f2cd",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "0fdfa7a483427132fc5495cbb45c44b7aee9251516076532898467c43cb1d023",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "0c1457747a6151dc43cc76eb5137760d9837210ec65ca1a170da81f7cffb1476",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "df074e5e4b0f9024b9099102fcbfc6ec688e4afb2d08d3e3567a98627e42a2c1",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -1984,6 +1984,48 @@
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
+      "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "d8e04ee86e2e865e3e7a2a245c6936c905613abb4a3aeeb77385579aaabe9aa6",
+      "to": "2e7bbe21a76a4a462e28ee513d08ff4b3df6b95b376a47d00d0edf7efb5a7561",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "c2b4c50d7fac3ee12286a57067a3e37ea0b57c7e2b7b24939c01168a76076e5a",
+      "to": "2bcb5b3a40249d80e363f0087309d079f65bd5bae8499ba87ca6803e0c49f426",
+      "on": "2026-09-27",
+      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
+      "to": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
+      "on": "2026-09-27",
+      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "7bdf38e1033eb9449b1e7a6fd6bff398e800145923c220290c79bb12ab291cc0",
+      "to": "cbd390a681acc683a874f9cb123ee356b2f4f8630dfefabbe088ed08cbb40759",
+      "on": "2026-09-27",
+      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "b253e5cd0cdce9a7129ecc85a72187e6eb29e52c1cd425ffc4b514f94793350f",
+      "to": "acea679ef4436e2a2de2d6c66ac1487b270bf650259b2f0a6e38ddf1a490c4fe",
+      "on": "2026-09-27",
+      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
       "previous_sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e",
       "sha256": "69907f18b8a43eeab81bd4324e1196a3bf3de1248fae9bd2efd01e76eda8fa90",
       "why": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata."
@@ -2008,6 +2050,15 @@
         "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Preserve both cashier routing and protected horse admission routing; financial SQL and all historical assertions unchanged. Nested hashes reflect this exact integrated metadata."
+    },
+    {
+      "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
@@ -2052,6 +2103,75 @@
       "why": "Integrate protected main36bb including cashier input routing, while preserving reserved-identity native qualification. Existing financial definitions, assertions and all historical binding records remain unchanged."
     },
     {
+      "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+      "to": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785",
+      "on": "2026-09-27",
+      "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "26bf55e5ab1d1138c3e3234b0e0fa6fb57bbb7e4bfcb5eecbf21976949ea1fec",
+      "to": "80f5b768691cb73b0a49d01790eb0b6a85c7197e6dc29d4c2d676320a27ed069",
+      "on": "2026-09-27",
+      "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "63971c18afc24c9a085370031dd83f11e6c4966e952a3746cc5855750a6aaa66",
+      "to": "8083a7ce0bae7707f4cc413718273c55c3eb06b4de9b3d6008efe4fd2019a850",
+      "on": "2026-09-27",
+      "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "date": "2026-09-27",
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "previous_sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
+      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711",
+      "why": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records."
+    },
+    {
+      "date": "2026-09-27",
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "previous_sha256": "26bf55e5ab1d1138c3e3234b0e0fa6fb57bbb7e4bfcb5eecbf21976949ea1fec",
+      "sha256": "1c655e64e62836b1a378a360a79de069cd740d49cf3b349fcc9605d5502bcf4d",
+      "why": "Cascade of the reviewed BBJ qualification classifier routing restamp and appended audit record; every prior map entry and financial assertion retained."
+    },
+    {
+      "date": "2026-09-27",
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "previous_sha256": "63971c18afc24c9a085370031dd83f11e6c4966e952a3746cc5855750a6aaa66",
+      "sha256": "fbe97d383fb80428a4dc88dee1becf295fbd00979c27110ff76d4dec91f63c8f",
+      "why": "Cascade of the reviewed BBJ qualification classifier routing restamp and appended audit record; every prior map entry and financial assertion retained."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected BBJ indexes eb6e949396",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
       "file": "scripts/ci/classify-ci-changes.mjs",
       "from": "17e14407ca9a6b65bccdcea734ba717a960f96309a26c184c0dd5a8c990ee5cb",
       "to": "676ed7db9d506469837ad52861e35490df1e84a625ff08fbbb1a822644df91b4",
@@ -2087,66 +2207,6 @@
       "why": "Cascades the reviewed first archived Spin routing source pins and their audit entries only; captured financial SQL and original fixture data unchanged."
     },
     {
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284",
-      "to": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded",
-      "on": "2026-09-27",
-      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
-    },
-    {
-      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
-      "from": "d8e04ee86e2e865e3e7a2a245c6936c905613abb4a3aeeb77385579aaabe9aa6",
-      "to": "2e7bbe21a76a4a462e28ee513d08ff4b3df6b95b376a47d00d0edf7efb5a7561",
-      "on": "2026-09-27",
-      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
-    },
-    {
-      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
-      "from": "c2b4c50d7fac3ee12286a57067a3e37ea0b57c7e2b7b24939c01168a76076e5a",
-      "to": "2bcb5b3a40249d80e363f0087309d079f65bd5bae8499ba87ca6803e0c49f426",
-      "on": "2026-09-27",
-      "why": "Add the native scoped achievement and rate-history SELECT policy qualification to accounting shard 4 and classify its isolated inputs. No existing financial fixtures or assertions changed."
-    },
-    {
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "from": "c609ed1e49272a651685c5e18a0e06bbf141173b0cb7c0aaabd402ad41b76d94",
-      "to": "03218c53a825f160862f0767e31cf2c460494886cf64bac2af024492f67fbd25",
-      "on": "2026-09-27",
-      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
-    },
-    {
-      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
-      "from": "7bdf38e1033eb9449b1e7a6fd6bff398e800145923c220290c79bb12ab291cc0",
-      "to": "cbd390a681acc683a874f9cb123ee356b2f4f8630dfefabbe088ed08cbb40759",
-      "on": "2026-09-27",
-      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
-    },
-    {
-      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
-      "from": "b253e5cd0cdce9a7129ecc85a72187e6eb29e52c1cd425ffc4b514f94793350f",
-      "to": "acea679ef4436e2a2de2d6c66ac1487b270bf650259b2f0a6e38ddf1a490c4fe",
-      "on": "2026-09-27",
-      "why": "Merge protected d49fa1913c horse admission input enforcement with scoped audit read CI. Preserve every existing native assertion and both integration audit histories; nested hashes bind the reviewed final file bytes."
-    },
-    {
-      "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs",
-        "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "tests/fixtures/sep8-spin-custody/source-binding.json"
-      ],
-      "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
-    },
-    {
-      "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
-      "changed_files": [
-        "scripts/ci/classify-ci-changes.mjs",
-        "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "tests/fixtures/sep8-spin-custody/source-binding.json"
-      ],
-      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
-    },
-    {
       "integration": "2026-09-27 Production Alerts with protected main 8b0c54fdc",
       "why": "Preserve both parents complete historical audit records, scoped audit routing and archived Spin routing; repin actual integrated workflow/classifier and nested metadata only. No captured financial input or assertion changed.",
       "files": [
@@ -2168,56 +2228,15 @@
       ]
     },
     {
-      "date": "2026-09-27",
-      "file": "scripts/ci/classify-ci-changes.mjs",
-      "previous_sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0",
-      "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711",
-      "why": "Add BBJ audit-read native runner, immutable input and connected source-test routing to existing required accounting and client jobs; retain all prior routing, financial assertions and historical audit records."
-    },
-    {
-      "date": "2026-09-27",
-      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
-      "previous_sha256": "26bf55e5ab1d1138c3e3234b0e0fa6fb57bbb7e4bfcb5eecbf21976949ea1fec",
-      "sha256": "1c655e64e62836b1a378a360a79de069cd740d49cf3b349fcc9605d5502bcf4d",
-      "why": "Cascade of the reviewed BBJ qualification classifier routing restamp and appended audit record; every prior map entry and financial assertion retained."
-    },
-    {
-      "date": "2026-09-27",
-      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
-      "previous_sha256": "63971c18afc24c9a085370031dd83f11e6c4966e952a3746cc5855750a6aaa66",
-      "sha256": "fbe97d383fb80428a4dc88dee1becf295fbd00979c27110ff76d4dec91f63c8f",
-      "why": "Cascade of the reviewed BBJ qualification classifier routing restamp and appended audit record; every prior map entry and financial assertion retained."
-    },
-    {
-      "on": "2026-09-27",
-      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
-      "files": [
-        {
-          "file": "scripts/ci/classify-ci-changes.mjs",
-          "from": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
-          "to": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
-        },
-        {
-          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
-          "from": "d575ba627a99bfc47b5606fd72ab43610443b8ee42df4b0ac47f628280048b8b",
-          "to": "928a23c38aad77dff7773c64cc03a99862eb9fbcc310acaa012768707abc123a"
-        },
-        {
-          "file": "tests/unit/fixtureNativeCi.test.ts",
-          "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
-          "to": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
-        },
-        {
-          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
-          "from": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f",
-          "to": "689f7745d18a6278fe856f4c86def444d080b971bf8f24723338abf26422317c"
-        },
-        {
-          "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
-          "from": "103a6c5b078e845e9b105b2b3d363938623bc64aa1823a08d99e921a100c031e",
-          "to": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c"
-        }
-      ]
+      "integration": "2026-09-27 backed payout discovery with protected archived Spin 593f355b75",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/unit/fixtureNativeCi.test.ts",
+        "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "tests/fixtures/earlybird-fee-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "file": "scripts/ci/classify-ci-changes.mjs",
@@ -2266,6 +2285,15 @@
         "tests/unit/fixtureNativeCi.test.ts",
         "tests/fixtures/sep8-spin-custody/source-binding.json",
         "tests/fixtures/earlybird-fee-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected native backend disposal a5b2b5f8",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
@@ -2407,6 +2435,93 @@
         "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+    },
+    {
+      "integration": "2026-09-30 Diamond Phase 11 line 2 concurrency runner (agent/claude-diamond-phase-11/test/one-diamond-cannot-be-spent-twice)",
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs",
+        "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "tests/fixtures/sep8-spin-custody/source-binding.json"
+      ],
+      "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
+    },
+    {
+      "on": "2026-09-27",
+      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
+      "files": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "from": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+          "to": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        },
+        {
+          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "from": "d575ba627a99bfc47b5606fd72ab43610443b8ee42df4b0ac47f628280048b8b",
+          "to": "928a23c38aad77dff7773c64cc03a99862eb9fbcc310acaa012768707abc123a"
+        },
+        {
+          "file": "tests/unit/fixtureNativeCi.test.ts",
+          "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
+          "to": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        },
+        {
+          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "from": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f",
+          "to": "689f7745d18a6278fe856f4c86def444d080b971bf8f24723338abf26422317c"
+        },
+        {
+          "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+          "from": "103a6c5b078e845e9b105b2b3d363938623bc64aa1823a08d99e921a100c031e",
+          "to": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c"
+        }
+      ]
+    },
+    {
+      "on": "2026-10-01",
+      "why": "Preserve exact archived recognition capture and source-seal bytes from formatter mutation; only three archived-spin evidence paths added to prettier ignore. No financial assertions or historical records changed.",
+      "files": [
+        {
+          "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+          "from": "ea239f4b47a09f42fa0688e941afa4234d726d407840323976afc374bb493f4c",
+          "to": "df074e5e4b0f9024b9099102fcbfc6ec688e4afb2d08d3e3567a98627e42a2c1"
+        }
+      ]
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -2600,6 +2715,19 @@
     "reason": "Visible operator reads bind the former ignored AgentPromoPanel balance and profile errors. The reviewed discarded-read ratchet changes only that component from 2 to 0 and adds its explanatory comment; no assertion is removed or weakened. Financial SQL, captured fixtures, component counts, limits and other source pins are unchanged.",
     "verification": "Exact SHA256 computed from the reviewed bytes. Source-binding verifier and focused ratchet checks must pass on this candidate; binding metadata is not native financial execution or production installation evidence."
   },
+  "diamond_honest_reads_ratchet_rebinding_20260930": {
+    "base_commit": "6a8ee7d8c11408850c50e78234c43397af19745f",
+    "source_branch": "cw-diamond-honest-reads-0930",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "225b85ad53b3d3d3f8f5616275f1c2e324588032d279f0d8d348d356b3de6c8f",
+        "sha256": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6"
+      }
+    ],
+    "reason": "The diamond wallet audit lowers this file's baseline for src/pages/VIPPage.tsx from 2 to 0, which is the ratchet TIGHTENING - it now permits fewer discarded-error reads for that file than before, never more - and the test's own third case asks for the lower number in the same commit, which is what turned it red here. Both reads were the shape this ratchet exists to kill, on a money surface: the profiles.diamonds read and the vip_points read discarded their errors, and supabase-js RESOLVES with { data: null, error }, so an RLS denial, a dropped link or a PGRST002 503 reached the player as setDiamonds(profData?.diamonds || 0) - a confident balance of ZERO for a wallet that was merely unreadable, which also greys out every Buy button on the page. Both now bind the error, report it through reportError, and carry a separate 'error' state that prints \"Unavailable\", so a real zero and an unreadable figure are no longer the same pixels (CLAUDE.md 10.86 rules 1 and 2). No assertion is removed or weakened by this rebinding, no other baseline row moves, and no financial component, captured catalog fixture, production object or accounting assertion is touched.",
+    "verification": "The new sha256 is the sha256 of the bytes of tests/unit/discardedErrorReadRatchet.test.ts at this base commit, read from disk in the worktree that produced the commit, with the runner's own computation - hashlib.sha256(path.read_bytes()).hexdigest(). The edit to this binding is a targeted text replacement of that one hash plus this block, not a JSON round-trip, so every other byte of the file is unchanged; python3 scripts/ci/verify-source-bindings.py then re-read all repository and fixture pins from disk and accepted the complete tree. component_count, both assertion counts, the captured fixtures map, limits and supplemental captures are byte-identical to the previous binding. No production data was read or changed by the restamp."
+  },
   "settlementAttributionIntegration20260927": {
     "reason": "Register the exact settlement-attribution native fixture and every maintained input in existing required accounting shard4. Existing runners, financial assertions, historical receipts and other pins remain unchanged. Cascade only the current nested binding bytes.",
     "changes": [
@@ -2623,26 +2751,24 @@
       }
     ]
   },
-  "productionAlertsSettlementIntegration20260927": {
-    "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
-    "changes": [
+  "satellite_combined_main_integration_20260927": {
+    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
+    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
+    "updated_active_pins": [
       {
-        "section": "repository_fixtures",
         "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e",
-        "current": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
+        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
+        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
       },
       {
-        "section": "repository_fixtures",
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "previous": "21078556a71e7dd7bde2fc81f18ac1c1c4e04a3b8fcbaea759365f5990c0d8ff",
-        "current": "54ec66afcc4cf28f85fca41916fd0458cff91e67d771ca32a42f90d1220f4930"
+        "before_sha256": "734b3df06cae8e5a2d82885138fa59ad835cf313f72bcf14fdca8347d5ac2c41",
+        "after_sha256": "627e31c69176f5c1a159f1bbcb94f6b42efd6964c44d8fa6cc5046c4b0f49aac"
       },
       {
-        "section": "repository_fixtures",
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "previous": "7f9726672ad54cbf112e912ae4b5c666ff9e93c928b03e078085e3af89065977",
-        "current": "3906e100fae8a55553a597f4bf06ac3616da8272456654bb2f8e886219717db4"
+        "before_sha256": "7c9a72d19b33c5e3996237167442e477262fa5d443d434ef328e552be2363178",
+        "after_sha256": "13b9259dca1807cec2fb501887c48c7cc79f2aaa807f5b1de9682f49623286b3"
       }
     ]
   },
@@ -2673,6 +2799,46 @@
       }
     ]
   },
+  "settlement_conservation_index_20260927": {
+    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "before": "32993053f035d9388c2e0d98f50a44ece7b290a1219f43d82a43ac79a02e7339",
+        "after": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "before": "301bb769b458e0b91959b281f3c9fe62fec84774fda0f98788c0bf0e716d959f",
+        "after": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
+      }
+    }
+  },
+  "productionAlertsSettlementIntegration20260927": {
+    "reason": "Preserve protected main 6e32e04f2 settlement-attribution qualification and Production Alerts archived Spin routing, including both complete audit histories. Rebind only exact merged workflow/classifier and dependent metadata; no financial fixture or assertion changed.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "77aff01a49dd725cd007530d9b5e7c52fd11698b25bed4f7b6cf1fd85b5acd7e",
+        "current": "f78df1642aaafac00ddb00d1020af72b3b5fbe12ab78c8d6d953c08de39c2f5d"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "21078556a71e7dd7bde2fc81f18ac1c1c4e04a3b8fcbaea759365f5990c0d8ff",
+        "current": "54ec66afcc4cf28f85fca41916fd0458cff91e67d771ca32a42f90d1220f4930"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "7f9726672ad54cbf112e912ae4b5c666ff9e93c928b03e078085e3af89065977",
+        "current": "3906e100fae8a55553a597f4bf06ac3616da8272456654bb2f8e886219717db4"
+      }
+    ]
+  },
   "productionAlertsBbjIntegration20260927": {
     "reason": "Preserve protected main eb6e94939 BBJ scoped-ledger qualification and Production Alerts archived Spin routing, retaining both parents complete audit histories. Rebind exact integrated classifier/workflow and nested metadata only; no qualified Spin input or assertion changes.",
     "changes": [
@@ -2693,6 +2859,26 @@
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
         "previous": "3906e100fae8a55553a597f4bf06ac3616da8272456654bb2f8e886219717db4",
         "current": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f"
+      }
+    ]
+  },
+  "certificationPlayerIndexIntegration20260927": {
+    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
+    "files": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
+        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "089358bbb769de16712b218c0a3e6b6a4fec5f986e4c3d6ce027eb37b2c36cec",
+        "sha256": "ff9ce565dd76970acd84c80f5981b08154ee497487edc739da6a6cf4a70d7952"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "5317831b963c3b9025f167272005448145c402ce03f456e6c8bd24b0fe1fa438",
+        "sha256": "18336e862e25f65de184b0422a18801388edd3107fc594597660d260998ec7b7"
       }
     ]
   },
@@ -2740,61 +2926,198 @@
     "protectedMain": "7461045c2375263f13756807325a2c235e796e94",
     "scope": "Preserve both BBJ native routes, every prior source map entry and parent qualification history; pins below bind the actual integrated CI and classifier. No financial assertion removed; merge does not qualify provider or live performance."
   },
-  "satellite_combined_main_integration_20260927": {
-    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
-    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
-    "updated_active_pins": [
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Preserve protected main's qualified lookup-index routes while adding the isolated player-search privacy harness path family. Only the classifier and its two nested binding records moved; accounting fixtures, financial assertions and captured inputs are unchanged.",
+    "changes": [
       {
+        "section": "repository_fixtures",
         "path": "scripts/ci/classify-ci-changes.mjs",
-        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
-        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
+        "previous": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "current": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
       },
       {
+        "section": "repository_fixtures",
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "before_sha256": "734b3df06cae8e5a2d82885138fa59ad835cf313f72bcf14fdca8347d5ac2c41",
-        "after_sha256": "627e31c69176f5c1a159f1bbcb94f6b42efd6964c44d8fa6cc5046c4b0f49aac"
+        "previous": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
+        "current": "940bc5157237c190679b2c6c510e3e3cc4024c7a39ede28e3c943757a7893854"
       },
       {
+        "section": "repository_fixtures",
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "before_sha256": "7c9a72d19b33c5e3996237167442e477262fa5d443d434ef328e552be2363178",
-        "after_sha256": "13b9259dca1807cec2fb501887c48c7cc79f2aaa807f5b1de9682f49623286b3"
+        "previous": "0654d6ce29995e19bfc4bb8eb8e9fb3eb4eaf8bc1217ce16f34b83e51a1e5360",
+        "current": "dddcd001d044e098a60a02915d75ecb6dd0a255f95b88ceda232489dc13db779"
       }
     ]
   },
-  "settlement_conservation_index_20260927": {
-    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
-    "changes": {
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+        "before": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68",
+        "after": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "previous": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
-        "current": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
+        "before": "ae57af9f463caea7f871c4ea4c2440651dd0a06d01ba3998c11649b4236e8402",
+        "after": "c845627aa750872af3128a38dfe340d61654119e81f4ee2c3608f0cc80ad17d7"
       },
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "previous": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8",
-        "current": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
+        "before": "0654d6ce29995e19bfc4bb8eb8e9fb3eb4eaf8bc1217ce16f34b83e51a1e5360",
+        "after": "03a5e7adbe0c50cf5a167107174bffb622f62295595e2a372f97586eca8fd617"
       }
     }
   },
-  "certificationPlayerIndexIntegration20260927": {
-    "reason": "Add the actual reserved-cleanup FK/index concurrency fixture to the existing required accounting route; preserve all historical bindings. Native source qualification is separate from hosted acceptance.",
-    "files": [
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
       {
         "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous_sha256": "e2aff9352230a9d8c364e4a883cc28db192300ffb8356a7348206ece9f0f3df2",
-        "sha256": "73f65f02f9fa46b69d69ab21f404781e1f3eac7af32cbe6da256059d82a0f020"
+        "before": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8",
+        "after": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
       },
       {
         "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "previous_sha256": "089358bbb769de16712b218c0a3e6b6a4fec5f986e4c3d6ce027eb37b2c36cec",
-        "sha256": "ff9ce565dd76970acd84c80f5981b08154ee497487edc739da6a6cf4a70d7952"
+        "before": "92984bea3230dbd920dedc908bb468e3d4a1d7e07b28c4264b8107b0bd08825d",
+        "after": "9195d331bbff05fc45dcdbbbcce4476fefb64349bda8c7b11c71bb726f4398bd"
       },
       {
         "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "previous_sha256": "5317831b963c3b9025f167272005448145c402ce03f456e6c8bd24b0fe1fa438",
-        "sha256": "18336e862e25f65de184b0422a18801388edd3107fc594597660d260998ec7b7"
+        "before": "50e3fbb993639ba90bee318d1eb7bdf14fc27e80c47d356e4e3ae87786c516ce",
+        "after": "4110b0f503aab2a1d9137bead25d2efd9a6f53b35945060735d4e5c2fcd3c416"
+      }
+    ]
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "tests/fixtures/sep8-spin-custody/source-binding.json"
+    ]
+  },
+  "coverageProtectedMainSecondIntegration20260927": {
+    "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
+    "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
+    "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "page_evidence_checkpoint_successor_20260927": {
+    "migrations": [
+      "supabase/migrations/20260926042810_the_period_calculator_reads_one_week_of_attributions.sql",
+      "supabase/migrations/20260927160709_a_page_recompute_reads_only_the_evidence_that_changed.sql"
+    ],
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "72eb966f218808739e33aaa19d16788c093b74d49b437e1568f4c0c12fe7cfac",
+        "sha256": "b115c778fc00bc5ecf3daf80a96dbb1386c01cfca42971ebdc684de32140dcc4"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "ab8241b2b12c506e39118b7d33e02cbcf0836265e91e7d8d353100356827963c",
+        "sha256": "496c8c0abd58f76a1e8418dbcd5922ea6b11fef4876118031ad54a0c9f38044b"
+      }
+    ],
+    "added_repository_inputs": ["tests/fixtures/union-weekly-basis/page-evidence-regression.sql"],
+    "reason": "Every page-scoped fn_rakeback_recompute_periods call the unaccrued-hand door did not answer read the whole club-week: on 2026-09-27 60 s of evidence counts and 9 s of tournament gate per call, 830-1,350 s of database time an hour, every one refused by batchless hands older than the door reads. 20260927160709 gives the page path a per club-week checkpoint of the frozen evidence shares (a batch and everything it covers are immutable), advanced under the calculator's own lock to a commit horizon, and reads only the batches recorded since and the records with no batch; the whole-period path keeps its full verification byte for byte. The union weekly basis cluster installs 20260926042810 (the body production runs), keeps it beside the successor as fixture.predecessor_page_calculator, applies 20260927160709 as the door does, and page-evidence-regression.sql proves the counts against the whole-period query lifted from the installed calculator over the cluster book and three randomized seeded weeks before and after they move, the page receipts and certificates against the whole-period call, the before/after gate and read costs, and the two insert guards.",
+    "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py (LANG=en_US.UTF-8, no LC_ALL): exit 0, 84 PASS steps. page-evidence-regression: 955 assertions; oracle lifted from the installed calculator equals fn_cash_period_evidence_since for 50 cluster club-weeks (120 checkpoint splits) and 70 seeded club-weeks (448 splits) and for 15 seeded club-weeks after the week moved under a checkpoint; page receipts and certificates equal the whole-period call for 30 cluster and 14 seeded club-weeks; the predecessor calls the gate once for a stale batchless hand and the page path does not; a checkpointed page reads 6 attribution rows against 6,015; both insert guards refuse and the real writer passes; period-coverage-regression's page drain runs on the page path."
+  },
+  "page_evidence_checkpoint_rederived_20260930": {
+    "migrations": [
+      "supabase/migrations/20260926042810_the_period_calculator_reads_one_week_of_attributions.sql",
+      "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql",
+      "supabase/migrations/20260930232349_a_page_recompute_reads_only_changed_evidence_rederived.sql"
+    ],
+    "superseded_and_deleted": "supabase/migrations/20260927160709_a_page_recompute_reads_only_the_evidence_that_changed.sql",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/dev/test-union-weekly-basis.py",
+        "previous_sha256": "b115c778fc00bc5ecf3daf80a96dbb1386c01cfca42971ebdc684de32140dcc4",
+        "sha256": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6"
+      },
+      {
+        "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+        "previous_sha256": "496c8c0abd58f76a1e8418dbcd5922ea6b11fef4876118031ad54a0c9f38044b",
+        "sha256": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757"
+      }
+    ],
+    "reason": "20260927160709 merged (PR #5475) and was never applied: its preimage assertion names md5(prosrc) 80f40737 (the 20260926042810 body), and production runs adea6633, which is that body with the ONE certificate-loop expression 20260927155651 step 3c rewrote (the tournament-fee agreement instant, now fn_accounting_tournament_source_terms_at). Proved byte for byte: 042810's body with that replacement hashes to the live prosrc. 20260930232349 is 160709 with the preimage set to adea6633, that expression carried into the installed calculator so applying it cannot revert 155651, the page-path and table comments naming the new version, and the postimage set to cb7f9eab. The union weekly basis cluster now takes 155651's step 3c (its two terms-at functions verbatim, then its replacement) after installing 042810, and applies 20260930232349 in place of 160709.",
+    "verification": "LANG=en_US.UTF-8 scripts/dev/test-union-weekly-basis.py on postgresql@17: exit 0, 86 PASS steps (84 before plus agreement-instant-terms-at and agreement-instant-calculator). page-evidence-regression: 955 PASS notices, 0 failures, unchanged in count from the 20260927 qualification."
+  },
+  "heldFeeOwnerBasisIntegration20260927": {
+    "scope": "Add the held-fee-owner-basis and held-fee-spin-retention native phases (owner-authorized host-club basis for held tournament fees; Sept-8 Spin witness under horse retention). The runner and the child bindings that pin it are rebound; no existing phase, fixture or assertion is removed or weakened.",
+    "migration": "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql"
+  },
+  "diamond_concurrency_runner_route_20260930": {
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366",
+        "sha256": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "f5663b226922840b7b909d65daa0a8063044a584f75e0d4a84b276448663faf6",
+        "sha256": "031825cd66c9f7b6590eca7ea59a164a808299a24aaa252d00c4084344ea70fb"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "f36f3e10515bdef8ed2ac23faf12b260be1504a349f3dfeac1e873bffd3c7f4e",
+        "sha256": "aaf5081d7b78661ff0ee4ce96849dbc584d223b7d62a988ac3116c0a9134cd69"
+      }
+    ],
+    "changed_qualification_manifest_pins": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366",
+        "sha256": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6",
+        "pinned_in": "scripts/qualification/cash-native-hosted.manifest.json"
+      }
+    ],
+    "reason": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py; npx vitest run tests/unit/diamondAcceptanceCi.test.ts tests/unit/fixtureNativeCi.test.ts tests/every-pinned-source-stays-bound.law.test.ts"
+  },
+  "profile_privacy_rebinding_20261001": {
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/agent-dashboard-durable-transfers.test.tsx",
+        "previous_sha256": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
+        "sha256": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6",
+        "sha256": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c"
+      }
+    ],
+    "reason": "Ruling 25 (docs/DIAMOND-RULINGS.md, Phase 10 line 2): a player's last-seen time is theirs alone, so the agent dashboard asks the presence door fn_profile_presence for who is online and reads the last hand played in the club from player_stats. agent-dashboard-durable-transfers.test.tsx answers that presence rpc with an empty list before its counted money rpcs, so every transfer and prepaid retry assertion is unchanged. discardedErrorReadRatchet.test.ts lowers three baselines exactly as its own shrink rule requires: DiamondService 1 -> 0 (the owner-door balance read binds and reports its error), OnlineFriendsPill 2 -> 1 (the profiles read binds its error), PresenceIndicator 1 -> 0 (presence comes from the presence door, which throws). No route, native phase, fixture or assertion is removed or weakened.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py; npx vitest run tests/components/agent-dashboard-durable-transfers.test.tsx tests/unit/discardedErrorReadRatchet.test.ts"
+  },
+  "productionAlertsCompletionIntegration20261001": {
+    "scope": "Preserve both merge parents and completion qualification; rebind actual merged source bytes. No native or production qualification implied.",
+    "ownParent": "65c059cb994c526a232b16e8a72e731910709211",
+    "protectedMain": "ec06319fe7197ea260173671dd590fcf26ca21eb",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d",
+        "current": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "983ee8c208596be291e58f8215ed074c08d32df71c754fd60eaf868a9c9f40fd",
+        "current": "f7e2bd884761a255044d43275fe42ac2517c16a3bca301407f74a304b384f2cd"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "0fdfa7a483427132fc5495cbb45c44b7aee9251516076532898467c43cb1d023",
+        "current": "0c1457747a6151dc43cc76eb5137760d9837210ec65ca1a170da81f7cffb1476"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c",
+        "current": "ea239f4b47a09f42fa0688e941afa4234d726d407840323976afc374bb493f4c"
       }
     ]
   }

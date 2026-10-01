@@ -1,5 +1,6 @@
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
-import type { HorseDecision } from '../../types.js';
+import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
+import type { HorseDecision, HorseTournamentUtilityLedger } from '../../types.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
@@ -70,6 +71,252 @@ function same(a: HorsePolicyAction, b: HorsePolicyAction): boolean {
   return a.action === b.action && a.amount === b.amount;
 }
 
+/** Legacy receipts can be read without being promoted to input provenance.
+ * New evidence-bearing receipts must be bounded and internally consistent
+ * before their immutable copy enters the execution witness. This validates
+ * structure and reconciliation; it does not establish response calibration. */
+export function horseTournamentUtilityReceiptIsValid(
+  value: unknown,
+  decision: Pick<HorseDecision, 'action' | 'amount'>
+): value is HorseTournamentUtilityLedger {
+  if (!record(value)) return false;
+  if (value.evidence === undefined) return true;
+  const nullableAmount = (n: unknown) => n === null || nonnegative(n);
+  const uint = (n: unknown) => nonnegative(n) && Number.isSafeInteger(n);
+  const probability = (n: unknown) => nonnegative(n) && n <= 1;
+  const finite = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
+  const actions = (n: unknown) => ACTIONS.includes(n as (typeof ACTIONS)[number]);
+  const ids = (n: unknown): n is string[] =>
+    Array.isArray(n) &&
+    n.length <= 9 &&
+    new Set(n).size === n.length &&
+    n.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 256);
+  if (
+    !exact(value, [
+      'schemaVersion',
+      'model',
+      'outcomeModel',
+      'objective',
+      'utilityUnit',
+      'chipEvUnit',
+      'baselineAction',
+      'baselineAmount',
+      'selectedAction',
+      'selectedAmount',
+      'executedAction',
+      'executedAmount',
+      'executionStatus',
+      'overrodeBaseline',
+      'baselineRetainedForUncertainty',
+      'baselineRetainedForContinuation',
+      'sidePotCount',
+      'playersBehind',
+      'coveringPlayers',
+      'conditionedOpponentRanges',
+      'equitySampleSize',
+      'utilityOutcomeSamples',
+      'equityStandardError',
+      'equityCalibrationError',
+      'effectiveOutcomeSamples',
+      'fieldPlayersActual',
+      'fieldPlayersModeled',
+      'fieldReconciliationErrorChips',
+      'icmMethod',
+      'icmErrorBound',
+      'componentReconciliationError',
+      'candidates',
+      'evidence',
+      ...(Object.hasOwn(value, 'readFrameSha256') ? ['readFrameSha256'] : []),
+    ]) ||
+    value.schemaVersion !== 1 ||
+    !['horse-tournament-utility-phase7-round1', 'horse-tournament-utility-phase8-round1'].includes(
+      value.model as string
+    ) ||
+    value.outcomeModel !==
+      (value.model === 'horse-tournament-utility-phase7-round1'
+        ? 'conditioned_showdown_samples'
+        : 'conditioned_public_street_continuation') ||
+    ![
+      'mtt_payout',
+      'satellite_seat_equity',
+      'pko',
+      'mystery_bounty',
+      'sng',
+      'spin_chip_ev',
+      'spin_payout',
+    ].includes(value.objective as string) ||
+    value.utilityUnit !== 'total_funded_pool_pct' ||
+    value.chipEvUnit !== 'tournament_chips' ||
+    !actions(value.baselineAction) ||
+    !nullableAmount(value.baselineAmount) ||
+    value.selectedAction !== decision.action ||
+    value.selectedAmount !== (decision.amount ?? null) ||
+    !actions(value.selectedAction) ||
+    !nullableAmount(value.selectedAmount) ||
+    (value.executedAction !== null && !actions(value.executedAction)) ||
+    !nullableAmount(value.executedAmount) ||
+    !['pending', 'intended', 'coerced', 'fallback', 'not_executed'].includes(
+      value.executionStatus as string
+    ) ||
+    ![
+      'overrodeBaseline',
+      'baselineRetainedForUncertainty',
+      'baselineRetainedForContinuation',
+    ].every((key) => typeof value[key] === 'boolean') ||
+    !ids(value.playersBehind) ||
+    !ids(value.coveringPlayers) ||
+    ![
+      'sidePotCount',
+      'conditionedOpponentRanges',
+      'equitySampleSize',
+      'utilityOutcomeSamples',
+      'fieldPlayersActual',
+      'fieldPlayersModeled',
+    ].every((key) => uint(value[key])) ||
+    ![
+      'equityStandardError',
+      'equityCalibrationError',
+      'effectiveOutcomeSamples',
+      'fieldReconciliationErrorChips',
+      'icmErrorBound',
+      'componentReconciliationError',
+    ].every((key) => nonnegative(value[key])) ||
+    !['exact_mh', 'plackett_luce_mc'].includes(value.icmMethod as string) ||
+    !horseTournamentUtilityEvidenceIsValid(value.evidence) ||
+    (Object.hasOwn(value, 'readFrameSha256') &&
+      value.readFrameSha256 !== null &&
+      (typeof value.readFrameSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(value.readFrameSha256))) ||
+    !Array.isArray(value.candidates) ||
+    value.candidates.length < 1 ||
+    value.candidates.length > 16
+  )
+    return false;
+  const opponentIds = new Set(value.evidence.opponents.map((row) => row.userId));
+  if (
+    (value.evidence.sampler !== undefined &&
+      (value.evidence.sampler.completedSamples !== value.utilityOutcomeSamples ||
+        value.evidence.sampler.completedSamples !== value.equitySampleSize)) ||
+    (value.conditionedOpponentRanges as number) !==
+      value.evidence.opponents.filter((row) => row.range !== null).length ||
+    (value.playersBehind as string[]).some((id) => !opponentIds.has(id)) ||
+    (value.coveringPlayers as string[]).some((id) => !opponentIds.has(id)) ||
+    (value.playersBehind as string[]).length !==
+      value.evidence.opponents.filter((row) => row.actsAfterHero).length ||
+    value.evidence.opponents.some(
+      (row) => row.actsAfterHero && !(value.playersBehind as string[]).includes(row.userId)
+    ) ||
+    value.fieldPlayersActual !== value.fieldPlayersModeled ||
+    (value.fieldPlayersActual as number) < 2 ||
+    (value.utilityOutcomeSamples as number) < 1 ||
+    (value.utilityOutcomeSamples as number) > 160 ||
+    (value.effectiveOutcomeSamples as number) > (value.utilityOutcomeSamples as number) + 1e-9 ||
+    (value.sidePotCount as number) > 10 ||
+    (value.componentReconciliationError as number) > 0.005 ||
+    ((value.executionStatus === 'pending' || value.executionStatus === 'not_executed') &&
+      (value.executedAction !== null || value.executedAmount !== null)) ||
+    (value.executionStatus === 'intended' &&
+      (value.executedAction !== value.selectedAction ||
+        value.executedAmount !== value.selectedAmount))
+  )
+    return false;
+  const candidateIds = new Set<string>();
+  let matchingSelected = 0;
+  for (const candidate of value.candidates) {
+    if (
+      !record(candidate) ||
+      !exact(candidate, [
+        'id',
+        'action',
+        'amount',
+        'investment',
+        'chipEv',
+        'payoutEv',
+        'bountyEv',
+        'optionEv',
+        'combinedUtility',
+        'utilityStandardError',
+        'utilityConfidenceHalfWidth',
+        'winProbability',
+        'allFoldProbability',
+        'bustProbability',
+        'bountyWinProbability',
+        'outcomeCount',
+        'resultingStackVectors',
+        'terminalForHero',
+        'sidePotCount',
+        'stackConservationError',
+        ...(Object.hasOwn(candidate, 'continuation') ? ['continuation'] : []),
+      ]) ||
+      typeof candidate.id !== 'string' ||
+      candidate.id.length < 1 ||
+      candidate.id.length > 64 ||
+      candidateIds.has(candidate.id) ||
+      !actions(candidate.action) ||
+      !nullableAmount(candidate.amount) ||
+      (['bet', 'raise'].includes(candidate.action as string)
+        ? !nonnegative(candidate.amount)
+        : candidate.amount !== null) ||
+      ![
+        'investment',
+        'payoutEv',
+        'utilityStandardError',
+        'utilityConfidenceHalfWidth',
+        'stackConservationError',
+      ].every((key) => nonnegative(candidate[key])) ||
+      !['chipEv', 'bountyEv', 'optionEv', 'combinedUtility'].every((key) =>
+        finite(candidate[key])
+      ) ||
+      !['winProbability', 'allFoldProbability', 'bustProbability', 'bountyWinProbability'].every(
+        (key) => probability(candidate[key])
+      ) ||
+      !['outcomeCount', 'resultingStackVectors', 'sidePotCount'].every((key) =>
+        uint(candidate[key])
+      ) ||
+      typeof candidate.terminalForHero !== 'boolean' ||
+      candidate.outcomeCount !== value.utilityOutcomeSamples ||
+      (candidate.resultingStackVectors as number) > (candidate.outcomeCount as number) ||
+      (candidate.sidePotCount as number) > (value.sidePotCount as number) ||
+      (candidate.stackConservationError as number) > 0.005 ||
+      Math.abs(
+        (candidate.combinedUtility as number) -
+          ((candidate.payoutEv as number) +
+            (candidate.bountyEv as number) +
+            (candidate.optionEv as number))
+      ) > 1e-7
+    )
+      return false;
+    candidateIds.add(candidate.id);
+    const selectedAmount = candidate.action === 'call' ? candidate.investment : candidate.amount;
+    if (candidate.action === decision.action && selectedAmount === (decision.amount ?? null))
+      matchingSelected++;
+    if (candidate.continuation !== undefined) {
+      const c = candidate.continuation;
+      if (
+        !record(c) ||
+        !exact(c, [
+          'shortStackCollisionProbability',
+          'expectedRetainedStackBb',
+          'expectedCoveredStacks',
+          'noFullBlindRaiseProbability',
+          ...['futureHands', 'futureForcedPaid', 'futureLevelUtilityEnvelope'].filter((key) =>
+            Object.hasOwn(c, key)
+          ),
+        ]) ||
+        !probability(c.shortStackCollisionProbability) ||
+        !probability(c.noFullBlindRaiseProbability) ||
+        !nonnegative(c.expectedRetainedStackBb) ||
+        !nonnegative(c.expectedCoveredStacks) ||
+        ['futureHands', 'futureForcedPaid', 'futureLevelUtilityEnvelope'].some(
+          (key) => Object.hasOwn(c, key) && !nonnegative(c[key])
+        )
+      )
+        return false;
+    }
+  }
+  return matchingSelected === 1;
+}
+
 /** Bounded structured-clone validation before witness construction. A graph
  * may be absent on legacy or caught-failure decisions; absence is not proof
  * of graph execution. A supplied graph must be complete, continuous and
@@ -92,7 +339,16 @@ export function horseDecisionReceiptIsValid(
       value.amount !== undefined ||
       value.policyGraph !== undefined ||
       value.policyOwnership !== undefined ||
-      value.tournamentPreflopAttribution !== undefined)
+      value.tournamentPreflopAttribution !== undefined ||
+      value.tournamentUtility !== undefined)
+  )
+    return false;
+  if (
+    value.tournamentUtility !== undefined &&
+    !horseTournamentUtilityReceiptIsValid(
+      value.tournamentUtility,
+      value as unknown as HorseDecision
+    )
   )
     return false;
   if (

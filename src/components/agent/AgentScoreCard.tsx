@@ -89,20 +89,25 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
         .in('transaction_type', ['agent_to_player', 'promo_agent_to_player']);
       if (recipientsError) throw recipientsError;
 
-      // Get active players (seen in last 7 days)
+      // Get active players: those who played a hand in THIS club in the last
+      // 7 days (the club's player_stats). A player's platform-wide last-seen
+      // time is theirs and platform staff's alone (ruling 25,
+      // docs/DIAMOND-RULINGS.md), and play here is what an agent's retention
+      // measures.
       const uniquePlayerIds = [
         ...new Set((recipients || []).map((r: any) => r.to_user_id).filter(Boolean)),
       ];
       let activePlayers = 0;
       if (uniquePlayerIds.length > 0) {
         const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-        const { data: activeProfiles, error: activeError } = await supabase
-          .from('profiles')
-          .select('id')
-          .in('id', uniquePlayerIds.slice(0, 50))
-          .gte('last_seen', sevenDaysAgo);
+        const { data: activeRows, error: activeError } = await supabase
+          .from('player_stats')
+          .select('user_id')
+          .eq('club_id', clubId)
+          .in('user_id', uniquePlayerIds.slice(0, 50))
+          .gte('updated_at', sevenDaysAgo);
         if (activeError) throw activeError;
-        activePlayers = (activeProfiles || []).length;
+        activePlayers = new Set((activeRows || []).map((r: any) => r.user_id)).size;
       }
 
       if (!isMounted.current) return;

@@ -50,6 +50,14 @@ const TESTS = join(ROOT, 'tests');
  * law test, a ratchet, a CI script or a docs/laws.d entry still reads by path.
  * Lower this when an orphan is routed or deleted. Raising it requires saying
  * why in the PR body.
+ * Raised to 34 on 2026-09-29 for the two typed clients Phase 10 built without
+ * their screen by instruction: src/services/DiamondAdjustmentService.ts (the
+ * Diamond adjustment doors, migration 20260929220000) and
+ * src/services/DiamondIncidentReviewService.ts (the incident review doors,
+ * migration 20260929211500). The Phase 10 staff surface (audit item 8) imports
+ * both and lowers this back to 32.
+ * Lowered back to 32 on 2026-09-29: the Diamond Staff Desk
+ * (src/pages/admin/DiamondStaffDeskPage.tsx) imports both.
  */
 const BASELINE_ORPHANS = 32;
 

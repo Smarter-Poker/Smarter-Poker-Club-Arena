@@ -153,8 +153,8 @@ const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'))
 const CashierStatementsPage = lazyWithRetry(() => import('./pages/CashierStatementsPage'));
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
-const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
-const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
+const ClubPlayersDoor = lazyWithRetry(() => import('./pages/ClubPlayersDoor'));
+const ClubMemberDoor = lazyWithRetry(() => import('./pages/ClubMemberDoor'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
 const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
@@ -296,6 +296,11 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
    refunds, run the catalog price lifecycle and verify comparison evidence.
    PlatformStaffGuard closes the route; every door checks staff again. */
 const CommerceDeskPage = lazyWithRetry(() => import('./pages/admin/CommerceDeskPage'));
+/* Diamond Staff Desk (2026-09-29, Diamond Phase 10 line 4): platform staff run
+   Diamond games, review Diamond incidents, read the books and handle Diamond
+   adjustments. PlatformStaffGuard closes the route; every door checks staff
+   again. Outside the arena's own paths, which render the safe shell for all. */
+const DiamondStaffDeskPage = lazyWithRetry(() => import('./pages/admin/DiamondStaffDeskPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -1506,7 +1511,7 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
-                          <ClubMembersPage />
+                          <ClubPlayersDoor />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1659,7 +1664,7 @@ function FullApp() {
                     <AuthGuard>
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Member Management">
-                          <MemberManagementPage />
+                          <ClubMemberDoor />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -2335,6 +2340,18 @@ function FullApp() {
                       <PlatformStaffGuard>
                         <PageErrorBoundary pageName="Commerce Desk">
                           <CommerceDeskPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="diamond-staff-desk"
+                  element={
+                    <AuthGuard>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Diamond Staff Desk">
+                          <DiamondStaffDeskPage />
                         </PageErrorBoundary>
                       </PlatformStaffGuard>
                     </AuthGuard>

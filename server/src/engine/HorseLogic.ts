@@ -9,10 +9,17 @@ import { HorsePolicyGraph } from './HorsePolicyGraph.js';
 import { horsePolicyRegistration, horsePolicyOwnership } from './HorsePolicyRegistry.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
+import {
+  acquireJointSamples,
+  jointSampleAcquisitionMatches,
+  JOINT_SAMPLE_WORK_BUDGET_MS,
+  type JointSampleAcquisition,
+} from './multiway/JointSampleAcquisition.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import { jointPlayersBehind } from './multiway/JointActionModel.js';
 import { horsePolicyDealtPlayers } from './multiway/DealtSeatCensus.js';
 import { tournamentSampleEquity } from './HorseTournamentUtility.js';
+import { captureHorseTournamentUtilityObservations } from './HorseTournamentUtilityEvidence.js';
 import {
   evaluateRemainingVariantPolicy,
   type RemainingVariantMode,
@@ -178,6 +185,8 @@ import {
   omahaDrawQuality,
   type OmahaDrawInfo,
   omahaNutStatus,
+  omahaBoatsAbove,
+  omahaBoatDominated,
   type OmahaNutStatus,
   omahaMadeClass,
   type OmahaMadeInfo,
@@ -1726,6 +1735,11 @@ export interface HorseDecideOpts {
    *  per hole count, plo5/plo6 value sizing plays small ball, and PLO
    *  aggressors are sampled toward board contact (default: enabled) */
   v15?: boolean;
+  /** V15 BOATS (2026-09-28, default OFF until the league resolves it): an
+   *  Omaha full house that a bigger boat or quads beats stops being nut-class,
+   *  and when raised after betting it calls instead of re-raising or jamming.
+   *  Measured by the plo5_v15_boats league matchup. */
+  v15Boats?: boolean;
   /** disable the V12 river-sizing polish: OOP block bets, nut-advantage
    *  overbets + blocker overbet bluffs, extended blocker-aware catches
    *  (defaults to the v12 master flag) */
@@ -1844,8 +1858,12 @@ export interface HorseDecideOpts {
    *  silently, with no miss recorded. Above GTO_MAX_DEPTH_BB (twice the
    *  deepest bucket - the same log-distance this file already tolerates for a
    *  one-bucket fallback) the consult declines and the heuristic layers,
-   *  which scale continuously with depth, play the spot. Disable to ablate
-   *  (default: enabled) */
+   *  which scale continuously with depth, play the spot.
+   *  DEFAULT OFF since 2026-09-28: the v33_depth_ceiling_400bb league
+   *  matchup, pooled over all 23 nightly runs (276,000 hands), measured the
+   *  ceiling at -2.97 +/- 1.09 bb/100 (2.7 stderr) against serving the
+   *  bucketed answer. Spots beyond the ceiling still fire
+   *  gto_served_beyond_depth_ceiling. Set true to measure it again. */
   v33DepthCeiling?: boolean;
   /** V37 (2026-09-02): satellite play — flat prizes are survival, not a
    *  ladder. A locked seat folds everything, a stack below the line jams
@@ -2040,6 +2058,8 @@ export function vpipFloorMul(gs: {
 let difficultyHint = 0;
 
 interface Phase7EquityEvidence {
+  observations?: TournamentUtilityInput['observations'];
+  samplerProvenance?: TournamentUtilityInput['samplerProvenance'];
   equity: number;
   sampleSize: number;
   standardError: number;
@@ -2090,15 +2110,18 @@ function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string
   const ordered = dealt.slice(start).concat(dealt.slice(0, start));
   const heroIndex = ordered.findIndex((player) => player.seat === hero.seat);
   if (heroIndex < 0) return new Set<string>();
+  const later = new Set(ordered.slice(heroIndex + 1).map((player) => player.seat));
   return new Set(
     ordered
-      .slice(heroIndex + 1)
       .filter(
         (player) =>
           !player.is_folded &&
           !player.is_sitting_out &&
           !player.is_all_in &&
-          player.user_id !== hero.user_id
+          player.user_id !== hero.user_id &&
+          // A re-raise returns around the ring. Earlier callers/raisers still
+          // owe the new price even though their opening position precedes us.
+          (later.has(player.seat) || player.bet < gs.currentBet)
       )
       .map((player) => player.user_id)
   );
@@ -2143,6 +2166,7 @@ function capturePhase7Equity(
     });
   }
   phase7EquityEvidence = {
+    observations: captureHorseTournamentUtilityObservations(active, useMind),
     equity: boundedEquity,
     sampleSize: n,
     standardError: n > 0 ? Math.sqrt((boundedEquity * (1 - boundedEquity)) / n) : 0,
@@ -2178,6 +2202,13 @@ function buildPhase7UtilityInput(
   if (!gs.pots || !gs.legalActions) throw new Error('joint_utility_canonical_state_unavailable');
   const toCall = Math.max(0, gs.currentBet - player.bet);
   return {
+    // Tournament stacks and awards use whole chips. Model the same button-
+    // ordered odd-chip and unmatched-contribution rules as final settlement.
+    settlement: {
+      chipUnit: 1,
+      dealerSeat: gs.dealerSeat!,
+      splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+    },
     street: gs.stage,
     hero: player,
     players: gs.players,
@@ -2198,6 +2229,8 @@ function buildPhase7UtilityInput(
     opponents: evidence7.opponents,
     sampledOpponentIds: evidence7.sampledOpponentIds,
     showdownSamples: evidence7.showdownSamples,
+    observations: evidence7.observations,
+    samplerProvenance: evidence7.samplerProvenance,
     context: {
       format:
         gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',
@@ -2722,6 +2755,15 @@ export class HorseLogic {
     decision = variants.decision;
     const { phase10, phase11, phase12 } = variants;
     const variantPolicy = phase10 ?? phase11 ?? phase12;
+    // Decision-local acquisition is independent of Phase 13 proposal authority.
+    // Its immutable population may be reused below; marginal board draws never
+    // enter this path. The existing offline clock control remains offline only.
+    let phase7JointAcquisition: JointSampleAcquisition | undefined;
+    const jointNow = opts.phase13EvidenceMode && !tele ? () => 0 : () => performance.now();
+    const multiBoard =
+      (gs.communityCards2?.length ?? 0) > 0 ||
+      (gs.communityCards3?.length ?? 0) > 0 ||
+      (gs.boardCount ?? 1) > 1;
 
     const arbitration = graph.run('tournament_utility', decision, () => {
       let phase8UtilityInput: TournamentUtilityInput | null = null;
@@ -2732,7 +2774,51 @@ export class HorseLogic {
         gs.tournament?.schemaVersion === 1
       ) {
         const tournament = trustedTournamentContext(gs);
-        const evidence7 = currentPhase7Equity();
+        let evidence7 = currentPhase7Equity();
+        let jointUnavailable: string | null = null;
+        let jointWithinBudget: (() => boolean) | undefined;
+        if (tournament && multiBoard) {
+          // Protect an existing commitment/continuation refusal before any
+          // joint utility may replace it. Phase 13 applies the same ownership.
+          if (decision.action === 'fold' && decision.continuationGuard) {
+            evidence7 = null;
+            jointUnavailable = `protected_${decision.continuationGuard}`;
+          } else {
+            const jointStarted = jointNow();
+            phase7JointAcquisition = acquireJointSamples(player, gs, { now: jointNow });
+            evidence7 = null;
+            if (
+              phase7JointAcquisition.status === 'acquired' &&
+              jointSampleAcquisitionMatches(player, gs, phase7JointAcquisition)
+            ) {
+              const acquisition = phase7JointAcquisition;
+              const joint = acquisition.evidence;
+              jointWithinBudget = () => jointNow() - jointStarted < JOINT_SAMPLE_WORK_BUDGET_MS;
+              const behind = new Set(jointPlayersBehind(player, gs));
+              const opponents = gs.players.filter((p) => joint.opponentIds.includes(p.user_id));
+              const useMind = opts.mind !== false;
+              evidence7 = {
+                ...tournamentSampleEquity({
+                  hero: player,
+                  sampledOpponentIds: joint.opponentIds,
+                  showdownSamples: joint.samples,
+                }),
+                samplerProvenance: acquisition.provenance,
+                observations: captureHorseTournamentUtilityObservations(opponents, useMind),
+                sampledOpponentIds: joint.opponentIds,
+                showdownSamples: joint.samples,
+                opponents: joint.opponentIds.map((userId) => ({
+                  userId,
+                  range: null,
+                  foldMul: useMind ? HorseMind.exploit(userId).bluffMod : 1,
+                  actsAfterHero: behind.has(userId),
+                })),
+              };
+            } else {
+              jointUnavailable = phase7JointAcquisition.reason ?? 'joint_samples_unavailable';
+            }
+          }
+        }
         if (!tournament) {
           if (tele) noteFire('phase7_utility_skip_incomplete');
         } else if (
@@ -2740,16 +2826,7 @@ export class HorseLogic {
           Array.isArray(gs.legalActions) &&
           gs.legalActions.some((action) => action !== 'discard') &&
           Array.isArray(gs.pots) &&
-          // Round 1 requires one coherent joint showdown sample per utility
-          // branch.  The existing multi-board strategy still prices those
-          // hands, but Phase 7 must not consume the independent per-board
-          // samples as though they came from one shared-deck deal.  Keep the
-          // baseline and expose the unavailable receipt until the later depth
-          // pass supplies that sampler.  Guard here as well as at capture time:
-          // preflop fixtures and restored hands can already carry extra boards.
-          !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
-          !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
-          (gs.boardCount ?? 1) <= 1 &&
+          (!multiBoard || evidence7?.samplerProvenance) &&
           evidence7
         ) {
           try {
@@ -2761,7 +2838,9 @@ export class HorseLogic {
               tournament,
               evidence7
             );
+            if (jointWithinBudget) phase8UtilityInput.withinBudget = jointWithinBudget;
             const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
+            const jointExpired = jointWithinBudget?.() === false;
             if (variantPolicy) {
               if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
                 const shadowStart = performance.now();
@@ -2794,8 +2873,10 @@ export class HorseLogic {
                     evaluation.unavailableReason ?? 'unknown';
               }
             }
-            phase8ReuseUtility = evaluation.continuePostflop;
-            const result = evaluation.result;
+            // The final receipt/hash work is charged too. Never accept an
+            // over-budget result just because the last loop check was timely.
+            phase8ReuseUtility = multiBoard ? undefined : evaluation.continuePostflop;
+            const result = jointExpired ? null : evaluation.result;
             if (result) {
               const selected = this.legalize(result.decision, player, gs, vi);
               const selectedAmount =
@@ -2827,7 +2908,9 @@ export class HorseLogic {
               }
             } else if (tele) {
               noteFire('phase7_utility_unavailable');
-              noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
+              noteFire(
+                `phase7_unavailable_${jointExpired ? 'work_budget' : (evaluation.unavailableReason ?? 'unknown')}`
+              );
             }
           } catch (error) {
             reportError(error, 'HorseLogic.phase7_tournament_utility');
@@ -2850,6 +2933,7 @@ export class HorseLogic {
                 ? 'phase7_unavailable_state_contract'
                 : 'phase7_unavailable_equity_evidence'
           );
+          if (jointUnavailable) noteFire(`phase7_unavailable_joint_${jointUnavailable}`);
         }
       }
       return { decision, phase8UtilityInput, phase8ReuseUtility };
@@ -3015,7 +3099,8 @@ export class HorseLogic {
               gs,
               decision,
               opts.phase13Joint ?? 'shadow',
-              opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase13EvidenceMode && !tele ? () => 0 : undefined,
+              phase7JointAcquisition
             );
       if (jointPolicy) {
         let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
@@ -4853,8 +4938,19 @@ export class HorseLogic {
       for (const n of suitN.values()) if (n >= 3) boardMono15 = true;
       for (const n of rankN.values()) if (n >= 2) boardPaired15 = true;
     }
+    // V15 BOATS (2026-09-28): a full house is not the nuts when a bigger boat
+    // or quads is live. Off by default until plo5_v15_boats resolves.
+    let boatDominated15 = false;
+    if (useV15 && opts.v15Boats === true && vi.isOmaha && cat === 7) {
+      try {
+        boatDominated15 = omahaBoatDominated(omahaBoatsAbove(player.cards, board));
+        if (tele15 && boatDominated15) noteFire('v15_boat_dominated');
+      } catch {
+        boatDominated15 = false;
+      }
+    }
     const nutClass15 =
-      cat >= 7 ||
+      (cat >= 7 && !boatDominated15) ||
       (nuts15 != null &&
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
@@ -5356,11 +5452,13 @@ export class HorseLogic {
           ? Math.min(heroRootStack31, opponentRootStack31)
           : null;
       const stackBB31 = effective31 !== null && gs.bigBlind > 0 ? effective31 / gs.bigBlind : null;
-      const tooDeep31 =
-        stackBB31 !== null &&
-        (opts.v33DepthCeiling ?? true) !== false &&
-        beyondGtoDepthCeiling(stackBB31);
+      // V33 is default OFF since 2026-09-28 (league: 23 runs, -2.97 +/- 1.09
+      // bb/100 with it on). Beyond the ceiling the bucketed answer is served,
+      // and every such spot is still counted so the staleness stays visible.
+      const beyond31 = stackBB31 !== null && beyondGtoDepthCeiling(stackBB31);
+      const tooDeep31 = beyond31 && opts.v33DepthCeiling === true;
       if (tooDeep31 && tele15) noteFire('gto_skip_too_deep');
+      else if (beyond31 && tele15) noteFire('gto_served_beyond_depth_ceiling');
 
       const direct31 =
         context31 &&
@@ -5649,9 +5747,10 @@ export class HorseLogic {
        * 150bb. Above the ceiling the answer would be extrapolated rather than
        * looked up, so the layer declines and the heuristics play the spot.
        */
-      const tooDeep32 =
-        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
+      const beyond32 = beyondGtoDepthCeiling(stackBB32);
+      const tooDeep32 = beyond32 && opts.v33DepthCeiling === true;
       if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+      else if (beyond32 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
       // V34: a drawing hand — no pair yet, but real equity from the runout.
       // It realizes a little better than its raw number (implied odds, and
@@ -5796,9 +5895,10 @@ export class HorseLogic {
 
         // Legacy V29/V30 remains a safe open-only fallback while no certified
         // V31 cell matches. It never answers a response node.
-        const tooDeep29 =
-          (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
+        const beyond29 = beyondGtoDepthCeiling(stackBB29);
+        const tooDeep29 = beyond29 && opts.v33DepthCeiling === true;
         if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+        else if (beyond29 && telemetryOn(opts)) noteFire('gto_served_beyond_depth_ceiling');
 
         // The open-node consult reads the same warehouse and the same depth
         // buckets, so the ceiling applies to it identically.
@@ -6759,6 +6859,7 @@ export class HorseLogic {
         // shove. The plan the bet made is honored here too.
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
+          (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
         return toCall >= stack || preferFlat15
@@ -6814,6 +6915,13 @@ export class HorseLogic {
         eq15 - dominationPenalty < 0.85
       ) {
         if (tele15) noteFire('v15_raise_gate');
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      // V15 BOATS: a full house that a bigger boat beats, raised after it
+      // bet, calls. The range that raises a boat on a paired board is the
+      // bigger boat; re-raising only ever gets called by it.
+      if (boatDominated15 && raisedAfterAggr) {
+        if (tele15) noteFire('v15_boat_gate');
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // ═══ V21 RIVER RAISE-WAR GOVERNOR ═══ once hero's river aggression

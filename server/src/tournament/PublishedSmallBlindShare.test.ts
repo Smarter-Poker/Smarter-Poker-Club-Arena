@@ -125,6 +125,12 @@ async function publish(spin: boolean, structure: any[], currentLevel: number) {
     // The chip clamp is a separate, already-correct guard; this test is about
     // the ceiling, so it is a pass-through here exactly as in the sibling.
     capLevelToTournamentChips: (level: unknown) => level,
+    // And since 2026-09-27 advanceBlindLevel refuses to invent a blind past
+    // the end of the authored structure at all unless the chip supply is
+    // proven. Every case below is deep past its ladder on purpose, so the
+    // supply is stated for the same reason the clamp is a pass-through:
+    // chips are not what these assertions are about.
+    chipsInPlayEstimate: () => 1_000_000_000,
     tournamentId: 'published-share',
     getTournamentLeaseGeneration: () => 'active-generation',
     lifecycleEpoch: { current: () => 1 },

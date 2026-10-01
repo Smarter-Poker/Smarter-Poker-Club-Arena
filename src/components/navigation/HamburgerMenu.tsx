@@ -28,6 +28,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { mayLeaveCurrentPage } from '../../lib/navigationGuard';
 import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
@@ -61,6 +62,8 @@ import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCan
 import { mediaUrl } from '../../utils/mediaBase';
 import { signInUrl } from '../../lib/signIn';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
+import { menuOffersCreateUnion } from './menuUnionDoor';
+import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -251,6 +254,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
      — slug stays slug, which is Dan's "THE SLUGS MUST MATCH". */
   const clubId = workspace.routeClubId;
   const clubRole = workspace.clubRole;
+  /* No union in the Diamond Arena (ruling 16, Phase 10 line 6): the menu
+     does not offer one to create while the arena is the club in context,
+     including the arena's lobby opened as a tab over a table. See
+     menuUnionDoor.ts. */
+  const inTabLobbyActive = useInTabLobbyActive();
+  const inTabLobbyClubId = useInTabLobbyClubId();
+  const showCreateUnion = menuOffersCreateUnion(canCreateUnion, [
+    clubId,
+    workspace.clubUUID,
+    inTabLobbyActive ? inTabLobbyClubId : null,
+  ]);
   /* EITHER READER MAY SAY YES; NEITHER MAY VETO. This was
      `clubId ? workspace.isPlatformStaff : isPlatformStaff`, which was safe
      only while `clubId` meant "on a /clubs/… path". Now that it is also true
@@ -474,7 +488,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const getFocusable = () =>
       Array.from(
         drawer.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          // input[tabindex="-1"] excluded: a TapHaptic switch inside a button is
+          // for the finger, never a keyboard stop.
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
       ).filter((element) => element.offsetParent !== null);
 
@@ -641,6 +657,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    // A page holding unsaved work (Table Management's ticker and message
+    // drafts) is asked first; these entries are buttons, so no link guard
+    // ever sees them.
+    if (!mayLeaveCurrentPage()) return;
     const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
     setRecentPaths(nextRecentPaths);
     try {
@@ -687,6 +707,21 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     setShowThemeSettings(true);
     onClose();
   };
+
+  // The Device Check is a modal destination too, and the shared Modal stacks
+  // at 1000, far under this drawer (9450/9500): opened with the drawer still
+  // up it painted behind the backdrop and could not be reached. Same hand-off
+  // as Table Studio: open it and close the drawer in the same click.
+  const handleOpenDeviceCheck = () => {
+    setShowDeviceCheck(true);
+    onClose();
+  };
+  // The menu reopened over an open check (edge swipe, Ctrl/Cmd+M, the bus):
+  // the check is dismissed with it, so closing the menu never brings back a
+  // blank Device Check the player did not ask for.
+  useEffect(() => {
+    if (isOpen) setShowDeviceCheck(false);
+  }, [isOpen]);
 
   const togglePinnedPath = (path: string) => {
     const nextPinnedPaths = pinnedPaths.includes(path)
@@ -916,6 +951,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Do not leave an off-canvas tree full of focusable controls in the tab order.
   if (!isOpen) {
+    if (showDeviceCheck) return <DeviceCheck isOpen onClose={() => setShowDeviceCheck(false)} />;
     return showThemeSettings ? (
       <ThemeSettingsModal
         isOpen
@@ -1183,7 +1219,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Invite Players
             </button>
-          ) : canCreateUnion ? (
+          ) : showCreateUnion ? (
             <button
               type="button"
               className={styles.quickAction}
@@ -1369,7 +1405,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span className={styles.toggleTrack} aria-hidden="true">
                 <span className={styles.toggleThumb} />
               </span>
-              <TapHaptic ignorePreference radius="3px" />
+              {/* Ticks when switching vibration ON (an iPhone browser feels it); off is silent. */}
+              <TapHaptic ignorePreference disabled={vibrationsEnabled} radius="3px" />
             </button>
           </div>
 
@@ -1410,7 +1447,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <button
             type="button"
             className={styles.navItem}
-            onClick={() => setShowDeviceCheck(true)}
+            onClick={handleOpenDeviceCheck}
             aria-label="Open Device Check"
           >
             <span>
@@ -1539,8 +1576,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           isVip={isVIP}
         />
       )}
-
-      <DeviceCheck isOpen={showDeviceCheck} onClose={() => setShowDeviceCheck(false)} />
 
       {/* Bible V8 §11.2: Theme Settings Modal */}
       <ThemeSettingsModal

@@ -3,10 +3,24 @@ import { dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as jointSampler from './multiway/JointRangeSampler.js';
+import * as tournamentUtility from './HorseTournamentUtility.js';
 
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import { HorseMind } from './HorseMind.js';
+import { HandController } from './HandController.js';
+import { horseMindHandFromCompletion } from './HorseMindHandIdentity.js';
+import { horsePlanContextFromDecision } from './HorsePlanHandIdentity.js';
+import { horsePlanHandKey } from './HorseDecisionEffects.js';
+import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
+import { decodeHorseDecisionReads, type HorseDecisionReadFrame } from './HorseDecisionReadFrame.js';
+import {
+  createHorseExecutionWitness,
+  settleHorseExecutionWitness,
+  type HorseExecutionWitness,
+} from './HorseExecutionWitness.js';
+import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   restoreFastRandom,
@@ -30,12 +44,14 @@ import {
   buildHorseDecisionKey,
   type FastHorseDecisionRequest,
   type HorseDecisionWorkerResponse,
+  type ObserveCompletedHandRequest,
 } from './horseDecision/index.js';
 import {
+  defaultHorseDecisionWorkerDependencies as defaults,
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from './horseDecision/workerRuntime.js';
-import type { Card, HorseDecision, SeatPlayer } from '../types.js';
+import type { ActionRecord, Card, HorseDecision, SeatPlayer } from '../types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -1639,6 +1655,79 @@ describe('Phase 7 live action-clock wiring', () => {
     expect(decision.tournamentUtility!.playersBehind).toEqual([]);
   });
 
+  it('includes earlier actors who still owe the re-raised price after the hero', () => {
+    const { hero, state } = decisionState('complete');
+    Object.assign(hero, { seat: 2, stack: 900, bet: 100, totalInvested: 100 });
+    state.players = [
+      { ...hero, cards: [] },
+      seat('small-blind', 1, 600, 400),
+      seat('early-raiser', 3, 800, 200),
+      seat('button-caller', 4, 800, 200),
+    ];
+    Object.assign(state, {
+      heroSeat: 2,
+      currentPlayerSeat: 2,
+      dealerSeat: 4,
+      dealtSeatIds: [1, 2, 3, 4],
+      currentBet: 400,
+      toCall: 300,
+      minRaiseTo: 600,
+      maxRaiseTo: 1000,
+      pot: 900,
+      contestablePot: 900,
+      pots: calculatePots(state.players),
+      actionHistory: [
+        {
+          seat: 3,
+          userId: 'early-raiser',
+          action: 'raise',
+          amount: 200,
+          stage: 'preflop',
+          timestamp: 1,
+        },
+        {
+          seat: 4,
+          userId: 'button-caller',
+          action: 'call',
+          amount: 200,
+          stage: 'preflop',
+          timestamp: 2,
+        },
+        {
+          seat: 1,
+          userId: 'small-blind',
+          action: 'raise',
+          amount: 400,
+          stage: 'preflop',
+          timestamp: 3,
+        },
+      ],
+    });
+    Object.assign(state.tournament!, {
+      playersAtTable: 4,
+      playersLeft: 4,
+      stacks: [1000, 1000, 1000, 1000],
+      stackByUser: Object.fromEntries(state.players.map((player) => [player.user_id, 1000])),
+    });
+    seedFastRandom(710924);
+    const decision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        telemetry: false,
+        mind: false,
+        decisionTimeMs: 0,
+        v27GtoCharts: false,
+        phase8Postflop: 'off',
+        phase13Joint: 'off',
+      }
+    );
+    expect(decision.tournamentUtility).toBeDefined();
+    expect(decision.tournamentUtility!.playersBehind).toEqual(['early-raiser', 'button-caller']);
+  });
+
   it('attaches the accepted ledger and emits receipts only for complete context', () => {
     enableBrainTelemetry();
     drainFires();
@@ -1669,6 +1758,61 @@ describe('Phase 7 live action-clock wiring', () => {
     );
   });
 
+  it.each([
+    [1, 2],
+    [2, 3],
+  ])('uses physical button %s for an odd single-board tournament pot', (dealerSeat, chipEv) => {
+    const { hero, state } = decisionState('complete');
+    Object.assign(hero, { stack: 1, bet: 2, totalInvested: 2 });
+    Object.assign(state.players[0], { stack: 1, bet: 2, totalInvested: 2 });
+    Object.assign(state.players[1], { stack: 0, bet: 3, totalInvested: 3, is_all_in: true });
+    state.players.push(seat('folded-dead-money', 3, 100, 1, { is_folded: true }));
+    Object.assign(state, {
+      stage: 'river',
+      dealerSeat,
+      dealtSeatIds: [1, 2, 3],
+      currentBet: 3,
+      toCall: 1,
+      pot: 6,
+      contestablePot: 6,
+      pots: calculatePots(state.players),
+      legalActions: ['fold', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      communityCards: ['T', 'J', 'Q', 'K', 'A'].map((rank) => card(rank as Card['rank'], 'clubs')),
+      actionHistory: [],
+    });
+    Object.assign(state.tournament!, {
+      playersAtTable: 3,
+      playersLeft: 3,
+      stacks: [3, 3, 101],
+      stackByUser: { 'live-hero': 3, 'live-villain': 3, 'folded-dead-money': 101 },
+    });
+    seedFastRandom(710923);
+    const decision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        telemetry: false,
+        mind: false,
+        decisionTimeMs: 0,
+        phase8Postflop: 'off',
+        phase13Joint: 'off',
+      }
+    );
+    // The board is a royal flush for both contenders. Calling produces seven
+    // chips: 4 to the first tied winner clockwise from the button, 3 to the
+    // other. Hero invests one more, so net gains are respectively 2 and 3.
+    const jam = decision.tournamentUtility?.candidates.find(
+      (candidate) => candidate.action === 'all_in'
+    );
+    expect(jam).toBeDefined();
+    expect(jam!.chipEv).toBeCloseTo(chipEv, 8);
+    expect(jam!.stackConservationError).toBe(0);
+  });
+
   it('fails Phase 7 closed on multi-board play instead of zipping independent deals', () => {
     enableBrainTelemetry();
     drainFires();
@@ -1690,6 +1834,129 @@ describe('Phase 7 live action-clock wiring', () => {
     const features = new Set(drainFires().map((receipt) => receipt.feature));
     expect(features).toContain('phase7_utility_unavailable');
     expect(features).toContain('phase7_unavailable_multi_board');
+  });
+
+  function jointRiverState(boardCount: number, dealerSeat: number) {
+    const { hero, state } = decisionState('complete');
+    Object.assign(hero, {
+      stack: 1,
+      bet: 2,
+      totalInvested: 2,
+      cards: [card('2', 'clubs'), card('3', 'clubs')],
+    });
+    state.players = [
+      { ...hero, cards: [] },
+      seat('live-villain', 2, 0, 3),
+      seat('folded-dead-money', 3, 100, 1, { is_folded: true }),
+    ];
+    const royal = (suit: Card['suit']) =>
+      ['T', 'J', 'Q', 'K', 'A'].map((rank) => card(rank as Card['rank'], suit));
+    Object.assign(state, {
+      stage: 'river',
+      dealerSeat,
+      dealtSeatIds: [1, 2, 3],
+      boardCount,
+      chipUnit: 1,
+      asset: 'chips',
+      bbjConfig: null,
+      bombPot: true,
+      currentBet: 3,
+      toCall: 1,
+      pot: 6,
+      contestablePot: 6,
+      pots: calculatePots(state.players),
+      legalActions: ['fold', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      communityCards: royal('hearts'),
+      communityCards2: royal('spades'),
+      communityCards3: boardCount === 3 ? royal('diamonds') : [],
+      actionHistory: [],
+    });
+    Object.assign(state.tournament!, {
+      playersAtTable: 3,
+      playersLeft: 3,
+      stacks: [3, 3, 101],
+      stackByUser: { 'live-hero': 3, 'live-villain': 3, 'folded-dead-money': 101 },
+    });
+    return { hero, state };
+  }
+
+  it.each([
+    [2, 1, 2],
+    [2, 2, 3],
+    [3, 1, 2],
+    [3, 2, 3],
+  ])(
+    'P7.2 consumes %s joint boards with button %s and exact net award %s while Phase13 is off',
+    (boardCount, dealerSeat, chipEv) => {
+      const { hero, state } = jointRiverState(boardCount, dealerSeat);
+      seedFastRandom(710923);
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+          phase13EvidenceMode: true,
+        }
+      );
+      const utility = decision.tournamentUtility!;
+      expect(utility).toBeDefined();
+      expect(utility.candidates.find((c) => c.action === 'all_in')?.chipEv).toBeCloseTo(chipEv, 8);
+      expect(utility.candidates.every((c) => c.stackConservationError === 0)).toBe(true);
+      expect(utility.evidence?.sampler).toMatchObject({
+        layout: 'independent',
+        boardCount,
+        sharedPrefixLength: 0,
+      });
+      expect(utility.evidence?.sampler?.completedSamples).toBeGreaterThanOrEqual(8);
+      expect(utility.evidence?.sampler?.stateKey).toBe(jointSampler.jointStateKey(hero, state));
+      expect(horseDecisionReceiptIsValid(decision)).toBe(true);
+      expect(decision.jointPolicy).toBeUndefined();
+    }
+  );
+
+  it('P7.2 refuses a result that exhausts its budget after the utility loop has finished', () => {
+    const { hero, state } = jointRiverState(2, 1);
+    let elapsed = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => elapsed);
+    const original = tournamentUtility.evaluateTournamentUtilityDetailed;
+    const utility = vi
+      .spyOn(tournamentUtility, 'evaluateTournamentUtilityDetailed')
+      .mockImplementation((input) => {
+        const result = original(input);
+        expect(result.result).not.toBeNull();
+        elapsed = 4;
+        return result;
+      });
+    try {
+      enableBrainTelemetry();
+      drainFires();
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: true,
+          mind: false,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+      expect(utility).toHaveBeenCalledTimes(1);
+      expect(decision.tournamentUtility).toBeUndefined();
+      expect(drainFires().map((row) => row.feature)).toContain('phase7_unavailable_work_budget');
+    } finally {
+      utility.mockRestore();
+      clock.mockRestore();
+    }
   });
 
   it('preserves the nested utility receipt across the live worker boundary', async () => {
@@ -1751,6 +2018,535 @@ describe('Phase 7 live action-clock wiring', () => {
     expect(cloned.decision.tournamentUtility?.schemaVersion).toBe(1);
     expect(cloned.decision.tournamentUtility?.selectedAction).toBe(cloned.decision.action);
     expect(cloned.decision.tournamentUtility?.candidates.length).toBeGreaterThan(1);
+  });
+
+  it.each(['off', 'shadow'] as const)(
+    'P7.2 joins one physical acquisition to the real worker and controller with Phase13 %s',
+    async (phase13Joint) => {
+      // Freeze only the local qualification clock. Production admission still
+      // rejects evidence-clock worker options; acquisition budget tests cover
+      // real refusal boundaries separately. This is not a latency benchmark.
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+      const sampler = vi.spyOn(jointSampler, 'sampleJointRanges');
+      const messages: HorseDecisionWorkerResponse[] = [];
+      const captures: Array<{ decision: HorseDecision; readFrame: HorseDecisionReadFrame }> = [];
+      const executions: HorseExecutionWitness[] = [];
+      const ready = defaults.workerReadiness();
+      const runtime = new HorseDecisionWorkerRuntime(
+        (message) => messages.push(structuredClone(message)),
+        {
+          ...defaults,
+          startServices: async () => ready,
+          stopServices: async () => undefined,
+          journalEnabled: () => true,
+          journalDecision: (_request, capture) =>
+            captures.push(structuredClone(capture) as (typeof captures)[number]),
+          journalExecution: (witness) => executions.push(structuredClone(witness)),
+          journalAcceptedHand: undefined,
+          journalLifecycle: undefined,
+          journalDiscard: undefined,
+          journalDiscardExecution: undefined,
+          noteDecision: () => undefined,
+          noteFeature: () => undefined,
+        }
+      );
+      try {
+        const tableId = '44444444-4444-4444-8444-444444444447';
+        const heroId = '11111111-1111-4111-8111-111111111117';
+        const opponentId = '22222222-2222-4222-8222-222222222227';
+        const hc = new HandController(
+          {
+            tableId,
+            handNumber: 700001,
+            gameVariant: 'nlh',
+            smallBlind: 50,
+            bigBlind: 100,
+            isTournament: true,
+            bombPot: { anteMultiplier: 1, boardCount: 2 },
+            rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+          },
+          [seat(heroId, 1, 201), seat(opponentId, 2, 101)],
+          1
+        );
+        hc.start();
+        for (let actions = 0; hc.getState().stage !== 'river' && actions < 6; actions++) {
+          expect(hc.performAction(hc.getState().currentPlayerSeat!, 'check')).toBe(true);
+        }
+        expect(hc.getState().stage).toBe('river');
+        expect(hc.getState().currentPlayerSeat).toBe(2);
+        expect(hc.performAction(2, 'all_in')).toBe(true);
+        const live = hc.getState();
+        const hero = live.players.find((p) => p.user_id === heroId)!;
+        const legal = hc.getAuthoritativeActionState(heroId)!;
+        const template = decisionState('complete').state;
+        const request: FastHorseDecisionRequest = {
+          type: 'DECIDE_FAST',
+          requestId: 700,
+          generation: 7,
+          fence: `${tableId}:700001:1:55555555-5555-4555-8555-555555555557:7`,
+          decisionTimeMs: 1700000100000,
+          decisionKey: '',
+          handJournalContext: captureHorseHandJournalContext(live.actionHistory),
+          player: hero,
+          style: 'balanced',
+          mods: {},
+          opts: { mind: false, phase8Postflop: 'off', phase13Joint },
+          gameState: {
+            ...template,
+            heroSeat: hero.seat,
+            currentPlayerSeat: live.currentPlayerSeat,
+            players: live.players.map((p) => ({ ...p, cards: [] })),
+            dealtSeatIds: [1, 2],
+            boardCount: hc.getActiveBoardCount(),
+            bombPot: true,
+            chipUnit: 1,
+            asset: 'chips',
+            bbjConfig: null,
+            communityCards: live.communityCards,
+            communityCards2: live.communityCards2,
+            communityCards3: live.communityCards3,
+            stage: live.stage,
+            currentBet: live.currentBet,
+            minRaise: live.minRaise,
+            pot: live.pot,
+            actionHistory: live.actionHistory,
+            pots: hc.computeLivePots(),
+            contestablePot: hc.getContestablePotForCall(heroId)!,
+            legalActions: legal.legalActions,
+            toCall: legal.toCall,
+            minRaiseTo: legal.minRaiseTo,
+            maxRaiseTo: legal.maxRaiseTo,
+            bettingStructure: legal.structure,
+            fixedBetSize: legal.fixedBetSize,
+            wagersCapped: legal.wagersCapped,
+            tournament: {
+              ...template.tournament!,
+              playersLeft: 2,
+              spotsPaid: 1,
+              payoutPct: [100],
+              stacks: [201, 101],
+              stackByUser: { [heroId]: 201, [opponentId]: 101 },
+              m: buildTournamentMState({
+                stackChips: hero.stack,
+                smallBlind: 50,
+                bigBlind: 100,
+                ante: 0,
+                anteType: 'none',
+                playersAtTable: 2,
+                nextSmallBlind: 75,
+                nextBigBlind: 150,
+                nextAnte: 0,
+                minutesToNextLevel: 5,
+                opponentStacks: live.players
+                  .filter((p) => p.user_id !== heroId)
+                  .map((p) => ({ userId: p.user_id, stackChips: p.stack })),
+              }),
+            },
+          },
+        };
+        request.decisionKey = buildHorseDecisionKey(request);
+        runtime.receive(structuredClone(request));
+        await runtime.drain();
+        const fast = messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(messages));
+        expect(sampler).toHaveBeenCalledTimes(1);
+        expect(horseDecisionReceiptIsValid(fast.decision)).toBe(true);
+        const utility = fast.decision.tournamentUtility!;
+        expect(utility).toBeDefined();
+        expect(utility.evidence?.sampler).toMatchObject({ boardCount: 2, layout: 'independent' });
+        expect(utility.readFrameSha256).toBe(captures[0].readFrame.sha256);
+        if (phase13Joint === 'off') expect(fast.decision.jointPolicy).toBeUndefined();
+        else expect(fast.decision.jointPolicy?.mode).toBe('shadow');
+        const witness = createHorseExecutionWitness(request, fast.decision, {
+          requestId: request.requestId,
+          lane: 'fast',
+          computeMs: fast.computeMs,
+          governorScale: fast.governorScale,
+        });
+        const accepted: Readonly<ActionRecord>[] = [];
+        const applied = hc.performAction(
+          hero.seat,
+          fast.decision.action,
+          fast.decision.amount,
+          'horse_policy',
+          (record) => accepted.push(record)
+        );
+        expect(applied).toBe(true);
+        settleHorseExecutionWitness(witness, {
+          applied,
+          acceptedActions: accepted.map((record) => ({ record, intended: true })),
+        });
+        expect(witness.executionStatus).toBe('intended');
+        expect(witness.phase7Evidence?.inputSha256).toBe(utility.evidence!.inputSha256);
+        runtime.receive({
+          type: 'OBSERVE_EXECUTION',
+          requestId: 701,
+          generation: request.generation,
+          fence: request.fence,
+          witness,
+        });
+        await runtime.drain();
+        expect(executions).toHaveLength(1);
+        expect(executions[0]).toEqual(witness);
+      } finally {
+        runtime.receive({ type: 'SHUTDOWN' });
+        await runtime.drain();
+        sampler.mockRestore();
+        clock.mockRestore();
+      }
+    }
+  );
+
+  it('P7.1 connects completed observations, original worker reads and utility to a real accepted controller action', async () => {
+    const heroId = '11111111-1111-4111-8111-111111111111';
+    const opponentId = '22222222-2222-4222-8222-222222222222';
+    const observationTable = '33333333-3333-4333-8333-333333333333';
+    const decisionTable = '44444444-4444-4444-8444-444444444444';
+    const lease = '55555555-5555-4555-8555-555555555555';
+    const originalRng = saveFastRandom();
+    const multipliers: number[] = [];
+    const modeledFoldProbabilities: number[] = [];
+    const scopeClaims: unknown[] = [];
+    try {
+      for (const response of ['fold', 'call'] as const) {
+        HorseMind.reset();
+        const messages: HorseDecisionWorkerResponse[] = [];
+        const captures: Array<{ decision: HorseDecision; readFrame: HorseDecisionReadFrame }> = [];
+        const executions: HorseExecutionWitness[] = [];
+        const ready = defaults.workerReadiness();
+        const runtime = new HorseDecisionWorkerRuntime(
+          (message) => messages.push(structuredClone(message)),
+          {
+            ...defaults,
+            startServices: async () => ready,
+            stopServices: async () => undefined,
+            journalEnabled: () => true,
+            journalDecision: (_request, capture) =>
+              captures.push(structuredClone(capture) as (typeof captures)[number]),
+            journalExecution: (witness) => executions.push(structuredClone(witness)),
+            journalAcceptedHand: undefined,
+            journalLifecycle: undefined,
+            journalDiscard: undefined,
+            journalDiscardExecution: undefined,
+            noteDecision: () => undefined,
+            noteFeature: () => undefined,
+          }
+        );
+        try {
+          // Isolated synthetic completed public histories. The real default
+          // ingestion runs, but these UUIDs do not assert a DB-accepted hand.
+          // Both incompatible family and incompatible size observations are
+          // retained; neither is later represented as exact NLH HU authority.
+          const completion = (n: number, reply: 'fold' | 'call'): ObserveCompletedHandRequest => ({
+            type: 'OBSERVE_COMPLETED_HAND',
+            requestId: n * 2,
+            generation: 1000000 + n,
+            fence: `${observationTable}:${1000000 + n}:${lease}:observe`,
+            handKey: `${observationTable}:${1000000 + n}`,
+            committedHandId: `66666666-6666-4666-8666-${String(n).padStart(12, '0')}`,
+            bigBlind: 100,
+            scope: n % 2 ? 'omaha:full' : 'holdem:full',
+            showdown: null,
+            actions: [
+              {
+                seat: 1,
+                userId: heroId,
+                action: 'all_in',
+                amount: 2000,
+                stage: 'preflop',
+                timestamp: 1700000000000 + n * 100,
+                isFullRaise: true,
+              },
+              {
+                seat: 2,
+                userId: opponentId,
+                action: reply,
+                amount: reply === 'call' ? 2000 : 0,
+                stage: 'preflop',
+                timestamp: 1700000000001 + n * 100,
+              },
+            ],
+          });
+          for (let n = 1; n <= 40; n++) {
+            const observation = completion(n, response);
+            const prefix = observation.actions!.slice(0, 1) as ActionRecord[];
+            HorseMind.setDecisionScope(observation.scope!);
+            HorseMind.observe(prefix, [], horseMindHandFromCompletion(observation));
+            HorseMind.observe(prefix, [], horseMindHandFromCompletion(observation));
+            HorseMind.setDecisionScope(null);
+            runtime.receive(observation);
+            runtime.receive({ ...observation, requestId: observation.requestId + 1 });
+          }
+          await runtime.drain();
+          expect(
+            messages.filter(
+              (message) => message.type === 'ACK' && message.operation === 'OBSERVE_COMPLETED_HAND'
+            )
+          ).toHaveLength(80);
+          expect(HorseMind.getStats(heroId)?.hands).toBe(40);
+          expect(HorseMind.getStats(opponentId)).toMatchObject({
+            hands: 40,
+            facedAggr: 40,
+            folds: response === 'fold' ? 40 : 0,
+          });
+          expect(HorseMind.getScopedStats(opponentId, 'omaha:full')?.hands).toBe(20);
+          expect(HorseMind.getScopedStats(opponentId, 'holdem:full')?.hands).toBe(20);
+          expect(HorseMind.getScopedStats(opponentId, 'holdem:hu')).toBeUndefined();
+          const originalWindow = {
+            version: 1,
+            coverage: 'complete',
+            fromMs: 1700000000101,
+            toMs: 1700000004001,
+          };
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual(originalWindow);
+          expect(HorseMind.getScopedStats(opponentId, 'omaha:full')?.sourceWindow).toEqual({
+            ...originalWindow,
+            toMs: 1700000003901,
+          });
+          // Reload the original aggregates before the real worker decision.
+          // The separately qualified persistence mapper/RPC owns the database
+          // boundary; this verifies its HorseMind import/export consumer path.
+          const pooledRows = HorseMind.exportDirty();
+          const scopedRows = HorseMind.exportDirtyScoped();
+          HorseMind.reset();
+          HorseMind.importStats(structuredClone(pooledRows));
+          HorseMind.importScoped(structuredClone(scopedRows));
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual(originalWindow);
+
+          // The current hand is actually dealt by the controller; its legal
+          // rights, stacks, cards and accepted record are not mocked.
+          const template = decisionState('complete');
+          const hc = new HandController(
+            {
+              tableId: decisionTable,
+              handNumber: 1000500,
+              gameVariant: 'nlh',
+              smallBlind: 50,
+              bigBlind: 100,
+              isTournament: true,
+              rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+            },
+            [seat(heroId, 1, 2000), seat(opponentId, 2, 2000)],
+            1
+          );
+          // Fix only the isolated undealt deck. The controller still deals
+          // cards, posts blinds and accepts every wager through its real path.
+          const deck = hc.getState().deck as unknown as {
+            cards: Card[];
+            getRemainingCards(): Card[];
+          };
+          const opening = [
+            card('A', 'spades'),
+            card('K', 'spades'),
+            card('Q', 'hearts'),
+            card('Q', 'diamonds'),
+          ];
+          const key = (c: Card) => `${c.rank}:${c.suit}`;
+          const held = new Set(opening.map(key));
+          deck.cards = [
+            ...opening,
+            ...deck
+              .getRemainingCards()
+              .filter((c) => !held.has(key(c)))
+              .sort((a, b) => key(a).localeCompare(key(b))),
+          ];
+          hc.start();
+          const live = hc.getState();
+          const hero = live.players.find((player) => player.user_id === heroId)!;
+          const opponent = live.players.find((player) => player.user_id === opponentId)!;
+          const legal = hc.getAuthoritativeActionState(heroId)!;
+          expect(live.currentPlayerSeat).toBe(hero.seat);
+          const request: FastHorseDecisionRequest = {
+            type: 'DECIDE_FAST',
+            requestId: 1000,
+            generation: 500,
+            fence: `${decisionTable}:1000500:1:${lease}:500`,
+            decisionTimeMs: 1700000100000,
+            decisionKey: '',
+            handJournalContext: captureHorseHandJournalContext(live.actionHistory),
+            player: hero,
+            style: 'balanced',
+            mods: {},
+            opts: { mind: true, v27GtoCharts: false, phase8Postflop: 'off', phase13Joint: 'off' },
+            gameState: {
+              ...template.state,
+              heroSeat: hero.seat,
+              currentPlayerSeat: live.currentPlayerSeat,
+              players: live.players.map((player) => ({ ...player, cards: [] })),
+              dealtSeatIds: [1, 2],
+              boardCount: 1,
+              chipUnit: 1,
+              asset: 'chips',
+              communityCards: live.communityCards,
+              stage: live.stage,
+              currentBet: live.currentBet,
+              minRaise: live.minRaise,
+              pot: live.pot,
+              actionHistory: live.actionHistory,
+              pots: hc.computeLivePots(),
+              contestablePot: hc.getContestablePotForCall(heroId)!,
+              legalActions: legal.legalActions,
+              toCall: legal.toCall,
+              minRaiseTo: legal.minRaiseTo,
+              maxRaiseTo: legal.maxRaiseTo,
+              bettingStructure: legal.structure,
+              fixedBetSize: legal.fixedBetSize,
+              wagersCapped: legal.wagersCapped,
+              tournament: {
+                ...template.state.tournament!,
+                stackByUser: { [heroId]: 2000, [opponentId]: 2000 },
+                m: buildTournamentMState({
+                  stackChips: hero.stack,
+                  smallBlind: 50,
+                  bigBlind: 100,
+                  ante: 0,
+                  anteType: 'none',
+                  playersAtTable: 2,
+                  nextSmallBlind: 75,
+                  nextBigBlind: 150,
+                  nextAnte: 0,
+                  minutesToNextLevel: 5,
+                  opponentStacks: [{ userId: opponentId, stackChips: opponent.stack }],
+                }),
+              },
+            },
+          };
+          request.decisionKey = buildHorseDecisionKey(request);
+          runtime.receive(structuredClone(request));
+          await runtime.drain();
+          const fast = messages.find((message) => message.type === 'FAST_RESULT');
+          if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(messages.at(-1)));
+          expect(horseDecisionReceiptIsValid(fast.decision)).toBe(true);
+          const utility = fast.decision.tournamentUtility!;
+          expect(utility).toBeDefined();
+          expect(utility.evidence).toBeDefined();
+          expect(utility.evidence!.opponents[0]).toMatchObject({
+            userId: opponentId,
+            foldMul: response === 'fold' ? 1.45 : 0.55,
+            statistics: {
+              source: 'pooled',
+              scope: null,
+              counters: { hands: 40, facedAggr: 40, folds: response === 'fold' ? 40 : 0 },
+              sourceWindow: originalWindow,
+            },
+            recency: { source: 'pooled', sourceWindow: originalWindow },
+          });
+          expect(utility.evidence!.observations).toEqual({
+            status: 'captured',
+            scope: 'holdem:hu',
+            window: { status: 'contribution_envelope', sourceWindow: originalWindow },
+            tableIsolation: 'not_established',
+            formatIsolation: 'not_established',
+            exactVariantIsolation: 'not_established',
+          });
+          expect(utility.evidence!.responseModel).toMatchObject({
+            calibration: 'uncalibrated',
+            modelErrorBound: null,
+          });
+          const originalFrame = captures[0].readFrame;
+          expect(utility.readFrameSha256).toBe(originalFrame.sha256);
+          const planContext = horsePlanContextFromDecision(request);
+          const originalReads = decodeHorseDecisionReads(
+            originalFrame,
+            request.gameState.players,
+            horsePlanHandKey(request.gameState.actionHistory, planContext),
+            planContext
+          );
+          expect(originalReads.stats.get(opponentId)?.hands).toBe(40);
+          expect(originalReads.stats.get(opponentId)?.sourceWindow).toEqual(originalWindow);
+          expect(originalReads.scoped.get(`omaha:full|${opponentId}`)?.hands).toBe(20);
+          multipliers.push(utility.evidence!.opponents[0].foldMul);
+          const jam = utility.candidates.find((candidate) => candidate.action === 'all_in');
+          expect(jam).toBeDefined();
+          modeledFoldProbabilities.push(jam!.allFoldProbability);
+          scopeClaims.push(utility.evidence!.observations);
+
+          // A later real ingestion changes the canonical pooled reads. DEEP
+          // must borrow FAST's original view, not recertify that new state.
+          runtime.receive(completion(41, response === 'fold' ? 'call' : 'fold'));
+          await runtime.drain();
+          expect(HorseMind.getStats(opponentId)?.hands).toBe(41);
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual({
+            ...originalWindow,
+            toMs: 1700000004101,
+          });
+          const deepRequest = {
+            ...request,
+            type: 'DECIDE_DEEP' as const,
+            requestId: 1001,
+            rngBefore: fast.rngBefore,
+            deepEquity: 2,
+          };
+          runtime.receive(structuredClone(deepRequest));
+          await runtime.drain();
+          const deep = messages.find((message) => message.type === 'DEEP_RESULT');
+          if (deep?.type !== 'DEEP_RESULT') throw Error(JSON.stringify(messages.at(-1)));
+          expect(horseDecisionReceiptIsValid(deep.decision)).toBe(true);
+          expect(deep.decision.tournamentUtility!.readFrameSha256).toBe(originalFrame.sha256);
+          expect(captures[1].readFrame).toEqual(originalFrame);
+          expect(
+            deep.decision.tournamentUtility!.evidence!.opponents[0].statistics.sourceWindow
+          ).toEqual(originalWindow);
+          expect(
+            deep.decision.tournamentUtility!.evidence!.opponents[0].recency.sourceWindow
+          ).toEqual(originalWindow);
+          expect(
+            deep.decision.tournamentUtility!.evidence!.opponents[0].statistics.counters?.hands
+          ).toBe(40);
+          expect(HorseMind.getStats(opponentId)?.hands).toBe(41);
+
+          const witness = createHorseExecutionWitness(deepRequest, deep.decision, {
+            requestId: deepRequest.requestId,
+            lane: 'deep',
+            computeMs: deep.computeMs,
+            governorScale: deep.governorScale,
+          });
+          expect(witness.handAnchor.status).toBe('anchored');
+          const accepted: Readonly<ActionRecord>[] = [];
+          const applied = hc.performAction(
+            hero.seat,
+            deep.decision.action,
+            deep.decision.amount,
+            'horse_policy',
+            (record) => accepted.push(record)
+          );
+          expect(applied).toBe(true);
+          expect(accepted).toHaveLength(1);
+          settleHorseExecutionWitness(witness, {
+            applied,
+            acceptedActions: accepted.map((record) => ({ record, intended: true })),
+          });
+          expect(witness.executionStatus).toBe('intended');
+          expect(witness.acceptedActions[0].record.action).toBe(deep.decision.action);
+          expect(witness.phase7Evidence).toMatchObject({
+            inputSha256: deep.decision.tournamentUtility!.evidence!.inputSha256,
+            readFrameSha256: originalFrame.sha256,
+            selectedAction: deep.decision.action,
+          });
+          runtime.receive({
+            type: 'OBSERVE_EXECUTION',
+            requestId: 1002,
+            generation: request.generation,
+            fence: request.fence,
+            witness,
+          });
+          await runtime.drain();
+          expect(executions).toHaveLength(1);
+          expect(executions[0]).toEqual(witness);
+          // Journal adapter storage is an isolated memory capture here; this
+          // proves the execution handoff, not SQLite persistence/live use.
+        } finally {
+          runtime.receive({ type: 'SHUTDOWN' });
+          await runtime.drain();
+        }
+      }
+      expect(multipliers).toEqual([1.45, 0.55]);
+      expect(modeledFoldProbabilities[0]).toBeGreaterThan(modeledFoldProbabilities[1]);
+      expect(scopeClaims[0]).toEqual(scopeClaims[1]);
+    } finally {
+      HorseMind.reset();
+      restoreFastRandom(originalRng);
+    }
   });
 
   it('runs after every legacy/global strategy layer and before think time', () => {

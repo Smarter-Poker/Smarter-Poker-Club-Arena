@@ -81,7 +81,6 @@ const flow = (over: Partial<DiamondFlow> = {}): DiamondFlow => ({
   earnedTotal: 4000,
   spentLast30: 160,
   earnedLast30: 400,
-  readAt: '2026-09-14T00:00:00Z',
   ...over,
 });
 

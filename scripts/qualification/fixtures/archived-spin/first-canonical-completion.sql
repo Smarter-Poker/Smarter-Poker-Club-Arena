@@ -28,8 +28,8 @@ BEGIN
  IF current_setting('transaction_isolation') IS DISTINCT FROM 'read committed' THEN RAISE EXCEPTION 'PROBE_ISOLATION_CHANGED'; END IF;
  PERFORM set_config('lock_timeout','3s',true);
  PERFORM set_config('TimeZone','UTC',true);
- IF transaction_timestamp()<'2026-09-21T07:00:00Z'::timestamptz
- OR transaction_timestamp()>='2026-09-28T07:00:00Z'::timestamptz THEN
+ IF transaction_timestamp()<'2026-09-28T07:00:00Z'::timestamptz
+ OR transaction_timestamp()>='2026-10-05T07:00:00Z'::timestamptz THEN
   RAISE EXCEPTION 'PROBE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF;
  IF public.fn_platform_frozen() IS DISTINCT FROM false THEN RAISE EXCEPTION 'PROBE_FROZEN'; END IF;
  IF EXISTS(SELECT 1 FROM public.tournament_terminal_settlements WHERE tournament_id=event)

@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { rawProfileHeading } from './support/rawProfileHeading';
+import { readProfileInterfaceMode } from './support/profileInterfaceMode';
 import { walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
@@ -16,6 +17,7 @@ import { installAccountRealtimeInterruption } from './support/accountRealtimeInt
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -431,13 +433,20 @@ test.describe('production Table Studio realtime contract', () => {
   // This test performs and verifies durable production writes on two reserved
   // identities, then hard-deletes both. Restoring disposable cosmetics before
   // deletion adds no evidence and can hide the original journey failure.
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
@@ -635,7 +644,7 @@ test.describe('production Table Studio realtime contract', () => {
         });
       }
       const otherName = await rawProfileHeading(otherPage);
-      const otherMode = await otherPage.locator('html').getAttribute('data-theme');
+      const otherMode = await readProfileInterfaceMode(otherPage, PRODUCTION_RESPONSE_TIMEOUT);
       await primaryPage.emulateMedia({ colorScheme: 'light' });
       await mobilePage.emulateMedia({ colorScheme: 'dark' });
       accountSignalReceived.set(primaryPage, false);
@@ -675,7 +684,7 @@ test.describe('production Table Studio realtime contract', () => {
       await primaryPage.emulateMedia({ colorScheme: 'dark' });
       await expect(primaryPage.locator('html')).toHaveAttribute('data-theme', 'dark');
       await expect(otherPage.locator('#profile-heading')).toHaveText(otherName);
-      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode!);
+      await expect(otherPage.locator('html')).toHaveAttribute('data-theme', otherMode);
       const accountReadback = await primaryAccount.client
         .from('profiles')
         .select('alias,settings')

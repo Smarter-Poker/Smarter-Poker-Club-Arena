@@ -96,8 +96,74 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // it takes the chip tournament path below and is refused there exactly as
     // a chip tournament seat is: a tournament table has no buy-in headroom.
     if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
-      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+      /* A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5).
+         The controller is cleared when a hand ends, but its settlement runs
+         on after it (postHandTasks is not awaited; the dealing loop waits for
+         it before the next deal). A direct top-up in that window raced the
+         settlement of the same seat: measured on an isolated cluster with the
+         live doors, the top-up door deadlocked against the hand settler, and a
+         top-up that won the race left the settler an opening stack that no
+         longer matched the seat, which it refuses. Until the settlement lands
+         the top-up is an intent, exactly as mid hand, and it is applied after
+         the settlement and before the next deal. */
+      return this.addDiamonds(
+        userId,
+        amount,
+        maxBuyIn,
+        midHand || this.hasSettlementInFlight(),
+        player,
+        opId
+      );
     }
+
+    /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
+
+       `midHand` above is read before any await, but dealHand() snapshots the
+       roster's stacks under the seat boundary and only then sets
+       `handController`, after the original cash manifest has been captured.
+       An add-on that read "between hands" while a hand was being prepared
+       applied its chips to table_seats.stack while the prepared roster still
+       held the old stack, so fn_cash_capture_hand_manifest found the seat row
+       disagreeing with the dealt stack and recorded
+       original_seat_or_starting_stack_unproven. Production, book 2026-09-21:
+       85 accepted Midway hands, each with exactly one direct add-on committed
+       0.006-6.7s before the manifest, blocked the union's weekly close.
+
+       The fix is ordering, not tolerance. A seat credit takes the same FIFO
+       seat boundary that hand preparation and departures hold, and decides
+       seat-versus-queue only once it owns it: either it lands before the
+       roster is snapshotted (and the dealt stack includes it), or the hand has
+       started and it is queued in table_pending_addons for settlement. A
+       mid-hand request never touches the seat and does not wait. */
+    if (!midHand) {
+      let releaseSeatBoundary: () => void;
+      try {
+        releaseSeatBoundary = await this.acquireSeatBoundary();
+      } catch {
+        return { success: false, error: 'Add-on failed' };
+      }
+      try {
+        return await this.addChipsDecided(userId, amount, opId);
+      } finally {
+        releaseSeatBoundary();
+      }
+    }
+    return this.addChipsDecided(userId, amount, opId);
+  }
+
+  /** The chip add-on once the seat-versus-queue decision can no longer race hand preparation. */
+  private async addChipsDecided(
+    userId: string,
+    amount: number,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (isMaintenanceFrozen()) {
+      return { success: false, error: 'Scheduled maintenance is in progress' };
+    }
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    const maxBuyIn = this.getMaxBuyIn();
+    const midHand = !!this.handController;
 
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
@@ -372,7 +438,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
     if (this.diamondTopUpIntents.size === 0) return;
-    if (this.handController) return;
+    // Not while a hand is dealt, and not while the last one is still settling:
+    // the settler checks the seat's opening stack, and a top-up landing under it
+    // would make that stack wrong. The next sweep lands it.
+    if (this.handController || this.hasSettlementInFlight()) return;
     const maxBuyIn = Math.floor(this.getMaxBuyIn());
     for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
       const player = players.find((p) => p.user_id === intent.userId);

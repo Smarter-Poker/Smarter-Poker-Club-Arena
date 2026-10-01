@@ -5,6 +5,7 @@ execution is not financial, historical-completion or production qualification.
 """
 from pathlib import Path
 import copy
+from datetime import datetime
 import sys
 import importlib.util
 import re
@@ -51,7 +52,7 @@ INPUTS = (MODULE, MANIFEST, COMPLETION, COMPLETION_CASES, COMPLETION_TEST, COMPL
             'full-provider-catalog.json', 'full-authority-catalog.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',
             'seating-receipts.json', 'schema-authority.json', 'original-launch-refusal.sql',
-            'first-connected-probe.sql', 'first-temporal-state.json', 'first-temporal-refusal.sql',
+            'first-connected-probe.sql', 'first-temporal-state.json', 'first-recognition-capture.json', 'first-temporal-refusal.sql',
             'first-manager-state.json', 'first-manager-proof.sql', 'first-funding-observation.sql', 'first-negative-cases.sql', 'first-atomic-failures.sql', 'first-preimage-drift.sql')))
 
 def require(value, message):
@@ -70,6 +71,30 @@ def decode(raw):
     return json.loads(raw,object_pairs_hook=unique,parse_constant=nonfinite,parse_float=Decimal)
 
 
+def validate_recognition_capture(files):
+    period=decode(files[BASE+'first-temporal-state.json'])['recognition_period']
+    path=BASE+'first-recognition-capture.json'
+    require(period['capture_path']==path, 'recognition capture path differs')
+    raw=files[path]
+    require(digest(raw)==period['capture_sha256'], 'recognition capture hash differs')
+    require(digest(period['query'].encode())==period['query_sha256']==
+            '67f65046f981cdf2f377b5243349a21c900a1bde31b1c425c34ee73102e62301', 'recognition query differs')
+    rows=decode(raw)['rows']
+    require(isinstance(rows,list) and len(rows)==1 and set(rows[0])=={'evidence'}, 'recognition rows differ')
+    e=rows[0]['evidence']
+    require(e==period['evidence'], 'recognition original evidence differs')
+    def stamp(v):
+        require(isinstance(v,str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?\+00:00',v), 'recognition timestamp invalid')
+        return datetime.fromisoformat(v)
+    start,observed,end=(stamp(e[k]) for k in ('week_start','observed_at','week_end'))
+    require(start<=observed<end, 'recognition observation outside bounds')
+    require(type(e['runs_blocking_now']) is int and e['runs_blocking_now']==0 and e['runs_overlapping_week']==[], 'recognition overlaps settlement')
+    require(e['scopes']==[{'club_id':'fade0000-0000-0000-0000-000000000001','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'}], 'recognition scope differs')
+    for p in (BASE+'first-temporal-refusal.sql',BASE+'first-connected-probe.sql',BASE+'first-atomic-failures.sql',PRODUCTION_PROBE_SQL,COMPLETION_SQL,LOCKS,CONCURRENCY):
+        text=files[p].decode()
+        require(start.strftime('%Y-%m-%dT%H:%M:%SZ') in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') in text, 'recognition source bounds differ: '+p)
+
+
 def validate_sources(files):
     require(set(INPUTS) <= set(files), 'first archived source inventory incomplete')
     manifest = decode(files[MANIFEST])
@@ -81,6 +106,7 @@ def validate_sources(files):
     for path in set(INPUTS)-{MANIFEST}:
         require(manifest['files'][path] == {'bytes':len(files[path]),'sha256':digest(files[path])},
                 'first archived source changed: '+path)
+    validate_recognition_capture(files)
     migration=files[MIGRATION].decode()
     require(len(re.findall(r'^BEGIN;$',migration,re.M))==1 and len(re.findall(r'^COMMIT;$',migration,re.M))==1,
             'first migration is not one transaction')

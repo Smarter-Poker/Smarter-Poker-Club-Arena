@@ -64,7 +64,8 @@ import {
   type MttStructureDescription,
 } from '../../../server/src/tournament/mttStructureDescription';
 import { compactChips } from '../../utils/format';
-import { SPIN_MAX_MULTIPLIER } from '../lobby/lobbyEntries';
+import { spinCeilingMultiplier } from '../lobby/lobbyEntries';
+import type { TournamentArenaEmbed } from './details/types';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 import { DAY_COMPLETE_LABEL } from '../../utils/multiDaySchedule';
@@ -117,6 +118,11 @@ interface Tournament extends TournamentEntryWindowRow {
   current_level?: number | null;
   addon_levels?: number;
   is_reentry?: boolean;
+  /* DIAMOND PHASE 9: the event's arena (TOURNAMENT_ARENA_EMBED) and, for a
+     Diamond Spin, the top of the table its creation pinned. A caller that
+     passes neither gets the chip ladder's ceiling, as before. */
+  arena?: TournamentArenaEmbed['arena'];
+  diamond_spin_ceiling?: number | null;
 }
 
 interface TournamentLobbyCardProps {
@@ -541,9 +547,13 @@ function TournamentLobbyCardInner({
       spin_multiplier: tournament.spin_multiplier,
     });
     if (!drawn) {
-      const ceiling = (Number(tournament.buyIn) || 0) * SPIN_MAX_MULTIPLIER;
+      /* The top of the table this Spin draws from: the chip ladder's for a
+         chip Spin, its own pinned table's for a Diamond Spin, and no figure
+         while that has not been read (lobbyEntries.spinCeilingMultiplier). */
+      const top = spinCeilingMultiplier(tournament);
+      const ceiling = (Number(tournament.buyIn) || 0) * (top ?? 0);
       return {
-        multiplier: `Win Up To ${SPIN_MAX_MULTIPLIER}x`,
+        multiplier: top === null ? 'Unavailable' : `Win Up To ${top}x`,
         moneyLabel: 'Top Prize',
         /* A ratio is the one thing a player shopping a board of buy-ins
            cannot compare at a glance. The chips can. */

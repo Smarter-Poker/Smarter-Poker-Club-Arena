@@ -93,6 +93,27 @@ describe('the fleet reports what it cannot finish', () => {
     expect(gauge(lines, 'poker_tournaments_decided_unfinished')).toBe(0);
   });
 
+  it('a collector that has never read publishes no deadlock count, so a restart is not a spike', async () => {
+    // pg_stat_database.deadlocks does not reset when the engine does. A 0
+    // before the first read is a counter reset to Prometheus, and increase()
+    // then counts the whole cumulative total again: at the 2026-09-30 11:56
+    // UTC restart the series went 5,285 -> 0 -> 5,287 and read as 5,287
+    // deadlocks in ten minutes.
+    const metrics = new HorseFleetMetrics();
+    const published = (): string[] =>
+      metrics.toPrometheus().filter((l) => l.startsWith('poker_db_deadlocks_total'));
+    expect(published()).toEqual([]);
+    // Declared, so a rule that names it still finds it; only the value waits.
+    expect(metrics.toPrometheus()).toContain('# TYPE poker_db_deadlocks_total counter');
+    rpc.mockImplementation(async () => ({ data: null, error: { message: 'starting' } }));
+    await metrics.refresh();
+    expect(published()).toEqual([]);
+    expect(gauge(metrics.toPrometheus(), 'poker_horse_fleet_metrics_stale_seconds')).toBe(86_400);
+    succeed();
+    await metrics.refresh();
+    expect(published()).toEqual(['poker_db_deadlocks_total 1841']);
+  });
+
   it('a failed read keeps the last good snapshot and lets staleness climb', async () => {
     const metrics = new HorseFleetMetrics();
     await metrics.refresh();

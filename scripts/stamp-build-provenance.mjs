@@ -148,10 +148,75 @@ try {
   pullRequestIdentityError = `Invalid PR build validation identity: ${error.message}`;
 }
 
+// The sole publisher admits a full current-main target once, before jobs
+// queue. A later descendant on main is not a rollback from the live origin.
+// Bind that exception to the actual protected workflow/event and Git graph;
+// an arbitrary CI build or a PR cannot acquire publication authority.
+let publication = null;
+let publicationIdentityError = null;
+try {
+  if (process.env.CA_BUILD_PURPOSE === 'production-publish') {
+    const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    const workflowRef = `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`;
+    const eventName = process.env.GITHUB_EVENT_NAME;
+    const triggerSha = process.env.GITHUB_SHA || '';
+    const workflowSha = process.env.GITHUB_WORKFLOW_SHA || '';
+    const eventPath = process.env.GITHUB_EVENT_PATH || '';
+    const observedMain = git('rev-parse --verify origin/main', '');
+    const fail = () => {
+      throw new Error('Invalid admitted publication identity');
+    };
+    if (
+      process.env.GITHUB_ACTIONS !== 'true' ||
+      process.env.GITHUB_REPOSITORY !== repository ||
+      process.env.GITHUB_REF !== 'refs/heads/main' ||
+      process.env.GITHUB_WORKFLOW_REF !== workflowRef ||
+      !/^[0-9a-f]{40}$/.test(commit) ||
+      process.env.CA_PUBLISH_TARGET_SHA !== commit ||
+      !/^[0-9a-f]{40}$/.test(observedMain) ||
+      !/^[0-9a-f]{40}$/.test(triggerSha) ||
+      workflowSha !== triggerSha ||
+      !/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ID || '') ||
+      !/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ATTEMPT || '') ||
+      !['push', 'repository_dispatch'].includes(eventName) ||
+      !path.isAbsolute(eventPath) ||
+      historyComplete !== true ||
+      dirty ||
+      !Number.isSafeInteger(behindMain) ||
+      behindMain < 0 ||
+      aheadMain !== 0 ||
+      git(`merge-base --is-ancestor ${commit} ${observedMain}`, null) !== '' ||
+      git(`merge-base --is-ancestor ${triggerSha} ${commit}`, null) !== ''
+    )
+      fail();
+    const stat = lstatSync(eventPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > 4 * 1024 * 1024) fail();
+    const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+    if (event.repository?.full_name !== repository || event.repository?.default_branch !== 'main')
+      fail();
+    if (eventName === 'push') {
+      if (event.ref !== 'refs/heads/main' || event.after !== triggerSha || event.deleted !== false)
+        fail();
+    } else if (event.action !== 'publish-club-arena' || event.client_payload?.ref_sha !== commit)
+      fail();
+    publication = {
+      admittedMain: commit,
+      observedMain,
+      workflowRef,
+      workflowSha,
+      triggerSha,
+      eventName,
+    };
+  }
+} catch (error) {
+  publicationIdentityError = `Invalid admitted publication identity: ${error.message}`;
+}
+
 const info = {
   schema: 1,
   validationOnly,
   pullRequest,
+  publication,
   commit,
   commitTime,
   buildTime: new Date().toISOString(),
@@ -180,13 +245,14 @@ console.log(
     `behind-main=${age}${dirty ? ' DIRTY' : ''} by=${info.builtBy}`
 );
 
-// A build from a checkout that is behind canonical main is exactly the
-// regression that happened. Release builds refuse it. A verified temporary PR
+// Unadmitted stale checkouts remain refused. The sole protected publisher
+// may finish its admitted target after main advances; origin ancestry and
+// compare-and-swap still refuse a rollback. A verified temporary PR
 // test may use its event snapshot, but retains its real non-publishable distance.
 // Local diagnostic builds warn; the publisher independently enforces provenance.
 const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
-if (pullRequestIdentityError) {
-  console.error(pullRequestIdentityError);
+if (pullRequestIdentityError || publicationIdentityError) {
+  console.error(pullRequestIdentityError || publicationIdentityError);
   process.exit(1);
 }
 if (commit !== 'unknown' && historyComplete !== true) {
@@ -206,13 +272,19 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (strictProvenance && (!validationOnly || process.env.STRICT_PROVENANCE === '1')) {
+  if (
+    strictProvenance &&
+    !publication &&
+    (!validationOnly || process.env.STRICT_PROVENANCE === '1')
+  ) {
     console.error(msg);
     process.exit(1);
   }
   console.warn(
-    validationOnly
-      ? `CI validation captured ${behindMain} later main commit(s); this bundle cannot be published.`
-      : msg
+    publication
+      ? `Protected publisher retains its admitted target; main advanced by ${behindMain} commit(s). Origin ancestry is checked before activation.`
+      : validationOnly
+        ? `CI validation captured ${behindMain} later main commit(s); this bundle cannot be published.`
+        : msg
   );
 }

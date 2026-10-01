@@ -46,21 +46,26 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     model.options = options;
   },
 }));
+// The player's own row is read through the owner door (ruling 25):
+// get_my_full_profile(), filtered by id, then the columns.
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: (columns: string) => {
-        model.select(columns);
-        return {
-          eq: () => ({
-            abortSignal: (signal: AbortSignal) => {
-              model.signals.push(signal);
-              return { maybeSingle: () => model.read() };
-            },
-          }),
-        };
-      },
-    }),
+    rpc: (name: string) => {
+      if (name !== 'get_my_full_profile') throw new Error('unexpected rpc ' + name);
+      return {
+        eq: () => ({
+          select: (columns: string) => {
+            model.select(columns);
+            return {
+              abortSignal: (signal: AbortSignal) => {
+                model.signals.push(signal);
+                return { maybeSingle: () => model.read() };
+              },
+            };
+          },
+        }),
+      };
+    },
   },
 }));
 import { ProfileAccountSync } from '../../src/hooks/useProfileAccountSync';

@@ -234,6 +234,195 @@
       "recoveredFrom": "File bytes equal the installed schema_migrations statements; public.fn_ca_migration_text(20260927150429) returned MD5 e5155bf7efde88d48b1185fdafe379f7 and byte_len 8624 on 2026-09-27 at 15:15 UTC.",
       "refusedBy": [],
       "liveVerdict": "Installed once after independent PostgreSQL 17 accounting, authorization, snapshot and drift qualification. This dynamic replacement has no statically parsed new object or @live-proof line and cannot be edited after installation. Live readback retains fn_cashier_statement_rows OID 54141976, postgres owner, postgres-only EXECUTE, SECURITY DEFINER, STABLE and public, pg_temp search path; definition MD5 is 49e310be00e91afc9a9b7582bb048184. Nine other guarded Cashier functions remained unchanged at installation. Only authorized all-scope totals precompute existing receipt omissions; no grants, triggers, financial rows, indexes or timeout changed. The first whole production read still exceeded 8 seconds and a later warm whole read passed; authenticated browser availability remains unresolved. This records immutable installed SQL, not completion or permission to replay it."
+    },
+    {
+      "version": "20260927150637",
+      "name": "stranded_player_audit_examines_history_only_after_excluding_",
+      "file": "supabase/migrations/20260927150637_stranded_player_audit_examines_history_only_after_excluding_.sql",
+      "md5": "330cf5e98f3debcf7473eff4e0c323f3",
+      "appliedToProductionAt": "2026-09-27T15:06:37Z",
+      "recoveredOn": "2026-09-27",
+      "recoveredFrom": "Exact unchanged SQL bytes equal public.fn_ca_migration_text(20260927150637).md5 330cf5e98f3debcf7473eff4e0c323f3 and body length 4596, read at 2026-09-27T15:16:23.338453Z.",
+      "refusedBy": [],
+      "liveVerdict": "Installed once after native PostgreSQL 17 qualification. Dynamic EXECUTE replaces only two CTE materialization boundaries in the existing read-only audit; the installed SQL lacks a parsed object or @live-proof comment and cannot be edited afterward. Live OID 25456281 retains postgres owner, STABLE SECURITY DEFINER, search_path=public and only postgres/service_role EXECUTE; anon and authenticated EXECUTE are both false. Function definition MD5 is 8c36b14e14eb5b39c09ebd5b72120030, matching the qualified postimage. Original predicates, stack rounding, result ordering and financial records are unchanged. Complete read-only function measured 2437.865ms with zero findings at 15:06. This records immutable installed SQL without replay; source delivery and the next naturally scheduled complete conservation job remain separate pending evidence."
+    },
+    {
+      "version": "20260920060705",
+      "name": "a_dispute_can_be_filed_by_the_person_who_has_one",
+      "file": "supabase/migrations/20260920060705_a_dispute_can_be_filed_by_the_person_who_has_one.sql",
+      "md5": "04020a6aa0118da38e5755918097cb2c",
+      "appliedToProductionAt": "2026-09-20T06:07:05Z",
+      "recoveredOn": "2026-09-28",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, E';\\n'), byte for byte (the fn_ca_migration_text body)",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Mirror PR of 2026-09-28. Run on the full mirror set before this row existed, check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding against this file. md5 read live the same day from public.fn_ca_migration_text('20260920060705') equals the file md5."
+    },
+    {
+      "version": "20260922022319",
+      "name": "a_superseded_original_hands_off_its_retained_hand",
+      "file": "supabase/migrations/20260922022319_a_superseded_original_hands_off_its_retained_hand.sql",
+      "md5": "675937ecf5404eda202cbb07546a6410",
+      "appliedToProductionAt": "2026-09-22T02:23:19Z",
+      "recoveredOn": "2026-09-28",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, E';\\n'), byte for byte (the fn_ca_migration_text body)",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Mirror PR of 2026-09-28. Run on the full mirror set before this row existed, check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding against this file. md5 read live the same day from public.fn_ca_migration_text('20260922022319') equals the file md5."
+    },
+    {
+      "version": "20260928142429",
+      "name": "an_unconfirmed_debit_is_written_down_not_held_in_memory_forever",
+      "file": "supabase/migrations/20260928142429_an_unconfirmed_debit_is_written_down_not_held_in_memory_forever.sql",
+      "md5": "ac0edf9635e0711e8c549a6110a32ccf",
+      "appliedToProductionAt": "2026-09-28T14:24:29Z",
+      "recoveredOn": "2026-09-28",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, E';\\n'), byte for byte (the fn_ca_migration_text body)",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Recording of 2026-09-28. Applied to production from PR #5522 before it merged; the engine half of #5522 was never merged, so nothing calls these objects: smarter_private.time_bank_consume_unconfirmed holds 0 rows and fn_record_unconfirmed_time_bank_consume is service_role-only (proacl read live {postgres=X/postgres,service_role=X/postgres}) and refuses any caller whose auth.role() is not service_role. Byte length 9470 and md5 ac0edf96... read live the same day from public.fn_ca_migration_text('20260928142429') equal the file. check-definer-authorization, check-money-trigger-declared, check-no-new-band-aids, check-unqualified-writes and check-lease-lock-strength raised no finding."
+    },
+    {
+      "version": "20260927231524",
+      "name": "a_recorded_bust_that_nobody_can_record_stops_the_whole_event",
+      "file": "supabase/migrations/20260927231524_a_recorded_bust_that_nobody_can_record_stops_the_whole_event.sql",
+      "md5": "3fc9fb3528bb9e6dc1876310fa4c9b45",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: fn_ca_drain_recorded_bust_backlog ACL is postgres/service_role only; anon and authenticated cannot execute. The historical split REVOKEs include a separate PUBLIC revoke. Definition md5 c1d44baedaa6e41b12cad7ec16ec5111. This records the existing operator drain, adds no recurring caller; current engine bust-stage ordering is separately fixed by #5596."
+    },
+    {
+      "version": "20260927231551",
+      "name": "the_bust_backlog_detectors_can_see_a_candidate_with_no_rebuy_prompt",
+      "file": "supabase/migrations/20260927231551_the_bust_backlog_detectors_can_see_a_candidate_with_no_rebuy_prompt.sql",
+      "md5": "e14a2cda74fc75f78c58973f1686e073",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5497",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: both fn_ca_knockout_door_stalled and fn_ca_bust_backlog_stalled have postgres/service_role-only ACLs; anon and authenticated cannot execute. The detector split REVOKEs include a separate PUBLIC revoke. No scheduler or new observation loop is introduced."
+    },
+    {
+      "version": "20260928001934",
+      "name": "a_hand_the_table_has_already_dealt_past_is_disposed",
+      "file": "supabase/migrations/20260928001934_a_hand_the_table_has_already_dealt_past_is_disposed.sql",
+      "md5": "60ca33df418120082b6c9b23a19906e9",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final fn_ca_dispose_superseded_hand_submissions definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. The historical temporary-table DELETE was superseded by recorded 20260928133817 and 20260928134553; current body has WHERE true. Original receipt/resume and immutable snapshot behavior remains qualified in the native disposal fixture."
+    },
+    {
+      "version": "20260928031344",
+      "name": "retention_closes_the_settlement_request_it_prunes",
+      "file": "supabase/migrations/20260928031344_retention_closes_the_settlement_request_it_prunes.sql",
+      "md5": "c1f0c360e805826d301cddac961ba617",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: sp_prune_hand_history definition md5 ca8dabd9856cf1be6136d7a6f5dd8158 still reads horse_retention_days; retention helper ACL postgres/service_role only, definition md5 b30df5d8cfc7ac1eb9c9dff69d29a0a4. Recorded anchored patch adds only disposal call and leaves the config-driven pruner intact; native retention fixture proves the preserved body/config."
+    },
+    {
+      "version": "20260928033651",
+      "name": "a_transfer_its_event_will_never_complete_still_closes",
+      "file": "supabase/migrations/20260928033651_a_transfer_its_event_will_never_complete_still_closes.sql",
+      "md5": "82714ed8c45da7c0cdff1c9888c28aea",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5517",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: fn_f06_close_abandoned_manager_transfer definition md5 7b24537a5e81e79fe95ba55ef2ec7928, anon cannot execute; authenticated has EXECUTE but first statement rejects every non-service_role or non-service actor before any mutation. Lease FOR SHARE is followed immediately by IF FOUND THEN RAISE: any successful path finds no lease row and retains no lease-row lock. This is historical source recording, not a new holder lock or invocation."
+    },
+    {
+      "version": "20260928133817",
+      "name": "the_disposal_batch_says_which_rows_it_clears",
+      "file": "supabase/migrations/20260928133817_the_disposal_batch_says_which_rows_it_clears.sql",
+      "md5": "5bac011603d694fa60ed78fccab67e87",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b includes DELETE FROM _hand_disposal_batch WHERE true. This records the historical anchored scope correction; final 20260928134553 preserves it. No replay performed."
+    },
+    {
+      "version": "20260928134553",
+      "name": "a_request_that_can_never_apply_is_disposed_and_an_accepted_permit_is_settlement",
+      "file": "supabase/migrations/20260928134553_a_request_that_can_never_apply_is_disposed_and_an_accepted_permit_is_settlement.sql",
+      "md5": "08125d11363e7f5042235dfd986f17cf",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte; version is ledger identity, actual applied timestamp unknown. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so every one of these nine hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5516",
+      "refusedBy": ["historical source prediction; see liveVerdict"],
+      "liveVerdict": "Read production 2026-09-30: final disposal definition md5 4333dc1291933bf9296956903952ea6b, ACL postgres/service_role only. Original final door recorded exactly, with qualification extended to accepted-permit evidence and inapplicable requests plus refusal controls. Version timestamp is retained as history identity, not asserted as observed installation time."
+    },
+    {
+      "version": "20260927231300",
+      "name": "a_stale_lease_yields_to_its_named_successor",
+      "file": "supabase/migrations/20260927231300_a_stale_lease_yields_to_its_named_successor.sql",
+      "md5": "9cce6d4d0c9a4de740b36e08ed2a1ea9",
+      "appliedToProductionAt": "2026-09-27T23:13:00Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte. Timestamp follows version identifier; actual installation timestamp not separately recorded. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so this hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5493",
+      "refusedBy": [],
+      "liveVerdict": "Production read September30 confirms exact history SQL MD5. The four tournament lease doors are SECURITY DEFINER, postgres-owned, with ACL {postgres=X/postgres,service_role=X/postgres}; anon/authenticated cannot execute and service_role can. claim_tournament_lease_v2 retains search_path=public, pg_temp, full definition MD5 14f4ed4a7659d42188f57da0a54af421 and body MD5 e3397fe6782ed685d3aba81f547bb42c. The separate forward migration20260928032017 restricts the broad same-generation takeover. This is immutable historical evidence; never replay or edit installed SQL to add a live-proof comment."
+    },
+    {
+      "version": "20260927231603",
+      "name": "the_tournament_lease_doors_state_that_only_the_engine_opens_them",
+      "file": "supabase/migrations/20260927231603_the_tournament_lease_doors_state_that_only_the_engine_opens_them.sql",
+      "md5": "2d28e1615c7fe095b89569d9bf3e46c9",
+      "appliedToProductionAt": "2026-09-27T23:16:03Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte. Timestamp follows version identifier; actual installation timestamp not separately recorded. Corrected 2026-09-30: the original recovery appended || chr(10), one byte production never ran, so this hashed to something schema_migrations does not hold.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/5493",
+      "refusedBy": [
+        "a-merged-migration-must-be-live: grants-only history requires verified recording"
+      ],
+      "liveVerdict": "Production read September30 confirms exact history SQL MD5. The four tournament lease doors are SECURITY DEFINER, postgres-owned, with ACL {postgres=X/postgres,service_role=X/postgres}; anon/authenticated cannot execute and service_role can. claim_tournament_lease_v2 retains search_path=public, pg_temp, full definition MD5 14f4ed4a7659d42188f57da0a54af421 and body MD5 e3397fe6782ed685d3aba81f547bb42c. The separate forward migration20260928032017 restricts the broad same-generation takeover. This is immutable historical evidence; never replay or edit installed SQL to add a live-proof comment."
+    },
+    {
+      "version": "20260928000425",
+      "name": "horse_audit_leak_spike_requires_significance_and_audit_watches_itself",
+      "file": "supabase/migrations/20260928000425_horse_audit_leak_spike_requires_significance_and_audit_watches_itself.sql",
+      "md5": "de66975f200e5626484923840d0ad9d8",
+      "appliedToProductionAt": "2026-09-28T00:04:25Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [
+        "check-definer-authorization: anon rule",
+        "migration-version-collisions: name longer than 60 characters"
+      ],
+      "liveVerdict": "Production read 2026-09-30: file is 6539 bytes, md5 de66975f200e5626484923840d0ad9d8, equal to fn_ca_migration_text. The anon finding WAS true when this ran: fn_horse_tag_ev_significance(date) was created SECURITY DEFINER with PUBLIC execute and no auth.uid() check. It was closed in production by migration 20260930181809 close_the_horse_tag_ev_console_to_the_browser; read live 2026-09-30 its proacl is {postgres=X/postgres,service_role=X/postgres}, has_function_privilege('anon',...) and ('authenticated',...) are both false, and no pg_policy expression references it, so it is not an RLS helper. fn_run_horse_daily_audit(date) carries both patches (it references fn_horse_tag_ev_significance and daily_audit_lost) and fn_audit_tuner_health(date) carries the replaced horse_error_log text. The name is 69 characters and production stored it uncut, so this file's name equals the ledger row's name exactly. No horse filter: the function reads horse_review_rollup, which is horse-only telemetry by construction."
+    },
+    {
+      "version": "20260928000527",
+      "name": "horse_daily_audit_fallback_rescues_a_missed_day_loudly",
+      "file": "supabase/migrations/20260928000527_horse_daily_audit_fallback_rescues_a_missed_day_loudly.sql",
+      "md5": "34e0c338493c5f009d0a7264c45e6db7",
+      "appliedToProductionAt": "2026-09-28T00:05:27Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-09-30: file is 2505 bytes, md5 34e0c338493c5f009d0a7264c45e6db7, equal to fn_ca_migration_text. fn_horse_daily_audit_fallback() is SECURITY DEFINER with proacl {postgres=X/postgres,service_role=X/postgres}; anon and authenticated cannot execute. cron.job jobid 373 horse-daily-audit-fallback is active on '30 7 * * *' running select public.fn_horse_daily_audit_fallback(), which is the job that raised the cron roster from 121 toward 124 in docs/attestation/cron-roster.tsv. Recorded as history only: this file describes what production runs and adds no schedule; whether a fallback of this shape should outlive its cause is a CLAUDE.md 10.12 question for its owner, not for a recording."
+    },
+    {
+      "version": "20260930032343",
+      "name": "owner_switches_the_fleet_engine_on",
+      "file": "supabase/migrations/20260930032343_owner_switches_the_fleet_engine_on.sql",
+      "md5": "3262220dc4ad4a730439aef5476dd8c8",
+      "appliedToProductionAt": "2026-09-30T03:23:43Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-09-30: file is 3330 bytes, md5 3262220dc4ad4a730439aef5476dd8c8, equal to fn_ca_migration_text; production's bytes end in a newline and so does this file, and the header's box-drawing rules are U+2550 (three bytes each). Data-only: public.content_settings holds one row with engine_enabled=true and updated_at 2026-09-30T03:23:43.52529Z, the instant this ran. Its own pre-flight asserts engine_enabled=false, so replaying it would abort; it must never be re-applied."
     }
   ]
 }

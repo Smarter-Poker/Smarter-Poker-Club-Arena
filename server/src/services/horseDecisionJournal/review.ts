@@ -32,7 +32,7 @@ import {
   type HorseJournalRecord,
 } from './record.js';
 import { HorseDecisionJournalStore } from './store.js';
-import { readonlyHorseJournalStoreOptions } from './config.js';
+import { horseJournalArchiveDirectoryNames, readonlyHorseJournalStoreOptions } from './config.js';
 import {
   horseLifecycleKeys,
   horseLifecycleRequestDigest,
@@ -542,6 +542,7 @@ export function reconcileHorseJournalHand(
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
+          !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
           w.expectedExecutionAmount !== expectedWitness.expectedExecutionAmount ||
           w.computeMs !== d.computeMs ||
@@ -559,6 +560,11 @@ export function reconcileHorseJournalHand(
             horsePlanHandKey(s.gameState.actionHistory, planContext),
             planContext
           );
+          if (
+            d.decision.tournamentUtility?.evidence &&
+            d.decision.tournamentUtility.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 7 original observation read frame does not match');
         } catch {
           gap('read_frame_unavailable');
           continue;
@@ -623,20 +629,51 @@ export function reconcileHorseJournalHand(
   }
 }
 
+/** One hand's records live in exactly one decision-shard's catalog (the lane
+ * shards by table id, and every fence for a table begins with it - see
+ * lane.ts), so a reader with no other way to know which shard captured a
+ * given hand tries each existing archive directory in turn and keeps the
+ * first that actually holds the hand. Unsharded deployments (the overwhelming
+ * common case) have exactly one candidate, 'archive', and this is then
+ * byte-for-byte what a single `new HorseDecisionJournalStore` + `readHand`
+ * always did: one attempt, its own error or its own (possibly empty) result. */
+export function readHorseJournalHandRecords(
+  directory: string,
+  handKey: string
+): readonly HorseJournalRecord[] {
+  const names = horseJournalArchiveDirectoryNames(directory);
+  const candidates = names.length ? names : ['archive'];
+  let lastError: unknown;
+  for (const name of candidates) {
+    let store: HorseDecisionJournalStore | undefined;
+    try {
+      store = new HorseDecisionJournalStore(
+        directory,
+        readonlyHorseJournalStoreOptions(directory, name)
+      );
+      const records = store.readHand(handKey);
+      if (records.length) return records;
+    } catch (error) {
+      lastError = error;
+      continue;
+    } finally {
+      try {
+        store?.close();
+      } catch {
+        /* read-only connection cleanup */
+      }
+    }
+  }
+  if (lastError !== undefined) throw lastError;
+  return [];
+}
+
 /** Explicit offline reader. No implicit creation, migration, export, deletion,
  * journal write or policy activation is permitted by this entry point. */
 export function readHorseJournalHand(directory: string, handKey: string): HorseJournalHandReview {
-  let store: HorseDecisionJournalStore | undefined;
   try {
-    store = new HorseDecisionJournalStore(directory, readonlyHorseJournalStoreOptions(directory));
-    return reconcileHorseJournalHand(store.readHand(handKey), handKey);
+    return reconcileHorseJournalHand(readHorseJournalHandRecords(directory, handKey), handKey);
   } catch {
     return { ...empty(), gaps: ['storage_unavailable'] };
-  } finally {
-    try {
-      store?.close();
-    } catch {
-      /* read-only connection cleanup */
-    }
   }
 }

@@ -108,7 +108,9 @@ describe('responsive premium Club Arena', () => {
     expect(launch).toBeGreaterThan(campaign);
     expect(games).toBeGreaterThan(launch);
     expect(PAGE).toContain('openingChecklistEligible &&');
-    expect(PAGE).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
+    expect(PAGE).toContain('launchTasks.every((task) => task.complete || task.skipped)');
+    expect(PAGE).toContain('waitForCompletion');
+    expect(PAGE).toContain('<ClubLaunchCompletionLatch');
   });
 
   it('builds the approved mobile welcome, identity/jackpot pair, and wallet accordion', () => {

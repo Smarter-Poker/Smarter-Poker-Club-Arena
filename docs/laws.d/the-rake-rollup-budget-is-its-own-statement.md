@@ -1,0 +1,3 @@
+# tests/the-rake-rollup-budget-is-its-own-statement.law.test.ts
+
+The `union-rake-rollup-catchup` pg_cron command sets `statement_timeout` as its own top-level statement before its `DO` (a `set_config` inside the `DO` never applies, which cost 54 failed runs and three stale days of `union_rake_paid_daily_user` on 2026-09-29/30); `fn_union_rake_rollup_refresh_day` takes each hand's total from a `LATERAL SUM`, never a window partitioned by `r.id` that walks the whole of `rake_records`; and `fn_union_rake_rollup_catchup` stops starting new days 240 s into its statement so a slow day commits the rest instead of rolling them back.

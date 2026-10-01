@@ -1,8 +1,7 @@
 /** PREPARED, UNEXECUTED explicit offline private CLI. No DB/network/writeback. */
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
-import { readonlyHorseJournalStoreOptions } from '../services/horseDecisionJournal/config.js';
+import { readHorseJournalHandRecords } from '../services/horseDecisionJournal/review.js';
 import {
   readPrivateCorrectiveJson,
   writePrivateCorrectiveResult,
@@ -31,7 +30,6 @@ export function runPrivateRosterReview(
       output:
         'Usage: private-roster-review <absolute-private-journal> <hand-SHA256> <accepted-record-SHA256> <absolute-private-raw-rows-json> <new-absolute-private-output-json> [absolute-private-signed-roster-authority-json]\n',
     };
-  let store: HorseDecisionJournalStore | undefined;
   try {
     const raw: unknown = readPrivateCorrectiveJson(args[3], 1048576);
     if (!object(raw) || raw.version !== 1 || !Array.isArray(raw.rows)) throw Error();
@@ -43,15 +41,12 @@ export function runPrivateRosterReview(
       producerSourceDigest: environment.HORSE_ROSTER_REVIEW_PRODUCER_SHA256,
       allowSynthetic: false,
     };
-    store = new HorseDecisionJournalStore(args[0], readonlyHorseJournalStoreOptions(args[0]));
     const input = {
-      records: store.readHand(args[1]),
+      records: readHorseJournalHandRecords(args[0], args[1]),
       handKey: args[1],
       acceptedHandRecordDigest: args[2],
       rows: raw.rows,
     };
-    store.close();
-    store = undefined;
     const exported = createUnsignedAcceptedCommitmentExport(input);
     const eligibility = acceptedRosterEligibility(input, envelope, trust);
     writePrivateCorrectiveResult(
@@ -71,12 +66,6 @@ export function runPrivateRosterReview(
     };
   } catch {
     return { code: 3, output: 'Private Horse roster review unavailable.\n' };
-  } finally {
-    try {
-      store?.close();
-    } catch {
-      /* read-only store */
-    }
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

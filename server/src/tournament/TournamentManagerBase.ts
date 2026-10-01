@@ -112,9 +112,14 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
-import { tournamentUnitCents, type TournamentUnitClubRow } from './tournamentUnit.js';
+import {
+  DIAMOND_UNIT_CENTS,
+  tournamentUnitCents,
+  type TournamentUnitClubRow,
+} from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
+import { diamondSpinSettlementProven } from './diamondSpinLaunchProof.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
   tournamentFinishRefusalAlertsSuppressedTotal,
@@ -174,6 +179,7 @@ import {
   closeAbandonedGeneration,
   countAbandonedGenerationOutcome,
 } from './abandonedGenerationDoor.js';
+import { levelResumeRemainingMs } from './levelClockOutage.js';
 
 /**
  * What one ask of the abandoned-generation door came to.
@@ -767,13 +773,34 @@ export abstract class TournamentManagerBase {
    * players. The knockout door accepted those eliminations when probed
    * directly; nothing was ever asking it.
    *
-   * So a sweep that reaches its mutation phase with nothing done yet may extend
-   * its deadline ONCE, by this much, to buy at least one committed mutation.
-   * It is one batch's worth of the same budget, granted once per sweep, only in
-   * the bust assignment pass, and only when the pass has committed nothing -
-   * the yield rule is otherwise unchanged.
+   * The first answer (2026-09-10) was a grace: a sweep that reached its
+   * mutation phase with nothing done could extend its deadline once, by one
+   * budget, to buy at least one committed finish, and it yielded the moment
+   * it had committed anything. That was measured to be one finish per
+   * admission, and one finish per admission is not enough.
+   *
+   * THE BATCH THE SWEEP PREPARED IS THE BATCH IT RECORDS (2026-09-27). Read on
+   * production at 22:44 UTC: the process-wide elimination scheduler had 317
+   * managers registered, 275 queued, all four slots busy and an oldest wait of
+   * 333 s, so a large MTT was admitted about every six minutes; inside each
+   * admission the reads spent the budget, the grace bought exactly one
+   * `Eliminated:` line, and three freerolls (341, 347 and 309 entrants)
+   * accumulated 213, 96 and 100 busted players still `status='playing'` at 0
+   * chips. Every one of those rows holds its roster chair, so the balancer
+   * could place nobody, no table was ever consolidated, and all 110 open tables
+   * of those events drained to one player each and stopped dealing.
+   *
+   * So the clock now decides only whether a pass may START recording. Once the
+   * reads are paid for and the pass holds its prepared, ordered batch (bounded
+   * by SWEEP_MUTATION_BATCH_SIZE), the batch is recorded whole: the deadline
+   * cannot refuse a bust that is already in flight, nor the busts queued behind
+   * it in the same batch. The yield to other tournaments happens after the
+   * batch, which is what the batch size has always bounded. The batch window
+   * is opened by the bust assignment pass alone (`openEliminationMutationBatch`),
+   * closed with it, never carried between sweeps, and never widens any other
+   * stage: a slow balance read or a finish attempt still answers to the budget.
    */
-  static readonly SWEEP_MUTATION_GRACE_MS = 5_000;
+  private eliminationMutationBatchOpen = false;
   /** Horses already offered the current add-on window in this process. */
   protected addOnAttemptedHorseIds = new Set<string>();
   /** Round-robin cursor keeps one transient refusal from starving the field. */
@@ -891,6 +918,13 @@ export abstract class TournamentManagerBase {
   protected lastObservedHandCompletedAtMs = 0;
   /** One line per held level, not one per recheck. */
   private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
+  /**
+   * Levels whose escalation past the end of the authored structure was held
+   * for an unproven chip supply. Announced once per level, for the same
+   * reason the stalled hold is: a hold nobody can read is a tournament whose
+   * blinds mysteriously stopped.
+   */
+  private readonly unprovenEscalationHoldAnnouncedFor = new Set<number>();
   /**
    * True once beginBreakCountdown has stamped an end time on THIS break.
    *
@@ -1454,6 +1488,56 @@ export abstract class TournamentManagerBase {
     return true;
   }
 
+  /**
+   * A PAUSE THIS MANAGER ARMED IS THIS MANAGER'S TO GIVE BACK (2026-09-28).
+   *
+   * `prepareManagedTableEngineForPlay` arms an absolute `untilResumed` hold
+   * from `onBreak`/`stageEndPause`, and the one thing that lifts it is the
+   * loop in `resumeFromBreak()`. That loop runs ONCE, over `this.tableEngines`
+   * as it stands at that instant, and the same call writes `onBreak = false` -
+   * which makes `resumeFromBreak()` early-return for the rest of the event.
+   * So the release is a single sweep at a single instant, and a dealer that is
+   * not in the map at that instant is never offered it at all.
+   *
+   * There is a real window. `performManagedTableEngineRecovery` arms the
+   * replacement BEFORE `await this.gameServer.replaceTableEngine(...)` - the
+   * order `TournamentEngineRecovery.guard.test.ts` pins, because the dealer
+   * must inherit the hold before it can be published - and joins it to
+   * `tableEngines` only after that await returns. `resumeFromBreak()` has
+   * awaits of its own (the durable clear, the `break_ended` broadcast), so it
+   * can complete the whole release between the arm and the join and leave the
+   * replacement holding a break that is over, with no caller left anywhere in
+   * this manager that would look at it again.
+   *
+   * The release is therefore offered at the table's own park edge rather than
+   * at the break's end instant: `onPauseReady` fires from inside
+   * `awaitPauseGate()` the moment a dealer is physically parked waiting for
+   * someone to lift its pause, it is wired on EVERY managed engine
+   * (`wireEliminationWake`), and it is republished on every park. Not a timer
+   * and not a sweep - the same causal edge `advanceHandForHandBarrier` and the
+   * stage-end barrier already answer.
+   *
+   * `requiresExplicitPauseResume()` is the exact question, not an
+   * approximation: the engine raises it only for the `untilResumed` shape only
+   * this manager arms, and `resumeDealing()` lowers it on the way out, so it
+   * reads true precisely while this manager still owes this table a release.
+   */
+  protected releaseManagedTablePauseIfUnowned(engine: ServerTableEngine): void {
+    if (!this.running || !engine.requiresExplicitPauseResume()) return;
+    // Every authority that may still own this hold, in the order the arm
+    // considered them. While one of these is true the pause has a living
+    // owner and a release here would deal through it.
+    if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
+    if (this.addOnBreakActive && this.addOnBreakOwnsPause) return;
+    try {
+      engine.resumeDealing();
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.managed_table_pause_release_failed', {
+        tournamentId: this.tournamentId,
+      });
+    }
+  }
+
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
@@ -1676,6 +1760,12 @@ export abstract class TournamentManagerBase {
     return !claimed;
   }
 
+  /** Layer three owns the exact original permit's no-start/retirement receipt. */
+  protected async recoverStoppedOriginalAdmission(
+    _tableId: string,
+    _engine: ServerTableEngine
+  ): Promise<void> {}
+
   private async performManagedTableEngineRecovery(
     tableId: string,
     engine: ServerTableEngine,
@@ -1698,6 +1788,12 @@ export abstract class TournamentManagerBase {
         reason,
       });
     }
+    if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+    // A retained unknown BEGIN belongs to this failed original. Resolve it
+    // through its existing custody owner now, rather than waiting for this
+    // table's turn in the ordinary balance pass. Retirement may remove or
+    // continue the table, so the same exact-owner check follows the await.
+    await this.recoverStoppedOriginalAdmission(tableId, engine);
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
     if (!(await this.resolveTournamentSeatMoveQuarantine(tableId, engine))) {
       this.requestEliminationSweep('seat_move_outcome_pending');
@@ -1789,6 +1885,10 @@ export abstract class TournamentManagerBase {
       !this.gameServer.ownsTournamentTableEngine(tableId, engine)
     )
       throw new Error('F06 continued source owner changed');
+    // If this original's restart event requested the disposition, that
+    // exact recovery will replace it after the receipt returns. Joining it
+    // here would make the continuation await its own caller.
+    if (this.tableEngineRecoveries.has(engine)) return;
     await this.recoverManagedTableEngine(
       tableId,
       engine,
@@ -1804,6 +1904,16 @@ export abstract class TournamentManagerBase {
    * the base manager has no break authority and does nothing.
    */
   protected holdSourceForItsBreak(_tableId: string, _engine: ServerTableEngine): void {}
+
+  /**
+   * Take over the process-local retirement reservations an earlier, retired
+   * generation of this event left behind (2026-09-29). The base manager has
+   * no F06 break door; TournamentManager proves each one against the durable
+   * break row under this generation's lease and GameServer yields it.
+   */
+  protected async adoptAbandonedRetirementCustody(
+    _lifecycle: TournamentLifecycleToken
+  ): Promise<void> {}
 
   /** A manager is not torn down until every table start it launched has settled. */
   protected async startParkedMovementEngine(
@@ -2196,6 +2306,9 @@ export abstract class TournamentManagerBase {
     const lifecycle = this.lifecycleEpoch.current();
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
+    // A fresh scheduler entry starts in the general lanes; the next balance
+    // stage declares consolidation again if the field still needs it.
+    this.consolidationDeclared = false;
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       diagnostics: Object.freeze({
@@ -2249,7 +2362,9 @@ export abstract class TournamentManagerBase {
     return (
       this.running &&
       !this.eliminationSweepSignal?.aborted &&
-      (this.eliminationSweepDeadlineAt === 0 || Date.now() < this.eliminationSweepDeadlineAt)
+      (this.eliminationSweepDeadlineAt === 0 ||
+        this.eliminationMutationBatchOpen ||
+        Date.now() < this.eliminationSweepDeadlineAt)
     );
   }
 
@@ -2257,22 +2372,30 @@ export abstract class TournamentManagerBase {
     return this.eliminationSweepDeadlineAt > 0 && Date.now() >= this.eliminationSweepDeadlineAt;
   }
 
-  /** Cleared with every sweep deadline; one grace per admitted sweep. */
-  protected eliminationMutationGraceGranted = false;
+  /**
+   * The bust assignment pass holds a prepared, ordered, bounded batch. While
+   * the window is open the work budget cannot refuse a mutation of that
+   * batch; manager stop and the sweep's abort signal still can. Closed with
+   * the pass, and reset at every sweep admission so it never carries over.
+   * See the note above `eliminationMutationBatchOpen` for the measurement.
+   */
+  protected openEliminationMutationBatch(): void {
+    this.eliminationMutationBatchOpen = true;
+  }
+
+  protected closeEliminationMutationBatch(): void {
+    this.eliminationMutationBatchOpen = false;
+  }
+
+  protected eliminationMutationBatchIsOpen(): boolean {
+    return this.eliminationMutationBatchOpen;
+  }
 
   /**
-   * Buy one bounded extension so a sweep cannot be starved out of its own
-   * mutation phase by the reads that prepared it. Returns false when this
-   * sweep has already had its grace - the caller then yields and requeues,
-   * which is the ordinary budget rule. See SWEEP_MUTATION_GRACE_MS.
+   * A hand just left a player at zero. The elimination manager gives its bust
+   * stage the next admission even if a later stage holds the continuation.
    */
-  protected grantEliminationMutationGrace(): boolean {
-    if (this.eliminationMutationGraceGranted) return false;
-    if (this.eliminationSweepDeadlineAt === 0) return false;
-    this.eliminationMutationGraceGranted = true;
-    this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_MUTATION_GRACE_MS;
-    return true;
-  }
+  protected bustAwaitsItsStage(): void {}
 
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
@@ -2294,7 +2417,73 @@ export abstract class TournamentManagerBase {
 
   /** A delayed correctness retry that outranks the routine safety backlog. */
   protected requestUrgentEliminationSweepAfter(delayMs: number): void {
+    this.urgentRedrivesRequested++;
     tournamentEliminationScheduler.wakeUrgentAfter(this.tournamentId, delayMs);
+  }
+
+  /**
+   * Every delayed correctness retry this manager has asked for. The balance
+   * stage compares it across its own work: a retry asked for there is a
+   * table break or seat move that is not finished yet. See
+   * DEFAULT_CONSOLIDATION_SLOTS in TournamentEliminationScheduler.ts.
+   */
+  protected urgentRedrivesRequested = 0;
+  /** What this manager last told the scheduler about its consolidation work. */
+  private consolidationDeclared = false;
+
+  /**
+   * A HELD LEVEL ON A SPREAD FIELD ASKS FOR ITS BALANCE PASS (2026-09-29).
+   *
+   * The consolidation lane is declared by the balance stage, so a field has
+   * to reach that stage once through the general queue before it is served
+   * promptly. After the 06:06 UTC restart on 2026-09-29 that first pass was
+   * the whole wait: general sweeps took about 20 s each against a contended
+   * database, 471 managers were queued, and Morning Free Buy 6a18ddaa (10
+   * players on 7 tables) and $100 Freeroll c65c414d (13 on 13) sat behind
+   * the entire platform for their first balance pass after the thaw.
+   *
+   * The held level is the witness that this tournament deals nothing, and
+   * the dealers it owns can say why without a database read: when two or
+   * more of them hold fewer than two players, no table can deal until the
+   * balancer merges them. That is consolidation work, so this manager moves
+   * to the lane and asks for one pass; the balance stage then keeps or clears
+   * the mark on what it reads. Checked on the held level's own 15 s recheck,
+   * which already runs; it adds no timer and no query.
+   */
+  protected askForConsolidationIfSpread(): void {
+    if (this.consolidationDeclared) return;
+    let loneTables = 0;
+    for (const engine of this.tableEngines.values()) {
+      let seated: number;
+      try {
+        seated = engine.getOccupiedSeatNumbers().length;
+      } catch {
+        return;
+      }
+      if (seated >= 2) return;
+      loneTables++;
+    }
+    if (loneTables < 2) return;
+    this.declareConsolidationOutstanding(true);
+    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+  }
+
+  /**
+   * A field with a break or seat move outstanding is served from the
+   * scheduler's consolidation lane until a balance stage finishes clean.
+   */
+  protected declareConsolidationOutstanding(outstanding: boolean): void {
+    if (this.consolidationDeclared === outstanding) return;
+    if (tournamentEliminationScheduler.setConsolidating(this.tournamentId, outstanding)) {
+      this.consolidationDeclared = outstanding;
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${
+          outstanding
+            ? 'consolidation outstanding - sweeps move to the consolidation lane'
+            : 'consolidation finished - sweeps return to the general lanes'
+        }`
+      );
+    }
   }
 
   /** Keep one add-on retry due while its persisted offer window is open. */
@@ -2342,10 +2531,14 @@ export abstract class TournamentManagerBase {
           // release the boundary. Other hands may finish; none may start.
           this.holdSatelliteQualifierBoundary();
         }
+        this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }
     });
     engine.onPauseReady(() => {
+      // A dealer parked on a hold this manager armed and no longer owns is
+      // released here, by the authority that armed it. See the method.
+      this.releaseManagedTablePauseIfUnowned(engine);
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
@@ -4551,6 +4744,44 @@ export abstract class TournamentManagerBase {
       }
     }
 
+    /* A DIAMOND SPIN'S SETTLEMENT IS ITS OWN DRAW (DIAMOND PHASE 9, 2026-09-29).
+       The chip read below finds a Spin's one jackpot_draw in its owner's
+       reserve ledger; a Diamond Spin has no owner pool and writes none, so it
+       refused every Diamond Spin here, fresh or recovered after a bust. Its
+       settlement is its draw receipt, proved against the row, its ledger legs
+       and the source's register rows by the same proof the launch completion
+       reads (see diamondSpinLaunchProof.ts). The unit is the one read beside
+       the row at start, as the paid gate reads it; a unit that could not be
+       read asks the chip record, as it always did, and a Diamond Spin then
+       stands down until the next pass reads it again. */
+    if (
+      spinLaunch &&
+      Number(tournament.buy_in_amount) > 0 &&
+      this.tournamentUnit() === DIAMOND_UNIT_CENTS
+    ) {
+      const { data: drawProof, error: drawProofErr } = await supabase.rpc(
+        'fn_poker_diamond_spin_draw_proof',
+        { p_tournament_id: this.tournamentId, p_launch_id: null }
+      );
+      this.assertLifecycleCurrent(lifecycle);
+      if (drawProofErr) {
+        return refuse(`the Diamond Spin draw could not be read: ${drawProofErr.message}`);
+      }
+      if (
+        !diamondSpinSettlementProven({
+          proof: drawProof,
+          buyIn: Number(tournament.buy_in_amount),
+          cachedMultiplier: tournament.spin_multiplier,
+          cachedPrizePool: tournament.prize_pool,
+          rowMultiplier: tournamentProof.spin_multiplier,
+          rowPrizePool: tournamentProof.prize_pool,
+        })
+      ) {
+        return refuse('the Spin row and its Diamond draw do not prove the same exact launch');
+      }
+      return true;
+    }
+
     if (spinLaunch && Number(tournament.buy_in_amount) > 0) {
       const { data: bookedRows, error: bookedErr } = await supabase
         .from('spin_reserve_ledger')
@@ -4957,17 +5188,38 @@ export abstract class TournamentManagerBase {
             new Set((regs ?? []).map((r: any) => r.table_id).filter(Boolean) as string[])
           );
 
-          const { data: paidEntitlements, error: entitlementErr } = await supabase
-            .from('tournament_refund_entitlements')
-            // `created_at` is read for the REVEAL ANCHOR, not for the gate:
-            // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
-            // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
-            // moment. See stampSpinRevealAnchor below.
-            .select('user_id, gross, created_at')
-            .eq('tournament_id', this.tournamentId)
-            .eq('entitlement_kind', 'wallet_charge')
-            .eq('charge_category', 'tournament_buyin')
-            .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
+          /* A DIAMOND SPIN'S PAYMENT IS ITS CUSTODY ENTRY (DIAMOND PHASE 9,
+             2026-09-29). A chip entry's evidence is the refund entitlement its
+             wallet charge captures. A Diamond entry is paid into custody and
+             writes the Diamond tournament ledger's entry row instead - no
+             entitlement at all - so this gate would quarantine every Diamond
+             Spin. It reads the record the event's own asset keeps (the unit
+             read beside the tournament row at start says which) and the rest
+             of the gate, and the reveal anchor, are unchanged. A unit that
+             could not be read asks the chip record, as it always did: a
+             Diamond Spin then finds nothing and stands down like any unproven
+             field until the next pass reads its unit again. The draw proves
+             the same three whole entries itself (fn_poker_diamond_spin_draw). */
+          const paidEvidenceIsDiamond = this.tournamentUnit() === DIAMOND_UNIT_CENTS;
+          const payerIds = regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000'];
+          const { data: paidEntitlements, error: entitlementErr } = paidEvidenceIsDiamond
+            ? await supabase
+                .from('poker_diamond_tournament_ledger')
+                .select('user_id, gross:amount, created_at')
+                .eq('tournament_id', this.tournamentId)
+                .eq('kind', 'entry')
+                .in('user_id', payerIds)
+            : await supabase
+                .from('tournament_refund_entitlements')
+                // `created_at` is read for the REVEAL ANCHOR, not for the gate:
+                // Dan 2026-08-21, "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD
+                // PLAYER PAYS FOR HIS SEAT", and the last of these rows IS that
+                // moment. See stampSpinRevealAnchor below.
+                .select('user_id, gross, created_at')
+                .eq('tournament_id', this.tournamentId)
+                .eq('entitlement_kind', 'wallet_charge')
+                .eq('charge_category', 'tournament_buyin')
+                .in('user_id', payerIds);
           this.assertLifecycleCurrent(lifecycle);
 
           if (entitlementErr) {
@@ -4995,7 +5247,7 @@ export abstract class TournamentManagerBase {
           if (unpaid.length > 0) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) without an exact ${buyIn}-chip funded entitlement (${unpaid
+                `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) without an exact ${buyIn}-${paidEvidenceIsDiamond ? 'Diamond funded entry' : 'chip funded entitlement'} (${unpaid
                   .map((u) => u.slice(0, 8))
                   .join(
                     ', '
@@ -6169,6 +6421,13 @@ export abstract class TournamentManagerBase {
         }
       }
 
+      // A retirement reservation a retired generation of this event left in
+      // this process is handed to this one before any dealer is built
+      // (adoptAbandonedRetirementCustody). Without it, one such table refused
+      // every successor's resume with f06_retirement_custody_held, forever.
+      await this.adoptAbandonedRetirementCustody(lifecycle);
+      this.assertLifecycleCurrent(lifecycle);
+
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
        *
@@ -6365,11 +6624,38 @@ export abstract class TournamentManagerBase {
                   Math.min(Date.now(), breakEndsAt) - Math.max(levelStartedAt, breakStartedAt)
                 )
               : 0;
-          const elapsed = Date.now() - levelStartedAt - pausedMs;
-          // A persisted overdue level stays due, including after a long outage.
-          if (Number.isFinite(elapsed) && elapsed >= 0) {
-            remainingMs = Math.max(1000, durationMs - elapsed);
+          /**
+           * A LEVEL NOTHING WAS PLAYED IN WAS NEVER SPENT (2026-09-27).
+           *
+           * This used to read "a persisted overdue level stays due, including
+           * after a long outage" and floor the remainder at one second. After
+           * the 2026-09-18 lease-loss wave that meant a level four days
+           * overdue came due the instant its manager armed the clock, and the
+           * 13:24 recovery on 2026-09-22 escalated twenty-two events straight
+           * past the end of their structures. The credit is now measured
+           * against this event's own dealing (levelClockOutage.ts): an
+           * ordinary restart resumes mid-level exactly as before, and an
+           * outage resumes at the level play stopped at with a fresh full one.
+           *
+           * ONLY AN ALREADY-OVERDUE LEVEL IS WORTH A READ. A level still
+           * inside its own duration cannot be an outage under that law - its
+           * idle time is shorter than the level it is idle in - so it resumes
+           * exactly as it always did and costs this adoption nothing. The
+           * witness is fetched only for a level whose time has already run
+           * out, which is precisely the shape that used to floor at one
+           * second, and never for the ordinary restart this path serves.
+           */
+          if (Date.now() - levelStartedAt - pausedMs >= durationMs) {
+            await this.seedDealingWitnessFromRows();
+            this.assertLifecycleCurrent(lifecycle);
           }
+          remainingMs = levelResumeRemainingMs({
+            levelStartedAtMs: levelStartedAt,
+            lastDealtAtMs: this.lastObservedHandCompletedAtMs || null,
+            nowMs: Date.now(),
+            durationMs,
+            pausedMs,
+          });
         }
         if (tournament.on_break) {
           // Arming would rewrite level_started_at. A second restart during
@@ -8474,6 +8760,56 @@ export abstract class TournamentManagerBase {
    * Total chips the tournament has ever issued, or null when it cannot be
    * known. Never guessed: a null caps nothing.
    */
+  /**
+   * THE BLIND CLOCK'S WITNESS, READ FROM ROWS WHEN THE CLOCK IS ALREADY OVERDUE
+   * (2026-09-27).
+   *
+   * `lastObservedHandCompletedAtMs` is written by onHandComplete, so on a
+   * brand-new manager it is 0 until this event deals its next hand - which is
+   * exactly what a frozen event cannot do. resume() therefore had to decide
+   * "was this level spent on play?" with no knowledge of when this event last
+   * played, and its answer was to credit the elapsed wall time whatever had
+   * happened, which after a four-day freeze floors the remainder at one
+   * second.
+   *
+   * The event's most recent dealt hand is the evidence, and it is one index
+   * lookup on idx_hand_history_tournament_created. It is asked for only when
+   * the level is already past its own duration - the ordinary mid-level
+   * restart never pays for it - so a fleet-wide re-adoption adds at most one
+   * bounded read per genuinely overdue event.
+   *
+   * Horse hands are retained for eight days (hand_history_retention_policy),
+   * and this law's longest window is one level, so pruning can never make a
+   * dealing event look idle. An event frozen past that retention reads as
+   * never having dealt, which is the same answer by a different route.
+   *
+   * A high-water mark: a slower read never un-sees a hand this manager already
+   * watched land. An unreadable answer leaves the value alone and is never
+   * fatal to the adoption - it reads as "this event has not dealt", which
+   * grants a fresh full level and holds the in-flight clock, both of which are
+   * the safe direction.
+   */
+  protected async seedDealingWitnessFromRows(): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('created_at')
+        .eq('tournament_id', this.tournamentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const dealtAt =
+        !error && data && typeof data.created_at === 'string' ? Date.parse(data.created_at) : NaN;
+      if (Number.isFinite(dealtAt) && dealtAt > this.lastObservedHandCompletedAtMs) {
+        this.lastObservedHandCompletedAtMs = dealtAt;
+      }
+    } catch (err) {
+      // Never let the clock's bookkeeping break an adoption that is otherwise
+      // sound: the value it would have set fails safe on its own.
+      reportError(err, 'Tournament.seed_dealing_witness');
+    }
+  }
+
   protected chipsInPlayEstimate(): number | null {
     const start = Number(this.tournamentCache?.starting_chips);
     if (!Number.isFinite(start) || start <= 0) return null;
@@ -8746,6 +9082,7 @@ export abstract class TournamentManagerBase {
             `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due with no hand dealt since it began - holding it until this tournament deals again`
           );
         }
+        this.askForConsolidationIfSpread();
         deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
         return;
       }
@@ -8846,6 +9183,74 @@ export abstract class TournamentManagerBase {
        */
       while (nextLevel < blindStructure.length && blindStructure[nextLevel]?.isBreak) {
         nextLevel++;
+      }
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  PAST THE END OF THE STRUCTURE, AN ESCALATION NEEDS A PROVEN STACK
+       *  (2026-09-27)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Every level from here on is INVENTED. The structure the tournament
+       * was advertised with has run out, resolveBlindLevel derives the rest,
+       * and capLevelToChipsInPlay is the only thing that keeps a derived
+       * blind inside what the field can actually post. That cap has existed
+       * since 2026-08-31 and it measures against chipsInPlayEstimate(), which
+       * returns null - capping NOTHING - unless entrantCountForChipCap has
+       * been raised, and the only thing that raises it is refreshChipCapInputs
+       * inside the elimination sweep.
+       *
+       * THE CAP LOSES A RACE IT WAS NEVER TOLD IT WAS IN. A manager does wake
+       * its own sweep once when it adopts (2026-09-10), so the cap is armed
+       * shortly after adoption - asynchronously, through one bounded scheduler
+       * slot. The level clock is not asynchronous: resume() armed it inline,
+       * and an overdue level fired in a second. In a fleet-wide re-adoption
+       * the scheduler is the thing that is backed up - after the 06:57 boot on
+       * 2026-09-11 it held 553 of 597 managers, its oldest entry waiting up to
+       * 24 minutes - so the escalation ran while the sweep that would have
+       * armed the cap was still queued. 2026-09-22 13:24:
+       * `Auto-escalated blinds (level 45, structure has 40):
+       * 5000000/10000000 ante 4000000` on a $100 Freeroll whose players held
+       * 3,000-15,000 chips. Not one of them could post the ante, let alone
+       * the blind. The first hand at that level is every stack all-in before
+       * a card is read, and the event's result is decided by the order the
+       * cards happen to fall. That is not the tournament anybody entered.
+       *
+       * WHAT IT DOES INSTEAD: it holds the last level the structure actually
+       * authored, and says so once, until the chip supply is known. The hold
+       * releases itself - the adoption's own sweep arms the cap as soon as it
+       * reaches a slot, and the next wake escalates normally against a supply
+       * it can measure. Nothing new has to run for that to happen.
+       * Refusing is available and guessing is not - this is the same choice
+       * the abandoned-generation door makes when the rows do not prove the
+       * shape. A held level is a slow tournament that still plays out and
+       * still finishes on busts; an unpostable blind is a finished tournament
+       * with an invented winner, and there is no repair afterwards that gives
+       * the field back the event it was playing. Cost of holding wrongly: the
+       * blinds stay put for fifteen seconds at a time while a count is
+       * unreadable. Cost of escalating wrongly: measured above.
+       *
+       * An event still inside its authored structure is untouched: those
+       * levels were authored by a human and are played as written, capped or
+       * not. A pending publication is replayed rather than held - it may
+       * already have committed, and the fenced RPC is what decides that. An
+       * empty structure keeps its existing "Next blind level is missing"
+       * throw, which is a different defect with its own handling.
+       */
+      if (
+        blindStructure.length > 0 &&
+        nextLevel >= blindStructure.length &&
+        !this.pendingBlindTransition &&
+        this.chipsInPlayEstimate() === null
+      ) {
+        if (!this.unprovenEscalationHoldAnnouncedFor.has(this.currentLevel)) {
+          this.unprovenEscalationHoldAnnouncedFor.add(this.currentLevel);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${nextLevel} would be invented past the end of a ${blindStructure.length}-level structure, and this event's chips in play are unproven - holding level ${this.currentLevel} rather than escalating against an unknown stack`
+          );
+        }
+        deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
+        return;
       }
 
       /**

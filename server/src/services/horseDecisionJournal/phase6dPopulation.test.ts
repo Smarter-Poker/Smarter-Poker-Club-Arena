@@ -7,6 +7,11 @@ const {
   CHAIN_LINKS,
   admitChain,
   assembleChain,
+  captureBucket,
+  captureContinuity,
+  captureMark,
+  firstShedAtOrAfter,
+  tallyIncompleteByCapture,
   cellKey,
   cellStatus,
   classifyDecision,
@@ -17,6 +22,7 @@ const {
   requestFromDeclaration,
   requestFromReport,
   serializePopulation,
+  strataCount,
   validateDeclaration,
 } = selector;
 
@@ -306,6 +312,66 @@ describe('Phase 6D declaration enforcement', () => {
   });
 });
 
+describe('Phase 6D serving-release declaration of 2026-09-27', () => {
+  const servingPath = new URL(
+    '../../../../docs/evidence/phase6d/population-declaration-2026-09-27.json',
+    import.meta.url
+  ).pathname;
+  const serving = loadDeclaration(servingPath);
+
+  it('admits the serving release only, over a window from its start minute', () => {
+    const d = serving.declaration;
+    expect(d.admittedReleases.map((r: { sha: string }) => r.sha)).toEqual([
+      '6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4',
+    ]);
+    expect(d.servingRelease.sha).toBe('6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4');
+    expect(d.window.start).toBe('2026-09-27T16:06:00Z');
+    expect(d.window.startMs).toBe(Date.parse('2026-09-27T16:06:00Z'));
+    expect(d.window.endMs).toBe(Date.parse(d.window.end));
+    expect(strataCount(d)).toBe(Math.ceil((d.window.endMs - d.window.startMs) / 3_600_000));
+    expect(strataCount(loaded.declaration)).toBe(24);
+  });
+
+  it('keeps the cells and targets of the 2026-09-26 declaration', () => {
+    expect(declaredCells(serving.declaration).size).toBe(3969);
+    expect(serving.declaration.population).toEqual(loaded.declaration.population);
+    expect(serving.declaration.chain).toEqual(loaded.declaration.chain);
+    expect(serving.declaration.selection.handsPerStratum).toBe(
+      loaded.declaration.selection.handsPerStratum
+    );
+  });
+
+  it('refuses the earlier releases, a moved window and a window longer than a day', () => {
+    const request = {
+      declarationDigest: serving.digest,
+      window: { ...serving.declaration.window },
+      targetPerCell: 3,
+      handsPerStratum: serving.declaration.selection.handsPerStratum,
+      releases: ['6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4'],
+      servingRelease: '6b6eabb1b169aed14fcb9fbd0ae54ee2bc42b2d4',
+    };
+    expect(enforceDeclaration(serving, request)).toBe(true);
+    expect(() =>
+      enforceDeclaration(serving, {
+        ...request,
+        releases: [...request.releases, '4946473bb65a27d964a3ad9401eaf4948014a0a8'],
+      })
+    ).toThrow(/not admitted/);
+    expect(() =>
+      enforceDeclaration(serving, {
+        ...request,
+        window: { ...request.window, endMs: request.window.endMs + 60_000 },
+      })
+    ).toThrow(/window differs/);
+    const long = structuredClone(serving.declaration);
+    long.window.endMs = long.window.startMs + 25 * 3_600_000;
+    expect(() => validateDeclaration(long)).toThrow(/at most 24 hours/);
+    const reversed = structuredClone(serving.declaration);
+    reversed.window.endMs = reversed.window.startMs;
+    expect(() => validateDeclaration(reversed)).toThrow(/at most 24 hours/);
+  });
+});
+
 const HAND_KEY = 'a'.repeat(64);
 const TURN_KEY = 'b'.repeat(64);
 const PRODUCER = '11111111-2222-4333-8444-555555555555';
@@ -473,5 +539,100 @@ describe('Phase 6D chain assembly', () => {
     });
     expect(mismatched.links.reference).toBe('missing:reference_mismatch');
     expect(mismatched.links.calculation).toBe('missing:calculation_receipt');
+  });
+});
+
+describe('Phase 6D capture continuity names shed records', () => {
+  // The 2026-09-27 shape on 6b6eabb1: one producer's sequence is dense until
+  // the publisher starts shedding at its queue bound, then it has holes. The
+  // decision before the holes lost its completed hand; the decision after the
+  // last hole did not.
+  const producer = 'producer-a';
+  const other = 'producer-b';
+  const archived = [1, 2, 3, 4, 5, 8, 9, 12, 13, 14];
+  const rows = [
+    ...archived.map((sequence, i) => ({ rowid: 100 + i * 2, producer, sequence })),
+    ...[1, 2, 3].map((sequence, i) => ({ rowid: 101 + i * 2, producer: other, sequence })),
+  ];
+  const atByRowid = new Map(rows.map((r) => [r.rowid, 1_000_000 + r.rowid * 1000]));
+  const shedAtMs = (gap: { beforeRowid: number }) => atByRowid.get(gap.beforeRowid)!;
+
+  it('finds every hole in a dense producer sequence and never exposes the producer id', () => {
+    const continuity = captureContinuity(rows);
+    const a = continuity.get(producer)!;
+    expect(a.label).toBe('producer 1');
+    expect(a.archived).toBe(10);
+    expect(a.firstSequence).toBe(1);
+    expect(a.lastSequence).toBe(14);
+    expect(a.notArchived).toBe(4);
+    expect(a.gaps.map((g: { afterSequence: number }) => g.afterSequence)).toEqual([5, 9]);
+    const b = continuity.get(other)!;
+    expect(b.label).toBe('producer 2');
+    expect(b.notArchived).toBe(0);
+    expect(JSON.stringify([...continuity.values()])).not.toContain(producer);
+    expect(() =>
+      captureContinuity([
+        { rowid: 1, producer, sequence: 1 },
+        { rowid: 2, producer, sequence: 1 },
+      ])
+    ).toThrow(/duplicated/);
+  });
+
+  it('locates the first shed at or after a decision, including a decision inside a hole', () => {
+    const continuity = captureContinuity(rows);
+    expect(firstShedAtOrAfter(continuity, producer, 2)?.afterSequence).toBe(5);
+    expect(firstShedAtOrAfter(continuity, producer, 5)?.afterSequence).toBe(5);
+    expect(firstShedAtOrAfter(continuity, producer, 6)?.afterSequence).toBe(5);
+    expect(firstShedAtOrAfter(continuity, producer, 8)?.afterSequence).toBe(9);
+    expect(firstShedAtOrAfter(continuity, producer, 12)).toBeNull();
+    expect(firstShedAtOrAfter(continuity, 'unknown', 1)).toBeNull();
+  });
+
+  it('marks each chain with its own producer, and tallies only incomplete chains', () => {
+    const continuity = captureContinuity(rows);
+    const before = captureMark(
+      continuity,
+      { producerId: producer, sequence: 3, atMs: atByRowid.get(104)! },
+      shedAtMs
+    );
+    expect(before).toEqual({
+      status: 'shed_after_decision',
+      producer: 'producer 1',
+      firstShedAfterDecisionMs: 4000,
+    });
+    const after = captureMark(
+      continuity,
+      { producerId: producer, sequence: 13, atMs: 0 },
+      shedAtMs
+    );
+    expect(after).toEqual({ status: 'no_shed_after_decision', producer: 'producer 1' });
+    // The other producer's holes never mark this producer's chain, and the
+    // reverse: producer-b is dense.
+    expect(
+      captureMark(continuity, { producerId: other, sequence: 1, atMs: 0 }, shedAtMs).status
+    ).toBe('no_shed_after_decision');
+    expect(
+      captureMark(continuity, { producerId: 'unscanned', sequence: 1, atMs: 0 }, shedAtMs)
+    ).toEqual({ status: 'producer_not_scanned' });
+    expect(captureBucket(before)).toBe('shed_within_60s_of_decision');
+    expect(captureBucket({ ...before, firstShedAfterDecisionMs: 61_000 })).toBe(
+      'shed_later_than_60s_after_decision'
+    );
+    expect(captureBucket({ ...before, firstShedAfterDecisionMs: null })).toBe(
+      'shed_after_decision:time_unavailable'
+    );
+    expect(captureBucket(undefined)).toBe('unmarked');
+    expect(
+      tallyIncompleteByCapture([
+        { complete: false, capture: before },
+        { complete: false, capture: after },
+        { complete: true, capture: before },
+        { complete: false },
+      ])
+    ).toEqual({
+      shed_within_60s_of_decision: 1,
+      no_shed_after_decision: 1,
+      unmarked: 1,
+    });
   });
 });

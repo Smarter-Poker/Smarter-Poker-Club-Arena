@@ -350,3 +350,55 @@ Order: A, B and C together (they stop the bleeding: identity, negatives, doors, 
 - The 08-19 "no player conversion" rule and the 08-21 "owner mint at 1:100" rule are consistent in code; the bridge being live for owners is Dan's design.
 - The multiplier is dormant (1.00 on all 1,308 profiles) and cannot mint on transfer.
 - `profiles.diamonds` is UPDATE-granted to `postgres` and `service_role` only; `authenticated` cannot write it directly.
+
+---
+
+## 8. What the register means PER WALLET (added 2026-09-30, binding)
+
+The conservation identity in 1.2 is a statement about the WHOLE supply, and it
+holds exactly: on 2026-09-30 `fn_ca_mint_supply('diamonds')` and
+`SUM(profiles.diamonds)` were both 6,853,624 and
+`fn_ca_diamond_register_vs_supply()` reported `difference 0.00`.
+
+Read PER WALLET, `ca_mint_ledger` carries two different quantities and only one
+of them is a balance. Confusing them is why an earlier settlement recorded
+"1,068 wallets differ" as an open defect. It is not one.
+
+| quantity                               | what it is                                      | equals holdings?  |
+| -------------------------------------- | ----------------------------------------------- | ----------------- |
+| `SUM(mint) - SUM(burn)` for the holder | issuance the register attributed to that wallet | **No, by design** |
+| `balance_after` on the holder's rows   | that wallet's balance after each movement       | **Yes, exactly**  |
+
+**The net is short by the wallet's opening stock, deliberately.** Lane B of the
+fix list says the diamond baseline was booked as an acknowledged-baseline row
+in `ca_mint_ledger` for the circulation that existed on 2026-09-03, and to
+"backfill NOTHING". That row is `baseline:diamonds:2026-09-03:v2` against the
+`circulation` holder, labelled "all player wallets (pre-standard circulation
+acknowledged as baseline)". So every wallet that held diamonds before the
+register existed carries an opening balance the register counted once, in the
+circulation bucket, and never attributed to it.
+
+Measured 2026-09-30: 1,068 of 1,427 live wallets differ, by 1,021,092 in total,
+and **every one of them leans the same way** (holdings above register net,
+gross difference equal to net difference). 581 differ by exactly 300 and 436 by
+exactly 500, which are the two historic signup grants. Circulation net
+(1,623,417) minus the residual the deletion door left on holders whose profiles
+are gone (602,325) is 1,021,092 to the diamond.
+
+**Do not attribute the baseline per holder to make the net "agree".** It would
+contradict lane B, it would rewrite 1,231 rows of a money ledger, and it buys
+nothing: `balance_after` already answers the per-wallet question exactly.
+
+**The check that can actually break** is `fn_ca_mint_register_attribution()`,
+and the number that matters in it is `register_drifts` (expected 0): wallets
+the register tracks whose balance chain does not end at what they hold, which
+is the only shape a genuine per-wallet fault can take. `wallets_net_differs` is
+not a fault count. Per wallet, `fn_ca_mint_wallet_attribution(uuid)` returns one
+of three verdicts and never folds "the register has never tracked this wallet"
+into "balanced".
+
+**Read the chain by value, not by `ORDER BY created_at DESC LIMIT 1`.** One
+transaction can claim many rewards, so dozens of register rows share a single
+`created_at`. Picking the last row by timestamp picks arbitrarily among them,
+and doing so reported 38 false drifts on a first pass of this very audit
+(CLAUDE.md 10.86: a signal that answers when it does not know).

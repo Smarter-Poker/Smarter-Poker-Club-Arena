@@ -167,8 +167,10 @@ import {
   sameCashBuyInIntent,
   type CashBuyInAttempt,
 } from '../services/CashBuyInRecovery';
+import { askToSignInAgain, isDeadSessionRefusal } from '../lib/deadSessionRefusal';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
 import {
   playerDisplayName,
@@ -8222,6 +8224,16 @@ function LiveTablePage({
   // The services behind them work fine; nothing ever called them. Each panel
   // now loads lazily when it is opened, so a closed panel costs nothing.
 
+  // THE DIAMOND ARENA'S BOARD (Phase 10, line 1; migration 20260930043000).
+  // player_stats never holds a Diamond hand, so a Diamond table asks its own
+  // board, from the one arena source this page already has, and says whether
+  // it is still asking or could not tell. At a chip table this is false and
+  // the board is asked and drawn exactly as before.
+  const leaderboardIsDiamond = tableState.arenaAsset === 'diamonds';
+  const [diamondLeaderboardState, setDiamondLeaderboardState] = useState<
+    'loading' | 'ready' | 'failed'
+  >('loading');
+
   // Leaderboard. Real data only became possible today: player_stats.vpip/pfr
   // and tournaments_played/won had no writer, so this board would have been
   // all zeros even if it had been wired.
@@ -8229,7 +8241,7 @@ function LiveTablePage({
     if (!showLeaderboard) return;
     let cancelled = false;
     const clubId = actualClubIdRef.current;
-    if (!clubId) {
+    if (!clubId && !leaderboardIsDiamond) {
       setLeaderboardPlayers([]);
       return;
     }
@@ -8240,14 +8252,20 @@ function LiveTablePage({
       month: 'monthly',
       allTime: 'all_time',
     };
+    if (leaderboardIsDiamond) setDiamondLeaderboardState('loading');
     (async () => {
       try {
-        const rows = await LeaderboardService.getClubLeaderboard(
-          clubId,
-          'profit',
-          periodMap[leaderboardPeriod] || 'weekly',
-          25
-        );
+        const rows = leaderboardIsDiamond
+          ? await LeaderboardService.getDiamondArenaLeaderboard(
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            )
+          : await LeaderboardService.getClubLeaderboard(
+              clubId as string,
+              'profit',
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            );
         if (cancelled) return;
         setLeaderboardPlayers(
           (rows || []).map((r) => ({
@@ -8260,14 +8278,20 @@ function LiveTablePage({
             isCurrentUser: r.userId === userId,
           }))
         );
+        if (leaderboardIsDiamond) setDiamondLeaderboardState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadLeaderboard');
+        if (cancelled) return;
+        reportError(e, 'TablePage.loadLeaderboard');
+        if (leaderboardIsDiamond) {
+          setLeaderboardPlayers([]);
+          setDiamondLeaderboardState('failed');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showLeaderboard, leaderboardPeriod, userId]);
+  }, [showLeaderboard, leaderboardPeriod, userId, leaderboardIsDiamond]);
 
   // Sound & vibration preferences — extracted to useTableSound hook
   const {
@@ -12003,6 +12027,11 @@ function LiveTablePage({
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
+  /* SHARE AS VIDEO (Phase 9.1): the hand_history id behind sharedHandData
+     when the share came from a stored record. The live snapshot taken as a
+     hand ends has no row id yet, so it clears this and the sheet shows no
+     video panel for it. */
+  const [sharedHandId, setSharedHandId] = useState<string | null>(null);
 
   // Real Name vs Alias
   const [useRealName, setUseRealName] = useState(() => {
@@ -14728,8 +14757,16 @@ function LiveTablePage({
     const s = payload?.settings || payload;
     if (!s) return;
     // Apply sound preference if changed
-    if (typeof s.soundEnabled === 'boolean') {
-      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
+    // MUTE ONLY (2026-09-27). This payload is the Settings page's cached copy,
+    // re-sent on every tab return and theme change, and it goes stale the
+    // moment the player mutes at the table or in the menu (those write the
+    // sound keys, not this cache). So it may only ever turn sound OFF: a stale
+    // `true` here must never un-mute a player. Sound ON from the Settings page
+    // already arrives through useTableSettings (applyGateChanges -> setEnabled).
+    // Off goes through the engine, which also returns the Safari audio session
+    // to "ambient", so a player's music is not left paused.
+    if (s.soundEnabled === false) {
+      soundService.setEnabled(false);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read
@@ -16934,6 +16971,7 @@ function LiveTablePage({
               .slice(1)
               .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
               .filter((b) => b.length > 0);
+            setSharedHandId(null);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
               tableName: st.tableName || 'Club Arena',
@@ -21655,10 +21693,8 @@ function LiveTablePage({
   useEffect(() => {
     if (!userId || userId === 'guest' || !showTimeBankStore || timeBankUnlimited) return;
     let alive = true;
-    void supabase
-      .from('profiles')
+    void ownProfile(userId)
       .select('diamonds')
-      .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => {
         const d = Number((data as { diamonds?: number } | null)?.diamonds);
@@ -26340,6 +26376,8 @@ function LiveTablePage({
         onShare={(hand) => {
           try {
             setSharedHandData(panelHandToShareable(hand, tableState.tableName || 'Club Arena'));
+            /* A stored record: its id is the hand_history row (Share As Video). */
+            setSharedHandId(hand.id || null);
             setShowHandDetail(false);
             setShowShareHand(true);
           } catch (e) {
@@ -26634,7 +26672,15 @@ function LiveTablePage({
             if (!stillCurrent()) return false;
             if (outcome.kind === 'unknown') {
               reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
-              toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              if (isDeadSessionRefusal(outcome.error)) {
+                /* Phase 11 line 7: a revoked session is refused again on every
+                   retry. The saved request stays, so signing in and retrying
+                   reuses its key; see lib/deadSessionRefusal. */
+                toast.error('Your Session Has Ended. Sign In Again To Finish This Buy-In.');
+                askToSignInAgain('money:cash_buyin');
+              } else {
+                toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              }
               return false;
             }
             cashBuyInPendingRef.current = null;
@@ -26733,6 +26779,7 @@ function LiveTablePage({
         showLeaderboard={showLeaderboard}
         leaderboardPlayers={leaderboardPlayers}
         leaderboardPeriod={leaderboardPeriod}
+        leaderboardDiamondState={leaderboardIsDiamond ? diamondLeaderboardState : undefined}
         onCloseLeaderboard={() => setShowLeaderboard(false)}
         onLeaderboardPeriodChange={setLeaderboardPeriod}
         // Leave Confirm
@@ -26856,6 +26903,7 @@ function LiveTablePage({
         // Share Hand
         showShareHand={showShareHand}
         sharedHandData={sharedHandData}
+        sharedHandId={sharedHandId}
         onCloseShareHand={() => setShowShareHand(false)}
         // Add-On
         addOnPeriod={addOnPeriod}

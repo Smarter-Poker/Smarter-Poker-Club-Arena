@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense, type KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { LoadingState } from '../components/common/EmptyState';
 import FriendListPanel from '../components/social/FriendListPanel';
 import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
@@ -164,6 +165,9 @@ const VARIANT_LABEL: Record<string, string> = {
 const variantLabel = (v: string) => VARIANT_LABEL[v] || v.toUpperCase();
 
 /** The columns the credential needs. One string, used by every reader here. */
+/* This page is the player's OWN profile (activeProfileUserId is the signed-in
+   account), and it shows their own Diamond balance, which only its owner reads
+   (ruling 25). Every read of it goes through the owner door, ownProfile(). */
 const PROFILE_COLUMNS = `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, arena_avatar_url, use_avatar_as_profile_pic, created_at, diamonds, is_vip, vip_tier, vip_expires_at, login_streak, bio, player_tags`;
 
 function toUserProfile(profile: any): UserProfile {
@@ -292,10 +296,8 @@ export default function ProfilePage() {
     if (!au || au.id !== requestedUserId || activeProfileUserIdRef.current !== requestedUserId) {
       return;
     }
-    const { data: p, error } = await supabase
-      .from('profiles')
+    const { data: p, error } = await ownProfile(requestedUserId)
       .select('diamonds, login_streak, is_vip')
-      .eq('id', requestedUserId)
       .maybeSingle();
     if (activeProfileUserIdRef.current !== requestedUserId) return;
     if (error) {
@@ -519,10 +521,8 @@ export default function ProfilePage() {
         // Fetch basic profile and stats
         const { data: profile, error: profileError } = await retryFetch(
           () =>
-            supabase
-              .from('profiles')
+            ownProfile(requestedUserId)
               .select(PROFILE_COLUMNS)
-              .eq('id', requestedUserId)
               .maybeSingle()
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMountedRef }
@@ -663,10 +663,8 @@ export default function ProfilePage() {
           .then(({ data: { user: authUser } }) => {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
-              supabase
-                .from('profiles')
+              ownProfile(requestedUserId)
                 .select(PROFILE_COLUMNS)
-                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data: profile }) => {
                   if (
@@ -761,10 +759,8 @@ export default function ProfilePage() {
           .then(({ data: { user: authUser } }) => {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
-              supabase
-                .from('profiles')
+              ownProfile(requestedUserId)
                 .select('diamonds, login_streak')
-                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
                   if (data && ownsActiveAccount(requestedUserId)) {
@@ -790,10 +786,8 @@ export default function ProfilePage() {
           .then(({ data: { user: authUser } }) => {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
-              supabase
-                .from('profiles')
+              ownProfile(requestedUserId)
                 .select('diamonds')
-                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
                   if (data && ownsActiveAccount(requestedUserId)) {
@@ -823,10 +817,8 @@ export default function ProfilePage() {
           .then(({ data: { user: authUser } }) => {
             if (authUser && ownsActiveAccount(authUser.id)) {
               const requestedUserId = authUser.id;
-              supabase
-                .from('profiles')
+              ownProfile(requestedUserId)
                 .select('diamonds')
-                .eq('id', requestedUserId)
                 .maybeSingle()
                 .then(({ data }) => {
                   if (data && ownsActiveAccount(requestedUserId)) {

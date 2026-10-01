@@ -5,8 +5,20 @@
   background: #020305;
 }
 
-.managementConsole {
+/* THREE PAGES, THREE PICTURES (Dan 2026-09-20): "DO NOT ATTACH EVERYTHING
+   TOGETHER WITH THE SAME DISPLAY WINDOWS." The Game Board is the spade console
+   on its own; Ticker Management and Club Messages print on their own frame
+   families inside their panels, and a creator replaces the board rather than
+   sitting in it. Nothing here wraps more than one section. */
+.boardConsole {
   --sc-max: 1000px;
+}
+
+/* A state of the page (checking access) on the flat-headed spade: narrower
+   than the board, never wider than its own art. The shark denial keeps its
+   own 733px master width. */
+.stateConsole:global(.sc--family-spade) {
+  --sc-max: 760px;
 }
 
 .commandHeader {
@@ -82,6 +94,25 @@
   border-block: 1px solid rgb(104 122 139 / 42%);
 }
 
+/* The strip is navigation, not a display window: no frame, no fill, one
+   engraved rule under it, and the page on show lit in the master's blue. */
+.surfaceNav {
+  width: min(calc(100% - 24px), 1000px);
+  margin: 0 auto clamp(12px, 2.4vw, 22px);
+  border-block: 0;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.surfaceNav button {
+  border-bottom: 2px solid transparent;
+  font-size: clamp(10px, 1.3vw, 13px);
+}
+
+.surfaceNav .surfaceActive {
+  border-bottom-color: #45adff;
+}
+
 .surfaceNav button,
 .filters button,
 .rowActions button,
@@ -94,7 +125,6 @@
   min-height: 44px;
   padding: 8px 12px;
   border: 0;
-  border-inline-end: 1px solid rgb(94 116 134 / 28%);
   color: #a9b4bf;
   background: transparent;
   font:
@@ -104,6 +134,14 @@
   text-transform: uppercase;
   text-decoration: none;
   cursor: pointer;
+}
+
+/* The divider belongs BETWEEN the columns of the strip and the filter row.
+   On the shared rule above it also printed after the last column and around
+   every button that stands alone, which drew three-sided boxes. */
+.surfaceNav button:not(:last-child),
+.filters button:not(:last-child) {
+  border-inline-end: 1px solid rgb(94 116 134 / 28%);
 }
 
 .surfaceNav button {
@@ -154,16 +192,25 @@
   color: #e4e7ec;
 }
 
-.creatorDeck {
+.creatorStage {
+  display: grid;
+  gap: clamp(8px, 1.6vw, 14px);
+  width: 100%;
+  max-width: 1000px;
   min-width: 0;
+  margin-inline: auto;
 }
 
+/* Back to the game types: a lit word on the black, not a drawn button. */
 .creatorBack {
   display: block;
-  width: 56px;
-  margin-bottom: 8px;
-  border-inline: 1px solid rgb(94 116 134 / 34%);
+  justify-self: start;
+  min-width: 56px;
+  margin-inline-start: 12px;
+  border-inline: 0;
   color: #45adff;
+  font-size: 18px;
+  text-shadow: 0 0 10px rgb(49 168 255 / 55%);
 }
 
 .filters {
@@ -175,10 +222,6 @@
 }
 .filters .active {
   border-bottom-color: #45adff;
-}
-.filters .dismissCreator {
-  grid-column: 1 / -1;
-  color: #ff8794;
 }
 
 .empty,
@@ -303,7 +346,8 @@
   color: #e4e7ec;
 }
 .scheduleRail button {
-  min-height: 30px;
+  /* Cancel Schedule is a phone tap target like every other control here. */
+  min-height: 44px;
   margin-left: auto;
   padding-block: 0;
   color: #45adff;
@@ -351,11 +395,24 @@
   box-shadow: none !important;
   overflow-y: auto;
 }
-.dialog > :global(.sc) {
+.dialog > :global(.sc--family-spade) {
   --sc-max: 760px;
 }
+
+/* THE SPADE GLASS IS CLEAR. Its mid slice is transparent between the rails,
+   which is right on a black page and wrong over a dimmed board: the board's
+   lit text read straight through a dialog's own copy. The rails sit between
+   1.7% and 7.6% of the master, so a black backing inset 3% closes the glass
+   and draws nothing outside the frame. */
+.dialog > :global(.sc--family-spade) > :global(.sc__body)::before {
+  content: '';
+  position: absolute;
+  inset: 0 3%;
+  z-index: -1;
+  background: #000;
+}
 .contractDialog {
-  width: min(100%, 940px);
+  width: min(100%, 760px);
 }
 .dialog label,
 .dialogField {
@@ -367,6 +424,12 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+/* A disabled field is not an editable one: same groove, quieter ink. */
+.dialog input:disabled {
+  color: #9aa5b3;
+  cursor: not-allowed;
+}
+
 .dialog input {
   width: 100%;
   min-height: 44px;

@@ -162,7 +162,7 @@ describe('engine accounting: base first, DB for the excess', () => {
     h.useOnce(); // 45s used → 15s beyond base
     const calls = h.consumeCalls();
     expect(calls).toHaveLength(1);
-    expect(calls[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15 });
+    expect(calls[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15, p_request_id: expect.any(String) });
   });
 
   it('a player with no meta (pre-wiring session) never triggers DB writes', () => {
@@ -195,7 +195,7 @@ describe('engine accounting: base first, DB for the excess', () => {
     engine.timeBankEngine.playerActed(TABLE, 'u1');
     const consume = rpc.mock.calls.filter((call: unknown[]) => call[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20 });
+    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20, p_request_id: expect.any(String) });
   });
 
   it('records an expired Lifetime activation once with its actual standard seconds', () => {
@@ -222,7 +222,7 @@ describe('engine accounting: base first, DB for the excess', () => {
 
     const consume = rpc.mock.calls.filter((call: unknown[]) => call[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20 });
+    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 20, p_request_id: expect.any(String) });
   });
 });
 
@@ -273,7 +273,7 @@ describe('mid-session refresh (diamond top-up)', () => {
     engine.timeBankEngine.playerActed(TABLE, 'u1');
     const consume = rpc.mock.calls.filter((c: unknown[]) => c[0] === 'fn_consume_time_bank');
     expect(consume).toHaveLength(1);
-    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15 });
+    expect(consume[0][1]).toEqual({ p_user_id: 'u1', p_seconds: 15, p_request_id: expect.any(String) });
   });
 
   it('fails closed (base only) when the allowance fetch errors', async () => {

@@ -227,3 +227,54 @@ export function verdictFor(
 ): DecidedRunningVerdict {
   return verdicts.get(tournamentId) ?? UNKNOWN;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A DECIDED EVENT HELD BY A MANAGER THAT CANNOT RETIRE IS NAMED, NOT WOKEN
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * WHY THIS EXISTS (2026-09-28)
+ *
+ * Both decided-event sweeps (the decided-but-RUNNING recovery and the
+ * seat-first finish sweep in GameServer) hand a decided tournament to the
+ * manager registered for it, or resume one when none is. A QUARANTINED
+ * manager is registered too: its stop failed, it holds the slot, and it is
+ * fenced, so it never sweeps again. Waking it does nothing, and resuming is
+ * refused while it holds the slot.
+ *
+ * On 2026-09-28 from 15:00Z 42 SNG/Spin events sat decided and unpaid for 15+
+ * minutes while the recovery sweep printed "is decided (1 playing) -
+ * recovering the winner" 20-39 times per event per ten minutes and nothing
+ * finished them. Every one was held by a manager quarantined on "retained
+ * time-bank custody" (the ambiguous fn_consume_time_bank overload,
+ * migration 20260928154352). The log said recovery was happening when it
+ * could not; CLAUDE.md 10.86 rule 1.
+ *
+ * This decides what the sweep may truthfully do. A held event is reported
+ * once per distinct quarantine reason, named with that reason, and counted
+ * on /health; it is never re-woken and never claimed as a recovery.
+ */
+export interface DecidedOwnerQuarantine {
+  readonly reason: string;
+  readonly custodyRefusal: string | null;
+}
+
+export type DecidedOwnerAction =
+  | { readonly kind: 'wake' }
+  | { readonly kind: 'resume' }
+  | { readonly kind: 'held'; readonly key: string; readonly because: string };
+
+export function decidedOwnerAction(input: {
+  managerRegistered: boolean;
+  /** The quarantine record held by EXACTLY the registered manager, or null. */
+  quarantine: DecidedOwnerQuarantine | null;
+}): DecidedOwnerAction {
+  if (!input.managerRegistered) return { kind: 'resume' };
+  if (!input.quarantine) return { kind: 'wake' };
+  const custody = input.quarantine.custodyRefusal ?? 'none';
+  return {
+    kind: 'held',
+    key: `${input.quarantine.reason}|${custody}`,
+    because: `its manager is quarantined (${input.quarantine.reason}; custody refusal: ${custody})`,
+  };
+}

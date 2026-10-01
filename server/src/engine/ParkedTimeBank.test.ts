@@ -342,7 +342,10 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       next.adoptSeatRoster(next.seatedPlayers);
       next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
       expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
-        ['fn_consume_time_bank', { p_user_id: user, p_seconds: 20 }],
+        [
+          'fn_consume_time_bank',
+          { p_user_id: user, p_seconds: 20, p_request_id: expect.any(String) },
+        ],
       ]);
       expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
       expect(old.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
@@ -396,8 +399,14 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         });
       await parked;
       await e.presenceSave;
-      expect(e.isMaintenanceStateDurable()).toBe(outcome === 'pending');
-      if (outcome === 'pending') {
+      /* 'refused' is { success: false }: the function ran and moved nothing,
+         and never will (an unknown user, a non-positive amount). Since
+         2026-09-28 that is an answer, not an unknown, so the park completes
+         exactly as it does after a confirmed debit rather than holding the
+         restart gate shut for the life of the process. */
+      const answered = outcome === 'pending' || outcome === 'refused';
+      expect(e.isMaintenanceStateDurable()).toBe(answered);
+      if (answered) {
         expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
           remainingSeconds: 10,
           dbConsumedSeconds: 30,
@@ -407,7 +416,15 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await e.persistPresenceForRestart('parked');
         expect(e.isMaintenanceStateDurable()).toBe(true);
       }
-      expect(data.rpc).toHaveBeenCalledTimes(1);
+      /* The debit carries its own id (2026-09-28). An answer that did not
+         confirm it may be asked about again, but only by that same id, so it
+         can never become a second charge: every call names one debit. */
+      const debits: any[][] = data.rpc.mock.calls.filter(
+        (call: any[]) => call[0] === 'fn_consume_time_bank'
+      );
+      expect(debits.length).toBeGreaterThanOrEqual(1);
+      if (answered || outcome === 'stale-break') expect(debits).toHaveLength(1);
+      expect(new Set(debits.map((call) => call[1].p_request_id)).size).toBe(1);
       e.timeBankEngine.dispose(table);
     }
   );
@@ -794,6 +811,55 @@ describe('stopped tournament bank custody', () => {
     expect(original.retireStoppedTimeBanksForClosedSession()).toBe(false);
     await original.stop();
     expect(data.rpc).toHaveBeenCalledOnce();
+  });
+
+  it('hands captured banks on after a teardown that reported a transient failure', async () => {
+    // 2026-10-01 12:27Z: a ten-second connect timeout failed the terminal
+    // snapshot flush of fifteen tournament tables. Each stop rejected after
+    // capturing its banks and releasing ownership; the replacement was then
+    // refused for ever because only a failure-free teardown could hand on.
+    const original = stoppedCandidate();
+    original.flushSnapshot = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    await expect(original.stop()).rejects.toThrow('teardown failed in 1 operation(s)');
+    expect(original.hasReleasedProcessOwnership()).toBe(true);
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    const replacement = engine();
+    replacement.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    const originals = new Map([[table, original]]);
+    const owner = Object.assign(Object.create(GameServer.prototype), {
+      running: true,
+      tableEngines: originals,
+      tournamentOwnedTables: new Set([table]),
+      tournamentRetirementCustody: new TournamentRetirementCustody(),
+      maintenanceBreak: { adopt: vi.fn() },
+    });
+    expect(await owner.replaceTableEngine(table, original, replacement)).toBe(true);
+    expect(originals.get(table)).toBe(replacement);
+    await replacement.readParkedTimeBanks();
+    replacement.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    expect(replacement.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+  });
+
+  it('never hands banks on while the original stop is still draining', async () => {
+    const original = stoppedCandidate();
+    let finish!: () => void;
+    original.flushSnapshot = () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    const stopping = original.stop();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    // Banks are captured before the flush, but the stop has not drained.
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    const next = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
+    finish();
+    await stopping;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
   });
 
   it('refuses incomplete capture without disposing the original value', async () => {

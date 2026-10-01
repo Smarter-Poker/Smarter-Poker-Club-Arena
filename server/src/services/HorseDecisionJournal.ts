@@ -89,6 +89,89 @@ export type HorseJournalFailureReason = (typeof HORSE_JOURNAL_FAILURE_REASONS)[n
  * refused write and never spends the restart budget. */
 export const HORSE_JOURNAL_CAPACITY_PROBE_MS = 60_000;
 
+/* THE QUEUE OUTLIVES A STALL, NOT JUST ONE LOCK RETRY (2026-09-28), AND IS
+   SIZED IN BYTES, WHICH IS WHAT BINDS (2026-09-29). The original bound - 64
+   records, 4 MiB - was sized for a writer that never stalls; every Horse
+   decision worker shard wrote to the SAME catalog file
+   (runtimeHorseJournalArchiveOptions, before 2026-09-28), so a shard's writer
+   routinely met SQLITE_BUSY behind the other's commit, and at the archive's
+   steady-state byte ceiling - where a batch also retires a segment inside the
+   same transaction - that was frequent enough to overflow 64 records in well
+   under a second. On the worst 15-minute window measured on 763e4cec
+   (2026-09-28 14:30Z), one shard enqueued about 120,000 decisions - roughly
+   134 a second - while shedding 20-40% of its attempts at queue_capacity.
+   Splitting the shared catalog per shard (config.ts, #5541) removed that
+   cause and the bound became 4,096 records / 16 MiB.
+
+   That did not stop the shedding, and this is why the second number was
+   wrong. On fa480b9b (2026-09-28 21:06Z onwards, split catalogs in place) both
+   shards still refused 8% and 18% of what they were offered at queue_capacity,
+   steadily, minute after minute, while phase15_journal_lock_retry stayed at
+   zero. A journal record is NOT a few hundred bytes: measured in both
+   archives, a decision record is about 9,000 bytes (8,853 and 9,146 decoded
+   bytes per record, 1,630 compressed). 16 MiB is therefore about 1,800
+   records, not 4,096; the count bound never applied, the byte bound was the
+   limiter, and it held about 15 seconds of a shard's traffic. The rest of the
+   cause is the writer's speed, fixed in store.ts (a segment's bytes are
+   validated once, not five times: 37 to 15 ms of CPU per 16-record batch) and
+   in workerPriority.ts / the decision worker's start (the writer thread was
+   created by a thread already at nice 10 and inherited it: on engine-01, two
+   EPYC cores, load average 12, it got about a tenth of a core and was
+   preempted about a thousand times a second). This bound is what a shard's
+   queue must still survive on its own: HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS's
+   ~7.6 s ladder, a writer restart, or the burst when a maintenance break
+   thaws every table at once, at the measured ~120 records a second offered
+   to each shard (about 230 across both, as a 15-minute mean at peak), about
+   9 KB each. 64 MiB is about 7,000 records, about a minute of that; 8,192
+   records is the count that goes with it. A shard's
+   queue is at most 64 MiB, so two shards hold at most 128 MiB. */
+export const HORSE_JOURNAL_QUEUE_MAX_RECORDS = 8192;
+export const HORSE_JOURNAL_QUEUE_MAX_BYTES = 64 * 1024 * 1024;
+
+/* A LOCK IS NOT A DEAD WRITER (2026-09-27). Every Horse decision worker shard
+   runs its own publisher and writer on the one shared archive, so a writer
+   routinely finds the catalog locked by the other shard's commit: SQLite
+   answers BUSY after its 250 ms busy timeout, the writer rolls the batch back
+   and says RETRYABLE. The publisher used to answer that by terminating the
+   writer and starting a replacement, with a budget of two and a one-second
+   termination fence. On e6b9dc5d (2026-09-27 21:05 to 21:22 UTC) both shards
+   restarted their writers six to nine times a minute, dropped thousands of
+   records a minute at the queue bound while each replacement reopened the
+   catalog, and at 21:22:51 one shard's retiring writer did not confirm
+   termination inside the fence, so that shard's capture stopped for good
+   (termination_unverified) and every later record from its tables was lost;
+   the surviving shard, alone on the catalog, ran with no restart at all.
+   The writer that said RETRYABLE is alive and holds nothing: it is asked
+   again, with the same immutable records, after a bounded backoff. Only a
+   batch refused this many times in a row falls back to the replacement path
+   below, whose budget and fence are unchanged. */
+export const HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
+  25, 50, 100, 200, 400, 800, 1000, 1000, 1000, 1000, 1000, 1000,
+]);
+
+/* A STOPPED CAPTURE RE-ARMS ITSELF (2026-09-28). The replacement budget (two
+   restarts, reset by a durable ACK) and the one-second termination fence ended
+   capture for the life of the process: on 41b91390 one shard stopped at
+   retry_exhausted at 01:04:07 UTC and the other at termination_unverified at
+   01:20:19, and neither would have captured again until the next engine
+   release, although the condition behind both (a writer slowed by catalog
+   scans, see HORSE_ARCHIVE_CATALOG_CONNECTION in the store) is the kind that
+   passes. A publisher that stopped at one of these fence reasons now starts a
+   fresh writer, with a fresh budget and the queue it kept, once a minute, and
+   only after the writer it retired has actually exited (the terminate promise
+   itself, not the one-second fence), so a publisher never owns two live
+   writers. It keeps doing so until a writer captures. Integrity refusals
+   (ack_mismatch, writer_unavailable), a journal that never started, a missing
+   restart and a shutdown stay terminal. */
+export const HORSE_JOURNAL_REARM_MS = 60_000;
+const HORSE_JOURNAL_REARMABLE: readonly HorseJournalFailureReason[] = Object.freeze([
+  'retry_exhausted',
+  'termination_unverified',
+  'restart_failed',
+]);
+const rearmable = (reason: HorseJournalFailureReason | null): boolean =>
+  reason !== null && HORSE_JOURNAL_REARMABLE.includes(reason);
+
 const HORSE_JOURNAL_MODES = [
   'starting',
   'ready',
@@ -112,6 +195,9 @@ const HEALTH_STATS_FIELDS = [
   'retiredSegments',
   'retiredRecords',
   'heldSegments',
+  'heldBytes',
+  'holdBudgetBytes',
+  'holdTrimmedSegments',
   'compressedBytes',
   'maxBytes',
   'records',
@@ -146,6 +232,12 @@ export interface HorseJournalHealth {
   retiredRecords: number | null;
   /** Published segments the evidence hold keeps from the ring. */
   heldSegments: number | null;
+  /** Their compressed bytes, the hold's budget (half the byte allocation;
+   * the other half always belongs to new capture), and how many segments of
+   * the hold window the budget released to the ring. */
+  heldBytes: number | null;
+  holdBudgetBytes: number | null;
+  holdTrimmedSegments: number | null;
   compressedBytes: number | null;
   maxBytes: number | null;
   records: number | null;
@@ -155,6 +247,11 @@ export interface HorseJournalHealth {
   /** Age of this report when it is read from a thread that does not own the
    * publisher (the main thread serving /health); null when read in place. */
   reportAgeMs: number | null;
+  /** On the thread serving /health: how many publishers (one per Horse
+   * decision worker shard) have reported, and how many are in each mode. The
+   * mode fields above are the least healthy publisher's; absent when read in
+   * place on a publisher's own thread. */
+  publishers?: { total: number; byMode: Partial<Record<HorseJournalMode, number>> };
   /** One sentence: whether capture is running and why, with the ring's
    * counts. Built on the reading thread from the finite fields above; never
    * text from a writer. */
@@ -172,6 +269,9 @@ const EMPTY_HEALTH: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number
     retiredSegments: null,
     retiredRecords: null,
     heldSegments: null,
+    heldBytes: null,
+    holdBudgetBytes: null,
+    holdTrimmedSegments: null,
     compressedBytes: null,
     maxBytes: null,
     records: null,
@@ -183,10 +283,23 @@ const EMPTY_HEALTH: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number
  * the ring's retained/published/unpublished/retired counts when the writer has
  * reported them. Finite inputs only. */
 export function horseJournalCaptureLine(h: Omit<HorseJournalHealth, 'capture'>): string {
+  const running = h.publishers ? (h.publishers.byMode.ready ?? 0) : null;
+  const sentence = horseJournalModeSentence(h);
+  // Several shards: say how many are capturing before the least healthy one's
+  // sentence, so a stopped shard is never hidden behind a running one.
+  return h.publishers && h.publishers.total > 1
+    ? `${running} of ${h.publishers.total} decision-shard publishers running; least healthy: ${sentence}`
+    : sentence;
+}
+function horseJournalModeSentence(h: Omit<HorseJournalHealth, 'capture'>): string {
+  const hold =
+    h.heldBytes === null
+      ? ''
+      : ` heldBytes=${h.heldBytes} holdBudgetBytes=${h.holdBudgetBytes ?? 0} holdTrimmed=${h.holdTrimmedSegments ?? 0}`;
   const counts =
     h.segments === null
       ? ''
-      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} held=${h.heldSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}`;
+      : ` retained=${h.segments} published=${h.publishedSegments ?? 0} held=${h.heldSegments ?? 0} unpublished=${h.pendingSegments ?? 0} retired=${h.retiredSegments ?? 0}${hold}`;
   const ring = h.maxSegments === null ? 'a ring' : `a ring of ${h.maxSegments} segments`;
   switch (h.mode) {
     case 'ready':
@@ -194,13 +307,17 @@ export function horseJournalCaptureLine(h: Omit<HorseJournalHealth, 'capture'>):
     case 'paused':
       return h.pausedReason === 'archive_storage_capacity'
         ? `not running: paused since ${h.pausedSince} because the filesystem is out of room; the ring retires only within its own allocation and asks again every minute;${counts}`
-        : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment outside the evidence hold left to retire (only held or unpublished segments remain); asks again every minute;${counts}`;
+        : (h.heldSegments ?? 0) > 0
+          ? `not running: paused since ${h.pausedSince} at ${h.pausedReason}: the evidence hold is crowding capture, no published segment outside it is left to retire (only held or unpublished segments remain); asks again every minute;${counts}`
+          : `not running: paused since ${h.pausedSince} at ${h.pausedReason} with no published segment left to retire (only unpublished segments remain); asks again every minute;${counts}`;
     case 'starting':
       return 'not running yet: the writer has not said READY';
     case 'recovering':
       return 'not running: the writer is being restarted';
     case 'failed':
-      return `not running: capture stopped for good at ${h.lastFailureReason} since ${h.failedSince};${counts}`;
+      return rearmable(h.lastFailureReason)
+        ? `not running: capture stopped at ${h.lastFailureReason} since ${h.failedSince}; a fresh writer is started every minute until one captures;${counts}`
+        : `not running: capture stopped for good at ${h.lastFailureReason} since ${h.failedSince};${counts}`;
     case 'stopped':
       return 'not running: the journal was stopped for shutdown';
     case 'unavailable':
@@ -251,6 +368,10 @@ export class HorseDecisionJournalPublisher {
   private recoveryPending = false;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private termination: Promise<boolean> = Promise.resolve(true);
+  /** Whether the last retired writer has actually exited: its terminate()
+   * promise, with no fence. A re-arm waits on this, never on the fence. */
+  private writerGone: Promise<boolean> = Promise.resolve(true);
+  private rearmTimer?: ReturnType<typeof setTimeout>;
   private stopping = false;
   private stopSent = false;
   private shutdownUnverified = false;
@@ -259,7 +380,7 @@ export class HorseDecisionJournalPublisher {
   private stopped?: () => void;
   private readonly producerId = randomUUID();
   private readonly sourceRelease = resolveReleaseIdentity().releaseSha;
-  private readonly watchdog: ReturnType<typeof setInterval>;
+  private watchdog: ReturnType<typeof setInterval>;
   private lastProgress: number;
   private lastFailureReason: HorseJournalFailureReason | null = null;
   private pausedReason: HorseJournalCapacityReason | null = null;
@@ -269,6 +390,10 @@ export class HorseDecisionJournalPublisher {
    * whose writers all died before READY never started capture at all. */
   private everReady = false;
   private probeTimer?: ReturnType<typeof setInterval>;
+  /** Consecutive lock refusals of the unacknowledged batch on this writer, and
+   * the backoff before it is asked again. Reset by its exact ACK or a new writer. */
+  private lockRetries = 0;
+  private lockRetryTimer?: ReturnType<typeof setTimeout>;
   private stats: Pick<HorseJournalHealth, (typeof HEALTH_STATS_FIELDS)[number]> | null = null;
   private statsAt: number | null = null;
   private statsRequestedAt: number | null = null;
@@ -287,14 +412,18 @@ export class HorseDecisionJournalPublisher {
   ) {
     this.lastProgress = this.now();
     this.attach(worker);
-    this.watchdog = setInterval(() => {
+    this.watchdog = this.startWatchdog();
+  }
+  private startWatchdog(): ReturnType<typeof setInterval> {
+    const watchdog = setInterval(() => {
       if (
         (this.mode === 'starting' || (this.mode === 'ready' && this.inFlight > 0)) &&
         this.now() - this.lastProgress > 5000
       )
         this.recover();
     }, 1000);
-    this.watchdog.unref?.();
+    watchdog.unref?.();
+    return watchdog;
   }
   private now(): number {
     return this.options.now?.() ?? performance.now();
@@ -315,6 +444,8 @@ export class HorseDecisionJournalPublisher {
     this.worker = worker;
     this.mode = 'starting';
     this.stopSent = false;
+    this.endLockWait();
+    this.lockRetries = 0;
     this.lastProgress = this.now();
     const epoch = ++this.epoch;
     const current = () => this.worker === worker && this.epoch === epoch;
@@ -337,20 +468,29 @@ export class HorseDecisionJournalPublisher {
     if (!worker) return this.termination;
     this.worker = null;
     this.epoch++;
+    let gone: Promise<boolean>;
+    try {
+      gone = worker.terminate().then(
+        () => true,
+        () => false
+      );
+    } catch {
+      gone = Promise.resolve(false);
+    }
+    this.writerGone = gone;
     this.termination = new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), 1000);
-      const finish = (confirmed: boolean) => {
-        clearTimeout(timer);
-        resolve(confirmed);
-      };
-      try {
-        void worker
-          .terminate()
-          .then(() => finish(true))
-          .catch(() => finish(false));
-      } catch {
-        finish(false);
-      }
+      void gone
+        .then((confirmed) => {
+          clearTimeout(timer);
+          resolve(confirmed);
+        })
+        .catch(() => {
+          // `gone` settles to a boolean and never rejects; if it ever did,
+          // the writer's exit is unconfirmed, which is what the fence says.
+          clearTimeout(timer);
+          resolve(false);
+        });
     });
     return this.termination;
   }
@@ -366,11 +506,12 @@ export class HorseDecisionJournalPublisher {
     this.lastFailureReason = reason;
     this.failedAt = this.wallNow();
     this.endPause();
+    this.endLockWait();
     this.count('unavailable');
     if (reason === 'start_failed') this.count('start_failed');
-    // Exactly one line per publisher lifetime. Until now a terminal writer
-    // failure only bumped a counter, so capture stopped with nothing in the
-    // log to say why until the next restart. Reason and mode only.
+    // One line per stop (at most one a minute once re-arming). Until
+    // 2026-09-26 a terminal writer failure only bumped a counter, so capture
+    // stopped with nothing in the log to say why. Reason and mode only.
     console.warn(
       `[HorseDecisionJournal] capture stopped mode=${this.reportedMode()} reason=${reason}`
     );
@@ -383,6 +524,8 @@ export class HorseDecisionJournalPublisher {
     }
     clearInterval(this.watchdog);
     clearTimeout(this.retryTimer);
+    if (rearmable(reason) && this.options.restart && !this.stopping && this.everReady)
+      this.scheduleRearm();
     void this.retireWriter()
       .then((confirmed) => {
         if (!confirmed) this.count('termination_unverified');
@@ -398,6 +541,56 @@ export class HorseDecisionJournalPublisher {
           this.stopped?.();
         }
       });
+  }
+  /** In a minute, once the retired writer has actually exited, start a fresh
+   * writer with a fresh budget. See HORSE_JOURNAL_REARM_MS. */
+  private scheduleRearm(): void {
+    clearTimeout(this.rearmTimer);
+    this.rearmTimer = setTimeout(() => {
+      this.rearmTimer = undefined;
+      void this.writerGone
+        .then((gone) => {
+          if (gone) this.rearm();
+          // A writer whose terminate() rejected may still be alive: never start
+          // a second one beside it. Ask again in a minute.
+          else if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
+        })
+        .catch(() => {
+          // A re-arm that threw (a replacement that cannot be attached) is
+          // neither silent nor a crash: it is counted, logged, and tried
+          // again in a minute while capture is still stopped.
+          this.count('rearm_failed');
+          console.warn(
+            `[HorseDecisionJournal] capture re-arm failed after=${this.lastFailureReason} queued=${this.queue.length}; trying again in a minute`
+          );
+          if (this.mode === 'failed' && !this.stopping) this.scheduleRearm();
+        });
+    }, HORSE_JOURNAL_REARM_MS);
+    this.rearmTimer.unref?.();
+  }
+  private rearm(): void {
+    if (this.mode !== 'failed' || this.stopping || !rearmable(this.lastFailureReason)) return;
+    let replacement: HorseJournalWorker;
+    try {
+      replacement = this.options.restart!();
+    } catch {
+      this.scheduleRearm();
+      return;
+    }
+    const after = this.lastFailureReason;
+    // A publisher that stopped at its budget still counts the batch it had in
+    // flight; nothing is in flight to a writer that has exited.
+    this.inFlight = 0;
+    this.retries = 0;
+    this.recoveryPending = true;
+    this.count('rearm_started');
+    // Reason and a count only.
+    console.warn(
+      `[HorseDecisionJournal] capture re-armed with a fresh writer after=${after} queued=${this.queue.length}`
+    );
+    clearInterval(this.watchdog);
+    this.watchdog = this.startWatchdog();
+    this.attach(replacement);
   }
   /** A quota refusal of an in-flight APPEND. The writer refused before it
    * committed anything, so the batch is still unacknowledged: keep it, keep the
@@ -433,6 +626,27 @@ export class HorseDecisionJournalPublisher {
     this.pausedReason = null;
     this.pausedAt = null;
   }
+  private endLockWait(): void {
+    clearTimeout(this.lockRetryTimer);
+    this.lockRetryTimer = undefined;
+  }
+  /** The live writer refused the batch at a lock and rolled it back. Nothing is
+   * in flight while it waits; the same queue head is dispatched to the same
+   * writer when the backoff ends. A record arriving meanwhile only queues. */
+  private retryLocked(): void {
+    const delay = HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS[this.lockRetries++]!;
+    this.count('lock_retry');
+    this.inFlight = 0;
+    const worker = this.worker,
+      epoch = this.epoch;
+    this.endLockWait();
+    this.lockRetryTimer = setTimeout(() => {
+      this.lockRetryTimer = undefined;
+      if (this.worker !== worker || this.epoch !== epoch || this.mode !== 'ready') return;
+      this.dispatch();
+    }, delay);
+    this.lockRetryTimer.unref?.();
+  }
   /** Ask, read-only, whether the batch that would be dispatched next fits. */
   private probe(): void {
     if (this.mode !== 'paused' || !this.worker || this.stopping || !this.queue.length) return;
@@ -465,6 +679,7 @@ export class HorseDecisionJournalPublisher {
     // A writer that died while paused is restarted like any other; a replacement
     // that meets the same quota pauses again from its first append.
     this.endPause();
+    this.endLockWait();
     if (!this.options.restart || this.retries >= 2) {
       /* A WRITER THAT NEVER SAID READY NEVER STARTED (2026-09-26). A module
          that cannot load is reported by `new Worker()` ASYNCHRONOUSLY, as an
@@ -537,7 +752,10 @@ export class HorseDecisionJournalPublisher {
       // Preflight the same complete envelope bound as the durable writer. A
       // too-large record is a capture gap; it must not poison later writes.
       const bytes = Buffer.byteLength(horseJournalJson(record));
-      if (this.queue.length >= 64 || this.queuedBytes + bytes > 4 * 1024 * 1024) {
+      if (
+        this.queue.length >= HORSE_JOURNAL_QUEUE_MAX_RECORDS ||
+        this.queuedBytes + bytes > HORSE_JOURNAL_QUEUE_MAX_BYTES
+      ) {
         this.count('queue_capacity');
         return;
       }
@@ -557,7 +775,7 @@ export class HorseDecisionJournalPublisher {
     this.record('request_lifecycle', keys.hand, keys.turn, lifecycle);
   }
   private dispatch(): void {
-    if (this.mode !== 'ready' || !this.worker || this.inFlight) return;
+    if (this.mode !== 'ready' || !this.worker || this.inFlight || this.lockRetryTimer) return;
     if (this.queue.length) {
       this.inFlight = Math.min(16, this.queue.length);
       this.lastProgress = this.now();
@@ -588,6 +806,16 @@ export class HorseDecisionJournalPublisher {
       return;
     }
     if (message?.type === 'RETRYABLE' && (this.mode === 'starting' || this.inFlight > 0)) {
+      // A writer that could not open has closed its port: only a replacement
+      // can help. A ready writer that met a lock is asked again in place.
+      if (
+        this.mode === 'ready' &&
+        this.inFlight > 0 &&
+        this.lockRetries < HORSE_JOURNAL_LOCK_RETRY_DELAYS_MS.length
+      ) {
+        this.retryLocked();
+        return;
+      }
       this.recover();
       return;
     }
@@ -672,6 +900,7 @@ export class HorseDecisionJournalPublisher {
     // lifetime. Only this complete, identity-checked durable ACK proves progress;
     // READY, retired-worker messages and malformed receipts cannot renew it.
     this.retries = 0;
+    this.lockRetries = 0;
     this.inFlight = 0;
     this.lastProgress = this.now();
     this.dispatch();
@@ -698,6 +927,9 @@ export class HorseDecisionJournalPublisher {
       retiredSegments: number('retiredSegments'),
       retiredRecords: number('retiredRecords'),
       heldSegments: number('heldSegments'),
+      heldBytes: number('heldBytes'),
+      holdBudgetBytes: number('holdBudgetBytes'),
+      holdTrimmedSegments: number('holdTrimmedSegments'),
       compressedBytes: number('compressedBytes'),
       maxBytes: number('maxBytes'),
       records: number('records'),
@@ -756,7 +988,9 @@ export class HorseDecisionJournalPublisher {
         clearTimeout(timer);
         clearInterval(this.watchdog);
         clearTimeout(this.retryTimer);
+        clearTimeout(this.rearmTimer);
         clearInterval(this.probeTimer);
+        this.endLockWait();
         resolve();
       };
       this.stopped = finish;
@@ -789,7 +1023,26 @@ export const horseDecisionJournalConfigured = (): boolean =>
  * therefore answered `starting` with every figure null whatever the journal
  * was doing, and did so for seven hours after capture stopped on 2026-09-25.
  * The worker's STATUS reply now carries its report (client.ts relays it here). */
-let relayed: { health: HorseJournalHealth; at: number } | null = null;
+/* ONE REPORT PER SHARD (2026-09-27). Each Horse decision worker shard runs its
+   own publisher, and each shard's STATUS reply relayed its report into one
+   slot, so /health showed whichever shard answered last. On e6b9dc5d one
+   shard's capture stopped for good at 21:22:51 UTC while the other ran: the
+   same process answered `failed` on one request and `ready` on the next, and
+   the Phase 6B observer recorded `ready` before its read and `failed` after.
+   Reports are now kept per shard; /health shows the least healthy shard's mode
+   and says how many shards are in each mode. */
+const relayed = new Map<string, { health: HorseJournalHealth; at: number }>();
+/** Worst first. A shard that cannot capture outranks one that can. */
+const MODE_SEVERITY: readonly HorseJournalMode[] = [
+  'failed',
+  'unavailable',
+  'stopped',
+  'recovering',
+  'paused',
+  'starting',
+  'ready',
+  'disabled',
+];
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 /** Rebuild a report that crossed the thread boundary from its finite field
  * set. Anything else in it is dropped; a malformed report is not shown. */
@@ -822,10 +1075,47 @@ function horseJournalHealthFromReport(value: unknown): HorseJournalHealth | null
   // The sentence is rebuilt here from those fields, never copied across.
   return withCapture(health);
 }
-/** Called on the thread that serves /health with the owning thread's report. */
-export function relayHorseDecisionJournalHealth(report: unknown): void {
+/** Called on the thread that serves /health with the owning thread's report.
+ * `source` names the reporting shard; each shard keeps its own last report. */
+export function relayHorseDecisionJournalHealth(report: unknown, source = 'default'): void {
   const health = horseJournalHealthFromReport(report);
-  if (health) relayed = { health, at: performance.now() };
+  if (health) relayed.set(source, { health, at: performance.now() });
+}
+/** The shards' reports as one /health section. Mode, failure and pause fields
+ * are the least healthy shard's; the catalog figures describe the one shared
+ * archive, so they are the freshest shard's; `queued` is the shards' sum. */
+function combinedRelayedHealth(): HorseJournalHealth {
+  const now = performance.now();
+  const reports = [...relayed.values()].map(({ health, at }) => {
+    const age = Math.max(0, Math.round(now - at));
+    return {
+      ...health,
+      statsAgeMs: health.statsAgeMs === null ? null : health.statsAgeMs + age,
+      reportAgeMs: age,
+    };
+  });
+  const rank = (h: HorseJournalHealth) => MODE_SEVERITY.indexOf(h.mode);
+  const worst = reports.reduce((a, b) => (rank(b) < rank(a) ? b : a));
+  const freshest = reports.reduce((a, b) =>
+    b.statsAgeMs !== null && (a.statsAgeMs === null || b.statsAgeMs < a.statsAgeMs) ? b : a
+  );
+  const byMode: Partial<Record<HorseJournalMode, number>> = {};
+  for (const h of reports) byMode[h.mode] = (byMode[h.mode] ?? 0) + 1;
+  const stats = Object.fromEntries(
+    [...HEALTH_STATS_FIELDS, 'statsAgeMs'].map((key) => [
+      key,
+      freshest[key as keyof HorseJournalHealth],
+    ])
+  );
+  const { capture: _capture, ...modeFields } = worst;
+  void _capture;
+  return withCapture({
+    ...modeFields,
+    ...stats,
+    queued: reports.reduce((n, h) => n + h.queued, 0),
+    reportAgeMs: Math.max(...reports.map((h) => h.reportAgeMs ?? 0)),
+    publishers: { total: reports.length, byMode },
+  });
 }
 /** The /health section, in every state: `disabled` without a journal
  * directory, the publisher's own view on the thread that owns it, otherwise
@@ -836,18 +1126,89 @@ export function horseDecisionJournalHealth(): HorseJournalHealth {
   if (publisher) return publisher.health();
   if (lifecycle === 'start_failed') return idleHealth('unavailable', 'start_failed');
   if (lifecycle === 'stopped') return idleHealth('stopped');
-  if (relayed) {
-    const age = Math.max(0, Math.round(performance.now() - relayed.at));
-    const report = relayed.health;
-    return {
-      ...report,
-      statsAgeMs: report.statsAgeMs === null ? null : report.statsAgeMs + age,
-      reportAgeMs: age,
-    };
-  }
+  if (relayed.size) return combinedRelayedHealth();
   return idleHealth('starting');
 }
-export function startHorseDecisionJournal(): void {
+/* THE WRITER THREAD MUST NOT BE BORN NICE (2026-09-29). Linux gives a new
+   thread the priority of the thread that creates it. Each Horse decision
+   worker lowers its own thread to nice 10 at its first line
+   (workerPriority.ts) so the main loop wins the CPU, and its journal writer
+   was then created from that thread: on fa480b9b both writer threads of
+   engine-01 (tids read from /proc/<pid>/task, nice 10) were preempted about a
+   thousand times a second and got about a tenth of a core on a host whose load
+   average was twelve on two cores. A writer that blocks on an fsync ten times a
+   batch and must queue for a core after each one manages about six batches a
+   second, which is about 100 records a second, whatever the disk can do; the
+   fleet offered about 120 to each shard and the difference was shed at
+   queue_capacity. A thread cannot raise its own priority without
+   CAP_SYS_NICE, which the engine container does not have, so the writer has to
+   be created BEFORE its parent is lowered. The decision worker calls
+   prespawnHorseDecisionJournalWriter() ahead of lowerDecisionWorkerPriority(),
+   and startHorseDecisionJournal() adopts that writer as its first one. A
+   replacement writer (restart after a failure) is still created later and
+   inherits the parent's nice: that is the degraded path, not the steady one. */
+interface PrespawnedWriter {
+  worker: Worker;
+  directory: string;
+  archive: string;
+  onError: () => void;
+}
+let prespawned: PrespawnedWriter | null = null;
+const journalWriterEntry = (): URL =>
+  new URL(
+    import.meta.url.endsWith('.ts')
+      ? './horseDecisionJournal/worker.ts'
+      : './horseDecisionJournal/worker.js',
+    import.meta.url
+  );
+const spawnJournalWriter = (
+  directory: string,
+  archive: ReturnType<typeof runtimeHorseJournalArchiveOptions>
+): Worker => new Worker(journalWriterEntry(), { workerData: { directory, archive } });
+/** Create this shard's writer thread now, at the calling thread's CURRENT
+ * priority, for startHorseDecisionJournal to adopt. Call it before lowering
+ * the thread's priority. A no-op without a journal directory, and never
+ * throws: the journal then simply starts its writer later, as before. */
+export function prespawnHorseDecisionJournalWriter(shard?: { index: number }): void {
+  if (publisher || prespawned) return;
+  const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
+  if (!directory) return;
+  try {
+    const archive = runtimeHorseJournalArchiveOptions(directory, process.env, shard);
+    // Until the publisher adopts it nothing listens for this thread's failure,
+    // and an unhandled 'error' event would take the decision worker down. A
+    // writer that failed before adoption is replaced by the publisher's own
+    // watchdog, exactly as a writer that fails at any other time.
+    const onError = () => {};
+    const worker = spawnJournalWriter(directory, archive);
+    worker.on('error', onError);
+    prespawned = { worker, directory, archive: JSON.stringify(archive), onError };
+  } catch {
+    prespawned = null;
+  }
+}
+/** The prespawned writer, if it was made for exactly this directory and
+ * archive; a writer made for anything else is stopped, never reused. */
+function adoptPrespawnedWriter(
+  directory: string,
+  archive: ReturnType<typeof runtimeHorseJournalArchiveOptions>
+): Worker | null {
+  const held = prespawned;
+  prespawned = null;
+  if (!held) return null;
+  if (held.directory !== directory || held.archive !== JSON.stringify(archive)) {
+    void held.worker.terminate().catch(() => {});
+    return null;
+  }
+  held.worker.off('error', held.onError);
+  return held.worker;
+}
+/** `shard` names this Horse decision worker's position among its peers so its
+ * writer opens its OWN archive/catalog instead of the one every shard shared
+ * until 2026-09-28 (see runtimeHorseJournalArchiveOptions). Absent (a single
+ * decision worker, or a caller that predates sharding), shard 0 is assumed:
+ * byte-for-byte today's one-archive layout. */
+export function startHorseDecisionJournal(shard?: { index: number }): void {
   if (publisher) return;
   const directory = process.env.HORSE_DECISION_JOURNAL_DIR;
   if (!directory) {
@@ -855,22 +1216,22 @@ export function startHorseDecisionJournal(): void {
     return;
   }
   try {
-    const entry = import.meta.url.endsWith('.ts')
-      ? './horseDecisionJournal/worker.ts'
-      : './horseDecisionJournal/worker.js';
-    const archive = runtimeHorseJournalArchiveOptions(directory);
-    const createWriter = () =>
-      new Worker(new URL(entry, import.meta.url), { workerData: { directory, archive } });
+    const archive = runtimeHorseJournalArchiveOptions(directory, process.env, shard);
+    const createWriter = () => spawnJournalWriter(directory, archive);
     // `lifecycle` says only that construction did not throw. A writer module
     // that cannot load fails later, as an event; the publisher reports that as
     // start_failed and moves the lifecycle with it.
     const owned: { publisher: HorseDecisionJournalPublisher | null } = { publisher: null };
-    owned.publisher = new HorseDecisionJournalPublisher(createWriter(), fireBrainTelemetry, {
-      restart: createWriter,
-      onStartFailed: () => {
-        if (publisher === owned.publisher && lifecycle === 'started') lifecycle = 'start_failed';
-      },
-    });
+    owned.publisher = new HorseDecisionJournalPublisher(
+      adoptPrespawnedWriter(directory, archive) ?? createWriter(),
+      fireBrainTelemetry,
+      {
+        restart: createWriter,
+        onStartFailed: () => {
+          if (publisher === owned.publisher && lifecycle === 'started') lifecycle = 'start_failed';
+        },
+      }
+    );
     publisher = owned.publisher;
     lifecycle = 'started';
   } catch {
@@ -879,6 +1240,9 @@ export function startHorseDecisionJournal(): void {
   }
 }
 export async function stopHorseDecisionJournal(): Promise<void> {
+  const unclaimed = prespawned;
+  prespawned = null;
+  if (unclaimed) await unclaimed.worker.terminate().catch(() => 0);
   const owned = publisher;
   publisher = null;
   if (owned) lifecycle = 'stopped';

@@ -63,11 +63,10 @@ import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
-import {
-  useDiamondLedger,
-  DIAMOND_LEDGER_PAGE,
-  type DiamondLedgerRow,
-} from '../hooks/useDiamondLedger';
+import { useDiamondLedger, type DiamondLedgerRow } from '../hooks/useDiamondLedger';
+/* The paged tail both diamond panes render. `DIAMOND_LEDGER_PAGE` moved in
+   there with the end line that reads it, so this page no longer imports it. */
+import { DiamondLedgerMore } from '../components/wallet/DiamondLedgerMore';
 import { uuid } from '../utils/uuid';
 import './PlayerWalletPage.css';
 import { publicOrigin } from '../lib/appBase';
@@ -903,7 +902,8 @@ export default function PlayerWalletPage() {
   const describeRow = useCallback(
     (row: DiamondLedgerRow, verb: 'Sent To' | 'Received From') => {
       const name = row.counterpartyId ? friendNameById.get(row.counterpartyId) : undefined;
-      return name ? `${verb} ${name}` : formatPopupText(row.description || row.label);
+      // Phase 6: the ledger's own player line, never the raw description.
+      return name ? `${verb} ${name}` : formatPopupText(row.line || row.label);
     },
     [friendNameById]
   );
@@ -1561,33 +1561,19 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
-              {sent !== null && sentError && sent.length > 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Older Sends.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadSent('more')}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {sent !== null && sent.length > 0 && sentHasMore && !sentError && (
-                <button
-                  type="button"
-                  className="vault-btn vault-btn--wide"
-                  onClick={() => void loadSent('more')}
-                  disabled={sentLoadingMore}
-                >
-                  {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
-                </button>
-              )}
-              {sent !== null && sent.length > DIAMOND_LEDGER_PAGE && !sentHasMore && !sentError && (
-                <p className="vault-panel__sub">
-                  That Is Every Diamond You Have Sent. {fmtNum(sent.length)} Entries.
-                </p>
-              )}
+              {/* The tail: the prefetch sentinel, the retry after a failed
+                  later page, the manual control, and the end line. One
+                  component, because Receive below carries the same four. */}
+              <DiamondLedgerMore
+                rowCount={sent === null ? 0 : sent.length}
+                hasMore={sentHasMore}
+                loadingMore={sentLoadingMore}
+                error={sentError}
+                onLoadMore={() => void loadSent('more')}
+                moreLabel="Load Older Sends"
+                errorLabel="Could Not Load Older Sends."
+                endLine={`That Is Every Diamond You Have Sent. ${fmtNum(sent?.length ?? 0)} Entries.`}
+              />
             </section>
           </div>
         )}
@@ -1700,40 +1686,23 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
-              {/* A LATER page failed. The pages already read stay on screen. */}
-              {incoming !== null && incomingError && incoming.length > 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Older Diamonds.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadIncoming('more')}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {incoming !== null && incoming.length > 0 && incomingHasMore && !incomingError && (
-                <button
-                  type="button"
-                  className="vault-btn vault-btn--wide"
-                  onClick={() => void loadIncoming('more')}
-                  disabled={incomingLoadingMore}
-                >
-                  {incomingLoadingMore ? 'Loading...' : 'Load Older Diamonds'}
-                </button>
-              )}
-              {/* Say the ledger has ended, rather than just running out of
-                  button. Before this the pane simply stopped at 25 rows and a
-                  player could not tell a full ledger from a truncated one. */}
-              {incoming !== null &&
-                incoming.length > DIAMOND_LEDGER_PAGE &&
-                !incomingHasMore &&
-                !incomingError && (
-                  <p className="vault-panel__sub">
-                    That Is Every Diamond You Have Received. {fmtNum(incoming.length)} Credits.
-                  </p>
-                )}
+              {/* The tail, the same component the Send pane uses: a sentinel
+                  that starts the next page a screenful early, the retry for a
+                  later page that failed (the pages already read stay), the
+                  manual control that is never taken away, and the line that
+                  says the ledger has ended. Before any of it the pane simply
+                  stopped at 25 rows and a player could not tell a full ledger
+                  from a truncated one. */}
+              <DiamondLedgerMore
+                rowCount={incoming === null ? 0 : incoming.length}
+                hasMore={incomingHasMore}
+                loadingMore={incomingLoadingMore}
+                error={incomingError}
+                onLoadMore={() => void loadIncoming('more')}
+                moreLabel="Load Older Diamonds"
+                errorLabel="Could Not Load Older Diamonds."
+                endLine={`That Is Every Diamond You Have Received. ${fmtNum(incoming?.length ?? 0)} Credits.`}
+              />
             </section>
           </div>
         )}

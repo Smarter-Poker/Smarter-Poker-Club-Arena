@@ -34,7 +34,8 @@ describe('The wallet asks an arena no chip question', () => {
         `${read} is issued without checking hasChipWallet`
       ).toBeGreaterThan(-1);
     }
-    expect(fetch).toContain("from('profiles')");
+    // The player's own Diamond balance, through the owner door (ruling 25).
+    expect(fetch).toContain("ownProfile(userId).select('diamonds')");
   });
 
   it('does not poll the chip jackpot pool in an arena', () => {

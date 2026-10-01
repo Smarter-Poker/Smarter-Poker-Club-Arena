@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE TWENTY-THREE RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE TWENTY-FOUR RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -59,6 +59,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-club-commerce-recovery.py',
   'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
+  'run-diamond-concurrency.py',
   'run-diamond-controlled-play.py',
   'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
@@ -72,7 +73,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The ten that stand up a cluster of their own. Declared in the wrapper and
+/* The eleven that stand up a cluster of their own. Declared in the wrapper and
    repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
   'run-diamond-club-commerce-admission.py',
@@ -82,12 +83,13 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-club-commerce-recovery.py',
   'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
+  'run-diamond-concurrency.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 23;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 10;
+const HOW_MANY_RUNNERS = 24;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 11;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -245,6 +247,12 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-tournament-lifecycle-doors.manifest.json',
     'tests/sql/diamond-tournament-lifecycle-seed.sql',
     'tests/sql/diamond-tournament-lifecycle-cases.sql',
+    /* Every file the concurrency runner loads out of tests/sql: the captured
+       money doors and their pins, the production-shape tables and the seed. */
+    'tests/sql/diamond-concurrency-doors.sql',
+    'tests/sql/diamond-concurrency-doors.manifest.json',
+    'tests/sql/diamond-concurrency-schema.sql',
+    'tests/sql/diamond-concurrency-seed.sql',
     'scripts/ci/run-diamond-sql-acceptance.py',
     'scripts/ci/check-diamond-runners-listed.mjs',
   ])('%s selects the PostgreSQL accounting job', (path) => {

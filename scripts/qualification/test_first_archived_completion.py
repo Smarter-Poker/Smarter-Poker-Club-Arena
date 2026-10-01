@@ -77,4 +77,21 @@ class FirstArchivedCompletionTests(unittest.TestCase):
   self.assertIn("c['B_in_progress_at_first_readback']",source);self.assertIn("readback('after_B')",source);self.assertIn("readback('after_C')",source)
   self.assertNotIn('TRUNCATE',source);self.assertNotIn('DISABLE TRIGGER',source);self.assertNotIn('DELETE FROM',source)
   self.assertIn("c['after']==c['after_replay']",source);self.assertIn("w['waiting_xids']==[top]",source)
+ def test_recognition_capture_is_bound_and_current(self):
+  A,_,_=M.modules();files={p:(M.ROOT/p).read_bytes() for p in A.INPUTS};A.validate_recognition_capture(files)
+  statepath=A.BASE+'first-temporal-state.json';rawpath=A.BASE+'first-recognition-capture.json'
+  for kind in ('hash','query','evidence','outside','overlap','scope','guard'):
+   f=dict(files);s=json.loads(f[statepath]);r=json.loads(f[rawpath]);p=s['recognition_period']
+   if kind=='hash':p['capture_sha256']='0'*64
+   elif kind=='query':p['query']+=' '
+   elif kind=='evidence':p['evidence']['observed_at']='2026-09-27T00:00:00+00:00'
+   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-05T07:00:00Z',b'2026-09-28T07:00:00Z')
+   else:
+    e=r['rows'][0]['evidence']
+    if kind=='outside':e['observed_at']='2026-09-27T00:00:00+00:00'
+    elif kind=='overlap':e['runs_blocking_now']=True
+    else:e['scopes']=[]
+    f[rawpath]=json.dumps(r).encode();p['capture_sha256']=hashlib.sha256(f[rawpath]).hexdigest();p['evidence']=e
+   f[statepath]=json.dumps(s).encode()
+   with self.subTest(kind=kind),self.assertRaises(ValueError):A.validate_recognition_capture(f)
 if __name__=='__main__':unittest.main()

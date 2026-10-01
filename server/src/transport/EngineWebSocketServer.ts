@@ -698,6 +698,34 @@ export class EngineWebSocketServer {
     return this.connections.size;
   }
 
+  /**
+   * Close every socket carrying `tableId` (Lightning Phase 6 remediation,
+   * 2026-10-01): a Lightning room whose pool session has ended. A
+   * single-table socket is closed 4404 (CLOSE_TABLE_NOT_FOUND), the code the
+   * client already treats as "this table is gone, stop reconnecting"; a mux
+   * socket keeps its other tables and is unsubscribed from this one with the
+   * TABLE_NOT_FOUND error a refused SUBSCRIBE gets. Presence is told for
+   * each, as for any close. Answers how many sockets it touched.
+   */
+  closeRoom(tableId: string, reason = 'Your Lightning Session Has Ended'): number {
+    let touched = 0;
+    for (const conn of [...this.connections.values()]) {
+      if (conn.isMux) {
+        if (!conn.subs?.has(tableId)) continue;
+        const sub = conn.subs.get(tableId);
+        conn.subs.delete(tableId);
+        if (sub && typeof sub !== 'symbol') this.hub.unsubscribe(tableId, sub);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', reason);
+        this.notifyDisconnectIfLast(tableId, conn.userId);
+        touched++;
+      } else if (conn.tableId === tableId) {
+        this.retireConnection(conn, CLOSE_TABLE_NOT_FOUND, reason);
+        touched++;
+      }
+    }
+    return touched;
+  }
+
   /** Counts and monotonic durations only; no identities or table contents. */
   connectionAccessStats(): {
     completed: number;

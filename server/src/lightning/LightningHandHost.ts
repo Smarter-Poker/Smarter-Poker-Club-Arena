@@ -19,7 +19,10 @@
  *     DisconnectEngine, keyed by this hand alone (`lightning:<hand_id>`), so
  *     no timer can outlive the hand or be carried into another;
  *   - a horse acts through the same turn timer and the same action door as a
- *     human, its decision from HorseLogic (CLAUDE.md 10.5).
+ *     human, its decision from the same live horse decision lane a physical
+ *     table asks, with its own style, mods and mind (CLAUDE.md 10.5);
+ *   - a qualifying bad beat pays the Bad Beat Jackpot exactly as at a
+ *     physical table, after settlement (LightningJackpot).
  *
  * THE SEQUENCE. begin_dealing -> fn_next_hand_number -> bind_hand_number ->
  * the host table's rules -> HandController with the formation's seats (the
@@ -56,7 +59,12 @@ import { TimeBankEngine, type TimeBankEvent } from '../engine/TimeBankEngine.js'
 import { DisconnectEngine } from '../engine/DisconnectEngine.js';
 import { playerActionContext } from '../engine/PlayerActionContext.js';
 import { PreActionEngine, type PreActionType } from '../engine/PreActionEngine.js';
-import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import {
+  getLiveHorseDecisionWorker,
+  type LiveHorseDecisionLane,
+} from '../engine/horseDecision/index.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
+import { describeError } from '../services/errorReporter.js';
 import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import {
@@ -103,6 +111,13 @@ import type {
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
+import { settleLightningJackpot, type LightningJackpotDeps } from './LightningJackpot.js';
+import {
+  decideLightningHorse,
+  LIGHTNING_HORSE_MAX_BANK_BURN_MS,
+  lightningHorseThinkTimeMs,
+  shapeLightningHorseAction,
+} from './LightningHorse.js';
 
 /** One hand as fn_lightning_match_and_form returned it. */
 export interface LightningFormedHand {
@@ -131,7 +146,22 @@ export interface LightningLease {
   generation: string;
 }
 
-/** A player's time bank across Lightning hands (one per Cluster worker). */
+/**
+ * A player's time bank across Lightning hands (one per Cluster worker).
+ *
+ * TWO HANDS AT ONCE (2026-10-01 remediation). A player can be in two hands
+ * (a fold frees them before the first settles), and each hand reads its bank
+ * from here when it starts. So a record keeps the MINIMUM remaining it has
+ * been told, never the last one written, and a folder's bank is recorded at
+ * the fold (finish() skips anyone already recorded). Paid seconds are debited
+ * under a deterministic request id per (hand, player), awaited with retry, so
+ * a lost answer is asked again and can never charge twice.
+ *
+ * A RESTART DOES NOT REFILL. A bank first seen by this worker is seeded from
+ * the durable bank: the paid allowance is already net of every debit
+ * (fn_time_bank_allowance_v2), and the free part is capped by what the
+ * player's anchor seat last persisted.
+ */
 export class LightningTimeBankLedger {
   static readonly BASE_SECONDS = 40;
   private readonly banks = new Map<
@@ -146,7 +176,17 @@ export class LightningTimeBankLedger {
   >();
 
   constructor(
-    private readonly backend: Pick<LightningHandBackend, 'timeBankAllowance' | 'consumeTimeBank'>
+    private readonly backend: Pick<
+      LightningHandBackend,
+      'timeBankAllowance' | 'consumeTimeBank' | 'durableTimeBanks'
+    >,
+    private readonly clusterId: string | null = null,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) =>
+      new Promise((r) => {
+        const t = setTimeout(r, ms);
+        (t as { unref?: () => void }).unref?.();
+      }),
+    private readonly logger: LightningWorkerLogger = defaultLogger
   ) {}
 
   /** Make sure every player has a bank; unknown allowances fall back to the base. */
@@ -159,13 +199,29 @@ export class LightningTimeBankLedger {
     } catch {
       /* the approved fallback: the base allowance, exactly as the engine */
     }
+    let durable = new Map<
+      string,
+      { remainingSeconds: number | null; usesRemaining: number | null }
+    >();
+    if (this.clusterId && this.backend.durableTimeBanks) {
+      try {
+        durable = await this.backend.durableTimeBanks(this.clusterId, missing);
+      } catch (err) {
+        this.logger.warn(
+          `[LightningTimeBank:${this.clusterId}] durable bank unreadable; seeding from the allowance (${describeError(err)})`
+        );
+      }
+    }
     for (const u of missing) {
       if (this.banks.has(u)) continue;
       const a = allowance.get(u);
       const total = LightningTimeBankLedger.BASE_SECONDS + (a?.extraSeconds ?? 0);
+      const seed = durable.get(u);
+      const uses = Math.ceil(total / 20);
       this.banks.set(u, {
-        remainingSeconds: total,
-        usesRemaining: Math.ceil(total / 20),
+        remainingSeconds:
+          seed?.remainingSeconds != null ? Math.min(total, seed.remainingSeconds) : total,
+        usesRemaining: seed?.usesRemaining != null ? Math.min(uses, seed.usesRemaining) : uses,
         unlimited: a?.unlimitedActivations === true,
         initialSeconds: total,
         consumedSeconds: 0,
@@ -178,26 +234,48 @@ export class LightningTimeBankLedger {
   }
 
   /**
-   * A hand ended with this player having `remainingSeconds` left. Seconds
+   * A hand is done with this player's bank (`remainingSeconds` left). The
+   * smaller figure wins: another hand may already have spent more. Seconds
    * spent beyond the base are paid ones, consumed exactly as the engine does.
    */
-  record(
+  async record(
     userId: string,
     remainingSeconds: number,
     usesRemaining: number,
+    handId: string,
     unlimitedSpent = 0
-  ): void {
+  ): Promise<void> {
     const bank = this.banks.get(userId);
     if (!bank) return;
-    bank.remainingSeconds = remainingSeconds;
-    bank.usesRemaining = usesRemaining;
+    bank.remainingSeconds = Math.min(bank.remainingSeconds, remainingSeconds);
+    bank.usesRemaining = Math.min(bank.usesRemaining, usesRemaining);
     const owed = bank.unlimited
       ? unlimitedSpent
-      : Math.max(0, bank.initialSeconds - remainingSeconds - LightningTimeBankLedger.BASE_SECONDS) -
-        bank.consumedSeconds;
+      : Math.max(
+          0,
+          bank.initialSeconds - bank.remainingSeconds - LightningTimeBankLedger.BASE_SECONDS
+        ) - bank.consumedSeconds;
     if (owed <= 0) return;
     if (!bank.unlimited) bank.consumedSeconds += owed;
-    void this.backend.consumeTimeBank(userId, owed).catch(() => undefined);
+    const requestId = lightningRequestId(handId, `tb/${userId}`);
+    for (let attempt = 1; attempt <= RPC_RETRY_ATTEMPTS; attempt++) {
+      try {
+        await this.backend.consumeTimeBank(userId, owed, requestId);
+        return;
+      } catch (err) {
+        if (attempt === RPC_RETRY_ATTEMPTS) {
+          // Unanswered: owed again, so the next record carries it (under its
+          // own hand's id) rather than the debit being lost.
+          if (!bank.unlimited) bank.consumedSeconds -= owed;
+          this.logger.error(
+            `[LightningTimeBank] debit of ${owed}s for ${userId} unconfirmed after ${attempt} attempts (request ${requestId})`,
+            err
+          );
+          return;
+        }
+        await this.sleep(150 * attempt);
+      }
+    }
   }
 }
 
@@ -226,6 +304,12 @@ export interface LightningHandHostDeps {
   /** Settlement found a conservation disagreement and FROZE the Cluster. */
   onClusterFrozen?(clusterId: string): void;
   now?: () => number;
+  /** The live horse decision lane (injected for tests; the process lane otherwise). */
+  horseLane?: () => LiveHorseDecisionLane;
+  /** The jackpot payout doors (injected for tests; the physical ones otherwise). */
+  jackpot?: Pick<LightningJackpotDeps, 'payMain' | 'payMini'>;
+  /** How long the post-commit drain may keep trying while the lease is held. */
+  postCommitBudgetMs?: number;
 }
 
 export type LightningHostState =
@@ -241,6 +325,14 @@ export type LightningHostState =
 const BETTING_STAGES = new Set<string>(['preflop', 'flop', 'turn', 'river']);
 const SETTLE_ATTEMPTS = 5;
 const RPC_RETRY_ATTEMPTS = 3;
+/**
+ * The post-commit drain (the physical engine's, ServerTableEngineSettlement):
+ * retried with backoff while the host lease is held, up to this budget, then
+ * a five-second handover once it is not. The outbox row stays authoritative
+ * and the projection worker is the successor either way.
+ */
+const POST_COMMIT_BUDGET_MS = 15_000;
+const POST_COMMIT_HANDOVER_MS = 5_000;
 
 /** A request id that is the same for the same (hand, purpose) on every retry. */
 export function lightningRequestId(handId: string, purpose: string): string {
@@ -294,6 +386,11 @@ export class LightningHandHost {
   private startedAtMs = 0;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private horseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The horse turn in flight: aborted when the turn moves on (one lane job per turn). */
+  private horseAbort: AbortController | null = null;
+  private horseGeneration = 0;
+  /** Players whose time bank this hand has already recorded (at a fold). */
+  private readonly bankRecorded = new Set<string>();
   private readonly timerKey: string;
   private readonly timer: PreciseActionTimer;
   private readonly timeBank: TimeBankEngine;
@@ -697,47 +794,63 @@ export class LightningHandHost {
     return state.currentBet - me.bet > 0;
   }
 
-  /** After an abandon: every room is told the felt is empty (the idle shape). */
+  /**
+   * The idle shape: no hand in this room. Sent to a room this hand stops
+   * publishing to - every room on an abandon, and a folder's room at the
+   * fold - so the client shows the next-hand state rather than a frozen felt.
+   */
+  private idleShape(room: string): Record<string, unknown> {
+    const rules = this.rules!;
+    return {
+      table_id: room,
+      hand_id: null,
+      lightning: {
+        hand_id: null,
+        cluster_id: this.clusterId,
+        name: rules.name ?? null,
+        small_blind: Number(rules.small_blind),
+        big_blind: Number(rules.big_blind),
+        variant: String(rules.game_variant || 'nlh'),
+        fast_fold_available: false,
+      },
+      hand_number: this.handNumber,
+      pot: 0,
+      community_cards: [],
+      community_cards2: [],
+      community_cards3: [],
+      hand_variant: String(rules.game_variant || 'nlh'),
+      current_bet: 0,
+      current_player: null,
+      dealer_seat: 0,
+      stage: 'waiting',
+      winner_ids: [],
+      winners: [],
+      min_raise: 0,
+      last_raise: 0,
+      turn_start_time_ms: 0,
+      turn_duration_ms: 0,
+      server_time_ms: this.now(),
+      turn_deadline_ms: 0,
+      discard_deadline_ms: null,
+      discard_deadlines: {},
+      discard_duration_ms: 0,
+      time_bank_active: false,
+      disconnect_states: {},
+      max_seats: Number(rules.max_players) || 0,
+      is_anonymous: rules.is_anonymous === true,
+      waiting_for_bb_user_ids: [],
+      post_bb_deferred_user_ids: [],
+      posting_bb_user_ids: [],
+      pots: [],
+      action_history: [],
+      players: [],
+    };
+  }
+
+  /** After an abandon: every room still shown the hand is told the felt is empty. */
   private publishIdle(): void {
     if (!this.rules) return;
-    for (const [playerId, room] of this.rooms()) {
-      this.deps.hub.publish(room, {
-        table_id: room,
-        hand_id: this.handId,
-        lightning: this.lightningBlock(playerId, null),
-        hand_number: this.handNumber,
-        pot: 0,
-        community_cards: [],
-        community_cards2: [],
-        community_cards3: [],
-        hand_variant: String(this.rules.game_variant || 'nlh'),
-        current_bet: 0,
-        current_player: null,
-        dealer_seat: 0,
-        stage: 'waiting',
-        winner_ids: [],
-        winners: [],
-        min_raise: 0,
-        last_raise: 0,
-        turn_start_time_ms: 0,
-        turn_duration_ms: 0,
-        server_time_ms: this.now(),
-        turn_deadline_ms: 0,
-        discard_deadline_ms: null,
-        discard_deadlines: {},
-        discard_duration_ms: 0,
-        time_bank_active: false,
-        disconnect_states: {},
-        max_seats: Number(this.rules.max_players) || 0,
-        is_anonymous: this.rules.is_anonymous === true,
-        waiting_for_bb_user_ids: [],
-        post_bb_deferred_user_ids: [],
-        posting_bb_user_ids: [],
-        pots: [],
-        action_history: [],
-        players: [],
-      });
-    }
+    for (const [, room] of this.rooms()) this.deps.hub.publish(room, this.idleShape(room));
   }
 
   private anteFields(): Record<string, unknown> {
@@ -979,6 +1092,8 @@ export class LightningHandHost {
     }
     if (this.horseTimer) clearTimeout(this.horseTimer);
     this.horseTimer = null;
+    this.horseAbort?.abort();
+    this.horseAbort = null;
     this.turnUser = null;
     this.turnStartMs = 0;
     this.turnDurationSec = 0;
@@ -1142,54 +1257,113 @@ export class LightningHandHost {
     }
   }
 
-  /** A horse decides with HorseLogic and acts inside the same turn clock. */
+  /**
+   * A horse decides in the live horse decision lane (the physical tables'
+   * own lane, with its own style, mods and mind) and acts inside the same
+   * turn clock, through the same action door, after the physical engine's
+   * think time. A failed job gets the liveness answer; an abort (the turn
+   * moved on) does nothing.
+   */
   private scheduleHorse(userId: string, context: string | null): void {
     const hc = this.hc!;
-    const state = hc.getState();
-    const me = state.players.find((p) => p.user_id === userId);
+    const rules = this.rules!;
+    const me = hc.getState().players.find((p) => p.user_id === userId);
     if (!me) return;
-    let decision: { action: string; amount?: number; thinkTime?: number };
-    try {
-      // Every other seat's cards are withheld: a horse sees what a human sees.
-      const players = state.players.map((p) => (p.user_id === userId ? p : { ...p, cards: [] }));
-      const gs = {
-        players,
-        communityCards: state.communityCards,
-        pot: state.pot,
-        currentBet: state.currentBet,
-        minRaise: state.minRaise,
-        lastRaise: state.lastRaise,
-        stage: state.stage,
-        gameVariant: String(this.rules?.game_variant || 'nlh'),
-        bigBlind: Number(this.rules?.big_blind) || 2,
-        dealerSeat: state.dealerSeat,
-        actionHistory: state.actionHistory,
-        gameMode: 'cash',
-        ante: Number(this.rules?.ante ?? 0) || 0,
-        format: 'cash',
-      } as unknown as HorseGameStateV2;
-      decision = HorseLogic.decide(me, gs, 'balanced', {}, { mind: false, telemetry: false });
-    } catch (err) {
-      this.logger.error(`[LightningHost:${this.instanceId}] horse decision failed`, err);
-      decision = { action: 'check', thinkTime: 0 };
-    }
-    const deadline = this.turnStartMs + this.turnDurationSec * 1000;
-    const delay = Math.max(0, Math.min(decision.thinkTime ?? 0, deadline - this.now() - 500));
-    this.horseTimer = setTimeout(() => {
-      this.horseTimer = null;
-      if (this.isTerminal() || !this.hc || playerActionContext(this.hc) !== context) return;
-      const r = this.applyAction(userId, decision.action, decision.amount, 'horse_policy');
-      if (!r.success) {
-        const auth = this.hc.getAuthoritativeActionState(userId);
-        this.applyAction(
-          userId,
-          auth?.legalActions.includes('check') ? 'check' : 'fold',
-          undefined,
-          'horse_fallback'
-        );
-      }
-    }, delay);
-    (this.horseTimer as { unref?: () => void }).unref?.();
+    this.horseAbort?.abort();
+    const abort = new AbortController();
+    this.horseAbort = abort;
+    const generation = ++this.horseGeneration;
+    const lane = this.deps.horseLane ?? getLiveHorseDecisionWorker;
+    const decisionAt = this.now();
+    const allInOrFold = rules.all_in_or_fold === true;
+    const current = () =>
+      !abort.signal.aborted &&
+      !this.isTerminal() &&
+      this.hc === hc &&
+      this.turnUser === userId &&
+      playerActionContext(hc) === context;
+    void decideLightningHorse(
+      {
+        hc,
+        userId,
+        seat: me.seat,
+        horseProfile: this.participants.get(userId)?.horseProfile,
+        variant: String(rules.game_variant || 'nlh'),
+        bigBlind: Number(rules.big_blind) || 2,
+        smallBlind: Number(rules.small_blind) || 1,
+        ante: (rules.ante_enabled ?? true) ? Number(rules.ante ?? 0) || 0 : 0,
+        bigBlindAnte: rules.big_blind_ante_enabled === true,
+        allInOrFold,
+        actionTimeSeconds: Number(rules.action_time_seconds) || undefined,
+        actions: this.actions,
+        generation,
+        fence: [this.hostTableId, this.handNumber, me.seat, generation].join(':'),
+        turnStartMs: this.turnStartMs,
+        now: decisionAt,
+      },
+      abort.signal,
+      lane,
+      (err) =>
+        this.logger.error(`[LightningHost:${this.instanceId}] horse decision worker failed`, err)
+    )
+      .then((decision) => {
+        if (!current()) return;
+        const actionTimeMs = (Number(rules.action_time_seconds) || 15) * 1000;
+        const bankSeconds = this.timeBank.getRemainingSeconds(this.timerKey, userId);
+        const bankUses = this.timeBank.getUsesRemaining(this.timerKey, userId);
+        const bankUsable =
+          rules.time_bank_enabled !== false &&
+          bankUses !== 0 &&
+          bankSeconds * 1000 > LIGHTNING_HORSE_MAX_BANK_BURN_MS + 2000;
+        const think = lightningHorseThinkTimeMs({
+          requested: decision.thinkTime,
+          actionTimeMs,
+          workerFallback: decision.workerFallback,
+          bankUsable,
+        });
+        const delay = Math.max(0, think - (this.now() - decisionAt));
+        if (this.horseTimer) clearTimeout(this.horseTimer);
+        this.horseTimer = setTimeout(() => {
+          this.horseTimer = null;
+          if (!current() || !this.hc) return;
+          const shaped = shapeLightningHorseAction(this.hc, userId, decision, allInOrFold);
+          const r = this.applyAction(
+            userId,
+            shaped.action,
+            shaped.amount,
+            decision.workerFallback ? 'horse_fallback' : 'horse_policy'
+          );
+          const fast = decision.fast;
+          if (
+            r.success &&
+            fast &&
+            fast.planBinding !== null &&
+            fast.planIssueDisposition === 'issued' &&
+            fast.effects.length > 0 &&
+            (shaped.action === 'bet' || shaped.action === 'raise')
+          ) {
+            void lane()
+              .commitDecisionEffects(fast)
+              .catch((err) =>
+                this.logger.error(
+                  `[LightningHost:${this.instanceId}] horse decision effects not committed`,
+                  err
+                )
+              );
+          }
+          if (!r.success && this.hc) {
+            const auth = this.hc.getAuthoritativeActionState(userId);
+            this.applyAction(
+              userId,
+              auth?.legalActions.includes('check') ? 'check' : 'fold',
+              undefined,
+              'horse_fallback'
+            );
+          }
+        }, delay);
+        (this.horseTimer as { unref?: () => void }).unref?.();
+      })
+      .catch(() => undefined /* aborted: the turn moved on */);
   }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────
@@ -1321,7 +1495,16 @@ export class LightningHandHost {
     this.foldTypes.set(userId, type);
     if (this.releasedOrRecorded.has(userId)) return;
     this.releasedOrRecorded.add(userId);
-    if (type !== 'fold_watch') this.watching.delete(userId);
+    // Their bank can change no further in this hand: record it now, so a
+    // second hand they are dealt meanwhile reads what this one left.
+    this.recordBank(userId);
+    if (type !== 'fold_watch') {
+      // The room stops hearing this hand: tell it so first (the idle shape),
+      // or the client keeps the folded hand's felt until the next one deals.
+      const room = this.watching.get(userId);
+      if (room && this.rules) this.deps.hub.publish(room, this.idleShape(room));
+      this.watching.delete(userId);
+    }
     const ackAt = this.now();
     // What the folder has put in the pot: no more can follow a fold.
     const committed = cents(
@@ -1564,14 +1747,7 @@ export class LightningHandHost {
       });
       if (out.ok) {
         this.state = 'complete';
-        try {
-          await this.deps.backend.postCommit(out.value.handHistoryId);
-        } catch (err) {
-          this.logger.error(
-            `[LightningHost:${this.instanceId}] post-commit obligations failed`,
-            err
-          );
-        }
+        await this.drainPostCommit(out.value.handHistoryId);
         this.emitAll({
           type: 'hand_history_saved',
           table_id: '',
@@ -1580,7 +1756,24 @@ export class LightningHandHost {
           timestamp: this.now(),
         });
         this.metrics.recordHand('settled');
+        // Captured before finish() clears who is watching: the jackpot is
+        // every participant's, folded or not (the table share is the dealt-in).
+        const jackpotHand = this.jackpotHand(state);
         this.finish('hand_end');
+        await settleLightningJackpot(jackpotHand, {
+          emit: (room, payload) => this.deps.hub.emitEvent(room, payload),
+          logger: this.logger,
+          now: this.now,
+          ...(this.deps.jackpot ?? {}),
+        });
+        return;
+      }
+      if (out.reason === 'cluster_frozen') {
+        // The Cluster was ALREADY frozen (by another hand's settlement): this
+        // one moved nothing. Void the instance, and make sure the worker stops.
+        this.state = 'dealing';
+        await this.abandon('cluster_frozen');
+        this.deps.onClusterFrozen?.(this.clusterId);
         return;
       }
       if (out.frozen) {
@@ -1610,6 +1803,86 @@ export class LightningHandHost {
       `[LightningHost:${this.instanceId}] settlement outcome unknown; left to the reaper`
     );
     this.finish('hand_end');
+  }
+
+  /**
+   * The physical engine's bounded post-commit drain: `ok !== true` is a
+   * failure (predecessor_pending is common with several hands on one front
+   * table), retried with backoff while the host lease is held, up to the
+   * budget, then for a short handover once it is not. Giving up files the
+   * critical financial alert the physical engine files; the outbox row stays
+   * authoritative and the projection worker finishes it.
+   */
+  private async drainPostCommit(handHistoryId: string): Promise<boolean> {
+    const started = this.now();
+    const budget = this.deps.postCommitBudgetMs ?? POST_COMMIT_BUDGET_MS;
+    let handoverEnds: number | null = null;
+    let attempt = 0;
+    let lastError: unknown = null;
+    for (;;) {
+      attempt++;
+      try {
+        const out = await this.deps.backend.postCommit(handHistoryId);
+        if (out?.ok === true) return true;
+        throw new Error(`post-commit obligations refused (${out?.reason ?? 'unknown'})`);
+      } catch (err) {
+        lastError = err;
+        if (attempt === 1 || attempt % 10 === 0)
+          this.logger.warn(
+            `[LightningHost:${this.instanceId}] post-commit obligations pending (attempt ${attempt}): ${describeError(err)}`
+          );
+      }
+      const now = this.now();
+      if (!this.deps.leaseFor(this.hostTableId) && handoverEnds === null)
+        handoverEnds = now + POST_COMMIT_HANDOVER_MS;
+      const limit = Math.min(started + budget, handoverEnds ?? Infinity);
+      if (now >= limit) break;
+      const backoffMs = Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000);
+      await this.sleep(Math.min(backoffMs, Math.max(0, limit - now)));
+    }
+    void raiseFinancialAlert(
+      'critical',
+      'LightningHandHost.post_commit_obligations_pending',
+      `Lightning hand ${this.hostTableId}#${this.handNumber} committed, but its host gave up its durable post-commit envelope after ${attempt} attempt(s); the outbox row remains authoritative and the projection worker is its successor`,
+      {
+        table_id: this.hostTableId,
+        hand_number: this.handNumber,
+        hand_id: handHistoryId,
+        lightning_hand_id: this.handId,
+        attempts: attempt,
+        error: describeError(lastError),
+      }
+    ).catch((alertError) =>
+      this.logger.error(
+        `[LightningHost:${this.instanceId}] post-commit alert not filed`,
+        alertError
+      )
+    );
+    return false;
+  }
+
+  /** What the jackpot check reads: the settled hand's facts, every participant's room. */
+  private jackpotHand(state: GameState) {
+    const rules = this.rules!;
+    return {
+      hostTableId: this.hostTableId,
+      clubId: (rules.club_id as string | null | undefined) ?? null,
+      asset: (rules.arena?.asset as string | undefined) ?? null,
+      bbjPercent: rules.bbj_percent as number | null | undefined,
+      handNumber: this.handNumber,
+      variant: String(rules.game_variant || 'nlh'),
+      smallBlind: Number(rules.small_blind),
+      bigBlind: Number(rules.big_blind),
+      showdown: this.showdown,
+      winnerIds: this.winners.map((w) => w.userId),
+      potSize: state.pot,
+      dealtInPlayerIds: state.players.map((p) => p.user_id),
+      board: [...this.boards[0]],
+      rooms: [...this.participants.values()].map(
+        (p) => [p.playerId, p.poolSessionId] as [string, string]
+      ),
+      stacks: state.players.map((p) => ({ userId: p.user_id, stack: p.stack })),
+    };
   }
 
   private async keepalive(): Promise<void> {
@@ -1651,9 +1924,7 @@ export class LightningHandHost {
     this.keepaliveTimer = null;
     this.clearTurn();
     for (const p of this.participants.values()) {
-      const remaining = this.timeBank.getRemainingSeconds(this.timerKey, p.playerId);
-      const uses = this.timeBank.getUsesRemaining(this.timerKey, p.playerId);
-      if (this.hc) this.deps.timeBanks.record(p.playerId, remaining, uses);
+      this.recordBank(p.playerId);
       this.timer.cancelTimer(this.timerKey, p.playerId);
     }
     this.timeBank.dispose(this.timerKey);
@@ -1673,6 +1944,19 @@ export class LightningHandHost {
     this.watching.clear();
     this.resolveFinished();
     this.deps.onFinished?.(this);
+  }
+
+  /** This hand is done with the player's bank: hand it back to the ledger, once. */
+  private recordBank(playerId: string): void {
+    if (!this.hc || this.bankRecorded.has(playerId)) return;
+    this.bankRecorded.add(playerId);
+    const remaining = this.timeBank.getRemainingSeconds(this.timerKey, playerId);
+    const uses = this.timeBank.getUsesRemaining(this.timerKey, playerId);
+    void this.deps.timeBanks
+      .record(playerId, remaining, uses, this.handId)
+      .catch((err) =>
+        this.logger.error(`[LightningHost:${this.instanceId}] time bank not recorded`, err)
+      );
   }
 
   private async withRetry<T>(fn: () => Promise<T>): Promise<T> {

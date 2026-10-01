@@ -75,6 +75,17 @@ export interface LightningClusterWorkerDeps {
   hasInstance?: (instanceId: string) => boolean;
   /** The barrier froze the Cluster: the supervisor drops this worker. */
   onClusterFrozen?: (clusterId: string) => void;
+  /**
+   * Epoch ms before which this Cluster must not form: consecutive abandoned
+   * hands back it off (LightningHosting), a settled hand clears it.
+   */
+  formBackoffUntil?: () => number;
+  /**
+   * Does this process hold the verified lease on the Cluster's front table
+   * (the host table every hand binds to)? Without it a formed hand could only
+   * be abandoned, so the worker does not form.
+   */
+  holdsFrontTableLease?: () => Promise<boolean>;
 }
 
 export type LightningWorkerPassResult =
@@ -302,6 +313,23 @@ export class LightningClusterWorker {
   /** One forming pass: match_and_form, then a host per formed hand. */
   private async formPass(): Promise<LightningWorkerPassResult> {
     if (this.frozen()) return { outcome: 'frozen' };
+    const backoffUntil = this.deps.formBackoffUntil?.() ?? 0;
+    if (backoffUntil > this.now().getTime())
+      return { outcome: 'skipped', reason: 'abandon_backoff' };
+    if (this.deps.holdsFrontTableLease) {
+      let held = false;
+      try {
+        held = await this.deps.holdsFrontTableLease();
+      } catch (err) {
+        if (this.failureLog.shouldLog('front_table_lease')) {
+          this.logger.error(
+            `[Lightning:${this.clusterId}] front table lease unknown; not forming`,
+            err
+          );
+        }
+      }
+      if (!held) return { outcome: 'skipped', reason: 'front_table_lease_not_held' };
+    }
     let disconnected: string[];
     try {
       disconnected = this.deps.presence.snapshot(

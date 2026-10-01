@@ -37,6 +37,7 @@ import { SEATED_PROFILE_SELECT } from '../services/supabase/tableAvatar.js';
 import { arenaPlayerName, type ArenaNameProfile } from '../services/supabase/arenaPlayerName.js';
 import { loadTable } from '../services/supabase/tables.js';
 import { processHandPostCommitObligations } from '../services/supabase/handProjection.js';
+import { lightningAnchorTimeBanks } from '../services/supabase/lightningAnchor.js';
 import { isUuid } from './LightningRpc.js';
 
 /** One formed seat, as the formation barrier wrote it. */
@@ -54,6 +55,8 @@ export interface LightningParticipant {
   equippedAura: string;
   /** The horse's input device only (CLAUDE.md 10.5); never serialized to a client. */
   isHorse: boolean;
+  /** The horse's own style and mods (profiles.horse_profile), as a physical seat carries it. */
+  horseProfile?: unknown;
 }
 
 /** The host table's rules: the same columns the physical engine deals from. */
@@ -124,13 +127,25 @@ export interface LightningHandBackend {
   settle(
     args: LightningSettleArgs
   ): Promise<LightningCallOutcome<{ handHistoryId: string; receiptHash: string | null }>>;
-  postCommit(handHistoryId: string): Promise<void>;
+  /**
+   * fn_ca_process_hand_post_commit_obligations: `ok !== true` is a failure
+   * (predecessor_pending is the common one with several hands per front table).
+   */
+  postCommit(handHistoryId: string): Promise<{ ok: boolean; reason?: string }>;
   /** fn_time_bank_allowance_v2: extra seconds beyond the base, per player. */
   timeBankAllowance(
     userIds: string[]
   ): Promise<Map<string, { extraSeconds: number; unlimitedActivations: boolean }>>;
-  /** fn_consume_time_bank: the paid seconds a player spent. */
-  consumeTimeBank(userId: string, seconds: number): Promise<void>;
+  /**
+   * fn_consume_time_bank: the paid seconds a player spent, under a request id
+   * that is the same on every retry, so a lost answer can never charge twice.
+   */
+  consumeTimeBank(userId: string, seconds: number, requestId: string): Promise<void>;
+  /** The durable bank each player's anchor seat last persisted (worker-start seed). */
+  durableTimeBanks?(
+    clusterId: string,
+    userIds: string[]
+  ): Promise<Map<string, { remainingSeconds: number | null; usesRemaining: number | null }>>;
 }
 
 const MS = (ms: number) => `${Math.max(0, Math.round(ms))} milliseconds`;
@@ -261,6 +276,7 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
           equippedFrame: profile?.equipped_frame ?? '',
           equippedAura: profile?.equipped_aura ?? '',
           isHorse: profile?.is_horse === true,
+          horseProfile: profile?.horse_profile ?? undefined,
         };
       });
     },
@@ -358,7 +374,8 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
     },
 
     async postCommit(handHistoryId) {
-      await processHandPostCommitObligations(handHistoryId);
+      const out = await processHandPostCommitObligations(handHistoryId);
+      return out.ok === true ? { ok: true } : { ok: false, reason: out.reason ?? 'refused' };
     },
 
     async timeBankAllowance(userIds) {
@@ -377,14 +394,21 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
       return out;
     },
 
-    async consumeTimeBank(userId, seconds) {
+    async consumeTimeBank(userId, seconds, requestId) {
       const { data, error } = await supabase.rpc('fn_consume_time_bank', {
         p_user_id: userId,
         p_seconds: seconds,
+        p_request_id: requestId,
       });
-      if (error || (data as { success?: boolean } | null)?.success !== true) {
+      // Answered either way (success true, or a refusal that never applied)
+      // is an answer; only an error or a missing receipt is retried.
+      if (error || typeof (data as { success?: unknown } | null)?.success !== 'boolean') {
         throw new Error(`fn_consume_time_bank unconfirmed: ${error?.message ?? 'missing receipt'}`);
       }
+    },
+
+    async durableTimeBanks(clusterId, userIds) {
+      return lightningAnchorTimeBanks(clusterId, userIds);
     },
   };
 }

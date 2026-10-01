@@ -1,6 +1,8 @@
--- 20261001214213_diamond_scene_health_is_recorded_where_the_platform_can_read.sql
+-- 20261001220527_diamond_scene_health_is_recorded_where_the_platform_can_read.sql
 --
--- Version reserved by scripts/new-migration.mjs.
+-- Version reserved by scripts/new-migration.mjs (20261001214213), then re-stamped
+-- to the version the Supabase MCP recorded when it was applied to production
+-- (2026-10-01 22:05 UTC, outside the hourly break window).
 --
 -- WHAT THIS CHANGES, AND WHY:
 --

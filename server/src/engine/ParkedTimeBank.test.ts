@@ -813,6 +813,55 @@ describe('stopped tournament bank custody', () => {
     expect(data.rpc).toHaveBeenCalledOnce();
   });
 
+  it('hands captured banks on after a teardown that reported a transient failure', async () => {
+    // 2026-10-01 12:27Z: a ten-second connect timeout failed the terminal
+    // snapshot flush of fifteen tournament tables. Each stop rejected after
+    // capturing its banks and releasing ownership; the replacement was then
+    // refused for ever because only a failure-free teardown could hand on.
+    const original = stoppedCandidate();
+    original.flushSnapshot = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    await expect(original.stop()).rejects.toThrow('teardown failed in 1 operation(s)');
+    expect(original.hasReleasedProcessOwnership()).toBe(true);
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    const replacement = engine();
+    replacement.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    const originals = new Map([[table, original]]);
+    const owner = Object.assign(Object.create(GameServer.prototype), {
+      running: true,
+      tableEngines: originals,
+      tournamentOwnedTables: new Set([table]),
+      tournamentRetirementCustody: new TournamentRetirementCustody(),
+      maintenanceBreak: { adopt: vi.fn() },
+    });
+    expect(await owner.replaceTableEngine(table, original, replacement)).toBe(true);
+    expect(originals.get(table)).toBe(replacement);
+    await replacement.readParkedTimeBanks();
+    replacement.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    expect(replacement.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+  });
+
+  it('never hands banks on while the original stop is still draining', async () => {
+    const original = stoppedCandidate();
+    let finish!: () => void;
+    original.flushSnapshot = () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    const stopping = original.stop();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    // Banks are captured before the flush, but the stop has not drained.
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    const next = engine();
+    next.tableInfo.tournament_id = original.tableInfo.tournament_id;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
+    finish();
+    await stopping;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+  });
+
   it('refuses incomplete capture without disposing the original value', async () => {
     const original = stoppedCandidate();
     original.timeBankMeta.delete(user);

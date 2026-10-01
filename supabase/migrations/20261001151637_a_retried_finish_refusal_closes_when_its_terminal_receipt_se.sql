@@ -54,6 +54,8 @@
 -- (runs the real function in an isolated PostgreSQL; --baseline proves the
 -- preimage leaves the settled refusal open).
 -- Production Alerts Fleet, incident tournament-finish-refusal-alerts-never-close.
+--
+-- @live-proof: md5(pg_get_functiondef('public.fn_resolve_settled_financial_alerts(boolean,integer)'::regprocedure)) = '472cdee8238759c193ebf01824843162'
 -- ============================================================================
 
 BEGIN;
@@ -668,5 +670,12 @@ BEGIN
   END IF;
 END
 $component$;
+
+-- Close it explicitly, so the file states the grant it relies on. Production
+-- already holds exactly this ACL ({postgres=X, service_role=X}, read
+-- 2026-10-01), and CREATE OR REPLACE preserves it, so this changes nothing on
+-- production; it only makes the authorization readable from the migration.
+REVOKE ALL ON FUNCTION public.fn_resolve_settled_financial_alerts(boolean, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_resolve_settled_financial_alerts(boolean, integer) TO service_role;
 
 COMMIT;

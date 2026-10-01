@@ -221,6 +221,21 @@ one-container rule in the same pull request.
 
 **Built.** Nothing to build. The decision is recorded in the evidence above.
 
+## Ruling 18 amended for streak milestones (2026-09-30, migration 20260930233000; docs/changelog/2026-09-30-a-streak-milestone-never-takes-the-daily-reward-down.md)
+
+**This amendment was decided by Claude on Dan's delegation of 2026-09-30.** Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".
+
+**What happened.** A Daily Missions streak milestone (30 days 1,000; 60 days 2,500; 100 days and every 30 after 6,000) was paid inside the claim of a daily reward and counted on the `daily_missions` line, whose per-user daily cap is 500 under this ruling. When `DR7:user_over_daily_cap` began refusing on 2026-09-26, every milestone of 1,000 or more was refused, and because it ran inside the claim it rolled back the ordinary reward (9 to 45 Diamonds) with it, for as long as the streak lasted. 160 horses reached thirty days on 2026-09-29 and 2026-09-30; the horse claim sweep retried their refused rows oldest first, 500 a minute, and paid nobody behind them. On 2026-09-30 3,053 horse rewards worth 98,921 Diamonds were owed and 46 `DR0:health_critical` rows were open.
+
+**The decision: pay the milestones as promised.**
+
+1. Streak milestones have their own per-user line, `daily_mission_milestones`, capped at 6,000 a day - the largest milestone - identical for horses, humans and VIP. The 500 cap on ordinary daily-mission rewards stays exactly as written above, and no amount changes.
+2. A milestone is evaluated and paid apart from the claim, in its own subtransaction, so a refused milestone can never roll back the ordinary reward.
+3. A refused milestone stays owed and is retried: it is written down the moment the streak reaches it, paid one credit per milestone under its own reference, and tried again by the player's next daily claim until one pays it. It is never forfeited.
+4. The horse claim sweep never lets a refused reward block the rewards behind it (a capped reward waits for the day its cap resets, a failed one ten minutes, in `ca_horse_claim_deferrals`), and it names a milestone refusal as one: `CH3:milestone_refused`, and its own `milestones_refused` count, never an ordinary cap refusal.
+
+Every credit still goes through `add_diamonds_to_balance` and the register follows the journal as before, so players + house + custody = register holds.
+
 ## A retry gets its first receipt (decided by Claude on Dan's delegation of 2026-09-30; migration 20260930235000; docs/changelog/2026-09-30-diamond-phase-11-a-retry-gets-its-first-receipt.md)
 
 **Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".** The two questions Phase 11 left open (docs/evidence/diamond-phase-11/concurrency-and-recovery.md) are decided:

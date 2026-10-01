@@ -1,3 +1,4 @@
+-- @live-proof: md5(pg_get_functiondef('public.fn_recognize_accounting_tournament_fees(uuid,timestamptz,uuid,uuid,uuid)'::regprocedure)) = '48005212e5690fe916f57c3a4da9bf57'
 -- PR5676 made cash commission batches acquire per-club advisory keys before
 -- their commission relation locks. The historical fee owner already holds
 -- a strong relation lock when recognition reaches the commission trigger.

@@ -27,7 +27,7 @@
     "supabase/migrations/20260930233400_tournament_fee_commissions_batch_their_projection_writes.sql": "2c0196ee954bf73985358eb6e6cb591568376cda0073f2a0f58f74cb0fc00d46",
     "tests/fixtures/held-fee-owner-basis/qualify-commission-batch.py": "dce4618242bb07232f320bf08123cd62185cc6f90aedaecb74f0bf4e133ec07d",
     "tests/fixtures/held-fee-owner-basis/commission-batch-scene.sql": "6382b18ada9949a76a37ffac6b85cf5e331494582029c1411176ae205a710cb7",
-    "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql": "ad2f3984296b7d988d030a51079187e16d6f817baf40d051c0dac6bc3bedff4d",
+    "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql": "20361f797a0439c636ac616d7d34384a67b5d9b96705f61792f5b06f3e26dc44",
     "supabase/migrations/20261001000000_the_chip_estate_takes_its_locks_in_one_order.sql": "93d7241f7c15b346b5dfff41b0dc1116d92e5464964a02e30a3731795fded991",
     "tests/fixtures/held-fee-owner-basis/qualify-commission-key-admission.py": "c4e2806db843f4f59e36da38a1d8da1ee32fe08d7ef0d20b66ede44e3e6fb201"
   },

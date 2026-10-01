@@ -133,6 +133,11 @@ const engineWs = new EngineWebSocketServer({
   },
 });
 
+// Lightning Phase 6 remediation: an ended pool session's room has its sockets closed.
+gameServer.lightningRooms.setRoomCloser((roomId, reason) => {
+  engineWs.closeRoom(roomId, reason);
+});
+
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
 const channelWs = new ChannelWebSocketServer((tournamentId) =>
   gameServer.getTournamentHandForHand(tournamentId)

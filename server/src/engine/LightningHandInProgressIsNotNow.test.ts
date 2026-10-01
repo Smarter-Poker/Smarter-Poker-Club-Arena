@@ -33,6 +33,9 @@ const db = vi.hoisted(() => ({
   cashoutCalls: [] as Array<Record<string, unknown>>,
   resolver: 'lightning' as 'lightning' | 'ok',
   addon: 'lightning' as 'lightning' | 'ok',
+  /** userId -> the live Lightning hand fn_lightning_player_live_hand answers. */
+  liveHand: new Map<string, string>(),
+  liveHandCalls: [] as Array<Record<string, unknown>>,
 }));
 const reportError = vi.hoisted(() => vi.fn());
 
@@ -96,6 +99,10 @@ vi.mock('../services/supabase/client.js', () => {
       if (db.addon === 'lightning') return { data: null, error: LIGHTNING_ERROR };
       return { data: null, error: null };
     }
+    if (fn === 'fn_lightning_player_live_hand') {
+      db.liveHandCalls.push(args);
+      return { data: db.liveHand.get(args.p_player_id) ?? null, error: null };
+    }
     if (fn === 'fn_offer_open_seat')
       return { data: { ok: false, reason: 'nobody_waiting' }, error: null };
     return { data: [], error: null };
@@ -133,6 +140,8 @@ beforeEach(() => {
   db.cashoutCalls = [];
   db.resolver = 'lightning';
   db.addon = 'lightning';
+  db.liveHand.clear();
+  db.liveHandCalls = [];
   reportError.mockClear();
 });
 afterEach(() => {
@@ -353,6 +362,45 @@ describe('chips landing on a seat whose player is in a Lightning hand', () => {
     expect(rpcSpy.mock.calls.filter((c) => c[0] === 'atomic_table_addon')).toHaveLength(1);
     expect(reportError).not.toHaveBeenCalled();
     expect(e.seatedPlayers[0].stack).toBe(150);
+    e.preciseTimer?.dispose?.();
+  });
+});
+
+describe('a leave while the seat anchors a live Lightning hand never attempts the cash-out (remediation 2026-10-01)', () => {
+  const HAND = 'cccccccc-0000-4000-8000-000000000001';
+  for (const [who, id, occ] of [
+    ['a human', ALICE, OCC_A],
+    ['a horse', BOB, OCC_B],
+  ] as const) {
+    it(`${who}: leave_pending is recorded, nothing is cashed out, and the sweep finishes it after the hand`, async () => {
+      const e = tableWith({ user_id: id, occupancy_id: occ, seat_number: 1 });
+      db.liveHand.set(id, HAND);
+      const answer = await e.leaveTable(id, { occupancyId: occ, seatNumber: 1 });
+      expect(answer).toEqual({
+        success: true,
+        immediate: false,
+        code: 'LIGHTNING_HAND_IN_PROGRESS',
+      });
+      expect(db.liveHandCalls).toEqual([{ p_player_id: id, p_cluster_id: 'game-1' }]);
+      expect(db.cashoutCalls).toEqual([]);
+      expect(db.departures).toHaveLength(1);
+      expect(e.seatedPlayers[0].leave_pending).toBe(true);
+      // The hand settles; the existing sweep cashes the seat out, once.
+      db.liveHand.clear();
+      db.cashout.set(id, 'ok');
+      db.pending = [{ user_id: id, seat_number: 1, occupancy_id: occ }];
+      await e.sweepQueuedLeaves();
+      expect(e.seatedPlayers).toEqual([]);
+      expect(db.cashoutCalls).toHaveLength(1);
+      e.preciseTimer?.dispose?.();
+    });
+  }
+
+  it('no live hand: the cash-out runs as before', async () => {
+    const e = tableWith({ user_id: ALICE, occupancy_id: OCC_A, seat_number: 1 });
+    const answer = await e.leaveTable(ALICE, { occupancyId: OCC_A, seatNumber: 1 });
+    expect(answer).toMatchObject({ success: true, immediate: true });
+    expect(db.cashoutCalls).toHaveLength(1);
     e.preciseTimer?.dispose?.();
   });
 });

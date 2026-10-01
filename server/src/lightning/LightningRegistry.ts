@@ -47,6 +47,8 @@ interface RoomInfo {
 export interface LightningRegistryDeps {
   /** fn_lightning_hand_view_access(p_pool_session_id, p_user_id). */
   viewAccess?(roomId: string, userId: string): Promise<boolean>;
+  /** Close every socket on a room (EngineWebSocketServer.closeRoom); wired at boot. */
+  closeRoom?(roomId: string, reason: string): void;
   /** The pool session's owner and Cluster (presence attribution). */
   roomOwner?(roomId: string): Promise<{ playerId: string; clusterId: string } | null>;
 }
@@ -91,10 +93,18 @@ export class LightningRegistry {
   private readonly roomOwner: (
     roomId: string
   ) => Promise<{ playerId: string; clusterId: string } | null>;
+  private closeRoom: ((roomId: string, reason: string) => void) | null;
+  private sweeping: Promise<number> | null = null;
 
   constructor(deps: LightningRegistryDeps = {}) {
     this.viewAccess = deps.viewAccess ?? lightningHandViewAccess;
     this.roomOwner = deps.roomOwner ?? lightningRoomOwner;
+    this.closeRoom = deps.closeRoom ?? null;
+  }
+
+  /** Boot wiring: the transport that can close a room's sockets. */
+  setRoomCloser(close: (roomId: string, reason: string) => void): void {
+    this.closeRoom = close;
   }
 
   // ─── HOSTS ──────────────────────────────────────────────────────────────
@@ -117,6 +127,9 @@ export class LightningRegistry {
       if (h !== host) continue;
       this.hostByRoom.delete(room);
       this.pruneRoom(room);
+      // A room still holding sockets and not moving to a new hand may be a
+      // pool session that just ended: ask, and close it if so.
+      if (this.rooms.get(room)?.sockets) void this.checkEndedRoom(room).catch(() => undefined);
     }
   }
 
@@ -242,6 +255,55 @@ export class LightningRegistry {
     return proxy;
   }
 
+  /**
+   * A room whose pool session has ENDED is closed: its record and proxy are
+   * forgotten and every socket on it is told 4404 (single-table) or
+   * TABLE_NOT_FOUND (mux), which the client reads as "this session is over".
+   * Only a room with sockets and no hand is asked; a check that cannot run
+   * leaves the room as it is. True when the room was closed.
+   */
+  private async checkEndedRoom(roomId: string): Promise<boolean> {
+    const info = this.rooms.get(roomId);
+    if (!info || info.sockets === 0 || this.hostByRoom.has(roomId)) return false;
+    let ok: boolean;
+    try {
+      ok = await this.viewAccess(roomId, info.userId);
+    } catch {
+      return false;
+    }
+    if (ok || this.hostByRoom.has(roomId) || this.rooms.get(roomId) !== info) return false;
+    this.rooms.delete(roomId);
+    this.proxies.delete(roomId);
+    try {
+      this.closeRoom?.(roomId, 'Your Lightning Session Has Ended');
+    } catch {
+      /* the transport must never take the registry down */
+    }
+    return true;
+  }
+
+  /**
+   * The supervisor's five-second tick: every room with live sockets and no
+   * hand here is checked, and a room whose pool session ended is closed.
+   * One sweep at a time; answers how many rooms it closed.
+   */
+  sweepEndedRooms(): Promise<number> {
+    if (this.sweeping) return this.sweeping;
+    const run = (async () => {
+      let closed = 0;
+      for (const [room, info] of [...this.rooms]) {
+        if (info.sockets === 0 || this.hostByRoom.has(room)) continue;
+        if (await this.checkEndedRoom(room)) closed++;
+      }
+      return closed;
+    })();
+    const tracked = run.finally(() => {
+      if (this.sweeping === tracked) this.sweeping = null;
+    });
+    this.sweeping = tracked;
+    return tracked;
+  }
+
   /** On (re)connect / RESYNC: the player's own cards, again. */
   rePushHoleCards(roomId: string, userId: string): void {
     this.hostByRoom.get(roomId)?.rePushHoleCards(userId);
@@ -258,14 +320,57 @@ export interface LightningHostingDeps {
   hostOptions?: Partial<Pick<LightningHandHostDeps, 'timer' | 'sleep' | 'now' | 'logger'>>;
 }
 
+/** The longest a Cluster waits after consecutive abandons before forming again. */
+export const LIGHTNING_ABANDON_BACKOFF_MAX_MS = 30_000;
+const ABANDON_BACKOFF_BASE_MS = 500;
+
 /** The worker's side of the registry: build, register and fence hosts. */
 export class LightningHosting {
   private readonly timeBanks = new Map<string, LightningTimeBankLedger>();
+  /** Per Cluster: consecutive abandoned hands, and no forming before `until`. */
+  private readonly abandonBackoff = new Map<string, { count: number; until: number }>();
 
   constructor(private readonly deps: LightningHostingDeps) {}
 
+  /**
+   * A host already exists for this instance - registered (dealing), or still
+   * starting (pending) - so a replayed pass can never start a second one.
+   */
   hasInstance(instanceId: string): boolean {
-    return this.deps.registry.hasInstance(instanceId);
+    if (this.deps.registry.hasInstance(instanceId)) return true;
+    for (const h of this.pending) if (h.instanceId === instanceId) return true;
+    return false;
+  }
+
+  /** The verified lease this process holds on a host table, or null. */
+  leaseFor(hostTableId: string): LightningLease | null {
+    return this.deps.leaseFor(hostTableId);
+  }
+
+  /**
+   * Epoch ms before which the Cluster must not form (0 = now). A hand that
+   * is abandoned doubles the wait, from half a second up to thirty; one that
+   * settles clears it. An abandon never wakes the worker, so a Cluster whose
+   * hands keep failing cannot spin match_and_form in a tight loop.
+   */
+  formBackoffUntil(clusterId: string): number {
+    return this.abandonBackoff.get(clusterId)?.until ?? 0;
+  }
+
+  private noteOutcome(clusterId: string, lifecycle: string): void {
+    const now = this.deps.hostOptions?.now?.() ?? Date.now();
+    if (lifecycle === 'complete') {
+      this.abandonBackoff.delete(clusterId);
+      return;
+    }
+    if (lifecycle !== 'abandoned') return;
+    const prev = this.abandonBackoff.get(clusterId)?.count ?? 0;
+    const count = prev + 1;
+    const wait = Math.min(
+      LIGHTNING_ABANDON_BACKOFF_MAX_MS,
+      ABANDON_BACKOFF_BASE_MS * 2 ** Math.min(count - 1, 10)
+    );
+    this.abandonBackoff.set(clusterId, { count, until: now + wait });
   }
 
   /** Deal one formed hand. Returns the host (already starting). */
@@ -277,7 +382,7 @@ export class LightningHosting {
   ): LightningHandHost {
     let ledger = this.timeBanks.get(hand.clusterId);
     if (!ledger) {
-      ledger = new LightningTimeBankLedger(this.deps.backend);
+      ledger = new LightningTimeBankLedger(this.deps.backend, hand.clusterId);
       this.timeBanks.set(hand.clusterId, ledger);
     }
     const registry = this.deps.registry;
@@ -291,14 +396,20 @@ export class LightningHosting {
       metrics: this.deps.metrics ?? lightningMetrics,
       isConnected: (playerId, roomId) => registry.isConnected(playerId, roomId),
       onPlayerReleased: (playerId, why) => {
-        if (why === 'fast' || why === 'normal') registry.releaseRoom(host, playerId);
-        wake();
+        // A FOLDED player is free while the hand plays on: match them now.
+        // Everyone released at the hand's end waits for onFinished, which
+        // wakes only for a settled hand - never for an abandon.
+        if (why === 'fast' || why === 'normal') {
+          registry.releaseRoom(host, playerId);
+          wake();
+        }
       },
       onDealing: (h) => registry.register(h),
       onClusterFrozen: (clusterId) => onClusterFrozen?.(clusterId),
       onFinished: (h) => {
         registry.unregister(h);
-        wake();
+        this.noteOutcome(h.clusterId, h.lifecycle);
+        if (h.lifecycle === 'complete') wake();
       },
       ...this.deps.hostOptions,
     });

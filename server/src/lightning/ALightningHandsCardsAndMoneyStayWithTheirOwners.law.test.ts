@@ -15,6 +15,11 @@
  *      made at most once per hand under one request id. A hand that fails
  *      before it (bad formation, lost lease, a refusal) is abandoned and
  *      settles nothing; no Lightning file writes a seat, a stack or a wallet.
+ *      The one thing that follows a SUCCESSFUL settlement is the Bad Beat
+ *      Jackpot (remediation 2026-10-01): the hand paid the fee, so it can win
+ *      the jackpot, through the physical payout doors (processBBJPayout /
+ *      processMiniBBJPayout, idempotent on pool, table and hand) and only
+ *      ever after the hand settled.
  *
  * If this fails you are about to leak a card or move money outside the one
  * door that is audited for it. Fix the change, never this law.
@@ -126,5 +131,22 @@ describe('LAW: a Lightning hand’s money moves only through settlement', () => 
     expect(backend.match(/'fn_lightning_settle_hand'/g)?.length).toBe(1);
     const host = code('LightningHandHost.ts');
     expect(host.match(/backend\.settle\(/g)?.length).toBe(1);
+  });
+
+  it('the jackpot is paid only through the physical doors, and only after a settled hand', () => {
+    const host = code('LightningHandHost.ts');
+    const calls = [...host.matchAll(/await settleLightningJackpot\(/g)].map((m) => m.index!);
+    expect(calls).toHaveLength(1);
+    // Inside the settled branch: after `if (out.ok) {` and after state = 'complete'.
+    const settledBranch = host.lastIndexOf('if (out.ok) {', calls[0]);
+    expect(settledBranch).toBeGreaterThan(host.indexOf('backend.settle('));
+    expect(host.slice(settledBranch, calls[0])).toContain("this.state = 'complete';");
+    const jackpot = code('LightningJackpot.ts');
+    // The physical payout doors, and nothing that writes on its own.
+    expect(jackpot).toMatch(/processBBJPayout/);
+    expect(jackpot).toMatch(/processMiniBBJPayout/);
+    expect(jackpot).not.toMatch(/\.rpc\(|\.from\(/);
+    // Nobody is seated at the host table: every share is credited directly.
+    expect(jackpot.match(/seatedUserIds: \[\]/g)?.length).toBe(2);
   });
 });

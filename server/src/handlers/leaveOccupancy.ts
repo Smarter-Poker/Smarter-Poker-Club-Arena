@@ -23,6 +23,15 @@ export interface LeaveOccupancyDeps {
         }
       | null
       | undefined;
+    /**
+     * Lightning Phase 6 remediation: a pool_session_id (the player's Lightning
+     * room) resolves to the anchor seat the chips sit in, so a leave from a
+     * Lightning room is a leave from that seat, at that table's engine.
+     */
+    lightningAnchorFor?(
+      roomId: string,
+      userId: string
+    ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null>;
   };
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +54,33 @@ export async function handleLeaveOccupancy(
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return sendJSON(res, 400, { success: false, error: 'Invalid leave request' });
     }
-    const { tableId, occupancyId, seatNumber } = body as Record<string, unknown>;
+    const requested = body as Record<string, unknown>;
+    let { tableId, occupancyId, seatNumber } = requested;
+    // A Lightning room is no table: the leave is the anchor seat's.
+    if (
+      deps.gameServer.lightningAnchorFor &&
+      typeof tableId === 'string' &&
+      UUID.test(tableId) &&
+      !deps.gameServer.getTableEngine(tableId)
+    ) {
+      const anchor = await deps.gameServer.lightningAnchorFor(tableId, auth.userId);
+      if (anchor) {
+        if (
+          (occupancyId !== undefined && occupancyId !== anchor.occupancyId) ||
+          (seatNumber !== undefined && seatNumber !== anchor.seatNumber)
+        )
+          return sendJSON(res, 409, {
+            protocol: 'seat-occupancy-v1',
+            success: false,
+            immediate: false,
+            code: 'STALE_OCCUPANCY',
+            error: 'This Request Belongs To A Previous Seat.',
+          });
+        tableId = anchor.anchorTableId;
+        occupancyId = anchor.occupancyId;
+        seatNumber = anchor.seatNumber;
+      }
+    }
     if (
       typeof tableId !== 'string' ||
       !UUID.test(tableId) ||

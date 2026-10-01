@@ -87,6 +87,7 @@ import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
 import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
 import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
+import { lightningAnchorSeat } from './services/supabase/lightningAnchor.js';
 import type { LightningLease } from './lightning/LightningHandHost.js';
 import type { ActionEngine } from './handlers/action.js';
 import type { LightningSeatProxy } from './lightning/LightningSeatProxy.js';
@@ -3294,6 +3295,8 @@ export class GameServer {
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
     hosting: this.lightningHosting,
+    // Ended pool sessions: their rooms' sockets are closed (every 5 s).
+    sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
   });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
@@ -11077,6 +11080,25 @@ export class GameServer {
   /** POST /preaction's engine: the table engine, or a Lightning room's seat proxy. */
   getPreActionEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
     return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /**
+   * A Lightning room's anchor seat (Lightning Phase 6 remediation): leave and
+   * add chips from a pool_session_id act on the seat the chips sit in. Null
+   * for a real table id, for a room that is not the caller's, and when the
+   * read fails (the caller then answers as for an unknown table).
+   */
+  async lightningAnchorFor(
+    roomId: string,
+    userId: string
+  ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
+    if (this.tableEngines.has(roomId)) return null;
+    try {
+      return await lightningAnchorSeat(roomId, userId);
+    } catch (err) {
+      reportError(err, 'GameServer.lightning_anchor_lookup_failed');
+      return null;
+    }
   }
 
   /** Is this id a table engine here, or a Lightning room this process serves? */

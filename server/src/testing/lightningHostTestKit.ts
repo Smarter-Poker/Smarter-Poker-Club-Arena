@@ -19,6 +19,51 @@ import {
 } from '../lightning/LightningHandHost.js';
 import { LightningMetrics } from '../lightning/LightningMetrics.js';
 import { MetricsRegistry } from '../observability/Metrics.js';
+import { HorseLogic } from '../engine/HorseLogic.js';
+import type {
+  FastHorseDecisionResult,
+  LiveHorseDecisionLane,
+  LiveHorseDecisionSnapshot,
+} from '../engine/horseDecision/index.js';
+
+/**
+ * A stand-in for the live horse decision lane: it answers with the brain the
+ * worker runs (HorseLogic.decide) on the snapshot it was sent, so a test sees
+ * exactly what the host asked for (`calls`) and a real decision back.
+ */
+export function fakeHorseLane(opts: { fail?: boolean } = {}) {
+  const calls: LiveHorseDecisionSnapshot[] = [];
+  const committed: FastHorseDecisionResult[] = [];
+  const lane = {
+    decideFast: vi.fn(async (snap: LiveHorseDecisionSnapshot): Promise<FastHorseDecisionResult> => {
+      calls.push(snap);
+      if (opts.fail) throw new Error('worker down');
+      const decision = HorseLogic.decide(snap.player, snap.gameState, snap.style, snap.mods ?? {}, {
+        mind: false,
+        telemetry: false,
+      } as never);
+      return {
+        type: 'FAST_RESULT',
+        requestId: calls.length,
+        planBinding: null,
+        planIssueDisposition: 'no_effects',
+        generation: snap.generation,
+        fence: snap.fence,
+        decision,
+        rngBefore: 0,
+        rngAfter: 0,
+        computeMs: 1,
+        governorScale: 1,
+        effects: [],
+      } as unknown as FastHorseDecisionResult;
+    }),
+    commitDecisionEffects: vi.fn(async (r: FastHorseDecisionResult) => {
+      committed.push(r);
+      return { ok: true } as never;
+    }),
+  };
+  return { lane: lane as unknown as LiveHorseDecisionLane, calls, committed, raw: lane };
+}
 
 export const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -51,9 +96,11 @@ export class RecordingHub {
 
 export interface FakeBackendOptions {
   /** Settlement answers: 'ok', 'transport' (unknown) or 'refuse', in order. */
-  settleScript?: Array<'ok' | 'transport' | 'refuse' | 'frozen'>;
+  settleScript?: Array<'ok' | 'transport' | 'refuse' | 'frozen' | 'cluster_frozen'>;
   rules?: Record<string, unknown>;
   participantsOverride?: (p: LightningParticipant[]) => LightningParticipant[];
+  /** Post-commit answers, in order (the last repeats): ok, or a refusal reason. */
+  postCommitScript?: Array<'ok' | string>;
 }
 
 export function fakeBackend(
@@ -101,6 +148,7 @@ export function fakeBackend(
   });
   if (opts.participantsOverride) participants = opts.participantsOverride(participants);
   const script = [...(opts.settleScript ?? ['ok'])];
+  const postScript = [...(opts.postCommitScript ?? ['ok'])];
   const calls = {
     settle: [] as LightningSettleArgs[],
     fastFold: [] as Array<{
@@ -113,7 +161,7 @@ export function fakeBackend(
     keepalive: 0,
     postCommit: [] as string[],
     insertHoleCards: [] as Array<{ table: string; hand: number; rows: unknown[] }>,
-    consumed: [] as Array<{ userId: string; seconds: number }>,
+    consumed: [] as Array<{ userId: string; seconds: number; requestId: string }>,
   };
   let handNumber = 1_000_000 + Math.floor(Math.random() * 1000);
   const backend: LightningHandBackend = {
@@ -173,15 +221,18 @@ export function fakeBackend(
           return { ok: false, reason: 'fn_lightning_settle_hand_failed', transport: true };
         if (next === 'refuse') return { ok: false, reason: 'lease_mismatch' };
         if (next === 'frozen') return { ok: false, reason: 'stack_invariant_failed', frozen: true };
+        if (next === 'cluster_frozen') return { ok: false, reason: 'cluster_frozen' };
         return { ok: true, value: { handHistoryId: uid(7777), receiptHash: 'r' } };
       }
     ),
     postCommit: vi.fn(async (id: string) => {
       calls.postCommit.push(id);
+      const next = postScript.length > 1 ? postScript.shift()! : postScript[0];
+      return next === 'ok' ? { ok: true } : { ok: false, reason: next };
     }),
     timeBankAllowance: vi.fn(async () => new Map()),
-    consumeTimeBank: vi.fn(async (userId: string, seconds: number) => {
-      calls.consumed.push({ userId, seconds });
+    consumeTimeBank: vi.fn(async (userId: string, seconds: number, requestId: string) => {
+      calls.consumed.push({ userId, seconds, requestId });
     }),
   };
   return { backend, participants, calls };
@@ -215,6 +266,11 @@ export function buildHost(
   const fb = fakeBackend(formed, stacks, opts.horses ?? new Set(), opts);
   const released: Array<{ playerId: string; why: string }> = [];
   const metrics = new LightningMetrics(new MetricsRegistry());
+  const horseLane = fakeHorseLane();
+  const jackpot = {
+    payMain: vi.fn(async () => ({ status: 'nothing_to_pay' as const, reason: 'fixture' })),
+    payMini: vi.fn(async () => ({ status: 'skipped' as const, reason: 'fixture' })),
+  };
   const host = new LightningHandHost(formed, {
     backend: fb.backend,
     hub,
@@ -226,9 +282,11 @@ export function buildHost(
     sleep: () => Promise.resolve(),
     isConnected: () => true,
     onPlayerReleased: (playerId, why) => released.push({ playerId, why }),
+    horseLane: () => horseLane.lane,
+    jackpot: jackpot as never,
     ...(opts.deps ?? {}),
   });
-  return { host, hub, released, metrics, ...fb };
+  return { host, hub, released, metrics, horseLane, jackpot, ...fb };
 }
 
 /** Let promise chains settle without advancing any fake clock. */

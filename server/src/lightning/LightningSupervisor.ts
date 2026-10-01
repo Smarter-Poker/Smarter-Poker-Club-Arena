@@ -39,6 +39,7 @@ import { LightningClusterWorker, type LightningWorkerLogger } from './LightningC
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
 import type { LightningHosting } from './LightningRegistry.js';
+import { lightningFrontTable } from '../services/supabase/lightningAnchor.js';
 
 export interface LightningSupervisorDeps {
   /** This process's anchor-table presence (GameServer's engines). */
@@ -58,7 +59,19 @@ export interface LightningSupervisorDeps {
   hosting?: LightningHosting;
   /** Injected for tests; the real worker otherwise. */
   createWorker?: (clusterId: string, config: LightningConfig) => LightningClusterWorker;
+  /**
+   * Close the sockets of every Lightning room whose pool session has ended
+   * (LightningRegistry.sweepEndedRooms), run every ROOM_SWEEP_INTERVAL_MS.
+   */
+  sweepRooms?: () => Promise<unknown>;
+  /** The Cluster's front table (the host table every hand binds to). */
+  frontTable?: (clusterId: string) => Promise<string | null>;
 }
+
+/** How often ended Lightning rooms are looked for (their sockets closed). */
+export const LIGHTNING_ROOM_SWEEP_INTERVAL_MS = 5_000;
+/** How long a Cluster's front table id is trusted before it is read again. */
+const FRONT_TABLE_TTL_MS = 30_000;
 
 /** The one discovery read: Clusters in Lightning mode with Lightning enabled. */
 export async function discoverLightningClusters(): Promise<string[]> {
@@ -96,6 +109,8 @@ export class LightningSupervisor {
   private readonly metrics: LightningMetrics;
   private readonly logger: LightningWorkerLogger;
   private readonly frozen: () => boolean;
+  private roomSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly frontTables = new Map<string, { tableId: string | null; at: number }>();
 
   constructor(private readonly deps: LightningSupervisorDeps) {
     this.presence = new LightningPresence(deps.presenceSource);
@@ -134,6 +149,19 @@ export class LightningSupervisor {
       `[LightningSupervisor] running - discovery every ${LIGHTNING_DISCOVERY_INTERVAL_MS / 1000}s on the leader`
     );
     this.arm(generation, 0);
+    if (this.deps.sweepRooms && !this.roomSweepTimer) {
+      const sweep = this.deps.sweepRooms;
+      this.roomSweepTimer = setInterval(() => {
+        if (!this.running || generation !== this.generation) return;
+        void Promise.resolve()
+          .then(sweep)
+          .catch((err) => {
+            if (this.failureLog.shouldLog('room_sweep'))
+              this.logger.error('[LightningSupervisor] ended-room sweep failed', err);
+          });
+      }, LIGHTNING_ROOM_SWEEP_INTERVAL_MS);
+      (this.roomSweepTimer as { unref?: () => void }).unref?.();
+    }
   }
 
   /**
@@ -148,6 +176,10 @@ export class LightningSupervisor {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.roomSweepTimer) {
+      clearInterval(this.roomSweepTimer);
+      this.roomSweepTimer = null;
     }
     const op = (async () => {
       if (this.inFlight) await this.inFlight.catch(() => undefined);
@@ -251,11 +283,14 @@ export class LightningSupervisor {
   private createWorker(clusterId: string, config: LightningConfig): LightningClusterWorker {
     if (this.deps.createWorker) return this.deps.createWorker(clusterId, config);
     const hosting = this.deps.hosting;
-    // A frozen Cluster (barrier or settlement): its worker stops for good.
+    // A frozen Cluster (barrier or settlement): its worker stops for good,
+    // and every hand of it that has not reached settlement is abandoned (a
+    // hand already settling is left alone: settlement answers for itself).
     const onFrozen = (id: string): void => {
       if (this.workers.get(id) === worker) this.workers.delete(id);
       this.metrics.setWorkers(this.workers.size);
-      void worker.stop();
+      void worker.stop().catch(() => undefined);
+      void hosting?.abortCluster(id, 'cluster_frozen').catch(() => undefined);
     };
     const worker: LightningClusterWorker = new LightningClusterWorker(clusterId, config, {
       rpc: this.rpc,
@@ -276,10 +311,25 @@ export class LightningSupervisor {
             },
             hasInstance: (id) => hosting.hasInstance(id),
             onClusterFrozen: (id) => onFrozen(id),
+            formBackoffUntil: () => hosting.formBackoffUntil(clusterId),
+            holdsFrontTableLease: async () => {
+              const front = await this.frontTableOf(clusterId);
+              return front !== null && hosting.leaseFor(front) !== null;
+            },
           }
         : {}),
     });
     return worker;
+  }
+
+  /** The Cluster's front table, cached briefly (the host table every hand binds to). */
+  private async frontTableOf(clusterId: string): Promise<string | null> {
+    const nowMs = (this.deps.now?.() ?? new Date()).getTime();
+    const cached = this.frontTables.get(clusterId);
+    if (cached && nowMs - cached.at < FRONT_TABLE_TTL_MS) return cached.tableId;
+    const tableId = await (this.deps.frontTable ?? lightningFrontTable)(clusterId);
+    this.frontTables.set(clusterId, { tableId, at: nowMs });
+    return tableId;
   }
 
   private async stopAllWorkers(): Promise<void> {

@@ -1,0 +1,32 @@
+-- tests/fixtures/ledger-invariant/setup.sql
+-- Fixture rows, written BEFORE the migration installs the invariant (as every
+-- production balance was): one chip club, one Diamond club, a cash table, a
+-- tournament table, a Diamond table, a union wallet, a jackpot pool, players.
+
+INSERT INTO public.clubs (id, name, asset, chip_treasury) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'Fixture Chip Club', 'chips', 1000),
+  ('22222222-2222-2222-2222-222222222222', 'Fixture Diamond Arena', 'diamonds', 0);
+
+INSERT INTO public.club_members (club_id, user_id, chip_balance) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001', 100),
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000002', 100),
+  ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000003', 100);
+
+INSERT INTO public.tables (id, club_id, tournament_id) VALUES
+  ('77777777-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', NULL),   -- cash
+  ('77777777-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', NULL),   -- cash, second
+  ('77777777-0000-0000-0000-00000000000e', '11111111-1111-1111-1111-111111111111', '99999999-0000-0000-0000-000000000001'), -- tournament
+  ('77777777-0000-0000-0000-00000000000d', '22222222-2222-2222-2222-222222222222', NULL);   -- Diamond
+
+INSERT INTO public.table_seats (id, table_id, user_id, seat_number, stack) VALUES
+  ('55555555-0000-0000-0000-000000000001', '77777777-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 1, 50),
+  ('55555555-0000-0000-0000-000000000002', '77777777-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002', 2, 60),
+  ('55555555-0000-0000-0000-000000000003', '77777777-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000003', 3, 40),
+  ('55555555-0000-0000-0000-00000000000e', '77777777-0000-0000-0000-00000000000e', 'aaaaaaaa-0000-0000-0000-000000000001', 1, 1500),
+  ('55555555-0000-0000-0000-00000000000d', '77777777-0000-0000-0000-00000000000d', 'aaaaaaaa-0000-0000-0000-000000000001', 1, 300);
+
+INSERT INTO public.union_wallets (id, union_id, chip_balance, rake_wallet) VALUES
+  ('66666666-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 500, 20);
+
+INSERT INTO public.bbj_pools (id, club_id, main_balance, backup_balance, promo_balance) VALUES
+  ('44444444-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 10, 5, 1);

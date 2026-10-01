@@ -136,7 +136,7 @@ export function AvatarGallery({
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [href], [tabindex="0"]'
+          'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), [href], [tabindex="0"]'
         ) || []
       );
     window.requestAnimationFrame(() => focusable()[0]?.focus());

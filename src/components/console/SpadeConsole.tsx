@@ -6,6 +6,7 @@ import type {
   ReactNode,
   Ref,
 } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 import { TapHaptic } from '../haptics/TapHaptic';
@@ -595,6 +596,11 @@ export type PlateButtonProps = {
    * A plate that commits a game action (Insure, Cash Out) carries TapHaptic:
    * on an iPhone browser the finger's tap on it is the only buzz possible
    * (src/components/haptics/TapHaptic.tsx). Buttons only; ignored on a link.
+   *
+   * Left unset, a plate inside a pop-up (any dialog: the cashier, deposit and
+   * withdraw, buy-in, insurance, the receipts) carries it too (2026-10-01):
+   * a pop-up's plates are the decisions, and every one of them should answer
+   * the finger. `false` turns it off for one plate.
    */
   haptic?: boolean;
   ink?: ConsoleInk;
@@ -621,6 +627,9 @@ export type PlateButtonProps = {
   href?: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
+/** What counts as a pop-up: every dialog the app draws marks itself one of these ways. */
+const POPUP_SELECTOR = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog';
+
 export function PlateButton({
   zone,
   canvasW = SPADE_CONSOLE_W,
@@ -632,7 +641,7 @@ export function PlateButton({
   href,
   className = '',
   style,
-  haptic = false,
+  haptic,
   ...rest
 }: {
   zone: Zone;
@@ -647,6 +656,23 @@ export function PlateButton({
 } & PlateButtonProps) {
   const ref = useFitText<HTMLSpanElement>(label, 1, 0.5, { wrapBelow });
   const plateStyle = { ...zonePct(zone, canvasW, canvasH), ...style };
+  // Whether this plate sits in a pop-up: one ancestor walk when it mounts.
+  // TapHaptic itself decides whether this device can use it.
+  const own = useRef<HTMLButtonElement | null>(null);
+  const [inPopup, setInPopup] = useState(false);
+  useLayoutEffect(() => {
+    if (haptic !== undefined || !own.current) return;
+    setInPopup(Boolean(own.current.closest(POPUP_SELECTOR)));
+  }, [haptic]);
+  const attach = useCallback(
+    (node: HTMLButtonElement | null) => {
+      own.current = node;
+      if (typeof buttonRef === 'function') buttonRef(node);
+      else if (buttonRef) (buttonRef as { current: HTMLButtonElement | null }).current = node;
+    },
+    [buttonRef]
+  );
+  const buzz = haptic ?? inPopup;
   const face = (
     <span className="sc-plate__well">
       <span className={`sc-plate__text sc-ink--${ink}`} ref={ref}>
@@ -676,13 +702,13 @@ export function PlateButton({
   return (
     <button
       type="button"
-      ref={buttonRef}
+      ref={attach}
       className={`sc-plate ${className}`.trim()}
       style={plateStyle}
       {...rest}
     >
       {face}
-      {haptic && <TapHaptic disabled={Boolean(rest.disabled)} radius="6px" />}
+      {buzz && <TapHaptic disabled={Boolean(rest.disabled)} radius="6px" />}
     </button>
   );
 }

@@ -26,6 +26,7 @@ import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorke
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { tableStateHub } from './transport/TableStateHub.js';
+import { authorizeTableConnection } from './services/TableConnectionAccess.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
 import { channelHub } from './hub/ChannelHub.js';
@@ -93,7 +94,14 @@ const gameServer = new GameServer();
 // Constructed BEFORE the HTTP server so the router closure can capture it.
 const engineWs = new EngineWebSocketServer({
   hub: tableStateHub,
-  tableExists: (tableId) => gameServer.getTableEngine(tableId) !== undefined,
+  // Lightning Phase 6: a pool_session_id the caller was admitted to is a room too.
+  tableExists: (tableId) => gameServer.hasTableOrLightningRoom(tableId),
+  authorizeConnection: async (tableId, userId) => {
+    const verdict = await authorizeTableConnection(tableId, userId);
+    if (verdict.allowed || verdict.reason !== 'table_not_found') return verdict;
+    // Not a table: the caller's own Lightning room (fn_lightning_hand_view_access).
+    return gameServer.lightningRooms.authorize(tableId, userId);
+  },
   ensureTable: (tableId) => gameServer.ensureCashTableEngine(tableId),
   // FIX 2 (2026-07-24): on (re)connect / RESYNC, re-push the player's hole
   // cards for the current hand (public state alone leaves reconnecting players
@@ -102,6 +110,7 @@ const engineWs = new EngineWebSocketServer({
     gameServer.replayMaintenancePresentation(tableId);
     const engine = gameServer.getTableEngine(tableId);
     void engine?.rePushHoleCards(userId);
+    gameServer.lightningRooms.rePushHoleCards(tableId, userId);
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
     // player's pre-action, so a reconnected bar shows what is actually armed.
     engine?.rePushPreAction(userId);
@@ -116,9 +125,11 @@ const engineWs = new EngineWebSocketServer({
   // already gone (and giving reconnects a laggy, frozen-feeling re-entry).
   onConnect: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.heartbeat(userId);
+    gameServer.lightningRooms.connect(tableId, userId);
   },
   onDisconnect: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.notifyTransportDisconnect(userId);
+    gameServer.lightningRooms.disconnect(tableId, userId);
   },
 });
 

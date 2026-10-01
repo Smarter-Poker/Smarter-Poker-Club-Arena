@@ -40,7 +40,10 @@ import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
-const EVENTS = strip(read('server/src/engine/ServerTableEngineHandEvents.ts'));
+// Lightning Phase 6 (2026-09-27): the frame literals moved into the shared
+// builders both dealers use, so the pins read the engine AND its builders.
+const FRAMES = strip(read('server/src/engine/presentation/handEventFrames.ts'));
+const EVENTS = strip(read('server/src/engine/ServerTableEngineHandEvents.ts')) + '\n' + FRAMES;
 const BASE = strip(read('server/src/engine/ServerTableEngineBase.ts'));
 const TABLE_PAGE = strip(read('src/pages/TablePage.tsx'));
 const BOARD = read('src/components/table/CommunityCards.tsx');
@@ -73,7 +76,10 @@ describe('the engine SENDS which board cards won', () => {
   });
 
   it('a highlight failure can never break the payout event', () => {
-    const block = sliceEnclosingBlock(EVENTS, 'winningBoardIndices', 0, 2);
+    const block = FRAMES.slice(
+      FRAMES.indexOf('export function winningBoardIndices'),
+      FRAMES.indexOf('export function potWinFrame')
+    );
     expect(block).toMatch(/catch/);
   });
 });

@@ -125,6 +125,7 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
   tournamentFinishRefusalAlertsSuppressedTotal,
   classifyFinishRefusal,
+  finishRefusalIsTransient,
   finishRefusalRetryDelayMs,
   type FinishRefusalReason,
 } from '../observability/engineInstruments.js';
@@ -658,6 +659,30 @@ export abstract class TournamentManagerBase {
   private lastFinishRefusalReason: FinishRefusalReason | null = null;
 
   /**
+   * A TRANSIENT REFUSAL IS NEWS ONLY WHEN IT STOPS BEING TRANSIENT (2026-10-01).
+   *
+   * `TRANSIENT_FINISH_REFUSALS` (deadlock, timeout) are, by this file's own
+   * definition, the database saying "not now": the same call succeeds on the
+   * next pass. A critical money alert on the FIRST one therefore measures
+   * finish-lane contention, not an unpaid finish. Measured 2026-09-26 to
+   * 2026-10-01: 342 of 342 settled tournaments with an open
+   * `Tournament.atomic_finish_refused` alert (333 timeout, 7 deadlock, 2 other)
+   * are COMPLETED with an immutable terminal receipt; the lane refused each
+   * one once (55P03 on the single platform finish lane, 8 s lock_timeout) and
+   * the next admission paid it in full. 23 open drift incidents and 347 open
+   * criticals were this, and not one named money that was owed.
+   *
+   * A transient refusal is alerted when this tournament has reported the
+   * SAME transient reason this many times running - the lane is then wedged,
+   * not busy - and the streak is written into the alert. A rule refusal
+   * (fee reconciliation, prize set, attribution) is alerted on the first
+   * report exactly as before: asking again cannot clear it, so the first one
+   * is the news. Every refusal of every kind is still counted on
+   * `poker_tournament_finish_refusals_total{reason}`.
+   */
+  static readonly TRANSIENT_FINISH_REFUSAL_ALERT_STREAK = 3;
+
+  /**
    * Record a proven refusal and answer whether this is news: a reason this
    * tournament has not already reported. An unproven (unknown-outcome) failure
    * is always news, because it is never repeated on a clock.
@@ -667,11 +692,22 @@ export abstract class TournamentManagerBase {
     const reason = classifyFinishRefusal(error instanceof Error ? error.message : String(error));
     if (reason === this.lastFinishRefusalReason) {
       this.finishRefusalStreak += 1;
-      return false;
+    } else {
+      this.lastFinishRefusalReason = reason;
+      this.finishRefusalStreak = 1;
     }
-    this.lastFinishRefusalReason = reason;
-    this.finishRefusalStreak = 1;
-    return true;
+    if (finishRefusalIsTransient(reason)) {
+      // News exactly once: on the pass the streak reaches the threshold.
+      return (
+        this.finishRefusalStreak === TournamentManagerBase.TRANSIENT_FINISH_REFUSAL_ALERT_STREAK
+      );
+    }
+    return this.finishRefusalStreak === 1;
+  }
+
+  /** How many times running this tournament has reported its current refusal reason. */
+  protected get currentFinishRefusalStreak(): number {
+    return this.finishRefusalStreak;
   }
 
   /** The delay releaseFinishGuard hands the scheduler for the next pass. */
@@ -723,7 +759,9 @@ export abstract class TournamentManagerBase {
         severity,
         source,
         message,
-        reasonForKey ? { ...context, refusal_reason: reasonForKey } : context,
+        reasonForKey
+          ? { ...context, refusal_reason: reasonForKey, refusal_streak: this.finishRefusalStreak }
+          : context,
         `${String(subject)}:${reasonForKey ?? 'unknown'}`,
         String(subject)
       );

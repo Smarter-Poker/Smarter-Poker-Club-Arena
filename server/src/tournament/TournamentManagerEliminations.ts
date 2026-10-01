@@ -156,6 +156,9 @@ class TerminalSettlementCommittedError extends Error {
   }
 }
 
+/** The sweep stage that asks the terminal authority to finish the event (see finishStage). */
+export const FINISH_STAGE = 2;
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
   /**
    * Cooperative continuation through the bounded manager work unit. A slow
@@ -163,6 +166,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /** Exposed for the law test only: where the sweep cursor will resume. */
+  get eliminationSweepNextStage(): number {
+    return this.eliminationSweepCursor.nextStage;
+  }
   /** A queued continuation can finish later stages without revisiting these busts. */
   private unresolvedBustsInSweepCycle = false;
 
@@ -1247,7 +1254,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       finishStage: {
-        if (this.eliminationSweepCursor.nextStage > 2) break finishStage;
+        if (this.eliminationSweepCursor.nextStage > FINISH_STAGE) break finishStage;
         const satelliteFinish = await this.checkSatelliteQualifierCompletion();
         if (sweepStopped() || satelliteFinish === 'complete') return;
         if (satelliteFinish === 'pending') {
@@ -4012,6 +4019,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    */
   private rearmIfTheFinishWasRefused(): void {
     if (this.tournamentFinished) return;
+    /* THE RETRY GOES STRAIGHT BACK TO THE FINISH (2026-10-01).
+       A refused finish has already spent this admission's budget (five
+       attempts and the resolver against the finish lane, ~48 s), so
+       completedStage(3) below advances the cursor PAST the finish stage.
+       Without this rewind the re-armed admission ran stages 3..8, reset the
+       cursor, and the finish was only asked again on the admission after
+       that - two trips through a scheduler queue whose oldest wait was
+       measured at 589-1,121 s between 14:30 and 14:52 UTC on 2026-10-01.
+       Tournament 028268d1 was refused at 14:36:56 and paid at 15:04:23. The
+       winner is owed the next admission, not the one after. The cursor's
+       own fairness rule still holds: a rewind is applied once, and the
+       interrupted stage gets the admission after it. */
+    this.eliminationSweepCursor.rewindTo(FINISH_STAGE);
     this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
   }
 

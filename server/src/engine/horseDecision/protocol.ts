@@ -374,6 +374,9 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   governorScale: number;
   /** Applied only after this exact intended action is accepted at the table. */
   effects: HorseMindDecisionEffect[];
+  /** The worker's Phase 8 authority after this decision. Optional only for
+   * injected test workers; absent is never usable authority. */
+  phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
 }
 
 export interface DeepHorseDecisionResult extends HorseDecisionFence {
@@ -383,6 +386,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   decision: HorseDecision;
   computeMs: number;
   governorScale: number;
+  phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
 }
 
 export interface HorseDecisionWorkerAck extends HorseDecisionFence {

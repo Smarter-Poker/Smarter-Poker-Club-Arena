@@ -2964,6 +2964,7 @@ export class HorseLogic {
         ) {
           phase8.ledger.applied = false;
           phase8.ledger.completed = false;
+          phase8.ledger.selection = 'none';
           phase8.ledger.reason = 'illegal_candidate';
         } else decision = phase8.decision;
         decision = { ...decision, tournamentPostflop: phase8.ledger };
@@ -2980,6 +2981,7 @@ export class HorseLogic {
             noteFire(`phase8_objective_${phase8.ledger.objective}`);
           }
           if (phase8.ledger.changed) noteFire('phase8_shadow_changed');
+          noteFire(`phase8_selection_${phase8.ledger.selection}`);
           if (phase8.ledger.applied) noteFire('phase8_applied');
           else noteFire('phase8_baseline_retained');
           for (const reason of phase8.ledger.reasons) noteFire(`phase8_feature_${reason}`);

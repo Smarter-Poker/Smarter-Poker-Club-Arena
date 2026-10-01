@@ -69,6 +69,15 @@ import {
   TOURNAMENT_CONTEXT_STATUSES,
 } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
+import type { HorseDecision } from '../../types.js';
+import {
+  admitHorsePhase8ReleaseAuthority,
+  HorseQualifiedAuthorityHolder,
+  type HorseAuthorityAdmission,
+  type HorseAuthorityReceipt,
+} from '../HorseQualifiedAuthority.js';
+import { liveHorsePhase8Safety } from '../HorsePhase8Safety.js';
+import type { Phase8Mode } from '../HorseTournamentPostflop.js';
 import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
@@ -148,6 +157,13 @@ export interface HorseDecisionWorkerDependencies {
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
   now(): number;
+  /**
+   * Admit the committed protected-release Phase 8 selection. Absent in an
+   * injected test runtime means no selection: every decision stays shadow.
+   */
+  admitPhase8Authority?(): HorseAuthorityAdmission;
+  /** The worker's live Phase 8 safety sentinel; a reason withdraws authority. */
+  phase8SafetyDisabledReason?(): string | null;
 }
 
 let ownedServicesStarted = false;
@@ -250,6 +266,8 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   journalLifecycle: journalHorseRequestLifecycle,
   startServices: startOwnedServices,
   stopServices: stopOwnedServices,
+  admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
+  phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
   decide: HorseLogic.decide.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
@@ -410,6 +428,10 @@ export class HorseDecisionWorkerRuntime {
   private started = false;
   private stopped = false;
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
+  /** Worker-owned Phase 8 authority. Admitted once from the committed release
+   * selection; never from a request. A new worker is a new epoch. */
+  private readonly phase8Authority = new HorseQualifiedAuthorityHolder();
+  private phase8AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -420,6 +442,7 @@ export class HorseDecisionWorkerRuntime {
   start(): Promise<HorseDecisionWorkerReadiness> {
     if (this.readyPromise) return this.readyPromise;
     this.started = true;
+    this.admitPhase8Authority();
     this.readyPromise = this.deps.startServices();
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -1384,6 +1407,65 @@ export class HorseDecisionWorkerRuntime {
     }
   }
 
+  private admitPhase8Authority(): void {
+    if (this.phase8AuthorityAdmitted) return;
+    this.phase8AuthorityAdmitted = true;
+    let admission: HorseAuthorityAdmission;
+    try {
+      admission = this.deps.admitPhase8Authority?.() ?? {
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      };
+    } catch {
+      admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+    }
+    this.phase8Authority.apply(admission);
+    noteFire(`phase8_authority_worker_${this.phase8Authority.currentState()}`);
+  }
+
+  /** A tripped safety sentinel is an explicit local withdrawal. */
+  private observePhase8Safety(): void {
+    let reason: string | null = null;
+    try {
+      reason = this.deps.phase8SafetyDisabledReason?.() ?? null;
+    } catch {
+      reason = 'safety_unreadable';
+    }
+    if (reason && this.phase8Authority.currentState() === 'usable') {
+      this.phase8Authority.withdraw(`safety_${reason}`);
+      noteFire('phase8_authority_worker_withdrawn');
+    }
+  }
+
+  /**
+   * Worker-owned admission: candidate mode comes from this worker's usable
+   * authority at the moment the request RUNS, never from the caller. A request
+   * queued before a withdrawal therefore runs in shadow. The caller may only
+   * turn Phase 8 off.
+   */
+  private phase8Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: Phase8Mode;
+    receipt: HorseAuthorityReceipt;
+  } {
+    this.admitPhase8Authority();
+    this.observePhase8Safety();
+    const receipt = this.phase8Authority.receipt();
+    if (request.opts?.phase8Postflop === 'off') return { mode: 'off', receipt };
+    return {
+      mode: this.phase8Authority.verdict(receipt, Date.now()) === 'usable' ? 'candidate' : 'shadow',
+      receipt,
+    };
+  }
+
+  /** Bind the admission receipt to the returned Phase 8 ledger. */
+  private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
+    if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
+    // A decision that tripped the sentinel withdraws authority now; its own
+    // receipt generation is then stale at the main scheduler's recheck.
+    this.observePhase8Safety();
+  }
+
   /** One decision at one governor scale; that scale is the one journaled beside it. */
   private atGovernorScale<T>(fn: () => T): { value: T; scale: number } {
     if (this.deps.atGovernorScale) return this.deps.atGovernorScale(fn);
@@ -1401,6 +1483,7 @@ export class HorseDecisionWorkerRuntime {
     );
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
+    const phase8 = this.phase8Admission(request);
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1412,6 +1495,7 @@ export class HorseDecisionWorkerRuntime {
         this.deps.captureDecisionEffects(() =>
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
+            phase8Postflop: phase8.mode,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
             observeMind: true,
@@ -1426,6 +1510,7 @@ export class HorseDecisionWorkerRuntime {
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
+    this.bindPhase8Authority(captured.value, phase8.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -1516,6 +1601,7 @@ export class HorseDecisionWorkerRuntime {
         rngAfter,
         computeMs,
         governorScale,
+        phase8Authority: this.phase8Authority.receipt(),
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -1579,6 +1665,9 @@ export class HorseDecisionWorkerRuntime {
       });
       return 'refused';
     }
+    // Deep work admits authority afresh when it runs: a withdrawal while it
+    // waited behind think time turns it back to shadow.
+    const phase8 = this.phase8Admission(request);
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -1597,6 +1686,7 @@ export class HorseDecisionWorkerRuntime {
             this.deps.captureDecisionEffects(() =>
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
+                phase8Postflop: phase8.mode,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -1612,6 +1702,7 @@ export class HorseDecisionWorkerRuntime {
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
+    this.bindPhase8Authority(decision, phase8.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -1651,6 +1742,7 @@ export class HorseDecisionWorkerRuntime {
       decision,
       computeMs,
       governorScale,
+      phase8Authority: this.phase8Authority.receipt(),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

@@ -118,7 +118,11 @@ describe('the gauge cannot drift', () => {
     ] as const;
     for (const [label, current, next] of stages) {
       expect(sweep.match(new RegExp(`\\b${label}`, 'g'))).toHaveLength(1);
-      expect(sweep).toContain(`this.eliminationSweepCursor.nextStage > ${current}`);
+      // The finish gate is written against the named FINISH_STAGE constant
+      // (2026-10-01, the refused-finish rewind reads the same name); the
+      // constant is pinned to 2 in aTransientRefusalIsNewsWhenItStopsBeingTransient.
+      const gate = label === 'finishStage:' ? 'FINISH_STAGE' : String(current);
+      expect(sweep).toContain(`this.eliminationSweepCursor.nextStage > ${gate}`);
       expect(sweep).toContain(`completedStage(${next})`);
     }
   });

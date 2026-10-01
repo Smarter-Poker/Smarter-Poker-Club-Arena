@@ -1,0 +1,9 @@
+# Accounting qualification isolates unsolicited maintenance
+
+PR5750 CI36935396855 accounting shard2 failed in commission-batch-after-ordinary_fallback when the real owner refused a NOWAIT lock on public.player_stats. The previous equivalent job110599469010 passed the same scene. The original failure artifacts do not identify the lock holder; autovacuum is a possible contributor, not an established historical cause. Earlier explicit test workers are joined before this scene.
+
+The disposable weekly-accounting cluster now disables unsolicited autovacuum, as its cron launches were already disabled, and asserts and retains both actual settings before loading the scene. Explicit concurrency tests and production NOWAIT admission remain unchanged. On a failed held-fee call, a bounded read-only observation retains surviving backends and relevant locks, then preserves the original failure. This later observation cannot identify a blocker that already exited.
+
+This correction addresses the fixture isolation and missing diagnostic evidence found while delivering the oldest Production Alerts incident. It changes no production financial function, timeout, balance or business schedule. Focused native owner-basis qualification and the existing required hosted suite must pass before release. The incident and backlog remain open until separately verified production repair and reconciliation.
+
+Local validation: the existing held-fee-owner-basis native phase passed with actual background settings off/off, 78 PASS results, unchanged before/after ordinary fallback economics, successful shutdown and verified allocation removal. The affected CI-wiring suite passed 653 tests, TypeScript compilation passed, and all 794 source pins matched. This is focused local qualification; hosted qualification, merge and production recovery remain separate. The test formatting correction preserves its original prefix and changes no native executable input.

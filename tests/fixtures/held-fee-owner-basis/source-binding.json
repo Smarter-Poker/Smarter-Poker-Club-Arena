@@ -9,8 +9,8 @@
     "tests/fixtures/held-fee-owner-basis/before.sql": "f5b7bdcd8f42f28e4a47e340a51154b68660c3979df3beb12d87299604310881",
     "tests/fixtures/held-fee-owner-basis/after.sql": "5d385b8489b8255bc04c723ea2f3a2ee8ba15278604ee9ef579c2fb24a3f7f56",
     "tests/fixtures/held-fee-owner-basis/production-owner-path.json": "2ed43c7b261fe76b47567891f3b1033b567d71d9e27fa03bbb99afd5b6ee249f",
-    "scripts/dev/qualify-held-fee-owner-basis.py": "5d43e1755d1f5a73604ad5d0f1fea427dc3878daed7630163dba4d8047d621f7",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
+    "scripts/dev/qualify-held-fee-owner-basis.py": "eea8f9de3d2ac24156120c695289e521823adf67f1ffc8ff5573e42309283a21",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql": "394bb56aaac8126e55f99907ff11b03f94dabd046eb16def0171a493396fa20d",
     "tests/fixtures/held-fee-owner-basis/member-lane-production.json": "b28cea6982d8321ed642afb40ce5c9f72dda11907fd3a2927cb9cd25d2f91d45",
@@ -41,5 +41,22 @@
   "capture_validation_migration": "supabase/migrations/20260930172029_legacy_fee_capture_reuses_transaction_owned_terminal_admissi.sql",
   "mystery_prefix_migration": "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql",
   "commission_batch_migration": "supabase/migrations/20260930233400_tournament_fee_commissions_batch_their_projection_writes.sql",
-  "commission_key_admission_migration": "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql"
+  "commission_key_admission_migration": "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql",
+  "productionAlertsFixtureIsolation20261001": {
+    "reason": "Disable unsolicited maintenance in disposable native clusters, assert and retain actual settings, capture bounded post-failure diagnostics, and preserve original failure. Prior lock holder remains unknown; production NOWAIT and explicit concurrency unchanged.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/dev/qualify-held-fee-owner-basis.py",
+        "previous": "5d43e1755d1f5a73604ad5d0f1fea427dc3878daed7630163dba4d8047d621f7",
+        "current": "eea8f9de3d2ac24156120c695289e521823adf67f1ffc8ff5573e42309283a21"
+      },
+      {
+        "section": "repository_files",
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "previous": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
+        "current": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e"
+      }
+    ]
+  }
 }

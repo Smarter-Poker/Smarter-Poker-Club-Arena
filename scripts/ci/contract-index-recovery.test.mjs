@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  cleanupStatement,
+  validateRecoveryPair,
+  RECOVERY_SNAPSHOTS,
   validRecoveryCutoff,
   recoveryRequest,
   recoveryStatement,
@@ -11,7 +14,12 @@ import {
   RECOVERY_INDEX,
   EXPECTED_DEFINITION,
 } from './contract-index-recovery.mjs';
-const request = { index: RECOVERY_INDEX, oid: '83342071', before: '2026-10-01T21:22:10Z' };
+const request = {
+  index: RECOVERY_INDEX,
+  oid: '83342071',
+  before: '2026-10-01T21:22:10Z',
+  transientOid: null,
+};
 const row = {
   observer_authorized: true,
   oid: request.oid,
@@ -102,10 +110,10 @@ test('old or unknown snapshots, prepared transactions and unknown observer refus
 });
 test('owning applier keeps bounded single recovery before unchanged migration body', () => {
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
-  assert.equal(source.split('client.query(recoveryStatement(recovery))').length - 1, 1);
+  assert.equal(source.split('sendOnce(recoveryStatement(recovery))').length - 1, 1);
   assert.ok(
     source.indexOf('validateRecoverySnapshots') <
-      source.indexOf('client.query(recoveryStatement(recovery))')
+      source.indexOf('sendOnce(recoveryStatement(recovery))')
   );
   assert.ok(source.includes("SET statement_timeout = '600s'"));
   assert.ok(source.includes('PREAMBLE_MINUTES_NEEDED = 12'));
@@ -146,4 +154,74 @@ test('real exact migration binds a complete explicit request and refuses missing
   assert.throws(() =>
     recoveryRequest(RECOVERY_FILE, sql + ' ', request.index, request.oid, request.before)
   );
+});
+
+test('exact interrupted pair alone permits cleanup; original and other indexes never do', () => {
+  const r = { ...request, transientOid: '83498459' };
+  const names = ['managed_game_contract_versions_game_id_id_idx_ccnew'];
+  const original = { ...row, no_transients: false, transient_names: names };
+  const transient = {
+    ...original,
+    oid: r.transientOid,
+    name: names[0],
+    definition: EXPECTED_DEFINITION.replace('game_id_id_idx ON', 'game_id_id_idx_ccnew ON'),
+  };
+  assert.equal(validateRecoveryPair([original], [transient], r).transient.oid, r.transientOid);
+  assert.equal(
+    cleanupStatement(r),
+    'DROP INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx_ccnew'
+  );
+  for (const bad of [
+    null,
+    request,
+    { ...r, transientOid: request.oid },
+    { ...r, transientOid: '0' },
+    { ...r, transientOid: '4294967296' },
+  ])
+    assert.throws(() => cleanupStatement(bad));
+  for (const rows of [
+    [],
+    [transient, transient],
+    [{ ...transient, oid: '83498460' }],
+    [{ ...transient, valid: true }],
+    [{ ...transient, ready: false }],
+    [{ ...transient, live: false }],
+    [{ ...transient, name: 'other' }],
+    [{ ...transient, no_builder: false }],
+    [{ ...transient, no_constraints: false }],
+    [{ ...transient, definition: EXPECTED_DEFINITION }],
+  ])
+    assert.throws(() => validateRecoveryPair([original], rows, r));
+  for (const names2 of [
+    [],
+    [...names, 'managed_game_contract_versions_game_id_id_idx_ccold'],
+    ['managed_game_contract_versions_game_id_id_idx_ccnew1'],
+  ])
+    assert.throws(() =>
+      validateRecoveryPair([{ ...original, transient_names: names2 }], [transient], r)
+    );
+  assert.throws(() => validateRecoveryPair([{ ...original, oid: '83342072' }], [transient], r));
+  assert.throws(() => validateRecoveryPair([original], [transient], request));
+  const sql = readFileSync(
+    new URL('../../supabase/migrations/' + RECOVERY_FILE, import.meta.url),
+    'utf8'
+  );
+  assert.deepEqual(
+    recoveryRequest(RECOVERY_FILE, sql, r.index, r.oid, r.before, r.transientOid),
+    r
+  );
+});
+test('current admission cannot filter readers using the historical failed-operation cutoff', () => {
+  assert.ok(RECOVERY_SNAPSHOTS.includes('xact_start <= statement_timestamp()'));
+  assert.ok(RECOVERY_SNAPSHOTS.includes('xact_start IS NULL'));
+  assert.ok(!RECOVERY_SNAPSHOTS.includes('$1'));
+  const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  assert.ok(source.includes('const deadline = performance.now() + 600000'));
+  assert.ok(source.includes('deadline - performance.now()'));
+  assert.equal(source.split('sendOnce(cleanupStatement(recovery))').length - 1, 1);
+  assert.ok(
+    source.indexOf('await freshAdmission(false)') <
+      source.indexOf('await sendOnce(recoveryStatement(recovery))')
+  );
+  assert.ok(source.includes('recoverySent ? EXIT_UNKNOWN : EXIT_REFUSED'));
 });

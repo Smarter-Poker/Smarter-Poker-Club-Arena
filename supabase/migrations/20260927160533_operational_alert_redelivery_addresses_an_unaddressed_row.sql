@@ -104,6 +104,13 @@
 --      direct-intake-prerequisites.sql, owner-notification-coexistence.sql);
 --      World Hub scripts/ci/probes/owner-operational-notification/provider-check.sql,
 --      scripts/ci/probes/owner-operational-notification/inputs/owner-notification-catalog-postimage.sql.
+--      Added to Club Arena main after this header was first written (#5675,
+--      re-checked 2026-10-01): tests/sql/diamond-concurrency-doors.sql (the
+--      fn_record_operational_alert @@PIN block and its line in the proof list
+--      at the foot) and tests/sql/diamond-concurrency-doors.manifest.json. They
+--      load their own captured recorder on an isolated cluster and stay green;
+--      after this install their REFRESH step (read every pin against
+--      production) must re-transport the recorder door to 4bab2581.
 --  (C) Qualification records and applied migrations (history, immutable):
 --      scripts/qualification/cash-pot-check-evidence.manifest.json,
 --      scripts/qualification/cash-pot-check-evidence.md,

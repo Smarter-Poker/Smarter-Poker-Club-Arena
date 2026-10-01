@@ -167,8 +167,29 @@ does four things:
 Evidence:
 [the arena belongs to the system](./evidence/diamond-phase-11/the-arena-belongs-to-the-system.md),
 which also lists every function, policy, trigger, job and client path that
-reads the arena's owner. One side effect is Dan's to weigh: `daniel@smarter.poker`
-no longer has Commander access, which it had only by owning the arena.
+reads the arena's owner. It had one side effect: `daniel@smarter.poker` had
+Club Commander access only because it owned the arena, so it lost it. The
+amendment below restores it the sanctioned way.
+
+**Amendment (2026-10-01): platform staff open Commander.** Commander already
+has a staff rule, and it is the platform's: `fn_is_platform_admin()`, which
+admits admin, superadmin and god. It already gates Commander's activity log,
+leads, rate limits, tournament points and player reputation. The two Commander
+access doors the World Hub reads, `get_commander_access_details` (its
+check-access route: the Commander orb, and "Host A Home Game") and
+`has_commander_access` (profile summaries), now admit platform staff by that
+same rule. The rule is read for the user asked about, because the World Hub
+asks as the server. The answer says why (`isPlatformStaff`). No venue row is
+made up, no subscription is invented, and no club, the arena least of all, gets
+an owner back. An ordinary player is still refused, and cannot borrow a staff
+account's answer by asking about it. Of the three platform staff accounts, the
+two admins already had Commander through their own venues, so only
+`daniel@smarter.poker` changes. Migration
+`20261001125101_platform_staff_open_commander`, rehearsed before and after in
+production (rolled back) and applied. The Commander app's own staff check
+(`smarter-poker-commander`, `pages/api/check-access.js`) reads venue staff rows
+and subscriptions only, and never admitted this account. Nothing there was
+lost, so nothing there changes.
 
 ### Ruling 23: the multi-table walk plays only where nothing is real
 

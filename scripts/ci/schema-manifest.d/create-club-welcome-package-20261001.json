@@ -1,5 +1,5 @@
 {
-  "_owner": "agent/codex/create-club-welcome-package-20261001 - migrations 20261001154709 core and 20261001212300 certification cleanup",
+  "_owner": "agent/codex/create-club-welcome-package-20261001 - migrations 20261001154709 core, 20261001212300 certification cleanup and 20261001224720 hot trigger",
   "tables": [
     "club_owner_creation_history",
     "club_welcome_entitlements",

@@ -197,8 +197,6 @@ BEGIN
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_offer_lifetime_first_club_welcome() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_offer_lifetime_first_club_welcome() TO service_role;
-CREATE TRIGGER trg_offer_lifetime_first_club_welcome AFTER INSERT ON public.club_creation_requests
-FOR EACH ROW EXECUTE FUNCTION public.fn_offer_lifetime_first_club_welcome();
 
 CREATE FUNCTION public.fn_get_club_welcome_package(p_club_id uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $function$
@@ -394,17 +392,6 @@ BEGIN
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_fence_welcome_package_schedule_spawn() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_fence_welcome_package_schedule_spawn() TO service_role;
-CREATE TRIGGER trg_fence_welcome_package_schedule_spawn
-BEFORE INSERT ON public.tournaments FOR EACH ROW
-EXECUTE FUNCTION public.fn_fence_welcome_package_schedule_spawn();
-
-INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
-VALUES (
-  'tournaments',
-  'trg_fence_welcome_package_schedule_spawn',
-  'Reviewed October 1: this owner-package fence moves no chips and changes no tournament value. It serializes a scheduled tournament insert with the package item and schedule rows, then refuses only when the exact preloaded schedule has been retired or disabled so reset cannot resurrect it.'
-)
-ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 
 CREATE FUNCTION public.fn_get_club_welcome_package_reset_impact(p_club_id uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $function$

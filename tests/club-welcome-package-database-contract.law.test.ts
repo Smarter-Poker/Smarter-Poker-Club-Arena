@@ -16,6 +16,13 @@ const cleanupSql = readFileSync(
   ),
   'utf8'
 );
+const hotTriggerSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001224720_welcome_schedule_spawn_trigger_runs_after_core.sql'
+  ),
+  'utf8'
+);
 
 describe('prospective lifetime-first club welcome package database contract', () => {
   it('installs the core atomically without cross-hot-table prelocks', () => {
@@ -27,13 +34,21 @@ describe('prospective lifetime-first club welcome package database contract', ()
       /LOCK TABLE (auth\.users|public\.(club_creation_requests|clubs|tournaments))/
     );
     expect(sql).not.toContain('fn_ca_prepare_unused_welcome_certification_fixture');
+    expect(sql).not.toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
+    expect(sql).not.toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(hotTriggerSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(hotTriggerSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
+    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).not.toMatch(/LOCK TABLE/);
     expect(cleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(cleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(cleanupSql).not.toMatch(/LOCK TABLE/);
   });
 
   it('mints entitlement only from a new creation receipt and never backfills', () => {
-    expect(sql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
     expect(sql).toContain('public.fn_club_membership_lock(NEW.user_id)');
     expect(sql).toContain('club_owner_creation_history');
     expect(sql).toContain("false,'historical'");
@@ -108,7 +123,7 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).toContain('SET active=false');
     expect(sql).toContain("'fn_remove_first_club_welcome_games'");
     expect(sql).toContain('WELCOME_RESET_SETTLEMENT_LANE_DOCTRINE_FAILED');
-    expect(sql).toContain('trg_fence_welcome_package_schedule_spawn');
+    expect(hotTriggerSql).toContain('trg_fence_welcome_package_schedule_spawn');
     expect(sql).toContain('t.schedule_id=ANY(v_schedules)');
     expect(sql).toContain("'hand_history',v_hands");
     expect(resetSql).not.toMatch(

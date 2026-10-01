@@ -873,12 +873,20 @@ test.describe('production Daily Missions certification', () => {
           (response) => response.url().includes('/rest/v1/rpc/reroll_daily_challenge'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
+        // The global wallet's authoritative Diamond read. Since #5679 (ruling 25,
+        // migration 20260930234500) `authenticated` holds no SELECT on
+        // profiles.diamonds, so every own-balance read goes through the owner
+        // door, ownProfile() in src/lib/ownProfile.ts:
+        // POST /rest/v1/rpc/get_my_full_profile?select=diamonds&id=eq.<uid>.
+        // DynamicWallet issues it on BALANCE_UPDATED, which the reroll emits.
+        // This pinned the retired GET /rest/v1/profiles read, which the client
+        // no longer sends, so it waited 60s for a request that cannot come.
         const globalBalanceRefresh = page.waitForResponse(
           (response) => {
             const url = new URL(response.url());
             return (
-              response.request().method() === 'GET' &&
-              url.pathname.endsWith('/rest/v1/profiles') &&
+              response.request().method() === 'POST' &&
+              url.pathname.endsWith('/rest/v1/rpc/get_my_full_profile') &&
               (url.searchParams.get('select') || '').includes('diamonds')
             );
           },

@@ -19,6 +19,8 @@ import {
 } from '../../utils/diamondWheelMotion';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { WheelPrizeCard } from './WheelPrizeCard';
+import { createWheelFrameWatch, wheelStartsLite } from './wheelLite';
+import { createSceneTelemetry } from '../games/sceneTelemetry';
 import styles from './DiamondWheel.module.css';
 
 export interface DiamondWheelProps {
@@ -199,6 +201,8 @@ export default function DiamondWheel({
   paused = false,
 }: DiamondWheelProps) {
   const frame = useRef<HTMLDivElement>(null);
+  // Decoration at rest on a phone that cannot carry it (wheelLite.ts).
+  const [startsLite] = useState(() => wheelStartsLite());
   // The frame's box decides the aperture (fit-viewport widens it) and the
   // pixel size of one wheel unit; every layer is placed from these numbers.
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -310,6 +314,15 @@ export default function DiamondWheel({
   useEffect(() => {
     let frameHandle: number | null = null;
     let previous = performance.now();
+    let watch = createWheelFrameWatch();
+    let watching: unknown = null;
+    // How real phones draw a spin, in the same anonymous summary the 3D scenes
+    // send: only spin frames count, so the idle drift never dilutes it. Tier 0
+    // is the full wheel, 1 is lite.
+    const telemetry = createSceneTelemetry('wheel', {
+      software: false,
+      startTier: startsLite ? 1 : 0,
+    });
     const animate = (now: number) => {
       frameHandle = null;
       // Use visible elapsed time, not a frame-count surrogate. Clamping each
@@ -323,6 +336,7 @@ export default function DiamondWheel({
       }
       const state = live.current;
       const run = animation.current;
+      if (!run || !state.spinning) telemetry.frame(now, false);
       let moving = false;
       if (run && state.spinning) {
         if (!run.sounded) {
@@ -332,6 +346,16 @@ export default function DiamondWheel({
           soundService.playSpinTicking(0, []);
         }
         run.elapsed += elapsed;
+        // Each spin is watched from its own first frame: a slow device turns
+        // the decoration off for the rest of the visit, never the spin.
+        if (watching !== run) {
+          watching = run;
+          watch = createWheelFrameWatch();
+        } else if (watch.frame(elapsed)) {
+          frame.current?.setAttribute('data-lite', '');
+          telemetry.tier(1);
+        }
+        telemetry.frame(now, true);
         const progress = Math.min(1, run.elapsed / run.duration);
         while (run.nextPeg < run.pegs.length && run.pegs[run.nextPeg] <= run.elapsed) {
           soundService.playSpinPeg(0.5 + (0.5 * run.nextPeg) / Math.max(1, run.pegs.length - 1));
@@ -432,13 +456,14 @@ export default function DiamondWheel({
     return () => {
       if (frameHandle !== null) cancelAnimationFrame(frameHandle);
       frameHandle = null;
+      telemetry.end();
       settleDrift();
       wake.current = () => {};
       document.removeEventListener('visibilitychange', visibility);
       intersection?.disconnect();
       media?.removeEventListener?.('change', reduced);
     };
-  }, [settleDrift, write]);
+  }, [settleDrift, write, startsLite]);
 
   // A released hold or an unpaused wheel needs a frame to notice.
   useEffect(() => {
@@ -497,6 +522,7 @@ export default function DiamondWheel({
       data-presentation={presentation}
       data-prize-scale={(presentation === 'cabinet' || assembled) && !upgraded ? 2 : 1}
       data-wheel-unit={unit ? unit.toFixed(4) : undefined}
+      data-lite={startsLite ? '' : undefined}
     >
       <div className={styles.aura} aria-hidden="true" />
       <div className={styles.stage} style={stageStyle} data-wheel-face aria-hidden="true">

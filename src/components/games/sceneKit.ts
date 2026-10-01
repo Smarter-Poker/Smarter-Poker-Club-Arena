@@ -163,6 +163,12 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
     renderer,
     scene,
     camera,
+    /** Whether the CPU draws this scene (a software rasteriser), for the telemetry. */
+    software,
+    /** The quality tier in force (0 best, FLOOR_TIER lowest), for the telemetry. */
+    get qualityTier() {
+      return governor.tier;
+    },
     /** Resize the canvas, keeping the governor's pixel ratio. */
     setSize(nextWidth: number, nextHeight: number) {
       size = { width: nextWidth, height: nextHeight };

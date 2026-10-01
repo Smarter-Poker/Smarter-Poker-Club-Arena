@@ -4601,9 +4601,9 @@ export class HorseLogic {
       (opts.phase7Utility ?? true) !== false &&
       gs.stateSchemaVersion === 1 &&
       isTournamentMode(gs) &&
-      // Phase 7 Round 1 never zips independently sampled boards into a fake
-      // joint deal. The existing audited multi-board layer remains authority
-      // until one shared-deck sampler is added in the later depth round.
+      // Phase 7 never zips independently sampled marginal boards into a fake
+      // joint deal. Multi-board utility consumes only the physical shared-deck
+      // acquisition in the tournament_utility node (Phase 7B).
       extraBoards.length === 0 &&
       trustedTournament?.schemaVersion === 1 &&
       trustedTournament.contextStatus === 'complete';
@@ -4675,12 +4675,7 @@ export class HorseLogic {
         const perBoardSplit: HiLoSplit | undefined = hiLoSplit
           ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
           : undefined;
-        const outcomes7: HorseEquityOutcomeCollector | undefined = captureOutcomes7
-          ? {
-              maxSamples: phase7OutcomeBudget(trustedTournament?.playersLeft),
-              samples: [],
-            }
-          : undefined;
+        // Marginal per-board draws are never Phase 7 outcome samples.
         const eb = simulateEquity(
           player.cards,
           b,
@@ -4691,10 +4686,9 @@ export class HorseLogic {
           useAdaptiveMC,
           perBoardSplit,
           oppReadsPerBoard,
-          outcomes7,
+          undefined,
           otherVisibleCards
         );
-        if (outcomes7) outcomeBoards7.push(outcomes7);
         boardEq36.push(eb);
         sum += eb;
         if (loAcc && perBoardSplit) {
@@ -4721,15 +4715,7 @@ export class HorseLogic {
         1,
         Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
       );
-      capturePhase7Equity(
-        gs,
-        player,
-        equity,
-        perBoardSamples7 * (extraBoards.length + 1),
-        bands,
-        useMind,
-        outcomeBoards7
-      );
+      capturePhase7Equity(gs, player, equity, perBoardSamples7, bands, useMind, outcomeBoards7);
     }
 
     // V36: multi-board facts. nBoards36 boards pay equally; a board hero

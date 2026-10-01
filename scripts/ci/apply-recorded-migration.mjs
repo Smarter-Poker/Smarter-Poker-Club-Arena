@@ -155,7 +155,7 @@ console.log(`[apply] ${file}`);
 console.log(`[apply]   version ${version}, slug ${slug}, ${Buffer.byteLength(sql)} bytes`);
 if (preamble.length > 0) {
   console.log(`[apply]   ${preamble.length} CREATE INDEX CONCURRENTLY statement(s) first, each on its own:`);
-  for (const ix of preamble) console.log(`[apply]     ${ix.name} ON public.${ix.table}`);
+  for (const ix of preamble) console.log(`[apply]     ${ix.name} ON ${ix.schema}.${ix.table}`);
 }
 console.log('[apply]   not present in schema_migrations; applying the migration as ONE transaction');
 
@@ -214,8 +214,8 @@ for (const ix of preamble) {
     const { rows } = await client.query(
       `SELECT i.indisvalid AND i.indisready AS valid FROM pg_index i
          JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relname = $1`,
-      [ix.name]
+        WHERE n.nspname = $1 AND c.relname = $2`,
+      [ix.schema, ix.name]
     );
     valid = rows.length === 1 && rows[0].valid === true;
   } catch (e) {
@@ -226,7 +226,7 @@ for (const ix of preamble) {
   }
   if (!valid) {
     await client.end().catch(() => {});
-    refused(`${ix.name} exists but is not VALID. DROP INDEX CONCURRENTLY IF EXISTS public.${ix.name}; then dispatch again. The transaction was NOT sent.`);
+    refused(`${ix.name} exists but is not VALID. DROP INDEX CONCURRENTLY IF EXISTS ${ix.schema}.${ix.name}; then dispatch again. The transaction was NOT sent.`);
   }
   console.log(`[apply]   ${ix.name} valid (${Date.now() - t0}ms)`);
 }

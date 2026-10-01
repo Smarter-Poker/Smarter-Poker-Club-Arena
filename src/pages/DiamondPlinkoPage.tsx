@@ -868,6 +868,9 @@ function DiamondPlinkoGame() {
           clubUuid={uuid}
           awardId={result.award_id ?? null}
           chips={result.payout_chips}
+          stakeChips={
+            result.diamonds_per_chip > 0 ? result.bet_diamonds / result.diamonds_per_chip : null
+          }
           detail={`${result.drops.length} Drops Completed.`}
           // The best bucket the batch landed in, lit in its own tint.
           game="plinko"

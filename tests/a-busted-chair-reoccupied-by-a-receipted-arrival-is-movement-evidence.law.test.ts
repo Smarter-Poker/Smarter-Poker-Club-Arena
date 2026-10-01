@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest';
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const FILE = '20260928165716_a_busted_chair_reoccupied_by_a_receipted_arrival_is_movement.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+const NEVER_DEALT = '20261001151056_a_table_that_never_dealt_is_moved_from_its_seated_entries.sql';
 const ORIGIN = readFileSync(
   join(MIGRATIONS, '20260926091645_a_receipted_chip_is_movement_evidence.sql'),
   'utf8'
@@ -136,6 +137,11 @@ describe('a busted chair reoccupied by a receipted arrival is movement evidence'
           'FUNCTION smarter_private.f06_movement_prior('
         )
       );
-    expect(later).toEqual([]);
+    // 20261001151056 (a table that never dealt) is the one successor, and it
+    // refuses to run unless the installed body is exactly this post-image.
+    expect(later).toEqual([NEVER_DEALT]);
+    expect(readFileSync(join(MIGRATIONS, NEVER_DEALT), 'utf8')).toContain(
+      `md5(p.prosrc) = '${POST_MD5}'`
+    );
   });
 });

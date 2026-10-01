@@ -17,6 +17,29 @@ const TX =
   'BEGIN;\nCREATE OR REPLACE FUNCTION public.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\nCOMMIT;\n';
 
 describe('the apply door accepts concurrent index builds before the transaction and nothing else', () => {
+  it('installs the merged mint supply indexes with settings in one bounded transaction', () => {
+    const sql = readFileSync(
+      'supabase/migrations/20260929130144_the_supply_check_reads_an_index_not_the_whole_ledger.sql',
+      'utf8'
+    );
+    const shape = splitConcurrentPreamble(sql);
+    expect(shape.ok).toBe(true);
+    if (!shape.ok) return;
+    expect(shape.indexes.map((i: { name: string }) => i.name)).toEqual([
+      'ca_mint_ledger_asset_created_net_idx',
+      'ca_mint_ledger_baseline_correction_idx',
+    ]);
+    expect(
+      shape.indexes.every((i: { statement: string }) =>
+        i.statement.includes('INCLUDE (action, amount)')
+      )
+    ).toBe(true);
+    expect(shape.body).toContain("SET LOCAL statement_timeout = '5s';");
+    expect(shape.body).toContain("SET LOCAL lock_timeout = '1s';");
+    expect(shape.body).toContain('ALTER TABLE public.ca_mint_ledger SET');
+    expect(shape.body.trim().endsWith('COMMIT;')).toBe(true);
+  });
+
   it('splits eight concurrent builds from the transaction, in file order', () => {
     const file = readFileSync(
       join(

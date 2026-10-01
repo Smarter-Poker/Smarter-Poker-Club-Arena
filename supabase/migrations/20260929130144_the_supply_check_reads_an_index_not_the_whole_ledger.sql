@@ -52,10 +52,9 @@
 -- replica were 541 ms plain and 622 ms concurrent, so the cost of CONCURRENTLY
 -- is negligible and the risk it removes is not.
 --
--- CREATE INDEX CONCURRENTLY cannot run inside a transaction block, so this file
--- cannot be shipped by .github/workflows/apply-merged-migration.yml, which
--- sends its file in one transaction. It is applied through an autocommit
--- session instead, and NEVER inside the :50-:03 UTC break window.
+-- The maintained apply-merged-migration.yml installer sends each concurrent
+-- index separately and validates it, then applies the settings transaction.
+-- Its existing time budget and :50-:03 UTC DDL refusal remain authoritative.
 
 -- (1) r and ra: the asset-scoped net-issuance sums become index-only.
 --     Column order (asset, created_at) serves both the bare asset filter and
@@ -86,6 +85,9 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS ca_mint_ledger_baseline_correction_idx
 --     fix. Scale factor 0 plus an absolute threshold is the same idiom already
 --     used on ca_hand_transfers (150000) and daily_challenge_progress_events
 --     (300000), scaled here to a much smaller table.
+BEGIN;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
 ALTER TABLE public.ca_mint_ledger SET (
   autovacuum_vacuum_scale_factor        = 0.0,
   autovacuum_vacuum_threshold           = 5000,
@@ -121,3 +123,4 @@ ALTER TABLE public.ca_mint_ledger SET (
 -- indisvalid matters: a CREATE INDEX CONCURRENTLY that fails leaves an INVALID
 -- index behind that the planner will not use, and counting it would let this
 -- migration certify a fix that is not there.
+COMMIT;

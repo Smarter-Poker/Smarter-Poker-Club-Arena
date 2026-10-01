@@ -5,12 +5,11 @@
 -- CLAUDE.md 10.9: the reasoning goes in this header, not just the SQL.
 -- Say what was wrong, what this changes, and what you measured. A
 -- migration whose header is its own filename is the next agent's mystery.
--- The core migration intentionally leaves both activation triggers detached.
--- Install the tournament fence first and the first-club offer second in this
--- atomic transaction, after the core has released every earlier schema/auth
--- lock. This prevents the auth -> tournaments cycle proven by production
--- installer run 36936895662 and keeps provisioning fail-closed until the
--- schedule fence is present.
+-- The core migration intentionally leaves all DDL on existing hot tables
+-- detached. This transaction touches only tournaments after the core has
+-- released every earlier schema/auth lock, preventing the auth -> tournaments
+-- cycle proven by production installer run 36936895662. First-club activation
+-- remains detached until the later clubs and request migrations are complete.
 BEGIN;
 SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
@@ -26,9 +25,5 @@ VALUES (
   'Reviewed October 1: this owner-package fence moves no chips and changes no tournament value. It serializes a scheduled tournament insert with the package item and schedule rows, then refuses only when the exact preloaded schedule has been retired or disabled so reset cannot resurrect it.'
 )
 ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
-
-CREATE TRIGGER trg_offer_lifetime_first_club_welcome
-AFTER INSERT ON public.club_creation_requests FOR EACH ROW
-EXECUTE FUNCTION public.fn_offer_lifetime_first_club_welcome();
 
 COMMIT;

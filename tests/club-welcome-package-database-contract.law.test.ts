@@ -23,6 +23,20 @@ const hotTriggerSql = readFileSync(
   ),
   'utf8'
 );
+const clubHistorySql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001232445_welcome_club_owner_history_runs_after_core.sql'
+  ),
+  'utf8'
+);
+const requestActivationSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001232452_welcome_request_activation_runs_last.sql'
+  ),
+  'utf8'
+);
 
 describe('prospective lifetime-first club welcome package database contract', () => {
   it('installs the core atomically without cross-hot-table prelocks', () => {
@@ -36,24 +50,50 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).not.toContain('fn_ca_prepare_unused_welcome_certification_fixture');
     expect(sql).not.toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
     expect(sql).not.toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(sql).not.toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
+    expect(sql).not.toContain('REFERENCES public.clubs');
+    expect(sql).not.toContain('REFERENCES public.club_creation_requests');
+    expect(sql).not.toMatch(
+      /INSERT INTO public\.club_owner_creation_history\s+\(owner_id,first_club_id,welcome_eligible,provenance,recorded_at\)/
+    );
     expect(hotTriggerSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(hotTriggerSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(hotTriggerSql).toContain("SET LOCAL lock_timeout = '15s';");
     expect(hotTriggerSql).toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
-    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).not.toContain('trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).not.toContain('trg_remember_club_owner_transfer');
     expect(hotTriggerSql).not.toMatch(/LOCK TABLE/);
+    expect(clubHistorySql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(clubHistorySql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(clubHistorySql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(clubHistorySql).toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
+    expect(clubHistorySql).toContain('ADD CONSTRAINT club_welcome_entitlements_club_fkey');
+    expect(clubHistorySql).not.toContain('trg_offer_lifetime_first_club_welcome');
+    expect(clubHistorySql).not.toContain('trg_fence_welcome_package_schedule_spawn');
+    expect(requestActivationSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(requestActivationSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(requestActivationSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(requestActivationSql).toContain(
+      'ADD CONSTRAINT club_welcome_entitlements_owner_request_fkey'
+    );
+    expect(requestActivationSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(requestActivationSql.indexOf('ADD CONSTRAINT')).toBeLessThan(
+      requestActivationSql.indexOf('CREATE TRIGGER')
+    );
+    expect(requestActivationSql).not.toContain('trg_fence_welcome_package_schedule_spawn');
+    expect(requestActivationSql).not.toContain('trg_remember_club_owner_transfer');
     expect(cleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(cleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(cleanupSql).not.toMatch(/LOCK TABLE/);
   });
 
   it('mints entitlement only from a new creation receipt and never backfills', () => {
-    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(requestActivationSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
     expect(sql).toContain('public.fn_club_membership_lock(NEW.user_id)');
     expect(sql).toContain('club_owner_creation_history');
     expect(sql).toContain("false,'historical'");
     expect(sql).toContain("true,'prospective'");
-    expect(sql).toContain('trg_remember_club_owner_transfer');
+    expect(clubHistorySql).toContain('trg_remember_club_owner_transfer');
     expect(sql).toContain(
       'public.fn_provision_first_club_welcome_package(NEW.club_id,NEW.request_id)'
     );

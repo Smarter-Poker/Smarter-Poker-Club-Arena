@@ -8239,7 +8239,7 @@ export class GameServer {
           );
           const idleTm = this.tournamentEngines.get(String(t.id));
           if (idleTm) {
-            idleTm.requestEliminationSweep('stalled_decided_survivor');
+            idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
           } else {
             this.launchDiscoveryJob(
               this.ensureTournamentManagerAdmission(
@@ -10226,7 +10226,7 @@ export class GameServer {
         if (seatFirstAction.kind === 'held') {
           this.noteDecidedEventHeld(id, String(t.name), liveStacks, seatFirstAction);
         } else if (claimedManager) {
-          claimedManager.requestEliminationSweep('seat_first_terminal_stack');
+          claimedManager.requestDecidedEliminationSweep('seat_first_terminal_stack');
         } else {
           await this.ensureTournamentManagerAdmission(
             id,

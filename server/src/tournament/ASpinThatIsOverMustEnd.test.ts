@@ -83,7 +83,7 @@ describe('all three conditions must hold', () => {
 
 describe('it settles, and never cancels', () => {
   it('hands the result to the manager that owns the immutable finish claim', () => {
-    expect(SWEEP).toContain("requestEliminationSweep('seat_first_terminal_stack')");
+    expect(SWEEP).toContain("requestDecidedEliminationSweep('seat_first_terminal_stack')");
     expect(SWEEP).toContain('await this.ensureTournamentManagerAdmission(');
     expect(SWEEP).not.toMatch(/\.update\(\{ status: 'COMPLETING' \}\)/);
   });

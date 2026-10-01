@@ -2308,8 +2308,10 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
     // A fresh scheduler entry starts in the general lanes; the next balance
-    // stage declares consolidation again if the field still needs it.
+    // stage declares consolidation again if the field still needs it, and the
+    // next deciding hand or decided recovery declares the field decided again.
     this.consolidationDeclared = false;
+    this.fieldDecidedDeclared = false;
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       diagnostics: Object.freeze({
@@ -2469,6 +2471,47 @@ export abstract class TournamentManagerBase {
     if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
   }
 
+  /** What this manager last told the scheduler about its field being decided. */
+  private fieldDecidedDeclared = false;
+
+  /**
+   * A DECIDED GAME IS NOT WAITING BEHIND LIVE ONES (2026-10-01).
+   *
+   * One table and at most one stack left with chips: nothing can be dealt
+   * again and the only work left is to record the busts and pay the winner.
+   * Every sweep this manager is owed from now on comes from the scheduler's
+   * decided lane (DECIDED_LANE_LEAVES_LIVE_SLOTS). Admission order only: the
+   * sweep is still the authority on every bust and on the finish.
+   */
+  protected declareFieldDecided(): void {
+    if (this.fieldDecidedDeclared) return;
+    if (tournamentEliminationScheduler.setDecided(this.tournamentId)) {
+      this.fieldDecidedDeclared = true;
+    }
+  }
+
+  /** The deciding hand's own final stacks, read without a database call. */
+  protected declareFieldDecidedIfOneStackRemains(
+    finalStacks: readonly { user_id: string; stack: number }[]
+  ): void {
+    if (this.fieldDecidedDeclared || this.tableEngines.size !== 1) return;
+    try {
+      const [engine] = this.tableEngines.values();
+      // The stacks must describe the whole table, not a partial bust list.
+      if (finalStacks.length < engine.getOccupiedSeatNumbers().length) return;
+    } catch {
+      return;
+    }
+    const live = finalStacks.filter((player) => Number(player.stack) > 0).length;
+    if (live <= 1) this.declareFieldDecided();
+  }
+
+  /** A recovery that has read the field as decided wakes it through the decided lane. */
+  requestDecidedEliminationSweep(reason: string): boolean {
+    this.declareFieldDecided();
+    return this.requestEliminationSweep(reason);
+  }
+
   /**
    * A field with a break or seat move outstanding is served from the
    * scheduler's consolidation lane until a balance stage finishes clean.
@@ -2533,6 +2576,7 @@ export abstract class TournamentManagerBase {
           this.holdSatelliteQualifierBoundary();
         }
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
+        this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }

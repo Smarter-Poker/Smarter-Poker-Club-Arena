@@ -17,3 +17,7 @@ Historical read-frame versions and historical receipt digest bytes remain readab
 Focused verification covers capture, duplicates, mixed legacy history, original-time bounds, import/export, persistence mapping and real PostgreSQL upserts, original FAST/DEEP frames, receipt validation and accepted controller execution. The existing connected Phase 7 test is extended rather than replaced with a second benchmark.
 
 Implementation, required checks, protected merge, migration installation/readback and live natural proof are recorded separately in the owning delivery checkpoint. This document is not a completion certificate. Multi-board tournament natural-use proof remains unobserved where no eligible production tournament table exists; no production wagers or configuration changes are made to manufacture it.
+
+## Installation concurrency correction
+
+The first installation attempt after PR #5672 merged refused its exact function-preimage check and rolled back before adding either column. A concurrent live fix had ordered both upsert batches by their primary keys, keeping input order for repeated keys, to prevent deadlocks. The unapplied migration and isolated preimage fixture are updated to preserve that ordering while adding the observation window. The preimage guard remains; this is not permission to overwrite later database changes. Exact installation and live proof remain pending in the delivery checkpoint.

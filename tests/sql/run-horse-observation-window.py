@@ -196,18 +196,54 @@ def main():
                 assert row['source_window'] == window(10, 20, 'partial')
                 passed.append(f'legacy recency overwrite 4-to-{changed} conservatively degrades coverage')
             for scoped in (False, True):
+                table = 'horse_mind_stats' + ('_scoped' if scoped else '')
+                values = [
+                    {'user_id': 'order-z', 'hands': 9, 'r_hands': 9, 'source_window': window(100, 100)},
+                    {'user_id': 'order-a', 'hands': 3, 'r_hands': 3, 'source_window': window(200, 200)},
+                    {'user_id': 'order-a', 'hands': 4, 'r_hands': 4, 'source_window': window(250, 250)},
+                    {'user_id': 'order-z', 'hands': 2, 'r_hands': 2, 'source_window': window(300, 300)},
+                ]
+                if scoped:
+                    for value, scope in zip(values, ['omaha:short', 'omaha:short', 'holdem:hu', 'omaha:short']):
+                        value['scope'] = scope
+                # Observe the executed insert sequence, not only an ORDER BY
+                # string. All fixture instrumentation rolls back in this call.
+                trace = sql('''BEGIN;
+                    CREATE TEMP TABLE visit_order(seq bigint GENERATED ALWAYS AS IDENTITY, actor text, scope text, hands int);
+                    CREATE FUNCTION pg_temp.capture_visit() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN INSERT INTO pg_temp.visit_order(actor,scope,hands)
+                      VALUES(NEW.user_id,to_jsonb(NEW)->>'scope',NEW.hands); RETURN NEW; END $$;
+                    CREATE TRIGGER capture_order BEFORE INSERT ON public.''' + table + '''
+                      FOR EACH ROW EXECUTE FUNCTION pg_temp.capture_visit();
+                    ''' + call(values, scoped) + '''
+                    SELECT jsonb_agg(jsonb_build_array(actor,scope,hands) ORDER BY seq) FROM pg_temp.visit_order;
+                    SELECT to_jsonb(t) FROM public.''' + table + " t WHERE user_id='order-z'; ROLLBACK;").splitlines()
+                expected = ([['order-a', 'holdem:hu', 4], ['order-a', 'omaha:short', 3],
+                             ['order-z', 'omaha:short', 9], ['order-z', 'omaha:short', 2]] if scoped else
+                            [['order-a', None, 3], ['order-a', None, 4],
+                             ['order-z', None, 9], ['order-z', None, 2]])
+                assert trace[0] == '4' and json.loads(trace[1]) == expected
+                final = json.loads(trace[2])
+                assert final['hands'] == 9 and final['source_window'] == window(100, 300)
+                if not scoped:
+                    assert final['r_hands'] == 2, 'same-key recency must use last input ordinal'
+                passed.append(table + ' executed key order and duplicate input ordinal preserve values')
+            for scoped in (False, True):
                 tag = 'scoped' if scoped else 'pooled'
                 def concurrent_write(i):
                     value = {'user_id': tag + '-race', 'hands': i + 1,
                              'source_window': window((i + 1) * 100, (i + 1) * 100)}
                     if scoped:
                         value['scope'] = 'holdem:hu'
-                    sql('BEGIN; ' + call([value], scoped) + ' SELECT pg_sleep(0.02); COMMIT;')
+                    other = {**value, 'user_id': tag + '-race-other'}
+                    batch = [value, other] if i % 2 == 0 else [other, value]
+                    sql('BEGIN; ' + call(batch, scoped) + ' SELECT pg_sleep(0.02); COMMIT;')
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                     list(pool.map(concurrent_write, range(8)))
-                row = read_row(tag + '-race', scoped)
-                assert row['hands'] == 8 and row['source_window'] == window(100, 800)
-                passed.append(tag + ' concurrent row updates preserve counter maximum and complete envelope')
+                for key in [tag + '-race', tag + '-race-other']:
+                    row = read_row(key, scoped)
+                    assert row['hands'] == 8 and row['source_window'] == window(100, 800)
+                passed.append(tag + ' reversed overlapping concurrent batches preserve maxima and envelopes')
             print(json.dumps({'status': 'passed', 'checks': passed, 'checkCount': len(passed),
                               'migration': str(MIGRATION.relative_to(ROOT)),
                               'migrationSHA256': hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),

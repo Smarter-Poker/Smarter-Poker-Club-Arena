@@ -1,4 +1,3 @@
--- Read-only installed RPC definitions, captured 2026-09-30 from configured Supabase project.
 CREATE OR REPLACE FUNCTION public.upsert_horse_mind_stats(rows jsonb)
  RETURNS integer
  LANGUAGE plpgsql
@@ -12,7 +11,12 @@ BEGIN
   IF rows IS NULL OR jsonb_typeof(rows) <> 'array' THEN
     RETURN 0;
   END IF;
-  FOR r IN SELECT * FROM jsonb_array_elements(rows) LOOP
+  -- KEY ORDER, INPUT ORDER WITHIN A KEY (2026-10-01). Concurrent flushes upserted
+  -- overlapping keys in the order each caller listed them and deadlocked on this
+  -- table. Every caller now takes the rows in key order; repeats of one key keep
+  -- their input order, so the value each column ends with is unchanged.
+  FOR r IN SELECT e.value FROM jsonb_array_elements(rows) WITH ORDINALITY AS e(value, ord)
+            ORDER BY e.value->>'user_id', e.ord LOOP
     CONTINUE WHEN r->>'user_id' IS NULL OR length(r->>'user_id') = 0 OR length(r->>'user_id') > 128;
     INSERT INTO public.horse_mind_stats AS t
       (user_id, hands, vpip, pfr, three_bet, aggr, passive, folds, faced_aggr,
@@ -99,7 +103,12 @@ AS $function$
 declare n integer := 0; r jsonb;
 begin
   if rows is null or jsonb_typeof(rows) <> 'array' then return 0; end if;
-  for r in select * from jsonb_array_elements(rows) loop
+  -- KEY ORDER, INPUT ORDER WITHIN A KEY (2026-10-01). Concurrent flushes upserted
+  -- overlapping keys in the order each caller listed them and deadlocked on this
+  -- table. Every caller now takes the rows in key order; repeats of one key keep
+  -- their input order, so the value each column ends with is unchanged.
+  for r in select e.value from jsonb_array_elements(rows) with ordinality as e(value, ord)
+            order by e.value->>'user_id', e.value->>'scope', e.ord loop
     continue when r->>'user_id' is null or length(r->>'user_id') = 0 or length(r->>'user_id') > 128;
     continue when r->>'scope' is null or (r->>'scope') !~ '^(holdem|omaha|sixplus):(hu|short|full)$';
     insert into public.horse_mind_stats_scoped as t

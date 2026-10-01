@@ -49,6 +49,7 @@ import { SpadeConsole } from '../components/console/SpadeConsole';
 import './AdminDashboardPage.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { DiamondSceneHealth } from '../components/admin/DiamondSceneHealth';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips } from '../utils/format';
@@ -2092,6 +2093,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
         </div>
       </div>
       <CardSlideAdoption />
+      <DiamondSceneHealth />
     </div>
   );
 }

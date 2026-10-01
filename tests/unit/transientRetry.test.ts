@@ -119,7 +119,7 @@ describe('certify-club-create routes its retirement through the retry', () => {
 
   it('retires each fixture club inside retryTransient, on the sanctioned door, mapping the returned error', () => {
     expect(source).toContain("import { retryTransient } from './transient-retry.mjs'");
-    const door = source.indexOf("admin.rpc('fn_ca_retire_certification_club'");
+    const door = source.indexOf("admin.rpc('fn_ca_retire_welcome_certification_club'");
     expect(door).toBeGreaterThan(-1);
     const wrapper = source.lastIndexOf('retryTransient(', door);
     expect(wrapper).toBeGreaterThan(-1);

@@ -315,10 +315,11 @@ try {
   // warned "Fixture Hard Delete Skipped" and left a club behind holding its
   // 100,000-chip opening grant: 15 clubs, 1,300,000 chips.
   //
-  // fn_ca_retire_certification_club is the sanctioned door. It proves the club
-  // is a fixture, retires its chips to the Mint with a declared journal row,
-  // and removes it through the maintenance path that archives every journal row
-  // it touches. A failure here is now loud: a leaked fixture is a real defect.
+  // The welcome coordinator proves and removes only unused package-owned games,
+  // then invokes fn_ca_retire_certification_club in the same transaction. The
+  // long-standing retirement door still proves the club, retires its chips to
+  // the Mint with a declared journal row, and archives every journal row it
+  // touches. A failure here is loud: a leaked fixture is a real defect.
   if (clubIds.length) {
     const { error: retireError } = await admin
       .from('clubs')
@@ -335,7 +336,7 @@ try {
       // is never retried.
       const { data, error } = await retryTransient(
         () =>
-          admin.rpc('fn_ca_retire_certification_club', {
+          admin.rpc('fn_ca_retire_welcome_certification_club', {
             p_club_id: clubId,
             p_reason: 'cert-cleanup',
           }),

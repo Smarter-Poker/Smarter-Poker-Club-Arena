@@ -442,7 +442,7 @@ describe('post-deploy production account', () => {
           clubReads === 1 ? [{ id: clubId, name: 'Crest Cert 123456789', owner_id: USER_ID }] : []
         );
       }
-      if (url.includes('/rest/v1/rpc/fn_ca_retire_certification_club')) {
+      if (url.includes('/rest/v1/rpc/fn_ca_retire_welcome_certification_club')) {
         return Response.json({ success: true, chips_retired: 100000 });
       }
       return new Response('unexpected request', { status: 500 });
@@ -453,7 +453,7 @@ describe('post-deploy production account', () => {
       retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
     ).resolves.toBe(1);
     const retirement = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes('/rest/v1/rpc/fn_ca_retire_certification_club')
+      String(input).includes('/rest/v1/rpc/fn_ca_retire_welcome_certification_club')
     );
     expect(JSON.parse(String(retirement?.[1]?.body))).toEqual({
       p_club_id: clubId,
@@ -665,7 +665,7 @@ describe('a certification fixture that leaked must not wedge the next certificat
         calls.push('clubs-read');
         return Response.json([...owned.values()].map((club) => ({ ...club, owner_id: USER_ID })));
       }
-      if (url.includes('/rpc/fn_ca_retire_certification_club')) {
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
         calls.push('retire');
         const body = JSON.parse(String(init?.body));
         retireBodies.push(body);

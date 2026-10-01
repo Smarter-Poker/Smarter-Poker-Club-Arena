@@ -85,6 +85,10 @@ import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
+import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
+import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
+import type { LightningLease } from './lightning/LightningHandHost.js';
+import type { ActionEngine } from './handlers/action.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -3271,8 +3275,24 @@ export class GameServer {
    * 'off' - none today. A worker in 'form' mode refuses to run until a
    * dealing host exists. See src/lightning/LightningSupervisor.ts.
    */
+  /**
+   * Lightning Phase 6 (2026-09-27): the hands this process deals across
+   * anchor tables, by room (pool_session_id), and the hosting that builds a
+   * LightningHandHost for each hand a 'form' worker forms. Settlement fences
+   * on the host table's lease, which is only ever this process's own engine
+   * lease (lightningLeaseFor). Dark: no Cluster is Lightning-enabled and
+   * worker_mode defaults to 'off'.
+   */
+  readonly lightningRooms = new LightningRegistry();
+  private lightningHosting = new LightningHosting({
+    registry: this.lightningRooms,
+    backend: createSupabaseLightningHandBackend(),
+    hub: tableStateHub,
+    leaseFor: (hostTableId) => this.lightningLeaseFor(hostTableId),
+  });
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
+    hosting: this.lightningHosting,
   });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
@@ -10704,6 +10724,22 @@ export class GameServer {
         reportError(err, 'GameServer.lightning_presence_report_failed');
       }
     }
+    // Players watching from their own Lightning room (pool_session_id).
+    yield* this.lightningRooms.presenceReports();
+  }
+
+  /**
+   * The verified cash lease this process holds on a Lightning host table (the
+   * Cluster's front table), or null. A hand is dealt and settled only under
+   * it: its loss abandons the hand before any chip moves.
+   */
+  private lightningLeaseFor(hostTableId: string): LightningLease | null {
+    const engine = this.tableEngines.get(hostTableId);
+    if (!engine || !engine.isRunning() || !engine.hasCurrentEngineLeaseAuthority()) return null;
+    const authority = engine.getEngineLeaseAuthority();
+    if (!authority || authority.scope !== 'cash' || !authority.verified || !authority.generation)
+      return null;
+    return { instance: INSTANCE_ID, generation: authority.generation };
   }
 
   /**
@@ -11025,6 +11061,21 @@ export class GameServer {
    */
   getTableEngine(tableId: string): ServerTableEngine | undefined {
     return this.tableEngines.get(tableId);
+  }
+
+  /**
+   * POST /action's engine: the table engine, or - when the id is a Lightning
+   * pool_session_id - the seat proxy that routes to the hand being dealt in
+   * that room (Lightning Phase 6). getTableEngine keeps its ServerTableEngine
+   * type for its ~850 engine-only callers.
+   */
+  getActionEngine(tableId: string): ActionEngine | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /** Is this id a table engine here, or a Lightning room this process serves? */
+  hasTableOrLightningRoom(tableId: string): boolean {
+    return this.tableEngines.has(tableId) || this.lightningRooms.isRoom(tableId);
   }
 
   /**

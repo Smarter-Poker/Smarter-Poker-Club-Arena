@@ -87,6 +87,8 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleMetrics>[1]['gameServer'] & {
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
+    /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
+    getActionEngine?: GameServer['getActionEngine'];
   };
 
 export interface RouterDeps {
@@ -499,7 +501,16 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     // State-mutating routes — handlers/*.ts (Phase U3.2 + U3.3).
     // ─────────────────────────────────────────────────────────────────────────
-    if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
+    if (method === 'POST' && url === '/action')
+      return handleAction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getActionEngine
+              ? gameServer.getActionEngine(tableId)
+              : gameServer.getTableEngine(tableId),
+        },
+      });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
     /**
      * ROUTED 2026-08-28. `handleRejectRebuy` was imported at the top of this

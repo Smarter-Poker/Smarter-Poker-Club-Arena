@@ -38,6 +38,7 @@ import { LightningPresence, type PresenceSource } from './LightningPresence.js';
 import { LightningClusterWorker, type LightningWorkerLogger } from './LightningClusterWorker.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
+import type { LightningHosting } from './LightningRegistry.js';
 
 export interface LightningSupervisorDeps {
   /** This process's anchor-table presence (GameServer's engines). */
@@ -49,6 +50,12 @@ export interface LightningSupervisorDeps {
   logger?: LightningWorkerLogger;
   frozen?: () => boolean;
   now?: () => Date;
+  /**
+   * The dealing host (Lightning Phase 6). Without it a 'form' worker refuses
+   * to form. Every unsettled hand of a Cluster whose worker stops - leadership
+   * lost, shutdown, the Cluster no longer qualifying - is abandoned through it.
+   */
+  hosting?: LightningHosting;
   /** Injected for tests; the real worker otherwise. */
   createWorker?: (clusterId: string, config: LightningConfig) => LightningClusterWorker;
 }
@@ -223,6 +230,7 @@ export class LightningSupervisor {
         `[LightningSupervisor] ${clusterId} no longer qualifies - stopping its worker`
       );
       await worker.stop();
+      await this.deps.hosting?.abortCluster(clusterId, 'worker_stopped');
     }
     if (!this.running || generation !== this.generation) return;
 
@@ -242,20 +250,37 @@ export class LightningSupervisor {
 
   private createWorker(clusterId: string, config: LightningConfig): LightningClusterWorker {
     if (this.deps.createWorker) return this.deps.createWorker(clusterId, config);
-    return new LightningClusterWorker(clusterId, config, {
+    const hosting = this.deps.hosting;
+    const worker: LightningClusterWorker = new LightningClusterWorker(clusterId, config, {
       rpc: this.rpc,
       presence: this.presence,
       metrics: this.metrics,
       logger: this.logger,
       frozen: this.frozen,
       now: this.deps.now,
+      ...(hosting
+        ? {
+            startHand: (hand) => {
+              hosting.startHand(hand, worker.currentConfig, () => worker.wake());
+            },
+            hasInstance: (id) => hosting.hasInstance(id),
+            onClusterFrozen: (id) => {
+              if (this.workers.get(id) === worker) this.workers.delete(id);
+              this.metrics.setWorkers(this.workers.size);
+              void worker.stop();
+            },
+          }
+        : {}),
     });
+    return worker;
   }
 
   private async stopAllWorkers(): Promise<void> {
     const workers = [...this.workers.values()];
     this.workers.clear();
     await Promise.allSettled(workers.map((w) => w.stop()));
+    // Leadership is gone: no hand this process formed may be settled under it.
+    await this.deps.hosting?.abortAll('leadership_lost');
     this.metrics.setWorkers(0);
   }
 }

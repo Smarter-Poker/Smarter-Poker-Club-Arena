@@ -51,6 +51,27 @@ export interface LightningRegistryDeps {
   closeRoom?(roomId: string, reason: string): void;
   /** The pool session's owner and Cluster (presence attribution). */
   roomOwner?(roomId: string): Promise<{ playerId: string; clusterId: string } | null>;
+  /** `cash_games.cluster_mode` of a Cluster: why a room ended, for its close reason. */
+  clusterMode?(clusterId: string): Promise<string | null>;
+}
+
+/** The close reason of a room whose player left (or was cashed out of) the pool. */
+export const LIGHTNING_SESSION_ENDED_REASON = 'Your Lightning Session Has Ended';
+/**
+ * The close reason of a room whose Cluster went back to MUST MOVE (Lightning
+ * Phase 7): the pool is gone, and the player's seat is at their own table.
+ */
+export const LIGHTNING_HAS_ENDED_REASON = 'Lightning Has Ended';
+
+export async function lightningClusterMode(clusterId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('cash_games')
+    .select('cluster_mode')
+    .eq('id', clusterId)
+    .maybeSingle();
+  if (error) throw new Error(`cash_games cluster_mode read failed: ${error.message}`);
+  const mode = (data as { cluster_mode?: unknown } | null)?.cluster_mode;
+  return typeof mode === 'string' ? mode : null;
 }
 
 const REFUSED: TableConnectionAccess = {
@@ -95,10 +116,12 @@ export class LightningRegistry {
   ) => Promise<{ playerId: string; clusterId: string } | null>;
   private closeRoom: ((roomId: string, reason: string) => void) | null;
   private sweeping: Promise<number> | null = null;
+  private readonly clusterMode: (clusterId: string) => Promise<string | null>;
 
   constructor(deps: LightningRegistryDeps = {}) {
     this.viewAccess = deps.viewAccess ?? lightningHandViewAccess;
     this.roomOwner = deps.roomOwner ?? lightningRoomOwner;
+    this.clusterMode = deps.clusterMode ?? lightningClusterMode;
     this.closeRoom = deps.closeRoom ?? null;
   }
 
@@ -261,6 +284,13 @@ export class LightningRegistry {
    * TABLE_NOT_FOUND (mux), which the client reads as "this session is over".
    * Only a room with sockets and no hand is asked; a check that cannot run
    * leaves the room as it is. True when the room was closed.
+   *
+   * THE REASON SAYS WHICH ENDING (Lightning Phase 7). A room whose Cluster is
+   * back in MUST MOVE says "Lightning Has Ended"; any other ended session
+   * keeps "Your Lightning Session Has Ended". The client does not trust the
+   * words (the mux replaces them with a code): it asks fn_lightning_my_session,
+   * which names the seat to go back to. A mode that cannot be read is the
+   * ordinary ending: the room is closed all the same.
    */
   private async checkEndedRoom(roomId: string): Promise<boolean> {
     const info = this.rooms.get(roomId);
@@ -272,14 +302,29 @@ export class LightningRegistry {
       return false;
     }
     if (ok || this.hostByRoom.has(roomId) || this.rooms.get(roomId) !== info) return false;
+    const reason = await this.endedReason(roomId, info.clusterId);
+    // Re-checked after the await: a room taken by a new hand is not closed.
+    if (this.hostByRoom.has(roomId) || this.rooms.get(roomId) !== info) return false;
     this.rooms.delete(roomId);
     this.proxies.delete(roomId);
     try {
-      this.closeRoom?.(roomId, 'Your Lightning Session Has Ended');
+      this.closeRoom?.(roomId, reason);
     } catch {
       /* the transport must never take the registry down */
     }
     return true;
+  }
+
+  private async endedReason(roomId: string, clusterId: string | null): Promise<string> {
+    try {
+      const cluster = clusterId ?? (await this.roomOwner(roomId))?.clusterId ?? null;
+      if (!cluster) return LIGHTNING_SESSION_ENDED_REASON;
+      return (await this.clusterMode(cluster)) === 'must_move'
+        ? LIGHTNING_HAS_ENDED_REASON
+        : LIGHTNING_SESSION_ENDED_REASON;
+    } catch {
+      return LIGHTNING_SESSION_ENDED_REASON;
+    }
   }
 
   /**

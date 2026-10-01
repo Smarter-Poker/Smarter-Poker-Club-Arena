@@ -26,6 +26,15 @@
  * host still refuses 'form' outright and calls nothing - a formed hand with
  * no dealer would sit until reaped, holding its players out of every hand.
  *
+ * DRAINING (Lightning Phase 7, 2026-10-02). A Cluster in `pending_off` is on
+ * its way back to MUST MOVE: the database refuses to form, and settles every
+ * hand already in the air. Its worker keeps running but DRAINS - each pass
+ * calls nothing at all (no matcher, no match_and_form), and says once per
+ * keepalive interval that it is draining. The hands in the air are not the
+ * worker's: their hosts deal them to settlement and keep their instances
+ * alive on their own clock. A Cluster that turns back to `lightning` (the
+ * conversion aborted) resumes forming on the next pass.
+ *
  * TIMERS. One setTimeout at a time, armed only after the previous pass has
  * finished (no overlap, no pile-up behind a slow database), unref'd so it
  * never holds the process open, and cleared by stop(), which also waits for a
@@ -117,6 +126,9 @@ export class LightningClusterWorker {
   /** The request id of a forming pass whose outcome is unknown: retried as-is. */
   private pendingRequestId: string | null = null;
   private wakeRequested = false;
+  /** `pending_off`: form nothing, call nothing; the hands in the air settle. */
+  private draining = false;
+  private lastDrainLogAtMs = 0;
 
   constructor(
     readonly clusterId: string,
@@ -144,6 +156,26 @@ export class LightningClusterWorker {
 
   get passCount(): number {
     return this.passes;
+  }
+
+  get isDraining(): boolean {
+    return this.draining;
+  }
+
+  /**
+   * The supervisor's word on the Cluster's mode: `pending_off` drains,
+   * `lightning` forms. Takes effect from the next pass; a pass already in
+   * flight finishes (and the database refuses its formation anyway).
+   */
+  setDraining(draining: boolean): void {
+    if (draining === this.draining) return;
+    this.draining = draining;
+    this.lastDrainLogAtMs = 0;
+    this.logger.log(
+      draining
+        ? `[Lightning:${this.clusterId}] pending_off - forming stopped; hands in the air play on to settlement`
+        : `[Lightning:${this.clusterId}] back to lightning - forming resumes`
+    );
   }
 
   /** Arm the first pass. Idempotent; a stopped worker stays stopped. */
@@ -224,6 +256,8 @@ export class LightningClusterWorker {
    */
   wake(): void {
     if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
+    // A draining Cluster forms nothing, so a freed player is no reason to run.
+    if (this.draining) return;
     if (this.inFlight) {
       this.wakeRequested = true;
       return;
@@ -245,6 +279,7 @@ export class LightningClusterWorker {
   private async runPass(): Promise<LightningWorkerPassResult> {
     const mode = this.config.workerMode;
     if (mode === 'off') return { outcome: 'off' };
+    if (this.draining) return this.drainPass();
     if (mode === 'form' && this.deps.startHand) return this.formPass();
     if (mode === 'form') {
       if (this.failureLog.shouldLog('form')) {
@@ -308,6 +343,21 @@ export class LightningClusterWorker {
     this.metrics.recordSummary(this.clusterId, summary);
     this.maybeLogSummary(summary, disconnected.length);
     return { outcome: 'matched', summary, disconnected: disconnected.length };
+  }
+
+  /**
+   * A draining pass: no I/O at all. The keepalive line says, at most once per
+   * keepalive interval, that the worker is alive and why it is not forming.
+   */
+  private drainPass(): LightningWorkerPassResult {
+    const nowMs = this.now().getTime();
+    if (nowMs - this.lastDrainLogAtMs >= this.config.keepaliveIntervalMs) {
+      this.lastDrainLogAtMs = nowMs;
+      this.logger.log(
+        `[Lightning:${this.clusterId}] draining (pending_off): forming nothing until the Cluster is MUST MOVE`
+      );
+    }
+    return { outcome: 'skipped', reason: 'pending_off' };
   }
 
   /** One forming pass: match_and_form, then a host per formed hand. */

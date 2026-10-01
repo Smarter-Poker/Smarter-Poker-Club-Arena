@@ -368,6 +368,7 @@ describe('route decision and the pool-session registry', () => {
       anchorTableId: null,
       seatNumber: null,
       occupancyId: null,
+      seatTableId: null,
     });
     expect(parseLightningMySession(null).poolSessionId).toBeNull();
     expect(parseLightningMySession({ pool_session_id: 'not-a-uuid' }).poolSessionId).toBeNull();

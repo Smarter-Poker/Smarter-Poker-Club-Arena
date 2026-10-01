@@ -1920,12 +1920,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       ),
     ] as const;
     this.setLoopPhase('load_next_hand_inputs');
+    const haltedBeforeRead = this.dealingHaltLock;
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
     const [seats, rake, halt] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
     if (rake.status === 'rejected') throw rake.reason;
     if (halt.status === 'rejected') throw halt.reason;
+    /* A HALT THAT LIFTED IN THIS READ GETS A ROSTER READ AFTER IT (Lightning
+       Phase 7, 2026-10-02). LIGHTNING -> MUST_MOVE clears the halt only after
+       every Lightning hand has settled, and those settlements moved chips on
+       this table's anchor seats while it stood halted. The roster and the
+       halt are separate round trips sent side by side, so the halt can be
+       answered cleared while the roster beside it was answered before the
+       last settlement committed - and the first hand back would be dealt on
+       stacks the database no longer holds. When this read is the one that
+       saw the lift, the seats are read once more, sent after the lift was
+       observed, so they include every settlement the lift waited for. Costs
+       one extra read per lift and nothing on any other hand. */
+    if (haltedBeforeRead && !this.dealingHaltLock) {
+      return await this.withStepBudget(
+        'load_seats_after_halt_lift',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        loadSeatedPlayers(this.tableId)
+      );
+    }
     return seats.value;
   }
 

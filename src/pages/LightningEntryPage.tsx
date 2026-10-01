@@ -13,6 +13,10 @@
  *     database moves a player who buys in at a Lightning Cluster into its pool,
  *     and the table view carries that tab on to the pool-session room.
  *
+ *   - LIGHTNING PHASE 7: the Cluster is back in MUST MOVE and the caller
+ *     already holds a seat in it. Their table is offered (VIEW GAME), never a
+ *     second join; the player goes there by the button (CLAUDE.md 10.6).
+ *
  * There is no table list and no seat choice on this page: a Lightning player
  * never picks either.
  */
@@ -32,6 +36,12 @@ import {
 } from '../lightning/lightningSession';
 import { LIGHTNING_NEXT_HAND_NOTICE_MS } from '../lightning/lightningHand';
 import { clusterModeDisplay } from '../lightning/lightningLobby';
+import {
+  LIGHTNING_ENDED_EYEBROW,
+  LIGHTNING_ENDED_TEXT,
+  LIGHTNING_RETURN_LABEL,
+  lightningReturnPath,
+} from '../lightning/lightningReversion';
 import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { warmTable } from '../services/tableWarmup';
 import { isUUID } from '../utils/clubIdResolver';
@@ -168,6 +178,26 @@ export default function LightningEntryPage() {
   }
 
   const { meta, decision } = phase;
+  if (decision.kind === 'seat') {
+    const seatTableId = decision.seatTableId;
+    return (
+      <div className="lightning-entry" data-testid="lightning-entry">
+        <EmptyState
+          eyebrow={LIGHTNING_ENDED_EYEBROW}
+          title={meta?.name ?? 'Lightning'}
+          description={LIGHTNING_ENDED_TEXT}
+          action={{
+            label: LIGHTNING_RETURN_LABEL,
+            onClick: () => {
+              warmTable(seatTableId);
+              navigate(lightningReturnPath(seatTableId));
+            },
+          }}
+          secondaryAction={{ label: 'Return To Lobby', onClick: () => navigate('/') }}
+        />
+      </div>
+    );
+  }
   const joinLabel = decision.kind === 'entry' ? decision.joinLabel : 'Join Game';
   const lightning = decision.kind === 'entry' && decision.lightning;
   const stakes =

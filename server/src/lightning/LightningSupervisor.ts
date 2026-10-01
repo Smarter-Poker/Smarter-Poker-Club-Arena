@@ -24,6 +24,17 @@
  * are running keep running, none is started); a config that cannot be read
  * or is not deployed is `off`, so its Cluster gets no worker - and a Cluster
  * whose config turns `off` loses the one it had.
+ *
+ * ON THE WAY OUT (Lightning Phase 7, 2026-10-02). LIGHTNING -> MUST_MOVE
+ * passes through `pending_off`: the database refuses to form a new hand and
+ * still settles the ones in the air. Discovery therefore finds `pending_off`
+ * Clusters as well, and their worker is DRAINING: it calls no matcher and
+ * forms nothing, while every hand already dealt plays on to settlement under
+ * its own host (keepalives included) - a Cluster that merely stopped
+ * qualifying would instead have its hands abandoned. When the commit sets
+ * `must_move` the Cluster leaves discovery, its worker stops, and the
+ * ended-room sweep is run at once so every room it held closes with
+ * "Lightning Has Ended" instead of up to a sweep interval later.
  */
 import { supabase } from '../services/supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -44,8 +55,12 @@ import { lightningFrontTable } from '../services/supabase/lightningAnchor.js';
 export interface LightningSupervisorDeps {
   /** This process's anchor-table presence (GameServer's engines). */
   presenceSource: PresenceSource;
-  /** Clusters passing the cash_games filter. Defaults to the one select. */
-  discover?: () => Promise<string[]>;
+  /**
+   * Clusters passing the cash_games filter. Defaults to the one select. A
+   * bare id is a Cluster in `lightning`; `{ draining: true }` is one in
+   * `pending_off`, on its way back to MUST MOVE.
+   */
+  discover?: () => Promise<Array<string | LightningDiscoveredCluster>>;
   rpc?: LightningRpcClient;
   metrics?: LightningMetrics;
   logger?: LightningWorkerLogger;
@@ -68,22 +83,59 @@ export interface LightningSupervisorDeps {
   frontTable?: (clusterId: string) => Promise<string | null>;
 }
 
+/** One Cluster discovery found, and whether it is on its way out of Lightning. */
+export interface LightningDiscoveredCluster {
+  clusterId: string;
+  /** `pending_off`: no new hand forms; the hands in the air settle. */
+  draining: boolean;
+}
+
+/** The Cluster modes that hold a worker: running, and draining on the way out. */
+export const LIGHTNING_WORKER_CLUSTER_MODES = ['lightning', 'pending_off'] as const;
+
 /** How often ended Lightning rooms are looked for (their sockets closed). */
 export const LIGHTNING_ROOM_SWEEP_INTERVAL_MS = 5_000;
 /** How long a Cluster's front table id is trusted before it is read again. */
 const FRONT_TABLE_TTL_MS = 30_000;
 
-/** The one discovery read: Clusters in Lightning mode with Lightning enabled. */
-export async function discoverLightningClusters(): Promise<string[]> {
+/**
+ * The one discovery read: Clusters in Lightning mode, or draining out of it
+ * (`pending_off`), with Lightning enabled.
+ */
+export async function discoverLightningClusters(): Promise<LightningDiscoveredCluster[]> {
   const { data, error } = await supabase
     .from('cash_games')
-    .select('id')
-    .eq('cluster_mode', 'lightning')
+    .select('id, cluster_mode')
+    .in('cluster_mode', [...LIGHTNING_WORKER_CLUSTER_MODES])
     .eq('lightning_enabled', true);
   if (error) throw error;
-  return (data ?? [])
-    .map((row) => (row as { id?: unknown }).id)
-    .filter((id): id is string => isUuid(id));
+  return parseDiscoveredClusters(data);
+}
+
+/** The discovery rows, read defensively: an unknown mode is no Cluster at all. */
+export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredCluster[] {
+  const out: LightningDiscoveredCluster[] = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const r = row as { id?: unknown; cluster_mode?: unknown } | null;
+    if (!r || !isUuid(r.id)) continue;
+    if (r.cluster_mode !== 'lightning' && r.cluster_mode !== 'pending_off') continue;
+    out.push({ clusterId: r.id, draining: r.cluster_mode === 'pending_off' });
+  }
+  return out;
+}
+
+function normalizeDiscovered(
+  found: Array<string | LightningDiscoveredCluster>
+): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const item of found) {
+    if (typeof item === 'string') {
+      if (isUuid(item)) out.set(item, out.get(item) ?? false);
+    } else if (item && isUuid(item.clusterId)) {
+      out.set(item.clusterId, item.draining === true || out.get(item.clusterId) === true);
+    }
+  }
+  return out;
 }
 
 const defaultRpc: LightningRpcClient = (fn, args) =>
@@ -105,7 +157,7 @@ export class LightningSupervisor {
   private readonly failureLog = new RateLimitedLog(LIGHTNING_FAILURE_LOG_INTERVAL_MS, 16);
   private readonly presence: LightningPresence;
   private readonly rpc: LightningRpcClient;
-  private readonly discover: () => Promise<string[]>;
+  private readonly discover: () => Promise<Array<string | LightningDiscoveredCluster>>;
   private readonly metrics: LightningMetrics;
   private readonly logger: LightningWorkerLogger;
   private readonly frozen: () => boolean;
@@ -216,9 +268,9 @@ export class LightningSupervisor {
     // makes no request at all.
     if (!this.running || generation !== this.generation) return;
     if (this.frozen()) return;
-    let candidates: string[];
+    let candidates: Map<string, boolean>;
     try {
-      candidates = await this.discover();
+      candidates = normalizeDiscovered(await this.discover());
     } catch (err) {
       if (this.failureLog.shouldLog('discover')) {
         this.logger.error(
@@ -231,7 +283,7 @@ export class LightningSupervisor {
     if (!this.running || generation !== this.generation) return;
 
     const qualifying = new Map<string, LightningConfig>();
-    for (const clusterId of new Set(candidates)) {
+    for (const clusterId of candidates.keys()) {
       const out = await lightningConfig(this.rpc, clusterId);
       if (!this.running || generation !== this.generation) return;
       if (out.status !== 'ok') {
@@ -255,26 +307,44 @@ export class LightningSupervisor {
     }
 
     // Stop the workers whose Cluster no longer qualifies.
+    let stoppedAny = false;
     for (const [clusterId, worker] of [...this.workers]) {
       if (qualifying.has(clusterId)) continue;
       this.workers.delete(clusterId);
+      stoppedAny = true;
       this.logger.log(
         `[LightningSupervisor] ${clusterId} no longer qualifies - stopping its worker`
       );
       await worker.stop();
+      // After LIGHTNING -> MUST_MOVE nothing is left to abandon: the commit
+      // waited for every hand to settle. Anything else that ends a worker
+      // (Lightning disabled, config off) voids what has not settled.
       await this.deps.hosting?.abortCluster(clusterId, 'worker_stopped');
     }
     if (!this.running || generation !== this.generation) return;
+    // A Cluster that left Lightning: close its rooms now, not a sweep later.
+    if (stoppedAny && this.deps.sweepRooms) {
+      const sweep = this.deps.sweepRooms;
+      void Promise.resolve()
+        .then(sweep)
+        .catch((err) => {
+          if (this.failureLog.shouldLog('room_sweep'))
+            this.logger.error('[LightningSupervisor] ended-room sweep failed', err);
+        });
+    }
 
-    // Start the new ones; hand the others their fresh config.
+    // Start the new ones; hand the others their fresh config and mode.
     for (const [clusterId, config] of qualifying) {
+      const draining = candidates.get(clusterId) === true;
       const existing = this.workers.get(clusterId);
       if (existing) {
         if (!sameLightningConfig(existing.currentConfig, config)) existing.updateConfig(config);
+        existing.setDraining(draining);
         continue;
       }
       const worker = this.createWorker(clusterId, config);
       this.workers.set(clusterId, worker);
+      worker.setDraining(draining);
       worker.start();
     }
     this.metrics.setWorkers(this.workers.size);

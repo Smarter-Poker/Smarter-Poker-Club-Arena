@@ -37,6 +37,12 @@ export interface LightningMySession {
   anchorTableId: string | null;
   seatNumber: number | null;
   occupancyId: string | null;
+  /**
+   * LIGHTNING PHASE 7: the table the caller holds a live seat at. Set when the
+   * caller has no open pool session but is seated - after the Cluster went
+   * back to MUST MOVE, this is the table their seat is waiting at.
+   */
+  seatTableId: string | null;
 }
 
 /** Pool session states that mean the session is over and holds no room. */
@@ -66,9 +72,11 @@ export function parseLightningMySession(raw: unknown): LightningMySession {
       anchorTableId: null,
       seatNumber: null,
       occupancyId: null,
+      seatTableId: null,
     };
   }
   const id = text(row.pool_session_id);
+  const seatTable = text(row.seat_table_id);
   const anchor = text(row.anchor_table_id);
   const occupancy = text(row.occupancy_id);
   const seat = num(row.seat_number);
@@ -82,7 +90,23 @@ export function parseLightningMySession(raw: unknown): LightningMySession {
     anchorTableId: anchor && isUUID(anchor) ? anchor : null,
     seatNumber: seat !== null && Number.isInteger(seat) && seat >= 1 ? seat : null,
     occupancyId: occupancy && isUUID(occupancy) ? occupancy : null,
+    seatTableId: seatTable && isUUID(seatTable) ? seatTable : null,
   };
+}
+
+/**
+ * LIGHTNING PHASE 7: the table to send a player back to after LIGHTNING ->
+ * MUST_MOVE. Only when the database says all three: no open pool session, the
+ * Cluster is MUST MOVE, and the caller holds a live seat. Null otherwise - a
+ * player who left or cashed out of the pool has no seat to go back to, and a
+ * Cluster still in Lightning still has their room.
+ */
+export function lightningReturnTableId(
+  session: LightningMySession | null | undefined
+): string | null {
+  if (!session || hasLightningRoom(session)) return null;
+  if (session.clusterMode !== 'must_move') return null;
+  return session.seatTableId;
 }
 
 /** The caller holds a pool session whose room can be opened. */
@@ -438,6 +462,8 @@ export function clearLightningEntryIntent(anchorTableId: string): void {
 
 export type LightningEntryDecision =
   | { kind: 'open'; poolSessionId: string }
+  /** LIGHTNING PHASE 7: the Cluster is MUST MOVE and the caller is seated there. */
+  | { kind: 'seat'; seatTableId: string }
   | { kind: 'entry'; joinLabel: 'Join Lightning' | 'Join Game'; lightning: boolean };
 
 /**
@@ -452,6 +478,10 @@ export function lightningEntryDecision(
   if (session && hasLightningRoom(session) && session.poolSessionId) {
     return { kind: 'open', poolSessionId: session.poolSessionId };
   }
+  /* A Cluster back in MUST MOVE with the caller already seated: their table,
+     never a second join. The player is offered it; nothing moves them. */
+  const seatTableId = lightningReturnTableId(session);
+  if (seatTableId) return { kind: 'seat', seatTableId };
   const mode = meta?.clusterMode ?? session?.clusterMode ?? null;
   /* JOIN LIGHTNING only while the Cluster IS Lightning. On its way in
      (pending_on) or out (pending_off, draining) the door is JOIN GAME. */

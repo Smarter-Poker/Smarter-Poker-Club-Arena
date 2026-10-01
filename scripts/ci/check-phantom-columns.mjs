@@ -117,6 +117,14 @@ function baseColumn(token) {
 // Find .from('table')...select('literal') pairs. The select is attributed to the
 // nearest preceding .from(...) whose scope hasn't been closed by another .from(.
 const fromRx = /\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)/g;
+/* THE OWNER DOOR READS PROFILES (2026-10-01, ruling 25). A player's own private
+   profile fields are read through get_my_full_profile(), which returns profile
+   rows - `ownProfile(id).select('diamonds')` in src/lib/ownProfile.ts. That
+   select has no `.from()` of its own, so the nearest-preceding rule pinned it
+   on whatever table the file named last (clubs.diamonds, wallet_transactions.
+   login_streak). The door is a source of `profiles` rows, and is indexed as
+   one. */
+const ownerDoorRx = /\bownProfile\s*\(|\.rpc\s*\(\s*['"]get_my_full_profile['"]/g;
 // select with a STRING literal only (skip template-literal / dynamic selects).
 const selectRx = /\.select\s*\(\s*(['"])([^'"]*)\1/g;
 
@@ -201,6 +209,9 @@ for (const dir of SCAN_DIRS) {
     fromRx.lastIndex = 0;
     let m;
     while ((m = fromRx.exec(src))) froms.push({ pos: m.index, table: m[1] });
+    ownerDoorRx.lastIndex = 0;
+    while ((m = ownerDoorRx.exec(src))) froms.push({ pos: m.index, table: 'profiles' });
+    froms.sort((a, b) => a.pos - b.pos);
     if (!froms.length) continue;
 
     // ── WRITE PAYLOADS (.update/.insert/.upsert) ──

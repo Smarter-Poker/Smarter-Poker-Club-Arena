@@ -836,6 +836,22 @@
       "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
     },
     {
+      "identity": "fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)",
+      "md5": "19cd9ea4fb671379fe84f05d409812a1",
+      "len": 6164,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)",
+      "md5": "6e3a82f7b5bf8e1f10d44e34fe214117",
+      "len": 7720,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
+    },
+    {
       "identity": "fn_poker_guard_arena_structure()",
       "md5": "d3ecf93c4ac0aced79031b4ce00df59b",
       "len": 3790,
@@ -866,6 +882,14 @@
       "owner": "postgres",
       "grants": "service_role",
       "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_purchase_feature_v2(p_user_id uuid, p_feature text, p_request_id uuid)",
+      "md5": "122d227c5571dc0ae34e4a351cd16453",
+      "len": 7830,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_raise_server_financial_alert(p_severity text, p_source text, p_message text, p_context jsonb, p_dedupe_key text, p_entity_id text)",
@@ -1595,14 +1619,14 @@
     "public.fn_poker_diamond_tournament_drain(p_tournament_id uuid, p_bank text, p_amount bigint, p_reason text, p_destination_account text, p_journal_for uuid)": "ceffb36777bfa7067c4fac90c51d5858",
     "public.fn_poker_diamond_tournament_escrow(p_tournament_id uuid)": "d31432344bd1e28904416f5924b75670",
     "public.fn_poker_diamond_tournament_open_shadow(p_tournament_id uuid)": "a48dc93434b566767bf9baa0f63abee4",
-    "public.fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)": "e246c03b5a6d2aff690d227912ff7e82",
+    "public.fn_poker_diamond_tournament_pay(p_user_id uuid, p_amount numeric, p_idempotency_key text, p_category text, p_tournament_id uuid, p_description text)": "19cd9ea4fb671379fe84f05d409812a1",
     "public.fn_poker_diamond_tournament_refund(p_tournament_id uuid, p_user_id uuid, p_kind text, p_source text, p_request_id uuid)": "a1b8b3b5bd4d7d50af063a3534f6372b",
-    "public.fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)": "39f95b499619cab7a1eb65ff583aa638",
+    "public.fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)": "6e3a82f7b5bf8e1f10d44e34fe214117",
     "public.fn_poker_guard_arena_structure()": "d3ecf93c4ac0aced79031b4ce00df59b",
     "public.fn_poker_guard_chip_seat()": "3326766760c7b9c9bfe12daca34ebd0f",
     "public.fn_protect_profile_username_and_gate()": "c2c87d5579b31a8481ca044d5e20a82e",
     "public.fn_publish_profile_account_change()": "84dcc945b3e6d19254a5b901d365eca6",
-    "public.fn_purchase_feature_v2(p_user_id uuid, p_feature text, p_request_id uuid)": "f16cefd4ad43466df06c7150440c3e16",
+    "public.fn_purchase_feature_v2(p_user_id uuid, p_feature text, p_request_id uuid)": "122d227c5571dc0ae34e4a351cd16453",
     "public.fn_receipted_tournament_is_immutable()": "961aa627ed8cb88d11b4750ef3464be5",
     "public.fn_record_entry_purchase_receipt(p_key_domain text, p_idempotency_key text, p_request jsonb, p_response jsonb)": "8311abb5ac10247b078e54f163792f5a",
     "public.fn_refuse_new_entries_while_frozen()": "7d7bd629403539eb069ac20afc62b547",

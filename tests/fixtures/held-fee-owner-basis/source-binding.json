@@ -9,7 +9,7 @@
     "tests/fixtures/held-fee-owner-basis/before.sql": "f5b7bdcd8f42f28e4a47e340a51154b68660c3979df3beb12d87299604310881",
     "tests/fixtures/held-fee-owner-basis/after.sql": "5d385b8489b8255bc04c723ea2f3a2ee8ba15278604ee9ef579c2fb24a3f7f56",
     "tests/fixtures/held-fee-owner-basis/production-owner-path.json": "2ed43c7b261fe76b47567891f3b1033b567d71d9e27fa03bbb99afd5b6ee249f",
-    "scripts/dev/qualify-held-fee-owner-basis.py": "28f72d254c38a7b7327c26fca728e09314488cd5fa36bdacbb8027a693c9421b",
+    "scripts/dev/qualify-held-fee-owner-basis.py": "5d43e1755d1f5a73604ad5d0f1fea427dc3878daed7630163dba4d8047d621f7",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql": "394bb56aaac8126e55f99907ff11b03f94dabd046eb16def0171a493396fa20d",
@@ -23,7 +23,13 @@
     "tests/fixtures/held-fee-owner-basis/qualify-capture-validation.py": "e34c56057c979c627f173bb95a2909321e724023eccaea44df6e4881d4ddd235",
     "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql": "ef9694fe9a513d4ad5f93dc58d296960de1baa39fcd8394dac6f0b8dd2860a04",
     "tests/fixtures/held-fee-owner-basis/qualify-mystery-prefix.py": "cc0a635eb2302fd88f9e3ec17243140aedbf24d79fea86902843d5503571f828",
-    "tests/fixtures/held-fee-owner-basis/mystery-prefix-scene.sql": "96afc496d7ec1c396e2bff6719d6cffa1cd66371ea48d039f8366b20369de5c7"
+    "tests/fixtures/held-fee-owner-basis/mystery-prefix-scene.sql": "96afc496d7ec1c396e2bff6719d6cffa1cd66371ea48d039f8366b20369de5c7",
+    "supabase/migrations/20260930233400_tournament_fee_commissions_batch_their_projection_writes.sql": "2c0196ee954bf73985358eb6e6cb591568376cda0073f2a0f58f74cb0fc00d46",
+    "tests/fixtures/held-fee-owner-basis/qualify-commission-batch.py": "dce4618242bb07232f320bf08123cd62185cc6f90aedaecb74f0bf4e133ec07d",
+    "tests/fixtures/held-fee-owner-basis/commission-batch-scene.sql": "6382b18ada9949a76a37ffac6b85cf5e331494582029c1411176ae205a710cb7",
+    "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql": "20361f797a0439c636ac616d7d34384a67b5d9b96705f61792f5b06f3e26dc44",
+    "supabase/migrations/20261001000000_the_chip_estate_takes_its_locks_in_one_order.sql": "93d7241f7c15b346b5dfff41b0dc1116d92e5464964a02e30a3731795fded991",
+    "tests/fixtures/held-fee-owner-basis/qualify-commission-key-admission.py": "c4e2806db843f4f59e36da38a1d8da1ee32fe08d7ef0d20b66ede44e3e6fb201"
   },
   "spin_assertions": 52,
   "member_lane_migration": "supabase/migrations/20260930121356_held_fee_owner_operations_use_event_lanes_and_indexed_journa.sql",
@@ -33,5 +39,7 @@
   },
   "projection_admission_migration": "supabase/migrations/20260930162226_held_fee_owner_admits_shared_projections_before_writes.sql",
   "capture_validation_migration": "supabase/migrations/20260930172029_legacy_fee_capture_reuses_transaction_owned_terminal_admissi.sql",
-  "mystery_prefix_migration": "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql"
+  "mystery_prefix_migration": "supabase/migrations/20260930181444_mystery_terminal_credit_prefixes_use_bounded_indexed_ranges.sql",
+  "commission_batch_migration": "supabase/migrations/20260930233400_tournament_fee_commissions_batch_their_projection_writes.sql",
+  "commission_key_admission_migration": "supabase/migrations/20261001004123_held_fee_commission_batch_refuses_busy_club_keys.sql"
 }

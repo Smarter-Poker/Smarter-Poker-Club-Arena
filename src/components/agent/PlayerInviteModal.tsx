@@ -117,7 +117,10 @@ export default function PlayerInviteModal({
       // Search profiles by username or display name
       const { data, error } = await supabase
         .from('profiles')
-        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, email`)
+        /* No email: it is its owner's and platform staff's alone (ruling 25),
+           and `authenticated` was never granted it, so naming it refused this
+           whole search. */
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         /* Searching by real name stays: a lookup is not a disclosure, and an
            owner inviting someone they know by name needs it. What comes BACK
            is the arena name. */
@@ -144,7 +147,6 @@ export default function PlayerInviteModal({
             username: p.username,
             displayName: playerDisplayName(p),
             avatarUrl: p.avatar_url,
-            email: p.email,
           }))
       );
     } catch (err) {

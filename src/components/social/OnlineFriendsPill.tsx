@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { readPresence } from '../../lib/ownProfile';
 import './OnlineFriendsPill.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
@@ -58,18 +59,22 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
 
       const friendIds = friendships.map((f) => (f.user_id === userId ? f.friend_id : f.user_id));
 
-      // Get profiles for friends
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, last_seen`)
-        .in('id', friendIds);
+      // Get profiles for friends: public columns only. A friend's last-seen
+      // time is theirs (ruling 25); who is online now comes from the presence
+      // door, which applies the same five-minute heartbeat rule server-side.
+      const [{ data: profiles, error: profilesError }, presence] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url`)
+          .in('id', friendIds),
+        readPresence(friendIds),
+      ]);
 
+      if (profilesError) throw profilesError;
       if (!profiles) return;
 
-      // Filter to recently active (last 5 min = "online")
-      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const online = profiles
-        .filter((p) => p.last_seen && p.last_seen > fiveMinAgo)
+        .filter((p) => presence.get(p.id) === true)
         .map((p) => ({
           id: p.id,
           displayName: playerDisplayName(p),

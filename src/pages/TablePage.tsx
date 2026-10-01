@@ -170,6 +170,7 @@ import {
 import { askToSignInAgain, isDeadSessionRefusal } from '../lib/deadSessionRefusal';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
 import {
   playerDisplayName,
@@ -21686,10 +21687,8 @@ function LiveTablePage({
   useEffect(() => {
     if (!userId || userId === 'guest' || !showTimeBankStore || timeBankUnlimited) return;
     let alive = true;
-    void supabase
-      .from('profiles')
+    void ownProfile(userId)
       .select('diamonds')
-      .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => {
         const d = Number((data as { diamonds?: number } | null)?.diamonds);

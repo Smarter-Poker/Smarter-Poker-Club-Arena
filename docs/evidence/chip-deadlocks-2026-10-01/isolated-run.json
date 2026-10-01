@@ -1,0 +1,260 @@
+{
+  "started": "2026-10-01T00:18:50Z",
+  "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+  "results": [
+    {
+      "case": "commission-rollups-one-club",
+      "pair": "cash accrual batch x tournament finish on agent_commission_unsettled_rollup / ca_club_commission_daily",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.61,
+      "batch_paused_after_first_tier": true,
+      "finish_waited": true,
+      "batch": "completed",
+      "finish": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "commission-rollups-two-clubs",
+      "pair": "cash accrual batch (club B then A) x union finish (club A then B) on ca_club_commission_daily",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.61,
+      "batch_paused_before_second_club": true,
+      "finish_waited": true,
+      "batch": "completed",
+      "finish": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "finish-vs-raked-hand",
+      "pair": "tournament finish (club_wallets, then VIP carry) x raked hand (VIP carry, then club_wallets)",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.56,
+      "hand_waited_for_wallet": true,
+      "finish_waited": true,
+      "finish": "completed",
+      "hand": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "finish-vs-two-raked-hands",
+      "pair": "finish x hand x hand through ca_club_rake_daily (three-way)",
+      "state": "before",
+      "deadlocks": 2,
+      "deadlock_errors": 2,
+      "seconds": 0.71,
+      "hand2_waited": true,
+      "hand1_waited": true,
+      "finish_waited": true,
+      "finish": "deadlock victim (rolled back)",
+      "hand2": "deadlock victim (rolled back)",
+      "hand1": "completed"
+    },
+    {
+      "case": "finish-vs-horse-claims",
+      "pair": "tournament finish (profiles via the player_stats trigger, +0 hands) x horse claims (profiles in claim order)",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.56,
+      "finish_waited": true,
+      "finish": "deadlock victim (rolled back)",
+      "horse_claims": "completed"
+    },
+    {
+      "case": "horse-mind-pairs",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_pairs",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.6,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "horse-mind-stats",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_stats",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.65,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "horse-mind-stats-scoped",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_stats_scoped",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.62,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "pr5542-player-stats-across-hands",
+      "pair": "cash accrual batch (hand of b, then hand of a) x Projection 2 WITH PR #5542's ORDER BY (a, then b)",
+      "state": "before",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.63,
+      "batch_paused_before_second_hand": true,
+      "projection_waited": true,
+      "batch": "completed",
+      "projection": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "commission-rollups-one-club",
+      "pair": "cash accrual batch x tournament finish on agent_commission_unsettled_rollup / ca_club_commission_daily",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 0.45,
+      "batch_paused_after_first_tier": true,
+      "finish_waited": true,
+      "batch": "completed",
+      "finish": "completed"
+    },
+    {
+      "case": "commission-rollups-two-clubs",
+      "pair": "cash accrual batch (club B then A) x union finish (club A then B) on ca_club_commission_daily",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 0.45,
+      "batch_paused_before_second_club": true,
+      "finish_waited": true,
+      "batch": "completed",
+      "finish": "completed"
+    },
+    {
+      "case": "finish-vs-raked-hand",
+      "pair": "tournament finish (club_wallets, then VIP carry) x raked hand (VIP carry, then club_wallets)",
+      "state": "after",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.54,
+      "hand_waited_for_wallet": true,
+      "finish_waited": true,
+      "finish": "completed",
+      "hand": "deadlock victim (rolled back)"
+    },
+    {
+      "case": "finish-vs-two-raked-hands",
+      "pair": "finish x hand x hand through ca_club_rake_daily (three-way)",
+      "state": "after",
+      "deadlocks": 2,
+      "deadlock_errors": 2,
+      "seconds": 0.67,
+      "hand2_waited": true,
+      "hand1_waited": true,
+      "finish_waited": true,
+      "finish": "deadlock victim (rolled back)",
+      "hand2": "deadlock victim (rolled back)",
+      "hand1": "completed"
+    },
+    {
+      "case": "finish-vs-horse-claims",
+      "pair": "tournament finish (profiles via the player_stats trigger, +0 hands) x horse claims (profiles in claim order)",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 2.37,
+      "finish_waited": false,
+      "finish": "completed",
+      "horse_claims": "completed"
+    },
+    {
+      "case": "horse-mind-pairs",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_pairs",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 0.44,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "completed"
+    },
+    {
+      "case": "horse-mind-stats",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_stats",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 0.45,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "completed"
+    },
+    {
+      "case": "horse-mind-stats-scoped",
+      "pair": "horse-mind flush x horse-mind flush on horse_mind_stats_scoped",
+      "state": "after",
+      "deadlocks": 0,
+      "deadlock_errors": 0,
+      "seconds": 0.45,
+      "flush1_paused": true,
+      "flush2_waited": true,
+      "flush1": "completed",
+      "flush2": "completed"
+    },
+    {
+      "case": "pr5542-player-stats-across-hands",
+      "pair": "cash accrual batch (hand of b, then hand of a) x Projection 2 WITH PR #5542's ORDER BY (a, then b)",
+      "state": "after",
+      "deadlocks": 1,
+      "deadlock_errors": 1,
+      "seconds": 0.59,
+      "batch_paused_before_second_hand": true,
+      "projection_waited": true,
+      "batch": "completed",
+      "projection": "deadlock victim (rolled back)"
+    }
+  ],
+  "values": {
+    "before": {
+      "upsert_horse_mind_pairs": [
+        "{\"n3\": 3, \"n_r\": 0, \"opp3\": 0, \"opps\": 0, \"opp_r\": 0, \"victim_id\": \"v\"}",
+        "{\"n3\": 5, \"n_r\": 0, \"opp3\": 0, \"opps\": 0, \"opp_r\": 0, \"victim_id\": \"v\"}"
+      ],
+      "upsert_horse_mind_stats": [
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 3, \"checks\": 0, \"r_aggr\": 0, \"passive\": 0, \"r_folds\": 0, \"r_hands\": 2.5, \"f3b_opps\": 0, \"r_checks\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"r_passive\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"r_faced_aggr\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}",
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 5, \"checks\": 0, \"r_aggr\": 0, \"passive\": 0, \"r_folds\": 0, \"r_hands\": 9.5, \"f3b_opps\": 0, \"r_checks\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"r_passive\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"r_faced_aggr\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}"
+      ],
+      "upsert_horse_mind_stats_scoped": [
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 3, \"scope\": \"holdem:hu\", \"checks\": 0, \"passive\": 0, \"f3b_opps\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}",
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 5, \"scope\": \"holdem:hu\", \"checks\": 0, \"passive\": 0, \"f3b_opps\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}"
+      ]
+    },
+    "after": {
+      "upsert_horse_mind_pairs": [
+        "{\"n3\": 3, \"n_r\": 0, \"opp3\": 0, \"opps\": 0, \"opp_r\": 0, \"victim_id\": \"v\"}",
+        "{\"n3\": 5, \"n_r\": 0, \"opp3\": 0, \"opps\": 0, \"opp_r\": 0, \"victim_id\": \"v\"}"
+      ],
+      "upsert_horse_mind_stats": [
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 3, \"checks\": 0, \"r_aggr\": 0, \"passive\": 0, \"r_folds\": 0, \"r_hands\": 2.5, \"f3b_opps\": 0, \"r_checks\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"r_passive\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"r_faced_aggr\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}",
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 5, \"checks\": 0, \"r_aggr\": 0, \"passive\": 0, \"r_folds\": 0, \"r_hands\": 9.5, \"f3b_opps\": 0, \"r_checks\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"r_passive\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"r_faced_aggr\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}"
+      ],
+      "upsert_horse_mind_stats_scoped": [
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 3, \"scope\": \"holdem:hu\", \"checks\": 0, \"passive\": 0, \"f3b_opps\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}",
+        "{\"pfr\": 0, \"aggr\": 0, \"vpip\": 0, \"folds\": 0, \"hands\": 5, \"scope\": \"holdem:hu\", \"checks\": 0, \"passive\": 0, \"f3b_opps\": 0, \"bigbet_sd\": 0, \"cbet_opps\": 0, \"f3b_folds\": 0, \"post_aggr\": 0, \"three_bet\": 0, \"cbet_folds\": 0, \"faced_aggr\": 0, \"snap_bet_sd\": 0, \"tank_bet_sd\": 0, \"post_passive\": 0, \"river_bet_opps\": 0, \"river_bet_folds\": 0, \"bigbet_sd_strong\": 0, \"snap_bet_sd_strong\": 0, \"tank_bet_sd_strong\": 0}"
+      ]
+    }
+  },
+  "functions_pinned_and_verified": 26,
+  "projection2_statement_md5": "5b5f5edc9e90e1acc0adf10ca8601087",
+  "migration_subs_block_md5": "7835bf047e87a8e4264db229da979d6c",
+  "revert_subs_block_md5": "c438d2eff06926d4179f8ca5bf266dca",
+  "values_equal": true,
+  "finished": "2026-10-01T00:19:03Z"
+}

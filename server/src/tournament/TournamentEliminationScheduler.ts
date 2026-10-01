@@ -395,10 +395,27 @@ export class TournamentEliminationScheduler {
     );
   }
 
-  /** A consolidating manager's every wake is consolidation work. */
+  /**
+   * A DECIDED FIELD IS NEVER CONSOLIDATION WORK (2026-10-01).
+   *
+   * A consolidating manager's every wake is consolidation work - unless its
+   * field is decided. A decided field is one table with at most one stack
+   * left: it has nothing to merge, and its finish pass belongs to the decided
+   * lane, which reads the general slots first. The consolidation lane is ONE
+   * slot (DEFAULT_CONSOLIDATION_SLOTS).
+   *
+   * Measured on production 2026-10-01 22:29-22:50 UTC, engine 71825702: the
+   * decided-but-RUNNING board marked every decided Spin and Sit & Go
+   * consolidating, so 208 managers were consolidating and 207 were queued for
+   * that one slot, oldest wait 743 s. The fields that really needed it waited
+   * behind them and dealt nothing: Five-Card Reload 7e7dabf8 and a21f7007 (a
+   * table break parked since 22:04), Sunday Deep Stack Satellite $25 d9cc8159
+   * (a held qualifier boundary, no hand since 21:20), and the decided
+   * satellite 1e0343b5 was woken 25 times without a sweep.
+   */
   private laneFor(entry: Entry, kind: QueueKind): QueueKind {
-    if (entry.consolidating) return 'consolidation';
-    return entry.decided ? 'decided' : kind;
+    if (entry.decided) return 'decided';
+    return entry.consolidating ? 'consolidation' : kind;
   }
 
   private queueFor(kind: QueueKind): QueuedPlace[] {
@@ -423,7 +440,8 @@ export class TournamentEliminationScheduler {
     if (!entry || !entry.registered) return false;
     if (entry.consolidating === consolidating) return true;
     entry.consolidating = consolidating;
-    if (consolidating) {
+    // A decided field keeps the decided lane (see laneFor).
+    if (consolidating && !entry.decided) {
       if (entry.pendingWakeAs !== null) entry.pendingWakeAs = 'consolidation';
       if (entry.dirtyAs !== null) entry.dirtyAs = 'consolidation';
       if (entry.queuedAs !== null) {
@@ -445,13 +463,20 @@ export class TournamentEliminationScheduler {
     if (!entry || !entry.registered) return false;
     if (entry.decided) return true;
     entry.decided = true;
-    if (!entry.consolidating) {
-      if (entry.pendingWakeAs !== null) entry.pendingWakeAs = 'decided';
-      if (entry.dirtyAs !== null) entry.dirtyAs = strongerQueueKind(entry.dirtyAs, 'decided');
-      if (entry.queuedAs !== null) {
-        this.enqueue(entry, 'decided');
-        return true;
-      }
+    // Whatever it already has pending moves to the decided lane, including a
+    // place in the consolidation lane: a decided field has nothing to merge
+    // and must not hold the one consolidation slot's queue (see laneFor).
+    if (entry.pendingWakeAs !== null) entry.pendingWakeAs = 'decided';
+    if (entry.dirtyAs !== null) entry.dirtyAs = 'decided';
+    if (entry.queuedAs !== null && entry.queuedAs !== 'decided') {
+      // A new ticket retires the earlier place: a consolidation place left
+      // live would still be served from the consolidation slot.
+      entry.queuedAs = 'decided';
+      entry.queueTicket++;
+      this.decidedQueue.push({ entry, ticket: entry.queueTicket });
+      this.refreshMetrics();
+      this.pump();
+      return true;
     }
     this.refreshMetrics();
     return true;

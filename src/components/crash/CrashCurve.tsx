@@ -71,6 +71,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { createFramePacer } from '../games/framePacer';
+import { createSceneTelemetry, reportSceneFailure } from '../games/sceneTelemetry';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { crashMultiplierCents } from '../../utils/diamondGamesFairness';
@@ -1073,7 +1074,12 @@ export default function CrashCurve(props: CrashCurveProps) {
     } catch (e) {
       setFailed(true);
       reportError(e, 'CrashCurve.renderer');
+      reportSceneFailure('crash', 'renderer');
     }
+    // One anonymous summary of how this phone drew the visit (sceneTelemetry.ts).
+    const telemetry = kit
+      ? createSceneTelemetry('crash', { software: kit.software, startTier: kit.qualityTier })
+      : null;
     // The glass is placed by the camera the scene renders with. Without a
     // renderer the same camera still places the axes over a dark frame, so the
     // figure and its lines survive a lost WebGL context.
@@ -1090,6 +1096,7 @@ export default function CrashCurve(props: CrashCurveProps) {
     const lost = (event: Event) => {
       event.preventDefault();
       setFailed(true);
+      reportSceneFailure('crash', 'context_lost');
     };
     const restored = () => setFailed(false);
     surface?.addEventListener('webglcontextlost', lost);
@@ -1371,6 +1378,10 @@ export default function CrashCurve(props: CrashCurveProps) {
         plate.current.dataset.shown = 'true';
       }
       const submitted = kit ? kit.render(pacer.governorInterval(pace)) : false;
+      if (submitted && kit && telemetry) {
+        telemetry.tier(kit.qualityTier);
+        telemetry.frame(now, pace === 0);
+      }
       /* THE SOUND IS ON THIS FRAME'S CLOCK (2026-09-26). The engine is one
          voice for the whole flight, steered to the figure this frame printed
          (so once the cash-out is tapped and the hero holds the tapped figure,
@@ -1404,6 +1415,7 @@ export default function CrashCurve(props: CrashCurveProps) {
     return () => {
       cancelAnimationFrame(raf);
       pacer.dispose();
+      telemetry?.end();
       silenceEngine(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);
       surface?.removeEventListener('webglcontextlost', lost);

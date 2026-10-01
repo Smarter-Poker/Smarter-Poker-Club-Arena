@@ -336,14 +336,17 @@ every overload.
 
 - **Public profile fields.** Which ones are public is Dan's open decision
   (Phase 10, line 2). Out of scope for this line.
-- **The arena's owner.** The Diamond Arena's club row names a real platform
-  account (role `god`) as `owner_id`. Chip doors that trust a club's owner
-  therefore treat that one account as the arena's owner. Every money
-  consequence we probed is still refused, by the arena identity constraint
-  (`poker_arena_diamond_identity`: no union, no chip treasury, pool, promo or
-  insurance balance) and by the step-0 chip-money and hierarchy triggers.
-  Whether the arena row should name the system account instead is Dan's
-  decision.
+- **The arena's owner (decided and fixed, 2026-09-30).** The Diamond Arena's
+  club row named a real platform account (role `god`) as `owner_id`, so chip
+  doors that trust a club's owner treated that one account as the arena's
+  owner. Every money consequence we probed was still refused by the arena
+  identity constraint (`poker_arena_diamond_identity`: no union, no chip
+  treasury, pool, promo or insurance balance) and by the step-0 chip-money and
+  hierarchy triggers. Decided by Claude on Dan's delegation of 2026-09-30
+  (Ruling 22): the arena now belongs to the system account, which nobody signs
+  in as, and platform staff keep every staff door. See migration
+  `20260930235500` and
+  [the arena belongs to the system](./the-arena-belongs-to-the-system.md).
 - **Chip estate, observed only.**
   - The chip mint door (`fn_mint_chips_from_diamonds`) looks up a replay key
     in its club before it checks who is asking, so another user's key in the

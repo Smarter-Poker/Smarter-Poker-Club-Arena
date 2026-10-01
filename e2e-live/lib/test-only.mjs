@@ -59,7 +59,9 @@ export function identityInStorageState(path) {
   try {
     state = JSON.parse(fs.readFileSync(path, 'utf8'));
   } catch {
-    throw new Refusal(`the saved browser state ${path} cannot be read, so its account cannot be checked`);
+    throw new Refusal(
+      `the saved browser state ${path} cannot be read, so its account cannot be checked`
+    );
   }
   for (const origin of state.origins || []) {
     for (const item of origin.localStorage || []) {
@@ -81,15 +83,24 @@ export function requireTestIdentity({ email = process.env.SP_EMAIL, authPath } =
   const stored = identityInStorageState(authPath);
   const named = email && email.trim() ? email.trim() : null;
   if (!named && !stored) {
-    throw new Refusal('no account is named (SP_EMAIL) and no saved browser state holds one; refusing to guess an account');
+    throw new Refusal(
+      'no account is named (SP_EMAIL) and no saved browser state holds one; refusing to guess an account'
+    );
   }
-  for (const [source, who] of [['SP_EMAIL', named], ['the saved browser state', stored]]) {
+  for (const [source, who] of [
+    ['SP_EMAIL', named],
+    ['the saved browser state', stored],
+  ]) {
     if (who && !isTestIdentity(who)) {
-      throw new Refusal(`${source} is ${who}, which is not a test identity (an address ending in ${TEST_IDENTITY_SUFFIX})`);
+      throw new Refusal(
+        `${source} is ${who}, which is not a test identity (an address ending in ${TEST_IDENTITY_SUFFIX})`
+      );
     }
   }
   if (named && stored && named.toLowerCase() !== stored.toLowerCase()) {
-    throw new Refusal(`SP_EMAIL (${named}) and the saved browser state (${stored}) are different accounts`);
+    throw new Refusal(
+      `SP_EMAIL (${named}) and the saved browser state (${stored}) are different accounts`
+    );
   }
   return named || stored;
 }
@@ -106,8 +117,14 @@ export async function requirePageIdentity(page, expected) {
       }
     }, AUTH_STORAGE_KEY)
     .catch(() => null);
-  if (!email || !isTestIdentity(email) || (expected && email.toLowerCase() !== expected.toLowerCase())) {
-    throw new Refusal(`the page is signed in as ${email || 'nobody'}, not the test identity ${expected}`);
+  if (
+    !email ||
+    !isTestIdentity(email) ||
+    (expected && email.toLowerCase() !== expected.toLowerCase())
+  ) {
+    throw new Refusal(
+      `the page is signed in as ${email || 'nobody'}, not the test identity ${expected}`
+    );
   }
   return email;
 }
@@ -120,22 +137,30 @@ export async function requireTestClub({
   fetchImpl = globalThis.fetch,
 } = {}) {
   const key = club && club.trim();
-  if (!key) throw new Refusal(`no test club is named; set E2E_TEST_CLUB to a club tagged ${TEST_CLUB_TAG}`);
-  if (!anonKey) throw new Refusal('VITE_SUPABASE_ANON_KEY is not set, so the club cannot be checked; refusing');
+  if (!key)
+    throw new Refusal(`no test club is named; set E2E_TEST_CLUB to a club tagged ${TEST_CLUB_TAG}`);
+  if (!anonKey)
+    throw new Refusal('VITE_SUPABASE_ANON_KEY is not set, so the club cannot be checked; refusing');
   const filter = UUID.test(key) ? `id=eq.${key}` : `slug=eq.${encodeURIComponent(key)}`;
   const res = await fetchImpl(
     `${supabaseUrl}/rest/v1/clubs?select=id,name,slug,tags,asset,lifecycle_status&${filter}`,
     { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } }
   );
-  if (!res.ok) throw new Refusal(`the club ${key} could not be read (HTTP ${res.status}); refusing`);
+  if (!res.ok)
+    throw new Refusal(`the club ${key} could not be read (HTTP ${res.status}); refusing`);
   const rows = await res.json();
-  if (!Array.isArray(rows) || rows.length !== 1) throw new Refusal(`no single club answers to ${key}; refusing`);
+  if (!Array.isArray(rows) || rows.length !== 1)
+    throw new Refusal(`no single club answers to ${key}; refusing`);
   const row = rows[0];
-  if (REAL_CLUBS.has(row.id)) throw new Refusal(`${row.name} is a real club; the walk never plays there`);
+  if (REAL_CLUBS.has(row.id))
+    throw new Refusal(`${row.name} is a real club; the walk never plays there`);
   if (!Array.isArray(row.tags) || !row.tags.includes(TEST_CLUB_TAG)) {
-    throw new Refusal(`${row.name} is not flagged as a test club (clubs.tags has no ${TEST_CLUB_TAG})`);
+    throw new Refusal(
+      `${row.name} is not flagged as a test club (clubs.tags has no ${TEST_CLUB_TAG})`
+    );
   }
-  if (row.asset !== 'chips') throw new Refusal(`${row.name} does not play in chips; the walk plays chip tables only`);
+  if (row.asset !== 'chips')
+    throw new Refusal(`${row.name} does not play in chips; the walk plays chip tables only`);
   if (row.lifecycle_status === 'retired') throw new Refusal(`${row.name} is retired`);
   return row;
 }

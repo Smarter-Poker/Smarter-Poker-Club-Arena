@@ -36,7 +36,10 @@ const ctx = await browser.newContext({
 });
 const page = await ctx.newPage();
 
-await page.goto('https://smarter.poker/hub/club-arena/', { waitUntil: 'domcontentloaded', timeout: 45000 });
+await page.goto('https://smarter.poker/hub/club-arena/', {
+  waitUntil: 'domcontentloaded',
+  timeout: 45000,
+});
 try {
   await requirePageIdentity(page, IDENTITY);
 } catch (e) {

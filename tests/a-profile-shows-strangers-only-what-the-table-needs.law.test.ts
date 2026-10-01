@@ -13,7 +13,8 @@
  * Migration 20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door
  * opened the doors and moved the database's own readers; the column revoke
  * that closes the table is its own migration, applied once every reader had
- * moved. What this pins:
+ * moved, 20260930234500_a_profile_shows_strangers_only_what_the_table_needs.
+ * What this pins:
  *  - the staff door answers platform staff only, the presence door answers a
  *    boolean and never the heartbeat, and neither is open to a visitor;
  *  - the owner door is get_my_full_profile(), pinned, not rewritten;
@@ -23,7 +24,10 @@
  *    select, a filter or an order - because Postgres refuses the WHOLE
  *    statement, and several readers here swallow 42501 as "no profile";
  *  - the player's own private fields are read through the owner door, and
- *    who is online through the presence door.
+ *    who is online through the presence door;
+ *  - the revoke runs only once no reader a browser can reach names a private
+ *    column, takes exactly the seventeen, and leaves writes, the service role,
+ *    RLS and the doors as they were.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -307,5 +311,79 @@ describe('LAW: a profile shows strangers only what the table needs', () => {
     ]) {
       expect(read(file), file).toContain('readPresence(');
     }
+  });
+});
+
+const REVOKE_NAME = migrationNames()
+  .filter((n) => n.endsWith('_a_profile_shows_strangers_only_what_the_table_needs.sql'))
+  .at(-1);
+if (!REVOKE_NAME) throw new Error('the profile column revoke migration is missing');
+const REVOKE = migrationText(REVOKE_NAME);
+const REVOKE_CODE = code(REVOKE);
+
+describe('LAW: the table itself refuses a stranger the private columns', () => {
+  it('runs after the doors, and only once no reader a browser can reach names a private column', () => {
+    expect(REVOKE_NAME > DOORS).toBe(true);
+    const sweep = code(sliceBetween(REVOKE, '-- 1. EVERY READER HAS MOVED', '-- 2. THE REVOKE'));
+    for (const c of PRIVATE) expect(sweep).toContain(`'${c}'`);
+    expect(sweep).toContain("has_function_privilege('authenticated', p.oid, 'EXECUTE')");
+    expect(sweep).toContain('NOT t.tgisinternal AND NOT p.prosecdef');
+    expect(sweep).toContain('a reader a browser can reach still names a private profile column');
+    expect(sweep).toContain('a policy reads a private profile column');
+    expect(sweep).toContain('a browser-readable view reads profiles');
+    // Exactly the six step 1 reviewed, each with its reason beside it.
+    const reviewed = sliceBetween(REVOKE, 'v_reviewed constant text[] := ARRAY[', '];');
+    expect(reviewed.match(/'[a-z_]+\(/g)).toHaveLength(6);
+  });
+
+  it('revokes SELECT on exactly the seventeen private columns from authenticated and anon', () => {
+    const revoke = sliceBetween(REVOKE_CODE, 'REVOKE SELECT (', 'FROM authenticated, anon;');
+    const named = revoke
+      .slice('REVOKE SELECT ('.length)
+      .replace(/\)\s*ON public\.profiles\s*$/, '')
+      .split(',')
+      .map((c) => c.trim());
+    expect([...named].sort()).toEqual([...PRIVATE].sort());
+    expect(REVOKE_CODE).not.toMatch(/\bGRANT\b/);
+    expect(REVOKE_CODE).not.toMatch(/REVOKE\s+(UPDATE|INSERT|ALL)/i);
+    expect(REVOKE_CODE).not.toMatch(/service_role\s*;/);
+    expect(REVOKE_CODE).not.toMatch(/(ALTER|DROP|CREATE)\s+POLICY/i);
+  });
+
+  it('proves itself live, and leaves writes, the service role, RLS and the doors as they were', () => {
+    const proofs = [...REVOKE.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1]);
+    expect(proofs.length).toBeGreaterThanOrEqual(3);
+    expect(proofs[0]).toContain(
+      "NOT has_column_privilege('authenticated', 'public.profiles', c, 'SELECT')"
+    );
+    const final = code(sliceBetween(REVOKE, '-- 5. THE ESTATE IS AS IT WAS', 'RAISE NOTICE'));
+    expect(final).toContain('authenticated reads % columns of profiles, expected 81');
+    expect(final).toContain('authenticated may update % columns of profiles, expected 99');
+    expect(final).toContain('the service role or the row policies of profiles changed');
+    expect(final).toContain(
+      "'profiles_delete,profiles_insert_self,profiles_select,profiles_update'"
+    );
+    expect(final).toContain(
+      "md5(pg_get_functiondef('public.get_my_full_profile()'::regprocedure)) <> 'a464244a590dd2615cadc79c63a283ba'"
+    );
+    expect(final).toContain('this migration must not open a Diamond switch');
+    expect(final).toContain('the Diamond identity is not whole');
+    expect(final).toContain('watched guards off their baseline');
+  });
+
+  it('stops the live-stream list naming a broadcaster by legal name, by asserted substitution', () => {
+    const edit = sliceBetween(
+      REVOKE,
+      '-- 4. THE LIVE-STREAM LIST STOPS NAMING A BROADCASTER BY THEIR LEGAL NAME',
+      '-- 5. THE ESTATE IS AS IT WAS'
+    );
+    expect(edit).toContain("IF md5(v_def) <> '01efdcda8c294e68635d9ceaa33eabce' THEN");
+    expect(edit).toContain("v_old constant text := 'p.username, p.full_name, p.avatar_url';");
+    expect(edit).toContain("v_new constant text := 'p.username, NULL::text, p.avatar_url';");
+    expect(edit).toContain('IF v_n <> 1 THEN');
+    expect(edit).toContain(
+      "IF md5(replace(pg_get_functiondef(v_oid), v_new, v_old)) <> '01efdcda8c294e68635d9ceaa33eabce' THEN"
+    );
+    expect(edit).toContain('the grants changed');
   });
 });

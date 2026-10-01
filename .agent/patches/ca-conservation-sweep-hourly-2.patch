@@ -1,0 +1,449 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7469dd560..dc1055e30 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1486,6 +1486,14 @@ jobs:
+           PG_BIN: /usr/lib/postgresql/17/bin
+         run: python3 scripts/ci/test-rakeback-settler-read-horizon-postgres.py
+ 
++      - name: The conservation sweep's history-wide reads keep exact results through online covering indexes
++        if: matrix.shard == 4
++        run: python3 scripts/ci/test-conservation-sweep-read-indexes-postgres.py
++
++      - name: A failing hourly cron reaches the board
++        if: matrix.shard == 4
++        run: python3 scripts/ci/test-cron-failure-watch-postgres.py
++
+       - name: Event-owned engine recovery database boundaries
+         if: matrix.shard == 1
+         env:
+diff --git a/scripts/ci/classify-ci-changes.mjs b/scripts/ci/classify-ci-changes.mjs
+index ad701139f..2caf6fcb5 100644
+--- a/scripts/ci/classify-ci-changes.mjs
++++ b/scripts/ci/classify-ci-changes.mjs
+@@ -89,6 +89,11 @@ const certificationRetirement =
+ const certificationPlayerIndex =
+   /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
+ 
++// The conservation sweep's history-wide reads and the cron-failure watch keep
++// their native qualification (exact installed bodies, online build, plans).
++const conservationSweepReads =
++  /^(scripts\/(?:ci\/(?:test-conservation-sweep-read-indexes-postgres\.py$|test-cron-failure-watch-postgres\.py$|fixtures\/conservation-sweep-read-indexes\/)|ops\/build-conservation-sweep-read-indexes-concurrently\.sql$)|tests\/conservationSweepReadIndexesRegression\.test\.ts$)/;
++
+ export function gitEnvironmentForCwd() {
+   // Hooks export repository context that overrides cwd. These local-only Git
+   // calls must also discard inherited index/object/config overrides so a
+@@ -282,7 +287,8 @@ export function classifyChangedPaths(paths) {
+       matches(certificationRetirement) ||
+       matches(satelliteAuditIndex) ||
+       matches(satelliteLedgerAuditIndex) ||
+-      matches(certificationPlayerIndex),
++      matches(certificationPlayerIndex) ||
++      matches(conservationSweepReads),
+     tests:
+       bbjFixture ||
+       chipStoreCoverage ||
+@@ -327,7 +333,8 @@ export function classifyChangedPaths(paths) {
+       matches(certificationRetirement) ||
+       matches(satelliteAuditIndex) ||
+       matches(satelliteLedgerAuditIndex) ||
+-      matches(certificationPlayerIndex),
++      matches(certificationPlayerIndex) ||
++      matches(conservationSweepReads),
+     phase4: phase4Changed,
+     fixture: matches(fixture),
+   };
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-conservation-installed.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-conservation-installed.sql
+new file mode 100644
+index 000000000..a388f2750
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-conservation-installed.sql
+@@ -0,0 +1,112 @@
++CREATE OR REPLACE FUNCTION public.fn_bbj_conservation_check()
++ RETURNS jsonb
++ LANGUAGE plpgsql
++ STABLE SECURITY DEFINER
++ SET search_path TO 'public'
++AS $function$
++DECLARE
++  v_in numeric; v_out numeric; v_bal numeric; v_gap numeric; v_base record;
++  v_epoch_at timestamptz; v_epoch_unexp numeric; v_epoch_runs int;
++  v_counters_paid numeric; v_payout_rows numeric; v_pre_table numeric;
++  v_unrecorded_since numeric; v_seeds_live numeric;
++  v_seeds numeric; v_drift numeric; v_unexplained numeric; v_tol numeric;
++BEGIN
++  v_in := fn_bbj_contributions_total();
++  v_in := v_in + (SELECT COALESCE(SUM(amount),0) FROM union_wallet_transactions WHERE tx_type='bbj_fund');
++
++  v_out := (SELECT COALESCE(SUM(total_amount),0) FROM bbj_payouts)
++         + (SELECT COALESCE(SUM(amount),0) FROM union_wallet_transactions WHERE tx_type='bbj_promo_sweep')
++         + (SELECT COALESCE(SUM(amount),0) FROM chip_transactions WHERE transaction_type='bbj_promo_sweep')
++         + (SELECT COALESCE(SUM(amount),0) FROM wallet_transactions
++             WHERE category='promotion' AND description='BBJ promo pool payout');
++
++  SELECT COALESCE(SUM(main_balance+backup_balance+promo_balance),0) INTO v_bal FROM bbj_pools;
++
++  v_gap := round(v_in - v_out - v_bal, 2);
++  SELECT * INTO v_base FROM bbj_conservation_baseline WHERE id = 1;
++  v_tol := COALESCE(v_base.tolerance, 1.00);
++  v_drift := round(v_gap - COALESCE(v_base.baseline_gap, 0), 2);
++
++  -- THE EPOCH (Phase 4.2): since the opening balances, the journal identity per
++  -- pool per bank. This is what `healthy` means; the lifetime figures stay.
++  SELECT min(taken_at) INTO v_epoch_at FROM public.ca_bbj_pool_snapshots WHERE is_baseline;
++  SELECT count(*) INTO v_epoch_runs FROM public.ca_bbj_pool_snapshots WHERE NOT is_baseline;
++  /* END TO END, NOT INTERVAL BY INTERVAL (2026-09-09). Summing each hour's
++     residue accumulated every straddled drop forever, because a leg whose
++     transaction began before a snapshot and committed after it belongs to no
++     window at all. One comparison across the whole epoch has only two
++     boundaries instead of three hundred. */
++  SELECT round(
++           (SELECT COALESCE(sum(main_balance + backup_balance + promo_balance), 0) FROM public.bbj_pools)
++         - (SELECT COALESCE(sum(b.main + b.backup + b.promo), 0)
++              FROM public.ca_bbj_pool_snapshots b WHERE b.is_baseline)
++         - (SELECT COALESCE(sum(CASE WHEN l.to_type = 'bbj_pool' THEN l.amount ELSE 0 END), 0)
++                 - COALESCE(sum(CASE WHEN l.from_type = 'bbj_pool' THEN l.amount ELSE 0 END), 0)
++              FROM public.chip_ledger l
++             WHERE (l.to_type = 'bbj_pool' OR l.from_type = 'bbj_pool')
++               AND l.created_at > v_epoch_at), 2)
++    INTO v_epoch_unexp;
++
++  /* THE LIFETIME DECOMPOSITION (phase 5.3). Two ledgers with different start
++     dates, named rather than reported as a deficit.
++
++     ROOT pools only: a merge folds the retired pool's counters into its
++     destination, so summing every pool would count the club pool's 74,301.10
++     twice. */
++  SELECT COALESCE(sum(total_paid_out),0) INTO v_counters_paid
++    FROM bbj_pools WHERE merged_into_pool_id IS NULL;
++  SELECT COALESCE(sum(total_amount),0) INTO v_payout_rows FROM bbj_payouts;
++  v_pre_table := round(v_counters_paid - v_payout_rows, 2);
++
++  /* The historical figure is CLOSED at 71,749.31. Anything beyond it is a
++     payout made since bbj_payouts existed that wrote no row - a live blind
++     spot wearing a historical explanation's clothes. */
++  v_unrecorded_since := round(v_pre_table - COALESCE(v_base.pre_ledger_payouts, 0), 2);
++
++  /* Opening seeds pull the OTHER way: bank balance with no inflow row behind
++     it. REMEMBERED, not read from bbj_pools.pool_amount - four functions can
++     write that column, so deriving from it would let any of them move a money
++     verdict, and would silently absorb a new seed the way the pre-ledger
++     bucket would have absorbed a new unrecorded payout. The live column is
++     reported beside it so a divergence is visible rather than load-bearing. */
++  v_seeds := COALESCE(v_base.opening_seeds, 0);
++  SELECT COALESCE(sum(pool_amount),0) INTO v_seeds_live FROM bbj_pools;
++
++  v_unexplained := round(v_drift - v_pre_table + v_seeds, 2);
++
++  RETURN jsonb_build_object(
++    'inflow', round(v_in,2), 'outflow', round(v_out,2), 'balances', round(v_bal,2),
++    'gap', v_gap,
++    'baseline_gap', COALESCE(v_base.baseline_gap, 0),
++    /* THE HEADLINE IS THE LIVE FIGURE (2026-09-09). This was v_drift, the
++       lifetime gap, which is closed and does not move; the sweep reads this
++       key for the incident's amount, so every incident said 70,795.11 while
++       the thing that made the verdict unhealthy was a few chips. The
++       lifetime figure keeps its place under 'lifetime' below. */
++    'drift_from_baseline', round(COALESCE(v_epoch_unexp, 0), 2),
++    'lifetime_drift_from_baseline', v_drift,
++    'tolerance', v_tol,
++    'lifetime', jsonb_build_object(
++      'drift_from_baseline', v_drift,
++      'paid_before_the_payout_table', v_pre_table,
++      'pre_ledger_payouts_known', COALESCE(v_base.pre_ledger_payouts, 0),
++      'paid_without_a_payout_row_since', v_unrecorded_since,
++      'opening_seeds_known', v_seeds,
++      'legacy_pool_amount_live', round(v_seeds_live,2),
++      'unexplained', v_unexplained,
++      'known_residue', COALESCE(v_base.lifetime_residue, 0),
++      'moved_since_resolution', round(v_unexplained - COALESCE(v_base.lifetime_residue,0), 2),
++      'note', 'The gap is two ledgers with different start dates, not missing chips. bbj_contributions begins 2026-03-03; bbj_payouts begins 2026-07-22. The union pool paid forty jackpots in between (71,749.31), and bbj_pools.total_paid_out is the witness that was there. Against it, 1,000.00 of opening seed sits in a bank with no contribution row. Both are CLOSED historical figures. `paid_without_a_payout_row_since` and `moved_since_resolution` are the live signals; everything else here is memory.'),
++    'lifetime_healthy',
++          abs(v_unexplained - COALESCE(v_base.lifetime_residue, 0)) <= v_tol
++      AND abs(v_unrecorded_since) <= 0.01,
++    'epoch', jsonb_build_object(
++      'opened_at', v_epoch_at,
++      'snapshots', v_epoch_runs,
++      'unexplained_since_opening', round(v_epoch_unexp, 2),
++      'known_residue', COALESCE(v_base.epoch_residue, 0),
++      'moved_since_recorded', round(v_epoch_unexp - COALESCE(v_base.epoch_residue, 0), 2)),
++    'healthy', v_epoch_at IS NOT NULL
++               AND abs(v_epoch_unexp - COALESCE(v_base.epoch_residue, 0)) <= v_tol);
++END;
++$function$
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-contributions-total-installed.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-contributions-total-installed.sql
+new file mode 100644
+index 000000000..916a618a3
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/bbj-contributions-total-installed.sql
+@@ -0,0 +1,23 @@
++CREATE OR REPLACE FUNCTION public.fn_bbj_contributions_total()
++ RETURNS numeric
++ LANGUAGE plpgsql
++ STABLE SECURITY DEFINER
++ SET search_path TO 'public'
++AS $function$
++DECLARE
++  v_as_of timestamptz;
++  v_total numeric;
++  v_tail  numeric;
++BEGIN
++  SELECT c.as_of, c.total INTO v_as_of, v_total
++    FROM money_flow_checkpoint c WHERE c.metric_key = 'bbj_contributions_inflow';
++  IF NOT FOUND THEN
++    v_as_of := '-infinity'::timestamptz; v_total := 0;
++  END IF;
++
++  SELECT COALESCE(SUM(b.amount), 0) INTO v_tail
++    FROM bbj_contributions b WHERE b.created_at >= v_as_of;
++
++  RETURN v_total + v_tail;
++END;
++$function$
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/bootstrap.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/bootstrap.sql
+new file mode 100644
+index 000000000..021101faf
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/bootstrap.sql
+@@ -0,0 +1,132 @@
++-- Native fixture for the conservation sweep's history-wide reads.
++-- Column names and types match production for every column the three
++-- installed functions read; production indexes those reads could use are
++-- reproduced (idx_chip_ledger_created_at, the payout and idempotency keys).
++-- No player data: every identity is md5-derived from an integer.
++SET client_min_messages = warning;
++CREATE ROLE service_role NOLOGIN;
++CREATE ROLE anon NOLOGIN;
++CREATE ROLE authenticated NOLOGIN;
++
++CREATE FUNCTION u(n integer) RETURNS uuid LANGUAGE sql IMMUTABLE AS
++$$ SELECT (substr(md5(n::text),1,8)||'-'||substr(md5(n::text),9,4)||'-'||substr(md5(n::text),13,4)||'-'||substr(md5(n::text),17,4)||'-'||substr(md5(n::text),21,12))::uuid $$;
++
++CREATE TABLE chip_ledger (
++  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++  created_at timestamptz NOT NULL,
++  club_id uuid,
++  from_type text NOT NULL,
++  from_entity_id uuid,
++  to_type text NOT NULL,
++  to_entity_id uuid,
++  amount numeric NOT NULL,
++  category text NOT NULL,
++  status text NOT NULL DEFAULT 'posted',
++  memo text
++);
++CREATE INDEX idx_chip_ledger_created_at ON chip_ledger (created_at);
++CREATE INDEX idx_chip_ledger_to_entity_created ON chip_ledger (to_entity_id, created_at DESC);
++CREATE INDEX idx_chip_ledger_from_entity_created ON chip_ledger (from_entity_id, created_at DESC);
++
++CREATE TABLE ca_chip_baseline (
++  club_id uuid NOT NULL, user_id uuid NOT NULL,
++  opening_balance numeric NOT NULL, ledger_at_baseline numeric NOT NULL DEFAULT 0,
++  unledgered_gap numeric NOT NULL DEFAULT 0, taken_at timestamptz NOT NULL,
++  PRIMARY KEY (club_id, user_id));
++CREATE TABLE club_members (
++  club_id uuid NOT NULL, user_id uuid NOT NULL, chip_balance numeric NOT NULL DEFAULT 0,
++  PRIMARY KEY (club_id, user_id));
++
++-- BBJ books read by fn_bbj_conservation_check
++CREATE TABLE bbj_contributions (id bigserial PRIMARY KEY, amount numeric NOT NULL, created_at timestamptz NOT NULL);
++CREATE TABLE money_flow_checkpoint (metric_key text PRIMARY KEY, as_of timestamptz, total numeric);
++CREATE TABLE union_wallet_transactions (id bigserial PRIMARY KEY, tx_type text, amount numeric);
++CREATE TABLE bbj_payouts (id bigserial PRIMARY KEY, total_amount numeric);
++CREATE TABLE chip_transactions (id bigserial PRIMARY KEY, transaction_type text, amount numeric);
++CREATE TABLE wallet_transactions (id bigserial PRIMARY KEY, category text, description text, amount numeric);
++CREATE TABLE bbj_pools (id uuid PRIMARY KEY, main_balance numeric, backup_balance numeric, promo_balance numeric,
++  total_paid_out numeric, merged_into_pool_id uuid, pool_amount numeric);
++CREATE TABLE bbj_conservation_baseline (id integer PRIMARY KEY, tolerance numeric, baseline_gap numeric,
++  pre_ledger_payouts numeric, opening_seeds numeric, lifetime_residue numeric, epoch_residue numeric);
++CREATE TABLE ca_bbj_pool_snapshots (id bigserial PRIMARY KEY, taken_at timestamptz NOT NULL, is_baseline boolean NOT NULL,
++  main numeric, backup numeric, promo numeric);
++
++-- payout rows without money
++CREATE TABLE tournaments (id uuid PRIMARY KEY, name text);
++CREATE TABLE tournament_payouts (
++  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tournament_id uuid NOT NULL, user_id uuid NOT NULL,
++  position integer, source text NOT NULL, amount numeric NOT NULL, paid_at timestamptz NOT NULL,
++  idempotency_key text, metadata jsonb);
++CREATE INDEX idx_tournament_payouts_tournament ON tournament_payouts (tournament_id);
++CREATE UNIQUE INDEX uq_tournament_payouts_idempotency_key ON tournament_payouts (idempotency_key) WHERE idempotency_key IS NOT NULL;
++CREATE TABLE wallet_credit_idempotency (key text PRIMARY KEY, created_at timestamptz NOT NULL, user_id uuid, note text);
++CREATE INDEX idx_wallet_credit_idempotency_user_id ON wallet_credit_idempotency (user_id);
++
++-- 480,000 ledger legs, 2026-08-20 .. 2026-09-27. 1 in 5 moves a club member's
++-- player_wallet (half credits, half debits), 2 in 5 feed or pay a BBJ pool,
++-- the rest are other legs; a padding memo gives rows a realistic width.
++INSERT INTO chip_ledger (created_at, club_id, from_type, from_entity_id, to_type, to_entity_id, amount, category, memo)
++SELECT timestamptz '2026-08-20 00:00:00+00' + (i * interval '6.8 seconds'),
++       CASE WHEN i % 97 = 0 THEN NULL ELSE u(1000 + (i % 300) % 20) END,
++       CASE k WHEN 0 THEN 'table' WHEN 1 THEN 'player_wallet'
++              WHEN 2 THEN 'table_pot' WHEN 3 THEN 'table_pot' WHEN 4 THEN 'table_pot'
++              WHEN 5 THEN 'bbj_pool' ELSE 'table_pot' END,
++       CASE k WHEN 1 THEN u(2000 + i % 300) WHEN 5 THEN u(5000 + i % 5) ELSE u(9000 + i % 50) END,
++       CASE k WHEN 0 THEN 'player_wallet' WHEN 1 THEN 'table'
++              WHEN 2 THEN 'bbj_pool' WHEN 3 THEN 'bbj_pool' WHEN 4 THEN 'bbj_pool'
++              WHEN 5 THEN 'player_wallet' ELSE 'rake_pool' END,
++       CASE k WHEN 0 THEN u(2000 + i % 300) WHEN 2 THEN u(5000 + i % 5) WHEN 3 THEN u(5000 + i % 5)
++              WHEN 4 THEN u(5000 + i % 5) WHEN 5 THEN u(2000 + i % 300) ELSE u(9000 + i % 50) END,
++       round(((i % 997) + 1) / 100.0, 2),
++       CASE WHEN k IN (2,3,4,5) THEN 'bbj' ELSE 'hand' END,
++       repeat('x', 180)
++  FROM (SELECT i, CASE WHEN i % 10 < 1 THEN 0 WHEN i % 10 < 2 THEN 1 WHEN i % 10 < 5 THEN 2 + (i % 3)
++                       WHEN i % 10 < 6 THEN 5 ELSE 6 END AS k
++          FROM generate_series(1, 480000) i) s;
++
++INSERT INTO ca_chip_baseline (club_id, user_id, opening_balance, taken_at)
++SELECT u(1000 + n % 20), u(2000 + n), 1000 + n, timestamptz '2026-08-26 00:00:00+00'
++  FROM generate_series(0, 299) n;
++-- Balances equal baseline + movements for every member but twelve, which
++-- drift by a known amount.
++INSERT INTO club_members (club_id, user_id, chip_balance)
++SELECT b.club_id, b.user_id,
++       b.opening_balance
++       + COALESCE((SELECT sum(CASE WHEN l.to_type = 'player_wallet' THEN l.amount ELSE 0 END)
++                        - sum(CASE WHEN l.from_type = 'player_wallet' THEN l.amount ELSE 0 END)
++                     FROM chip_ledger l
++                    WHERE l.club_id = b.club_id AND l.created_at >= b.taken_at
++                      AND ((l.to_type = 'player_wallet' AND l.to_entity_id = b.user_id)
++                        OR (l.to_type <> 'player_wallet' AND l.from_type = 'player_wallet' AND l.from_entity_id = b.user_id))), 0)
++       + CASE WHEN b.opening_balance::int % 25 = 0 THEN 7.25 ELSE 0 END
++  FROM ca_chip_baseline b;
++
++INSERT INTO bbj_contributions (amount, created_at)
++SELECT 0.5, timestamptz '2026-09-20 00:00:00+00' + i * interval '1 minute' FROM generate_series(1, 5000) i;
++INSERT INTO money_flow_checkpoint VALUES ('bbj_contributions_inflow', '2026-09-24 00:00:00+00', 1234.50);
++INSERT INTO union_wallet_transactions (tx_type, amount) VALUES ('bbj_fund', 100), ('bbj_promo_sweep', 40), ('rake', 9);
++INSERT INTO bbj_payouts (total_amount) VALUES (300), (125.5);
++INSERT INTO chip_transactions (transaction_type, amount) VALUES ('bbj_promo_sweep', 12);
++INSERT INTO wallet_transactions (category, description, amount) VALUES ('promotion', 'BBJ promo pool payout', 3);
++INSERT INTO bbj_pools SELECT u(5000 + n), 1000 + n, 200, 50, 400 + n, NULL, 10 FROM generate_series(0, 4) n;
++INSERT INTO bbj_conservation_baseline VALUES (1, 1.00, 0, 0, 0, 0, 0);
++INSERT INTO ca_bbj_pool_snapshots (taken_at, is_baseline, main, backup, promo) VALUES
++  ('2026-09-01 00:00:00+00', true, 5000, 900, 200),
++  ('2026-09-02 00:00:00+00', false, 5100, 900, 200);
++
++-- 40,000 payouts over 30 days, 2,000 tournaments; the newest have a missing
++-- or unmatched idempotency key in known places.
++INSERT INTO tournaments SELECT u(20000 + n), 'Fixture Event ' || n FROM generate_series(0, 1999) n;
++INSERT INTO wallet_credit_idempotency (key, created_at, user_id, note)
++SELECT 'prize:' || i, timestamptz '2026-08-01 00:00:00+00' + i * interval '1 minute', u(2000 + i % 300), repeat('y', 150)
++  FROM generate_series(1, 90000) i;
++INSERT INTO tournament_payouts (tournament_id, user_id, position, source, amount, paid_at, idempotency_key, metadata)
++SELECT u(20000 + i % 2000), u(2000 + i % 300), 1 + i % 9,
++       (ARRAY['structure','reconcile','satellite_ticket','bubble_protection'])[1 + i % 4],
++       CASE WHEN i % 53 = 0 THEN 0 ELSE 5 + i % 40 END,
++       now() - (i * interval '64.8 seconds'),
++       CASE WHEN i % 211 = 0 THEN NULL WHEN i % 307 = 0 THEN 'missing:' || i ELSE 'prize:' || (i % 90000 + 1) END,
++       jsonb_build_object('pad', repeat('z', 200))
++  FROM generate_series(1, 40000) i;
++
++VACUUM (ANALYZE);
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/chip-drift-installed.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/chip-drift-installed.sql
+new file mode 100644
+index 000000000..b9487ce81
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/chip-drift-installed.sql
+@@ -0,0 +1,32 @@
++CREATE OR REPLACE FUNCTION public.fn_chip_drift_since_baseline()
++ RETURNS TABLE(club_id uuid, user_id uuid, opening_balance numeric, movements_since numeric, expected numeric, actual numeric, drift numeric)
++ LANGUAGE sql
++ STABLE SECURITY DEFINER
++ SET search_path TO 'public', 'pg_temp'
++AS $function$
++  WITH span AS (SELECT MIN(taken_at) AS t0 FROM public.ca_chip_baseline),
++  moves AS (
++    SELECT cl.club_id AS c_id,
++           /* The player is whichever side is typed player_wallet. Never a
++              coalesce: both sides are populated now. */
++           CASE WHEN cl.to_type = 'player_wallet' THEN cl.to_entity_id
++                ELSE cl.from_entity_id END AS u_id,
++           SUM(CASE WHEN cl.to_type   = 'player_wallet' THEN cl.amount ELSE 0 END)
++         - SUM(CASE WHEN cl.from_type = 'player_wallet' THEN cl.amount ELSE 0 END) AS net
++    FROM public.chip_ledger cl, span
++    WHERE cl.club_id IS NOT NULL
++      AND cl.created_at >= span.t0
++      AND (cl.to_type = 'player_wallet' OR cl.from_type = 'player_wallet')
++    GROUP BY 1, 2
++  )
++  SELECT b.club_id, b.user_id, b.opening_balance,
++         COALESCE(m.net, 0)                              AS movements_since,
++         b.opening_balance + COALESCE(m.net, 0)          AS expected,
++         COALESCE(cm.chip_balance, 0)                    AS actual,
++         COALESCE(cm.chip_balance, 0) - (b.opening_balance + COALESCE(m.net, 0)) AS drift
++  FROM public.ca_chip_baseline b
++  JOIN public.club_members cm
++    ON cm.club_id = b.club_id AND cm.user_id = b.user_id
++  LEFT JOIN moves m
++    ON m.c_id = b.club_id AND m.u_id = b.user_id;
++$function$
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/cron-failure-watch-installed.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/cron-failure-watch-installed.sql
+new file mode 100644
+index 000000000..e19bcdc83
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/cron-failure-watch-installed.sql
+@@ -0,0 +1,39 @@
++CREATE OR REPLACE FUNCTION public.fn_ca_cron_failure_watch()
++ RETURNS integer
++ LANGUAGE plpgsql
++ SECURITY DEFINER
++ SET search_path TO 'public'
++AS $function$
++DECLARE r record; n integer := 0; v_is_guard boolean;
++BEGIN
++  FOR r IN
++    SELECT j.jobname,
++           count(*) FILTER (WHERE d.status = 'failed')    AS fails,
++           count(*) FILTER (WHERE d.status = 'succeeded') AS successes,
++           max(d.start_time) FILTER (WHERE d.status = 'succeeded') AS last_success,
++           max(left(d.return_message, 200)) FILTER (WHERE d.status = 'failed') AS sample_error
++    FROM cron.job j
++    JOIN cron.job_run_details d ON d.jobid = j.jobid
++    WHERE j.active AND d.start_time > now() - interval '2 hours'
++    GROUP BY j.jobname
++    HAVING count(*) FILTER (WHERE d.status = 'failed') >= 5
++       AND count(*) FILTER (WHERE d.status = 'succeeded') = 0
++    LIMIT 20
++  LOOP
++    SELECT EXISTS (SELECT 1 FROM public.ca_guard_inventory g
++                    WHERE g.kind = 'cron' AND g.object_a = r.jobname AND g.active)
++      INTO v_is_guard;
++    PERFORM public.fn_ca_raise_drift_incident(
++      'fn_ca_cron_failure_watch', 'unknown',
++      CASE WHEN v_is_guard THEN 'critical' ELSE 'warning' END,
++      'cron-failing:' || r.jobname || ':' || CURRENT_DATE::text,
++      0, NULL, NULL, 'reporting', 'cron.job_run_details',
++      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
++      'scheduled job ' || r.jobname || ' has failed ' || r.fails
++        || ' times in 2h with zero successes. Last error: ' || COALESCE(r.sample_error, '?'),
++      NULL, jsonb_build_object('jobname', r.jobname, 'fails_2h', r.fails,
++                               'last_success', r.last_success));
++    n := n + 1;
++  END LOOP;
++  RETURN n;
++END $function$
+diff --git a/scripts/ci/fixtures/conservation-sweep-read-indexes/payout-rows-installed.sql b/scripts/ci/fixtures/conservation-sweep-read-indexes/payout-rows-installed.sql
+new file mode 100644
+index 000000000..21ba64914
+--- /dev/null
++++ b/scripts/ci/fixtures/conservation-sweep-read-indexes/payout-rows-installed.sql
+@@ -0,0 +1,20 @@
++CREATE OR REPLACE FUNCTION public.fn_ca_payout_rows_without_money(p_days integer DEFAULT 30)
++ RETURNS TABLE(tournament_id uuid, tournament_name text, player_id uuid, finish_position integer, source text, amount numeric, paid_at timestamp with time zone, idempotency_key text)
++ LANGUAGE sql
++ STABLE SECURITY DEFINER
++ SET search_path TO 'public', 'pg_temp'
++AS $function$
++    SELECT p.tournament_id, t.name, p.user_id, p.position, p.source, p.amount, p.paid_at, p.idempotency_key
++      FROM public.tournament_payouts p
++      JOIN public.tournaments t ON t.id = p.tournament_id
++     WHERE p.source IN ('structure', 'reconcile', 'overlay_backpay', 'spin_backpay',
++                        'hu_shortfall', 'late_reg_adjustment', 'final_table_deal', 'bubble_protection')
++       AND p.user_id IS NOT NULL
++       AND p.amount > 0
++       AND p.paid_at > now() - make_interval(days => GREATEST(COALESCE(p_days, 30), 1))
++       AND p.paid_at > (SELECT min(created_at) FROM public.wallet_credit_idempotency)
++       AND (p.idempotency_key IS NULL
++            OR NOT EXISTS (SELECT 1 FROM public.wallet_credit_idempotency w
++                            WHERE w.key = p.idempotency_key))
++     ORDER BY p.paid_at DESC;
++  $function$

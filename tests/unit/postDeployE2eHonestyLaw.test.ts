@@ -22,8 +22,8 @@
  * If someone reverts one, this test names which.
  */
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -85,6 +85,76 @@ const spec = (file: string, statuses: (string | null)[]) => ({
       })),
     },
   ],
+});
+
+describe.each([
+  { lane: 'client', workflow: WORKFLOW },
+  { lane: 'live-table', workflow: TABLE_WORKFLOW },
+])('$lane release-window status under Actions bash -e', ({ workflow }) => {
+  it.each([0, 3, 1])('handles classifier exit %i without losing its verdict', (status) => {
+    const proof = step(workflow, 'Classify the release window this certificate covers');
+    const body = proof.split('\n        run: |\n')[1];
+    expect(body).toBeDefined();
+    const script = body.replace(/^ {10}/gm, '');
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-release-window-'));
+    const summary = join(dir, 'summary.md');
+    writeFileSync(summary, '');
+    try {
+      // Execute the maintained shell block, including its pipeline, with the
+      // runner's errexit setting. Only external I/O is controlled here; the
+      // provenance parser's lineage decisions have their own direct tests.
+      const result = spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-e',
+          '-o',
+          'pipefail',
+          '-c',
+          `curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+node() {
+  cat >/dev/null
+  [ "$1" = scripts/ci/production-e2e-provenance.mjs ] || return 99
+  [ "$2" = release-window ] || return 99
+  printf '%s\\n' "$CLASSIFIER_OUTPUT"
+  return "$CLASSIFIER_STATUS"
+}
+${script}`,
+        ],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            EXPECTED_LIVE_SHA: 'a'.repeat(40),
+            GITHUB_STEP_SUMMARY: summary,
+            CLASSIFIER_STATUS: String(status),
+            CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
+          },
+        }
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(status === 1 ? 1 : 0);
+      const report = readFileSync(summary, 'utf8');
+      if (status === 0) {
+        expect(report).toContain('Production stayed on');
+        expect(report).not.toContain('NON-VERDICT');
+      } else if (status === 3) {
+        expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
+        expect(report).toContain(`superseded ${'b'.repeat(40)}`);
+        expect(report).toContain('NON-VERDICT');
+        expect(report).not.toContain('Production stayed on');
+      } else {
+        expect(result.stdout).toContain('::error::production left');
+        expect(report).not.toContain('Production stayed on');
+        expect(report).not.toContain('NON-VERDICT');
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the checker refuses a run that verified nothing', () => {

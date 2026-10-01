@@ -17,6 +17,16 @@ export const WHEEL_MIN_FRAMES = 30;
 export const WHEEL_SLOW_SHARE = 0.25;
 
 let demoted = false;
+/** Every wheel on screen hears a demotion: the cabinet and the upgrade wheel turn lite together. */
+const listeners = new Set<() => void>();
+
+/** Run `listener` when this visit turns lite. Returns the unsubscribe. */
+export function onWheelLite(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 /** Whether a wheel mounting now should start lite. */
 export function wheelStartsLite(nav: Navigator | undefined = globalThis.navigator): boolean {
@@ -42,6 +52,7 @@ export function createWheelFrameWatch() {
       if (frames >= WHEEL_MIN_FRAMES && slow / frames >= WHEEL_SLOW_SHARE) {
         decided = true;
         demoted = true;
+        for (const listener of [...listeners]) listener();
         return true;
       }
       return false;

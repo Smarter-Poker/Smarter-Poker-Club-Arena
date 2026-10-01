@@ -4,6 +4,7 @@ import DiamondWheel from '../../src/components/wheel/DiamondWheel';
 import {
   WHEEL_MIN_FRAMES,
   createWheelFrameWatch,
+  onWheelLite,
   resetWheelLite,
   wheelStartsLite,
 } from '../../src/components/wheel/wheelLite';
@@ -113,5 +114,46 @@ describe('a spin reports how the phone drew it', () => {
       'diamond_scene_session',
       expect.objectContaining({ game: 'wheel', software: false, start_tier: 0, fps: 50 })
     );
+  });
+});
+
+describe('every wheel on screen turns lite together', () => {
+  it('tells each listener once, and not one that left', () => {
+    const stays = vi.fn();
+    const leaves = vi.fn();
+    const offStays = onWheelLite(stays);
+    onWheelLite(leaves)();
+    const watch = createWheelFrameWatch();
+    for (let i = 0; i < WHEEL_MIN_FRAMES + 5; i++) watch.frame(50);
+    expect(stays).toHaveBeenCalledTimes(1);
+    expect(leaves).not.toHaveBeenCalled();
+    offStays();
+  });
+
+  it('marks both the cabinet wheel and the upgrade wheel when one spin proves slow', () => {
+    const wheel = (upgraded: boolean) => (
+      <DiamondWheel
+        segments={[]}
+        landingOrd={null}
+        spinKey={0}
+        spinning={false}
+        onLanded={() => {}}
+        upgraded={upgraded}
+      />
+    );
+    const { container } = render(
+      <>
+        {wheel(false)}
+        {wheel(true)}
+      </>
+    );
+    const frames = () => [...container.querySelectorAll('[data-idle-direction]')];
+    expect(frames()).toHaveLength(2);
+    for (const f of frames()) expect(f).not.toHaveAttribute('data-lite');
+    act(() => {
+      const watch = createWheelFrameWatch();
+      for (let i = 0; i < WHEEL_MIN_FRAMES; i++) watch.frame(50);
+    });
+    for (const f of frames()) expect(f).toHaveAttribute('data-lite');
   });
 });

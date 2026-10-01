@@ -19,7 +19,7 @@ import {
 } from '../../utils/diamondWheelMotion';
 import { WheelPrizeArt } from './WheelPrizeArt';
 import { WheelPrizeCard } from './WheelPrizeCard';
-import { createWheelFrameWatch, wheelStartsLite } from './wheelLite';
+import { createWheelFrameWatch, onWheelLite, wheelStartsLite } from './wheelLite';
 import { createSceneTelemetry } from '../games/sceneTelemetry';
 import styles from './DiamondWheel.module.css';
 
@@ -203,6 +203,8 @@ export default function DiamondWheel({
   const frame = useRef<HTMLDivElement>(null);
   // Decoration at rest on a phone that cannot carry it (wheelLite.ts).
   const [startsLite] = useState(() => wheelStartsLite());
+  // A slow spin on any wheel turns every mounted wheel lite at once.
+  useEffect(() => onWheelLite(() => frame.current?.setAttribute('data-lite', '')), []);
   // The frame's box decides the aperture (fit-viewport widens it) and the
   // pixel size of one wheel unit; every layer is placed from these numbers.
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -351,10 +353,7 @@ export default function DiamondWheel({
         if (watching !== run) {
           watching = run;
           watch = createWheelFrameWatch();
-        } else if (watch.frame(elapsed)) {
-          frame.current?.setAttribute('data-lite', '');
-          telemetry.tier(1);
-        }
+        } else if (watch.frame(elapsed)) telemetry.tier(1);
         telemetry.frame(now, true);
         const progress = Math.min(1, run.elapsed / run.duration);
         while (run.nextPeg < run.pegs.length && run.pegs[run.nextPeg] <= run.elapsed) {

@@ -9,24 +9,27 @@ const sql = readFileSync(
   ),
   'utf8'
 );
+const cleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001212300_welcome_certification_cleanup_runs_after_core.sql'
+  ),
+  'utf8'
+);
 
 describe('prospective lifetime-first club welcome package database contract', () => {
-  it('installs atomically with the reviewed hot-relation lock window', () => {
+  it('installs the core atomically without cross-hot-table prelocks', () => {
     expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(sql).toContain("SET LOCAL lock_timeout = '15s';");
     expect(sql).not.toContain("SET LOCAL lock_timeout = '5s';");
-    const authLock = sql.indexOf('LOCK TABLE auth.users IN ACCESS EXCLUSIVE MODE;');
-    const requestLock = sql.indexOf(
-      'LOCK TABLE public.club_creation_requests IN SHARE ROW EXCLUSIVE MODE;'
+    expect(sql).not.toMatch(
+      /LOCK TABLE (auth\.users|public\.(club_creation_requests|clubs|tournaments))/
     );
-    const clubLock = sql.indexOf('LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;');
-    const firstDdl = sql.indexOf('CREATE TABLE public.club_welcome_entitlements');
-    expect(authLock).toBeGreaterThan(0);
-    expect(authLock).toBeLessThan(requestLock);
-    expect(requestLock).toBeGreaterThan(0);
-    expect(requestLock).toBeLessThan(clubLock);
-    expect(clubLock).toBeLessThan(firstDdl);
+    expect(sql).not.toContain('fn_ca_prepare_unused_welcome_certification_fixture');
+    expect(cleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(cleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(cleanupSql).not.toMatch(/LOCK TABLE/);
   });
 
   it('mints entitlement only from a new creation receipt and never backfills', () => {
@@ -139,23 +142,28 @@ describe('prospective lifetime-first club welcome package database contract', ()
   });
 
   it('prepares only an unused reserved certification welcome fixture before the old retirement door', () => {
-    expect(sql).toContain('public.fn_ca_prepare_unused_welcome_certification_fixture');
-    expect(sql).toContain('WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED');
-    expect(sql).toContain('WELCOME_CERTIFICATION_FIXTURE_MEMBER_OR_AGENT_REFUSED');
-    expect(sql).toContain('WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES');
-    expect(sql).toContain('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY');
-    expect(sql).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
-    expect(sql).toContain("LIKE 'ca-customization-cert-postdeploy-%@example.invalid'");
-    expect(sql).toContain('v_item_count<>10');
-    expect(sql).toContain('cardinality(v_cash)<>9');
-    expect(sql).toContain('DELETE FROM public.tables WHERE id=ANY(v_tables)');
-    expect(sql).toContain('DELETE FROM public.cash_games WHERE id=ANY(v_cash)');
-    expect(sql).toContain('DELETE FROM public.tournament_schedules WHERE id=ANY(v_schedules)');
-    expect(sql).toContain(
+    expect(cleanupSql).toContain('public.fn_ca_prepare_unused_welcome_certification_fixture');
+    expect(cleanupSql).toContain('WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED');
+    expect(cleanupSql).toContain('WELCOME_CERTIFICATION_FIXTURE_MEMBER_OR_AGENT_REFUSED');
+    expect(cleanupSql).toContain('WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES');
+    expect(cleanupSql).toContain('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY');
+    expect(cleanupSql).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
+    expect(cleanupSql).toContain("LIKE 'ca-customization-cert-postdeploy-%@example.invalid'");
+    expect(cleanupSql).toContain('v_item_count<>10');
+    expect(cleanupSql).toContain('cardinality(v_cash)<>9');
+    expect(cleanupSql).toContain('DELETE FROM public.tables WHERE id=ANY(v_tables)');
+    expect(cleanupSql).toContain('DELETE FROM public.cash_games WHERE id=ANY(v_cash)');
+    expect(cleanupSql).toContain(
+      'DELETE FROM public.tournament_schedules WHERE id=ANY(v_schedules)'
+    );
+    expect(cleanupSql).toContain(
       'PERFORM public.fn_ca_prepare_unused_welcome_certification_fixture(p_club_id)'
     );
-    expect(sql.indexOf('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY')).toBeLessThan(
-      sql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_tables)')
+    expect(cleanupSql).toContain(
+      'RETURN public.fn_ca_retire_certification_club(p_club_id,p_reason)'
+    );
+    expect(cleanupSql.indexOf('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY')).toBeLessThan(
+      cleanupSql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_tables)')
     );
   });
 });

@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / 'supabase/migrations/20261001154709_prospective_lifetime_first_club_welcome_package.sql'
+CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261001212300_welcome_certification_cleanup_runs_after_core.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -16,7 +17,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migration': MIGRATION.name, 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -150,7 +151,8 @@ try:
     if r.returncode: raise RuntimeError(r.stderr+'\n'+(cluster/'server.log').read_text())
     run('setup',SETUP)
     run('opening-definition-before', "SELECT pg_get_functiondef('fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);")
-    run('install',MIGRATION.read_text())
+    run('install-core',MIGRATION.read_text())
+    run('install-certification-cleanup',CLEANUP_MIGRATION.read_text())
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'
@@ -168,7 +170,7 @@ try:
     run('reset-discovers-both-schedule-links',f"SET request.jwt.claim.sub='{owner1}'; DELETE FROM hand_history; WITH s AS(SELECT entity_id FROM club_welcome_package_items WHERE club_id='{c1}' AND entity_kind='tournament_schedule'), a AS(INSERT INTO tournaments(id,club_id,schedule_id,status) SELECT gen_random_uuid(),'{c1}',entity_id,'REGISTERING' FROM s RETURNING id), b AS(INSERT INTO tournaments(id,club_id,status) VALUES(gen_random_uuid(),'{c1}','REGISTERING') RETURNING id) INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key) SELECT s.entity_id,b.id,'backlink' FROM s,b; SELECT jsonb_array_length(fn_get_club_welcome_package_reset_impact('{c1}')->'tournament_ids');",'2')
     run('owner-reset-soft-retires',f"SET request.jwt.claim.sub='{owner1}'; SELECT fn_remove_first_club_welcome_games('{c1}',gen_random_uuid())->>'ok'; SELECT count(*) FROM tournaments WHERE club_id='{c1}' AND status='CANCELLED'; SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c1}' AND retired_at IS NOT NULL;",'true\n2\n10')
     run('retired-schedule-fences-spawn',f"SET request.jwt.claim.sub='{owner1}'; DO $x$ DECLARE s uuid; BEGIN SELECT entity_id INTO s FROM club_welcome_package_items WHERE club_id='{c1}' AND entity_kind='tournament_schedule'; BEGIN INSERT INTO tournaments(id,club_id,schedule_id,status) VALUES(gen_random_uuid(),'{c1}',s,'REGISTERING'); RAISE EXCEPTION 'spawn_not_fenced'; EXCEPTION WHEN sqlstate '55000' THEN NULL; END; END $x$; SELECT 'refused';",'refused')
-    run('certification-cleanup-exact-fixture',f"INSERT INTO auth.users VALUES('{owner4}','ca-customization-cert-postdeploy-native@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c5}','{owner4}','Crest Cert Native'); INSERT INTO club_members(club_id,user_id) VALUES('{c5}','{owner4}'); SET request.jwt.claim.sub='{owner4}'; INSERT INTO club_creation_requests VALUES('{owner4}',gen_random_uuid(),'{c5}'); SET request.jwt.claim.role='service_role'; SELECT fn_ca_prepare_unused_welcome_certification_fixture('{c5}')->>'prepared'; SELECT count(*),(SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c5}'),(SELECT count(*) FROM club_owner_creation_history WHERE owner_id='{owner4}') FROM tables WHERE club_id='{c5}';",'true\n0|0|0')
+    run('certification-cleanup-exact-fixture',f"INSERT INTO auth.users VALUES('{owner4}','ca-customization-cert-postdeploy-native@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c5}','{owner4}','Crest Cert Native'); INSERT INTO club_members(club_id,user_id) VALUES('{c5}','{owner4}'); SET request.jwt.claim.sub='{owner4}'; INSERT INTO club_creation_requests VALUES('{owner4}',gen_random_uuid(),'{c5}'); SET request.jwt.claim.role='service_role'; SELECT fn_ca_retire_welcome_certification_club('{c5}','native-cert')->>'success'; SELECT count(*),(SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c5}'),(SELECT count(*) FROM club_owner_creation_history WHERE owner_id='{owner4}') FROM tables WHERE club_id='{c5}';",'true\n0|0|0')
     run('certification-cleanup-refuses-activity',f"INSERT INTO auth.users VALUES('{owner5}','ca-customization-cert-postdeploy-active@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c6}','{owner5}','Crest Cert Active'); INSERT INTO club_members(club_id,user_id) VALUES('{c6}','{owner5}'); SET request.jwt.claim.sub='{owner5}'; INSERT INTO club_creation_requests VALUES('{owner5}',gen_random_uuid(),'{c6}'); INSERT INTO table_seats(table_id) SELECT initial_table_id FROM club_welcome_package_items WHERE club_id='{c6}' AND entity_kind='cash_game' LIMIT 1; SET request.jwt.claim.role='service_role'; DO $x$ BEGIN PERFORM fn_ca_prepare_unused_welcome_certification_fixture('{c6}'); RAISE EXCEPTION 'activity_not_refused'; EXCEPTION WHEN sqlstate '55000' THEN IF SQLERRM<>'WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY' THEN RAISE; END IF; END $x$; SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c6}') FROM club_welcome_package_items WHERE club_id='{c6}';",'10|9')
     run('certification-cleanup-refuses-protected-estate',f"INSERT INTO auth.users VALUES('{owner6}','ca-customization-cert-postdeploy-protected@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c7}','{owner6}','Crest Cert Protected'); INSERT INTO club_members(club_id,user_id) VALUES('{c7}','{owner6}'); SET request.jwt.claim.sub='{owner6}'; INSERT INTO club_creation_requests VALUES('{owner6}',gen_random_uuid(),'{c7}'); SET request.jwt.claim.role='service_role'; DO $x$ BEGIN PERFORM fn_ca_prepare_unused_welcome_certification_fixture('{c7}'); RAISE EXCEPTION 'protected_not_refused'; EXCEPTION WHEN sqlstate '42501' THEN IF SQLERRM<>'WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED' THEN RAISE; END IF; END $x$; SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c7}') FROM club_welcome_package_items WHERE club_id='{c7}';",'10|9')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')

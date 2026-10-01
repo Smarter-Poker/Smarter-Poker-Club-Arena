@@ -18,7 +18,7 @@ export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
-// The exact names fn_ca_retire_certification_club itself accepts. The door
+// The exact names the guarded certification-retirement coordinator accepts.
 // re-checks them, but this side refuses first so an unrecognized club is never
 // even offered to it.
 const CERTIFICATION_CLUB_NAME_PREFIXES = ['Crest Cert ', 'Preset Crest Cert '];
@@ -481,7 +481,7 @@ export async function retireCertificationClubWithRetry({
     () =>
       serviceRequest(
         configuration,
-        '/rest/v1/rpc/fn_ca_retire_certification_club',
+        '/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
         { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
         fetchImpl
       ),

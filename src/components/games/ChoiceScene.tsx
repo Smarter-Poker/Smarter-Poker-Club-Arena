@@ -9,6 +9,7 @@ import { isSoftwareRenderer } from './rendererTier';
 import { createQualityGovernor, FLOOR_TIER } from './qualityGovernor';
 import { applyQualityTier } from './sceneKit';
 import { createFramePacer } from './framePacer';
+import { createSceneTelemetry, reportSceneFailure } from './sceneTelemetry';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
@@ -1228,6 +1229,7 @@ function CrossingScene(props: Props) {
     } catch (e) {
       setFailed(true);
       reportError(e, 'ChoiceScene.renderer');
+      reportSceneFailure('crossing', 'renderer');
       latest.current.onSettled?.();
       return;
     }
@@ -1875,6 +1877,9 @@ function CrossingScene(props: Props) {
         needsDraw = true;
       },
     });
+    // One anonymous summary of how this phone drew the visit (sceneTelemetry.ts).
+    const telemetry = createSceneTelemetry('crossing', { software, startTier: governor.tier });
+    let stallReported = false;
     const resize = () => {
       const w = node.clientWidth,
         h = node.clientHeight;
@@ -2348,6 +2353,10 @@ function CrossingScene(props: Props) {
       // completion lands on a frame the driver has not linked yet.
       const drawing = compiled && !p.paused && onScreen && (!reduced || needsDraw);
       const submitted = compiled && (drawing ? frames.render(pacer.governorInterval(pace)) : true);
+      if (drawing && submitted) {
+        telemetry.tier(governor.tier);
+        telemetry.frame(now, pace === 0);
+      }
       if (drawing) needsDraw = false;
       animating = !finished || lean > 0 || stepping;
       // A beat belongs to the frame that shows it: the same terminal-frame
@@ -2364,13 +2373,22 @@ function CrossingScene(props: Props) {
       // terminal frame however long that takes.
       if (pending.current) {
         stalled = submitted ? 0 : stalled + visibleDelta;
-        if (stalled >= 8000) setFailed(true);
-      } else stalled = 0;
+        if (stalled >= 8000) {
+          setFailed(true);
+          // Reported once per stall, not once per frame of it.
+          if (!stallReported) reportSceneFailure('crossing', 'stalled');
+          stallReported = true;
+        }
+      } else {
+        stalled = 0;
+        stallReported = false;
+      }
     };
     raf = requestAnimationFrame(draw);
     const lost = (e: Event) => {
       e.preventDefault();
       setFailed(true);
+      reportSceneFailure('crossing', 'context_lost');
       latest.current.onSettled?.();
     };
     // A context the browser gives back is drawn on again: every sign is
@@ -2390,6 +2408,7 @@ function CrossingScene(props: Props) {
     return () => {
       cancelAnimationFrame(raf);
       pacer.dispose();
+      telemetry.end();
       clearTimeout(compileTimer);
       silenceCar(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);

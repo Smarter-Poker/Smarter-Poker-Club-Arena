@@ -40,6 +40,18 @@ const frames = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 vi.mock('../../src/services/SoundService', () => ({ soundService: sounds, PLINKO_PEG_GAP_MS: 30 }));
+const telemetry = vi.hoisted(() => ({ failed: vi.fn(), ended: vi.fn() }));
+vi.mock('../../src/components/games/sceneTelemetry', async (original) => {
+  const actual = await original<typeof import('../../src/components/games/sceneTelemetry')>();
+  return {
+    ...actual,
+    reportSceneFailure: telemetry.failed,
+    createSceneTelemetry: (...args: Parameters<typeof actual.createSceneTelemetry>) => {
+      const real = actual.createSceneTelemetry(...args);
+      return { ...real, end: () => telemetry.ended(args[0]) };
+    },
+  };
+});
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/utils/animationSpeed', async (original) => ({
   ...(await original<typeof import('../../src/utils/animationSpeed')>()),
@@ -572,5 +584,49 @@ describe('Crash and Plinko draw every display frame while they move, and park wh
     let ticks = 0;
     for (let t = 108; t <= 900; t += 8, ticks++) frame(t);
     expect(frames.render.mock.calls.length).toBeGreaterThanOrEqual(ticks - 2);
+  });
+});
+
+describe('the scenes report how they drew, and when they could not', () => {
+  it('Plinko reports a renderer it could not start', () => {
+    noWebGL.on = true;
+    render(
+      <PlinkoBoard
+        multipliersCents={Array.from({ length: 17 }, () => 100)}
+        path={null}
+        dropKey={1}
+        batchPathBits={null}
+        restingSlot={null}
+      />
+    );
+    expect(telemetry.failed).toHaveBeenCalledWith('plinko', 'renderer');
+  });
+
+  it('Crash and Plinko close their visit summary on unmount', () => {
+    const crash = render(
+      <CrashCurve
+        phase="idle"
+        growthK={0.12}
+        capCents={2500}
+        startedAtLocalMs={100}
+        finalCents={null}
+        cashoutCents={null}
+        crashCents={null}
+        autoCashoutCents={null}
+      />
+    );
+    crash.unmount();
+    expect(telemetry.ended).toHaveBeenCalledWith('crash');
+    const plinko = render(
+      <PlinkoBoard
+        multipliersCents={Array.from({ length: 17 }, () => 100)}
+        path={null}
+        dropKey={1}
+        batchPathBits={null}
+        restingSlot={null}
+      />
+    );
+    plinko.unmount();
+    expect(telemetry.ended).toHaveBeenCalledWith('plinko');
   });
 });

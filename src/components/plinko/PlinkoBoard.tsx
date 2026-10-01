@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
 import { createFramePacer } from '../games/framePacer';
+import { createSceneTelemetry, reportSceneFailure } from '../games/sceneTelemetry';
 import { pegIndexAt, plinkoPegField } from './plinkoPegField';
 import { plinkoCabinet, type CabinetFrame } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
@@ -275,13 +276,20 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     } catch (error) {
       setFailed(true);
       reportError(error, 'PlinkoBoard.renderer');
+      reportSceneFailure('plinko', 'renderer');
       return;
     }
     const { scene, camera, renderer } = kit;
+    // One anonymous summary of how this phone drew the visit (sceneTelemetry.ts).
+    const telemetry = createSceneTelemetry('plinko', {
+      software: kit.software,
+      startTier: kit.qualityTier,
+    });
     const surface = renderer.domElement;
     const lost = (event: Event) => {
       event.preventDefault();
       setFailed(true);
+      reportSceneFailure('plinko', 'context_lost');
     };
     const restored = () => setFailed(false);
     surface.addEventListener('webglcontextlost', lost);
@@ -671,6 +679,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       cabinetFrame.pulsing = pulsing;
       cabinet.frame(cabinetFrame);
       if (kit.render(pacer.governorInterval(pace))) {
+        telemetry.tier(kit.qualityTier);
+        telemetry.frame(now, pace === 0);
         /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
            for the pegs this frame shows being struck, at most one every
            PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row
@@ -700,6 +710,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', visibilityChanged);
       pacer.dispose();
+      telemetry.end();
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;

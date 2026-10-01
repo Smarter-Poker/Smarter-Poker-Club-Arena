@@ -73,10 +73,30 @@ timeout`, inside `fn_ca_register_diamond_journal_row`'s sum over
 - First budgeted run, 00:21:02: succeeded in 45.5 s, 118 rewards claimed, 78
   milestones paid (78,000 Diamonds), 0 deferred, identity 0.00.
 
+## The drain (production, read-only)
+
+| Reading (UTC)                          | Owed past 5 min | Paid since apply (rewards / milestones) |
+| -------------------------------------- | --------------- | --------------------------------------- |
+| 00:05:30, before apply                 | 3,053           | -                                       |
+| 00:22:17, after the first budgeted run | 3,078           | 118 / 78                                |
+| 00:30:29                               | 2,046           | 1,279 / 177                             |
+| 00:37:57                               | 1,387           | 2,229 / 205                             |
+| 00:46:06                               | 548             | 3,388 / 235                             |
+| 00:52:21                               | 0               | 4,273 / 274 (181,500 Diamonds)          |
+
+Every budgeted run succeeded (45 s while the backlog lasted, then 9-21 s).
+The supply identity read 0.00 at every reading. Incidents along the way: three
+`CH3:milestone_refused` (`deadlock detected` against a concurrent writer, at
+00:21; each stayed owed and was paid by that horse's next claim) and one
+`CH3:horse_claim_failed` (`deadlock detected` at 00:26; deferred ten minutes,
+then claimed). At 00:52 `fn_ca_diamond_health()` read `horse claims` ok: "No
+horse is owed a reward it cannot claim." No area read critical.
+
 ## Verdict
 
-Tick for the fix: milestones pay on their own line, a refused milestone can no
-longer take a reward down or block the sweep, and the sweep pays again
-(about 118 rewards a minute while the backlog lasts). The backlog drain and
-the `DR0:health_critical` closure at the hourly watch are reported with their
-numbers in the line's final report.
+Tick: milestones pay on their own line, a refused milestone can no longer take
+a reward down or block the sweep, the sweep finishes inside its timeout, and
+the whole backlog was paid within 31 minutes of the second apply. The 47 open
+`DR0:health_critical` rows (all `horse claims`) close at the next hourly watch
+by its own rule, which resolves a row once every area it names reads other than
+critical; that closure is reported with its numbers in the line's final report.

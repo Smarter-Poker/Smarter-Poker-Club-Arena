@@ -1,0 +1,14 @@
+{
+  "migration": "supabase/migrations/20261001151646_the_conservation_delta_finds_a_seat_s_award_by_its_payout.sql",
+  "scalarBeforeDefinitionMD5": "46647067aa049dcb9bda93fa0a1a35b3",
+  "scalarDefinitionMD5": "f53d86ced39778a627082b7cb9d655f3",
+  "scalarBodyMD5": "e281e56110271d32957a26449b2b4033",
+  "payerBeforeDefinitionMD5": "9078403312e51a873e6e7462555dcf7e",
+  "payerAfterDefinitionMD5": "c4bee1c002152eeae5b85f1e4c9bde1a",
+  "auditBeforeDefinitionMD5": "462b1c631010e4bab0361967d2da2a75",
+  "auditAfterDefinitionMD5": "5d847143055fab40063ee1d968f2bb36",
+  "oldPayerJoin": "ON a.tournament_id = sp.tournament_id AND a.place = sp.position",
+  "newPayerJoin": "ON a.payout_id = sp.id",
+  "payerJoins": 2,
+  "payerOmittedTerm": "funded_bubble"
+}

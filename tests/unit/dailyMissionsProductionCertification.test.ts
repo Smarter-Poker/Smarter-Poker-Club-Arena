@@ -147,7 +147,25 @@ describe('Daily Missions production certification', () => {
     expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
     expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
     expect(helper).toContain("{ table: 'users', column: 'id' as const }");
-    expect(spec).toContain('hand history: exact fixture row remains');
+    // Production never receives a synthetic hand, so there is no hand fixture
+    // to clean up: the settled-hand trigger is certified on native PostgreSQL
+    // (scripts/ci/test-daily-missions-hand-trigger-postgres.py, board #5070).
+    expect(spec).not.toMatch(/['"`]hand_history['"`]/);
+    // Production still certifies the half the trigger hands off to: the exact
+    // outbox row the trigger writes, booked by the live pg_cron drainer. The
+    // spec must never book the event itself (the service enqueue RPC records
+    // it inline and deletes the outbox row, which skips the drainer).
+    expect(spec).toMatch(
+      /insertServiceRows<[\s\S]*?>\(environment, 'daily_challenge_event_outbox', \{\s*user_id: account!\.id,\s*event_key: eventKey,\s*amounts,\s*magnitudes,\s*threshold_values: thresholdValues,\s*occurred_at: occurredAt,\s*\}\)/
+    );
+    expect(spec).toContain('const eventKey = `certification:outbox:${randomUUID()}`;');
+    expect(spec).toContain(
+      'const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };'
+    );
+    expect(spec).toContain("'the pg_cron outbox drainer must book the queued event'");
+    expect(spec).toContain('timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT');
+    expect(spec).not.toContain('enqueue_daily_challenge_event');
+    expect(spec).not.toMatch(/fn_drain_daily_challenge_event_outbox_user['"`]/);
     expect(helper).toContain('reserved fixture residue remains after cleanup');
     // Certification owns and removes the exact UUID it creates. Listing the
     // entire Auth tenant first makes an unrelated damaged account capable of

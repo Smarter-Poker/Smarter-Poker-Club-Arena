@@ -3320,10 +3320,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        so it leaves the board here rather than being rendered as a game while
        being excluded from that game's figures - the two-answers shape 5.2 is
        about. A table with no cluster is untouched: it is its own game. */
-    const rows = (tables as unknown as LobbyTableRow[]).filter(
-      (t) => !t.cluster_id || isCensusTable(t)
+    const rows = withLightningState(
+      (tables as unknown as LobbyTableRow[]).filter((t) => !t.cluster_id || isCensusTable(t)),
+      lightningStates
     );
-    return withLightningState(withClusterFigures(rows), lightningStates) as unknown as TableData[];
+    return withClusterFigures(rows) as unknown as TableData[];
   }, [tables, lightningStates]);
 
   const styleCounts = useMemo(
@@ -4053,7 +4054,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          seat to choose. Its one door is the Lightning route, which opens the
          player's pool session or takes them through the Cluster's join. */
       if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
-        navigate(lightningRoute(row.cluster_id));
+        navigate(`/lightning/${row.cluster_id}`);
         return;
       }
       if (row?.cluster_id && row.cluster_must_move !== false) {

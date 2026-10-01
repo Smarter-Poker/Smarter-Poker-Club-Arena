@@ -3907,11 +3907,11 @@ function LiveTablePage({
               return;
             }
           }
-          heartbeatToastRef.current?.info?.(
-            lightningRoomRef.current
-              ? 'Your Lightning Session Has Ended'
-              : 'This Table Is No Longer Running'
-          );
+          if (lightningRoomRef.current) {
+            heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
+            return;
+          }
+          heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
         })();
       }
     } else if (engineLastError.code !== undefined) {

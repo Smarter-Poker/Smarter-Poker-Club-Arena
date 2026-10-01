@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { useDiamondGamesEntry } from '../../src/hooks/useDiamondGamesEntry';
+import { EVENT_COALESCE_MS, useDiamondGamesEntry } from '../../src/hooks/useDiamondGamesEntry';
 const state = vi.hoisted(() => ({
   user: { id: 'a' },
   read: vi.fn(),
@@ -29,16 +29,17 @@ describe('entry eligibility stays with its account', () => {
       state.listeners.get('BALANCE_UPDATED')?.({ payload: { userId: 'b', clubId: 'club-a' } });
       state.listeners.get('BALANCE_UPDATED')?.({ payload: { userId: 'a', clubId: 'club-b' } });
       state.listeners.get('TABLE_LEFT')?.({ payload: { userId: 'b' } });
+      await new Promise((r) => setTimeout(r, EVENT_COALESCE_MS + 50));
     });
     expect(state.read).toHaveBeenCalledTimes(1);
     await act(async () => {
       state.listeners.get('BALANCE_UPDATED')?.({ payload: { userId: 'a', clubId: 'club-a' } });
     });
-    expect(state.read).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(state.read).toHaveBeenCalledTimes(2));
     await act(async () => {
       state.listeners.get('TABLE_LEFT')?.({ payload: { userId: 'a' } });
     });
-    expect(state.read).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(state.read).toHaveBeenCalledTimes(3));
     unmount();
     state.read.mockReset();
   });

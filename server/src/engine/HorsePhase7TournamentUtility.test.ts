@@ -20,7 +20,10 @@ import {
   settleHorseExecutionWitness,
   type HorseExecutionWitness,
 } from './HorseExecutionWitness.js';
-import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
+import {
+  horseDecisionReceiptIsValid,
+  horsePhase7EvidenceMismatch,
+} from './horseDecision/responseValidation.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   restoreFastRandom,
@@ -2151,6 +2154,8 @@ describe('Phase 7 live action-clock wiring', () => {
         if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(messages));
         expect(sampler).toHaveBeenCalledTimes(1);
         expect(horseDecisionReceiptIsValid(fast.decision)).toBe(true);
+        // The physical acquisition is bound to the request the worker received.
+        expect(horsePhase7EvidenceMismatch(fast.decision, request)).toBeNull();
         const utility = fast.decision.tournamentUtility!;
         expect(utility).toBeDefined();
         expect(utility.evidence?.sampler).toMatchObject({ boardCount: 2, layout: 'independent' });
@@ -2417,6 +2422,7 @@ describe('Phase 7 live action-clock wiring', () => {
           const fast = messages.find((message) => message.type === 'FAST_RESULT');
           if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(messages.at(-1)));
           expect(horseDecisionReceiptIsValid(fast.decision)).toBe(true);
+          expect(horsePhase7EvidenceMismatch(fast.decision, request)).toBeNull();
           const utility = fast.decision.tournamentUtility!;
           expect(utility).toBeDefined();
           expect(utility.evidence).toBeDefined();
@@ -2482,6 +2488,7 @@ describe('Phase 7 live action-clock wiring', () => {
           const deep = messages.find((message) => message.type === 'DEEP_RESULT');
           if (deep?.type !== 'DEEP_RESULT') throw Error(JSON.stringify(messages.at(-1)));
           expect(horseDecisionReceiptIsValid(deep.decision)).toBe(true);
+          expect(horsePhase7EvidenceMismatch(deep.decision, deepRequest)).toBeNull();
           expect(deep.decision.tournamentUtility!.readFrameSha256).toBe(originalFrame.sha256);
           expect(captures[1].readFrame).toEqual(originalFrame);
           expect(

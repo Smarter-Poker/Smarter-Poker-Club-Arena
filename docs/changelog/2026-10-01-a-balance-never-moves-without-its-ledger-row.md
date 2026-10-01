@@ -9,12 +9,12 @@ EVERY SINGLE TRANSACTION is logged, and on the same ledger...?"
 Every transaction was logged, but by a second hand. A chip balance on this
 platform is written directly by its door (176 functions write one of
 club*members.chip_balance, clubs.chip_treasury, table_seats.stack,
-union_wallets.*, bbj_pools._ or the ledger itself; the table is in
+union_wallets.*, bbj*pools.* or the ledger itself; the table is in
 `docs/evidence/chip-balance-writers-2026-10-01.md`, read live from `pg_proc`
-through the new view `v_ca_chip_balance_writers`), and the chip_ledger leg is
+through the new view `v_ca_chip_balance_writers`), and the chip*ledger leg is
 written AFTER the fact by a trigger - fn_club_members_ledger_writer on the
 wallet, fn_ca_autoledger on the treasuries, banks and pools. Both triggers stand
-down when a door sets `app.ledger_autoskip_<table>`and promises to write the
+down when a door sets `app.ledger_autoskip*<table>`and promises to write the
 leg itself. Thirty-six doors make that promise and nothing ever checked it, so a
 stand-down whose leg was missing, the wrong amount, or named the wrong wallet
 committed clean (the 2026-09-14 rakeback close moved 84,041.00 under anonymous

@@ -1,6 +1,9 @@
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
-import type { HorseDecision, HorseTournamentUtilityLedger } from '../../types.js';
+import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
+import type { HorseGameStateV2 } from '../HorseLogic.js';
+import { MAX_UTILITY_OUTCOMES } from '../HorseTournamentUtility.js';
+import { jointStateKey } from '../multiway/JointRangeSampler.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
@@ -209,7 +212,7 @@ export function horseTournamentUtilityReceiptIsValid(
     value.fieldPlayersActual !== value.fieldPlayersModeled ||
     (value.fieldPlayersActual as number) < 2 ||
     (value.utilityOutcomeSamples as number) < 1 ||
-    (value.utilityOutcomeSamples as number) > 160 ||
+    (value.utilityOutcomeSamples as number) > MAX_UTILITY_OUTCOMES ||
     (value.effectiveOutcomeSamples as number) > (value.utilityOutcomeSamples as number) + 1e-9 ||
     (value.sidePotCount as number) > 10 ||
     (value.componentReconciliationError as number) > 0.005 ||
@@ -315,6 +318,52 @@ export function horseTournamentUtilityReceiptIsValid(
     }
   }
   return matchingSelected === 1;
+}
+
+export type HorsePhase7EvidenceMismatch =
+  | 'phase7_foreign_opponent'
+  | 'phase7_marginal_multi_board'
+  | 'phase7_sampler_single_board'
+  | 'phase7_sampler_board_count'
+  | 'phase7_sampler_state';
+
+/** Request binding for an evidence-bearing Phase 7 receipt. The structural
+ * validator above cannot see the request, so a well-formed sampler for another
+ * state or board layout, or a multi-board receipt with no physical joint
+ * acquisition (marginal draws), was admissible. Recompute each binding from the
+ * request the worker actually received and return the first named mismatch.
+ * Legacy receipts without evidence keep no new authority and are not refused. */
+export function horsePhase7EvidenceMismatch(
+  decision: Pick<HorseDecision, 'tournamentUtility'>,
+  request: { player: SeatPlayer; gameState: HorseGameStateV2 }
+): HorsePhase7EvidenceMismatch | null {
+  const evidence = decision.tournamentUtility?.evidence;
+  if (!evidence) return null;
+  const state = request.gameState;
+  const hero = request.player;
+  const opponents = new Set(
+    (Array.isArray(state?.players) ? state.players : [])
+      .filter((player) => player.user_id !== hero?.user_id)
+      .map((player) => player.user_id)
+  );
+  if (evidence.opponents.some((row) => !opponents.has(row.userId)))
+    return 'phase7_foreign_opponent';
+  // Same multi-board test as the ordinary Phase 7 caller in HorseLogic.
+  const boardCount = state.boardCount ?? 1;
+  const multiBoard =
+    (state.communityCards2?.length ?? 0) > 0 ||
+    (state.communityCards3?.length ?? 0) > 0 ||
+    boardCount > 1;
+  const sampler = evidence.sampler;
+  if (!sampler) return multiBoard ? 'phase7_marginal_multi_board' : null;
+  if (!multiBoard) return 'phase7_sampler_single_board';
+  if (sampler.boardCount !== boardCount) return 'phase7_sampler_board_count';
+  try {
+    if (sampler.stateKey !== jointStateKey(hero, state)) return 'phase7_sampler_state';
+  } catch {
+    return 'phase7_sampler_state';
+  }
+  return null;
 }
 
 /** Bounded structured-clone validation before witness construction. A graph

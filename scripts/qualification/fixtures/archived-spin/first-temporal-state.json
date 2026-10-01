@@ -45,9 +45,12 @@
     "scope": "Current first-event recognized sources only; no global absence claim."
   },
   "recognition_period": {
-    "capture_sha256": "96903b28b5fc613731c0a50c86639e21b29b7e00bd8bbb4d396092a4b8ba0f1a",
-    "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SET LOCAL timezone='UTC'; WITH scopes AS (SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533' UNION SELECT f.union_id,t.club_id FROM public.tournaments t JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)), bounds AS (SELECT public.fn_union_week_start(transaction_timestamp()) start_at,((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' end_at) SELECT jsonb_build_object('observed_at',transaction_timestamp(),'week_start',b.start_at,'week_end',b.end_at,'scopes',(SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) FROM scopes s),'runs_overlapping_week',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.period_start,r.period_end,r.round_no),'[]'::jsonb) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<b.end_at AND r.period_end>b.start_at AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id))),'runs_blocking_now',(SELECT count(*) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<=transaction_timestamp() AND r.period_end>transaction_timestamp() AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id)))) evidence FROM bounds b; COMMIT;",
+    "capture_sha256": "d59a01865d3e0d6e8827f04095834d0c1101ab4f6f73f0a43dbdf8e4e7ffa35c",
+    "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SET LOCAL timezone='UTC'; WITH scopes AS (SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533' UNION SELECT f.union_id,t.club_id FROM public.tournaments t JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)), bounds AS (SELECT public.fn_union_week_start(transaction_timestamp()) start_at,((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' end_at) SELECT jsonb_build_object('observed_at',transaction_timestamp(),'week_start',b.start_at,'week_end',b.end_at,'scopes',(SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) FROM scopes s),'runs_overlapping_week',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.period_start,r.period_end,r.round_no),'[]'::jsonb) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<b.end_at AND r.period_end>b.start_at AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id))),'runs_blocking_now',(SELECT count(*) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<=transaction_timestamp() AND r.period_end>transaction_timestamp() AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id)))) evidence FROM bounds b; COMMIT;\n",
     "evidence": {
+      "observed_at": "2026-10-01T15:36:55.588486+00:00",
+      "runs_blocking_now": 0,
+      "runs_overlapping_week": [],
       "scopes": [
         {
           "club_id": "fade0000-0000-0000-0000-000000000001",
@@ -55,11 +58,33 @@
         }
       ],
       "week_end": "2026-10-05T07:00:00+00:00",
-      "week_start": "2026-09-28T07:00:00+00:00",
-      "observed_at": "2026-09-27T00:22:27.735724+00:00",
-      "runs_blocking_now": 0,
-      "runs_overlapping_week": []
+      "week_start": "2026-09-28T07:00:00+00:00"
     },
-    "scope": "Current recognition transaction period, not original charge period; outside these bounds requires authentic recapture."
-  }
+    "scope": "Current recognition transaction period, not original charge period; outside these bounds requires authentic recapture.",
+    "query_sha256": "67f65046f981cdf2f377b5243349a21c900a1bde31b1c425c34ee73102e62301",
+    "capture_path": "scripts/qualification/fixtures/archived-spin/first-recognition-capture.json"
+  },
+  "recognition_period_history": [
+    {
+      "status": "superseded_inconsistent_bounds_and_capture_metadata",
+      "record": {
+        "capture_sha256": "96903b28b5fc613731c0a50c86639e21b29b7e00bd8bbb4d396092a4b8ba0f1a",
+        "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SET LOCAL timezone='UTC'; WITH scopes AS (SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533' UNION SELECT f.union_id,t.club_id FROM public.tournaments t JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)), bounds AS (SELECT public.fn_union_week_start(transaction_timestamp()) start_at,((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' end_at) SELECT jsonb_build_object('observed_at',transaction_timestamp(),'week_start',b.start_at,'week_end',b.end_at,'scopes',(SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) FROM scopes s),'runs_overlapping_week',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.period_start,r.period_end,r.round_no),'[]'::jsonb) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<b.end_at AND r.period_end>b.start_at AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id))),'runs_blocking_now',(SELECT count(*) FROM public.accounting_routed_settlement_runs r WHERE r.period_start<=transaction_timestamp() AND r.period_end>transaction_timestamp() AND EXISTS(SELECT 1 FROM scopes s WHERE (r.union_id IS NOT NULL AND r.union_id=s.coordinator_union_id) OR (r.standalone_club_id IS NOT NULL AND s.coordinator_union_id IS NULL AND r.standalone_club_id=s.club_id)))) evidence FROM bounds b; COMMIT;",
+        "evidence": {
+          "scopes": [
+            {
+              "club_id": "fade0000-0000-0000-0000-000000000001",
+              "coordinator_union_id": "fade0000-0000-0000-0000-000000000001"
+            }
+          ],
+          "week_end": "2026-10-05T07:00:00+00:00",
+          "week_start": "2026-09-28T07:00:00+00:00",
+          "observed_at": "2026-09-27T00:22:27.735724+00:00",
+          "runs_blocking_now": 0,
+          "runs_overlapping_week": []
+        },
+        "scope": "Current recognition transaction period, not original charge period; outside these bounds requires authentic recapture."
+      }
+    }
+  ]
 }

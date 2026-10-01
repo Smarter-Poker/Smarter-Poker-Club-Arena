@@ -10,6 +10,7 @@ import {
 import { evaluateJointLivePolicy } from './JointLivePolicy.js';
 
 afterEach(() => vi.restoreAllMocks());
+type State = ReturnType<typeof jointPolicyFixture>;
 
 describe('decision-local shared joint acquisition', () => {
   it.each([2, 3])('acquires immutable %i-board samples independently of Phase13 mode', (boards) => {
@@ -93,6 +94,72 @@ describe('decision-local shared joint acquisition', () => {
       mutate(changed);
       expect(jointSampleAcquisitionMatches(changed.hero, changed.state, acquired)).toBe(false);
     }
+  });
+
+  // Every named refusal the acquisition owner can return is pinned here or in
+  // the neighbouring tests; previously these six had no test at all.
+  it.each([
+    [
+      'outside_betting_street',
+      (s: State) => {
+        s.state.stage = 'showdown' as never;
+      },
+    ],
+    [
+      'no_opponent',
+      (s: State) => {
+        for (const p of s.state.players) if (p.user_id !== s.hero.user_id) p.is_folded = true;
+      },
+    ],
+    [
+      'heads_up_owned_by_variant_policy',
+      (s: State) => {
+        Object.assign(s.state, { bombPot: false, boardCount: 1, communityCards2: undefined });
+        const live = s.state.players.filter((p) => p.user_id !== s.hero.user_id && !p.is_folded);
+        for (const p of live.slice(1)) p.is_folded = true;
+      },
+    ],
+    [
+      'seats_outside_launch_domain',
+      (s: State) => {
+        // Six-card Omaha deals at most seven tournament seats from one deck.
+        const large = jointFixture('plo6', 'river', 2, 9);
+        Object.assign(s.state, {
+          gameVariant: 'plo6',
+          bettingStructure: 'pot_limit',
+          players: large.state.players,
+          dealtSeatIds: large.state.dealtSeatIds,
+        });
+      },
+    ],
+    [
+      'button_unavailable',
+      (s: State) => {
+        s.state.dealerSeat = 0;
+      },
+    ],
+    [
+      'history_budget',
+      (s: State) => {
+        s.state.actionHistory = Array.from({ length: 257 }, (_, timestamp) => ({
+          userId: 'p1',
+          seat: 2,
+          stage: 'flop' as const,
+          action: 'check' as const,
+          amount: 0,
+          timestamp,
+        }));
+      },
+    ],
+  ] as const)('refuses %s by name before sampling', (reason, mutate) => {
+    const fixture = jointPolicyFixture('nlh', 2, 'tournament', 'river');
+    const draw = vi.spyOn(sampler, 'sampleJointRanges');
+    mutate(fixture);
+    const result = acquireJointSamples(fixture.hero, fixture.state, { now: () => 0 });
+    expect(result.status).toBe('refused');
+    expect(result.reason).toBe(reason);
+    expect(result.provenance).toBeNull();
+    expect(draw).not.toHaveBeenCalled();
   });
 
   it('keeps the large-table minimum and returns named refusals without relaxing the domain', () => {

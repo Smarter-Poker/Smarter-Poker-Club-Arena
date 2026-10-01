@@ -68,7 +68,7 @@ class FirstArchivedPostabortTests(unittest.TestCase):
         d,e=fixture();query=M.bind_query(d)
         receipt={'query':query,'query_sha256':hashlib.sha256(query.encode()).hexdigest(),
             'original_output':json.dumps(e)+'\n','evidence':copy.deepcopy(e),'validation':check(d,e)}
-        self.assertEqual(M.validate_receipt(d,receipt,{'synthetic':True},{'synthetic':True})['nonbank_rowsets_exact'],20)
+        self.assertEqual(M.validate_receipt(d,receipt,{'synthetic':True},{'synthetic':True})['nonbank_rowsets_exact'],22)
         mutations=[lambda r:r.update(query=r['query']+'SELECT 1;'),lambda r:r.update(query_sha256='wrong'),
             lambda r:r.update(original_output=''),lambda r:r.update(original_output=r['original_output']+'{}'),
             lambda r:r.update(original_output=r['original_output'].replace('"history_exists": false','"history_exists": false,"history_exists": false')),
@@ -105,5 +105,19 @@ class FirstArchivedPostabortTests(unittest.TestCase):
         self.assertIn("'public.union_wallets',(SELECT coalesce(jsonb_agg(projection",M.QUERY)
         self.assertIn('FROM snapshot CROSS JOIN authority CROSS JOIN bank_witness;',M.QUERY)
         self.assertNotIn('txid_current()',M.QUERY)
+
+
+class CurrentOwnerBasisAbsenceTests(unittest.TestCase):
+    def test_exact_23_scope_and_nonempty_basis_refused(self):
+        self.assertEqual(len(M.SCOPED),23)
+        for name in ('public.accounting_tournament_fee_owner_bases','public.accounting_tournament_fee_owner_operations'):
+            d,e=fixture()
+            for stage in ('before','inside','replay_state'):d[stage][name]=[{'unexpected':True}]
+            e['scoped_rows'][name]=[{'unexpected':True}]
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'fee owner basis must remain absent'):check(d,e)
+    def test_missing_added_rowset_refuses(self):
+        for name in ('public.accounting_tournament_fee_owner_bases','public.accounting_tournament_fee_owner_operations'):
+            d,e=fixture();del e['scoped_rows'][name]
+            with self.subTest(name=name),self.assertRaises(ValueError):check(d,e)
 
 if __name__=='__main__':unittest.main()

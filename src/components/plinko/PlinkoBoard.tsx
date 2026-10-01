@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
+import { createFramePacer } from '../games/framePacer';
 import { pegIndexAt, plinkoPegField } from './plinkoPegField';
 import { plinkoCabinet, type CabinetFrame } from './plinkoCabinet';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
@@ -447,9 +448,18 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     const writeTally = (count: number, total: number) => {
       if (tally.current) tally.current.textContent = tallyLine(count, total, bestCents);
     };
+    // Every display frame while diamonds fall or a landing plays, about 30 a
+    // second between drops, nothing at all once parked (framePacer.ts).
+    const pacer = createFramePacer({ reducedMs: 150 });
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
-      if (document.hidden || now - last < (reduced ? 150 : 30)) return;
+      const live = latest.current;
+      const pace = pacer.pace(now, {
+        reduced,
+        moving: !landed || pendingLanding,
+        signature: `${live.dropKey}|${live.batchPathBits?.length ?? -1}|${live.path?.length ?? -1}|${live.restingSlot}|${live.multipliersCents.join(',')}`,
+      });
+      if (document.hidden || now - last < pace) return;
       last = now;
       visibleElapsed += lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -660,7 +670,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       cabinetFrame.flying = flying;
       cabinetFrame.pulsing = pulsing;
       cabinet.frame(cabinetFrame);
-      if (kit.render(reduced ? 150 : 30)) {
+      if (kit.render(pacer.governorInterval(pace))) {
         /* THE BOARD IS HEARD ON THE FRAME THAT SHOWS IT (2026-09-26). A tick
            for the pegs this frame shows being struck, at most one every
            PLINKO_PEG_GAP_MS on the frame clock, pitched by the lowest row
@@ -689,6 +699,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', visibilityChanged);
+      pacer.dispose();
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
       sceneRef.current = null;

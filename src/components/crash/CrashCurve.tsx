@@ -70,6 +70,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { createFramePacer } from '../games/framePacer';
 import { gameRenderer, metal, solid } from '../games/sceneKit';
 import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
 import { crashMultiplierCents } from '../../utils/diamondGamesFairness';
@@ -1136,13 +1137,23 @@ export default function CrashCurve(props: CrashCurveProps) {
       const s = path.at(progress, scratch[4]).project(camera);
       return [((s.x + 1) / 2) * width, ((1 - s.y) / 2) * height];
     };
+    // Every display frame while the flight or its ending moves, about 30 a
+    // second between rounds, and nothing at all once parked (framePacer.ts).
+    const pacer = createFramePacer({ reducedMs: 180 });
     const draw = (now: number) => {
       if (document.hidden) {
         raf = 0;
         return;
       }
       raf = requestAnimationFrame(draw);
-      if (now - last < (reduced ? 180 : 30)) return;
+      const live = latest.current;
+      const burstEnd = (live.phase === 'cashed' ? 800 + 2600 * speed : 0) + 1300 * speed;
+      const pace = pacer.pace(now, {
+        reduced,
+        moving: !(live.phase === 'idle' || (notified && revealedFor > burstEnd)),
+        signature: `${live.phase}|${live.startedAtLocalMs}|${live.tickerCents}|${live.finalCents}|${live.cashoutCents}|${live.capCents}|${live.autoCashoutCents}`,
+      });
+      if (now - last < pace) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
       lastVisibleFrame = now;
@@ -1359,7 +1370,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         plateShown = true;
         plate.current.dataset.shown = 'true';
       }
-      const submitted = kit ? kit.render(reduced ? 180 : 30) : false;
+      const submitted = kit ? kit.render(pacer.governorInterval(pace)) : false;
       /* THE SOUND IS ON THIS FRAME'S CLOCK (2026-09-26). The engine is one
          voice for the whole flight, steered to the figure this frame printed
          (so once the cash-out is tapped and the hero holds the tapped figure,
@@ -1392,6 +1403,7 @@ export default function CrashCurve(props: CrashCurveProps) {
     const glassNode = glass.current;
     return () => {
       cancelAnimationFrame(raf);
+      pacer.dispose();
       silenceEngine(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);
       surface?.removeEventListener('webglcontextlost', lost);

@@ -1419,6 +1419,12 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Horse original observation windows survive atomic persistence
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-observation-window.py
+
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py

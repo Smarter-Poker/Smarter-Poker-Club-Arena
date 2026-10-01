@@ -2292,6 +2292,26 @@ describe('Phase 7 live action-clock wiring', () => {
           expect(HorseMind.getScopedStats(opponentId, 'omaha:full')?.hands).toBe(20);
           expect(HorseMind.getScopedStats(opponentId, 'holdem:full')?.hands).toBe(20);
           expect(HorseMind.getScopedStats(opponentId, 'holdem:hu')).toBeUndefined();
+          const originalWindow = {
+            version: 1,
+            coverage: 'complete',
+            fromMs: 1700000000101,
+            toMs: 1700000004001,
+          };
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual(originalWindow);
+          expect(HorseMind.getScopedStats(opponentId, 'omaha:full')?.sourceWindow).toEqual({
+            ...originalWindow,
+            toMs: 1700000003901,
+          });
+          // Reload the original aggregates before the real worker decision.
+          // The separately qualified persistence mapper/RPC owns the database
+          // boundary; this verifies its HorseMind import/export consumer path.
+          const pooledRows = HorseMind.exportDirty();
+          const scopedRows = HorseMind.exportDirtyScoped();
+          HorseMind.reset();
+          HorseMind.importStats(structuredClone(pooledRows));
+          HorseMind.importScoped(structuredClone(scopedRows));
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual(originalWindow);
 
           // The current hand is actually dealt by the controller; its legal
           // rights, stacks, cards and accepted record are not mocked.
@@ -2407,12 +2427,14 @@ describe('Phase 7 live action-clock wiring', () => {
               source: 'pooled',
               scope: null,
               counters: { hands: 40, facedAggr: 40, folds: response === 'fold' ? 40 : 0 },
+              sourceWindow: originalWindow,
             },
+            recency: { source: 'pooled', sourceWindow: originalWindow },
           });
           expect(utility.evidence!.observations).toEqual({
             status: 'captured',
             scope: 'holdem:hu',
-            window: { status: 'not_recorded', from: null, to: null },
+            window: { status: 'contribution_envelope', sourceWindow: originalWindow },
             tableIsolation: 'not_established',
             formatIsolation: 'not_established',
             exactVariantIsolation: 'not_established',
@@ -2431,6 +2453,7 @@ describe('Phase 7 live action-clock wiring', () => {
             planContext
           );
           expect(originalReads.stats.get(opponentId)?.hands).toBe(40);
+          expect(originalReads.stats.get(opponentId)?.sourceWindow).toEqual(originalWindow);
           expect(originalReads.scoped.get(`omaha:full|${opponentId}`)?.hands).toBe(20);
           multipliers.push(utility.evidence!.opponents[0].foldMul);
           const jam = utility.candidates.find((candidate) => candidate.action === 'all_in');
@@ -2443,6 +2466,10 @@ describe('Phase 7 live action-clock wiring', () => {
           runtime.receive(completion(41, response === 'fold' ? 'call' : 'fold'));
           await runtime.drain();
           expect(HorseMind.getStats(opponentId)?.hands).toBe(41);
+          expect(HorseMind.getStats(opponentId)?.sourceWindow).toEqual({
+            ...originalWindow,
+            toMs: 1700000004101,
+          });
           const deepRequest = {
             ...request,
             type: 'DECIDE_DEEP' as const,
@@ -2457,6 +2484,12 @@ describe('Phase 7 live action-clock wiring', () => {
           expect(horseDecisionReceiptIsValid(deep.decision)).toBe(true);
           expect(deep.decision.tournamentUtility!.readFrameSha256).toBe(originalFrame.sha256);
           expect(captures[1].readFrame).toEqual(originalFrame);
+          expect(
+            deep.decision.tournamentUtility!.evidence!.opponents[0].statistics.sourceWindow
+          ).toEqual(originalWindow);
+          expect(
+            deep.decision.tournamentUtility!.evidence!.opponents[0].recency.sourceWindow
+          ).toEqual(originalWindow);
           expect(
             deep.decision.tournamentUtility!.evidence!.opponents[0].statistics.counters?.hands
           ).toBe(40);

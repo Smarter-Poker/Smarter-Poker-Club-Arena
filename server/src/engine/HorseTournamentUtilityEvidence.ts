@@ -8,6 +8,11 @@ import {
 } from './HorseMind.js';
 import type { TournamentUtilityInput } from './HorseTournamentUtility.js';
 import type { SeatPlayer } from '../types.js';
+import {
+  normalizeHorseObservationWindow,
+  mergeHorseObservationWindows,
+  type HorseObservationWindow,
+} from './HorseObservationWindow.js';
 
 type Counters = Readonly<Pick<OpponentStats, 'hands' | 'vpip' | 'pfr' | 'folds' | 'facedAggr'>>;
 type RecentCounters = Readonly<Pick<OpponentStats, 'rHands' | 'rFolds' | 'rFacedAggr'>>;
@@ -56,9 +61,17 @@ export function captureHorseTournamentUtilityObservations(
   if (mindEnabled) {
     for (const opponent of opponents) {
       const pooled = HorseMind.getStats(opponent.user_id);
-      if (pooled) stats.set(opponent.user_id, { ...pooled });
+      if (pooled)
+        stats.set(opponent.user_id, {
+          ...pooled,
+          sourceWindow: normalizeHorseObservationWindow(pooled.sourceWindow),
+        });
       const row = scope ? HorseMind.getScopedStats(opponent.user_id, scope) : undefined;
-      if (row) scoped.set(`${scope}|${opponent.user_id}`, { ...row });
+      if (row)
+        scoped.set(`${scope}|${opponent.user_id}`, {
+          ...row,
+          sourceWindow: normalizeHorseObservationWindow(row.sourceWindow),
+        });
     }
   }
   return { scope, reads: { stats, scoped }, mindEnabled };
@@ -83,7 +96,11 @@ export interface HorseTournamentUtilityEvidence {
   readonly observations: Readonly<{
     status: 'captured' | 'unavailable' | 'disabled';
     scope: ReadScope | null;
-    window: Readonly<{ status: 'not_recorded'; from: null; to: null }>;
+    /** Aggregate of selected lifetime-statistic contributions only; pooled
+     * recency is attributed separately on each opponent. Not an exact census. */
+    window:
+      | Readonly<{ status: 'not_recorded'; from: null; to: null }>
+      | Readonly<{ status: 'contribution_envelope'; sourceWindow: HorseObservationWindow }>;
     tableIsolation: 'not_established';
     formatIsolation: 'not_established';
     exactVariantIsolation: 'not_established';
@@ -94,10 +111,18 @@ export interface HorseTournamentUtilityEvidence {
       range: readonly [number, number] | null;
       foldMul: number;
       actsAfterHero: boolean;
-      statistics: Readonly<{ source: Source; scope: ReadScope | null; counters: Counters | null }>;
+      statistics: Readonly<{
+        source: Source;
+        scope: ReadScope | null;
+        counters: Counters | null;
+        sourceWindow?: HorseObservationWindow;
+      }>;
       recency: Readonly<{
         source: Exclude<Source, 'family_size'> | 'family_size_fallback';
         counters: RecentCounters | null;
+        /** Envelope of the source row contributing decayed counters, not a
+         * precise rolling-window boundary or a freshness guarantee. */
+        sourceWindow?: HorseObservationWindow;
       }>;
     }>
   >;
@@ -279,6 +304,59 @@ export function buildHorseTournamentUtilityEvidence(
       : 'disabled'
     : 'unavailable';
   const scope = observations?.scope ?? null;
+  const opponents = Object.freeze(
+    input.opponents.map((opponent) => {
+      const pooled =
+        status === 'captured' ? observations!.reads.stats.get(opponent.userId) : undefined;
+      const scoped =
+        status === 'captured' && scope
+          ? observations!.reads.scoped.get(`${scope}|${opponent.userId}`)
+          : undefined;
+      // This is HorseMind.readStats' actual selection, not the table/format
+      // from the current request pretending to be a historical observation.
+      const scopedSelected = scoped !== undefined && scoped.hands >= SCOPE_MIN_HANDS;
+      const selected = scopedSelected ? scoped : pooled;
+      const source: Source =
+        status === 'disabled'
+          ? 'disabled'
+          : selected
+            ? scopedSelected
+              ? 'family_size'
+              : 'pooled'
+            : 'unavailable';
+      const copy = <K extends keyof OpponentStats>(row: OpponentStats, keys: readonly K[]) =>
+        Object.freeze(Object.fromEntries(keys.map((key) => [key, row[key]]))) as Readonly<
+          Pick<OpponentStats, K>
+        >;
+      return Object.freeze({
+        userId: opponent.userId,
+        range:
+          opponent.range === null ? null : Object.freeze([...opponent.range] as [number, number]),
+        foldMul: opponent.foldMul,
+        actsAfterHero: opponent.actsAfterHero,
+        statistics: Object.freeze({
+          source,
+          scope: source === 'family_size' ? scope : null,
+          counters: selected ? copy(selected, COUNTERS) : null,
+          sourceWindow: normalizeHorseObservationWindow(selected?.sourceWindow),
+        }),
+        // exploit() blends the pooled recency bucket even when lifetime reads
+        // use family/size. A scoped row alone is its literal fallback.
+        recency: Object.freeze({
+          source:
+            status === 'disabled'
+              ? 'disabled'
+              : pooled
+                ? 'pooled'
+                : selected
+                  ? 'family_size_fallback'
+                  : 'unavailable',
+          counters: pooled || selected ? copy((pooled ?? selected)!, RECENT) : null,
+          sourceWindow: normalizeHorseObservationWindow((pooled ?? selected)?.sourceWindow),
+        }),
+      });
+    })
+  );
   const evidence: HorseTournamentUtilityEvidence = {
     version: VERSION,
     inputSha256: horseTournamentUtilityInputSha256(input),
@@ -302,62 +380,19 @@ export function buildHorseTournamentUtilityEvidence(
     observations: Object.freeze({
       status,
       scope,
-      window: Object.freeze({ status: 'not_recorded', from: null, to: null }),
+      window: Object.freeze({
+        status: 'contribution_envelope',
+        sourceWindow: mergeHorseObservationWindows(
+          ...opponents
+            .filter((row) => row.statistics.counters !== null)
+            .map((row) => row.statistics.sourceWindow)
+        ),
+      }),
       tableIsolation: 'not_established',
       formatIsolation: 'not_established',
       exactVariantIsolation: 'not_established',
     }),
-    opponents: Object.freeze(
-      input.opponents.map((opponent) => {
-        const pooled =
-          status === 'captured' ? observations!.reads.stats.get(opponent.userId) : undefined;
-        const scoped =
-          status === 'captured' && scope
-            ? observations!.reads.scoped.get(`${scope}|${opponent.userId}`)
-            : undefined;
-        // This is HorseMind.readStats' actual selection, not the table/format
-        // from the current request pretending to be a historical observation.
-        const scopedSelected = scoped !== undefined && scoped.hands >= SCOPE_MIN_HANDS;
-        const selected = scopedSelected ? scoped : pooled;
-        const source: Source =
-          status === 'disabled'
-            ? 'disabled'
-            : selected
-              ? scopedSelected
-                ? 'family_size'
-                : 'pooled'
-              : 'unavailable';
-        const copy = <K extends keyof OpponentStats>(row: OpponentStats, keys: readonly K[]) =>
-          Object.freeze(Object.fromEntries(keys.map((key) => [key, row[key]]))) as Readonly<
-            Pick<OpponentStats, K>
-          >;
-        return Object.freeze({
-          userId: opponent.userId,
-          range:
-            opponent.range === null ? null : Object.freeze([...opponent.range] as [number, number]),
-          foldMul: opponent.foldMul,
-          actsAfterHero: opponent.actsAfterHero,
-          statistics: Object.freeze({
-            source,
-            scope: source === 'family_size' ? scope : null,
-            counters: selected ? copy(selected, COUNTERS) : null,
-          }),
-          // exploit() blends the pooled recency bucket even when lifetime reads
-          // use family/size. A scoped row alone is its literal fallback.
-          recency: Object.freeze({
-            source:
-              status === 'disabled'
-                ? 'disabled'
-                : pooled
-                  ? 'pooled'
-                  : selected
-                    ? 'family_size_fallback'
-                    : 'unavailable',
-            counters: pooled || selected ? copy((pooled ?? selected)!, RECENT) : null,
-          }),
-        });
-      })
-    ),
+    opponents,
   };
   if (!horseTournamentUtilityEvidenceIsValid(evidence, input.sampledOpponentIds)) return fail();
   return Object.freeze(evidence);
@@ -400,10 +435,15 @@ export function horseTournamentUtilityEvidenceIsValid(
     ]) ||
     !['captured', 'unavailable', 'disabled'].includes(value.observations.status as string) ||
     !scopeValid(value.observations.scope) ||
-    !exact(value.observations.window, ['status', 'from', 'to']) ||
-    value.observations.window.status !== 'not_recorded' ||
-    value.observations.window.from !== null ||
-    value.observations.window.to !== null ||
+    !(
+      (exact(value.observations.window, ['status', 'from', 'to']) &&
+        value.observations.window.status === 'not_recorded' &&
+        value.observations.window.from === null &&
+        value.observations.window.to === null) ||
+      (exact(value.observations.window, ['status', 'sourceWindow']) &&
+        value.observations.window.status === 'contribution_envelope' &&
+        observationWindowIsValid(value.observations.window.sourceWindow))
+    ) ||
     value.observations.tableIsolation !== 'not_established' ||
     value.observations.formatIsolation !== 'not_established' ||
     value.observations.exactVariantIsolation !== 'not_established' ||
@@ -412,6 +452,8 @@ export function horseTournamentUtilityEvidenceIsValid(
     (value.observations.status === 'unavailable' && value.observations.scope !== null)
   )
     return false;
+  const hasWindows = value.observations.window.status === 'contribution_envelope';
+  const selectedWindows: HorseObservationWindow[] = [];
   const ids = new Set<string>();
   for (const row of value.opponents) {
     if (
@@ -427,12 +469,17 @@ export function horseTournamentUtilityEvidenceIsValid(
           !finite(row.range[1]) ||
           row.range[0] > row.range[1] ||
           row.range[1] > 1)) ||
-      !exact(row.statistics, ['source', 'scope', 'counters']) ||
+      !exact(row.statistics, [
+        'source',
+        'scope',
+        'counters',
+        ...(hasWindows ? ['sourceWindow'] : []),
+      ]) ||
       !['family_size', 'pooled', 'unavailable', 'disabled'].includes(
         row.statistics.source as string
       ) ||
       !scopeValid(row.statistics.scope) ||
-      !exact(row.recency, ['source', 'counters']) ||
+      !exact(row.recency, ['source', 'counters', ...(hasWindows ? ['sourceWindow'] : [])]) ||
       !['pooled', 'family_size_fallback', 'unavailable', 'disabled'].includes(
         row.recency.source as string
       )
@@ -441,6 +488,25 @@ export function horseTournamentUtilityEvidenceIsValid(
     ids.add(row.userId);
     const stats = row.statistics;
     const recent = row.recency;
+    if (hasWindows) {
+      if (
+        !observationWindowIsValid(stats.sourceWindow) ||
+        !observationWindowIsValid(recent.sourceWindow)
+      )
+        return false;
+      if (
+        (stats.source === 'unavailable' || stats.source === 'disabled') &&
+        (stats.sourceWindow.coverage !== 'unknown' || recent.sourceWindow.coverage !== 'unknown')
+      )
+        return false;
+      // Same source row must carry the same contribution envelope.
+      if (
+        (stats.source === 'pooled' || recent.source === 'family_size_fallback') &&
+        !sameObservationWindow(stats.sourceWindow, recent.sourceWindow)
+      )
+        return false;
+      if (stats.counters !== null) selectedWindows.push(stats.sourceWindow);
+    }
     if (stats.source === 'family_size' || stats.source === 'pooled') {
       const counters = stats.counters;
       if (
@@ -472,10 +538,36 @@ export function horseTournamentUtilityEvidenceIsValid(
         return false;
     } else if (recentCounters !== null) return false;
   }
+  if (
+    hasWindows &&
+    !sameObservationWindow(
+      (value.observations.window as { sourceWindow: HorseObservationWindow }).sourceWindow,
+      mergeHorseObservationWindows(...selectedWindows)
+    )
+  )
+    return false;
   return (
     opponentIds === undefined ||
     (opponentIds.length === ids.size &&
       new Set(opponentIds).size === ids.size &&
       opponentIds.every((id) => ids.has(id)))
+  );
+}
+
+function sameObservationWindow(a: HorseObservationWindow, b: HorseObservationWindow): boolean {
+  return (
+    a.version === b.version &&
+    a.coverage === b.coverage &&
+    a.fromMs === b.fromMs &&
+    a.toMs === b.toMs
+  );
+}
+function observationWindowIsValid(value: unknown): value is HorseObservationWindow {
+  return (
+    exact(value, ['version', 'coverage', 'fromMs', 'toMs']) &&
+    sameObservationWindow(
+      value as unknown as HorseObservationWindow,
+      normalizeHorseObservationWindow(value)
+    )
   );
 }

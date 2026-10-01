@@ -39,7 +39,11 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   const [results, setResults] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
   const isMounted = useIsMounted();
-  const [searchType, setSearchType] = useState<'username' | 'email' | 'id'>('username');
+  /* No email search: a player's email and last-active time are theirs and
+     platform staff's alone (ruling 25, docs/DIAMOND-RULINGS.md). `email` was
+     never granted to a browser, so this search 403'd whole on every run; it
+     answers by handle and player id now. */
+  const [searchType, setSearchType] = useState<'username' | 'id'>('username');
   const [searched, setSearched] = useState(false);
   // Distinguishes "the search ran and found nobody" from "the search did not
   // run". Those were the same screen until 2026-08-26.
@@ -117,10 +121,8 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                     id,
                     username,
                     avatar_url:arena_avatar_url,
-                    email,
                     status,
                     created_at,
-                    last_active,
                     club_members!inner(club_id)
                 `
         )
@@ -136,8 +138,6 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
 
       if (searchType === 'username') {
         profileQuery = profileQuery.ilike('username', `%${likeSafe}%`);
-      } else if (searchType === 'email') {
-        profileQuery = profileQuery.ilike('email', `%${likeSafe}%`);
       } else if (searchType === 'id') {
         // profiles.id is a uuid. Anything that is not one made Postgres raise
         // 22P02 invalid input syntax, which the handler below turned into an
@@ -203,10 +203,9 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         id: p.id,
         username: p.username || 'Unknown',
         avatar: p.avatar_url,
-        email: p.email,
         status: (p.status || 'active') as Player['status'],
         joinedAt: p.created_at,
-        lastActive: p.last_active || p.created_at,
+        lastActive: p.created_at,
         balance: balances[p.id] || 0,
         clubs: Array(clubCounts[p.id] || 0).fill('Club'),
       }));
@@ -263,7 +262,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       {/* Search Bar */}
       <div className="search-controls">
         <div className="search-type">
-          {(['username', 'email', 'id'] as const).map((type) => (
+          {(['username', 'id'] as const).map((type) => (
             <button
               key={type}
               className={searchType === type ? 'active' : ''}

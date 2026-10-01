@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { readPresence } from '../../lib/ownProfile';
 import { masterBus } from '../../core/MasterBus';
 import styles from './PresenceIndicator.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -27,7 +28,6 @@ export default function PresenceIndicator({
   className = '',
 }: PresenceIndicatorProps) {
   const [status, setStatus] = useState<PresenceStatus>('offline');
-  const [lastSeen, setLastSeen] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -49,18 +49,14 @@ export default function PresenceIndicator({
          profiles.is_online and profiles.last_seen are real columns and are the
          only presence data that exists, so they are now the primary read
          rather than a fallback nobody could reach. */
+      /* 2026-10-01 (ruling 25): a player's last-seen time is theirs alone, so
+         it is no longer read or shown here. Online-now comes from the presence
+         door, which counts the flag only while its heartbeat is fresh - the
+         raw flag alone was stale-true on 288 human rows. */
       try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_online, last_seen')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profile && isMounted) {
-          setStatus(profile.is_online ? 'online' : 'offline');
-          if (profile.last_seen) {
-            setLastSeen(new Date(profile.last_seen));
-          }
+        const presence = await readPresence([userId]);
+        if (isMounted) {
+          setStatus(presence.get(userId) ? 'online' : 'offline');
         }
       } catch (e) {
         /* The old fallback lived here and duplicated the query above, from
@@ -101,11 +97,8 @@ export default function PresenceIndicator({
         },
         (payload) => {
           if (payload.new && isMounted) {
-            const newData = payload.new as { is_online?: boolean; last_seen?: string };
+            const newData = payload.new as { is_online?: boolean };
             setStatus(newData.is_online ? 'online' : 'offline');
-            if (newData.last_seen) {
-              setLastSeen(new Date(newData.last_seen));
-            }
           }
         }
       )
@@ -127,14 +120,6 @@ export default function PresenceIndicator({
   const getStatusLabel = (): string => {
     if (status === 'online') return 'Online';
     if (status === 'away') return 'Away';
-    if (lastSeen) {
-      const diffMs = Date.now() - lastSeen.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 60) return `${diffMins}m ago`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
-      return 'Offline';
-    }
     return 'Offline';
   };
 

@@ -79,24 +79,29 @@ vi.mock('../../src/services/VIPService', () => ({
   normalizeVIPPurchaseError: () => 'Purchase Failed',
 }));
 
-vi.mock('../../src/lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const builder: Record<string, unknown> = {};
-      builder.select = () => builder;
-      builder.eq = () => builder;
-      builder.order = () => builder;
-      builder.maybeSingle = () =>
-        table === 'profiles' ? mocks.profilesResponse() : mocks.vipPointsResponse();
-      builder.limit = () =>
-        table === 'diamond_transactions'
-          ? mocks.ledgerResponse()
-          : Promise.resolve({ data: [], error: null });
-      return builder;
+vi.mock('../../src/lib/supabase', () => {
+  const from = (table: string) => {
+    const builder: Record<string, unknown> = {};
+    builder.select = () => builder;
+    builder.eq = () => builder;
+    builder.order = () => builder;
+    builder.maybeSingle = () =>
+      table === 'profiles' ? mocks.profilesResponse() : mocks.vipPointsResponse();
+    builder.limit = () =>
+      table === 'diamond_transactions'
+        ? mocks.ledgerResponse()
+        : Promise.resolve({ data: [], error: null });
+    return builder;
+  };
+  return {
+    supabase: {
+      from,
+      // The player's own balance is read through the owner door (ruling 25),
+      // which answers like the profiles row did.
+      rpc: vi.fn((name: string) => (name === 'get_my_full_profile' ? from('profiles') : undefined)),
     },
-    rpc: vi.fn(),
-  },
-}));
+  };
+});
 
 vi.mock('../../src/utils/errorReporter', () => ({
   reportError: mocks.reportError,

@@ -81,7 +81,12 @@ vi.mock('../../src/lib/supabase', () => {
     getAuthUser: () => Promise.resolve({ data: { user: mocks.currentAuthUser } }),
     supabase: {
       from,
-      rpc: () => Promise.resolve({ data: null, error: null }),
+      // The page reads the player's own row through the owner door (ruling
+      // 22), filtered by id like the profiles read was.
+      rpc: (name: string) =>
+        name === 'get_my_full_profile'
+          ? from('profiles')
+          : Promise.resolve({ data: null, error: null }),
       auth: {
         getUser: () => Promise.resolve({ data: { user: mocks.currentAuthUser } }),
       },

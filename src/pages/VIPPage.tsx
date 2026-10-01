@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import {
@@ -299,10 +300,8 @@ export default function VIPPage() {
            connection or a PGRST 503 became `profData?.diamonds || 0` and the
            player was shown a balance of 0 for money that was still there. The
            error is now bound, reported, and kept as its own state. */
-        const { data: profData, error: profError } = await supabase
-          .from('profiles')
+        const { data: profData, error: profError } = await ownProfile(requestedUserId)
           .select('diamonds')
-          .eq('id', requestedUserId)
           .maybeSingle();
 
         if (!isCurrent()) return;

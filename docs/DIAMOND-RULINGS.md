@@ -244,3 +244,21 @@ Every credit still goes through `add_diamonds_to_balance` and the register follo
 2. **A retry that reuses a key with different parameters is refused by name at every door, the prize payer included.** The payer answers a retry of a payment it made (same payee, event, bank and amount under the key) true, as it did the first time, and refuses any other use of the key as `diamond_tournament_pay_key_reused`. The description is the payment's label, not its identity. `fn_credit_and_log`, the payer's only caller, reads whether its own call paid from the key the payer names when it pays, so it still writes the payout evidence once and still answers false to a verified retry; the settlers above it, the terminal and the engine read exactly the answers they read before. No engine code changed.
 
 The rebuy money core (`fn_ca_process_tournament_chip_purchase_money_v1`) keeps its "already charged" answer. It is shared with chips, it is not a door anyone calls, and the public door `process_tournament_rebuy` already answers every retry with its stored first receipt and refuses the core's answer by name. The core refuses a changed price by name. Chip doors are unchanged.
+
+## Ruling 25 (decided by Claude on Dan's delegation of 2026-09-30): a profile shows strangers only what the table needs
+
+Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE". It settles question 1 of the Phase 10 audit ([lines 1, 2 and 6](DIAMOND-PHASE-10-LINES-1-2-6-2026-09-29.md), line 2: "Which profile fields are public?").
+
+**The ruling.** A stranger sees only what playing with you needs: display name, username, avatar, player number and public statistics. Anything that reveals a person's money, real identity or whereabouts is readable only by that person and by platform staff (`fn_is_platform_admin()`: role admin, superadmin or god).
+
+**The columns of `public.profiles`.**
+
+- **Their owner's and staff's only (SELECT revoked from `authenticated` and `anon`):** `diamonds`, `diamond_balance`, `diamond_multiplier`, `first_name`, `last_name`, `full_name`, `birth_year`, `city`, `state`, `country`, `last_seen`, `last_login`, `last_login_date`, `last_active`, `updated_at` (the presence heartbeat stamps it with `last_seen`, so it is last seen), `referred_by`, `poker_near_me_preferences` (it holds a last location and city).
+- **Already unreadable before this ruling, unchanged:** `email`, `phone`, `birthday`, `age_verified`, `age_verified_at`, `over_18_attested_at`, the `jurisdiction_*` and `kyc_*` columns, `stripe_customer_id`, `notification_token`, `mfa_required`, `is_farming_flagged`, `is_horse`, `horse_status`, `horse_profile`, `status_text`.
+- **Public, everything else.** Kept public because each is genuinely ambiguous, and said so: `is_online` (a presence signal the player controls with `showOnlineStatus`); the Hendon Mob figures and link (public tournament records); `home_casino`, `favorite_venue`, `home_poker_club` (where someone likes to play, which they chose to show); the social links; `is_vip`, `vip_tier`, `vip_expires_at` (they drive VIP styling others see); `referral_code`; `last_trivia_date`; `created_at`; and the settings and preference blobs other than `poker_near_me_preferences`.
+
+**How it is read now.** The owner reads their own row through `get_my_full_profile()`; platform staff through `get_full_profiles_for_staff(uuid[])`; who is online now through `fn_profile_presence(uuid[])`, a boolean by the five-minute heartbeat rule that never returns the heartbeat. Writes are unchanged: a player still edits their own private fields.
+
+**Built.** Migration `20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door` (the doors, and eleven database readers moved off the private fields); the Club Arena's reads moved in the same change; the World Hub's moved separately; the column revoke `20260930234500_a_profile_shows_strangers_only_what_the_table_needs` follows once both apps are live. Evidence: [profile privacy, 2026-10-01](evidence/profile-privacy-2026-10-01.md).
+
+Migration `20260930234000`'s comments and the two new doors' database comments call this ruling 22: it was written under that number the same night rulings 22 to 24 above landed, and the applied file is a record that does not change. The database comments are corrected by the revoke migration. It is ruling 25.

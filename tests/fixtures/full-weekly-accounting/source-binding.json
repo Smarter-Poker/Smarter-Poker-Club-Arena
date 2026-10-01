@@ -147,7 +147,7 @@
     "tests/fixtures/cashier-document-authority/regression.sql": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
-    "tests/components/agent-dashboard-durable-transfers.test.tsx": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
+    "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
     "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3073,5 +3073,21 @@
     ],
     "reason": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened.",
     "verification": "python3 scripts/ci/verify-source-bindings.py; npx vitest run tests/unit/diamondAcceptanceCi.test.ts tests/unit/fixtureNativeCi.test.ts tests/every-pinned-source-stays-bound.law.test.ts"
+  },
+  "profile_privacy_rebinding_20261001": {
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/agent-dashboard-durable-transfers.test.tsx",
+        "previous_sha256": "a244a41b185c4113858cd574fd4310e6ab19b6b1d595378c75c5f0ef37857dcc",
+        "sha256": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "cfc9d80101312035ae8a9501f99e9182203424b0ffb1dd5073c876ae98bfe0f6",
+        "sha256": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c"
+      }
+    ],
+    "reason": "Ruling 25 (docs/DIAMOND-RULINGS.md, Phase 10 line 2): a player's last-seen time is theirs alone, so the agent dashboard asks the presence door fn_profile_presence for who is online and reads the last hand played in the club from player_stats. agent-dashboard-durable-transfers.test.tsx answers that presence rpc with an empty list before its counted money rpcs, so every transfer and prepaid retry assertion is unchanged. discardedErrorReadRatchet.test.ts lowers three baselines exactly as its own shrink rule requires: DiamondService 1 -> 0 (the owner-door balance read binds and reports its error), OnlineFriendsPill 2 -> 1 (the profiles read binds its error), PresenceIndicator 1 -> 0 (presence comes from the presence door, which throws). No route, native phase, fixture or assertion is removed or weakened.",
+    "verification": "python3 scripts/ci/verify-source-bindings.py; npx vitest run tests/components/agent-dashboard-durable-transfers.test.tsx tests/unit/discardedErrorReadRatchet.test.ts"
   }
 }

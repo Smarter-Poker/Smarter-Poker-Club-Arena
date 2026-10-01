@@ -8,6 +8,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -202,12 +203,12 @@ export const DiamondService = {
    * which answers null when it could not read rather than zero.
    */
   async getBalance(userId: string): Promise<DiamondWallet> {
-    // Read diamond balance from profiles (the actual source of truth)
-    const { data: profileData } = await supabase
-      .from('profiles')
+    // Read diamond balance from profiles (the actual source of truth), the
+    // player's own, through the owner door (ruling 25, src/lib/ownProfile.ts).
+    const { data: profileData, error: profileError } = await ownProfile(userId)
       .select('diamonds')
-      .eq('id', userId)
       .maybeSingle();
+    if (profileError) reportError(profileError, 'DiamondService.getBalance', { userId });
 
     const balance = profileData?.diamonds || 0;
 

@@ -558,6 +558,13 @@ BEGIN
   IF v ->> 'reason' IS DISTINCT FROM 'lightning_cluster_stands_down' THEN
     RAISE EXCEPTION 'FAIL 05: the tick does not stand down in LIGHTNING: %', v;
   END IF;
+  -- Both engines acknowledge the Lightning halt, so its acknowledgement has
+  -- something to be cleared of.
+  PERFORM public.fn_cash_table_observe_dealing_halt(public.fn_cash_cluster_front_table(v_g));
+  PERFORM public.fn_cash_table_observe_dealing_halt(harness.feeder(v_g));
+  IF (SELECT count(*) FROM public.tables WHERE cluster_id = v_g AND dealing_halt_observed_at IS NOT NULL) <> 2 THEN
+    RAISE EXCEPTION 'FIXTURE: TICK''s two halted tables did not record their engines'' acknowledgement';
+  END IF;
   PERFORM harness.to(v_g, 12);
   v := harness.drive(v_g); v := harness.drive(v_g);
   IF harness.mode(v_g) <> 'must_move' OR (v -> 'result' ->> 'tables_released')::integer <> 2
@@ -582,7 +589,7 @@ BEGIN
     RAISE EXCEPTION 'FAIL 05: the tick did not take the Cluster back with must-move moves from the feeder to the main: %', v;
   END IF;
 END $$;
-\echo '  ok  05 THE TABLES DEAL AGAIN  the tick stands down in LIGHTNING; the reversion lifts both halts Lightning placed and nothing is left for an engine to observe; and the next tick answers ok for twelve seated players and plans must_move moves from the feeder to the main'
+\echo '  ok  05 THE TABLES DEAL AGAIN  the tick stands down in LIGHTNING; the reversion lifts both halts Lightning placed, with both engines'' acknowledgements, and nothing is left for an engine to observe; and the next tick answers ok for twelve seated players and plans must_move moves from the feeder to the main'
 
 -- 05b MANY PARTLY FILLED TABLES: THE PLANNER CONSOLIDATES AND MOVES NOBODY MID-HAND --
 -- Four six-max tables (Main 1, Main 2, Main 3, feeder), horses at each, 18

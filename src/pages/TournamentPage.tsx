@@ -694,13 +694,25 @@ export default function TournamentPage() {
         return;
       }
       if (selectedTournament.status === 'RUNNING') {
-        const [rebuyCheck, addOnCheck] = await Promise.all([
+        /* canAddOn answers for the EVENT only. process_tournament_rebuy sells
+           an add-on solely to a live 'playing' entry, so without the viewer's
+           own entry every spectator, busted player and non-entrant was shown
+           an Add-On button that could only end in a refusal (2026-10-01). */
+        const [rebuyCheck, addOnCheck, mine] = await Promise.all([
           tournamentService.canRebuy(selectedTournament.id, currentUser.id),
           tournamentService.canAddOn(selectedTournament.id),
+          supabase
+            .from('tournament_players')
+            .select('status')
+            .eq('tournament_id', selectedTournament.id)
+            .eq('user_id', currentUser.id)
+            .maybeSingle(),
         ]);
         if (!isMounted) return;
         setCanRebuyNow(rebuyCheck.allowed);
-        setCanAddOnNow(addOnCheck.allowed);
+        setCanAddOnNow(
+          addOnCheck.allowed && !mine.error && String(mine.data?.status ?? '') === 'playing'
+        );
       } else {
         if (isMounted) {
           setCanRebuyNow(false);
@@ -1565,7 +1577,11 @@ export default function TournamentPage() {
                     ? 'Processing...'
                     : /* Quote the price actually charged (base + fee),
                          as whole chips, not the raw buy-in column. */
-                      `Rebuy (${money(
+                      `${
+                        selectedTournament.is_reentry && !selectedTournament.is_rebuy
+                          ? 'Re-Enter'
+                          : 'Rebuy'
+                      } (${money(
                         tournamentService.quoteFromTournament(selectedTournament, 'rebuy').totalCost
                       )})`}
                 </button>

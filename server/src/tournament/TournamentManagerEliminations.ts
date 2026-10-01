@@ -1292,6 +1292,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
+          this.mysteryPlayersRemainingHint = remainingCount;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -1299,8 +1300,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // inventory. Guarded on `> 1` so the phase can never open on the
           // heads-up hand that ends the event.
           try {
-            await this.maybeActivateMysteryBounty(remainingCount);
+            const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
+            // Hold the parked boundary only while a hand is still in the air;
+            // every other answer is final for this count, so deal on.
+            if (awaitingBoundary !== true) this.releaseMysteryActivationBoundary();
           } catch (mbErr) {
             reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);

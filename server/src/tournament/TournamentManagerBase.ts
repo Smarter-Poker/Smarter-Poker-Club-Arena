@@ -107,6 +107,7 @@ import {
 import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import {
+  mysteryBountyThresholdReached,
   mysteryPoolCents,
   shouldActivateMysteryBounty,
   type MysteryBountyActivationMode,
@@ -2531,6 +2532,7 @@ export abstract class TournamentManagerBase {
           // release the boundary. Other hands may finish; none may start.
           this.holdSatelliteQualifierBoundary();
         }
+        if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
       }
@@ -2539,6 +2541,9 @@ export abstract class TournamentManagerBase {
       // A dealer parked on a hold this manager armed and no longer owns is
       // released here, by the authority that armed it. See the method.
       this.releaseManagedTablePauseIfUnowned(engine);
+      // A parked table is the edge a held mystery activation waits for.
+      if (this.mysteryActivationBoundaryPending)
+        this.requestEliminationSweep('mystery_activation_boundary');
       if (this.satelliteQualifierBoundaryPending) {
         this.requestEliminationSweep('satellite_qualifier_boundary');
       } else this.advanceHandForHandBarrier();
@@ -3851,6 +3856,118 @@ export abstract class TournamentManagerBase {
   /** Guard against two sweeps overlapping across an await. */
   private mysteryBountySeeding = false;
 
+  /**
+   * THE MYSTERY PHASE OPENS AT A HAND BOUNDARY THE ENGINE HOLDS (2026-10-01).
+   *
+   * Activation may only flip between hands, and the elimination sweep that
+   * decides it runs AFTER the busting hand, asynchronously. Nothing held the
+   * next deal for it: hand-for-hand parks only multi-table events and its
+   * barrier resumes the instant the last table parks. So whenever the bubble
+   * burst at a final table, the next hand was already dealt by the time the
+   * sweep asked, the predicate answered `hand_in_progress`, nothing re-asked,
+   * and the chests never opened. Production 2026-09-11..30: 13 at-the-money
+   * mystery events with at least two paid places (6882feb8, 1d29ce9e,
+   * ad2379b2, 3e7119e3, 57aed9fc ...) paid every in-the-money knockout the
+   * flat bounty and never drew a single envelope.
+   *
+   * A bust that can cross the threshold now parks every table before its next
+   * deal until the sweep has answered. A `hand_in_progress` answer keeps the
+   * hold, and each table parking re-drives the sweep; any other answer
+   * releases it. The engine pause carries its own safety budget and the
+   * manager clears its flag on the same budget, so the hold can only ever
+   * cost seconds, never wedge a table.
+   */
+  static readonly MYSTERY_ACTIVATION_HOLD_MS = 20_000;
+  protected mysteryActivationBoundaryPending = false;
+  /** Players still playing at the last verified sweep count; null = unknown. */
+  protected mysteryPlayersRemainingHint: number | null = null;
+  private mysteryActivationBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly mysteryActivationBoundaryEngines = new Set<ServerTableEngine>();
+
+  /** Could the busts in this hand open the mystery phase? Pure on cached state. */
+  protected mysteryActivationMayOpenOnBust(
+    finalStacks: ReadonlyArray<{ stack: unknown }>
+  ): boolean {
+    const t = this.tournamentCache;
+    if (!t?.is_mystery_bounty || this.mysteryBountyStage !== 'pending') return false;
+    if (this.isCohortSatellite()) return false;
+    const busted = finalStacks.filter((player) => Number(player.stack) <= 0).length;
+    const hint = this.mysteryPlayersRemainingHint;
+    // Unknown is not "far away": hold, and let the verified count decide.
+    if (hint == null) return true;
+    const after = hint - busted;
+    // The bust that leaves one player ends the event; there is nothing to open.
+    if (after <= 1) return false;
+    return mysteryBountyThresholdReached(
+      (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      t.mystery_bounty_activation_value,
+      after,
+      Number(t.current_players) || hint,
+      countPaidPlaces(t.payout_structure)
+    );
+  }
+
+  /** Park every table before its next deal until the activation sweep answers. */
+  protected holdMysteryActivationBoundary(): void {
+    if (!this.running) return;
+    // A break, a stage end or an owning add-on break already parks every
+    // table before its next deal; their release is theirs, not ours.
+    if (this.onBreak || this.stageEndPause || (this.addOnBreakActive && this.addOnBreakOwnsPause))
+      return;
+    this.mysteryActivationBoundaryPending = true;
+    if (!this.handForHandActive) {
+      // Hand-for-hand already parks each table after its hand, and the flag
+      // above stops its barrier from resuming them before the sweep answers.
+      for (const engine of this.tableEngines.values()) {
+        engine.pauseAfterHand(TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS, {
+          beforeNextHand: true,
+        });
+        this.mysteryActivationBoundaryEngines.add(engine);
+      }
+    }
+    if (this.mysteryActivationBoundaryTimer) {
+      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
+    }
+    this.mysteryActivationBoundaryTimer = this.setLifecycleTimeout(() => {
+      this.mysteryActivationBoundaryTimer = null;
+      this.releaseMysteryActivationBoundary();
+    }, TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS);
+  }
+
+  /** Give back exactly the hold armed above, deferring to any other owner. */
+  protected releaseMysteryActivationBoundary(): void {
+    if (!this.mysteryActivationBoundaryPending) return;
+    this.mysteryActivationBoundaryPending = false;
+    if (this.mysteryActivationBoundaryTimer) {
+      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
+      this.mysteryActivationBoundaryTimer = null;
+    }
+    const engines = [...this.mysteryActivationBoundaryEngines];
+    this.mysteryActivationBoundaryEngines.clear();
+    if (!this.running) return;
+    if (this.handForHandActive) {
+      this.advanceHandForHandBarrier();
+      return;
+    }
+    if (
+      this.onBreak ||
+      this.stageEndPause ||
+      (this.addOnBreakActive && this.addOnBreakOwnsPause) ||
+      this.satelliteQualifierBoundaryPending
+    )
+      return;
+    for (const engine of engines) {
+      if (![...this.tableEngines.values()].includes(engine)) continue;
+      try {
+        engine.resumeDealing();
+      } catch (err) {
+        reportError(err, 'Tournament.mystery_activation_boundary_release_failed', {
+          tournamentId: this.tournamentId,
+        });
+      }
+    }
+  }
+
   /** True only when NO table in this event has a hand in progress. */
   protected allTablesBetweenHands(): boolean {
     for (const engine of this.tableEngines.values()) {
@@ -3880,7 +3997,7 @@ export abstract class TournamentManagerBase {
    * chests of its own precisely so a second ladder cannot come into existence
    * — three of them already had, and none agreed.
    */
-  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<void> {
+  protected async maybeActivateMysteryBounty(playersRemaining: number): Promise<boolean | void> {
     if (this.mysteryBountyStage !== 'pending') return;
     const t = this.tournamentCache;
     if (!t?.is_mystery_bounty) return;
@@ -3981,7 +4098,9 @@ export abstract class TournamentManagerBase {
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
     });
-    if (!decision.activate) return;
+    // True only for the one transient refusal: the caller keeps the
+    // activation boundary armed so the tables park and the sweep re-asks.
+    if (!decision.activate) return decision.reason === 'hand_in_progress';
 
     /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
        20260911094503). A head earned before this moment but not yet
@@ -4156,7 +4275,8 @@ export abstract class TournamentManagerBase {
       !this.handForHandActive ||
       !this.running ||
       this.isOnBreak() ||
-      this.satelliteQualifierBoundaryPending
+      this.satelliteQualifierBoundaryPending ||
+      this.mysteryActivationBoundaryPending
     )
       return;
     const expectedIds = [...this.handForHandTableIds];

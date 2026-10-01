@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import './ShareHand.css';
 import {
   HAND_CLIP_POLL_LIMIT_MS,
   HAND_CLIP_POLL_MS,

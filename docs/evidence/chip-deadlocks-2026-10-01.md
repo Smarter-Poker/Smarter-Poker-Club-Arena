@@ -176,8 +176,9 @@ The settler's cursor moved again at 01:27:00 UTC. It had already been about an h
 first migration was applied (the conservation sweep's settler-lag check fired at 23:55 UTC on 30
 September); the failed batches then stopped it from about 00:04 to 01:27, and the backlog met the
 night's busiest cash hours (5,800 to 6,700 cash raked hands an hour from 01:00 to 05:00 UTC).
-Between 02:56 and 05:25 it slowed further with no batch error and no batch lock wait in the
-database log, so that part is in the engine's loop, not on a lock. It caught up at about 07:30 UTC:
+Between about 03:00 and 05:00 it nearly stopped, with no batch error and one batch lock wait in
+the database log, so that part is in the engine's loop, not on a lock; the 02:00 hour's hands
+took until 05:25. It caught up at about 07:30 UTC:
 hands raked from 22:50 on 30 September to about 07:00 on 1 October were accrued up to 2 h 53 min
 late (hands from 02:00 waited 153 minutes on average); from 07:00 the wait is back to its usual 15
 to 22 minutes on average (the settler runs every 30 minutes), and the settler-lag check resolved at

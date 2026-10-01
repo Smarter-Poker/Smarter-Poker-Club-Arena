@@ -1,0 +1,1 @@
+# Re-trigger Agent Apply Patch after the workflow was re-enabled on 2026-10-01. No paths are deleted.

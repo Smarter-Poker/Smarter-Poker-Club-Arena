@@ -292,8 +292,12 @@ BEGIN
 END;
 $function$;
 
+-- Engine plumbing, not a surface: nothing a browser role can call. The
+-- triggers below run them as their owner regardless of these grants.
 REVOKE ALL ON FUNCTION public.fn_ca_ledger_tally_add(text, text, numeric) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.fn_ca_ledger_tally_key(text, uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_felt_counts_table(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_felt_counts_table(uuid) TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. The balance side: one trigger function for every covered table
@@ -496,6 +500,10 @@ BEGIN
   RETURN NULL;
 END;
 $function$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_tally_balance_move() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_tally_ledger_leg() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_balance_has_its_ledger_row() FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. The triggers

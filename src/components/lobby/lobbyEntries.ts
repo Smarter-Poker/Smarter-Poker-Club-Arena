@@ -1391,6 +1391,8 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
         })
       : null;
   const lightningStatus = lightning && lightning.mode === 'lightning' ? lightning.status : null;
+  /* A paused, frozen or dead Cluster is a closed game: no mode word, no join. */
+  const modeClosedLabel = lightning?.closedLabel ?? null;
   const cluster =
     t.cluster_id && figures
       ? {
@@ -1399,7 +1401,10 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           template: t.cluster_template ?? null,
           tables: figures.tables,
           state: t.cluster_state ?? null,
-          ...(lightning && lightningStatus
+          /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
+             set only while the mode is lightning itself. pending_off and
+             draining still say LIGHTNING LIVE below, with JOIN GAME. */
+          ...(lightning && lightningStatus && lightning.joinLightning
             ? { lightning: { players: lightning.players, status: lightningStatus } }
             : {}),
         }
@@ -1416,9 +1421,11 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const st = cluster
     ? t.cluster_enabled === false
       ? { key: 'closed' as LobbyStatusKey, label: 'Closed' }
-      : gamePlayers > 0
-        ? { key: 'running' as LobbyStatusKey, label: 'Running' }
-        : { key: 'open' as LobbyStatusKey, label: 'Open' }
+      : modeClosedLabel
+        ? { key: 'closed' as LobbyStatusKey, label: modeClosedLabel }
+        : gamePlayers > 0
+          ? { key: 'running' as LobbyStatusKey, label: 'Running' }
+          : { key: 'open' as LobbyStatusKey, label: 'Open' }
     : cashStatus(t, waiting);
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
@@ -1466,21 +1473,25 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     live: (cluster ? gamePlayers : t.current_players || 0) > 0,
     rules: cluster
       ? [
-          lightning && lightningStatus
-            ? {
-                key: 'lightning_live',
-                label: lightning.label,
-                detail: lightningStatus,
-                tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
-              }
-            : {
-                key: cluster.mustMove ? 'must_move' : 'manual_table',
-                label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-                detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-                tip: cluster.mustMove
-                  ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-                  : 'One Table The Host Runs By Hand.',
-              },
+          ...(modeClosedLabel
+            ? []
+            : [
+                lightning && lightningStatus
+                  ? {
+                      key: 'lightning_live',
+                      label: 'LIGHTNING LIVE',
+                      detail: lightningStatus,
+                      tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
+                    }
+                  : {
+                      key: cluster.mustMove ? 'must_move' : 'manual_table',
+                      label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                      detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                      tip: cluster.mustMove
+                        ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                        : 'One Table The Host Runs By Hand.',
+                    },
+              ]),
           ...cashRuleMedallions(t),
         ]
       : cashRuleMedallions(t),

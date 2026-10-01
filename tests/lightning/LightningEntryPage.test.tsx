@@ -131,6 +131,41 @@ describe('the Lightning route', () => {
     gameRow.cluster_mode = 'lightning';
   });
 
+  it('JOIN GAME on a Cluster leaving Lightning leaves no intent: the table never waits for a pool', async () => {
+    gameRow.cluster_mode = 'pending_off';
+    rpc.mockImplementation(async (name: string) => {
+      if (name === 'fn_lightning_my_session') {
+        return { data: { pool_session_id: null, cluster_mode: 'pending_off' }, error: null };
+      }
+      if (name === 'fn_cash_game_join') {
+        return { data: { ok: true, action: 'seat', table_id: ANCHOR }, error: null };
+      }
+      return { data: null, error: null };
+    });
+    try {
+      renderAt(`/lightning/${CLUSTER}`);
+      const join = await screen.findByRole('button', { name: /join game/i });
+      expect(screen.queryByRole('button', { name: /join lightning/i })).toBeNull();
+      fireEvent.click(join);
+      await screen.findByTestId('table-route');
+      expect(getLightningEntryIntent(ANCHOR)).toBeNull();
+    } finally {
+      gameRow.cluster_mode = 'lightning';
+    }
+  });
+
+  it('a paused Cluster offers no door and says Game Paused', async () => {
+    gameRow.cluster_mode = 'paused';
+    rpc.mockResolvedValue({ data: { pool_session_id: null, cluster_mode: 'paused' }, error: null });
+    try {
+      renderAt(`/lightning/${CLUSTER}`);
+      expect(await screen.findByText('Game Paused')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /join/i })).toBeNull();
+    } finally {
+      gameRow.cluster_mode = 'lightning';
+    }
+  });
+
   it('prints no technical loading text while it resolves', async () => {
     let release: (v: unknown) => void = () => {};
     rpc.mockImplementation(() => new Promise((r) => (release = r)));

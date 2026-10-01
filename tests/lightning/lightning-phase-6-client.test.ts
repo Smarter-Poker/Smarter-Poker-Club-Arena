@@ -265,6 +265,7 @@ describe('lobby card states', () => {
   it('says LIGHTNING LIVE only in Lightning modes and MUST MOVE otherwise', () => {
     expect(isLightningMode('lightning')).toBe(true);
     expect(isLightningMode('pending_off')).toBe(true);
+    expect(isLightningMode('draining')).toBe(true);
     for (const m of ['must_move', 'pending_on', null, undefined])
       expect(isLightningMode(m)).toBe(false);
     expect(lightningLobbyBadge({ clusterMode: 'must_move', state: null, boardPlayers: 4 })).toEqual(
@@ -273,6 +274,8 @@ describe('lobby card states', () => {
         label: 'MUST MOVE',
         players: 4,
         status: null,
+        joinLightning: false,
+        closedLabel: null,
       }
     );
     expect(
@@ -282,6 +285,8 @@ describe('lobby card states', () => {
       label: 'LIGHTNING LIVE',
       players: 20,
       status: 'ACTIVE',
+      joinLightning: true,
+      closedLabel: null,
     });
   });
 
@@ -360,6 +365,9 @@ describe('route decision and the pool-session registry', () => {
       stack: 200,
       inHand: true,
       handId: 'h',
+      anchorTableId: null,
+      seatNumber: null,
+      occupancyId: null,
     });
     expect(parseLightningMySession(null).poolSessionId).toBeNull();
     expect(parseLightningMySession({ pool_session_id: 'not-a-uuid' }).poolSessionId).toBeNull();

@@ -35,6 +35,10 @@ export const LIGHTNING_NEXT_HAND_NOTICE_MS = 2500;
 export interface LightningSnapshotFields {
   hand_id?: unknown;
   hand_number?: unknown;
+  /** 'waiting' between hands: the idle snapshot after a fold carries it. */
+  stage?: unknown;
+  /** Empty in the idle snapshot after a fold: the folder holds no seat in any hand. */
+  players?: unknown;
   lightning?: {
     cluster_id?: unknown;
     hand_id?: unknown;
@@ -73,11 +77,32 @@ export function lightningHandId(
 export function lightningHandKey(
   snapshot: LightningSnapshotFields | null | undefined
 ): string | null {
-  if (!snapshot) return null;
+  if (!snapshot || isLightningIdleSnapshot(snapshot)) return null;
   const id = lightningHandId(snapshot);
   if (id) return `id:${id}`;
   const n = positive(snapshot.hand_number);
   return n ? `n:${n}` : null;
+}
+
+/**
+ * The snapshot the engine publishes to a folder's room the moment they fold:
+ * stage 'waiting', no players, no hand id, LIGHTNING FOLD off. Nothing is on
+ * the felt for this player until their next hand is dealt, however long the
+ * folded hand goes on without them.
+ */
+export function isLightningIdleSnapshot(
+  snapshot: LightningSnapshotFields | null | undefined
+): boolean {
+  if (!snapshot) return false;
+  if (snapshot.stage === 'waiting') return true;
+  return (
+    Array.isArray(snapshot.players) && snapshot.players.length === 0 && !lightningHandId(snapshot)
+  );
+}
+
+/** A hand this player is in is on the felt right now. */
+export function lightningHandOnFelt(snapshot: LightningSnapshotFields | null | undefined): boolean {
+  return lightningHandKey(snapshot) !== null;
 }
 
 /** The engine's LIGHTNING FOLD flag, or null when the snapshot does not carry it. */
@@ -105,6 +130,12 @@ export interface LightningFoldInput {
    * only while the hero faces a bet); the local rule is the fallback only.
    */
   engineFastFoldAvailable?: boolean | null;
+  /**
+   * `lightningHandOnFelt(snapshot)`. False on the idle snapshot after a fold
+   * (and before the first hand): there is nothing to fold, whatever any other
+   * input still says from the hand that just ended.
+   */
+  handOnFelt?: boolean;
 }
 
 export interface LightningFoldAvailability {
@@ -123,12 +154,14 @@ export function lightningFoldAvailability(
   caps: Pick<LightningCapabilities, 'fast_fold' | 'fold_and_watch'>
 ): LightningFoldAvailability {
   const foldable =
-    typeof input.engineFastFoldAvailable === 'boolean'
-      ? input.heroSeated && input.engineFastFoldAvailable
-      : input.heroSeated &&
-        input.handInProgress &&
-        !input.handSettling &&
-        String(input.heroStatus ?? '') === 'active';
+    input.handOnFelt === false
+      ? false
+      : typeof input.engineFastFoldAvailable === 'boolean'
+        ? input.heroSeated && input.engineFastFoldAvailable
+        : input.heroSeated &&
+          input.handInProgress &&
+          !input.handSettling &&
+          String(input.heroStatus ?? '') === 'active';
   return {
     fastFold: foldable && caps.fast_fold === true,
     foldWatch: foldable && caps.fold_and_watch === true,

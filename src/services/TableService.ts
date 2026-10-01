@@ -292,7 +292,9 @@ class TableService {
   async leaveTable(
     tableId: string,
     seatNumber: number,
-    userId: string
+    userId: string,
+    /** LIGHTNING PHASE 6: the anchor seat a Lightning room leaves through. */
+    target?: { seatNumber: number; occupancyId: string }
   ): Promise<{
     success: boolean;
     chipsReturned: number;
@@ -304,7 +306,9 @@ class TableService {
     // A stale UI seat number must never retarget an interrupted cashout.
     void seatNumber;
     const { leaveSeatWithIntent } = await import('./SeatLeaveIntent');
-    const result = await leaveSeatWithIntent(tableId, userId);
+    const result = target
+      ? await leaveSeatWithIntent(tableId, userId, target)
+      : await leaveSeatWithIntent(tableId, userId);
     if (!result.success) return result;
     if (!result.deferred) {
       masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });

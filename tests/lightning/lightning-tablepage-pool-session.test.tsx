@@ -91,7 +91,11 @@ describe('TablePage on a pool-session id', () => {
   });
 
   it('mounts the Lightning controls only in a Lightning room', () => {
-    expect(PAGE).toMatch(/\{lightningRoom && tableState\.heroSeat > 0 \? \(\s*<LightningFoldBar/);
+    /* For the whole room, not only while a seat shows: the idle snapshot after
+       a fold carries no players, and the strip must hold its place, dimmed. */
+    expect(PAGE).toMatch(
+      /\{lightningRoom && userId && userId !== 'guest' \? \(\s*<LightningFoldBar/
+    );
     expect(PAGE).toMatch(/\{lightningRoom \? \(\s*<LightningNextHand/);
   });
 });

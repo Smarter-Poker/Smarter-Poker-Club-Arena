@@ -31,6 +31,7 @@ import {
   type LightningEntryDecision,
 } from '../lightning/lightningSession';
 import { LIGHTNING_NEXT_HAND_NOTICE_MS } from '../lightning/lightningHand';
+import { clusterModeDisplay } from '../lightning/lightningLobby';
 import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { warmTable } from '../services/tableWarmup';
 import { isUUID } from '../utils/clubIdResolver';
@@ -101,6 +102,8 @@ export default function LightningEntryPage() {
     };
   }, [clusterId, validId, attempt, navigate]);
 
+  const joinsLightning =
+    phase.kind === 'entry' && phase.decision.kind === 'entry' ? phase.decision.lightning : false;
   const join = useCallback(async () => {
     if (!clusterId || joining) return;
     setJoining(true);
@@ -112,8 +115,10 @@ export default function LightningEntryPage() {
         return;
       }
       /* The table's own buy-in takes it from here. The intent lets that table
-         carry this tab on to the pool-session room once the buy-in lands. */
-      setLightningEntryIntent(r.table_id, clusterId);
+         carry this tab on to the pool-session room once the buy-in lands. It
+         is set only for JOIN LIGHTNING: a JOIN GAME seat is an ordinary seat,
+         and the table must not wait for a pool session that will never come. */
+      if (joinsLightning) setLightningEntryIntent(r.table_id, clusterId);
       warmTable(r.table_id);
       navigate(`/table/${r.table_id}`);
     } catch (err) {
@@ -123,7 +128,7 @@ export default function LightningEntryPage() {
     } finally {
       if (mounted.current) setJoining(false);
     }
-  }, [clusterId, joining, navigate, toast]);
+  }, [clusterId, joining, joinsLightning, navigate, toast]);
 
   if (!validId) {
     return (
@@ -169,11 +174,19 @@ export default function LightningEntryPage() {
     meta && meta.smallBlind > 0 && meta.bigBlind > 0
       ? `Blinds ${Number(meta.smallBlind)}/${Number(meta.bigBlind)}`
       : '';
-  const closed = meta?.enabled === false;
+  /* A paused, frozen or dead Cluster offers no door at all, and says so in the
+     board's own words; a disabled one is closed as before. */
+  const modeDisplay = clusterModeDisplay(meta?.clusterMode ?? null);
+  const closed = meta?.enabled === false || modeDisplay.closedLabel !== null;
+  const eyebrow = modeDisplay.closedLabel
+    ? `Game ${modeDisplay.closedLabel}`
+    : lightning || modeDisplay.label === 'LIGHTNING LIVE'
+      ? 'Lightning'
+      : 'Must Move';
   return (
     <div className="lightning-entry" data-testid="lightning-entry">
       <EmptyState
-        eyebrow={lightning ? 'Lightning' : 'Must Move'}
+        eyebrow={eyebrow}
         title={meta?.name ?? 'Lightning'}
         description={
           closed

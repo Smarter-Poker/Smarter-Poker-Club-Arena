@@ -1,4 +1,8 @@
 {
-  "_owner": "perf/post-hand-db-cost-1001. Migration 20261001005431_a_club_day_rake_row_is_taken_at_commit: trg_ca_club_rake_daily_ins on public.rake_records becomes a DEFERRABLE INITIALLY DEFERRED row trigger executing the new trigger function below; fn_ca_club_rake_daily_apply and _compute unchanged.",
-  "functions": ["trg_ca_club_rake_daily_insert_at_commit"]
+  "_owner": "perf/post-hand-db-cost-1001. Migration 20261001005431_a_club_day_rake_row_is_taken_at_commit, applied to production 2026-10-01 01:10Z and recorded in supabase_migrations.schema_migrations with the file's exact bytes (md5 edef6b4c0315e1ae39903a1799d44787). smarter_private.ca_club_rake_daily_at_commit is an unlogged per-transaction scratch table; its deferred row trigger smarter_private.fn_ca_club_rake_daily_apply_at_commit applies the club day rake rollup at COMMIT. public.trg_ca_club_rake_daily_insert changed by one asserted substitution.",
+  "tables": ["smarter_private.ca_club_rake_daily_at_commit"],
+  "functions": [
+    "smarter_private.fn_ca_club_rake_daily_apply_at_commit",
+    "trg_ca_club_rake_daily_insert"
+  ]
 }

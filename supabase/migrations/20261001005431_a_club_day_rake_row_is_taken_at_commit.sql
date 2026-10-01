@@ -36,36 +36,46 @@
 -- profile lock. That is the convoy the log shows, and it is a reporting rollup:
 -- no money is in that row.
 --
--- WHAT CHANGES. Only WHEN the same upsert runs. The statement trigger becomes a
--- DEFERRABLE INITIALLY DEFERRED constraint trigger, FOR EACH ROW, that calls the
--- same fn_ca_club_rake_daily_apply with that one row's id at COMMIT. The row is
--- then locked for the commit itself and nothing else.
+-- WHAT CHANGES. Only WHEN the same upsert runs: at COMMIT. The statement
+-- trigger on rake_records stays exactly as it is (same name, same definition,
+-- same function, same filter). Its function, trg_ca_club_rake_daily_insert, is
+-- changed by one asserted substitution: instead of calling
+-- fn_ca_club_rake_daily_apply(v_ids) there and then, it writes the same v_ids
+-- into smarter_private.ca_club_rake_daily_at_commit, a transaction-scratch table
+-- whose DEFERRABLE INITIALLY DEFERRED row trigger calls the same
+-- fn_ca_club_rake_daily_apply with each id at COMMIT and removes the row. The
+-- club's day row is then locked for the commit itself and nothing else.
 --
 --   * fn_ca_club_rake_daily_compute and fn_ca_club_rake_daily_apply are not
 --     touched (md5 pinned below, before and after).
---   * The filter is the old one, as the trigger's WHEN: a cash row
---     (NOT is_tournament) that names a club.
+--   * The filter is the old one, untouched: a cash row (NOT is_tournament) that
+--     names a club.
 --   * Per row instead of per statement: apply() adds each hand's terms, and
 --     numeric addition is exact, so one call per row and one call per statement
---     leave identical rows. Proved on production rows, in one rolled-back
---     transaction, before this was applied (changelog, "Proof").
+--     leave identical rows. Proved on 4,003 production rows (2,399 of them union
+--     rows split across clubs) in one rolled-back transaction before this was
+--     applied (changelog, "Proof").
 --   * The failure rule is the old one, word for word: a rollup that cannot be
---     written never fails the hand (WARNING, RETURN NULL).
---   * Same trigger name. The old trigger function is left in place, unused, so
---     the qualification fixtures that pin it still load.
+--     written never fails the hand (WARNING, and the hand commits).
+--   * The scratch table is UNLOGGED: a row lives only inside the transaction
+--     that wrote it (deleted by its own commit-time trigger, discarded with an
+--     aborted transaction), so it writes no WAL and has nothing to lose in a
+--     crash. No foreign key to rake_records (a hot relation) and no grant.
 --
 -- WHAT DOES NOT CHANGE. No money table, no money function, no grant on one. No
 -- rake, wallet, ledger, VIP, BBJ, promo or insurance row is written differently
 -- or in a different order: atomic_distribute_rake and the post-commit
 -- obligations are byte for byte what they were.
 --
--- LOCKS. DROP TRIGGER takes ACCESS EXCLUSIVE on public.rake_records and CREATE
--- TRIGGER SHARE ROW EXCLUSIVE, both until COMMIT, behind any open transaction
--- that has inserted a rake row. lock_timeout is 2 s: at worst rake inserts wait
--- 2 s and this aborts having changed nothing. One transaction, so PostgREST
--- reloads its schema cache once. Not inside :50-:03 UTC.
+-- LOCKS. None on a hot relation. A first version of this file swapped the
+-- trigger on rake_records itself (DROP TRIGGER takes ACCESS EXCLUSIVE); at 01:05
+-- UTC it was refused by its own 2 s lock_timeout, having changed nothing, because
+-- some open hand always holds rake_records for longer than that - the very
+-- convoy it is for. This version creates a new table and a trigger on it, and
+-- replaces one function body: nothing waits on rake_records. One transaction,
+-- so PostgREST reloads its schema cache once. Not inside :50-:03 UTC.
 --
--- @live-proof: (SELECT tgdeferrable AND tginitdeferred AND (tgtype & 1) = 1 FROM pg_trigger WHERE tgrelid = 'public.rake_records'::regclass AND tgname = 'trg_ca_club_rake_daily_ins' AND tgfoid = 'public.trg_ca_club_rake_daily_insert_at_commit()'::regprocedure)
+-- @live-proof: (SELECT t.tgdeferrable AND t.tginitdeferred AND (t.tgtype & 1) = 1 AND c.relpersistence = 'u' AND pg_get_functiondef('public.trg_ca_club_rake_daily_insert()'::regprocedure) LIKE '%INSERT INTO smarter_private.ca_club_rake_daily_at_commit%' FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgrelid = 'smarter_private.ca_club_rake_daily_at_commit'::regclass AND t.tgname = 'ca_club_rake_daily_at_commit')
 
 BEGIN;
 SET LOCAL lock_timeout = '2s';
@@ -87,54 +97,100 @@ BEGIN
      'CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()' THEN
     RAISE EXCEPTION 'trg_ca_club_rake_daily_ins is not the pinned statement trigger';
   END IF;
-  IF to_regprocedure('public.trg_ca_club_rake_daily_insert_at_commit()') IS NOT NULL THEN
-    RAISE EXCEPTION 'trg_ca_club_rake_daily_insert_at_commit already exists';
+  IF to_regclass('smarter_private.ca_club_rake_daily_at_commit') IS NOT NULL
+  OR to_regprocedure('smarter_private.fn_ca_club_rake_daily_apply_at_commit()') IS NOT NULL THEN
+    RAISE EXCEPTION 'the at-commit rollup already exists';
   END IF;
-  PERFORM set_config('ca.rake_records_trigger_count',
-    (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.rake_records'::regclass AND NOT tgisinternal)::text, true);
 END
 $pins$;
 
-CREATE FUNCTION public.trg_ca_club_rake_daily_insert_at_commit()
+-- One row per cash rake row inserted by this transaction, between the insert
+-- and this transaction's COMMIT. Nothing else ever reads or writes it.
+CREATE UNLOGGED TABLE smarter_private.ca_club_rake_daily_at_commit (
+  rake_record_id uuid PRIMARY KEY
+);
+ALTER TABLE smarter_private.ca_club_rake_daily_at_commit OWNER TO postgres;
+ALTER TABLE smarter_private.ca_club_rake_daily_at_commit ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE smarter_private.ca_club_rake_daily_at_commit FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION smarter_private.fn_ca_club_rake_daily_apply_at_commit()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $fn$
 BEGIN
-  -- Fired at COMMIT (DEFERRABLE INITIALLY DEFERRED), once per cash rake row.
-  -- The same rollup the statement trigger wrote, for this one row, so the
-  -- club's day row is locked for the commit and not for the rest of the hand.
-  PERFORM public.fn_ca_club_rake_daily_apply(ARRAY[NEW.id]);
-  RETURN NULL;
-EXCEPTION WHEN OTHERS THEN
-  RAISE WARNING 'ca_club_rake_daily insert rollup failed: %', SQLERRM;
+  -- Fired at COMMIT, once per cash rake row: the rollup the statement trigger
+  -- used to write in the middle of the hand, for this one row, so the club's
+  -- day row is locked for the commit and not for the rest of the hand.
+  DELETE FROM smarter_private.ca_club_rake_daily_at_commit
+   WHERE rake_record_id = NEW.rake_record_id;
+  BEGIN
+    PERFORM public.fn_ca_club_rake_daily_apply(ARRAY[NEW.rake_record_id]);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'ca_club_rake_daily insert rollup failed: %', SQLERRM;
+  END;
   RETURN NULL;
 END;
 $fn$;
+ALTER FUNCTION smarter_private.fn_ca_club_rake_daily_apply_at_commit() OWNER TO postgres;
+REVOKE ALL ON FUNCTION smarter_private.fn_ca_club_rake_daily_apply_at_commit() FROM PUBLIC, anon, authenticated, service_role;
 
-ALTER FUNCTION public.trg_ca_club_rake_daily_insert_at_commit() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.trg_ca_club_rake_daily_insert_at_commit() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.trg_ca_club_rake_daily_insert_at_commit() TO service_role;
-
-DROP TRIGGER trg_ca_club_rake_daily_ins ON public.rake_records;
-
-CREATE CONSTRAINT TRIGGER trg_ca_club_rake_daily_ins
-  AFTER INSERT ON public.rake_records
+CREATE CONSTRAINT TRIGGER ca_club_rake_daily_at_commit
+  AFTER INSERT ON smarter_private.ca_club_rake_daily_at_commit
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW
-  WHEN (NOT COALESCE(NEW.is_tournament, false) AND NEW.club_id IS NOT NULL)
-  EXECUTE FUNCTION public.trg_ca_club_rake_daily_insert_at_commit();
+  EXECUTE FUNCTION smarter_private.fn_ca_club_rake_daily_apply_at_commit();
+
+DO $subs$
+DECLARE v_def text; v_old text; v_new text; v_n integer; v_acl text; v_after text;
+BEGIN
+  v_def := pg_get_functiondef('public.trg_ca_club_rake_daily_insert()'::regprocedure);
+  v_old := E'  IF v_ids IS NOT NULL THEN\n'
+        || E'    PERFORM public.fn_ca_club_rake_daily_apply(v_ids);\n'
+        || E'  END IF;\n';
+  v_new := E'  IF v_ids IS NOT NULL THEN\n'
+        || E'    -- Applied at COMMIT, one row at a time, by the deferred trigger on\n'
+        || E'    -- this scratch table: the club''s day row is no longer held for the\n'
+        || E'    -- rest of the hand (20261001005431).\n'
+        || E'    INSERT INTO smarter_private.ca_club_rake_daily_at_commit (rake_record_id)\n'
+        || E'    SELECT unnest(v_ids);\n'
+        || E'  END IF;\n';
+  v_n := (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old);
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'the apply clause occurs % times in trg_ca_club_rake_daily_insert, expected exactly 1', v_n;
+  END IF;
+  SELECT p.proacl::text INTO v_acl FROM pg_proc p WHERE p.oid = 'public.trg_ca_club_rake_daily_insert()'::regprocedure;
+  EXECUTE replace(v_def, v_old, v_new);
+  v_after := pg_get_functiondef('public.trg_ca_club_rake_daily_insert()'::regprocedure);
+  IF md5(v_after) <> '7c89337da7ff645a74fd4471be9170a5' THEN
+    RAISE EXCEPTION 'trg_ca_club_rake_daily_insert is not the expected text (md5 %)', md5(v_after);
+  END IF;
+  IF md5(replace(v_after, v_new, v_old)) <> '4bb7c4d64021796803829faacbcddbb0' THEN
+    RAISE EXCEPTION 'trg_ca_club_rake_daily_insert: the reverse substitution does not reproduce the pinned text';
+  END IF;
+  IF (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'public.trg_ca_club_rake_daily_insert()'::regprocedure)
+     IS DISTINCT FROM v_acl THEN
+    RAISE EXCEPTION 'trg_ca_club_rake_daily_insert grants moved';
+  END IF;
+END
+$subs$;
 
 DO $after$
-DECLARE v_def text;
 BEGIN
-  SELECT pg_get_triggerdef(t.oid) INTO v_def FROM pg_trigger t
-   WHERE t.tgrelid = 'public.rake_records'::regclass AND t.tgname = 'trg_ca_club_rake_daily_ins'
-     AND t.tgdeferrable AND t.tginitdeferred;
-  IF v_def IS DISTINCT FROM
-     'CREATE CONSTRAINT TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((NOT COALESCE(new.is_tournament, false)) AND (new.club_id IS NOT NULL))) EXECUTE FUNCTION trg_ca_club_rake_daily_insert_at_commit()' THEN
-    RAISE EXCEPTION 'trg_ca_club_rake_daily_ins is not the deferred row trigger: %', v_def;
+  IF (SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t
+       WHERE t.tgrelid = 'public.rake_records'::regclass AND t.tgname = 'trg_ca_club_rake_daily_ins')
+     IS DISTINCT FROM
+     'CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()' THEN
+    RAISE EXCEPTION 'the rake_records trigger moved';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+                  WHERE t.tgrelid = 'smarter_private.ca_club_rake_daily_at_commit'::regclass
+                    AND t.tgname = 'ca_club_rake_daily_at_commit'
+                    AND t.tgdeferrable AND t.tginitdeferred AND (t.tgtype & 1) = 1
+                    AND t.tgfoid = 'smarter_private.fn_ca_club_rake_daily_apply_at_commit()'::regprocedure
+                    AND c.relpersistence = 'u') THEN
+    RAISE EXCEPTION 'the at-commit trigger is not deferred, per row, on the unlogged scratch table';
   END IF;
   IF md5(pg_get_functiondef('public.fn_ca_club_rake_daily_apply(uuid[])'::regprocedure))
        <> '9b47ac0cf0ab468e28cfef01548f25e8'
@@ -142,15 +198,12 @@ BEGIN
        <> '8c184988b1c7b14f27d4305eb9b99456' THEN
     RAISE EXCEPTION 'the rollup functions moved';
   END IF;
-  IF (SELECT proacl::text FROM pg_proc WHERE oid = 'public.trg_ca_club_rake_daily_insert_at_commit()'::regprocedure)
-     IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'
-  OR has_function_privilege('anon', 'public.trg_ca_club_rake_daily_insert_at_commit()', 'EXECUTE')
-  OR has_function_privilege('authenticated', 'public.trg_ca_club_rake_daily_insert_at_commit()', 'EXECUTE') THEN
-    RAISE EXCEPTION 'trg_ca_club_rake_daily_insert_at_commit grants are not the old trigger function''s';
-  END IF;
-  IF (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.rake_records'::regclass AND NOT tgisinternal)::text
-     IS DISTINCT FROM current_setting('ca.rake_records_trigger_count', true) THEN
-    RAISE EXCEPTION 'rake_records gained or lost a trigger';
+  IF has_table_privilege('anon', 'smarter_private.ca_club_rake_daily_at_commit', 'SELECT,INSERT,UPDATE,DELETE')
+  OR has_table_privilege('authenticated', 'smarter_private.ca_club_rake_daily_at_commit', 'SELECT,INSERT,UPDATE,DELETE')
+  OR has_table_privilege('service_role', 'smarter_private.ca_club_rake_daily_at_commit', 'SELECT,INSERT,UPDATE,DELETE')
+  OR has_function_privilege('anon', 'smarter_private.fn_ca_club_rake_daily_apply_at_commit()', 'EXECUTE')
+  OR has_function_privilege('authenticated', 'smarter_private.fn_ca_club_rake_daily_apply_at_commit()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'the at-commit scratch table or function is reachable from a client role';
   END IF;
 END
 $after$;

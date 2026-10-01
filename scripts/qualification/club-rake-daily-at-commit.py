@@ -15,7 +15,8 @@ rake_records triggers over production's column shapes. It adds production's fore
 rake_attributions.player_id -> profiles(id), the one that waits behind a horse claim.
 
 Two cases, each run BEFORE (the live statement trigger) and AFTER (the migration file itself,
-executed whole, pins and all):
+executed whole, pins and all - its rake_records trigger stays as it is; its function now hands
+the same ids to an unlogged scratch table whose deferred trigger applies them at COMMIT):
 
   stalled-hand-holds-its-club  a third session holds one player's profile FOR UPDATE (what
                                fn_ca_horse_claim_due does). Hand 1 of club C names that player
@@ -135,12 +136,17 @@ def main():
         for state in ('before', 'after'):
             if state == 'after':
                 cl.psql(cd.DB, '-f', str(MIGRATION))
-                report['trigger_after'] = cl.q("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_ca_club_rake_daily_ins'")
+                report['triggers_after'] = cl.q(
+                    "SELECT string_agg(pg_get_triggerdef(oid), E'\\n' ORDER BY tgname) FROM pg_trigger "
+                    "WHERE tgname IN ('trg_ca_club_rake_daily_ins', 'ca_club_rake_daily_at_commit')")
             ctl = cd.Session(cl, 'ctl')
             for case in CASES:
                 r = case(cl, ctl, state)
                 report['results'].setdefault(r['case'], {})[state] = r
                 print('%-30s %-6s %s' % (r['case'], state, json.dumps({k: v for k, v in r.items() if k not in ('case', 'pair', 'state', 'daily')})), flush=True)
+            if state == 'after':
+                report['scratch_rows_left_after_every_commit_and_rollback'] = int(
+                    cl.q('SELECT count(*) FROM smarter_private.ca_club_rake_daily_at_commit'))
             ctl.close()
     finally:
         cl.stop()
@@ -156,6 +162,11 @@ def main():
             all(st[s][k] == 'completed' for s in ('before', 'after') for k in ('hand1', 'hand2_rake')),
         'stalled case: identical day rows': st['before']['daily'] == st['after']['daily'] and len(st['after']['daily']) == 1,
         'same-rows: identical day rows': sr['before']['daily'] == sr['after']['daily'] and len(sr['after']['daily']) >= 3,
+        'after: the scratch table is empty once every transaction has ended':
+            report.get('scratch_rows_left_after_every_commit_and_rollback') == 0,
+        'after: the rake_records trigger itself is unchanged':
+            'REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()'
+            in report.get('triggers_after', ''),
         'no deadlock anywhere': all(r[s]['deadlocks'] == 0 for r in report['results'].values() for s in ('before', 'after')),
     }
     report['checks'] = checks

@@ -12027,6 +12027,11 @@ function LiveTablePage({
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
+  /* SHARE AS VIDEO (Phase 9.1): the hand_history id behind sharedHandData
+     when the share came from a stored record. The live snapshot taken as a
+     hand ends has no row id yet, so it clears this and the sheet shows no
+     video panel for it. */
+  const [sharedHandId, setSharedHandId] = useState<string | null>(null);
 
   // Real Name vs Alias
   const [useRealName, setUseRealName] = useState(() => {
@@ -16966,6 +16971,7 @@ function LiveTablePage({
               .slice(1)
               .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
               .filter((b) => b.length > 0);
+            setSharedHandId(null);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
               tableName: st.tableName || 'Club Arena',
@@ -26370,6 +26376,8 @@ function LiveTablePage({
         onShare={(hand) => {
           try {
             setSharedHandData(panelHandToShareable(hand, tableState.tableName || 'Club Arena'));
+            /* A stored record: its id is the hand_history row (Share As Video). */
+            setSharedHandId(hand.id || null);
             setShowHandDetail(false);
             setShowShareHand(true);
           } catch (e) {
@@ -26895,6 +26903,7 @@ function LiveTablePage({
         // Share Hand
         showShareHand={showShareHand}
         sharedHandData={sharedHandData}
+        sharedHandId={sharedHandId}
         onCloseShareHand={() => setShowShareHand(false)}
         // Add-On
         addOnPeriod={addOnPeriod}

@@ -448,6 +448,9 @@ export interface TableModalsLayerProps {
   // Share Hand
   showShareHand: boolean;
   sharedHandData: any;
+  /** The hand_history id behind `sharedHandData` when the share came from
+      a stored record (Previous Hand detail); null for the live snapshot. */
+  sharedHandId?: string | null;
   onCloseShareHand: () => void;
 
   // Tournament Add-On
@@ -692,6 +695,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Share Hand
     showShareHand,
     sharedHandData,
+    sharedHandId = null,
     onCloseShareHand,
     // Add-On
     addOnPeriod,
@@ -1315,7 +1319,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Share Hand */}
       {showShareHand && sharedHandData && (
-        <ShareHand isOpen={showShareHand} onClose={onCloseShareHand} hand={sharedHandData} />
+        <ShareHand
+          isOpen={showShareHand}
+          onClose={onCloseShareHand}
+          hand={sharedHandData}
+          handId={sharedHandId}
+        />
       )}
 
       {/* Tournament Add-On Modal */}

@@ -58,7 +58,8 @@ production's `8be44e92...` and `ecdd1cd1...`).
 
 ## 3. `20260929130144` (the supply check index migration)
 
-Decision: apply, unchanged. Evidence read from production before applying:
+Decision: apply, unchanged (not re-derived, not deleted). Evidence read from
+production before applying:
 
 - neither `ca_mint_ledger_asset_created_net_idx` nor
   `ca_mint_ledger_baseline_correction_idx` exists, and `ca_mint_ledger` has no
@@ -69,8 +70,20 @@ Decision: apply, unchanged. Evidence read from production before applying:
   measured 31,304 on 2026-09-29), so the intent applies more now, not less.
 
 PR #5678 had just made the file installable through `apply-merged-migration.yml`
-(the settings now sit in one bounded transaction). It is applied through that
-workflow, dry run first.
+(the settings now sit in one bounded transaction). Through that workflow:
+
+- 00:41 UTC, dry run (run 36797407537): parsed two concurrent indexes and one
+  transaction, then refused because fewer than 12 minutes remained before :50.
+- 01:03:49 UTC, dry run (run 36799264118): `DRY RUN: nothing sent.`
+- 01:04:20 UTC, live (run 36799309219, dispatched by a parallel session that
+  owned #5678): both indexes built and validated (24.6 s and 37.9 s), the
+  settings transaction committed in 123 ms, and version `20260929130144` was
+  recorded under its own name. This session did not send a second apply; the
+  installer would have refused it as already recorded.
+
+Production readback after the apply, the file's own `@live-proof`: both indexes
+present with `indisvalid`, and `ca_mint_ledger.reloptions` carries
+`autovacuum_vacuum_insert_scale_factor=0.0` and the five sibling settings.
 
 **Locks.** Both indexes are `CREATE INDEX CONCURRENTLY IF NOT EXISTS`, sent one
 at a time before the transaction: SHARE UPDATE EXCLUSIVE on `ca_mint_ledger`,

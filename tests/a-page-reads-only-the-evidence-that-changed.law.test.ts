@@ -1,6 +1,9 @@
 /**
  * A PAGE RECOMPUTE READS ONLY THE EVIDENCE THAT CHANGED
- * (2026-09-27, migration 20260927160709).
+ * (2026-09-27, migration 20260927160709; re-derived 2026-09-30 as
+ * 20260930232349 against the calculator production runs, after
+ * 20260927155651 changed the certificate loop's agreement instant underneath
+ * the original, which was never applied and is deleted).
  *
  * The page path of fn_calculate_cash_rakeback_periods no longer reads the whole
  * club-week for its three evidence counts. It keeps, per club-week, the frozen
@@ -31,10 +34,34 @@ const SEGMENT_START = ' -- Tournament fees are earned at terminal recognition.';
 const SEGMENT_END =
   " IF drifted_issues>0 THEN RETURN receipt||jsonb_build_object('reason','cash_source_receipts_drifted','source_count',drifted_issues); END IF;\n";
 
+/**
+ * The body the page path replaces is the one production runs: 20260926042810's
+ * calculator with the ONE expression 20260927155651 (step 3c) rewrote in the
+ * certificate loop. 155651 patches it with replace() over pg_get_functiondef,
+ * so its file carries no literal body; the same replacement is applied here,
+ * and refused unless 155651 still carries exactly that old and new text.
+ */
+const AGREEMENT_PATCH = '20260927155651_';
+const AGREEMENT_BEFORE =
+  "CASE WHEN s.source_type='tournament_fee_accrual' THEN fee.charged_at ELSE s.earned_at END AS agreement_at,";
+const AGREEMENT_AFTER =
+  "CASE WHEN s.source_type='tournament_fee_accrual' THEN public.fn_accounting_tournament_source_terms_at(fee.tournament_id,fee.charged_at,fee.contract) ELSE s.earned_at END AS agreement_at,";
+
 function predecessorBody(): string {
   const name = migrationFiles().find((f) => f.startsWith(PREDECESSOR));
   if (!name) throw new Error('the predecessor migration is gone');
-  return functionBody(readMigration(name), CALC);
+  const patch = migrationFiles().find((f) => f.startsWith(AGREEMENT_PATCH));
+  if (!patch) throw new Error('the agreement-instant migration is gone');
+  const patchSql = readMigration(patch);
+  if (
+    !patchSql.includes('$old$' + AGREEMENT_BEFORE + '$old$') ||
+    !patchSql.includes('$new$' + AGREEMENT_AFTER + '$new$')
+  )
+    throw new Error('20260927155651 no longer rewrites the agreement instant this law replays');
+  const body = functionBody(readMigration(name), CALC);
+  if (body.split(AGREEMENT_BEFORE).length !== 2)
+    throw new Error('the predecessor does not carry the agreement instant once');
+  return body.replace(AGREEMENT_BEFORE, AGREEMENT_AFTER);
 }
 
 /** The whole-period segment of a calculator body. */
@@ -242,7 +269,8 @@ describe('a page recompute reads only the evidence that changed', () => {
     expect(sql).toMatch(/b\.earned_at=NEW\.earned_at/);
   });
   it('carries its measurements, preimage and postimage', () => {
-    expect(sql).toMatch(/80f40737e9015888f2b5c4215c383bc5/);
+    // The preimage is the live body (20260926042810 + 20260927155651 step 3c).
+    expect(sql).toMatch(/md5\(p\.prosrc\)='adea66332439cb1c0071f37ce12165b9'/);
     expect(sql).toMatch(/md5\(prosrc\)='[0-9a-f]{32}'/);
     expect(sql).toMatch(/60,276 ms/);
   });

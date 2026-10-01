@@ -1,4 +1,75 @@
 -- ============================================================================
+-- 20260930232349_a_page_recompute_reads_only_changed_evidence_rederived
+--
+-- RE-DERIVES 20260927160709 AGAINST THE CALCULATOR PRODUCTION RUNS TODAY
+-- ============================================================================
+--
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch. CLAUDE.md 10.9: the reasoning goes in this header.
+--
+-- WHY THERE IS A SECOND FILE (read live 2026-09-30)
+--
+-- 20260927160709 merged to main on 2026-09-27 (PR #5475) and was never
+-- applied. Its STEP 2.1 refuses unless fn_calculate_cash_rakeback_periods
+-- has md5(prosrc) = 80f40737e9015888f2b5c4215c383bc5, the body installed by
+-- 20260926042810. Production's body now hashes to
+-- adea66332439cb1c0071f37ce12165b9, so it could only ever abort with
+-- PERIOD_CALCULATOR_PREIMAGE_CHANGED. That file is deleted in the same pull
+-- request as this one (check-migrations-are-live's own remediation for a
+-- superseded file); it was never in schema_migrations, so no history row
+-- describes it and nothing in the database refers to it.
+--
+-- WHAT CHANGED UNDERNEATH IT, PROVED BYTE FOR BYTE
+--
+-- Exactly one expression. 20260927155651 (held_tournament_fees_are_recognized_
+-- on_the_owner_host_club_b, step 3c) rewrote the agreement instant of a
+-- tournament fee in the certificate loop's `receipts` CTE:
+--
+--   before  CASE WHEN s.source_type='tournament_fee_accrual' THEN fee.charged_at ...
+--   after   CASE WHEN s.source_type='tournament_fee_accrual' THEN
+--             public.fn_accounting_tournament_source_terms_at(fee.tournament_id,fee.charged_at,fee.contract) ...
+--
+-- Measured: the 20260926042810 body hashes to 80f40737...; the same body with
+-- that one replacement hashes to adea6633..., which is the live prosrc
+-- (pg_get_functiondef md5 926b233007ee76b4d8002d454568b1b5). Nothing else in
+-- the function differs. The line sits in the certificate loop, which
+-- 20260927160709 deliberately left untouched, and nowhere near the three
+-- evidence counts it rewrites for page calls.
+--
+-- SO THE INTENT STILL APPLIES, UNCHANGED. The live body still sends every page
+-- call through the whole club-week (gate, then the three counts). This file is
+-- 20260927160709 with these edits and nothing else:
+--   1. the preimage it asserts is adea66332439cb1c0071f37ce12165b9;
+--   2. the calculator it installs carries 20260927155651's agreement-instant
+--      expression, so applying it does not silently revert that fix;
+--   3. the page-path comment inside the calculator and the checkpoint table's
+--      COMMENT name this version;
+--   4. the postimage it asserts is the md5 of the body below,
+--      cb7f9eabbe3849ec05df23f9f2a361df.
+-- Every object name is the same, so the checkpoint, its helpers and the two
+-- insert guards are declared once, here.
+--
+-- THE TWO INSERT GUARDS WERE RE-CHECKED AGAINST TODAY'S WRITER (2026-09-30).
+-- fn_accrue_cash_hand_commissions(uuid) is still the only function that
+-- inserts into accounting_cash_accrual_batches or accounting_cash_rake_sources.
+-- Both batch inserts write earned_at = source.created_at (the record's own
+-- created_at) and leave recorded_at to its default, clock_timestamp(), which is
+-- never earlier than now(); the source insert writes earned_at =
+-- source.created_at and runs after the batch insert. Of the 237,214 batches
+-- recorded in the last three days, 0 carry an earned_at that is not their
+-- record's created_at.
+--
+-- LOCKS. STEP 1 builds three indexes CONCURRENTLY, outside any transaction:
+-- SHARE UPDATE EXCLUSIVE, which does not block the per-hand INSERTs into
+-- rake_records or accounting_cash_accrual_batches; it waits for transactions
+-- already running. STEP 2 takes SHARE ROW EXCLUSIVE on the two accrual tables
+-- for the two CREATE TRIGGER statements, bounded by lock_timeout 5s so a busy
+-- table refuses the whole transaction instead of queueing writers behind it.
+-- The new table carries no foreign key (CLAUDE.md section 2 rule 7).
+--
+-- The original reasoning and measurements follow, unchanged.
+--
+-- ============================================================================
 -- A PAGE RECOMPUTE READS ONLY THE EVIDENCE THAT CHANGED
 -- ============================================================================
 --
@@ -101,7 +172,7 @@ BEGIN
     RAISE EXCEPTION 'STEP 1 index missing or INVALID: %. DROP INDEX CONCURRENTLY IF EXISTS it and re-run STEP 1.', v_bad USING ERRCODE='55000';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid='public.fn_calculate_cash_rakeback_periods(uuid, date, date, uuid[])'::regprocedure
-                    AND md5(p.prosrc)='80f40737e9015888f2b5c4215c383bc5') THEN
+                    AND md5(p.prosrc)='adea66332439cb1c0071f37ce12165b9') THEN
     RAISE EXCEPTION 'PERIOD_CALCULATOR_PREIMAGE_CHANGED: fn_calculate_cash_rakeback_periods is not the body this migration was derived from' USING ERRCODE='55000';
   END IF;
   IF to_regclass('public.accounting_rakeback_period_evidence_checkpoints') IS NOT NULL
@@ -162,7 +233,7 @@ COMMENT ON TABLE public.accounting_rakeback_period_evidence_checkpoints IS
   'club-week, under the clubs union shape clubs_digest. Read and advanced only '
   'by the page path of fn_calculate_cash_rakeback_periods, which adds what was '
   'recorded since and the records with no batch. The whole-period call never '
-  'reads it. 20260927160709.';
+  'reads it. 20260930232349 (re-derived from 20260927160709).';
 
 -- ----------------------------------------------------------------------------
 -- 2.3  THE PIECES THE PAGE PATH READS
@@ -523,7 +594,7 @@ BEGIN
  IF incomplete_issues>0 THEN RETURN receipt||jsonb_build_object('reason','cash_source_receipts_incomplete','source_count',incomplete_issues); END IF;
  IF drifted_issues>0 THEN RETURN receipt||jsonb_build_object('reason','cash_source_receipts_drifted','source_count',drifted_issues); END IF;
  ELSE
- -- A PAGE READS ONLY THE EVIDENCE THAT CHANGED (20260927160709).
+ -- A PAGE READS ONLY THE EVIDENCE THAT CHANGED (20260930232349, re-derived from 20260927160709).
  -- The three week-level counts below are sums over the week's cash records.
  -- A record whose accrual batch exists is frozen: rake_records and
  -- rake_attributions refuse every change once it has one, and the batch and
@@ -578,7 +649,7 @@ BEGIN
  FOR player IN
   WITH receipts AS (
    SELECT s.source_type,s.source_id,s.rake_record_id,s.player_id,s.union_id,s.coordinator_union_id,s.earned_at,s.rake_credit,
-    CASE WHEN s.source_type='tournament_fee_accrual' THEN fee.charged_at ELSE s.earned_at END AS agreement_at,
+    CASE WHEN s.source_type='tournament_fee_accrual' THEN public.fn_accounting_tournament_source_terms_at(fee.tournament_id,fee.charged_at,fee.contract) ELSE s.earned_at END AS agreement_at,
     s.contract->'membership'->'terms' AS member,s.contract->'tiers'->0 AS direct,
     (s.contract->'membership'->>'history_id')::bigint AS member_history_ref,
     sum(s.rake_credit) OVER(PARTITION BY s.player_id) AS total_rake
@@ -694,7 +765,7 @@ REVOKE ALL ON FUNCTION public.fn_accounting_cash_source_matches_its_batch() FROM
 DO $post$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_calculate_cash_rakeback_periods(uuid, date, date, uuid[])'::regprocedure
-                  AND md5(prosrc)='d94774ed23aa7d0937da7538c1d49dd3' AND prosecdef
+                  AND md5(prosrc)='cb7f9eabbe3849ec05df23f9f2a361df' AND prosecdef
                   AND proconfig=ARRAY['search_path=public','statement_timeout=300s']) THEN
     RAISE EXCEPTION 'PERIOD_CALCULATOR_POSTIMAGE: the installed body is not the proved body, or its budget moved' USING ERRCODE='55000';
   END IF;

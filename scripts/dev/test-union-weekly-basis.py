@@ -119,13 +119,26 @@ try:
  # fixture.predecessor_page_calculator, so page-evidence-regression.sql can show
  # what a page cost before 20260927160709 and prove what it answers after.
  run(next((root/'supabase/migrations').glob('20260926042810*.sql')).read_text(),'period-calculator-one-week')
+ # Production then ran 20260927155651, whose step 3c rewrote ONE expression of
+ # that calculator - the agreement instant of a tournament fee in the
+ # certificate loop - to fn_accounting_tournament_source_terms_at. That is the
+ # body 20260930232349 replaces (md5(prosrc) adea6633...), so the cluster takes
+ # the same step: the two terms-at functions verbatim from 155651, then its 3c
+ # replacement, refused unless it changes the body. A fixture contract names no
+ # owner basis, so the inlined CASE returns the charge instant exactly as before.
+ held=next((root/'supabase/migrations').glob('20260927155651*.sql')).read_text()
+ terms=held[held.index('CREATE FUNCTION public.fn_accounting_tournament_owner_basis_terms_at('):held.index('\nDO $owner_basis$')]
+ run('SET check_function_bodies=off;\n'+terms,'agreement-instant-terms-at')
+ c3=held[held.index(' -- 3c. Rakeback period agreement instant.'):held.index(' -- 3d.')]
+ run('DO $agreement$ DECLARE source text;changed text; BEGIN\n'+c3.replace("'%', PROCEDURE_GUARD||'rakeback agreement instant'","'agreement instant predecessor changed'")+'END $agreement$;','agreement-instant-calculator')
  run("""DO $$ BEGIN EXECUTE replace(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure),
   'FUNCTION public.fn_calculate_cash_rakeback_periods(','FUNCTION fixture.predecessor_page_calculator('); END $$;""",'predecessor-page-calculator')
- # A page recompute reads only the evidence that changed. The whole file is
+ # A page recompute reads only the evidence that changed (20260930232349,
+ # re-derived from the never-applied 20260927160709). The whole file is
  # applied as the door applies it: three CREATE INDEX CONCURRENTLY statements,
  # then one transaction whose assertions bind the calculator above. Every
  # regression below runs with its checkpoint and its two insert guards armed.
- run(next((root/'supabase/migrations').glob('20260927160709*.sql')).read_text(),'page-evidence-checkpoint')
+ run(next((root/'supabase/migrations').glob('20260930232349*.sql')).read_text(),'page-evidence-checkpoint')
  # The club settlement floor bounds standalone discovery. Its own preimage
  # assertions name this exact installed base, so it is applied here, while the
  # predecessors are still pristine. Its fixture runs last, below.

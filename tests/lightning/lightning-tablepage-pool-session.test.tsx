@@ -10,6 +10,7 @@
  * null at every table. The JOIN LIGHTNING hand-off hook, which is the one
  * place a tab is re-pointed, is exercised for real below.
  */
+import { sliceMethod } from '../helpers/sourceWindow';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,8 +54,8 @@ describe('TablePage on a pool-session id', () => {
       const before = lines.slice(Math.max(0, i - 120), i).join('\n');
       expect(before, `tables read at line ${i + 1}`).toMatch(/lightningRoomRef\.current/);
     }
-    const boot = PAGE.slice(PAGE.indexOf('async function loadTableInfo() {'));
-    expect(boot.slice(0, 600)).toContain('if (lightningRoomRef.current) return;');
+    const boot = sliceMethod(PAGE, 'async function loadTableInfo() {');
+    expect(boot).toContain('if (lightningRoomRef.current) return;');
   });
 
   it('describes the felt from the Cluster and then the snapshot', () => {

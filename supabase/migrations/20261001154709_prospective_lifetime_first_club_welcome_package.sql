@@ -15,6 +15,12 @@ BEGIN;
 SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
+-- Match the live club-creation door's relation order.  Taking the request
+-- relation first means this migration waits without holding a conflicting
+-- clubs lock, then carries both locks through the one atomic transaction.
+LOCK TABLE public.club_creation_requests IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TABLE public.club_welcome_entitlements (
   club_id uuid PRIMARY KEY REFERENCES public.clubs(id) ON DELETE RESTRICT,
   owner_id uuid NOT NULL UNIQUE,

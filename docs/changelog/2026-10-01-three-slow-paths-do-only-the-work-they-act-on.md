@@ -135,4 +135,30 @@ part of (8,767 random reads of a 9.8 GB table per buy-in).
 
 ## After
 
-(see below - measured after the apply)
+Applied by Apply Merged Migration from this branch (dry run, then one run) at
+01:11 UTC: index valid in 6.7 s, transaction committed in 325 ms, recorded as
+`20261001010106`. Read back: the four bodies carry the pinned after-md5s,
+`fn_nit_career_check` executes for postgres and service_role only, the index is
+valid, the reloptions are set. Autovacuum visited `ca_club_tournament_daily`
+at 01:15 (all-visible pages 1,712 -> 5,549 of 5,666).
+
+| path                                     | before                                          | after (01:16-01:27 UTC)                                                                    |
+| ---------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| atomic_table_buyin, mean per call        | 7,269 ms lifetime; 9.0 s in the 30 min before   | **215 ms** over 291 calls                                                                  |
+| atomic_table_buyin, statement timeouts   | 13-45 per 10 min (avg ~23)                      | **0** in 15 min (Postgres log)                                                             |
+| outbox drain, mean per call              | 12,596 ms lifetime; 14.8 s in the 30 min before | **9.9 s** over 40 calls                                                                    |
+| outbox drain, DB time                    | ~58 s per minute                                | ~38 s per minute                                                                           |
+| outbox drain, wait profile (40 s sample) | 41% advisory, 21% WAL, 14% IO, 14% CPU          | **0% advisory, 0% WAL**; 61% DataFileRead, 30% CPU                                         |
+| drain per-player transaction p90         | 314 ms                                          | 182 ms                                                                                     |
+| snapshot, shark-club 14 days             | 14 s cold                                       | **202 ms** (summary index-only: 1,799 buffers for 82,124 rows cold, was 55,649 for 53,688) |
+| snapshot, shark-club 90 days             | not measured before                             | 9.3 s first read of the new index, 480 ms warm                                             |
+
+The drain's remaining time is the receipt read on the 14 GB
+`daily_challenge_progress_events` primary key, one cold page per event. That is
+its own work; making it cheaper is a retention or key-layout change, not a
+plan fix, and is not attempted here.
+
+Still timing out on the same page, and not in this change: `ca_club_game_page`
+(the Club Data game ledger, sorted pages) - 4 statement timeouts at
+01:15-01:17 UTC. It aggregates every tournament in range through
+`ca_club_tournament_player_daily` before paging.

@@ -71,7 +71,8 @@ None is read by production at runtime; the only live pin is
   2026-09-16/17 state: `scripts/ci/probes/production-alert-core/**`,
   `scripts/ci/probes/spin-expiry/provider-check.sql`,
   `scripts/qualification/fixtures/{cash-pot-failed-run-intake,direct-operational-source-intake}/*`,
-  `tests/fixtures/union-provider-preimages-20260917/*`, and World Hub
-  `scripts/ci/probes/owner-operational-notification/**`.
+  `tests/fixtures/union-provider-preimages-20260917/*`, `tests/sql/diamond-concurrency-doors.sql`
+  with its manifest (added by #5675; its REFRESH step re-transports the recorder door after
+  this install), and World Hub `scripts/ci/probes/owner-operational-notification/**`.
 - History: the qualification records under `scripts/qualification/*.md|json` and
   applied migrations 20260916111614, 20260917054616 and 20260917062322.

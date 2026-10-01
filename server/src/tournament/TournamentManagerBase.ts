@@ -1467,6 +1467,10 @@ export abstract class TournamentManagerBase {
     for (const [tableId, engine] of this.tableEngines) {
       this.holdSatelliteQualifierEngine(tableId, engine);
     }
+    // A parked field cannot deal, and only this manager's sweep can release
+    // it. Serve that sweep from the consolidation lane, not behind the whole
+    // platform (aDecidedOrHeldFieldIsNotWaitingBehindOneThatCanDeal).
+    this.declareConsolidationOutstanding(true);
   }
 
   /** A positive authoritative continuation releases only this exact generation. */
@@ -2344,6 +2348,9 @@ export abstract class TournamentManagerBase {
       },
       isActive: () => this.lifecycleIsCurrent(lifecycle),
     });
+    // An adopted cohort satellite holds its qualifier boundary before this
+    // registration exists; the fresh entry starts in the general lanes.
+    if (this.satelliteQualifierBoundaryPending) this.declareConsolidationOutstanding(true);
   }
 
   /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
@@ -2400,6 +2407,12 @@ export abstract class TournamentManagerBase {
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
+    // A DECIDED FIELD IS NOT WAITING BEHIND ONE THAT CAN DEAL (2026-10-01).
+    // The decided-but-RUNNING board has read at most one live player: no hand
+    // can be dealt and only the finish stage can pay the winner. In the general
+    // FIFO that pass waited up to 30 minutes behind 577 queued managers
+    // (aDecidedOrHeldFieldIsNotWaitingBehindOneThatCanDeal).
+    if (reason === 'stalled_decided_survivor') this.declareConsolidationOutstanding(true);
     const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
     if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));

@@ -90,16 +90,16 @@ in one transaction under `lock_timeout 2s`. Each pins the live md5, asserts its 
 asserts the measured result md5 and that the reverse substitution reproduces the pin, and that
 owner, security and grants did not move.
 
-| function                             | live md5 -> new md5                                                      | change                                                                                                             | pair                               |
-| ------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| `atomic_distribute_rake`             | `0ef820b10c57d902b5ab2d5f9e2be8a6` -> `ea7a4a403969a0fbe69f2216d63a0436` | locks the club wallet (`FOR NO KEY UPDATE`, bare) after the accounting week key and before the rake record insert  | 3 - **reverted by 20261001000500** |
-| `trg_agent_commission_rollup_insert` | `50cb43eb54b7924b39c25b9816f450a0` -> `c7e84377219a39d955783d0feae6642b` | takes `agent-commission:<club>` for each club in the inserted rows, in club order, before the agent and day rows   | 1                                  |
-| `fn_credit_agent_commissions_batch`  | `3b9313fc37e62ca2c0b0bbbc7fdc6dc0` -> `5ebf5489eabbe478d393e2e040683fe8` | takes every club key its cash items earn in (from `rake_attributions`), in club order, before the first item       | 1                                  |
-| `fn_retry_cash_accounting_sources`   | `cf43f5cc8e7d47994025cc7682cc18bc` -> `4b62b13c70191e56fe55644070303a97` | the same for the sources it is about to retry                                                                      | 1                                  |
-| `fn_sync_profile_total_hands`        | `918a9211cf484127ab5d326aea1e47b3` -> `f6ee538e4bcfc329dd0e46673b05dc30` | returns before the profile UPDATE when an UPDATE left `user_id` and `hands_played` unchanged (the sum cannot move) | 4                                  |
-| `upsert_horse_mind_pairs`            | `c73cb456bd033f8d3f5a03e53b9934b0` -> `389109138a65a4d150b48da5ffa209bb` | walks the input in key order; repeats of one key in input order                                                    | 5                                  |
-| `upsert_horse_mind_stats`            | `84df6d650c905cedba86f2698f1fbd3d` -> `6802f13c3b1e7b94e62694d1dc1e5fb1` | the same                                                                                                           | 5                                  |
-| `upsert_horse_mind_stats_scoped`     | `73884faf30f48913dba34053fdd33337` -> `199192476497889e659b8455c38ea631` | the same                                                                                                           | 5                                  |
+| function                             | live md5 -> new md5                                                      | change                                                                                                                                                                                                       | pair                               |
+| ------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `atomic_distribute_rake`             | `0ef820b10c57d902b5ab2d5f9e2be8a6` -> `ea7a4a403969a0fbe69f2216d63a0436` | locks the club wallet (`FOR NO KEY UPDATE`, bare) after the accounting week key and before the rake record insert                                                                                            | 3 - **reverted by 20261001000500** |
+| `trg_agent_commission_rollup_insert` | `50cb43eb54b7924b39c25b9816f450a0` -> `c7e84377219a39d955783d0feae6642b` | takes `agent-commission:<club>` for each club in the inserted rows, in club order, before the agent and day rows                                                                                             | 1                                  |
+| `fn_credit_agent_commissions_batch`  | `3b9313fc37e62ca2c0b0bbbc7fdc6dc0` -> `5ebf5489eabbe478d393e2e040683fe8` | takes every club key its cash items earn in (from `rake_attributions`), in club order, before the first item; **since 20261001001000 only those free, without waiting** (`d4572f3e1efd9c85a0025cc2906c6fae`) | 1                                  |
+| `fn_retry_cash_accounting_sources`   | `cf43f5cc8e7d47994025cc7682cc18bc` -> `4b62b13c70191e56fe55644070303a97` | the same for the sources it is about to retry; **since 20261001001000 without waiting** (`3788581d5e8f1953663b8929b4688d0a`)                                                                                 | 1                                  |
+| `fn_sync_profile_total_hands`        | `918a9211cf484127ab5d326aea1e47b3` -> `f6ee538e4bcfc329dd0e46673b05dc30` | returns before the profile UPDATE when an UPDATE left `user_id` and `hands_played` unchanged (the sum cannot move)                                                                                           | 4                                  |
+| `upsert_horse_mind_pairs`            | `c73cb456bd033f8d3f5a03e53b9934b0` -> `389109138a65a4d150b48da5ffa209bb` | walks the input in key order; repeats of one key in input order                                                                                                                                              | 5                                  |
+| `upsert_horse_mind_stats`            | `84df6d650c905cedba86f2698f1fbd3d` -> `6802f13c3b1e7b94e62694d1dc1e5fb1` | the same                                                                                                                                                                                                     | 5                                  |
+| `upsert_horse_mind_stats_scoped`     | `73884faf30f48913dba34053fdd33337` -> `199192476497889e659b8455c38ea631` | the same                                                                                                                                                                                                     | 5                                  |
 
 Chip behaviour is otherwise unchanged: no amount, receipt, refusal or grant moves; the new keys are
 advisory and transaction-scoped; the batch's key read is guarded (a malformed item is skipped by it,
@@ -138,6 +138,31 @@ waits on a hand that is itself waiting on the horse claims - for example the fin
 entrants' VIP carry rows before the wallet, or the horse claims no longer holding profiles
 `FOR UPDATE` across 500 claims. That needs its own measurement and is left for the lead.
 
+## The batch's up-front keys failed it whole - fixed
+
+The second change above had the cash accrual batch and the retry WAIT for every club key before
+their first item. That wait sits outside the per-item refusal blocks, and the engine's role has
+`lock_timeout 8s`; a tournament finish holds a club's key for the rest of its run. At 00:07:30 UTC a
+batch waited 8 s for one and failed whole (`canceling statement due to lock timeout`, at that line).
+The settler holds its cursor on a failed batch: `daemon_state.rakeback_settler` stopped at
+00:03:25 UTC (high-water mark 2026-09-30 22:50:49), so no cash commission accrued from then until
+the fix. Before the change the same wait happened inside an item, where a timeout refuses that one
+item for retry.
+
+`supabase/migrations/20261001001000_a_cash_batch_never_waits_for_a_commission_key.sql` (md5
+`cccf879ea68dccc69c5d01c6084d1749`) makes both walks non-blocking - `pg_try_advisory_xact_lock` in
+club order, stopping at the first key someone holds; the rest are taken item by item in the trigger
+as before. Pinned asserted substitutions: `fn_credit_agent_commissions_batch`
+`5ebf5489eabbe478d393e2e040683fe8` -> `d4572f3e1efd9c85a0025cc2906c6fae`,
+`fn_retry_cash_accounting_sources` `4b62b13c70191e56fe55644070303a97` ->
+`3788581d5e8f1953663b8929b4688d0a`. `REHEARSAL OK: the cash batch and retry try their commission
+keys and never wait for one outside an item; refusals unchanged; nothing opened` (fixture
+`chip-deadlocks-2026-10-01/rehearsal-fixture-batch-keys.sql`), then `APPLIED AND RECORDED
+20261001001000` at 01:05:09 UTC. The isolated case `batch-while-a-finish-holds-a-key` (a session
+holds the club's key, the batch runs with `lock_timeout 1s`) shows all three states: the original
+bodies complete; after 20261001000000 the batch fails whole with the lock timeout - production's
+00:07:30 failure; after 20261001001000 the call succeeds and only that item is refused for retry.
+
 ## Proved in isolation, before and after
 
 ```sh
@@ -150,17 +175,18 @@ The runner loads production's 26 bodies (`chip-deadlocks-live-doors.sql`, md5s i
 them over production's column shapes (`chip-deadlocks-schema.sql`); five read-only helpers are
 stubbed (`chip-deadlocks-stubs.sql`, each with its reason). Each case drives real concurrent psql
 sessions into the interleaving the log shows (a pause gate before one key's row, and `pg_locks`
-to see a session wait), first on the live bodies, then after the runner has executed both migrations' own `$subs$` blocks in order (`20261001000000`, then the revert `20261001000500`) - the text measured is the text applied. Deadlocks are counted from the cluster log, as production's are. Run 2026-10-01 00:18:50 to 2026-10-01 00:19:03 UTC, result in `chip-deadlocks-2026-10-01/isolated-run.json` (an earlier run, before the revert existed, gave the same before numbers and 0 after for pair 3):
+to see a session wait), first on the live bodies, then after the runner has executed the three migrations' own `$subs$` blocks in order (`20261001000000`, the revert `20261001000500`, then `20261001001000`) - the text measured is the text applied. Deadlocks are counted from the cluster log, as production's are. Run 2026-10-01 00:52:52 to 2026-10-01 00:53:08 UTC, result in `chip-deadlocks-2026-10-01/isolated-run.json` (earlier runs, before the revert and the key fix existed, gave the same before numbers):
 
-| case                                      | pair | before: deadlocks, victim                       | after: deadlocks, outcome                                   |
-| ----------------------------------------- | ---- | ----------------------------------------------- | ----------------------------------------------------------- |
-| commission-rollups-one-club               | 1    | 1, the finish (waiting on the day row)          | 0; the finish waits for the batch's club key, both complete |
-| commission-rollups-two-clubs              | 1    | 1, the finish                                   | 0; both complete                                            |
-| finish-vs-raked-hand                      | 3    | 1, the hand (waiting on `club_wallets`)         | 1 - reverted; 0 with 20261001000000 alone                   |
-| finish-vs-two-raked-hands                 | 3    | 2 (a hand on the day rake row, then the finish) | 2 - reverted; 0 with 20261001000000 alone                   |
-| finish-vs-horse-claims                    | 4    | 1, the finish (waiting on `profiles`)           | 0; the finish never waits                                   |
-| horse-mind-pairs / -stats / -stats-scoped | 5    | 1 each, the second flush                        | 0 each; the second flush waits, both complete               |
-| pr5542-player-stats-across-hands          | 2    | 1, the projection with PR #5542's `ORDER BY`    | 1 - not changed here, see above                             |
+| case                                      | pair    | before: deadlocks, victim                       | after: deadlocks, outcome                                                                                                                          |
+| ----------------------------------------- | ------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| commission-rollups-one-club               | 1       | 1, the finish (waiting on the day row)          | 0; the finish waits for the batch's club key, both complete                                                                                        |
+| commission-rollups-two-clubs              | 1       | 1, the finish                                   | 0; both complete                                                                                                                                   |
+| finish-vs-raked-hand                      | 3       | 1, the hand (waiting on `club_wallets`)         | 1 - reverted; 0 with 20261001000000 alone                                                                                                          |
+| finish-vs-two-raked-hands                 | 3       | 2 (a hand on the day rake row, then the finish) | 2 - reverted; 0 with 20261001000000 alone                                                                                                          |
+| finish-vs-horse-claims                    | 4       | 1, the finish (waiting on `profiles`)           | 0; the finish never waits                                                                                                                          |
+| horse-mind-pairs / -stats / -stats-scoped | 5       | 1 each, the second flush                        | 0 each; the second flush waits, both complete                                                                                                      |
+| pr5542-player-stats-across-hands          | 2       | 1, the projection with PR #5542's `ORDER BY`    | 1 - not changed here, see above                                                                                                                    |
+| batch-while-a-finish-holds-a-key          | 1 (key) | completes (the original bodies take no key)     | after 20261001000000 alone: the whole batch fails on the lock timeout; after 20261001001000: the call succeeds, that one item is refused for retry |
 
 Every deadlock named the relation production's victims name (`ca_club_commission_daily`,
 `club_wallets`, `vip_points_carry`, `profiles`, the three horse-mind tables, `player_stats`). A

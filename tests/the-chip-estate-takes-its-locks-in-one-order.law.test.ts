@@ -43,6 +43,11 @@ const REVERT_NAME = migrationNames()
   .at(-1);
 if (!REVERT_NAME) throw new Error('the raked-hand wallet revert is missing');
 const REVERT = migrationText(REVERT_NAME);
+const KEYS_NAME = migrationNames()
+  .filter((n) => n.endsWith('_a_cash_batch_never_waits_for_a_commission_key.sql'))
+  .at(-1);
+if (!KEYS_NAME) throw new Error('the commission-key wait fix is missing');
+const KEYS = migrationText(KEYS_NAME);
 const QUAL = resolve(__dirname, '..', 'scripts', 'qualification');
 const HARNESS = readFileSync(resolve(QUAL, 'chip-deadlocks.py'), 'utf8');
 const MANIFEST = JSON.parse(
@@ -200,6 +205,40 @@ describe('LAW: the chip estate takes its locks in one order', () => {
       "NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')"
     );
     expect(REVERT.replace(/--[^\n]*/g, ' ')).not.toMatch(/\bGRANT\b/i);
+  });
+
+  it('20261001001000: the batch and the retry try their keys and never wait for one outside an item', () => {
+    const subs = sliceBetween(KEYS, 'DO $subs$', 'END $subs$;');
+    for (const [signature, pinned, measured, proname] of [
+      [
+        'fn_credit_agent_commissions_batch(jsonb)',
+        '5ebf5489eabbe478d393e2e040683fe8',
+        'd4572f3e1efd9c85a0025cc2906c6fae',
+        'fn_credit_agent_commissions_batch',
+      ],
+      [
+        'fn_retry_cash_accounting_sources(integer)',
+        '4b62b13c70191e56fe55644070303a97',
+        '3788581d5e8f1953663b8929b4688d0a',
+        'fn_retry_cash_accounting_sources',
+      ],
+    ]) {
+      expect(subs).toContain(`    ('${signature}', '${pinned}', '${measured}',`);
+      expect(KEYS).toContain(
+        `-- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '${measured}' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = '${proname}')`
+      );
+    }
+    expect(subs).toContain('IF md5(v_def) <> s.before_md5 THEN');
+    expect(subs).toContain('IF md5(replace(v_after, s.new_text, s.old_text)) <> s.before_md5 THEN');
+    expect(subs).toContain('still waits for a commission key outside an item');
+    expect(subs).toContain(
+      "E'  EXIT WHEN NOT pg_try_advisory_xact_lock(hashtextextended(''agent-commission:''||v_gate::text,0));\\n'"
+    );
+    expect(KEYS).toContain("The engine's role has");
+    expect(KEYS).toContain('lock_timeout 8s');
+    expect(HARNESS).toContain('def case_batch_key_held(');
+    expect(HARNESS).toContain("startswith('item refused and queued for retry')");
+    expect(KEYS.replace(/--[^\n]*/g, ' ')).not.toMatch(/\bGRANT\b/i);
   });
 
   it('every commission writer takes the club key in club order before the rollup rows', () => {

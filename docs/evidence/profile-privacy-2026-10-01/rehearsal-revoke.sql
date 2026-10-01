@@ -105,8 +105,54 @@ BEGIN
   END IF;
   SELECT count(*) INTO v_n FROM public.get_visible_live_streams() ls WHERE ls.broadcaster_full_name IS NOT NULL;
   IF v_n <> 0 THEN RAISE EXCEPTION 'REHEARSAL FAIL: % live streams still name a broadcaster', v_n; END IF;
-  RESET ROLE;
+  IF v_t IS NOT DISTINCT FROM v_u2.full_name THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: the story bar named its author by legal name';
+  END IF;
   v_report := v_report || ' presence,stories,missions,unified,live-streams=ok';
+
+  -- 3b. The five invoker functions whose text names a private column (privacy-wh's list) keep
+  -- working after the revoke and tell a stranger nothing private.
+  -- fn_update_presence: the owner's heartbeat still writes (UPDATE stays granted; it filters on id).
+  PERFORM public.fn_update_presence(c_u1, true);
+  SELECT g.is_online, g.last_seen INTO v_row FROM public.get_my_full_profile() g WHERE g.id = c_u1;
+  IF v_row.is_online IS DISTINCT FROM true OR v_row.last_seen IS DISTINCT FROM now() THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: the presence heartbeat %', v_row;
+  END IF;
+  -- fn_ca_diamond_transfer_names_its_counterparty: a trigger on diamond_transactions, which no
+  -- browser role may write, so it runs only under a definer or the service role; and the one
+  -- profile fact it reads, that the counterparty's id exists, is public even to a browser role.
+  IF has_table_privilege('authenticated', 'public.diamond_transactions', 'INSERT')
+     OR has_table_privilege('anon', 'public.diamond_transactions', 'INSERT') THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: a browser role may write diamond_transactions';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = c_u2) THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: the counterparty check cannot see an account';
+  END IF;
+  -- fn_hg_caller_display_name: called directly by a stranger it is refused (it reads the
+  -- real-name columns as its caller), so it cannot hand one out...
+  BEGIN
+    v_t := public.fn_hg_caller_display_name(c_u2);
+    RAISE EXCEPTION 'REHEARSAL FAIL: a stranger called fn_hg_caller_display_name and got %', v_t;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  RESET ROLE;
+  -- ...its five callers (the home-game roster, seat claim, table list, start and unseat notice)
+  -- are definers whose owner still reads profiles, so they keep working...
+  SELECT string_agg(p.oid::regprocedure::text, ', '), count(*) INTO v_t, v_n FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prosrc ~ 'fn_hg_caller_display_name'
+     AND p.proname <> 'fn_hg_caller_display_name'
+     AND NOT (p.prosecdef AND has_column_privilege(p.proowner, 'public.profiles', 'full_name', 'SELECT'));
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: a caller of fn_hg_caller_display_name runs as its caller: %', v_t;
+  END IF;
+  -- ...and, run as that owner, it answers the arena name and never the legal name.
+  v_t := public.fn_hg_caller_display_name(c_u2);
+  IF v_t IS DISTINCT FROM public.fn_arena_name(v_u2.alias, v_u2.username, v_u2.display_name,
+                                               v_u2.first_name, v_u2.last_name, v_u2.full_name)
+     OR v_t IS NOT DISTINCT FROM v_u2.full_name THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: the home-game name %', v_t;
+  END IF;
+  v_report := v_report || ' heartbeat,transfer-check,hg-name=arena-only(direct-refused)';
 
   -- 4. Staff read through their door; a player cannot.
   PERFORM pg_temp.as_client(c_staff);

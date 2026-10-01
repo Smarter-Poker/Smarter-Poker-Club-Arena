@@ -90,6 +90,7 @@ import {
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
+import { crossedMilestone } from '../utils/crashMilestones';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { sealedChipPrize } from '../utils/sealedChipPrize';
@@ -229,6 +230,21 @@ function DiamondCrashGame() {
   const cashoutOpensRef = useRef(DEFAULT_CASHOUT_OPENS_CENTS);
   const readoutValueRef = useRef<HTMLSpanElement>(null);
   const readoutWorthRef = useRef<HTMLSpanElement>(null);
+  /* What a screen reader hears. The readout redraws every frame, so it is
+     not a live region; this one line says the start, each mark the climb
+     passes and the ending, and nothing in between. */
+  const announceNode = useRef<HTMLSpanElement | null>(null);
+  const announcedRef = useRef('');
+  const spokenCentsRef = useRef(100);
+  const announce = useCallback((text: string) => {
+    announcedRef.current = text;
+    if (announceNode.current) announceNode.current.textContent = text;
+  }, []);
+  // A round resumed before the console first draws is said once it does.
+  const announceRef = useCallback((node: HTMLSpanElement | null) => {
+    announceNode.current = node;
+    if (node) node.textContent = announcedRef.current;
+  }, []);
   const [cashoutOpen, setCashoutOpen] = useState(false);
   const cashoutOpenRef = useRef(false);
   const cashingRef = useRef(false);
@@ -281,9 +297,15 @@ function DiamondCrashGame() {
       if (readoutValueRef.current) readoutValueRef.current.textContent = multiplierLabel(cents);
       if (readoutWorthRef.current && roundRef.current)
         readoutWorthRef.current.textContent = `Worth ${chipsLabel((roundRef.current.bet_chips * cents) / 100)} Chips Right Now`;
+      const mark = crossedMilestone(spokenCentsRef.current, cents);
+      spokenCentsRef.current = Math.max(spokenCentsRef.current, cents);
+      if (mark !== null && roundRef.current)
+        announce(
+          `${multiplierLabel(mark)}, Worth ${chipsLabel((roundRef.current.bet_chips * mark) / 100)} Chips`
+        );
       if (cents >= cashoutOpensRef.current) openCashout(cents);
     },
-    [openCashout]
+    [openCashout, announce]
   );
 
   /** Reads the game and quotes the entry. Every read clears the quote before
@@ -411,6 +433,12 @@ function DiamondCrashGame() {
       setPhase('open');
       setStartedAtLocal(performance.now() - open.elapsed_ms);
       liveCentsRef.current = open.multiplier_now_cents ?? 100;
+      spokenCentsRef.current = liveCentsRef.current;
+      announce(
+        liveCentsRef.current > 100
+          ? `Round Resumed At ${multiplierLabel(liveCentsRef.current)}`
+          : 'Round Started'
+      );
       openCashout(liveCentsRef.current);
       stopPolling();
       const generation = pollGeneration.current;
@@ -453,7 +481,7 @@ function DiamondCrashGame() {
       };
       pollRef.current = setTimeout(tick, POLL_MS);
     },
-    [stopPolling, live, finish, toast, openCashout]
+    [stopPolling, live, finish, toast, openCashout, announce]
   );
 
   useEffect(() => {
@@ -1075,6 +1103,24 @@ function DiamondCrashGame() {
         uncertain),
     () => toast.error('Finish Your Bonus Game Before Leaving.')
   );
+  /* The ending is said once. Only a round that ended while this page watched
+     it is announced: one already over when the page opened is history. */
+  const endedRoundId = round && round.status !== 'open' ? round.round_id : null;
+  const spokenEndRef = useRef<string | null>(null);
+  useEffect(() => {
+    const ended = roundRef.current;
+    if (!endedRoundId || !ended || ended.round_id !== endedRoundId) return;
+    if (spokenEndRef.current === endedRoundId) return;
+    spokenEndRef.current = endedRoundId;
+    if (lastFinishedRound.current !== endedRoundId) return;
+    const paid = chipsLabel(ended.outcome?.payout_chips ?? 0);
+    announce(
+      ended.status === 'cashed'
+        ? `Round Over. Cashed Out At ${multiplierLabel(ended.outcome?.cashout_cents ?? 100)} For ${paid} Chips`
+        : `Round Over. Crashed At ${multiplierLabel(ended.outcome?.crash_cents ?? 100)}, ${paid} Chips Paid`
+    );
+  }, [endedRoundId, announce]);
+
   if (loading) return <PageSkeleton />;
   if (loadError || !state) {
     return (
@@ -1335,7 +1381,22 @@ function DiamondCrashGame() {
               )}
             />
           </div>
-          <div className={styles.readout} role="status">
+          {/* Through a round the readout redraws every frame, so it is read on
+              demand and not spoken by itself: this line says the start, each
+              mark passed and the ending. Between rounds the readout speaks
+              its own reasons, as it always did. */}
+          <span
+            ref={announceRef}
+            className="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          />
+          <div
+            className={styles.readout}
+            role="status"
+            aria-live={open || settledRound ? 'off' : 'polite'}
+          >
             <span className="sc-label sc-ink--blue">{readoutLabel}</span>
             <span
               ref={readoutValueRef}
@@ -1573,6 +1634,7 @@ function DiamondCrashGame() {
             game="crash"
             figure={finalCents === null ? null : finalCents / 100}
             cap={settledRound.cap_cents / 100}
+            stakeChips={settledRound.bet_chips}
           />
         )}
     </div>

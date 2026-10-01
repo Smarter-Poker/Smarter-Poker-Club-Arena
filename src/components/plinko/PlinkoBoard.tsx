@@ -10,6 +10,7 @@ import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSp
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
 import { PLINKO_PEG_GAP_MS, soundService } from '../../services/SoundService';
+import { BIG_WIN_CENTS } from '../../utils/bigWin';
 import styles from './PlinkoBoard.module.css';
 export const PLINKO_ROWS = 16;
 /** Sixteen rows of pegs drop into seventeen buckets. */
@@ -17,9 +18,10 @@ export const PLINKO_SLOTS = PLINKO_ROWS + 1;
 /**
  * Five times the drop or better. Dan played twenty games without seeing one, so
  * a landing at or above this gets a celebration of its own rather than a number
- * appearing in a list after the fact.
+ * appearing in a list after the fact. The bar is shared with every game's
+ * receipt (src/utils/bigWin.ts).
  */
-export const BIG_WIN_CENTS = 500;
+export { BIG_WIN_CENTS };
 /** The y the bucket row rests on, so a bounce always settles back to it. */
 const SLOT_REST_Y = -4.55;
 

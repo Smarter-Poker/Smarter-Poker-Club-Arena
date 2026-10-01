@@ -220,3 +220,12 @@ server. Enabling a standby then changes the gate law and the release's
 one-container rule in the same pull request.
 
 **Built.** Nothing to build. The decision is recorded in the evidence above.
+
+## A retry gets its first receipt (decided by Claude on Dan's delegation of 2026-09-30; migration 20260930235000; docs/changelog/2026-09-30-diamond-phase-11-a-retry-gets-its-first-receipt.md)
+
+**Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".** The two questions Phase 11 left open (docs/evidence/diamond-phase-11/concurrency-and-recovery.md) are decided:
+
+1. **Every Diamond money door answers a retry of the same request with its first receipt, word for word.** No door adds a replay marker: the cash buy-in answers nothing and the prize payer answers true or false, so a marker could never be the same at every door, and five doors (transfer, buy-in, top-up, cash-out, registration) already answered word for word. The store's "cost 0, not granted" and the withdrawal's `replayed` and `idempotent` markers are gone, and the withdrawal reports the balance its refund left, not the wallet at the moment of the retry. A client only retries after a lost answer, so the first receipt is the answer it never got.
+2. **A retry that reuses a key with different parameters is refused by name at every door, the prize payer included.** The payer answers a retry of a payment it made (same payee, event, bank and amount under the key) true, as it did the first time, and refuses any other use of the key as `diamond_tournament_pay_key_reused`. The description is the payment's label, not its identity. `fn_credit_and_log`, the payer's only caller, reads whether its own call paid from the key the payer names when it pays, so it still writes the payout evidence once and still answers false to a verified retry; the settlers above it, the terminal and the engine read exactly the answers they read before. No engine code changed.
+
+The rebuy money core (`fn_ca_process_tournament_chip_purchase_money_v1`) keeps its "already charged" answer. It is shared with chips, it is not a door anyone calls, and the public door `process_tournament_rebuy` already answers every retry with its stored first receipt and refuses the core's answer by name. The core refuses a changed price by name. Chip doors are unchanged.

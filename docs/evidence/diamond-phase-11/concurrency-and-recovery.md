@@ -13,6 +13,10 @@ cases executed is byte-identical to production's. It ran in an isolated
 PostgreSQL 17 that the suite creates and destroys, never against production.
 The work found four defects that needed no owner decision. All four are fixed in
 production by three migrations, each rehearsed and applied the estate's way.
+Its two open questions - what a retry should answer - were decided on Dan's
+delegation of 2026-09-30 and built by a fourth: every Diamond money door now
+answers a retry with its first receipt, word for word, and refuses a reused key
+with different details by name, the prize payer included.
 
 Programme line: Phase 11 of 12, "Test transfer/store/game concurrency,
 duplicate delivery and crash recovery."
@@ -67,11 +71,12 @@ duplicate delivery and crash recovery."
    entry charges, seats and records exactly as before. Only its lock order
    moved.
 
-| Migration                                                             | File md5                           | Rehearsed in production, rolled back                                                                                                                                                                                                                                                                                                               | Applied                               |
-| --------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `20260930121500_a_diamond_cash_buy_in_reaches_the_wallet`             | `5e1404ec1a7a50b8ccf1acd38791b896` | before: "seat count refused by the arena guard (the defect), blinds refused, wallet write refused, identity 0.00 unchanged, switches closed"; after: "seat count admitted, blinds refused, wallet write refused, identity 0.00 unchanged, switches closed"                                                                                         | `APPLIED AND RECORDED 20260930121500` |
-| `20260930123828_a_diamond_seat_takes_the_table_cap_before_the_wallet` | `465e4eaed9df290bbc7c398a920f8f43` | before: "a Diamond seat acquisition does not take (the inversion) the table-cap lock"; after: "a Diamond seat acquisition takes the table-cap lock, a non-Diamond one takes none, identity 0.00 unchanged, switches closed"                                                                                                                        | `APPLIED AND RECORDED 20260930123828` |
-| `20260930131333_every_seat_takes_the_table_cap_before_the_wallet`     | `23dfd9d01fbab6fb92792301584763d3` | before: "a chip seat acquisition does not (the inversion)"; after: "a Diamond seat acquisition takes the table-cap lock; a chip seat acquisition takes it too, still holds the Daily Missions lock and answers as before; a chip registration is admitted as before (ok, chips, cost 0, one roster row); identity 0.00 unchanged, switches closed" | `APPLIED AND RECORDED 20260930131333` |
+| Migration                                                             | File md5                           | Rehearsed in production, rolled back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Applied                               |
+| --------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `20260930121500_a_diamond_cash_buy_in_reaches_the_wallet`             | `5e1404ec1a7a50b8ccf1acd38791b896` | before: "seat count refused by the arena guard (the defect), blinds refused, wallet write refused, identity 0.00 unchanged, switches closed"; after: "seat count admitted, blinds refused, wallet write refused, identity 0.00 unchanged, switches closed"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `APPLIED AND RECORDED 20260930121500` |
+| `20260930123828_a_diamond_seat_takes_the_table_cap_before_the_wallet` | `465e4eaed9df290bbc7c398a920f8f43` | before: "a Diamond seat acquisition does not take (the inversion) the table-cap lock"; after: "a Diamond seat acquisition takes the table-cap lock, a non-Diamond one takes none, identity 0.00 unchanged, switches closed"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `APPLIED AND RECORDED 20260930123828` |
+| `20260930131333_every_seat_takes_the_table_cap_before_the_wallet`     | `23dfd9d01fbab6fb92792301584763d3` | before: "a chip seat acquisition does not (the inversion)"; after: "a Diamond seat acquisition takes the table-cap lock; a chip seat acquisition takes it too, still holds the Daily Missions lock and answers as before; a chip registration is admitted as before (ok, chips, cost 0, one roster row); identity 0.00 unchanged, switches closed"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `APPLIED AND RECORDED 20260930131333` |
+| `20260930235000_a_retry_gets_its_first_receipt`                       | `02907aff0a9f1029b8d2e39efd59f87d` | before: "store retry answers cost 0, granted false, idempotent true, the same request id for another feature is refused (REQUEST_ID_REUSED); the payer, given a key another credit claimed: answered false; fn_credit_and_log for that Diamond payment: answered false; nothing moved, identity 0.00 unchanged, switches closed\nCONTEXT: PL/pgSQL function inline_code_block line 114 at RAISE\n"}"; after: "store retry answers the stored receipt word for word, the same request id for another feature is refused (REQUEST_ID_REUSED); the payer, given a key another credit claimed: diamond_tournament_pay_key_reused; fn_credit_and_log for that Diamond payment: diamond_tournament_pay_key_reused; nothing moved, identity 0.00 unchanged, switches closed\nCONTEXT: PL/pgSQL function inline_code_block line 114 at RAISE\n"}" | `APPLIED AND RECORDED 20260930235000` |
 
 Every edit is an asserted substitution on a pinned live md5, with the reverse
 substitution proved. Every `@live-proof` expression is true in production. Both
@@ -81,17 +86,19 @@ nothing it creates survives:
 
 - `concurrency-rehearsal-fixture.sql`, md5 `ffb24bedba2f175d95681f73c3636d76`;
 - `lock-order-rehearsal-fixture.sql`, md5 `8cd9f08ca079eddfcb606514b1e3ec4e`;
+- `a-retry-gets-its-first-receipt-rehearsal.sql`, md5
+  `372c95c46d131da9b011084b43954d9c`;
 - `every-seat-lock-order-rehearsal-fixture.sql`, md5
   `04165f4e1edfd4c1ade97a9ce5176fef`.
 
 ## How it was tested (re-runnable)
 
-| Evidence                                        | Where                                                                                                                                                                                                        | Command                                                                              | Result                                                                  |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| The concurrency suite, isolated PostgreSQL 17   | `tests/sql/run-diamond-concurrency.py` with `diamond-concurrency-doors.sql`, its manifest, `diamond-concurrency-schema.sql` and `diamond-concurrency-seed.sql`                                               | `python3 scripts/ci/run-diamond-sql-acceptance.py --only run-diamond-concurrency.py` | 737 checks passed in about 30 seconds; runs in CI on every pull request |
-| Rolled-back production rehearsals, one session  | the three fixtures above, in `docs/evidence/diamond-phase-11/`                                                                                                                                               | `rehearse.sh <migration or empty> <fixture> <agent>`                                 | the lines in the table above                                            |
-| Laws on the three migration texts               | `tests/a-diamond-cash-buy-in-reaches-the-wallet.law.test.ts`, `tests/a-diamond-seat-takes-the-table-cap-before-the-wallet.law.test.ts`, `tests/every-seat-takes-the-table-cap-before-the-wallet.law.test.ts` | `npx vitest run <the three files>`                                                   | 15 passed                                                               |
-| The runner is wired into CI and cannot drop out | `tests/unit/diamondAcceptanceCi.test.ts`, `scripts/ci/run-diamond-sql-acceptance.py`, `scripts/ci/classify-ci-changes.mjs`                                                                                   | `npx vitest run tests/unit/diamondAcceptanceCi.test.ts`                              | passed                                                                  |
+| Evidence                                        | Where                                                                                                                                                                                                                                                            | Command                                                                              | Result                                                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| The concurrency suite, isolated PostgreSQL 17   | `tests/sql/run-diamond-concurrency.py` with `diamond-concurrency-doors.sql`, its manifest, `diamond-concurrency-schema.sql` and `diamond-concurrency-seed.sql`                                                                                                   | `python3 scripts/ci/run-diamond-sql-acceptance.py --only run-diamond-concurrency.py` | 773 checks passed in about 40 seconds; runs in CI on every pull request |
+| Rolled-back production rehearsals, one session  | the four fixtures above, in `docs/evidence/diamond-phase-11/`                                                                                                                                                                                                    | `rehearse.sh <migration or empty> <fixture> <agent>`                                 | the lines in the table above                                            |
+| Laws on the four migration texts                | `tests/a-diamond-cash-buy-in-reaches-the-wallet.law.test.ts`, `tests/a-diamond-seat-takes-the-table-cap-before-the-wallet.law.test.ts`, `tests/every-seat-takes-the-table-cap-before-the-wallet.law.test.ts`, `tests/a-retry-gets-its-first-receipt.law.test.ts` | `npx vitest run <the four files>`                                                    | 22 passed                                                               |
+| The runner is wired into CI and cannot drop out | `tests/unit/diamondAcceptanceCi.test.ts`, `scripts/ci/run-diamond-sql-acceptance.py`, `scripts/ci/classify-ci-changes.mjs`                                                                                                                                       | `npx vitest run tests/unit/diamondAcceptanceCi.test.ts`                              | passed                                                                  |
 
 ## The cluster, and why its answers are production's
 
@@ -100,11 +107,12 @@ temporary directory. The cluster listens on a Unix socket only
 (`listen_addresses` empty), and the suite destroys it when it finishes. It loads:
 
 - the estate's historical schema base, and the two Diamond tournament captures;
-- `diamond-concurrency-doors.sql`: 185 functions read read-only from production
+- `diamond-concurrency-doors.sql`: 188 functions read read-only from production
   with `pg_get_functiondef`, each pinned by md5. These are the money doors the
   cases call, everything they call, and the trigger functions production fires
   on the rows they write. They were captured on 2026-09-30 at 16:34 UTC, after
-  the last migration;
+  the last migration, and the three doors `20260930235000` redefined were read
+  again from production once it applied;
 - `diamond-concurrency-schema.sql`: the 97 tables those doors write, in
   production's exact shape: columns, constraints, indexes, triggers,
   row-level-security flags and grants. The load refuses to finish if one
@@ -193,20 +201,31 @@ Nine money doors, three deliveries of each:
 - **sequentially.**
 
 A third delivery followed every case, and then the same request id came again
-with a different payload. Every door made exactly one effect every time, and the
-third delivery moved nothing.
+with a different payload. Between the second and the third delivery the
+caller's wallet moves - a transfer of 11 in, through the real transfer door - so
+a door that rebuilt its answer from the wallet as it stands would answer the
+third delivery differently. Every door made exactly one effect every time, and
+the third delivery moved nothing.
 
-| Door           | The one effect                                   | What a replay answers                                                                                           | Same id, different payload                              |
-| -------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Transfer       | one transfer, two journal rows                   | the first receipt, word for word                                                                                | refused: `idempotency_payload_mismatch`                 |
-| Store purchase | one debit, one grant, one receipt                | the stored first receipt, marked as a replay: cost 0, `original_cost` 150, granted false, `idempotent` true     | refused: "Request Id Already Used For Another Purchase" |
-| Cash buy-in    | one custody row, one seat, one entry receipt     | the first receipt, word for word; the player reads it back as confirmed, identically every time                 | refused: `IDEMPOTENCY_KEY_REUSED`                       |
-| Top-up         | one custody movement                             | the first receipt, word for word                                                                                | refused: `idempotency_payload_mismatch`                 |
-| Cash-out       | one release, one cash-out receipt                | the first receipt, word for word                                                                                | refused: `CASHOUT_OCCUPANCY_SCOPE_MISMATCH`             |
-| Registration   | one custody row, ledger row, roster row, receipt | the first receipt, word for word                                                                                | refused: `IDEMPOTENCY_KEY_REUSED`                       |
-| Unregistration | one refund                                       | the first receipt word for word, plus `replayed` and `idempotent` true                                          | refused: `idempotency_payload_mismatch`                 |
-| Rebuy          | one charge, one credit key                       | the money core answers `idempotent` true; the public door replays its stored receipt before it reaches the core | not exercised                                           |
-| Prize payout   | one payment, one credit key                      | true once, then false to every replay                                                                           | pays nothing and answers false                          |
+Since `20260930235000_a_retry_gets_its_first_receipt` every door answers every
+retry with its first receipt, word for word, with no replay marker, and refuses
+the same id with a different payload by name. Run against the doors as they
+stood before it, the same suite fails at the store ("every retry answers the
+first receipt word for word": cost 0, granted false and idempotent true came
+back instead), and with only the withdrawal left as it was, at the withdrawal
+(its `replayed` and `idempotent` markers).
+
+| Door           | The one effect                                   | What a retry answers                                                                                                                                                                                               | Same id, different payload                                                             |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Transfer       | one transfer, two journal rows                   | the first receipt, word for word                                                                                                                                                                                   | refused: `idempotency_payload_mismatch`                                                |
+| Store purchase | one debit, one grant, one receipt                | the first receipt, word for word: the stored receipt (before `20260930235000`: cost 0, `original_cost` 150, granted false and `idempotent` true laid over it)                                                      | refused: "Request Id Already Used For Another Purchase" (`REQUEST_ID_REUSED`)          |
+| Cash buy-in    | one custody row, one seat, one entry receipt     | the first receipt, word for word; the player reads it back as confirmed, identically every time                                                                                                                    | refused: `IDEMPOTENCY_KEY_REUSED`                                                      |
+| Top-up         | one custody movement                             | the first receipt, word for word                                                                                                                                                                                   | refused: `idempotency_payload_mismatch`                                                |
+| Cash-out       | one release, one cash-out receipt                | the first receipt, word for word                                                                                                                                                                                   | refused: `CASHOUT_OCCUPANCY_SCOPE_MISMATCH`                                            |
+| Registration   | one custody row, ledger row, roster row, receipt | the first receipt, word for word                                                                                                                                                                                   | refused: `IDEMPOTENCY_KEY_REUSED`                                                      |
+| Unregistration | one refund                                       | the first receipt, word for word, with the balance the refund left (before: plus `replayed` and `idempotent` true, and `diamonds_after` read from the wallet at the retry)                                         | refused: `idempotency_payload_mismatch`                                                |
+| Rebuy          | one charge, one credit key                       | the money core answers "already charged" (`idempotent` true); the public door `process_tournament_rebuy` answers a retry with its stored first receipt before it reaches the core, and refuses that answer by name | refused: "Price mismatch"                                                              |
+| Prize payout   | one payment, one credit key                      | true, as the first delivery answered (before: false to every retry)                                                                                                                                                | refused: `diamond_tournament_pay_key_reused` (before: paid nothing and answered false) |
 
 A payout of 7 is drawn from the entrants' custody rows in order, so it can write
 two movements (2 from one row and 5 from the next). The payout's movement count
@@ -278,15 +297,31 @@ this one, only in an operating-system crash.
 - The chip side is a freeroll, used only for its locks. Chip money was not
   under test.
 
-## Open for Dan
+## Decided on Dan's delegation (2026-09-30)
 
-1. **Should every door answer a replay with its first receipt, word for word?**
-   Five do. The store purchase answers a replay with cost 0 and granted false.
-   Unregistration adds `replayed` and `idempotent` markers. The rebuy core
-   answers `idempotent`, and the prize payer answers false. Every one of them
-   takes effect exactly once, so nothing is wrong with the money. The question
-   is what a client or the engine should read.
-2. **Should the prize payer refuse a reused key with a different amount by
-   name?** `fn_poker_diamond_tournament_pay` answers false and pays nothing.
-   Every other door refuses that case by name. The payer is engine-internal, so
-   the answer depends on what the engine does with false.
+Dan, 2026-09-30: "these are all for you to decide not me ... FIX AND FINISH ALL
+OF THESE". Decided by Claude on that delegation, recorded in
+`docs/DIAMOND-RULINGS.md`, and built by
+`20260930235000_a_retry_gets_its_first_receipt`:
+
+1. **Every Diamond money door answers a retry with its first receipt, word for
+   word.** No door adds a replay marker: the cash buy-in answers nothing and the
+   payer answers true or false, so a marker could never be the same at every
+   door. The store now answers its stored receipt, and the withdrawal drops its
+   markers and reports the balance its refund left, read from the release's own
+   immutable receipt.
+2. **The prize payer refuses a reused key with different details by name**, as
+   every other door does: `diamond_tournament_pay_key_reused`. A retry of the
+   same payment answers true, its first receipt. The engine does not call the
+   payer: it reaches tournament money only through the terminal, and the payer's
+   one caller, `fn_credit_and_log`, now reads whether its own call paid from the
+   key the payer names when it pays. So `fn_credit_and_log` still writes the
+   payout evidence once and still answers false to a verified retry, and every
+   settler above it, the terminal and the engine read exactly what they read
+   before. Without that, a replayed true would have hit the payout table's
+   unique key and the retry would have failed every time. No engine code
+   changed.
+
+The rebuy money core keeps its "already charged" answer: it is shared with
+chips, and nobody reaches it but `process_tournament_rebuy`, which answers a
+retry with its stored first receipt and refuses the core's answer by name.

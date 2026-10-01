@@ -17,7 +17,10 @@ and crash recovery." Three groups of cases:
             interleaving forced by a held transaction or a pause gate and
             proved by pg_blocking_pids before it is released;
   REPLAY    the same request id delivered twice concurrently and twice
-            sequentially to every money door;
+            sequentially to every money door: exactly one effect, every
+            retry answered with the first receipt word for word (after the
+            caller's wallet has moved), and the same id with a different
+            payload refused by name;
   RECOVERY  a session killed mid-transaction at each dangerous point
             (pg_terminate_backend from a controller session), and the whole
             cluster stopped in immediate mode in the middle of a workload,
@@ -389,10 +392,10 @@ def unregister(uid, tid, req):
                 users=[uid])
 
 
-def rebuy(uid, tid, token):
+def rebuy(uid, tid, token, cost=None):
     return Door('rebuy', uid, CORE_CONTEXT,
-                "SELECT public.fn_ca_process_tournament_chip_purchase_money_v1(%s::uuid, %s::uuid, 'rebuy', NULL, NULL, 1, %s)"
-                % (q(tid), q(uid), q(token)), users=[uid])
+                "SELECT public.fn_ca_process_tournament_chip_purchase_money_v1(%s::uuid, %s::uuid, 'rebuy', %s, NULL, 1, %s)"
+                % (q(tid), q(uid), 'NULL' if cost is None else '%d' % cost, q(token)), users=[uid])
 
 
 def payout(uid, tid, amount, key):
@@ -929,7 +932,7 @@ def prep_rebuy(suite):
     token = 'replay-rebuy-' + rid()[:12]
     return (rebuy(x, tid, token), [x], {'wallet:' + x[-2:]: -25, 'custody': 25, 'journal_rows': 1, 'movements': 1,
                                         'ledger_rows': 1, 'roster': 'changed', 'credit_keys': 1},
-            None, None)
+            None, rebuy(x, tid, token, 26))
 
 
 PAY_ENTRANTS = []
@@ -951,16 +954,23 @@ def prep_payout(suite):
             None, payout(payee, tid, 8, key))
 
 
+# Every Diamond money door answers a retry with its first receipt, word for word,
+# and refuses the same request id with a different payload by name (decided by
+# Claude on Dan's delegation of 2026-09-30; 20260930235000). The rebuy money core
+# is the one exception to the first rule, and not a door: it is shared with chips
+# and reached only through process_tournament_rebuy, which answers a retry with
+# its stored first receipt before the core is reached and refuses the core's
+# "already charged" answer by name.
 REPLAYABLE = [
     Replayable('transfer', prep_transfer, True, ['idempotency_payload_mismatch']),
-    Replayable('purchase', prep_purchase, False, ['REQUEST_ID_REUSED']),
+    Replayable('purchase', prep_purchase, True, ['REQUEST_ID_REUSED']),
     Replayable('buy-in', prep_buyin, True, ['IDEMPOTENCY_KEY_REUSED']),
     Replayable('top-up', prep_topup, True, ['idempotency_payload_mismatch']),
     Replayable('cash-out', prep_cashout, True, ['CASHOUT_OCCUPANCY_SCOPE_MISMATCH']),
     Replayable('register', prep_register, True, ['IDEMPOTENCY_KEY_REUSED']),
-    Replayable('unregister', prep_unregister, False, ['IDEMPOTENCY_KEY_REUSED', 'idempotency']),
-    Replayable('rebuy', prep_rebuy, False, []),
-    Replayable('payout', prep_payout, False, []),
+    Replayable('unregister', prep_unregister, True, ['idempotency_payload_mismatch']),
+    Replayable('rebuy', prep_rebuy, False, ['Price mismatch']),
+    Replayable('payout', prep_payout, True, ['diamond_tournament_pay_key_reused']),
 ]
 
 
@@ -970,6 +980,24 @@ def settle_delta(got, want):
         if got.get(k) != v:
             return False
     return all(k in want or k == 'movements' for k in got)
+
+
+DONORS = {}
+
+
+def move_wallet(suite, spec, uid, label):
+    """Move the caller's wallet between deliveries - a transfer in from a donor, through the
+    real transfer door - so a retry that rebuilt its receipt from the wallet as it stands
+    would answer differently from the first delivery."""
+    if spec.name not in DONORS:
+        DONORS[spec.name] = suite.players(1)[0]
+    donor = DONORS[spec.name]
+    before = suite.wallet(uid)
+    s = suite.session('donor_%d' % len(suite.sessions), client_context(donor))
+    r = suite.result(s.step(transfer(donor, uid, 11, 'replay-move-' + rid()[:20]).sql))
+    s.close()
+    suite.check(r.get('success') is True and suite.wallet(uid) == before + 11,
+                "%s: the caller's wallet moved between deliveries (a transfer of 11 in)" % label, r)
 
 
 def durable(suite, spec, door):
@@ -1013,47 +1041,37 @@ def replay_variant(suite, spec, variant):
     got = delta(before, after)
     suite.check(settle_delta(got, want), '%s: exactly one effect (%s)' % (
         label, ', '.join('%s %+d' % (k, v) if isinstance(v, int) else k for k, v in sorted(want.items()))), got)
+    move_wallet(suite, spec, door.actor, label)
+    after = suite.money(users)
     third = suite.result(b.step(door.sql))
-    suite.check(suite.money(users) == after, '%s: a third delivery moves nothing' % label, third)
+    suite.check(suite.money(users) == after, "%s: a third delivery, after the caller's wallet moved, moves nothing"
+                % label, third)
     if variant == 'after a rolled-back first attempt':
         first, replays = rb, [third]
     else:
         first, replays = ra, [rb, third]
     if spec.same_reply:
-        suite.check(all(r == first for r in replays), '%s: every delivery answers with the same receipt' % label,
-                    [first] + replays)
-    elif spec.name == 'purchase':
+        suite.check('error' not in first and all(r == first for r in replays),
+                    "%s: every retry answers the first receipt word for word, with no replay marker, even after the "
+                    "caller's wallet moved" % label, [first] + replays)
+    if spec.name == 'purchase':
         stored = json.loads(suite.ctrl.ok("SELECT result FROM public.digital_purchase_receipts WHERE user_id=%s"
                                           % q(users[0]))[0])
-        suite.check(first.get('granted') is True and first.get('cost') == 150 and stored == first
-                    and all(r.get('cost') == 0 and r.get('original_cost') == 150 and r.get('idempotent') is True
-                            and r.get('granted') is False and r.get('success') is True for r in replays),
-                    '%s: the stored receipt is the first answer, and every replay answers from it marked as a replay '
-                    '(cost 0, original_cost 150, granted false) - one debit, one grant' % label, (first, replays, stored))
-    elif spec.name == 'unregister':
-        bare = [{k: v for k, v in r.items() if k not in ('replayed', 'idempotent')} for r in replays]
-        suite.check(all(b == first for b in bare)
-                    and all(r.get('replayed') is True and r.get('idempotent') is True for r in replays),
-                    '%s: every replay answers the first receipt word for word, marked replayed and idempotent' % label,
-                    (first, replays))
+        suite.check(first.get('granted') is True and first.get('cost') == 150 and stored == first,
+                    '%s: the first answer is the stored receipt - one debit of 150, one grant' % label, (first, stored))
+    elif spec.name == 'payout':
+        suite.check(first.get('value') == 't', '%s: the payer answers every delivery of the payment true' % label, first)
     elif spec.name == 'rebuy':
         suite.check(first.get('chips_added') == 10000 and first.get('idempotent') is None
                     and all(r.get('idempotent') is True and r.get('success') is True for r in replays),
-                    '%s: the money core charges once and answers every replay as idempotent; the public door '
-                    'process_tournament_rebuy replays its stored receipt before it reaches the core' % label,
-                    (first, replays))
-    elif spec.name == 'payout':
-        suite.check(first.get('value') == 't' and all(r.get('value') == 'f' for r in replays),
-                    '%s: the payer answers true once and false to every replay of the same key' % label, (first, replays))
+                    '%s: the money core charges once and answers every replay "already charged" (idempotent); the '
+                    'public door process_tournament_rebuy answers a retry with its stored first receipt before it '
+                    'reaches the core, and refuses that answer by name' % label, (first, replays))
     if door.receipt and spec.name == 'buy-in':
         r1, r2 = durable(suite, spec, door), durable(suite, spec, door)
         suite.check(r1 == r2 and r1 and '"confirmed"' in r1[0],
                     '%s: the player reads the buy-in receipt back as confirmed, identically, every time' % label, (r1, r2))
-    if other is not None and spec.name == 'payout':
-        ro = suite.result(b.step(other.sql))
-        suite.check(ro.get('value') == 'f' and suite.money(users) == after,
-                    '%s: the same key with a different amount pays nothing - the key is the payment\'s identity' % label, ro)
-    elif other is not None:
+    if other is not None:
         ro = suite.result(b.step(other.sql))
         suite.check(suite.refusal(other, ro, spec.mismatch_names) and suite.money(users) == after,
                     '%s: the same request id with a different payload is refused by name (%s) and moves nothing'

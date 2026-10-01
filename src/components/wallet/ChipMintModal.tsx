@@ -51,6 +51,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { ownProfile } from '../../lib/ownProfile';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -169,11 +170,9 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     setTarget({ state: 'loading' });
 
     (async () => {
-      // Diamond balance.
-      const { data: prof, error: profError } = await supabase
-        .from('profiles')
+      // Diamond balance, the player's own, through the owner door (ruling 22).
+      const { data: prof, error: profError } = await ownProfile(user.id)
         .select('diamonds')
-        .eq('id', user.id)
         .maybeSingle();
       if (profError) {
         reportError(profError, 'ChipMintModal');

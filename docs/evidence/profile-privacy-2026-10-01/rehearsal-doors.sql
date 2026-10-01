@@ -39,12 +39,14 @@ BEGIN
   UPDATE public.profiles SET full_name = 'Rehearsal Person Two', first_name = 'Rehearsal', last_name = 'Two',
          city = 'Rehearsal City', state = 'RS', country = 'RC', birth_year = 1990 WHERE id = c_u2;
   UPDATE public.profiles SET full_name = 'Rehearsal Person One', city = 'Own City', state = 'OS' WHERE id = c_u1;
-  SELECT * INTO v_u1 FROM public.profiles WHERE id = c_u1;
-  SELECT * INTO v_u2 FROM public.profiles WHERE id = c_u2;
+  UPDATE public.profiles SET is_online = true, last_seen = now() WHERE id = c_u2;
   SELECT m.club_id INTO v_club FROM public.club_members m GROUP BY m.club_id ORDER BY count(*) DESC LIMIT 1;
   INSERT INTO public.social_stories (author_id, content, expires_at)
        VALUES (c_u2, 'rehearsal story', now() + interval '1 hour') RETURNING id INTO v_story;
   INSERT INTO public.social_follows (follower_id, following_id) VALUES (c_u1, c_u2);
+  -- Read after the inserts: a social trigger may credit a fixture.
+  SELECT * INTO v_u1 FROM public.profiles WHERE id = c_u1;
+  SELECT * INTO v_u2 FROM public.profiles WHERE id = c_u2;
 
   -- 1. The owner door answers with the caller's own row and nothing else.
   PERFORM pg_temp.as_client(c_u1);
@@ -56,9 +58,21 @@ BEGIN
   SELECT g.diamonds, g.full_name, g.city, g.last_seen, g.updated_at INTO v_row FROM public.get_my_full_profile() g;
   IF v_row.diamonds IS DISTINCT FROM v_u1.diamonds OR v_row.full_name IS DISTINCT FROM v_u1.full_name
      OR v_row.city IS DISTINCT FROM v_u1.city OR v_row.last_seen IS DISTINCT FROM v_u1.last_seen THEN
-    RAISE EXCEPTION 'REHEARSAL FAIL: owner door fields differ from the row';
+    RAISE EXCEPTION 'REHEARSAL FAIL: owner door fields differ from the row: door % / row % % % %', v_row, v_u1.diamonds, v_u1.full_name, v_u1.city, v_u1.last_seen;
   END IF;
   v_report := v_report || ' owner=own-row';
+  -- Presence answers a boolean for a fresh heartbeat, and never the heartbeat.
+  SELECT count(*) INTO v_n FROM public.fn_profile_presence(ARRAY[c_u2]) x;
+  IF v_n <> 1 OR NOT (SELECT x.is_online FROM public.fn_profile_presence(ARRAY[c_u2]) x) THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: presence of a fresh heartbeat';
+  END IF;
+  RESET ROLE;
+  UPDATE public.profiles SET last_seen = now() - interval '10 minutes' WHERE id = c_u2;
+  SET LOCAL ROLE authenticated;
+  IF (SELECT x.is_online FROM public.fn_profile_presence(ARRAY[c_u2]) x) THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: a stale heartbeat still reads online';
+  END IF;
+  v_report := v_report || ' presence=fresh-online,stale-offline';
 
   -- 2. The staff door refuses a player by name, and a visitor cannot call it.
   BEGIN
@@ -73,6 +87,11 @@ BEGIN
   BEGIN
     PERFORM 1 FROM public.get_full_profiles_for_staff(ARRAY[c_u2]);
     RAISE EXCEPTION 'REHEARSAL FAIL: a visitor read the staff door';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM 1 FROM public.fn_profile_presence(ARRAY[c_u2]);
+    RAISE EXCEPTION 'REHEARSAL FAIL: a visitor read presence';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
   -- The signed-out profile page: no legal name and no balance.
@@ -167,6 +186,13 @@ BEGIN
     RAISE EXCEPTION 'REHEARSAL FAIL: an upsert naming full_name ran after the revoke';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
+  -- Presence still answers under the revoke.
+  RESET ROLE;
+  UPDATE public.profiles SET last_seen = now() WHERE id = c_u2;
+  SET LOCAL ROLE authenticated;
+  IF NOT (SELECT x.is_online FROM public.fn_profile_presence(ARRAY[c_u2]) x) THEN
+    RAISE EXCEPTION 'REHEARSAL FAIL: presence under the revoke';
+  END IF;
   -- The moved invoker readers run under the revoke.
   v_j := to_jsonb(public.get_top_mission_completers(v_club, 3));
   v_j := public.fn_get_stories(c_u1);
@@ -189,7 +215,7 @@ BEGIN
     RAISE EXCEPTION 'REHEARSAL FAIL: staff door after the revoke: %', v_t;
   END IF;
   RESET ROLE;
-  v_report := v_report || ' revoke=stranger-refused,public-read,owner-door,owner-edit,upsert-refused,readers-ok,staff-door';
+  v_report := v_report || ' revoke=stranger-refused,public-read,owner-door,owner-edit,upsert-refused,presence,readers-ok,staff-door';
 
   RAISE EXCEPTION 'REHEARSAL OK:% in % ms', v_report,
     round(extract(epoch FROM clock_timestamp() - v_t0) * 1000);

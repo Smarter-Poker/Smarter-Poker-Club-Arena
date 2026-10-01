@@ -431,8 +431,12 @@ class IdentityDNACore {
          ONE ungranted column 403s the whole statement and the profile then
          silently never loads. `status` (granted, checked 2026-09-29) is how a
          closed account is recognised: 'deleted'. */
+      /* No `updated_at`: the presence heartbeat stamps it with last_seen, so
+         it is its owner's (ruling 22) and naming it 403s this read WHOLE -
+         which the benign-error branch below would swallow, and the profile
+         would silently never load. Nothing here reads it. */
       .select(
-        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number, status`
+        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, player_number, status`
       )
       .eq('id', userId)
       .maybeSingle();

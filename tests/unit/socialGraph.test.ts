@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   chunkSocialProfileIds,
-  formatSocialLastSeen,
   isSocialProfileOnline,
   resolveSocialProfile,
 } from '../../src/utils/socialGraph';
@@ -26,20 +25,28 @@ describe('social graph profile resolution', () => {
     });
   });
 
-  it('accepts realtime presence immediately and persisted presence only while fresh', () => {
-    const now = Date.parse('2026-08-30T12:00:00.000Z');
-    expect(isSocialProfileOnline('a', new Set(['a']), false, undefined, now)).toBe(true);
-    expect(isSocialProfileOnline('b', new Set(), true, '2026-08-30T11:57:00.000Z', now)).toBe(true);
-    expect(isSocialProfileOnline('b', new Set(), true, '2026-08-30T11:40:00.000Z', now)).toBe(
-      false
-    );
+  it('accepts realtime presence immediately and otherwise the presence door, which is fresh by construction', () => {
+    /* Since ruling 22 (2026-10-01) the browser never receives last_seen: the
+       five-minute freshness test runs in fn_profile_presence, so the persisted
+       answer passed here is already fresh, and a stale flag arrives as false. */
+    expect(isSocialProfileOnline('a', new Set(['a']), false)).toBe(true);
+    expect(isSocialProfileOnline('b', new Set(), true)).toBe(true);
+    expect(isSocialProfileOnline('b', new Set(), false)).toBe(false);
   });
 
-  it('formats useful recent activity without exposing old timestamps forever', () => {
-    const now = Date.parse('2026-08-30T12:00:00.000Z');
-    expect(formatSocialLastSeen('2026-08-30T11:43:00.000Z', now)).toBe('Active 17m ago');
-    expect(formatSocialLastSeen('2026-08-28T12:00:00.000Z', now)).toBe('Active 2d ago');
-    expect(formatSocialLastSeen('2026-06-01T12:00:00.000Z', now)).toBe('Offline');
+  it('never carries a last-seen time into the resolved profile', () => {
+    const resolved = resolveSocialProfile({
+      id: 'player-2',
+      username: 'shark',
+      is_online: true,
+      last_seen: '2026-08-30T11:57:00.000Z',
+    } as never);
+    expect(resolved).toEqual({
+      available: true,
+      name: 'shark',
+      avatarUrl: undefined,
+      sourceOnline: true,
+    });
   });
 
   it('chunks profile lookups so large networks do not create oversized URLs', () => {

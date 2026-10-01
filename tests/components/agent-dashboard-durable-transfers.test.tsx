@@ -50,7 +50,12 @@ vi.mock('../../src/core/MasterBus', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: (...args: unknown[]) => mocks.rpc(...args),
+    // Presence (ruling 22) is its own door; the money rpcs this test counts
+    // are everything else.
+    rpc: (...args: unknown[]) =>
+      args[0] === 'fn_profile_presence'
+        ? Promise.resolve({ data: [], error: null })
+        : mocks.rpc(...args),
     from: (table: string) => {
       let selection = '';
       const query: Record<string, unknown> = {};

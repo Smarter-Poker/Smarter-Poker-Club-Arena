@@ -57,34 +57,39 @@ vi.mock('../../src/services/VIPService', () => ({
       : 'Purchase Failed',
 }));
 
-vi.mock('../../src/lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      let requestedUserId = '';
-      const builder: Record<string, unknown> = {};
-      builder.select = () => builder;
-      builder.eq = (_column: string, value: string) => {
-        requestedUserId = value;
-        return builder;
-      };
-      builder.order = () => builder;
-      builder.maybeSingle = () =>
-        Promise.resolve({
-          data:
-            table === 'profiles'
-              ? { diamonds: requestedUserId === 'account-a' ? 100 : 200 }
-              : { current_points: 0, lifetime_points: 0 },
-          error: null,
-        });
-      builder.limit = () =>
-        table === 'diamond_transactions'
-          ? mocks.ledgerResponse(requestedUserId)
-          : Promise.resolve({ data: [], error: null });
+vi.mock('../../src/lib/supabase', () => {
+  const from = (table: string) => {
+    let requestedUserId = '';
+    const builder: Record<string, unknown> = {};
+    builder.select = () => builder;
+    builder.eq = (_column: string, value: string) => {
+      requestedUserId = value;
       return builder;
+    };
+    builder.order = () => builder;
+    builder.maybeSingle = () =>
+      Promise.resolve({
+        data:
+          table === 'profiles'
+            ? { diamonds: requestedUserId === 'account-a' ? 100 : 200 }
+            : { current_points: 0, lifetime_points: 0 },
+        error: null,
+      });
+    builder.limit = () =>
+      table === 'diamond_transactions'
+        ? mocks.ledgerResponse(requestedUserId)
+        : Promise.resolve({ data: [], error: null });
+    return builder;
+  };
+  return {
+    supabase: {
+      from,
+      // The player's own balance is read through the owner door (ruling 22),
+      // filtered by the account's id like the profiles row was.
+      rpc: vi.fn((name: string) => (name === 'get_my_full_profile' ? from('profiles') : undefined)),
     },
-    rpc: vi.fn(),
-  },
-}));
+  };
+});
 
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {

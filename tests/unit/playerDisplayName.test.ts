@@ -184,18 +184,25 @@ describe('never renders nothing', () => {
 });
 
 describe('the query contract', () => {
-  it('names every column the resolver reads', () => {
+  it('names every public column the resolver reads', () => {
     for (const col of [
       'username',
       'display_name',
       'alias',
-      'first_name',
-      'last_name',
-      'full_name',
       'display_name_preference',
       'use_real_name',
     ]) {
       expect(PLAYER_NAME_COLUMNS).toContain(col);
+    }
+  });
+
+  it("names no real-name column: a legal name is its owner's alone (ruling 22)", () => {
+    /* `authenticated` holds no SELECT on these, and Postgres refuses the whole
+       statement that names one, so a list that carried them would 403 every
+       screen that shows a name. The owner's own row still carries them, read
+       through get_my_full_profile(). */
+    for (const col of ['first_name', 'last_name', 'full_name']) {
+      expect(PLAYER_NAME_COLUMNS).not.toMatch(new RegExp(`(^|[^a-z_])${col}([^a-z_]|$)`));
     }
   });
 });

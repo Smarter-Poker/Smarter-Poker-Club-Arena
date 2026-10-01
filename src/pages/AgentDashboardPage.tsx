@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -88,7 +89,13 @@ interface AgentProfile {
   display_name?: string;
   username?: string;
   avatar_url?: string;
-  last_seen?: string;
+  /** Online now, from the presence door - never the heartbeat (ruling 22). */
+  online?: boolean;
+  /** The last hand this player played in THIS club: player_stats.updated_at,
+      the club's own public statistics. A player's platform-wide last-seen
+      time is theirs and platform staff's alone (ruling 22,
+      docs/DIAMOND-RULINGS.md), so the agent's activity panel reads play here. */
+  last_played?: string;
 }
 interface DownlineMember {
   user_id: string;
@@ -314,14 +321,38 @@ function AgentDashboardContent() {
             () =>
               supabase
                 .from('profiles')
-                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, last_seen`)
+                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
                 .in('id', allUserIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
           );
+          // Who is online now (the presence door) and when each played here
+          // last (this club's player_stats). Either may fail on its own; the
+          // panel then shows nobody online / no hand played, never an error.
+          const presence = await readPresence(allUserIds).catch((e) => {
+            reportError(e, 'AgentDashboardPage.presence');
+            return new Map<string, boolean>();
+          });
+          const lastPlayed = new Map<string, string>();
+          const { data: played, error: playedError } = await supabase
+            .from('player_stats')
+            .select('user_id, updated_at')
+            .eq('club_id', uuid)
+            .in('user_id', allUserIds);
+          if (playedError) reportError(playedError, 'AgentDashboardPage.lastPlayed');
+          for (const row of (played || []) as { user_id: string; updated_at: string | null }[]) {
+            const prior = lastPlayed.get(row.user_id);
+            if (row.updated_at && (!prior || row.updated_at > prior)) {
+              lastPlayed.set(row.user_id, row.updated_at);
+            }
+          }
           if (profiles)
             profiles.forEach((p: AgentProfile) => {
-              profileMap[p.id] = p;
+              profileMap[p.id] = {
+                ...p,
+                online: presence.get(p.id) === true,
+                last_played: lastPlayed.get(p.id),
+              };
             });
         }
 
@@ -870,11 +901,7 @@ function AgentDashboardContent() {
   }, [players, playerSearch]);
 
   const totalPlayerChips = players.reduce((sum, p) => sum + (p.chip_balance || 0), 0);
-  const onlinePlayers = players.filter((p) => {
-    const lastSeen = p.profile?.last_seen;
-    if (!lastSeen) return false;
-    return Date.now() - new Date(lastSeen).getTime() < 300000;
-  });
+  const onlinePlayers = players.filter((p) => p.profile?.online === true);
 
   // ── Loading State ──────────────────────────────────────────
   if (loading) {
@@ -1271,12 +1298,7 @@ function AgentDashboardContent() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {
-                    filteredPlayers.filter((p) => {
-                      const ls = p.profile?.last_seen;
-                      return ls && Date.now() - new Date(ls).getTime() < 300000;
-                    }).length
-                  }
+                  {filteredPlayers.filter((p) => p.profile?.online === true).length}
                 </div>
                 <div className="admin-stat-label">Online Now</div>
               </div>
@@ -1314,9 +1336,7 @@ function AgentDashboardContent() {
                   const name = p.profile
                     ? playerDisplayName(p.profile)
                     : p.user_id?.substring(0, 8);
-                  const isOnline =
-                    p.profile?.last_seen &&
-                    Date.now() - new Date(p.profile.last_seen).getTime() < 300000;
+                  const isOnline = p.profile?.online === true;
                   return (
                     <div key={p.user_id} className="admin-card" style={{ padding: '14px 16px' }}>
                       <div
@@ -1362,7 +1382,7 @@ function AgentDashboardContent() {
                           {' '}
                           {p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}
                         </span>
-                        <span> {timeAgo(p.profile?.last_seen)}</span>
+                        <span> {timeAgo(p.profile?.last_played)}</span>
                       </div>
                     </div>
                   );
@@ -1565,7 +1585,7 @@ function AgentDashboardContent() {
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
                   {fmt(
                     players.filter((p: DownlineMember) => {
-                      const ls = p.profile?.last_seen;
+                      const ls = p.profile?.last_played;
                       if (!ls) return false;
                       const days = (Date.now() - new Date(ls).getTime()) / 86400000;
                       return days >= 5 && days < 14;
@@ -1578,7 +1598,7 @@ function AgentDashboardContent() {
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
                   {fmt(
                     players.filter((p: DownlineMember) => {
-                      const ls = p.profile?.last_seen;
+                      const ls = p.profile?.last_played;
                       if (!ls) return true;
                       return (Date.now() - new Date(ls).getTime()) / 86400000 >= 14;
                     }).length
@@ -1602,13 +1622,13 @@ function AgentDashboardContent() {
                       <th>Status</th>
                       <th>Player</th>
                       <th>Chips</th>
-                      <th>Last Active</th>
+                      <th>Last Played</th>
                       <th>Days</th>
                     </tr>
                   </thead>
                   <tbody>
                     {players.map((p: DownlineMember, i: number) => {
-                      const lastSeen = p.profile?.last_seen;
+                      const lastSeen = p.profile?.last_played;
                       const daysSince = lastSeen
                         ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / 86400000)
                         : 999;

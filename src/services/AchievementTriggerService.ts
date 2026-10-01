@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { achievementService, type Achievement } from './AchievementService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
@@ -269,10 +270,9 @@ class AchievementTriggerServiceClass {
 
     const today = new Date().toISOString().slice(0, 10); // UTC calendar day
 
-    const { data: profile, error: readErr } = await supabase
-      .from('profiles')
+    // The player's own streak day, which only its owner reads (ruling 22).
+    const { data: profile, error: readErr } = await ownProfile(userId)
       .select('login_streak, last_login_date')
-      .eq('id', userId)
       .maybeSingle();
 
     if (readErr) {

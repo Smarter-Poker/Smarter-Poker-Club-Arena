@@ -124,3 +124,19 @@ neither can refuse a player.
 
 **If the aggregate needs to come down, the lever is the per-user daily cap**,
 which is one row per engine and identical for horses and humans.
+
+## Ruling 22 (2026-10-01): a profile shows strangers only what the table needs
+
+Decided by Claude on Dan's delegation of 2026-09-30. Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE". It settles question 1 of the Phase 10 audit ([lines 1, 2 and 6](DIAMOND-PHASE-10-LINES-1-2-6-2026-09-29.md), line 2: "Which profile fields are public?").
+
+**The ruling.** A stranger sees only what playing with you needs: display name, username, avatar, player number and public statistics. Anything that reveals a person's money, real identity or whereabouts is readable only by that person and by platform staff (`fn_is_platform_admin()`: role admin, superadmin or god).
+
+**The columns of `public.profiles`.**
+
+- **Their owner's and staff's only (SELECT revoked from `authenticated` and `anon`):** `diamonds`, `diamond_balance`, `diamond_multiplier`, `first_name`, `last_name`, `full_name`, `birth_year`, `city`, `state`, `country`, `last_seen`, `last_login`, `last_login_date`, `last_active`, `updated_at` (the presence heartbeat stamps it with `last_seen`, so it is last seen), `referred_by`, `poker_near_me_preferences` (it holds a last location and city).
+- **Already unreadable before this ruling, unchanged:** `email`, `phone`, `birthday`, `age_verified`, `age_verified_at`, `over_18_attested_at`, the `jurisdiction_*` and `kyc_*` columns, `stripe_customer_id`, `notification_token`, `mfa_required`, `is_farming_flagged`, `is_horse`, `horse_status`, `horse_profile`, `status_text`.
+- **Public, everything else.** Kept public because each is genuinely ambiguous, and said so: `is_online` (a presence signal the player controls with `showOnlineStatus`); the Hendon Mob figures and link (public tournament records); `home_casino`, `favorite_venue`, `home_poker_club` (where someone likes to play, which they chose to show); the social links; `is_vip`, `vip_tier`, `vip_expires_at` (they drive VIP styling others see); `referral_code`; `last_trivia_date`; `created_at`; and the settings and preference blobs other than `poker_near_me_preferences`.
+
+**How it is read now.** The owner reads their own row through `get_my_full_profile()`; platform staff through `get_full_profiles_for_staff(uuid[])`; who is online now through `fn_profile_presence(uuid[])`, a boolean by the five-minute heartbeat rule that never returns the heartbeat. Writes are unchanged: a player still edits their own private fields.
+
+**Built.** Migration `20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door` (the doors, and eleven database readers moved off the private fields); the Club Arena's reads moved in the same change; the World Hub's moved separately; the column revoke `20260930234500_a_profile_shows_strangers_only_what_the_table_needs` follows once both apps are live. Evidence: [profile privacy, 2026-10-01](evidence/profile-privacy-2026-10-01.md).

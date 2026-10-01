@@ -66,8 +66,12 @@ class ProfileServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
+        /* Public columns only (ruling 22): the balance, the login day and the
+           row clock (which the presence heartbeat stamps) are their owner's,
+           and this method takes any id. The owner reads theirs through
+           ownProfile() (src/lib/ownProfile.ts). */
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, total_hands_played, created_at'
         )
         .eq('id', userId)
         .maybeSingle();
@@ -89,7 +93,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, total_hands_played, created_at'
         )
         .eq('username', username)
         .maybeSingle();
@@ -117,7 +121,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          `id, ${PLAYER_NAME_COLUMNS}, avatar_url, arena_avatar_url, bio, player_number, level, tier, is_vip, vip_tier, vip_expires_at, created_at, updated_at`
+          `id, ${PLAYER_NAME_COLUMNS}, avatar_url, arena_avatar_url, bio, player_number, level, tier, is_vip, vip_tier, vip_expires_at, created_at`
         )
         .eq('id', userId)
         .maybeSingle();
@@ -255,16 +259,17 @@ class ProfileServiceClass {
        Postgres felt like, presented as a ranking. It is now a rollup of
        SUM(player_stats.hands_played) maintained by trg_sync_profile_total_hands,
        and it sums to 6,764,566 over 1,006 players. */
+    /* There is no winnings column, and the Diamond balance that stood in for
+       one is its owner's alone (ruling 22): a board of other players'
+       balances is exactly what the ruling closes. Both metrics rank hands. */
     const orderColumn = {
-      winnings: 'diamonds', // No total_winnings column; use diamonds as proxy
+      winnings: 'total_hands_played',
       hands: 'total_hands_played',
     }[metric];
 
     const { data } = await supabase
       .from('profiles')
-      .select(
-        'id, username, display_name, avatar_url, level, tier, total_hands_played, diamonds, created_at, updated_at'
-      )
+      .select('id, username, display_name, avatar_url, level, tier, total_hands_played, created_at')
       .order(orderColumn, { ascending: false })
       .limit(limit);
 

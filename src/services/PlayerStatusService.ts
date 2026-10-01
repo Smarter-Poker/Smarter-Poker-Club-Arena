@@ -22,7 +22,8 @@ export interface PlayerStatus {
   playingAt: string | null; // Current table name
   playingAtTableId: string | null; // Current table ID for deep-link
   isOnline: boolean;
-  lastSeen: string;
+  /** Never filled: a player's last-seen time is theirs alone (ruling 22). */
+  lastSeen?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -89,7 +90,7 @@ class PlayerStatusServiceClass {
        * name as if they had written it. The column exists now
        * (20260828034000_profiles_status_text.sql), so read the real one.
        */
-      .select('id, status_text, is_online, last_seen')
+      .select('id, status_text, is_online')
       .eq('id', userId)
       .maybeSingle();
 
@@ -101,7 +102,6 @@ class PlayerStatusServiceClass {
       playingAt: null,
       playingAtTableId: null,
       isOnline: data.is_online || false,
-      lastSeen: data.last_seen || new Date().toISOString(),
     };
   }
 
@@ -135,7 +135,7 @@ class PlayerStatusServiceClass {
     // Step 2: Batch-fetch profiles for all friend IDs
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, status_text, is_online, last_seen')
+      .select('id, status_text, is_online')
       .in('id', Array.from(friendIds))
       .eq('is_online', true);
 
@@ -147,7 +147,6 @@ class PlayerStatusServiceClass {
       playingAt: null,
       playingAtTableId: null,
       isOnline: true,
-      lastSeen: p.last_seen || new Date().toISOString(),
     }));
   }
 

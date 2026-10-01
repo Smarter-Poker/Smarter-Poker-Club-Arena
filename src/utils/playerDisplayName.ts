@@ -161,6 +161,18 @@ export function playerDisplayName(
   return handleName(p) || clean(p.display_name) || realName(p) || FALLBACK;
 }
 
-/** The columns a query must select for playerDisplayName() to work. */
+/**
+ * The columns a query must select for playerDisplayName() to work.
+ *
+ * NO REAL-NAME COLUMN (ruling 22, docs/DIAMOND-RULINGS.md, 2026-10-01). A
+ * profile's legal name is readable only by its owner and by platform staff:
+ * `authenticated` holds no SELECT on first_name, last_name or full_name, and
+ * Postgres refuses the WHOLE statement that names one (42501), so this list
+ * names the public columns only. The resolver still takes the real-name fields
+ * when a caller has them - the owner's own row, read through
+ * get_my_full_profile() (src/lib/ownProfile.ts) - and then still keeps a
+ * display_name that IS the legal name off an arena surface. For anyone else it
+ * resolves alias -> username -> display_name, as it always did.
+ */
 export const PLAYER_NAME_COLUMNS =
-  'username, display_name, alias, first_name, last_name, full_name, display_name_preference, use_real_name';
+  'username, display_name, alias, display_name_preference, use_real_name';

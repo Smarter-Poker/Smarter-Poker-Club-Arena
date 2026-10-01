@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import type { UnionSettlement } from '../utils/unionStatementReport';
 export type { UnionSettlement, ClubSettlementBreakdown } from '../utils/unionStatementReport';
 import { masterBus } from '../core/MasterBus';
@@ -372,12 +373,13 @@ class UnionServiceClass {
     const adminUserIds = [...new Set(rows.map((a) => a.user_id).filter(Boolean))];
     if (adminUserIds.length > 0) {
       try {
+        // Public name columns only: a legal name is its owner's (ruling 22).
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, username, full_name')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', adminUserIds);
         for (const p of profiles || []) {
-          nameMap.set(p.id, p.full_name || p.username || undefined);
+          nameMap.set(p.id, playerDisplayName(p));
         }
       } catch (err) {
         reportError(err, 'UnionService.getUnionProfile');
@@ -534,12 +536,13 @@ class UnionServiceClass {
     // Owner display names — one batched profiles lookup.
     if (ownerIds.length > 0) {
       try {
+        // Public name columns only: a legal name is its owner's (ruling 22).
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, username, full_name')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', ownerIds);
         for (const p of profiles || []) {
-          ownerNames.set(p.id, p.full_name || p.username || undefined);
+          ownerNames.set(p.id, playerDisplayName(p));
         }
       } catch (err) {
         reportError(err, 'UnionService.ownerProfileLookup');

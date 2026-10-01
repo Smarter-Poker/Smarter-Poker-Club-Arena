@@ -3,15 +3,15 @@ import { playerDisplayName, type NameableProfile } from './playerDisplayName';
 export interface SocialGraphProfile extends NameableProfile {
   id: string;
   avatar_url?: string | null;
+  /** The presence door's answer (fn_profile_presence): online now, with the
+      five-minute heartbeat rule applied server-side. Never the raw flag. */
   is_online?: boolean | null;
-  last_seen?: string | null;
 }
 
 export interface ResolvedSocialProfile {
   available: boolean;
   name: string;
   avatarUrl?: string;
-  lastSeen?: string;
   sourceOnline: boolean;
 }
 
@@ -37,42 +37,28 @@ export function resolveSocialProfile(
     available: true,
     name: playerDisplayName(profile, 'arena'),
     avatarUrl: profile.avatar_url || undefined,
-    lastSeen: profile.last_seen || undefined,
     sourceOnline: profile.is_online === true,
   };
 }
 
 /**
- * Realtime presence wins. The persisted profile signal is accepted only while
- * its heartbeat is fresh, so a stale `is_online=true` row cannot keep somebody
+ * Realtime presence wins. Otherwise the persisted signal counts only while its
+ * heartbeat is fresh, so a stale `is_online=true` row cannot keep somebody
  * online forever after a disconnected device disappears.
+ *
+ * Since 2026-10-01 that freshness test runs in the database: a player's
+ * last-seen time is theirs alone (ruling 22, docs/DIAMOND-RULINGS.md), so the
+ * browser never receives it, and `presenceOnline` is the presence door's
+ * answer (fn_profile_presence, src/lib/ownProfile.ts readPresence), which
+ * applies SOCIAL_PRESENCE_FRESH_MS to the flag before answering. An offline
+ * friend reads "Offline"; how long ago they left is not shown.
  */
 export function isSocialProfileOnline(
   userId: string,
   liveUserIds: ReadonlySet<string>,
-  sourceOnline: boolean,
-  lastSeen?: string,
-  now = Date.now()
+  presenceOnline: boolean
 ): boolean {
-  if (liveUserIds.has(userId)) return true;
-  if (!sourceOnline || !lastSeen) return false;
-  const seenAt = Date.parse(lastSeen);
-  return Number.isFinite(seenAt) && now - seenAt <= SOCIAL_PRESENCE_FRESH_MS;
-}
-
-export function formatSocialLastSeen(lastSeen?: string, now = Date.now()): string {
-  if (!lastSeen) return 'Offline';
-  const seenAt = Date.parse(lastSeen);
-  if (!Number.isFinite(seenAt)) return 'Offline';
-
-  const elapsedMinutes = Math.max(0, Math.floor((now - seenAt) / 60_000));
-  if (elapsedMinutes < 2) return 'Active moments ago';
-  if (elapsedMinutes < 60) return `Active ${elapsedMinutes}m ago`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `Active ${elapsedHours}h ago`;
-  const elapsedDays = Math.floor(elapsedHours / 24);
-  if (elapsedDays < 30) return `Active ${elapsedDays}d ago`;
-  return 'Offline';
+  return liveUserIds.has(userId) || presenceOnline === true;
 }
 
 export function chunkSocialProfileIds(ids: readonly string[], size = 100): string[][] {

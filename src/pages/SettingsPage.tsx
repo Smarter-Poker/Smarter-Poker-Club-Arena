@@ -8,6 +8,7 @@
 import { useState, useEffect, useId, useRef, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
@@ -492,8 +493,9 @@ export default function SettingsPage() {
 
       // Fetch user data from various tables
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
-        supabase
-          .from('profiles')
+        /* The player's own record, so it may carry their own private fields
+           (last_login): read through the owner door (ruling 22). */
+        ownProfile(user.id)
           /**
            * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).
            *
@@ -511,7 +513,6 @@ export default function SettingsPage() {
           .select(
             'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, last_login'
           )
-          .eq('id', user.id)
           .maybeSingle(),
         // A DATA EXPORT MUST NOT EXPORT A FROZEN NUMBER (fixed 2026-08-27).
         // This exported rows from the retired global wallet table, frozen

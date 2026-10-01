@@ -55,6 +55,7 @@ import { WalletIcon, type WalletIconName } from '../icons/LobbyIcons';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { ownProfile } from '../../lib/ownProfile';
 import { watchBbjPool } from '../../lib/bbjPoolFeed';
 import { resolveClubUUID, resolveClubUUIDSync, isUUID } from '../../utils/clubIdResolver';
 import {
@@ -760,12 +761,8 @@ export default function DynamicWallet({
           const request = new AbortController();
           const deadline = setTimeout(() => request.abort(), 15_000);
           return Promise.all([
-            supabase
-              .from('profiles')
-              .select('diamonds')
-              .eq('id', userId)
-              .abortSignal(request.signal)
-              .maybeSingle(),
+            // The player's own balance, through the owner door (ruling 22).
+            ownProfile(userId).select('diamonds').abortSignal(request.signal).maybeSingle(),
             hasChipWallet
               ? supabase
                   .from('club_members')

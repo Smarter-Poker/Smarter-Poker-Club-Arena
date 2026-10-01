@@ -107,9 +107,13 @@ describe('Community Command Center interaction contracts', () => {
   });
 
   it('combines realtime and fresh persisted presence without trusting stale online flags', () => {
+    /* Ruling 22 (2026-10-01): a friend's last-seen time is theirs alone, so
+       the page reads public columns and asks the presence door (which applies
+       the five-minute heartbeat rule in the database) who is online now. */
     expect(FRIENDS).toContain('isSocialProfileOnline(');
-    expect(FRIENDS).toContain('formatSocialLastSeen(friend.last_seen)');
-    expect(FRIENDS).toContain('is_online, last_seen');
+    expect(FRIENDS).toContain('readPresence(allProfileIds)');
+    expect(FRIENDS).not.toContain('last_seen');
+    expect(FRIENDS).not.toContain('formatSocialLastSeen');
   });
 
   it('keeps challenge and activity data live while making failure states recoverable', () => {

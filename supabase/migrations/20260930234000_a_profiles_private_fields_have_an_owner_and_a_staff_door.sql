@@ -24,12 +24,20 @@
 --    (fn_is_platform_admin(): role admin, superadmin or god). Anyone else,
 --    signed in or not, is refused by name (42501). A definer read; signed-in
 --    accounts and the service role may call it, a visitor may not.
--- 2. THE OWNER DOOR already exists and is kept as it is: get_my_full_profile()
+-- 2. WHO IS ONLINE NOW, new: fn_profile_presence(uuid[]) answers, for the
+--    accounts asked for, whether each is online now and nothing else - the
+--    persisted flag counts only while its heartbeat is under five minutes old,
+--    the rule the friends list (SOCIAL_PRESENCE_FRESH_MS) and
+--    ca_club_member_downline already apply. The heartbeat itself, last_seen,
+--    becomes its owner's with step 2, and 288 of today's human rows hold a
+--    stale is_online = true, so the flag alone cannot stand in for it. A
+--    definer read for signed-in accounts and the service role.
+-- 3. THE OWNER DOOR already exists and is kept as it is: get_my_full_profile()
 --    returns the caller's own row and nothing else, and refuses a caller with
 --    no account. The World Hub's profile editor and the birthday revoke of
 --    2026-09-29 already read the owner's private fields through it. It is
 --    pinned here so the revoke cannot land on a changed door.
--- 3. SEVEN READERS THAT NAMED A STRANGER BY THEIR LEGAL NAME, AND TWO PROFILE
+-- 4. SEVEN READERS THAT NAMED A STRANGER BY THEIR LEGAL NAME, AND TWO PROFILE
 --    DOORS THAT ANSWERED WITH ONE, stop reading private fields. Each changes
 --    by asserted substitution (live md5 pinned, the old clause found exactly
 --    once, the reverse proved), keeps its grants, and is otherwise untouched:
@@ -84,7 +92,7 @@ SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '60s';
 
 -- ---------------------------------------------------------------------------
--- 1. THE STAFF DOOR
+-- 1. THE STAFF DOOR AND THE PRESENCE DOOR
 -- ---------------------------------------------------------------------------
 CREATE FUNCTION public.get_full_profiles_for_staff(p_user_ids uuid[])
 RETURNS SETOF public.profiles
@@ -113,6 +121,30 @@ COMMENT ON FUNCTION public.get_full_profiles_for_staff(uuid[]) IS
 
 REVOKE ALL ON FUNCTION public.get_full_profiles_for_staff(uuid[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_full_profiles_for_staff(uuid[]) TO authenticated, service_role;
+
+CREATE FUNCTION public.fn_profile_presence(p_user_ids uuid[])
+RETURNS TABLE (user_id uuid, is_online boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $fn$
+  -- Online now, and nothing else: the persisted flag counts only while its
+  -- heartbeat is under five minutes old. The heartbeat (last_seen) is never
+  -- returned; it is its owner's.
+  SELECT p.id,
+         (COALESCE(p.is_online, false) AND p.last_seen > now() - interval '5 minutes')
+    FROM public.profiles p
+   WHERE auth.uid() IS NOT NULL
+     AND p.id = ANY (COALESCE(p_user_ids, ARRAY[]::uuid[]))
+   LIMIT 1000;
+$fn$;
+
+COMMENT ON FUNCTION public.fn_profile_presence(uuid[]) IS
+  'Who of the accounts asked for is online now: is_online counted only while last_seen is under five minutes old (the friends list and ca_club_member_downline rule). Never returns last_seen, which is its owner''s. Ruling 22 (docs/DIAMOND-RULINGS.md), migration 20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door.';
+
+REVOKE ALL ON FUNCTION public.fn_profile_presence(uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_profile_presence(uuid[]) TO authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 2. READERS THAT NAME A STRANGER STOP READING PRIVATE FIELDS
@@ -219,6 +251,19 @@ BEGIN
     RAISE EXCEPTION 'the staff door must be a definer returning profile rows that a signed-in account may call and a visitor may not';
   END IF;
 
+  -- The presence door: one definer answering a boolean, never the heartbeat.
+  IF to_regprocedure('public.fn_profile_presence(uuid[])') IS NULL
+     OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.fn_profile_presence(uuid[])'::regprocedure)
+     OR pg_get_function_result('public.fn_profile_presence(uuid[])'::regprocedure)
+        <> 'TABLE(user_id uuid, is_online boolean)'
+     OR has_function_privilege('anon', 'public.fn_profile_presence(uuid[])', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.fn_profile_presence(uuid[])', 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                 WHERE p.oid = 'public.fn_profile_presence(uuid[])'::regprocedure
+                   AND a.grantee = 0 AND a.privilege_type = 'EXECUTE') THEN
+    RAISE EXCEPTION 'the presence door must be a definer answering (user_id, is_online) to signed-in accounts only';
+  END IF;
+
   -- The owner door is the pinned text: the caller's own row, a caller with no
   -- account refused, and a visitor cannot call it at all.
   IF v_owner IS NULL
@@ -272,7 +317,7 @@ BEGIN
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'watched guards off their baseline: %', v_bad;
   END IF;
-  RAISE NOTICE 'a profile''s private fields have an owner door and a staff door; eleven readers moved off them';
+  RAISE NOTICE 'a profile''s private fields have an owner door and a staff door, presence has its own, eleven readers moved off them';
 END $m$;
 
 COMMIT;

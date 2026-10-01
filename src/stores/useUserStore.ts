@@ -9,7 +9,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { reportError } from '../utils/errorReporter';
 import { resolveVipStatus } from '../utils/vipStatus';
 import { clearCachedIdentity } from '../lib/cachedIdentity';
@@ -238,8 +238,14 @@ export const useUserStore = create<UserState>()(
            * the column. The store therefore never populated and the failure
            * was invisible. Explicit columns, all of them granted.
            */
-          const { data, error } = await supabase
-            .from('profiles')
+          /* THE OWNER DOOR (ruling 22, src/lib/ownProfile.ts). This is the
+             signed-in player's own row, and it carries their own real-name
+             fields so the arena resolver can still keep a display_name that IS
+             the legal name off the felt. A legal name is readable only by its
+             owner, and a column grant is not per row, so the table refuses
+             even the owner's own; get_my_full_profile() returns the caller's
+             row and nothing else. */
+          const { data, error } = await ownProfile(userId)
             .select(
               /* PLAYER_NAME_COLUMNS rather than a hand-written list: it is the
                  one place that says which columns `playerDisplayName` needs,
@@ -249,9 +255,8 @@ export const useUserStore = create<UserState>()(
                  granted to `authenticated` (checked against the live schema);
                  if that ever stops being true this select 403s WHOLE, per the
                  note above, so add to that constant with the same care. */
-              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, is_vip, vip_tier, vip_expires_at, created_at, player_number`
+              `id, ${PLAYER_NAME_COLUMNS}, first_name, last_name, full_name, avatar_url:arena_avatar_url, tier, is_vip, vip_tier, vip_expires_at, created_at, player_number`
             )
-            .eq('id', userId)
             .maybeSingle();
 
           if (error) {

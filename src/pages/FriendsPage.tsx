@@ -14,6 +14,7 @@ import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { exportToCSV } from '../lib/export';
 import { supabase } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { fetchAllRows, type PagedResult } from '../utils/fetchAllRows';
@@ -21,7 +22,6 @@ import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { retryFetch } from '../utils/retryFetch';
 import {
   chunkSocialProfileIds,
-  formatSocialLastSeen,
   isSocialProfileOnline,
   resolveSocialProfile,
   type SocialGraphProfile,
@@ -34,8 +34,8 @@ interface Friend {
   username: string;
   avatar_url?: string;
   is_online: boolean;
+  /** The presence door's answer: online now by a fresh heartbeat. */
   source_online: boolean;
-  last_seen?: string;
   profile_available: boolean;
 }
 
@@ -377,18 +377,23 @@ export default function FriendsPage() {
                 () =>
                   supabase
                     .from('profiles')
-                    .select(
-                      `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_online, last_seen`
-                    )
+                    /* Public columns only: a friend's last-seen time is
+                       theirs (ruling 22). Online-now comes from the presence
+                       door below. */
+                    .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
                     .in('id', ids),
                 { maxRetries: 2, isMountedRef: isMounted }
               )
             )
           );
+          const presence = await readPresence(allProfileIds);
           for (const batch of batches) {
             if (batch.error) throw batch.error;
             for (const profile of batch.data || []) {
-              profileMap.set(profile.id, profile as SocialGraphProfile);
+              profileMap.set(profile.id, {
+                ...(profile as SocialGraphProfile),
+                is_online: presence.get(profile.id) === true,
+              });
             }
           }
         }
@@ -411,14 +416,12 @@ export default function FriendsPage() {
             user_id: friendship.friendId,
             username: resolved.name,
             avatar_url: resolved.avatarUrl,
-            last_seen: resolved.lastSeen,
             source_online: resolved.sourceOnline,
             profile_available: resolved.available,
             is_online: isSocialProfileOnline(
               friendship.friendId,
               onlineUserIds,
-              resolved.sourceOnline,
-              resolved.lastSeen
+              resolved.sourceOnline
             ),
           });
         });
@@ -448,14 +451,12 @@ export default function FriendsPage() {
                 user_id: requestUserId,
                 username: resolved.name,
                 avatar_url: resolved.avatarUrl,
-                last_seen: resolved.lastSeen,
                 source_online: resolved.sourceOnline,
                 profile_available: resolved.available,
                 is_online: isSocialProfileOnline(
                   requestUserId,
                   onlineUserIds,
-                  resolved.sourceOnline,
-                  resolved.lastSeen
+                  resolved.sourceOnline
                 ),
               };
             })
@@ -551,12 +552,7 @@ export default function FriendsPage() {
 
   const friendsWithStatus = friends.map((friend) => ({
     ...friend,
-    is_online: isSocialProfileOnline(
-      friend.user_id,
-      onlineUserIds,
-      friend.source_online,
-      friend.last_seen
-    ),
+    is_online: isSocialProfileOnline(friend.user_id, onlineUserIds, friend.source_online),
   }));
   const filteredFriends = friendsWithStatus.filter((friend) =>
     friend.username.toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -951,7 +947,7 @@ function FriendGroup({
                     ? 'Connection Record Only'
                     : friend.is_online
                       ? 'Online Now'
-                      : formatSocialLastSeen(friend.last_seen)}
+                      : 'Offline'}
                 </small>
               </span>
             </button>

@@ -25,6 +25,21 @@ on:
         description: 'Migration filename under supabase/migrations (e.g. 20260922143541_club_and_union_diamond_commerce.sql)'
         required: true
         type: string
+      recover_index:
+        description: 'Opt-in recovery: exact public.managed_game_contract_versions_game_id_id_idx only'
+        required: false
+        default: ''
+        type: string
+      recover_oid:
+        description: 'Observed invalid index OID; required together with recover_index'
+        required: false
+        default: ''
+        type: string
+      recover_before:
+        description: 'Inspected failed-operation cutoff as past ISO UTC timestamp'
+        required: false
+        default: ''
+        type: string
       dry_run:
         description: 'Read and check only; send nothing'
         required: false
@@ -61,10 +76,19 @@ jobs:
         id: apply
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MIGRATION_FILE: ${{ inputs.migration }}
+          RECOVER_INDEX: ${{ inputs.recover_index }}
+          RECOVER_OID: ${{ inputs.recover_oid }}
+          RECOVER_BEFORE: ${{ inputs.recover_before }}
         run: |
           set -uo pipefail
+          recovery_args=()
+          if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" ]]; then
+            recovery_args=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
+          fi
           node scripts/ci/apply-recorded-migration.mjs \
-            --migration "${{ inputs.migration }}" \
+            --migration "$MIGRATION_FILE" \
+            "${recovery_args[@]}" \
             ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
@@ -81,7 +105,7 @@ jobs:
             case "$code" in
               0) echo "- result: **APPLIED or ALREADY-APPLIED** (see the log line)";;
               1) echo "- result: **REFUSED** - nothing committed, or the reason is in the log";;
-              3) echo "- result: **UNKNOWN** - the state could not be read; NOTHING was sent";;
+              3) echo "- result: **UNKNOWN** - inspect the log and durable outcome before another operation";;
               *) echo "- result: **UNEXPECTED exit $code**";;
             esac
             echo ""

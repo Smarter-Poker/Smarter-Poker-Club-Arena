@@ -292,14 +292,24 @@ import {
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
 import LightningNextHand from '../components/table/LightningNextHand';
+import LightningJoining from '../components/table/LightningJoining';
 import {
+  LIGHTNING_LEAVE_QUEUED_TEXT,
+  fetchLightningAnchorSeat,
   fetchLightningClusterMeta,
+  fetchMyLightningSession,
+  findMyLightningRoom,
+  hasLightningRoom,
+  lightningAnchorSeat,
+  lightningClusterIdOfSnapshot,
   registerLightningPoolSession,
   useLightningPoolSession,
+  type LightningAnchorSeat,
 } from '../lightning/lightningSession';
 import {
   lightningFastFoldFlag,
   lightningFoldAvailability,
+  lightningHandOnFelt,
   lightningHandId,
   lightningHandKey,
   lightningSnapshotPatch,
@@ -7819,7 +7829,27 @@ function LiveTablePage({
       // so every top-up charged the player twice for a single stack increase.
       // The engine is now the sole authoritative debit; UI/session trackers update
       // only after it acks.
-      const res = await GameServerAPI.addChips(tableId, amount, opId);
+      /* LIGHTNING PHASE 6: a pool-session room holds no seat; the chips sit
+         on the player's anchor seat, so the add-on is addressed there (the
+         room id answered "Player not seated"). Read fresh, never cached. */
+      let addOnTableId: string = tableId;
+      const addOnRoom = lightningRoomRef.current;
+      if (addOnRoom) {
+        let anchor: LightningAnchorSeat | null = null;
+        try {
+          anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId);
+        } catch (anchorErr) {
+          reportError(anchorErr, 'TablePage.lightning_addon_anchor_read_failed', {
+            clusterId: addOnRoom.clusterId,
+          });
+        }
+        if (!anchor) {
+          toast.error(`Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
+          return false;
+        }
+        addOnTableId = anchor.anchorTableId;
+      }
+      const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
       if (!res.success) {
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
@@ -9855,14 +9885,59 @@ function LiveTablePage({
     showLobbyNow();
   };
 
+  /**
+   * LIGHTNING PHASE 6: where a leave from this room is addressed.
+   *   - `undefined`: not a Lightning room; the table's own seat, as always.
+   *   - a seat: the caller's anchor seat, read fresh from fn_lightning_my_session.
+   *   - `null`: a Lightning room with no open pool session: nothing to cash out.
+   *   - 'unreadable': the read failed; the seat may hold chips, so it stays.
+   */
+  const resolveLightningLeave = async (): Promise<
+    LightningAnchorSeat | null | undefined | 'unreadable'
+  > => {
+    const room = lightningRoomRef.current;
+    if (!room || !userId || userId === 'guest') return undefined;
+    try {
+      const session = await fetchMyLightningSession(room.clusterId);
+      if (!hasLightningRoom(session)) return null;
+      const anchor = lightningAnchorSeat(session);
+      if (anchor) return anchor;
+      /* An open session whose anchor the answer did not name: the chips are
+         somewhere real, so this is never treated as "nothing to cash out". */
+      reportError(
+        new Error('fn_lightning_my_session named no anchor seat'),
+        'TablePage.lightning_leave_anchor_missing',
+        { clusterId: room.clusterId }
+      );
+      return 'unreadable';
+    } catch (err) {
+      reportError(err, 'TablePage.lightning_leave_anchor_read_failed', {
+        clusterId: room.clusterId,
+      });
+      return 'unreadable';
+    }
+  };
   const handleLeaveTable = async () => {
     setLeaveNotice(null);
     leaveNavigatedRef.current = false;
 
+    /* LIGHTNING PHASE 6: a pool-session room holds no seat of its own. The
+       chips sit on the player's anchor seat, so the leave and the cash out
+       are addressed to that seat (the room id answered 503). Between hands
+       the felt shows no seat at all, so the anchor is what says whether
+       there is anything to cash out. */
+    const lightningLeave = await resolveLightningLeave();
+    if (lightningLeave === 'unreadable') {
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+      return;
+    }
+
     // Nothing to cash out: a spectator, a guest, or a session that has not
     // hydrated yet. The door opens (Dan 2026-09-04, above).
-    const liveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
-    if (!tableId || !userId || liveSeat <= 0) {
+    const liveSeat = lightningLeave
+      ? lightningLeave.seatNumber
+      : Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || liveSeat <= 0 || lightningLeave === null) {
       leaveWithoutCashout(liveSeat);
       return;
     }
@@ -9943,8 +10018,19 @@ function LiveTablePage({
     showLobbyNow();
 
     try {
-      const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      const leaveTableId = lightningLeave ? lightningLeave.anchorTableId : tableId;
+      const result = lightningLeave
+        ? await tableService.leaveTable(leaveTableId, lightningLeave.seatNumber, userId, {
+            seatNumber: lightningLeave.seatNumber,
+            occupancyId: lightningLeave.occupancyId,
+          })
+        : await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
+        /* A leave during a live Lightning hand is queued: the hand finishes,
+           then the anchor seat cashes out. Say so, once, over the lobby. */
+        if (lightningLeave && result.deferred) {
+          heartbeatToastRef.current?.info?.(LIGHTNING_LEAVE_QUEUED_TEXT);
+        }
         // FIX 132: Clear heroSeatRef so player can re-seat at another table
         heroSeatRef.current = 0;
         // Dan 2026-08-19: the REF was cleared but tableState.heroSeat was not,
@@ -10027,7 +10113,12 @@ function LiveTablePage({
           // about to navigate away and unmount, so the host must be able to
           // find the row on its own.
           pendingCashout: result.deferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: result.occupancyId }
+            ? {
+                tableId: leaveTableId,
+                userId,
+                sinceMs: Date.now(),
+                occupancyId: result.occupancyId,
+              }
             : undefined,
         });
 
@@ -10126,8 +10217,16 @@ function LiveTablePage({
        only fail for a seat that did not exist, and the failure's text
        ("Authentication Required") was shown as the reason the tab could not
        be closed. */
-    const forceLiveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
-    if (!tableId || !userId || forceLiveSeat <= 0) {
+    /* LIGHTNING PHASE 6: the room's seat is the anchor seat (see handleLeaveTable). */
+    const forceLightning = await resolveLightningLeave();
+    if (forceLightning === 'unreadable') {
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+      return;
+    }
+    const forceLiveSeat = forceLightning
+      ? forceLightning.seatNumber
+      : Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || forceLiveSeat <= 0 || forceLightning === null) {
       heroSeatRef.current = 0;
       pendingSeatStackRef.current = 0;
       if (userId) playerStatusService.clearPlayingAt(userId);
@@ -10184,7 +10283,16 @@ function LiveTablePage({
       // lobby believing they had cashed out while their seat stayed active and
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
-      const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      const forceTableId = forceLightning ? forceLightning.anchorTableId : tableId;
+      const forced = forceLightning
+        ? await tableService.leaveTable(forceTableId, forceLightning.seatNumber, userId, {
+            seatNumber: forceLightning.seatNumber,
+            occupancyId: forceLightning.occupancyId,
+          })
+        : await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      if (forceLightning && forced?.success && forced.deferred) {
+        heartbeatToastRef.current?.info?.(LIGHTNING_LEAVE_QUEUED_TEXT);
+      }
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
         // CHIP CONTINUITY: a stay-clock refusal ("Leave Available In M:SS")
@@ -10256,7 +10364,12 @@ function LiveTablePage({
           sessionEnd: Date.now(),
           plPending: forceDeferred,
           pendingCashout: forceDeferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: forced.occupancyId }
+            ? {
+                tableId: forceTableId,
+                userId,
+                sinceMs: Date.now(),
+                occupancyId: forced.occupancyId,
+              }
             : undefined,
         });
       }
@@ -12323,6 +12436,25 @@ function LiveTablePage({
          `tableState.tournamentId`, which is only ever set from the row that
          just failed to load. Say what happened and offer the way out. */
       if (!table && isMounted) {
+        /* LIGHTNING PHASE 6: A ROOM IS NOT A MISSING TABLE. A pool-session
+           room has no `tables` row, and a new tab, a shared link or a bookmark
+           arrives without this tab's registry. Before saying the table does
+           not exist, ask whether this id is the caller's own Lightning room;
+           if it is, it is registered and the felt is described from its
+           Cluster like any other Lightning room. */
+        if (!error && tableId) {
+          try {
+            const room = await findMyLightningRoom(tableId);
+            if (!isMounted) return;
+            if (room) {
+              setTableLoadFailure(null);
+              return;
+            }
+          } catch (lookupErr) {
+            reportError(lookupErr, 'TablePage.lightning_room_lookup_failed', { tableId });
+          }
+          if (!isMounted || lightningRoomRef.current) return;
+        }
         if (error) reportError(error, 'TablePage.loadTableInfo_exhausted_retries');
         setTableLoadFailure(error ? 'unreachable' : 'missing');
         return;
@@ -22575,6 +22707,22 @@ function LiveTablePage({
     };
   }, [lightningRoom]);
 
+  /* A room opened from a new tab or a shared link that the database lookup
+     could not place: the engine names its Cluster in the snapshot, and the
+     room is a Lightning room from that moment. Never a "Table Not Found". */
+  const snapshotLightningClusterId = lightningRoom
+    ? null
+    : lightningClusterIdOfSnapshot(engineSnapshot);
+  useEffect(() => {
+    if (!tableId || !snapshotLightningClusterId) return;
+    registerLightningPoolSession({
+      poolSessionId: tableId,
+      clusterId: snapshotLightningClusterId,
+      meta: null,
+    });
+    setTableLoadFailure(null);
+  }, [tableId, snapshotLightningClusterId]);
+
   /* And what the engine says about the game wins the moment it says it. */
   useEffect(() => {
     if (!lightningRoom || !engineSnapshot) return;
@@ -22621,6 +22769,13 @@ function LiveTablePage({
   );
   const lightningHero =
     tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
+  /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage
+     'waiting', no players and LIGHTNING FOLD off, published to the folder's
+     room. Nothing of the folded hand is the player's any more: no fold is
+     offered, and the quiet is timed for "Next Hand..." from that moment. */
+  const lightningHandLive = lightningRoom
+    ? lightningHandOnFelt(engineSnapshot as LightningSnapshotFields)
+    : false;
   const lightningFold = lightningFoldAvailability(
     {
       heroSeated: tableState.heroSeat > 0,
@@ -22630,6 +22785,7 @@ function LiveTablePage({
       engineFastFoldAvailable: lightningRoom
         ? lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)
         : null,
+      handOnFelt: lightningHandLive,
     },
     lightningCaps
   );
@@ -22654,7 +22810,7 @@ function LiveTablePage({
 
   /* JOIN LIGHTNING: the buy-in landed at the anchor table the player joined
      through, so this tab follows their chair into the pool-session room. */
-  useLightningAnchorHandoff({
+  const lightningHandoff = useLightningAnchorHandoff({
     tableId,
     isPoolSession: lightningRoom !== null,
     heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
@@ -23105,7 +23261,7 @@ function LiveTablePage({
           not touch is one merge away from being an unstyled paragraph at the
           top of a fixed-position page. The class names are kept so that
           stylesheet can take it over later without touching this file. */}
-      {tableLoadFailure && (
+      {tableLoadFailure && !lightningRoom && (
         <TableLoadFailureOverlay
           tableLoadFailure={tableLoadFailure}
           exitDestination={exitDestination}
@@ -25954,7 +26110,7 @@ function LiveTablePage({
                 hero is in the pool, so the strip never enters or leaves
                 between hands; only its words light up when folding is
                 available (on the hero's turn and before it). */}
-            {lightningRoom && tableState.heroSeat > 0 ? (
+            {lightningRoom && userId && userId !== 'guest' ? (
               <LightningFoldBar
                 availability={lightningFold}
                 offerFoldWatch={lightningCaps.fold_and_watch}
@@ -25963,7 +26119,15 @@ function LiveTablePage({
               />
             ) : null}
             {lightningRoom ? (
-              <LightningNextHand handInProgress={tableState.isHandInProgress} />
+              <LightningNextHand
+                handInProgress={lightningHandLive && tableState.isHandInProgress}
+              />
+            ) : null}
+            {/* JOIN LIGHTNING completing: the anchor table never deals this
+                player a hand, so it says one neutral line until the tab
+                moves on, rather than showing a dead felt. */}
+            {lightningHandoff.joining && !lightningRoom ? (
+              <LightningJoining onCancel={lightningHandoff.cancel} />
             ) : null}
 
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}

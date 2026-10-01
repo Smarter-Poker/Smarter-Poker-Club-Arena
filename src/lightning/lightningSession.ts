@@ -19,6 +19,7 @@
 import { useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
+import { clusterModeDisplay } from './lightningLobby';
 
 /** fn_lightning_my_session, as the client reads it. */
 export interface LightningMySession {
@@ -28,6 +29,14 @@ export interface LightningMySession {
   stack: number | null;
   inHand: boolean;
   handId: string | null;
+  /**
+   * The seat the chips actually sit on. A pool session holds no seat of its
+   * own: the player's money stays on their anchor seat at a real table, so a
+   * leave, a cash out or an add-on is addressed there, never to the room.
+   */
+  anchorTableId: string | null;
+  seatNumber: number | null;
+  occupancyId: string | null;
 }
 
 /** Pool session states that mean the session is over and holds no room. */
@@ -54,9 +63,15 @@ export function parseLightningMySession(raw: unknown): LightningMySession {
       stack: null,
       inHand: false,
       handId: null,
+      anchorTableId: null,
+      seatNumber: null,
+      occupancyId: null,
     };
   }
   const id = text(row.pool_session_id);
+  const anchor = text(row.anchor_table_id);
+  const occupancy = text(row.occupancy_id);
+  const seat = num(row.seat_number);
   return {
     poolSessionId: id && isUUID(id) ? id : null,
     state: text(row.state),
@@ -64,6 +79,9 @@ export function parseLightningMySession(raw: unknown): LightningMySession {
     stack: num(row.stack),
     inHand: row.in_hand === true,
     handId: text(row.hand_id),
+    anchorTableId: anchor && isUUID(anchor) ? anchor : null,
+    seatNumber: seat !== null && Number.isInteger(seat) && seat >= 1 ? seat : null,
+    occupancyId: occupancy && isUUID(occupancy) ? occupancy : null,
   };
 }
 
@@ -80,6 +98,43 @@ export async function fetchMyLightningSession(clusterId: string): Promise<Lightn
   if (error) throw error;
   return parseLightningMySession(data);
 }
+
+// ─── The anchor seat: where a leave and an add-on are addressed ────────────
+
+export interface LightningAnchorSeat {
+  anchorTableId: string;
+  seatNumber: number;
+  occupancyId: string;
+}
+
+/** The anchor seat of an open pool session, or null when any part is unknown. */
+export function lightningAnchorSeat(
+  session: LightningMySession | null | undefined
+): LightningAnchorSeat | null {
+  if (!session || !hasLightningRoom(session)) return null;
+  if (!session.anchorTableId || session.seatNumber === null || !session.occupancyId) return null;
+  return {
+    anchorTableId: session.anchorTableId,
+    seatNumber: session.seatNumber,
+    occupancyId: session.occupancyId,
+  };
+}
+
+/**
+ * Read the caller's anchor seat in a Cluster fresh from the database. Asked at
+ * the moment of a leave or an add-on, never cached: the anchor is the one fact
+ * a cash out must not get wrong. Throws when the read fails, so a caller can
+ * tell "no seat" (null) from "could not ask" (an error).
+ */
+export async function fetchLightningAnchorSeat(
+  clusterId: string
+): Promise<LightningAnchorSeat | null> {
+  return lightningAnchorSeat(await fetchMyLightningSession(clusterId));
+}
+
+/** What a leave from a Lightning room during a live hand tells the player. */
+export const LIGHTNING_LEAVE_QUEUED_TEXT =
+  'Your Leave Is Queued. You Will Be Cashed Out When This Hand Ends.';
 
 // ─── The Cluster's own description ─────────────────────────────────────────
 
@@ -114,12 +169,15 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
   };
 }
 
+const LIGHTNING_CLUSTER_META_COLUMNS =
+  'id, club_id, name, variant, sb, bb, handedness, cluster_mode, enabled';
+
 export async function fetchLightningClusterMeta(
   clusterId: string
 ): Promise<LightningClusterMeta | null> {
   const { data, error } = await supabase
     .from('cash_games')
-    .select('id, club_id, name, variant, sb, bb, handedness, cluster_mode, enabled')
+    .select(LIGHTNING_CLUSTER_META_COLUMNS)
     .eq('id', clusterId)
     .maybeSingle();
   if (error) throw error;
@@ -233,6 +291,77 @@ export function useLightningPoolSession(id: string | null | undefined): Lightnin
   );
 }
 
+// ─── A room opened from a new tab or a shared link ─────────────────────────
+/*
+ * The registry lives in this tab's sessionStorage, so a new tab, a shared link
+ * or a bookmark arrives knowing nothing, and the room id has no `tables` row.
+ * Before the table view may say a room does not exist, it asks here. The pool
+ * session table is not readable from a browser, so the question is put the
+ * way the database allows: for each Cluster that can hold a pool session,
+ * fn_lightning_my_session answers whether the caller's open session in it is
+ * this room. No Cluster is Lightning today, so the list is empty and the
+ * answer is an immediate "no".
+ */
+
+/** Cluster modes in which a pool session can still be open. */
+export const LIGHTNING_ROOM_CLUSTER_MODES = [
+  'pending_on',
+  'lightning',
+  'pending_off',
+  'draining',
+  'paused',
+  'frozen',
+] as const;
+
+/** How many such Clusters one lookup asks about. */
+export const LIGHTNING_ROOM_SEARCH_LIMIT = 50;
+
+export async function findMyLightningRoom(roomId: string): Promise<LightningPoolEntry | null> {
+  if (!isUUID(roomId)) return null;
+  const known = getLightningPoolSession(roomId);
+  if (known) return known;
+  const { data, error } = await supabase
+    .from('cash_games')
+    .select(LIGHTNING_CLUSTER_META_COLUMNS)
+    .in('cluster_mode', [...LIGHTNING_ROOM_CLUSTER_MODES])
+    .limit(LIGHTNING_ROOM_SEARCH_LIMIT);
+  if (error) throw error;
+  const clusters = (Array.isArray(data) ? data : [])
+    .map((r) => parseLightningClusterMeta(r))
+    .filter((m): m is LightningClusterMeta => m !== null && isUUID(m.clusterId));
+  const answers = await Promise.all(
+    clusters.map(async (meta) => {
+      try {
+        return { meta, session: await fetchMyLightningSession(meta.clusterId) };
+      } catch {
+        return { meta, session: null };
+      }
+    })
+  );
+  const hit = answers.find(
+    (a) => a.session && hasLightningRoom(a.session) && a.session.poolSessionId === roomId
+  );
+  if (!hit) return null;
+  const entry: LightningPoolEntry = {
+    poolSessionId: roomId,
+    clusterId: hit.meta.clusterId,
+    meta: hit.meta,
+  };
+  registerLightningPoolSession(entry);
+  return getLightningPoolSession(roomId) ?? entry;
+}
+
+/**
+ * The engine names a pool-session room's Cluster in its snapshot
+ * (`lightning.cluster_id`). A room the registry does not know yet is known
+ * from that moment; null when the snapshot carries no Cluster.
+ */
+export function lightningClusterIdOfSnapshot(snapshot: unknown): string | null {
+  const lightning = (snapshot as { lightning?: { cluster_id?: unknown } | null } | null)?.lightning;
+  const id = lightning && typeof lightning.cluster_id === 'string' ? lightning.cluster_id : null;
+  return id && isUUID(id) ? id : null;
+}
+
 // ─── JOIN LIGHTNING in progress ────────────────────────────────────────────
 /*
  * JOIN LIGHTNING runs the Cluster's existing door (fn_cash_game_join) and the
@@ -324,7 +453,9 @@ export function lightningEntryDecision(
     return { kind: 'open', poolSessionId: session.poolSessionId };
   }
   const mode = meta?.clusterMode ?? session?.clusterMode ?? null;
-  const lightning = mode === 'lightning' || mode === 'pending_off';
+  /* JOIN LIGHTNING only while the Cluster IS Lightning. On its way in
+     (pending_on) or out (pending_off, draining) the door is JOIN GAME. */
+  const lightning = clusterModeDisplay(mode).joinLightning;
   return { kind: 'entry', joinLabel: lightning ? 'Join Lightning' : 'Join Game', lightning };
 }
 

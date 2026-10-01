@@ -10,7 +10,13 @@
  *   HOT       the pool is at least twice the size that turned Lightning on
  *   THIN      the pool is at or below the size that turns Lightning off
  *
- * Every other mode is MUST MOVE, exactly as the card has always said. The
+ * MUST MOVE is said only for a Cluster whose mode is must_move (or a row that
+ * does not carry its mode, which reads as the column's default, must_move).
+ * JOIN LIGHTNING is offered only while the mode is lightning: on the way in
+ * (pending_on) the card still says MUST MOVE, and on the way out (pending_off,
+ * draining) it still says LIGHTNING LIVE, each with the ordinary JOIN GAME
+ * door. A paused, frozen or dead Cluster says neither: it is a closed game,
+ * in the words the board already uses for one (Game Paused, Game Closed). The
  * numbers come from the one reader of a Cluster's Lightning state,
  * fn_cash_cluster_lightning_state, which fn_cash_game_lobby embeds as
  * `lightning`. It is asked only for a Cluster whose mode is already Lightning,
@@ -29,9 +35,33 @@ export interface LightningLobbyState {
   offThreshold: number | null;
 }
 
-/** Modes in which the Cluster deals Lightning hands. pending_off still does until it drains. */
+/**
+ * Modes in which the Cluster still deals Lightning hands: lightning, and on
+ * the way out pending_off and draining until the pool has drained.
+ */
 export function isLightningMode(mode: string | null | undefined): boolean {
-  return mode === 'lightning' || mode === 'pending_off';
+  return mode === 'lightning' || mode === 'pending_off' || mode === 'draining';
+}
+
+/** What the board says about a Cluster's mode, and which door it offers. */
+export interface ClusterModeDisplay {
+  /** The mode word on the card, or null for a paused or closed game. */
+  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
+  /** JOIN LIGHTNING is the door. Only while the mode is lightning. */
+  joinLightning: boolean;
+  /** A game nobody can join right now, in the board's existing words. */
+  closedLabel: 'Paused' | 'Closed' | null;
+}
+
+export function clusterModeDisplay(mode: string | null | undefined): ClusterModeDisplay {
+  if (mode === 'paused' || mode === 'frozen') {
+    return { label: null, joinLightning: false, closedLabel: 'Paused' };
+  }
+  if (mode === 'dead') return { label: null, joinLightning: false, closedLabel: 'Closed' };
+  if (isLightningMode(mode)) {
+    return { label: 'LIGHTNING LIVE', joinLightning: mode === 'lightning', closedLabel: null };
+  }
+  return { label: 'MUST MOVE', joinLightning: false, closedLabel: null };
 }
 
 function count(v: unknown): number | null {
@@ -56,7 +86,7 @@ export function parseLightningLobbyState(raw: unknown): LightningLobbyState | nu
 
 export function lightningPoolStatus(state: LightningLobbyState | null): LightningPoolStatus {
   if (!state) return 'BUILDING';
-  if (state.clusterMode === 'pending_off') return 'THIN';
+  if (state.clusterMode === 'pending_off' || state.clusterMode === 'draining') return 'THIN';
   const live = state.liveEligible;
   if (live === null) return 'BUILDING';
   if (state.offThreshold !== null && live <= state.offThreshold) return 'THIN';
@@ -68,10 +98,14 @@ export function lightningPoolStatus(state: LightningLobbyState | null): Lightnin
 }
 
 export interface LightningLobbyBadge {
-  mode: 'lightning' | 'must_move';
-  label: 'LIGHTNING LIVE' | 'MUST MOVE';
+  mode: 'lightning' | 'must_move' | 'closed';
+  label: 'LIGHTNING LIVE' | 'MUST MOVE' | null;
   players: number;
   status: LightningPoolStatus | null;
+  /** JOIN LIGHTNING is offered. True only while the mode is lightning. */
+  joinLightning: boolean;
+  /** Set for a paused, frozen or dead Cluster: no join is offered at all. */
+  closedLabel: 'Paused' | 'Closed' | null;
 }
 
 /** What a Cluster's card says about its mode. */
@@ -80,15 +114,36 @@ export function lightningLobbyBadge(input: {
   state: LightningLobbyState | null | undefined;
   boardPlayers: number;
 }): LightningLobbyBadge {
-  if (!isLightningMode(input.clusterMode)) {
-    return { mode: 'must_move', label: 'MUST MOVE', players: input.boardPlayers, status: null };
+  const display = clusterModeDisplay(input.clusterMode);
+  if (display.closedLabel) {
+    return {
+      mode: 'closed',
+      label: null,
+      players: input.boardPlayers,
+      status: null,
+      joinLightning: false,
+      closedLabel: display.closedLabel,
+    };
+  }
+  if (display.label !== 'LIGHTNING LIVE') {
+    return {
+      mode: 'must_move',
+      label: 'MUST MOVE',
+      players: input.boardPlayers,
+      status: null,
+      joinLightning: false,
+      closedLabel: null,
+    };
   }
   const state = input.state ?? null;
   return {
     mode: 'lightning',
     label: 'LIGHTNING LIVE',
     players: state?.liveEligible ?? input.boardPlayers,
-    status: lightningPoolStatus(state),
+    /* On its way out the pool is THIN by definition, whatever the last read said. */
+    status: input.clusterMode === 'lightning' ? lightningPoolStatus(state) : 'THIN',
+    joinLightning: display.joinLightning,
+    closedLabel: null,
   };
 }
 

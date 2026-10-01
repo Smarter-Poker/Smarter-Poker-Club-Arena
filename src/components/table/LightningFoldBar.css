@@ -61,3 +61,39 @@
   letter-spacing: 0.04em;
   pointer-events: none;
 }
+
+/* JOIN LIGHTNING completing: the anchor table is covered by one neutral line
+   until the tab moves to the pool-session room. Static: nothing animates. */
+.lightning-joining {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.lightning-joining__text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.lightning-joining__cancel {
+  min-height: 40px;
+  padding: 8px 14px;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}

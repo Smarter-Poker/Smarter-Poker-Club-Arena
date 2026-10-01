@@ -12,3 +12,10 @@ law pins those doors and edits, and that no Club Arena read of public.profiles
 names a private column in a select, a filter or an order: Postgres refuses the
 whole statement once the column is revoked, and several readers here treat
 42501 as "no profile" and would fail silently.
+Migration 20260930234500 then closed the table: it refuses to run while any
+reader a browser can reach (an invoker function, a trigger on a writable
+table, a policy or a view) still names a private column, revokes SELECT on
+exactly the seventeen from authenticated and anon, and leaves UPDATE, INSERT,
+RLS, the service role and the doors as they were; it also stops the live-stream
+list answering every caller with a broadcaster's legal name. The law pins each
+of those.

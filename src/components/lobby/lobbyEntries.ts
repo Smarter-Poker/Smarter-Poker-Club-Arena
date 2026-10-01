@@ -22,6 +22,11 @@ import {
  */
 
 import {
+  lightningLobbyBadge,
+  type LightningLobbyState,
+  type LightningPoolStatus,
+} from '../../lightning/lightningLobby';
+import {
   describeStoredMttStructure,
   type MttStructureDescription,
 } from '../../../server/src/tournament/mttStructureDescription';
@@ -113,6 +118,14 @@ export interface LobbyTableRow extends CashFeatureSource {
    * rather than offering a Join that can only fail.
    */
   cluster_enabled?: boolean | null;
+  /**
+   * LIGHTNING PHASE 6. `cash_games.cluster_mode` when the read carried it
+   * (the club-home chain embeds it with the game row), and the Cluster's
+   * Lightning pool state, which the board reads only for a Cluster whose mode
+   * is already Lightning. Absent on every other row: the card says MUST MOVE.
+   */
+  cluster_mode?: string | null;
+  cluster_lightning?: LightningLobbyState | null;
   /** Selected by realtime payloads; the fetches filter it to false and omit it. */
   is_deleted?: boolean | null;
 }
@@ -242,6 +255,12 @@ export interface LobbyEntry {
     template: string | null;
     tables: number;
     state: string | null;
+    /**
+     * LIGHTNING PHASE 6: set only while the Cluster runs as Lightning. The
+     * card then says LIGHTNING LIVE with the pool's player count and one
+     * word for the pool, and its door is the Lightning route, never a table.
+     */
+    lightning?: { players: number; status: LightningPoolStatus } | null;
   };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
@@ -1362,6 +1381,16 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
   const figures = t.cluster_id ? clusterFiguresOf(t) : null;
+  /* LIGHTNING PHASE 6: a Cluster running as Lightning says so, with its pool. */
+  const lightning =
+    t.cluster_id && figures
+      ? lightningLobbyBadge({
+          clusterMode: t.cluster_mode,
+          state: t.cluster_lightning,
+          boardPlayers: figures.players,
+        })
+      : null;
+  const lightningStatus = lightning && lightning.mode === 'lightning' ? lightning.status : null;
   const cluster =
     t.cluster_id && figures
       ? {
@@ -1370,9 +1399,16 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           template: t.cluster_template ?? null,
           tables: figures.tables,
           state: t.cluster_state ?? null,
+          ...(lightning && lightningStatus
+            ? { lightning: { players: lightning.players, status: lightningStatus } }
+            : {}),
         }
       : null;
-  const gamePlayers = figures ? figures.players : 0;
+  const gamePlayers = figures
+    ? lightning && lightningStatus
+      ? lightning.players
+      : figures.players
+    : 0;
   /* R10: a game is never "full" - a full Main opens a feeder - so its status
      is running or open, from the game-wide count, never from one table. A
      game the host has disabled is Closed: its door refuses GAME_CLOSED, and
@@ -1430,14 +1466,21 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     live: (cluster ? gamePlayers : t.current_players || 0) > 0,
     rules: cluster
       ? [
-          {
-            key: cluster.mustMove ? 'must_move' : 'manual_table',
-            label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-            detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-            tip: cluster.mustMove
-              ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-              : 'One Table The Host Runs By Hand.',
-          },
+          lightning && lightningStatus
+            ? {
+                key: 'lightning_live',
+                label: lightning.label,
+                detail: lightningStatus,
+                tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
+              }
+            : {
+                key: cluster.mustMove ? 'must_move' : 'manual_table',
+                label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                tip: cluster.mustMove
+                  ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                  : 'One Table The Host Runs By Hand.',
+              },
           ...cashRuleMedallions(t),
         ]
       : cashRuleMedallions(t),

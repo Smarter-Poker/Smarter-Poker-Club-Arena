@@ -83,6 +83,14 @@ import {
   withClusterFigures,
 } from '../components/lobby/lobbyEntries';
 import {
+  isLightningMode,
+  lightningClusterIdsOf,
+  lightningRoute,
+  withLightningState,
+  type LightningLobbyState,
+} from '../lightning/lightningLobby';
+import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
+import {
   TOURNAMENT_ARENA_EMBED,
   tournamentService,
   tournamentUnregisterSuccessText,
@@ -342,6 +350,10 @@ interface TableData {
   cluster_state?: string | null;
   /** `cash_games.enabled`, embedded by the chain read; a disabled game is Closed on the board. */
   cluster_enabled?: boolean | null;
+  /** LIGHTNING PHASE 6: `cash_games.cluster_mode`, embedded by the chain read. */
+  cluster_mode?: string | null;
+  /** LIGHTNING PHASE 6: the pool state, stamped only on a Lightning Cluster's rows. */
+  cluster_lightning?: LightningLobbyState | null;
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: string | null;
@@ -2945,7 +2957,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -3128,6 +3140,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               must_move?: boolean | null;
               state?: string | null;
               enabled?: boolean | null;
+              cluster_mode?: string | null;
             } | null;
           } & Record<string, unknown>;
           if (!game || typeof game !== 'object') return rest;
@@ -3137,6 +3150,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cluster_must_move: game.must_move ?? null,
             cluster_state: game.state ?? null,
             cluster_enabled: game.enabled ?? null,
+            /* LIGHTNING PHASE 6: the Cluster's mode, so a Lightning game's
+               card says LIGHTNING LIVE and its door is the Lightning route. */
+            cluster_mode: game.cluster_mode ?? null,
           };
         });
         flattenedTables = flattened as unknown as TableData[];
@@ -3290,6 +3306,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      (which keeps the old aggregate), not realtime (which carries one table at
      a time) - so a seat change on the feeder moves the game's row the moment
      its `tables` UPDATE arrives. */
+  /* LIGHTNING PHASE 6: the pool state of each Cluster on the board whose
+     mode is Lightning. No Cluster is Lightning today, so the list is empty
+     and nothing is read. */
+  const lightningClusterIds = useMemo(
+    () => lightningClusterIdsOf(tables as unknown as LobbyTableRow[]),
+    [tables]
+  );
+  const lightningStates = useLightningLobbyStates(lightningClusterIds);
   const boardTables = useMemo(() => {
     /* Count exactly what is rendered. A cluster row that is not a census
        table is not part of its game (the controller has stopped counting it),
@@ -3299,8 +3323,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const rows = (tables as unknown as LobbyTableRow[]).filter(
       (t) => !t.cluster_id || isCensusTable(t)
     );
-    return withClusterFigures(rows) as unknown as TableData[];
-  }, [tables]);
+    return withLightningState(withClusterFigures(rows), lightningStates) as unknown as TableData[];
+  }, [tables, lightningStates]);
 
   const styleCounts = useMemo(
     () =>
@@ -4025,6 +4049,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          table it names is opened exactly as any table is; the buy-in itself
          is still the table's own door. */
       const row = tablesRef.current.find((t) => t.id === tableId);
+      /* LIGHTNING PHASE 6: a Lightning Cluster has no table to pick and no
+         seat to choose. Its one door is the Lightning route, which opens the
+         player's pool session or takes them through the Cluster's join. */
+      if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
+        navigate(lightningRoute(row.cluster_id));
+        return;
+      }
       if (row?.cluster_id && row.cluster_must_move !== false) {
         if (!gameEntryScope.active || gameEntryScope.busy) return;
         gameEntryScope.busy = true;
@@ -4457,29 +4488,31 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash'
-          ? (warmTable(e.id), navigate(`/table/${e.id}`))
-          : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
+        e.kind === 'cash' && e.game && isLightningMode((e.raw as LobbyTableRow).cluster_mode)
+          ? navigate(lightningRoute(e.game.id))
+          : e.kind === 'cash'
+            ? (warmTable(e.id), navigate(`/table/${e.id}`))
+            : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,
                stale ids and recycled siblings included) — an MTT keeps its
                own lobby screen. Heads-up SNGs ride the same table route for
                the same reason; multi-seat SNGs are registration games and
                keep the lobby. */
-            e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
-            ? spinQuickJoin(
-                {
-                  id: e.id,
-                  name: e.name,
-                  buy_in_amount: Number(
-                    filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
-                      e.buyInValue ??
-                      0
-                  ),
-                },
-                e.kind === 'sng' ? 'sng' : 'spin'
-              )
-            : openTournamentLobby(e.id),
+              e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
+              ? spinQuickJoin(
+                  {
+                    id: e.id,
+                    name: e.name,
+                    buy_in_amount: Number(
+                      filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
+                        e.buyInValue ??
+                        0
+                    ),
+                  },
+                  e.kind === 'sng' ? 'sng' : 'spin'
+                )
+              : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,

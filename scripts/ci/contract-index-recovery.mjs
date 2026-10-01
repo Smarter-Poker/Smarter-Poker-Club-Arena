@@ -18,9 +18,13 @@ export function validRecoveryCutoff(value) {
 export const RECOVERY_SHA = '6790ef3affa5f220d5613e5edcf50f0e1b0c1cd2260dbd6326336fe860b70c38';
 export const EXPECTED_DEFINITION =
   'CREATE INDEX managed_game_contract_versions_game_id_id_idx ON public.managed_game_contract_versions USING btree (game_id, id)';
-export function recoveryRequest(file, sql, index, oid, before) {
-  if (!index && !oid && !before) return null;
+export function recoveryRequest(file, sql, index, oid, before, transientOid = null) {
+  if (!index && !oid && !before && !transientOid) return null;
   if (
+    (transientOid !== null &&
+      (!/^[1-9][0-9]*$/.test(transientOid) ||
+        BigInt(transientOid) > 4294967295n ||
+        transientOid === oid)) ||
     !validRecoveryCutoff(before) ||
     file !== RECOVERY_FILE ||
     index !== RECOVERY_INDEX ||
@@ -30,7 +34,7 @@ export function recoveryRequest(file, sql, index, oid, before) {
   ) {
     throw new Error('recovery requires exact migration bytes, approved index and observed OID');
   }
-  return { index, oid, before };
+  return { index, oid, before, transientOid };
 }
 export const RECOVERY_CATALOG = `SELECT
  current_user='postgres' AS observer_authorized,
@@ -42,6 +46,7 @@ export const RECOVERY_CATALOG = `SELECT
  i.indnkeyatts AS key_count,i.indnatts AS attribute_count,
  i.indpred IS NULL AS no_predicate,i.indexprs IS NULL AS no_expression,
  pg_get_indexdef(c.oid) AS definition,
+ ARRAY(SELECT s.relname::text FROM pg_class s WHERE s.relnamespace=c.relnamespace AND (s.relname LIKE 'managed_game_contract_versions_game_id_id_idx_ccnew%' OR s.relname LIKE 'managed_game_contract_versions_game_id_id_idx_ccold%') ORDER BY s.relname) AS transient_names,
  NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=c.oid) AS no_constraints,
  NOT EXISTS(SELECT 1 FROM pg_class s WHERE s.relnamespace=c.relnamespace AND (s.relname LIKE 'managed_game_contract_versions_game_id_id_idx_ccnew%' OR s.relname LIKE 'managed_game_contract_versions_game_id_id_idx_ccold%')) AS no_transients,
  NOT EXISTS(SELECT 1 FROM pg_stat_progress_create_index WHERE relid=t.oid) AS no_builder
@@ -49,8 +54,8 @@ export const RECOVERY_CATALOG = `SELECT
  JOIN pg_index i ON i.indexrelid=c.oid JOIN pg_class t ON t.oid=i.indrelid
  JOIN pg_namespace tn ON tn.oid=t.relnamespace
  WHERE c.oid=to_regclass('public.managed_game_contract_versions_game_id_id_idx')`;
-export const RECOVERY_SNAPSHOTS = `SELECT current_user='postgres' AS observer_authorized,
- NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND pid<>pg_backend_pid() AND backend_xmin IS NOT NULL AND (xact_start IS NULL OR xact_start <= $1::timestamptz)) AS clear,
+export const RECOVERY_SNAPSHOTS = `SELECT statement_timestamp()::text AS observed_at, current_user='postgres' AS observer_authorized,
+ NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND pid<>pg_backend_pid() AND backend_xmin IS NOT NULL AND (xact_start IS NULL OR xact_start <= statement_timestamp())) AS clear,
  NOT EXISTS(SELECT 1 FROM pg_prepared_xacts WHERE database=current_database()) AS no_prepared`;
 export function validateRecoveryCatalog(rows, request, recovered = false) {
   if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown recovery catalog');
@@ -106,4 +111,50 @@ export function recoveryStatement(request) {
   )
     throw new Error('unbound recovery command');
   return 'REINDEX INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx';
+}
+
+// before is retained provenance only: each admission query uses its own server timestamp.
+export const TRANSIENT_INDEX = RECOVERY_INDEX + '_ccnew';
+export const RECOVERY_TRANSIENT_CATALOG = RECOVERY_CATALOG.replace(
+  "WHERE c.oid=to_regclass('public.managed_game_contract_versions_game_id_id_idx')",
+  "WHERE c.oid=to_regclass('public.managed_game_contract_versions_game_id_id_idx_ccnew')"
+);
+export function cleanupStatement(request) {
+  recoveryStatement(request);
+  if (
+    !/^[1-9][0-9]*$/.test(request.transientOid || '') ||
+    BigInt(request.transientOid) > 4294967295n ||
+    request.transientOid === request.oid
+  )
+    throw new Error('unbound transient cleanup');
+  return 'DROP INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx_ccnew';
+}
+export function validateRecoveryPair(originalRows, transientRows, request) {
+  cleanupStatement(request);
+  if (
+    !Array.isArray(originalRows) ||
+    originalRows.length !== 1 ||
+    !Array.isArray(transientRows) ||
+    transientRows.length !== 1
+  )
+    throw new Error('unknown original/transient pair');
+  const original = originalRows[0],
+    transient = transientRows[0];
+  const sole = ['managed_game_contract_versions_game_id_id_idx_ccnew'];
+  for (const r of [original, transient])
+    if (r.no_transients !== false || JSON.stringify(r.transient_names) !== JSON.stringify(sole))
+      throw new Error('unexpected transient inventory');
+  validateRecoveryCatalog([{ ...original, no_transients: true }], request);
+  if (
+    transient.name !== sole[0] ||
+    transient.oid !== request.transientOid ||
+    transient.definition !==
+      EXPECTED_DEFINITION.replace('game_id_id_idx ON', 'game_id_id_idx_ccnew ON')
+  )
+    throw new Error('transient identity differs');
+  validateRecoveryCatalog(
+    [{ ...transient, name: original.name, definition: EXPECTED_DEFINITION, no_transients: true }],
+    { ...request, oid: request.transientOid }
+  );
+  return { original, transient };
 }

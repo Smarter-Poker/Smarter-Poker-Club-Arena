@@ -32,7 +32,7 @@
  * THE THREE OUTCOMES (CLAUDE.md 10.86 rule 1):
  *   0  APPLIED or ALREADY-APPLIED (stated separately in the log)
  *   1  REFUSED - a guard or the database said no, with the reason
- *   3  UNKNOWN - could not determine the state; NOTHING was sent
+ *   3  UNKNOWN - inspect durable state; an operation may have been sent
  *
  * NO RETRY LOOP (CLAUDE.md section 2 rule 2). One attempt per dispatch.
  *
@@ -55,6 +55,9 @@ import {
 
 import {
   recoveryRequest,
+  cleanupStatement,
+  RECOVERY_TRANSIENT_CATALOG,
+  validateRecoveryPair,
   recoveryStatement,
   RECOVERY_CATALOG,
   RECOVERY_SNAPSHOTS,
@@ -103,7 +106,8 @@ try {
     sql,
     argValue('--recover-index'),
     argValue('--recover-oid'),
-    argValue('--recover-before')
+    argValue('--recover-before'),
+    argValue('--recover-transient-oid')
   );
 } catch (e) {
   refused(e.message);
@@ -240,25 +244,53 @@ if (DRY_RUN && !recovery) {
 if (recovery) {
   let recoverySent = false;
   try {
-    await client.query("SET statement_timeout = '3s'");
-    validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
-    validateRecoverySnapshots((await client.query(RECOVERY_SNAPSHOTS, [recovery.before])).rows);
-    const refusal = await refusalNow();
-    if (refusal || minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED)
-      throw new Error('recovery lacks full maintenance runway or database refuses DDL');
-    // Recheck identity and old snapshots immediately before the one mutation.
-    validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
-    validateRecoverySnapshots((await client.query(RECOVERY_SNAPSHOTS, [recovery.before])).rows);
+    const deadline = performance.now() + 600000;
+    async function freshAdmission(withTransient) {
+      await client.query("SET statement_timeout = '3s'");
+      const original = (await client.query(RECOVERY_CATALOG)).rows;
+      if (withTransient)
+        validateRecoveryPair(
+          original,
+          (await client.query(RECOVERY_TRANSIENT_CATALOG)).rows,
+          recovery
+        );
+      else validateRecoveryCatalog(original, recovery);
+      const refusal = await refusalNow();
+      if (refusal || minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED)
+        throw new Error('recovery lacks full maintenance runway or database refuses DDL');
+      const snapshots = (await client.query(RECOVERY_SNAPSHOTS)).rows;
+      validateRecoverySnapshots(snapshots);
+      console.log(
+        `[apply] current snapshot admission ${snapshots[0].observed_at}; historical operation ${recovery.before}`
+      );
+    }
+    async function sendOnce(statement) {
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) throw new Error('shared 600s recovery budget exhausted');
+      await client.query("SELECT set_config('statement_timeout',$1,false)", [remaining + 'ms']);
+      recoverySent = true;
+      await client.query(statement);
+    }
+    await freshAdmission(Boolean(recovery.transientOid));
     if (DRY_RUN) {
       console.log(
-        '[apply] DRY RUN: exact recovery catalog and snapshot preconditions passed; no recovery sent.'
+        '[apply] DRY RUN: exact recovery pair/catalog and fresh snapshot preconditions passed; no DDL sent.'
       );
       await client.end();
       process.exit(EXIT_OK);
     }
-    await client.query("SET statement_timeout = '600s'");
-    recoverySent = true;
-    await client.query(recoveryStatement(recovery));
+    if (recovery.transientOid) {
+      await sendOnce(cleanupStatement(recovery));
+      await client.query("SET statement_timeout = '3s'");
+      if ((await client.query(RECOVERY_TRANSIENT_CATALOG)).rows.length !== 0)
+        throw new Error('transient cleanup not proven');
+      validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
+      console.log(
+        `[apply] exact interrupted transient OID ${recovery.transientOid} removed; original OID ${recovery.oid} unchanged`
+      );
+      await freshAdmission(false);
+    }
+    await sendOnce(recoveryStatement(recovery));
     await client.query("SET statement_timeout = '3s'");
     const replacement = validateRecoveryCatalog(
       (await client.query(RECOVERY_CATALOG)).rows,
@@ -273,7 +305,7 @@ if (recovery) {
       `[apply] recovery ${recoverySent ? 'SENT; inspect durable outcome before any further action' : 'NOT SENT'}: ${e.code || ''} ${e.message}`
     );
     console.error(
-      '[apply] Migration transaction/history NOT sent. No automatic retry, DROP or cancellation.'
+      '[apply] Migration transaction/history NOT sent. No automatic retry, unbound cleanup or cancellation.'
     );
     process.exit(recoverySent ? EXIT_UNKNOWN : EXIT_REFUSED);
   }

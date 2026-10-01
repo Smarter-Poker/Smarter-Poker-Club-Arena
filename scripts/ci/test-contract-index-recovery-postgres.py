@@ -47,7 +47,7 @@ def wait(sql):
  raise AssertionError('condition not observed: '+sql)
 def api(action,**kw):
  # Dynamic import keeps the maintained module authoritative, not a copied validator.
- script="import {pathToFileURL} from 'node:url';const m=await import(pathToFileURL(process.argv[1]));let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);let y;if(x.action==='queries')y={catalog:m.RECOVERY_CATALOG,snapshots:m.RECOVERY_SNAPSHOTS};else {const r=m.recoveryRequest(x.file,x.sql,x.index,x.oid,x.before);if(x.action==='catalog'){m.validateRecoveryCatalog(x.rows,r,x.recovered);y=true;}else if(x.action==='snapshots'){try{m.validateRecoverySnapshots(x.rows);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else y=m.recoveryStatement(r);}console.log(JSON.stringify(y));"
+ script="import {pathToFileURL} from 'node:url';const m=await import(pathToFileURL(process.argv[1]));let s='';for await(const c of process.stdin)s+=c;const x=JSON.parse(s);let y;if(x.action==='queries')y={catalog:m.RECOVERY_CATALOG,snapshots:m.RECOVERY_SNAPSHOTS,transient:m.RECOVERY_TRANSIENT_CATALOG};else {const r=m.recoveryRequest(x.file,x.sql,x.index,x.oid,x.before,x.transientOid);if(x.action==='pair'){try{m.validateRecoveryPair(x.rows,x.transientRows,r);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else if(x.action==='cleanup')y=m.cleanupStatement(r);else if(x.action==='catalog'){m.validateRecoveryCatalog(x.rows,r,x.recovered);y=true;}else if(x.action==='snapshots'){try{m.validateRecoverySnapshots(x.rows);y={accepted:true};}catch(e){y={accepted:false,error:e.message};}}else y=m.recoveryStatement(r);}console.log(JSON.stringify(y));"
  payload={'action':action,'before':observed,'file':migration.name,'sql':migration.read_text(),'index':'public.managed_game_contract_versions_game_id_id_idx',**kw}
  return json.loads(run([node,'--input-type=module','-e',script,str(module)],json.dumps(payload)))
 def rows(sql):return json.loads(q('SELECT coalesce(json_agg(x),\'[]\'::json) FROM ('+sql+')x'))
@@ -68,30 +68,55 @@ try:
  build=child("SET statement_timeout='30s'; SET lock_timeout='1s';\n"+preamble+'\n');code,error=finish(build,'interrupted-build');assert code!=0 and 'lock timeout' in error
  observed=q("SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')")
  queries=api('queries');catalog=rows(queries['catalog']);oid=catalog[0]['oid'];api('catalog',oid=oid,rows=catalog,recovered=False)
- snapshot_sql=queries['snapshots'].replace('$1',"'"+observed.replace("'","''")+"'")
+ snapshot_sql=queries['snapshots']
  blocked=api('snapshots',oid=oid,rows=rows(snapshot_sql));assert blocked['accepted'] is False and 'snapshot' in blocked['error']
  send(snapshot,'ROLLBACK;\n');assert finish(snapshot,'snapshot-release')[0]==0
  assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
  statement=api('statement',oid=oid);assert statement=='REINDEX INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx'
+ # Already-active transactions newer than historical provenance must now refuse.
  late_snapshot=child("SET application_name='contract_recovery_race_snapshot'; BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
  wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='contract_recovery_race_snapshot' AND state='idle in transaction' AND backend_xmin IS NOT NULL)")
+ assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is False
+ send(late_snapshot,'ROLLBACK;\n');assert finish(late_snapshot,'newer-snapshot-refusal-release')[0]==0
  assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
+ # A different snapshot arriving after final admission is an unavoidable race.
+ # Cause a genuine bounded interrupted REINDEX, never manufacture pg_index flags.
+ race=child("SET application_name='contract_after_admission_snapshot'; BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='contract_after_admission_snapshot' AND state='idle in transaction' AND backend_xmin IS NOT NULL)")
+ interrupted=child("SET statement_timeout='30s'; SET lock_timeout='2s';\n"+statement+';\n')
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_progress_create_index WHERE relid='public.managed_game_contract_versions'::regclass AND phase='waiting for old snapshots')")
+ code,error=finish(interrupted,'interrupted-reindex');assert code!=0 and 'lock timeout' in error
+ send(race,'ROLLBACK;\n');assert finish(race,'after-admission-snapshot-release')[0]==0
+ original_pair=rows(queries['catalog']);transient=rows(queries['transient']);assert len(transient)==1
+ transient_oid=transient[0]['oid'];assert transient_oid!=oid
+ assert api('pair',oid=oid,rows=original_pair,transientRows=transient)['accepted'] is False
+ assert api('pair',oid=oid,transientOid=str(int(transient_oid)+1),rows=original_pair,transientRows=transient)['accepted'] is False
+ wrong=json.loads(json.dumps(transient));wrong[0]['valid']=True
+ assert api('pair',oid=oid,transientOid=transient_oid,rows=original_pair,transientRows=wrong)['accepted'] is False
+ assert api('pair',oid=oid,transientOid=transient_oid,rows=original_pair,transientRows=transient)['accepted'] is True
+ assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
+ cleanup=api('cleanup',oid=oid,transientOid=transient_oid)
+ assert cleanup=='DROP INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx_ccnew'
+ q("SET statement_timeout='30s'; SET lock_timeout='3s';\n"+cleanup+';')
+ assert rows(queries['transient'])==[]
+ api('catalog',oid=oid,rows=rows(queries['catalog']),recovered=False)
+ assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
+ # Separately prove an after-check bounded wait can complete without killing
+ # the arriving snapshot, while another writer commits.
+ last=child("SET application_name='contract_final_race'; BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='contract_final_race' AND state='idle in transaction' AND backend_xmin IS NOT NULL)")
  recovery=child("SET statement_timeout='60s'; SET lock_timeout='5s';\n"+statement+';\n')
  wait("SELECT EXISTS(SELECT 1 FROM pg_stat_progress_create_index WHERE relid='public.managed_game_contract_versions'::regclass AND phase='waiting for old snapshots')")
- # A snapshot arriving after the guard models its unavoidable race; bounded
- # REINDEX waits without killing it. The writer commits during this real wait.
- # Independent writer is launched while the recovery client is active; receipt
- # records actual completion. No financial fixture or player data participates.
  q("SET statement_timeout='3s'; INSERT INTO public.managed_game_contract_versions(game_kind,game_id,club_id,version,contract,contract_hash) VALUES('table','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001',1,'{}',repeat('a',64));")
  assert recovery.poll() is None
- send(late_snapshot,'ROLLBACK;\n');assert finish(late_snapshot,'late-snapshot-release')[0]==0
+ send(last,'ROLLBACK;\n');assert finish(last,'final-race-release')[0]==0
  assert finish(recovery,'recovery')[0]==0
  after=rows(queries['catalog']);api('catalog',oid=oid,rows=after,recovered=True)
  q('BEGIN;'+migration.read_text().split('\nBEGIN;',1)[1])
  assert q("SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.managed_game_contract_versions t WHERE id<=2000")==baseline
  assert q('SELECT count(*) FROM public.managed_game_contract_versions')=='2001'
  passed=True
- (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'guard_refused_actual_old_snapshot':True,'newer_snapshot_admitted':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
+ (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'guard_refused_actual_old_snapshot':True,'newer_snapshot_refused':True,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
 finally:
  for p in children:
   if p.poll() is None:

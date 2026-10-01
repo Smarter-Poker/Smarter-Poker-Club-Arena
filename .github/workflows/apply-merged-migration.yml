@@ -35,8 +35,13 @@ on:
         required: false
         default: ''
         type: string
+      recover_transient_oid:
+        description: 'Optional inspected invalid original-name_ccnew OID; exact interrupted recovery only'
+        required: false
+        default: ''
+        type: string
       recover_before:
-        description: 'Inspected failed-operation cutoff as past ISO UTC timestamp'
+        description: 'Inspected original operation timestamp (provenance only; admission uses fresh server time)'
         required: false
         default: ''
         type: string
@@ -80,11 +85,15 @@ jobs:
           RECOVER_INDEX: ${{ inputs.recover_index }}
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
+          RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
         run: |
           set -uo pipefail
           recovery_args=()
-          if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" ]]; then
+          if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" || -n "$RECOVER_TRANSIENT_OID" ]]; then
             recovery_args=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
+          fi
+          if [[ -n "$RECOVER_TRANSIENT_OID" ]]; then
+            recovery_args+=(--recover-transient-oid "$RECOVER_TRANSIENT_OID")
           fi
           node scripts/ci/apply-recorded-migration.mjs \
             --migration "$MIGRATION_FILE" \

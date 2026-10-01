@@ -59,13 +59,16 @@ export function canonicalPhase8Value(v: unknown): unknown {
   return v;
 }
 
-/** The caller must have frozen performance.now() before calling. */
-export function digestPhase8UsefulCompletion(requests: readonly Phase8UsefulCompletionRequest[]): {
-  rows: Phase8UsefulCompletionDigestRow[];
-  sha256: string;
-} {
-  const rows: Phase8UsefulCompletionDigestRow[] = [];
-  for (let index = 0; index < requests.length; index++) {
+/** The caller must have frozen performance.now() before calling. `order`
+ * visits the requests in another sequence; each decision's seed and row stay
+ * bound to its population index, so any order must yield the same rows. */
+export function digestPhase8UsefulCompletion(
+  requests: readonly Phase8UsefulCompletionRequest[],
+  order?: readonly number[]
+): { rows: Phase8UsefulCompletionDigestRow[]; sha256: string } {
+  const rows: Phase8UsefulCompletionDigestRow[] = new Array(requests.length);
+  const visit = order ?? requests.map((_, index) => index);
+  for (const index of visit) {
     const r = requests[index];
     seedFastRandom((DIGEST_SEED ^ Math.imul(index + 1, 2654435761)) >>> 0);
     const decision = HorseLogic.decide(
@@ -83,14 +86,14 @@ export function digestPhase8UsefulCompletion(requests: readonly Phase8UsefulComp
     const stripped = JSON.parse(
       JSON.stringify(decision, (k, v) => (TIMING_FIELDS.has(k) ? undefined : v))
     );
-    rows.push({
+    rows[index] = {
       index,
       action: stripped.action,
       amount: stripped.amount ?? null,
       reason: stripped.tournamentPostflop?.reason ?? null,
       completed: stripped.tournamentPostflop?.completed ?? null,
       sha256: sha256(JSON.stringify(canonicalPhase8Value(stripped))),
-    });
+    };
   }
   return { rows, sha256: sha256(JSON.stringify(rows)) };
 }

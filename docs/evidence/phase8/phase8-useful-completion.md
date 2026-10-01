@@ -10,7 +10,7 @@ Horse Brain only. Machine: this development Mac (Apple M3 Ultra, 28 logical CPUs
 | `phase8-useful-completion-cold.json`          | Cold pass, repetition 1, every decision                                                                                                                              |
 | `phase8-useful-completion-warm.json`          | Warm pass, repetition 1, every decision                                                                                                                              |
 | `phase8-useful-completion-repetitions.json`   | All six final-source runs, the held experiment and the retained contended runs                                                                                       |
-| `phase8-useful-completion-digest-before.json` | Per-decision equivalence digest on engine source `4948e0ff` (clock frozen at 0)                                                                                      |
+| `phase8-useful-completion-digest-before.json` | Per-decision digest on engine source `4948e0ff` (clock frozen at 0), this Mac only; not a CI assertion                                                               |
 
 ## Exact Commands
 

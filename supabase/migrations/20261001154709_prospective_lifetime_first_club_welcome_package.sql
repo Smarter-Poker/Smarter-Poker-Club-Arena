@@ -10,7 +10,9 @@
 -- touches members, wallets, chips, ledgers, hands, rake, or history.
 
 BEGIN;
-SET LOCAL lock_timeout = '5s';
+-- The club-creation door already allows this window on the same hot relations.
+-- Two fully rolled-back production attempts proved five seconds was too short.
+SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
 CREATE TABLE public.club_welcome_entitlements (

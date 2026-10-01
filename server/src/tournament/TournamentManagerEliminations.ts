@@ -1494,8 +1494,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             // release their reserved roster chairs. Each success removes one
             // table; the existing deadline bounds even a changing field.
           } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
+          // A held qualifier boundary keeps the lane: its tables are parked
+          // until the satellite stage releases them.
           this.declareConsolidationOutstanding(
-            this.urgentRedrivesRequested !== redrivesBeforeBalance ||
+            this.satelliteQualifierBoundaryPending ||
+              this.urgentRedrivesRequested !== redrivesBeforeBalance ||
               progress?.kind === 'table-retired'
           );
 

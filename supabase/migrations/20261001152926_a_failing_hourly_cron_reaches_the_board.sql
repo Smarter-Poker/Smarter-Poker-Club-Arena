@@ -127,6 +127,12 @@ BEGIN
   RETURN n;
 END $function$;
 
+-- Operator telemetry: no browser role may run it; only the cron (postgres) and
+-- service_role do. Live ACL is already {postgres=X/postgres,service_role=X/postgres},
+-- so this restates it and the post-image guard below still holds.
+REVOKE ALL ON FUNCTION public.fn_ca_cron_failure_watch() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_cron_failure_watch() TO service_role;
+
 -- The restated watch is exactly the reviewed body, with its catalog intact.
 DO $post$
 BEGIN
@@ -145,5 +151,9 @@ BEGIN
   END IF;
 END
 $post$;
+
+-- fn_ca_cron_failure_watch is on fn_ca_guard_watchlist(): declare the change in
+-- this transaction so fn_ca_guard_defs_watch records it instead of raising it.
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_cron_failure_watch', 'migration 20261001152926_a_failing_hourly_cron_reaches_the_board');
 
 COMMIT;

@@ -1631,34 +1631,57 @@ describe('HorseDecisionWorkerRuntime', () => {
     }
   });
 
-  it('refuses a corrupted private frame before changing the canonical RNG or invoking a second decision', async () => {
-    const h = harness(),
-      request = fastRequest(1);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
-    const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
-    expect(entry.frame.version).toBe('horse-decision-reads-v2');
-    expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-v2');
-    entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
-    const restores = h.restored.length;
-    h.runtime.receive({
-      ...request,
-      type: 'DECIDE_DEEP',
-      requestId: 2,
-      rngBefore: fast.rngBefore,
-      deepEquity: 2,
-    });
-    await h.runtime.drain();
-    expect(h.messages.at(-1)).toMatchObject({
-      type: 'ERROR',
-      recoverable: true,
-      message: 'Horse decision read frame is invalid',
-    });
-    expect(h.decisionsAtRng).toHaveLength(1);
-    expect(h.restored).toHaveLength(restores);
-  });
+  it.each([false, true])(
+    'refuses a corrupted private frame before changing the canonical RNG or invoking a second decision (windows=%s)',
+    async (windows) => {
+      HorseMind.reset();
+      if (windows)
+        HorseMind.importStats([
+          {
+            user_id: 'horse-3',
+            hands: 20,
+            sourceWindow: { version: 1, coverage: 'complete', fromMs: 100, toMs: 200 },
+          },
+        ]);
+      try {
+        const h = harness(),
+          request = fastRequest(1);
+        h.runtime.receive(request);
+        await h.runtime.drain();
+        const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+        const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+        expect(entry.frame.version).toBe(
+          windows ? 'horse-decision-reads-v3' : 'horse-decision-reads-v2'
+        );
+        if (windows)
+          expect(JSON.parse(entry.frame.json).statsWindows[0][1]).toMatchObject({
+            fromMs: 100,
+            toMs: 200,
+          });
+        expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-');
+        entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
+        const restores = h.restored.length;
+        h.runtime.receive({
+          ...request,
+          type: 'DECIDE_DEEP',
+          requestId: 2,
+          rngBefore: fast.rngBefore,
+          deepEquity: 2,
+        });
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ERROR',
+          recoverable: true,
+          message: 'Horse decision read frame is invalid',
+        });
+        expect(h.decisionsAtRng).toHaveLength(1);
+        expect(h.restored).toHaveLength(restores);
+      } finally {
+        HorseMind.reset();
+      }
+    }
+  );
 
   it('keeps the actual second-look opponent reads pinned after other table observations', async () => {
     const { hero, state } = jointPolicyFixture('nlh', 1, 'cash', 'flop');

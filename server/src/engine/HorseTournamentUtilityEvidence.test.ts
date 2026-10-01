@@ -9,6 +9,7 @@ import {
   captureHorseTournamentUtilityObservations,
   horseTournamentUtilityEvidenceIsValid,
   horseTournamentUtilityInputSha256,
+  horseTournamentUtilityEvidenceSha256,
   horseTournamentJointSamplerProvenanceIsValid,
   type HorseTournamentJointSamplerProvenance,
 } from './HorseTournamentUtilityEvidence.js';
@@ -314,7 +315,10 @@ describe('Phase 7 actual utility input and read provenance', () => {
     expect(receipt.observations).toEqual({
       status: 'unavailable',
       scope: null,
-      window: { status: 'not_recorded', from: null, to: null },
+      window: {
+        status: 'contribution_envelope',
+        sourceWindow: { version: 1, coverage: 'unknown', fromMs: null, toMs: null },
+      },
       tableIsolation: 'not_established',
       formatIsolation: 'not_established',
       exactVariantIsolation: 'not_established',
@@ -323,6 +327,7 @@ describe('Phase 7 actual utility input and read provenance', () => {
       source: 'unavailable',
       scope: null,
       counters: null,
+      sourceWindow: { version: 1, coverage: 'unknown', fromMs: null, toMs: null },
     });
     expect(receipt.responseModel).toEqual({
       id: 'mdf-strength-v1',
@@ -354,6 +359,7 @@ describe('Phase 7 actual utility input and read provenance', () => {
       expect(receipt.opponents[0].recency).toEqual({
         source: 'pooled',
         counters: { rHands: 12.5, rFolds: 3, rFacedAggr: 4 },
+        sourceWindow: { version: 1, coverage: 'unknown', fromMs: null, toMs: null },
       });
       expect(receipt.opponents[0]).toMatchObject({
         range: [0.2, 0.8],
@@ -412,6 +418,7 @@ describe('Phase 7 actual utility input and read provenance', () => {
       source: 'disabled',
       scope: null,
       counters: null,
+      sourceWindow: { version: 1, coverage: 'unknown', fromMs: null, toMs: null },
     });
   });
 
@@ -518,5 +525,151 @@ describe('Phase 7 actual utility input and read provenance', () => {
     expect(horseTournamentUtilityEvidenceIsValid(receipt, ['opponent', 'opponent'])).toBe(false);
     value.heroEquity = NaN;
     expect(() => horseTournamentUtilityInputSha256(value)).toThrow('invalid');
+  });
+});
+
+describe('Phase 7 original contribution-window attribution', () => {
+  const unknown = { version: 1, coverage: 'unknown', fromMs: null, toMs: null } as const;
+  const pooled = { version: 1, coverage: 'partial', fromMs: 100, toMs: 900 } as const;
+  const scoped = { version: 1, coverage: 'complete', fromMs: 200, toMs: 300 } as const;
+  const withWindows = () => {
+    const source = reads();
+    source.stats.get('opponent')!.sourceWindow = { ...pooled };
+    source.scoped.get('holdem:hu|opponent')!.sourceWindow = { ...scoped };
+    return source;
+  };
+  const evidence = (source = withWindows()) =>
+    buildHorseTournamentUtilityEvidence(input(), {
+      scope: 'holdem:hu',
+      reads: source,
+      mindEnabled: true,
+    });
+
+  it('uses the selected source envelope, separately attributes pooled recency, and binds metadata in evidence only', () => {
+    const source = withWindows();
+    const receipt = evidence(source);
+    expect(receipt.observations.window).toEqual({
+      status: 'contribution_envelope',
+      sourceWindow: scoped,
+    });
+    expect(receipt.opponents[0].statistics.sourceWindow).toEqual(scoped);
+    expect(receipt.opponents[0].recency.sourceWindow).toEqual(pooled);
+    const before = horseTournamentUtilityEvidenceSha256(receipt);
+    source.scoped.get('holdem:hu|opponent')!.sourceWindow = { ...scoped, toMs: 301 };
+    const changed = evidence(source);
+    expect(changed.inputSha256).toBe(receipt.inputSha256);
+    expect(horseTournamentUtilityEvidenceSha256(changed)).not.toBe(before);
+    expect(receipt.responseModel.calibration).toBe('uncalibrated');
+    expect(horseTournamentUtilityEvidenceIsValid(structuredClone(receipt))).toBe(true);
+  });
+
+  it('detaches mutable source metadata at original capture and evidence construction', () => {
+    const source = withWindows();
+    HorseMind.runInSandbox(source, () => {
+      const prior = HorseMind.currentScope();
+      try {
+        HorseMind.setDecisionScope('holdem:hu');
+        const captured = captureHorseTournamentUtilityObservations(input().players.slice(1), true);
+        const receipt = buildHorseTournamentUtilityEvidence(input(), captured);
+        const serialized = JSON.stringify(receipt);
+        (source.stats.get('opponent')!.sourceWindow as any).toMs = 999;
+        (source.scoped.get('holdem:hu|opponent')!.sourceWindow as any).toMs = 333;
+        expect(captured.reads.stats.get('opponent')!.sourceWindow).toEqual(pooled);
+        expect(captured.reads.scoped.get('holdem:hu|opponent')!.sourceWindow).toEqual(scoped);
+        expect(JSON.stringify(receipt)).toBe(serialized);
+        expect(Object.isFrozen(receipt.opponents[0].statistics.sourceWindow)).toBe(true);
+        expect(Object.isFrozen(receipt.opponents[0].recency.sourceWindow)).toBe(true);
+      } finally {
+        HorseMind.setDecisionScope(prior);
+      }
+    });
+  });
+
+  it('retains unknown historical rows and makes a mixed contribution envelope partial', () => {
+    const value = input();
+    value.opponents.push({ ...value.opponents[0], userId: 'legacy' });
+    value.sampledOpponentIds.push('legacy');
+    const source = withWindows();
+    const missing = buildHorseTournamentUtilityEvidence(value, {
+      scope: 'holdem:hu',
+      reads: source,
+      mindEnabled: true,
+    });
+    // No selected row contributes no historical population to this envelope.
+    expect(missing.observations.window).toEqual({
+      status: 'contribution_envelope',
+      sourceWindow: scoped,
+    });
+    source.stats.set('legacy', { ...source.stats.get('opponent')!, sourceWindow: undefined });
+    const receipt = buildHorseTournamentUtilityEvidence(value, {
+      scope: 'holdem:hu',
+      reads: source,
+      mindEnabled: true,
+    });
+    expect(receipt.opponents[1].statistics.sourceWindow).toEqual(unknown);
+    expect(receipt.observations.window).toEqual({
+      status: 'contribution_envelope',
+      sourceWindow: { ...scoped, coverage: 'partial' },
+    });
+    expect(horseTournamentUtilityEvidenceIsValid(receipt)).toBe(true);
+    const noPooled = withWindows();
+    noPooled.stats.clear();
+    expect(evidence(noPooled).opponents[0].recency.sourceWindow).toEqual(scoped);
+    const low = withWindows();
+    low.scoped.get('holdem:hu|opponent')!.hands = 39;
+    expect(evidence(low).observations.window).toEqual({
+      status: 'contribution_envelope',
+      sourceWindow: pooled,
+    });
+  });
+
+  it('admits historical v1 receipts without rewriting their digest or inventing window dates', () => {
+    const old = structuredClone(evidence()) as any;
+    old.observations.window = { status: 'not_recorded', from: null, to: null };
+    for (const row of old.opponents) {
+      delete row.statistics.sourceWindow;
+      delete row.recency.sourceWindow;
+    }
+    const before = JSON.stringify(old);
+    const digest = horseTournamentUtilityEvidenceSha256(old);
+    expect(horseTournamentUtilityEvidenceIsValid(old, ['opponent'])).toBe(true);
+    expect(JSON.stringify(old)).toBe(before);
+    expect(horseTournamentUtilityEvidenceSha256(JSON.parse(before))).toBe(digest);
+  });
+
+  it.each([
+    'missing_stats',
+    'missing_recency',
+    'aggregate_mismatch',
+    'invalid_unknown',
+    'reversed',
+    'extra',
+    'legacy_mix',
+    'disabled_known',
+    'same_source_mismatch',
+  ])('rejects malformed or overstated contribution metadata: %s', (fault) => {
+    const receipt = structuredClone(evidence()) as any;
+    if (fault === 'missing_stats') delete receipt.opponents[0].statistics.sourceWindow;
+    if (fault === 'missing_recency') delete receipt.opponents[0].recency.sourceWindow;
+    if (fault === 'aggregate_mismatch') receipt.observations.window.sourceWindow.toMs++;
+    if (fault === 'invalid_unknown')
+      receipt.opponents[0].statistics.sourceWindow.coverage = 'unknown';
+    if (fault === 'reversed') receipt.opponents[0].recency.sourceWindow.fromMs = 999;
+    if (fault === 'extra') receipt.opponents[0].recency.sourceWindow.calibrated = true;
+    if (fault === 'legacy_mix')
+      receipt.observations.window = { status: 'not_recorded', from: null, to: null };
+    if (fault === 'disabled_known') {
+      receipt.observations.status = 'disabled';
+      receipt.opponents[0].statistics = {
+        source: 'disabled',
+        scope: null,
+        counters: null,
+        sourceWindow: scoped,
+      };
+      receipt.opponents[0].recency = { source: 'disabled', counters: null, sourceWindow: scoped };
+    }
+    if (fault === 'same_source_mismatch')
+      receipt.opponents[0].recency.source = 'family_size_fallback';
+    expect(horseTournamentUtilityEvidenceIsValid(receipt)).toBe(false);
   });
 });

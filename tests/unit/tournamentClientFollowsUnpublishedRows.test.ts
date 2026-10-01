@@ -88,3 +88,16 @@ describe('the club tournament page offers Add-On only to a live entry', () => {
     );
   });
 });
+
+describe('the tournament lobby re-reads its board instead of joining a channel per event', () => {
+  const lobby = read('pages/tournament/TournamentLobbyPage.tsx');
+  it('joins no per-tournament t-break channel', () => {
+    expect(lobby).not.toMatch(/getOrCreateChannel\(/);
+    expect(lobby).not.toMatch(/`t-break-\$\{/);
+  });
+  it('polls quietly while visible and only the newest read paints', () => {
+    expect(lobby).toMatch(/setInterval\(refresh, LOBBY_REFRESH_MS\)/);
+    expect(lobby).toMatch(/loadTournamentsRef\.current\(\{ quiet: true \}\)/);
+    expect(lobby).toMatch(/if \(seq !== loadSeqRef\.current\) return;\s*setTournaments\(mapped\)/);
+  });
+});

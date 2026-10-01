@@ -125,6 +125,102 @@ neither can refuse a player.
 **If the aggregate needs to come down, the lever is the per-user daily cap**,
 which is one row per engine and identical for horses and humans.
 
+## Rulings 22, 23 and 24 (decided by Claude on Dan's delegation of 2026-09-30)
+
+**Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".**
+
+Phase 11 left three questions open for Dan. He handed them back, so they are
+decided here by Claude on his delegation, and each is built. Like every ruling
+here, each binds every agent until Dan changes it.
+
+### Ruling 22: the Diamond Arena belongs to the system
+
+**Ruling.** The Diamond Arena's club row names the system account as its owner:
+`system@smarter.poker`, `00000000-0000-0000-0000-000000000001`, the estate's
+one non-person account. It is never a person's account, including the god
+account `daniel@smarter.poker` that owned it before. Platform staff, Dan
+included, run the arena through the staff doors. Those doors ask for the
+platform role and a live session, never for ownership.
+
+**Why.** Phase 11 line 1 found that the arena's owner was a real platform
+account people sign in as. Every door that trusts a club's owner treated it as
+the arena's owner. It could edit the arena's club row, read its audit rows, run
+the club integrity report, reach the chip bomb-pot door for a Diamond table,
+and it was the only account that could open a Diamond hand. The arena has
+players and platform staff (ruling 16). An owner a person can sign in as is a
+third role that nothing in the design gives a job to. The system account has no
+password, no sign-in identity and no session, and it has never signed in, so
+nobody inherits the owner's authority. A club row cannot own itself
+(`clubs.owner_id` references `profiles`), so the arena's club row, Phase 2's
+one system Diamond identity, is owned by the system account.
+
+**Built.** Migration `20260930235500_the_arena_belongs_to_the_system`, applied
+2026-09-30 and proved in rolled-back production rehearsals before and after. It
+does four things:
+
+- it names the system account as the arena's owner;
+- the owner-wallet trigger no longer gives a Diamond owner a chip membership
+  (that trigger had refused every change of the arena's owner);
+- a Diamond hand opens to platform staff with a live session;
+- the arena guard refuses any Diamond owner but the system account.
+
+Evidence:
+[the arena belongs to the system](./evidence/diamond-phase-11/the-arena-belongs-to-the-system.md),
+which also lists every function, policy, trigger, job and client path that
+reads the arena's owner. One side effect is Dan's to weigh: `daniel@smarter.poker`
+no longer has Commander access, which it had only by owning the arena.
+
+### Ruling 23: the multi-table walk plays only where nothing is real
+
+**Ruling.** `e2e-live/multitable-walk.mjs` is retired from production play. It
+refuses to run unless both of these hold:
+
+- it signs in as a test identity: an address ending in `.invalid`, the estate's
+  test-account marker (`fn_ca_is_fixture_account`; the post-deploy accounts are
+  `...@example.invalid`);
+- it targets a club flagged as a test club: `E2E_TEST_CLUB` names it, and its
+  `clubs.tags` holds `test-club`.
+
+It never plays Club JAQK, SHARK CLUB, Deep Stack Society or Midway Union, and
+it refuses a Diamond club or a retired one. Its sweeper, `cleanup-seats.mjs`,
+stands up only the same test identity.
+
+**Why.** The walk buys in and plays. It used to do that at the cheapest open
+table in Club JAQK, where horses play and people may sit, as whatever account
+the operator supplied. The README's "owner test account" named no particular
+account. That puts real chips at real tables under an account nobody chose on
+purpose. A walk that needs a real club to prove the multi-table layer is a walk
+that must not run against production. A test club and a test identity keep
+what it proves and remove what it risks.
+
+**Built.** `e2e-live/lib/test-only.mjs` holds the three checks: the named
+account, the saved browser state's account and the page's signed-in account.
+Every refusal comes before a browser opens or a seat is taken.
+`e2e-live/README.md` documents how to run the walk safely.
+`tests/the-multitable-walk-plays-only-where-nothing-is-real.law.test.ts` holds
+it. No production run was made. No club is tagged `test-club` today, so against
+production the walk refuses every time.
+
+### Ruling 24: no standby engine for now
+
+**Ruling.** The engine stays one process. No warm standby is run. Dan removed it
+on 2026-08-23.
+
+**Why.** The takeover logic works in testing. Phase 11's two-engine probe
+([engine ownership and scaling](./evidence/diamond-phase-11/engine-ownership-and-scaling.md),
+R2 and R3) shows a standby takes over only after the leader's lease is stale.
+But a standby adds a second server and a dual-leader risk, for little gain
+while the supervisor restarts the single engine: a crash costs the container
+restart plus 30 s instead of about 30 s. The scaling gate law
+(`tests/additional-engine-workers-wait-for-the-scaling-gate.law.test.ts`)
+already keeps extra engines off.
+
+**Revisit when** human traffic makes a 30-second crash takeover worth a second
+server. Enabling a standby then changes the gate law and the release's
+one-container rule in the same pull request.
+
+**Built.** Nothing to build. The decision is recorded in the evidence above.
+
 ## A retry gets its first receipt (decided by Claude on Dan's delegation of 2026-09-30; migration 20260930235000; docs/changelog/2026-09-30-diamond-phase-11-a-retry-gets-its-first-receipt.md)
 
 **Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".** The two questions Phase 11 left open (docs/evidence/diamond-phase-11/concurrency-and-recovery.md) are decided:

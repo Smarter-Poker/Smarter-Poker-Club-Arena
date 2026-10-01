@@ -293,6 +293,8 @@ import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
 import LightningNextHand from '../components/table/LightningNextHand';
 import LightningJoining from '../components/table/LightningJoining';
+import LightningEndedNotice from '../components/table/LightningEndedNotice';
+import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
 import {
   LIGHTNING_LEAVE_QUEUED_TEXT,
   fetchLightningAnchorSeat,
@@ -3849,6 +3851,17 @@ function LiveTablePage({
   // after an await, without putting tableId in the effect's dependencies.
   const notFoundTableIdRef = useRef(tableId);
   notFoundTableIdRef.current = tableId;
+  /* LIGHTNING PHASE 7: LIGHTNING -> MUST_MOVE closes this room once every
+     Lightning hand has settled. Each 4404 on a Lightning room asks the
+     database (fn_lightning_my_session); the answer that names the player's
+     live seat turns the room into the MUST MOVE notice below, with one button
+     to that table. Never an automatic move (CLAUDE.md 10.6). */
+  const lightningReversion = useLightningReversion({
+    clusterId: lightningRoom?.clusterId ?? null,
+    roomClosed: lightningRoom && engineLastError?.code === 4404 ? engineLastError : null,
+  });
+  const lightningReturnRef = useRef<string | null>(null);
+  lightningReturnRef.current = lightningReversion.seatTableId;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3918,7 +3931,11 @@ function LiveTablePage({
             }
           }
           if (lightningRoomRef.current) {
-            heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
+            /* The MUST MOVE notice already says Lightning has ended, and where
+               the seat is: a second message would only repeat it. */
+            if (!lightningReturnRef.current) {
+              heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
+            }
             return;
           }
           heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
@@ -26224,6 +26241,23 @@ function LiveTablePage({
                 moves on, rather than showing a dead felt. */}
             {lightningHandoff.joining && !lightningRoom ? (
               <LightningJoining onCancel={lightningHandoff.cancel} />
+            ) : null}
+            {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
+                and this room will deal no more. Never a dead felt: the notice
+                and the player's own way back to their seat. The player moves
+                themselves, by the button (CLAUDE.md 10.6). */}
+            {lightningRoom && lightningReversion.seatTableId ? (
+              <LightningEndedNotice
+                onViewGame={() => {
+                  const seatTable = lightningReversion.seatTableId;
+                  if (!seatTable) return;
+                  if (embeddedTableId) {
+                    onTableInfoUpdate?.({ movedToTableId: seatTable });
+                    return;
+                  }
+                  navigate(lightningReturnPath(seatTable), { replace: true });
+                }}
+              />
             ) : null}
 
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}

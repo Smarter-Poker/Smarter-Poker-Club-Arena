@@ -216,3 +216,49 @@ describe('LAW: a streak milestone never takes the daily reward down', () => {
     expect(note).toContain('20260930233000');
   });
 });
+
+/*
+ * THE SECOND PIECE, found by watching production after the first applied: with
+ * every owed reward payable at once, a 500-claim run could not finish inside the
+ * two-minute statement timeout pg_cron runs it under (each credit is registered
+ * through a sum over ca_mint_ledger), so every run rolled back and paid nothing.
+ * 20260930233500 stops starting claims 45 seconds into a run.
+ */
+const NAME2 = migrationNames()
+  .filter((n) => n.endsWith('_a_horse_claim_run_ends_inside_its_timeout.sql'))
+  .at(-1);
+if (!NAME2) throw new Error('the run-ends-inside-its-timeout migration is missing');
+const MIG2 = migrationText(NAME2);
+
+describe('LAW: a horse claim run ends inside its timeout', () => {
+  it('edits the sweep in place: pinned, asserted, and the reverse proved', () => {
+    const body = code(MIG2);
+    expect(body.trim().startsWith('BEGIN;')).toBe(true);
+    expect(body.trim().endsWith('COMMIT;')).toBe(true);
+    expect(body).toContain("'e29e852597c32cabda264ab14a9344ec'");
+    expect((body.match(/IF md5\(v_def\) <> '[0-9a-f]{32}' THEN/g) ?? []).length).toBe(1);
+    expect((body.match(/IF md5\(replace\(/g) ?? []).length).toBe(1);
+    expect(body).not.toMatch(/\bDROP\s+FUNCTION\b/i);
+    expect(body).not.toMatch(/\bcron\s*\.\s*(un)?schedule\s*\(/i);
+  });
+
+  it('stops starting claims at 45 seconds, checked before each claim', () => {
+    expect(MIG2).toContain("|| E'  v_started timestamptz := clock_timestamp();\\n';");
+    const exit = MIG2.indexOf(
+      "|| E'    EXIT WHEN clock_timestamp() - v_started > interval ''45 seconds'';\\n'"
+    );
+    const claim = MIG2.indexOf(
+      "|| E'    BEGIN\\n      PERFORM public.claim_daily_challenge_serialized_body(r.user_id, r.id, NULL);\\n';"
+    );
+    expect(exit).toBeGreaterThan(0);
+    expect(claim).toBeGreaterThan(exit);
+    expect(MIG2).toContain("v_old2 := E'  LOOP\\n    BEGIN\\n");
+    // the post-state check fails if the exit ever lands after the claim
+    expect(MIG2).toContain('the sweep does not stop starting claims at 45 seconds');
+    expect(MIG2).toContain('the sweep lost something 20260930233000 gave it');
+  });
+
+  it('states a live proof the merged-migration check can ask production', () => {
+    expect(MIG2).toMatch(/^-- @live-proof: .+45 seconds.+$/m);
+  });
+});

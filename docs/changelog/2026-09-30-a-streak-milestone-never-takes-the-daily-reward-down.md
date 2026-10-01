@@ -47,3 +47,17 @@ follows the journal as before: players + house + custody = register.
 
 Rehearsal, apply and the production watch are in
 `docs/evidence/diamond-phase-11/a-streak-milestone-never-takes-the-daily-reward-down.md`.
+
+## And a run that ends inside its timeout
+
+Migration `20260930233500_a_horse_claim_run_ends_inside_its_timeout`, found by
+watching production after the first applied. With the milestone out of the
+claim every owed reward became payable at once, and the sweep's 500-claim runs
+died at exactly 120 seconds - the two-minute statement timeout pg_cron runs it
+under - rolling back everything they had paid. The time goes to the register:
+each credit's journal row is registered by
+`fn_ca_register_diamond_journal_row`, which sums every Diamond row of
+`ca_mint_ledger` (about 172,000 rows, 176 ms measured) to stamp `supply_after`.
+The sweep now stops starting claims 45 seconds into a run and commits what it
+paid; the rest are still the oldest owed a minute later. The register's sum is
+a cost every Diamond movement pays; it is reported, not changed here.

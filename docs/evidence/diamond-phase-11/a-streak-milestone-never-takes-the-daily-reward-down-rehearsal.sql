@@ -45,8 +45,8 @@
 --
 -- REHEARSAL SAFETY (the 2026-09-29 rules): lock_timeout 2s; nothing here takes
 -- a lock on a hot chip table; the one lock waited for is the sweep's own
--- advisory lock, taken last, while it is held the live minute sweep answers
--- ran = false and moves nothing.
+-- advisory lock, taken last and queued for (at most 50 s); while it is held the
+-- live minute sweep answers ran = false and moves nothing.
 -- ============================================================================
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '60s';
@@ -278,15 +278,19 @@ BEGIN
 END $scene$;
 
 -- The sweep's own lock, last: while it is held the live minute sweep answers ran = false.
+-- It is QUEUED for, not polled: a live run holds it for its whole run and the next run takes it
+-- within milliseconds, so a poll can miss every gap. Queueing waits for the run in progress to
+-- end and takes the lock before the next one can; it holds nothing live play needs meanwhile.
 DO $lock$
 DECLARE t0 timestamptz := clock_timestamp();
 BEGIN
-  WHILE NOT pg_try_advisory_xact_lock(hashtext('ca_horse_claim_due')) LOOP
-    IF clock_timestamp() - t0 > interval '40 seconds' THEN
-      RAISE EXCEPTION 'REHEARSAL ABORTED: the live sweep held its lock for 40 s; run again';
-    END IF;
-    PERFORM pg_sleep(0.25);
-  END LOOP;
+  PERFORM set_config('lock_timeout', '50s', true);
+  BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('ca_horse_claim_due'));
+  EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION 'REHEARSAL ABORTED: the live sweep held its lock for 50 s; run again';
+  END;
+  PERFORM set_config('lock_timeout', '2s', true);
   PERFORM pg_temp.put('lock_wait_ms', round(extract(epoch FROM clock_timestamp() - t0) * 1000)::text);
 END $lock$;
 

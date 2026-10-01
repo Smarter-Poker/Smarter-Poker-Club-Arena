@@ -31,3 +31,12 @@ never deletes an unpaid milestone, the sweep's window excludes a deferred
 reward while its lock order and guards stay, no job is scheduled or
 unscheduled, nothing is reachable from a browser, and the decision is recorded
 under ruling 18.
+
+Migration 20260930233500 is the second piece, found by watching production
+after the first applied: every owed reward became payable at once, and a
+500-claim run could not finish inside the two-minute statement timeout pg_cron
+runs the sweep under, because each credit is registered through a sum over
+`ca_mint_ledger`; every run rolled back and paid nothing. The sweep now stops
+starting claims 45 seconds into a run and commits what it paid. The law pins
+that edit too: the live body pinned by md5, the exit checked before each claim,
+the reverse substitution proved, nothing dropped, scheduled or unscheduled.

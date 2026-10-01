@@ -1,7 +1,7 @@
 # The fees a hand takes stay on the felt until their legs are posted
 
 **Date:** 2026-10-02 (work began 22:49 UTC 2026-10-01)
-**Migration:** `20261001231409_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql`
+**Migration:** `20261001231409_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted.sql`
 **Law:** `tests/a-balance-never-moves-without-its-ledger-row.law.test.ts` (extended), `docs/laws.d/a-balance-never-moves-without-its-ledger-row.md`
 **Executed proof:** `scripts/dev/test-ledger-invariant.sh` (P2b-P2f pass, R12-R14 refused by name)
 

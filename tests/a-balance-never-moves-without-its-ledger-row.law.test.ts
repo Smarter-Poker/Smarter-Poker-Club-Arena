@@ -77,7 +77,7 @@ const installerName = migrations.find((f) =>
 const installer = installerName ? readFileSync(join(MIG_DIR, installerName), 'utf8') : '';
 const installerVersion = installerName?.slice(0, 14) ?? '';
 const receiptName = migrations.find((f) =>
-  f.endsWith('_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql')
+  f.endsWith('_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted.sql')
 );
 const receipt = receiptName ? readFileSync(join(MIG_DIR, receiptName), 'utf8') : '';
 
@@ -265,7 +265,7 @@ describe('a balance never moves without its ledger row', () => {
   it('the hand commits in two transactions and each balances on its own: the receipt carries the fees as felt until their legs are posted', () => {
     expect(
       receiptName,
-      'migration *_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql'
+      'migration *_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted.sql'
     ).toBeTruthy();
     expect(receiptName! > (installerName ?? '')).toBe(true);
     const body = stripComments(receipt);
@@ -304,7 +304,7 @@ describe('a balance never moves without its ledger row', () => {
     expect(body).toMatch(/\('hand_atomic_commits',\s*'zy_ca_tally_balance_move',/);
     expect(body).toMatch(/\('hand_atomic_commits',\s*'zz_ca_balance_has_its_ledger_row',/);
     expect(body).toContain(
-      "SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_balance_move', 'migration 20261001231409_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted');"
+      "SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_balance_move', 'migration 20261001231409_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted');"
     );
     // nothing about the hand commit itself changes: no amount, receipt, refusal name or engine
     expect(body).not.toMatch(
@@ -312,9 +312,7 @@ describe('a balance never moves without its ledger row', () => {
     );
     // the executable proof applies it after the installer and plants both halves alone
     const script = readFileSync(join(ROOT, 'scripts', 'dev', 'test-ledger-invariant.sh'), 'utf8');
-    expect(script).toContain(
-      '_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql'
-    );
+    expect(script).toContain('_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted.sql');
     expect(script.indexOf('-f "$receipt"')).toBeGreaterThan(script.indexOf('-f "$migration"'));
     const regression = readFileSync(join(FIXTURE_DIR, 'regression.sql'), 'utf8');
     for (const shape of [

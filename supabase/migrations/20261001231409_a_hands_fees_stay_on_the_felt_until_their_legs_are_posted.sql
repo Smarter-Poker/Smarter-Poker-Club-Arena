@@ -1,4 +1,4 @@
--- 20261001231409_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted
+-- 20261001231409_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-01 23:14:09 UTC.
 --
@@ -236,13 +236,13 @@ INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note)
 SELECT x.t, x.g, x.n
   FROM (VALUES
     ('hand_atomic_commits', 'zy_ca_tally_balance_move',
-     'the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted: while a cash hand''s post-commit envelope is stored and not completed, its receipt counts rake + bbj - inflow as felt in the transaction tally, so the accepted-hand transaction and the obligations transaction each balance on their own. Reads tables and clubs by primary key; writes nothing; never refuses.'),
+     'a_hands_fees_stay_on_the_felt_until_their_legs_are_posted: while a cash hand''s post-commit envelope is stored and not completed, its receipt counts rake + bbj - inflow as felt in the transaction tally, so the accepted-hand transaction and the obligations transaction each balance on their own. Reads tables and clubs by primary key; writes nothing; never refuses.'),
     ('hand_atomic_commits', 'zz_ca_balance_has_its_ledger_row',
-     'the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted: deferred to commit; refuses REFUSED: balance_moved_without_its_ledger_row when a hand envelope completes without its fee legs, or its fee legs are posted without completing it, in the same transaction.')
+     'a_hands_fees_stay_on_the_felt_until_their_legs_are_posted: deferred to commit; refuses REFUSED: balance_moved_without_its_ledger_row when a hand envelope completes without its fee legs, or its fee legs are posted without completing it, in the same transaction.')
   ) AS x(t, g, n)
 ON CONFLICT (table_name, trigger_name) DO UPDATE SET note = EXCLUDED.note;
 
-SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_balance_move', 'migration 20261001231409_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted');
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_balance_move', 'migration 20261001231409_a_hands_fees_stay_on_the_felt_until_their_legs_are_posted');
 
 -- ---------------------------------------------------------------------------
 -- 4. Installed whole, or not at all

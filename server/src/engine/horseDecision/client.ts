@@ -53,6 +53,7 @@ import {
   horseGovernorSnapshotIsValid,
   horseComputeMetadataIsValid,
   horseSamplingStateIsValid,
+  horsePhase7EvidenceMismatch,
 } from './responseValidation.js';
 
 export interface WorkerLike {
@@ -1215,6 +1216,15 @@ export class LiveHorseDecisionWorkerClient {
       if (phase6Mismatch !== null) {
         this.fail(
           new Error(`horse decision worker returned invalid policy receipt: ${phase6Mismatch}`)
+        );
+        return;
+      }
+      // The Phase 7 receipt's sampler and opponents are bound to this request
+      // the same way, before the execution witness commits to its evidence.
+      const phase7Mismatch = horsePhase7EvidenceMismatch(message.decision, active.request);
+      if (phase7Mismatch !== null) {
+        this.fail(
+          new Error(`horse decision worker returned invalid policy receipt: ${phase7Mismatch}`)
         );
         return;
       }

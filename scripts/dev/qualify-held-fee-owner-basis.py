@@ -27,7 +27,23 @@ def run(sql,label):
  p=out/(label+'.sql');p.write_text(sql)
  r=subprocess.run(cmd+['-f',str(p)],capture_output=True,text=True)
  (out/(label+'.log')).write_text(r.stdout+r.stderr)
- if r.returncode:raise AssertionError(label+': '+r.stderr[-6000:])
+ if r.returncode:
+  # Observation after the failed client exits: retain actual surviving blockers,
+  # never claim this proves the identity of a lock holder that already finished.
+  diagnostic_sql="""BEGIN READ ONLY; SET LOCAL statement_timeout='3s';
+SELECT jsonb_build_object('observed_at',clock_timestamp(),'timing','after_failed_client_exit',
+ 'autovacuum',current_setting('autovacuum'),
+ 'activity',(SELECT coalesce(jsonb_agg(jsonb_build_object('pid',pid,'backend_type',backend_type,'application_name',application_name,'state',state,'xact_start',xact_start,'backend_xmin',backend_xmin::text,'wait_event_type',wait_event_type,'wait_event',wait_event,'blocking_pids',pg_blocking_pids(pid)) ORDER BY pid),'[]'::jsonb) FROM pg_stat_activity WHERE datid=(SELECT oid FROM pg_database WHERE datname=current_database())),
+ 'locks',(SELECT coalesce(jsonb_agg(jsonb_build_object('pid',pid,'relation',relation::regclass::text,'mode',mode,'granted',granted) ORDER BY pid,relation,mode),'[]'::jsonb) FROM pg_locks WHERE relation IN(to_regclass('public.player_stats'),to_regclass('public.agent_commissions')))); COMMIT;"""
+  (out/(label+'.failure-diagnostic.sql')).write_text(diagnostic_sql)
+  try:
+   d=subprocess.run(cmd+['-At','-c',diagnostic_sql],capture_output=True,text=True,timeout=5)
+   (out/(label+'.failure-diagnostic.stdout')).write_text(d.stdout)
+   (out/(label+'.failure-diagnostic.stderr')).write_text(d.stderr)
+   (out/(label+'.failure-diagnostic.json')).write_text(json.dumps({'exit_code':d.returncode,'original_exit_code':r.returncode,'timing':'after_failed_client_exit'})+'\n')
+  except (OSError,subprocess.TimeoutExpired) as diagnostic_error:
+   (out/(label+'.failure-diagnostic.error')).write_text(str(diagnostic_error))
+  raise AssertionError(label+': '+r.stderr[-6000:])
  print('PASS '+label,flush=True)
 def md5_of(identity):
  return subprocess.check_output(cmd+['-At','-c',"SELECT COALESCE((SELECT md5(pg_get_functiondef(to_regprocedure('"+identity+"')))),'absent')"],text=True).strip()

@@ -2036,3 +2036,31 @@ describe('original Breakfast witness reaches its existing accounting gate', () =
     expect(artifact.with['if-no-files-found']).toBe('error');
   });
 });
+
+describe('weekly accounting fixture background isolation', () => {
+  it('disables unsolicited maintenance and retains actual startup settings', () => {
+    const runner = readFileSync('scripts/dev/test-full-weekly-accounting-activation.sh', 'utf8');
+    expect(runner).toContain('-c cron.launch_active_jobs=off -c autovacuum=off');
+    expect(runner).toContain(
+      "SELECT json_build_object('autovacuum',current_setting('autovacuum'),'cron.launch_active_jobs',current_setting('cron.launch_active_jobs')) AS native_background_settings"
+    );
+    expect(runner).toContain(
+      "current_setting('autovacuum') <> 'off' OR current_setting('cron.launch_active_jobs') <> 'off'"
+    );
+    expect(runner).toContain("RAISE EXCEPTION 'Native fixture background writers are enabled'");
+    expect(runner).toMatch(/for artifact in background-isolation\.log /);
+    expect(runner).toContain('> "$fixture/background-isolation.log" 2>&1');
+  });
+
+  it('captures bounded failure diagnostics without replacing the original error', () => {
+    const runner = readFileSync('scripts/dev/qualify-held-fee-owner-basis.py', 'utf8');
+    expect(runner).toContain("timing','after_failed_client_exit'");
+    expect(runner).toContain("SET LOCAL statement_timeout='3s'");
+    expect(runner).toContain("'backend_type',backend_type");
+    expect(runner).toContain('pg_blocking_pids(pid)');
+    expect(runner).toContain('capture_output=True,text=True,timeout=5');
+    expect(runner).toMatch(
+      /except \(OSError,subprocess\.TimeoutExpired\) as diagnostic_error:[\s\S]*raise AssertionError\(label\+': '\+r\.stderr\[-6000:\]\)/
+    );
+  });
+});

@@ -24,10 +24,15 @@ mkdir "$fixture/socket"
   -o "-k $fixture/socket -p 55493 -h ''" start >/dev/null
 started=1
 migration=$(ls "$root"/supabase/migrations/*_a_balance_never_moves_without_its_ledger_row.sql | head -1)
+# The hand receipt joins the felt (20261001231409): the fees a cash hand takes
+# are counted on the felt from the accepted-hand transaction to the obligations
+# transaction that posts their legs, so each half balances on its own.
+receipt=$(ls "$root"/supabase/migrations/*_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql | head -1)
 export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UTC -c client_min_messages=notice'
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55493 -d postgres \
   -f "$root/tests/fixtures/ledger-invariant/bootstrap.sql" \
   -f "$root/tests/fixtures/ledger-invariant/setup.sql" \
   -f "$migration" \
+  -f "$receipt" \
   -f "$root/tests/fixtures/ledger-invariant/regression.sql"
 echo "ledger invariant: every refusal named, every live shape committed"

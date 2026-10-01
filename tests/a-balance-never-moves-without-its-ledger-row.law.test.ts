@@ -45,6 +45,20 @@
  * 'refuse'. Until that migration exists this law pins observe as the installed
  * state and REFUSES a flip that is not its own named migration; once it exists
  * the law pins 'refuse' as the final state on main.
+ *
+ * THE HAND COMMITS IN TWO TRANSACTIONS, AND EACH ONE BALANCES ON ITS OWN
+ * (20261001231409). Observe mode's first 28 minutes found 4,491 findings, all
+ * on table_stack and all one pair: the accepted-hand transaction moves the
+ * seats by inflow - rake - bbj with no leg, and a later obligations transaction
+ * posts the fee legs with no felt move. The legs cannot be posted at commit
+ * (atomic_distribute_rake holds the club wallet row to COMMIT; 1,122 statement
+ * timeouts on that row in two hours), so the rule is applied the other way
+ * round: the hand's receipt counts rake + bbj - inflow as FELT from the moment
+ * its envelope is stored to the moment it completes, in the transaction that
+ * posts the legs. Either half alone, or the pre-envelope shape, is refused by
+ * name. Proved on production rows (4,074 of 4,074 completed cash hands:
+ * receipt fees = felt legs, to the cent) and executed in the harness (P2b-P2f,
+ * R12-R14).
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -62,6 +76,10 @@ const installerName = migrations.find((f) =>
 );
 const installer = installerName ? readFileSync(join(MIG_DIR, installerName), 'utf8') : '';
 const installerVersion = installerName?.slice(0, 14) ?? '';
+const receiptName = migrations.find((f) =>
+  f.endsWith('_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql')
+);
+const receipt = receiptName ? readFileSync(join(MIG_DIR, receiptName), 'utf8') : '';
 
 const stripComments = (sql: string) =>
   sql
@@ -244,14 +262,89 @@ describe('a balance never moves without its ledger row', () => {
     expect(ci).toContain('run: bash scripts/dev/test-ledger-invariant.sh');
   });
 
+  it('the hand commits in two transactions and each balances on its own: the receipt carries the fees as felt until their legs are posted', () => {
+    expect(
+      receiptName,
+      'migration *_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql'
+    ).toBeTruthy();
+    expect(receiptName! > (installerName ?? '')).toBe(true);
+    const body = stripComments(receipt);
+    expect(body.trim().startsWith('BEGIN;')).toBe(true);
+    expect(body.trim().endsWith('COMMIT;')).toBe(true);
+    expect(body).toMatch(/SET LOCAL lock_timeout = '\d+s';/);
+    // the branch: while the envelope is stored and not completed, on the cash felt, rake + bbj - inflow
+    expect(body).toContain("WHEN 'hand_atomic_commits' THEN");
+    expect(body).toContain("k_old := 'table_stack'; k_new := 'table_stack';");
+    for (const side of ['o', 'n']) {
+      expect(body).toContain(`(${side} ->> 'post_commit_payload') IS NOT NULL`);
+      expect(body).toContain(`(${side} ->> 'post_commit_completed_at') IS NULL`);
+      expect(body).toContain(`public.fn_ca_felt_counts_table((${side} ->> 'table_id')::uuid)`);
+      expect(body).toMatch(
+        new RegExp(
+          `COALESCE\\(\\(${side} -> 'stack_result' ->> 'rake'\\)::numeric, 0\\)\\s+\\+ COALESCE\\(\\(${side} -> 'stack_result' ->> 'bbj'\\)::numeric, 0\\)\\s+- COALESCE\\(\\(${side} -> 'stack_result' ->> 'inflow'\\)::numeric, 0\\)`
+        )
+      );
+    }
+    // the substitution is asserted on its anchor and read back, never retyped
+    expect(body).toContain("v_sig constant text := 'public.fn_ca_tally_balance_move()';");
+    expect(body).toMatch(/IF v_n IS DISTINCT FROM 1 THEN/);
+    expect(body).toContain('does not read back with the hand receipt counted as felt');
+    // both invariant triggers on the receipt, the check deferred to commit, nothing dropped
+    expect(body).toMatch(
+      /CREATE TRIGGER zy_ca_tally_balance_move\s+AFTER INSERT OR UPDATE OF post_commit_payload, post_commit_completed_at, stack_result, table_id OR DELETE\s+ON public\.hand_atomic_commits\s+FOR EACH ROW EXECUTE FUNCTION public\.fn_ca_tally_balance_move\(\);/
+    );
+    expect(body).toMatch(
+      /CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row\s+AFTER INSERT OR UPDATE OF post_commit_payload, post_commit_completed_at, stack_result, table_id OR DELETE\s+ON public\.hand_atomic_commits\s+DEFERRABLE INITIALLY DEFERRED\s+FOR EACH ROW EXECUTE FUNCTION public\.fn_ca_balance_has_its_ledger_row\(\);/
+    );
+    // no DROP statement (the refusal message that names the rule is not one)
+    expect(body).not.toMatch(/^\s*DROP\s+(TRIGGER|POLICY)\b/im);
+    expect(body).toMatch(/LOCK TABLE public\.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE;/);
+    expect(body).toMatch(/set_config\('lock_timeout', '250ms', true\)/);
+    // declared, and the redefinition of the tally function declared
+    expect(body).toMatch(/\('hand_atomic_commits',\s*'zy_ca_tally_balance_move',/);
+    expect(body).toMatch(/\('hand_atomic_commits',\s*'zz_ca_balance_has_its_ledger_row',/);
+    expect(body).toContain(
+      "SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_balance_move', 'migration 20261001231409_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted');"
+    );
+    // nothing about the hand commit itself changes: no amount, receipt, refusal name or engine
+    expect(body).not.toMatch(
+      /fn_ca_commit_hand_settlement|fn_ca_process_hand_post_commit_obligations|atomic_distribute_rake/
+    );
+    // the executable proof applies it after the installer and plants both halves alone
+    const script = readFileSync(join(ROOT, 'scripts', 'dev', 'test-ledger-invariant.sh'), 'utf8');
+    expect(script).toContain(
+      '_the_fees_a_hand_takes_stay_on_the_felt_until_their_legs_are_posted.sql'
+    );
+    expect(script.indexOf('-f "$receipt"')).toBeGreaterThan(script.indexOf('-f "$migration"'));
+    const regression = readFileSync(join(FIXTURE_DIR, 'regression.sql'), 'utf8');
+    for (const shape of [
+      'P2b the accepted-hand transaction',
+      'R12 the obligations transaction posts the fee legs but never completes the envelope',
+      'R13 the envelope completes with no fee legs behind it',
+      'R14 the pre-envelope shape',
+      'P2c the obligations transaction',
+      'P2d the restart path',
+      'P2e a tournament hand receipt is not the cash felt',
+      'P2f the eight-day retention prune',
+    ]) {
+      expect(regression).toContain(shape);
+    }
+    const bootstrap = readFileSync(join(FIXTURE_DIR, 'bootstrap.sql'), 'utf8');
+    expect(bootstrap).toContain('CREATE TABLE public.hand_atomic_commits (');
+  });
+
   it('observe is a measurement window with a named end: the installed mode, and the only hands that may change it', () => {
     const body = stripComments(installer);
     expect(body).toMatch(
       /INSERT INTO public\.ca_ledger_invariant_mode \(mode, reason\)\s+VALUES \('observe',/
     );
     const later = migrations.filter((f) => f > (installerName ?? ''));
+    // a flip is a write to the one row; a migration that merely reads the mode
+    // (20261001231409 reports it in its closing NOTICE) is not one
     const flips = later.filter((f) =>
-      /ca_ledger_invariant_mode/.test(readFileSync(join(MIG_DIR, f), 'utf8'))
+      /UPDATE\s+(public\.)?ca_ledger_invariant_mode\b/i.test(
+        stripComments(readFileSync(join(MIG_DIR, f), 'utf8'))
+      )
     );
     for (const f of flips) {
       const sql = stripComments(readFileSync(join(MIG_DIR, f), 'utf8'));
@@ -260,7 +353,7 @@ describe('a balance never moves without its ledger row', () => {
         /SET\s+mode\s*=\s*'observe'/i
       );
       expect(sql, `${f} must not drop or disable the invariant`).not.toMatch(
-        /(DROP|ALTER)\s+TABLE\s+(public\.)?(club_members|clubs|table_seats|table_pending_addons|union_wallets|bbj_pools|chip_ledger)\s+DISABLE TRIGGER\s+z[yz]_ca_/i
+        /(DROP|ALTER)\s+TABLE\s+(public\.)?(club_members|clubs|table_seats|table_pending_addons|union_wallets|bbj_pools|hand_atomic_commits|chip_ledger)\s+DISABLE TRIGGER\s+z[yz]_ca_/i
       );
     }
     // once the flip has landed on main, refuse is the law; until then observe is pinned as stage 1

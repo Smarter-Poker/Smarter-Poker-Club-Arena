@@ -160,6 +160,105 @@ SELECT pg_temp.expect_passes(
        WHERE id = '44444444-0000-0000-0000-000000000001' $q$);
 COMMIT;
 
+-- ===========================================================================
+-- THE HAND COMMITS IN TWO TRANSACTIONS, AND EACH ONE BALANCES ON ITS OWN
+-- (20261001231409). The accepted-hand transaction moves the seats by
+-- inflow - rake - bbj and stores the envelope on the receipt; the obligations
+-- transaction posts the fee legs and completes the envelope. The receipt
+-- counts rake + bbj - inflow as felt in between. Observed on production
+-- 22:24-22:52 UTC 2026-10-01: 4,491 findings, all of them this pair.
+-- ===========================================================================
+
+BEGIN;
+SELECT pg_temp.expect_passes(
+  'P2b the accepted-hand transaction: seats move by -(rake 2.00 + bbj 0.50), the receipt stores the envelope, no leg',
+  $q$ UPDATE public.table_seats SET stack = stack - 30 WHERE id = '55555555-0000-0000-0000-000000000002';
+      UPDATE public.table_seats SET stack = stack + 27.50 WHERE id = '55555555-0000-0000-0000-000000000003';
+      INSERT INTO public.hand_atomic_commits (table_id, hand_number, hand_id, payload_hash, stack_result)
+      VALUES ('77777777-0000-0000-0000-000000000001', 1001, 'bbbbbbbb-0000-0000-0000-000000001001', 'fixture',
+              '{"success":true,"rake":2,"bbj":0.5,"inflow":0,"mode":"delta"}'::jsonb);
+      UPDATE public.hand_atomic_commits
+         SET post_commit_payload = '{"version":"1","rake":{"amount":2,"bbj":0.5},"bbj_contribution":{"amount":0.5}}'::jsonb,
+             post_commit_request_hash = 'fixture', post_commit_payload_hash = 'fixture'
+       WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001001' $q$);
+COMMIT;
+
+-- Between the halves the fees are on the felt. Either half done alone, or the
+-- old shape with no envelope, is refused by name.
+SELECT pg_temp.expect_refused(
+  'R12 the obligations transaction posts the fee legs but never completes the envelope',
+  $q$ SELECT set_config('app.ledger_category', 'rake', true);
+      SELECT set_config('app.ledger_counterparty', 'table_stack', true);
+      SELECT set_config('app.ledger_counterparty_entity', '77777777-0000-0000-0000-000000000001', true);
+      UPDATE public.union_wallets SET rake_wallet = rake_wallet + 2 WHERE union_id = '88888888-0000-0000-0000-000000000001';
+      SELECT set_config('app.ledger_category', 'bbj_contribution', true);
+      UPDATE public.bbj_pools SET main_balance = main_balance + 0.20, backup_balance = backup_balance + 0.20, promo_balance = promo_balance + 0.10
+       WHERE id = '44444444-0000-0000-0000-000000000001' $q$,
+  'table_stack');
+
+SELECT pg_temp.expect_refused(
+  'R13 the envelope completes with no fee legs behind it',
+  $q$ UPDATE public.hand_atomic_commits SET post_commit_completed_at = now(), post_commit_result = '{"ok":true}'::jsonb
+       WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001001' $q$,
+  'table_stack');
+
+SELECT pg_temp.expect_refused(
+  'R14 the pre-envelope shape: seats move by the fees and the receipt stores no envelope',
+  $q$ UPDATE public.table_seats SET stack = stack - 10 WHERE id = '55555555-0000-0000-0000-000000000002';
+      UPDATE public.table_seats SET stack = stack + 9 WHERE id = '55555555-0000-0000-0000-000000000003';
+      INSERT INTO public.hand_atomic_commits (table_id, hand_number, hand_id, payload_hash, stack_result)
+      VALUES ('77777777-0000-0000-0000-000000000001', 1002, 'bbbbbbbb-0000-0000-0000-000000001002', 'fixture',
+              '{"success":true,"rake":1,"bbj":0,"inflow":0,"mode":"delta"}'::jsonb) $q$,
+  'table_stack');
+
+BEGIN;
+SELECT pg_temp.expect_passes(
+  'P2c the obligations transaction: rake to the union, drop to the pool, and the envelope completes',
+  $q$ SELECT set_config('app.ledger_category', 'rake', true);
+      SELECT set_config('app.ledger_counterparty', 'table_stack', true);
+      SELECT set_config('app.ledger_counterparty_entity', '77777777-0000-0000-0000-000000000001', true);
+      UPDATE public.union_wallets SET rake_wallet = rake_wallet + 2 WHERE union_id = '88888888-0000-0000-0000-000000000001';
+      SELECT set_config('app.ledger_category', 'bbj_contribution', true);
+      UPDATE public.bbj_pools SET main_balance = main_balance + 0.20, backup_balance = backup_balance + 0.20, promo_balance = promo_balance + 0.10
+       WHERE id = '44444444-0000-0000-0000-000000000001';
+      UPDATE public.hand_atomic_commits SET post_commit_completed_at = now(), post_commit_result = '{"ok":true}'::jsonb
+       WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001001' $q$);
+COMMIT;
+
+BEGIN;
+SELECT pg_temp.expect_passes(
+  'P2d the restart path (fn_ca_resume_hand_submission): both halves in one transaction',
+  $q$ UPDATE public.table_seats SET stack = stack - 20 WHERE id = '55555555-0000-0000-0000-000000000003';
+      UPDATE public.table_seats SET stack = stack + 18.50 WHERE id = '55555555-0000-0000-0000-000000000002';
+      INSERT INTO public.hand_atomic_commits (table_id, hand_number, hand_id, payload_hash, stack_result, post_commit_payload)
+      VALUES ('77777777-0000-0000-0000-000000000001', 1003, 'bbbbbbbb-0000-0000-0000-000000001003', 'fixture',
+              '{"success":true,"rake":1,"bbj":0.5,"inflow":0,"mode":"delta"}'::jsonb,
+              '{"version":"1","rake":{"amount":1,"bbj":0.5},"bbj_contribution":{"amount":0.5}}'::jsonb);
+      SELECT set_config('app.ledger_category', 'rake', true);
+      SELECT set_config('app.ledger_counterparty', 'table_stack', true);
+      SELECT set_config('app.ledger_counterparty_entity', '77777777-0000-0000-0000-000000000001', true);
+      UPDATE public.union_wallets SET rake_wallet = rake_wallet + 1 WHERE union_id = '88888888-0000-0000-0000-000000000001';
+      SELECT set_config('app.ledger_category', 'bbj_contribution', true);
+      UPDATE public.bbj_pools SET main_balance = main_balance + 0.50 WHERE id = '44444444-0000-0000-0000-000000000001';
+      UPDATE public.hand_atomic_commits SET post_commit_completed_at = now() WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001003' $q$);
+COMMIT;
+
+BEGIN;
+SELECT pg_temp.expect_passes(
+  'P2e a tournament hand receipt is not the cash felt: envelope stored and completed, nothing counted',
+  $q$ INSERT INTO public.hand_atomic_commits (table_id, hand_number, hand_id, payload_hash, stack_result, post_commit_payload)
+      VALUES ('77777777-0000-0000-0000-00000000000e', 1004, 'bbbbbbbb-0000-0000-0000-000000001004', 'fixture',
+              '{"success":true,"rake":0,"bbj":0,"inflow":0,"mode":"delta","tournament_id":"99999999-0000-0000-0000-000000000001"}'::jsonb,
+              '{"version":"1","rake":null,"bbj_contribution":null}'::jsonb);
+      UPDATE public.hand_atomic_commits SET post_commit_completed_at = now() WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001004' $q$);
+COMMIT;
+
+BEGIN;
+SELECT pg_temp.expect_passes(
+  'P2f the eight-day retention prune deletes a completed receipt: nothing was on the felt',
+  $q$ DELETE FROM public.hand_atomic_commits WHERE hand_id = 'bbbbbbbb-0000-0000-0000-000000001003' $q$);
+COMMIT;
+
 BEGIN;
 SELECT pg_temp.expect_passes(
   'P3 cash-out: the seat is vacated with its stack on the row, the wallet is credited',

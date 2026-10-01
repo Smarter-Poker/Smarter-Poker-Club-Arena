@@ -33,6 +33,21 @@ its snapshot. The one split-write it found, promo_apply_playthrough releasing
 promo into chip_balance under a stand-down with no leg, is fixed at its line in
 the same migration, pinned to the live body's md5.
 
+The hand commits in two transactions, and each one balances on its own
+(20261001231409). Observe mode's first 28 minutes recorded 4,491 findings, all
+on `table_stack`, all one pair: the accepted-hand transaction moves the seats by
+inflow - rake - bbj with no leg, and the later obligations transaction posts the
+fee legs (rake to the union wallet or chip retirement, the drop to the jackpot
+pool, the insurance bank's leg) with no felt move. The legs cannot be posted at
+commit without queueing every hand of a club on its club_wallets row inside the
+commit path (1,122 statement timeouts on that row in two hours), so the rule is
+applied the other way round: the hand's receipt (hand_atomic_commits) counts
+rake + bbj - inflow as FELT from the moment its envelope is stored to the moment
+it completes, in the transaction that posts the legs. Either half alone, or the
+pre-envelope shape, is refused by name (R12-R14 in the fixture). Proved on
+4,074 of 4,074 completed production cash hands: receipt fees = felt legs, to
+the cent.
+
 Staged: the migration installs mode `observe` (findings land in
 ca_ledger_invariant_findings, warned, committed) to measure one hour of live
 traffic on every covered account; the next migration flips the one row to

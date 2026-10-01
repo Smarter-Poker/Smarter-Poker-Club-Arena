@@ -24,6 +24,11 @@ const ROOT = join(__dirname, '..');
 const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
 const FILE = '20260928170557_a_bounty_paid_after_a_movement_proof_is_not_a_changed_roster.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+// 20261001151056 builds on this post-image (its pre-image guard names it) and
+// the release contract pins now carry its post-image.
+const NEVER_DEALT = '20261001151056_a_table_that_never_dealt_is_moved_from_its_seated_entries.sql';
+const SUCCESSOR_MD5 = 'df656e0490a6a8f570f409916fc2f643';
+const SUCCESSOR_DEF_MD5 = '6fd0cf3d598211408d165117fd8c32fe';
 const ORIGIN = readFileSync(
   join(
     MIGRATIONS,
@@ -109,10 +114,10 @@ describe('a bounty paid after a movement proof is not a changed roster', () => {
     const pinned = fixture.functions.find(
       (f) => f.signature === 'smarter_private.f06_assert_movement(uuid)'
     );
-    expect(pinned?.body_md5).toBe(POST_MD5);
-    expect(pinned?.definition_md5).toBe(POST_DEF_MD5);
-    expect(publisher).toContain(`'body_md5': '${POST_MD5}'`);
-    expect(publisher).toContain(`'definition_md5': '${POST_DEF_MD5}'`);
+    expect(pinned?.body_md5).toBe(SUCCESSOR_MD5);
+    expect(pinned?.definition_md5).toBe(SUCCESSOR_DEF_MD5);
+    expect(publisher).toContain(`'body_md5': '${SUCCESSOR_MD5}'`);
+    expect(publisher).toContain(`'definition_md5': '${SUCCESSOR_DEF_MD5}'`);
     expect(publisher).not.toContain(PRE_MD5);
     const lane = readFileSync(
       join(ROOT, 'scripts/ci/probes/f06-shared-hand-lane/historical_bank_qualification.py'),
@@ -140,6 +145,9 @@ describe('a bounty paid after a movement proof is not a changed roster', () => {
           'FUNCTION smarter_private.f06_assert_movement('
         )
       );
-    expect(later).toEqual([]);
+    expect(later).toEqual([NEVER_DEALT]);
+    expect(readFileSync(join(MIGRATIONS, NEVER_DEALT), 'utf8')).toContain(
+      `md5(p.prosrc) = '${POST_MD5}'`
+    );
   });
 });

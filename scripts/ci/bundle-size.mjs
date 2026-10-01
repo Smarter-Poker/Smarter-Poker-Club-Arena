@@ -203,8 +203,17 @@ async function main() {
   // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
   // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
   // initial-load limits and the entry-module gate are unchanged.
-  const TOTAL_GZ_CEILING = 2880;
-  const TOTAL_RAW_CEILING = 10150;
+  // 2026-10-01: raised to 2890 gz / 10175 raw for the Lightning player
+  // surface (spec Phase 6 client: the /lightning entry page, the LIGHTNING
+  // FOLD and FOLD & WATCH bar, the next-hand notice and the lobby pool state),
+  // under the owner's standing instruction to decide and finish the Lightning
+  // build. Paired CI builds with the same dependencies: main (PR #5713 base)
+  // measured 2880kB gz / 10144kB raw, exactly at the old ceiling; with the
+  // Lightning client 2888kB gz / 10163kB raw. No dependency was added, so no
+  // vendor arrives twice; initial load is unchanged at 314kB gz and the
+  // initial-load limits and the entry-module gate are untouched.
+  const TOTAL_GZ_CEILING = 2890;
+  const TOTAL_RAW_CEILING = 10175;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

@@ -18,6 +18,7 @@ import {
 import {
   LIGHTNING_NEXT_HAND_NOTICE_MS,
   lightningActionPayload,
+  lightningFastFoldFlag,
   lightningFoldAvailability,
   lightningHandId,
   lightningHandKey,
@@ -142,6 +143,32 @@ describe('LIGHTNING FOLD availability and payload', () => {
         foldWatch: false,
       });
     }
+  });
+  it("follows the engine's fast_fold_available flag when the snapshot carries it", () => {
+    expect(lightningFastFoldFlag({ lightning: { fast_fold_available: true } })).toBe(true);
+    expect(lightningFastFoldFlag({ lightning: { fast_fold_available: false } })).toBe(false);
+    expect(lightningFastFoldFlag({ lightning: {} })).toBeNull();
+    expect(lightningFastFoldFlag({ hand_number: 3 })).toBeNull();
+    // Before the hero's turn with no bet to face: the engine says no, so the button is off.
+    expect(lightningFoldAvailability({ ...live, engineFastFoldAvailable: false }, desktop)).toEqual(
+      {
+        fastFold: false,
+        foldWatch: false,
+      }
+    );
+    // The engine says yes: on, and FOLD & WATCH still only where the capability allows.
+    const quiet = { ...live, heroStatus: 'folded', engineFastFoldAvailable: true };
+    expect(lightningFoldAvailability(quiet, desktop)).toEqual({ fastFold: true, foldWatch: true });
+    expect(lightningFoldAvailability(quiet, phone)).toEqual({ fastFold: true, foldWatch: false });
+    expect(lightningFoldAvailability({ ...quiet, heroSeated: false }, desktop)).toEqual({
+      fastFold: false,
+      foldWatch: false,
+    });
+    // Absent flag: the local rule.
+    expect(lightningFoldAvailability({ ...live, engineFastFoldAvailable: null }, desktop)).toEqual({
+      fastFold: true,
+      foldWatch: true,
+    });
   });
   it('posts to the pool session room with the two new action names', async () => {
     expect(lightningActionPayload(POOL, 'fast_fold')).toEqual({

@@ -298,6 +298,7 @@ import {
   useLightningPoolSession,
 } from '../lightning/lightningSession';
 import {
+  lightningFastFoldFlag,
   lightningFoldAvailability,
   lightningHandId,
   lightningHandKey,
@@ -22626,6 +22627,9 @@ function LiveTablePage({
       handInProgress: tableState.isHandInProgress,
       handSettling,
       heroStatus: lightningHero?.status,
+      engineFastFoldAvailable: lightningRoom
+        ? lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)
+        : null,
     },
     lightningCaps
   );

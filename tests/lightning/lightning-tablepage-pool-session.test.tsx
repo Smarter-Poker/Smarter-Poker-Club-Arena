@@ -85,6 +85,10 @@ describe('TablePage on a pool-session id', () => {
     );
   });
 
+  it("drives the Lightning controls from the engine's fast_fold_available flag", () => {
+    expect(PAGE).toContain('lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)');
+  });
+
   it('mounts the Lightning controls only in a Lightning room', () => {
     expect(PAGE).toMatch(/\{lightningRoom && tableState\.heroSeat > 0 \? \(\s*<LightningFoldBar/);
     expect(PAGE).toMatch(/\{lightningRoom \? \(\s*<LightningNextHand/);

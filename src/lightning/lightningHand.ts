@@ -42,6 +42,8 @@ export interface LightningSnapshotFields {
     small_blind?: unknown;
     big_blind?: unknown;
     variant?: unknown;
+    /** The engine's own answer: may the hero LIGHTNING FOLD right now. */
+    fast_fold_available?: unknown;
   } | null;
 }
 
@@ -78,6 +80,14 @@ export function lightningHandKey(
   return n ? `n:${n}` : null;
 }
 
+/** The engine's LIGHTNING FOLD flag, or null when the snapshot does not carry it. */
+export function lightningFastFoldFlag(
+  snapshot: LightningSnapshotFields | null | undefined
+): boolean | null {
+  const v = snapshot?.lightning?.fast_fold_available;
+  return typeof v === 'boolean' ? v : null;
+}
+
 // ─── The two Lightning controls ────────────────────────────────────────────
 
 export interface LightningFoldInput {
@@ -89,6 +99,12 @@ export interface LightningFoldInput {
   handSettling: boolean;
   /** The hero's status in this hand, as the seat shows it. */
   heroStatus: string | null | undefined;
+  /**
+   * `snapshot.lightning.fast_fold_available`, when the engine publishes it.
+   * It is the authority (before the hero's turn the engine allows the fold
+   * only while the hero faces a bet); the local rule is the fallback only.
+   */
+  engineFastFoldAvailable?: boolean | null;
 }
 
 export interface LightningFoldAvailability {
@@ -107,10 +123,12 @@ export function lightningFoldAvailability(
   caps: Pick<LightningCapabilities, 'fast_fold' | 'fold_and_watch'>
 ): LightningFoldAvailability {
   const foldable =
-    input.heroSeated &&
-    input.handInProgress &&
-    !input.handSettling &&
-    String(input.heroStatus ?? '') === 'active';
+    typeof input.engineFastFoldAvailable === 'boolean'
+      ? input.heroSeated && input.engineFastFoldAvailable
+      : input.heroSeated &&
+        input.handInProgress &&
+        !input.handSettling &&
+        String(input.heroStatus ?? '') === 'active';
   return {
     fastFold: foldable && caps.fast_fold === true,
     foldWatch: foldable && caps.fold_and_watch === true,

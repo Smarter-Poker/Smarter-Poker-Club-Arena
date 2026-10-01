@@ -1,0 +1,4 @@
+{
+  "_owner": "perf/post-hand-db-cost-1001. Migration 20261001005431_a_club_day_rake_row_is_taken_at_commit: trg_ca_club_rake_daily_ins on public.rake_records becomes a DEFERRABLE INITIALLY DEFERRED row trigger executing the new trigger function below; fn_ca_club_rake_daily_apply and _compute unchanged.",
+  "functions": ["trg_ca_club_rake_daily_insert_at_commit"]
+}

@@ -384,6 +384,45 @@
         "a-merged-migration-must-be-live: grants-only history requires verified recording"
       ],
       "liveVerdict": "Production read September30 confirms exact history SQL MD5. The four tournament lease doors are SECURITY DEFINER, postgres-owned, with ACL {postgres=X/postgres,service_role=X/postgres}; anon/authenticated cannot execute and service_role can. claim_tournament_lease_v2 retains search_path=public, pg_temp, full definition MD5 14f4ed4a7659d42188f57da0a54af421 and body MD5 e3397fe6782ed685d3aba81f547bb42c. The separate forward migration20260928032017 restricts the broad same-generation takeover. This is immutable historical evidence; never replay or edit installed SQL to add a live-proof comment."
+    },
+    {
+      "version": "20260928000425",
+      "name": "horse_audit_leak_spike_requires_significance_and_audit_watches_itself",
+      "file": "supabase/migrations/20260928000425_horse_audit_leak_spike_requires_significance_and_audit_watches_itself.sql",
+      "md5": "de66975f200e5626484923840d0ad9d8",
+      "appliedToProductionAt": "2026-09-28T00:04:25Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [
+        "check-definer-authorization: anon rule",
+        "migration-version-collisions: name longer than 60 characters"
+      ],
+      "liveVerdict": "Production read 2026-09-30: file is 6539 bytes, md5 de66975f200e5626484923840d0ad9d8, equal to fn_ca_migration_text. The anon finding WAS true when this ran: fn_horse_tag_ev_significance(date) was created SECURITY DEFINER with PUBLIC execute and no auth.uid() check. It was closed in production by migration 20260930181809 close_the_horse_tag_ev_console_to_the_browser; read live 2026-09-30 its proacl is {postgres=X/postgres,service_role=X/postgres}, has_function_privilege('anon',...) and ('authenticated',...) are both false, and no pg_policy expression references it, so it is not an RLS helper. fn_run_horse_daily_audit(date) carries both patches (it references fn_horse_tag_ev_significance and daily_audit_lost) and fn_audit_tuner_health(date) carries the replaced horse_error_log text. The name is 69 characters and production stored it uncut, so this file's name equals the ledger row's name exactly. No horse filter: the function reads horse_review_rollup, which is horse-only telemetry by construction."
+    },
+    {
+      "version": "20260928000527",
+      "name": "horse_daily_audit_fallback_rescues_a_missed_day_loudly",
+      "file": "supabase/migrations/20260928000527_horse_daily_audit_fallback_rescues_a_missed_day_loudly.sql",
+      "md5": "34e0c338493c5f009d0a7264c45e6db7",
+      "appliedToProductionAt": "2026-09-28T00:05:27Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-09-30: file is 2505 bytes, md5 34e0c338493c5f009d0a7264c45e6db7, equal to fn_ca_migration_text. fn_horse_daily_audit_fallback() is SECURITY DEFINER with proacl {postgres=X/postgres,service_role=X/postgres}; anon and authenticated cannot execute. cron.job jobid 373 horse-daily-audit-fallback is active on '30 7 * * *' running select public.fn_horse_daily_audit_fallback(), which is the job that raised the cron roster from 121 toward 124 in docs/attestation/cron-roster.tsv. Recorded as history only: this file describes what production runs and adds no schedule; whether a fallback of this shape should outlive its cause is a CLAUDE.md 10.12 question for its owner, not for a recording."
+    },
+    {
+      "version": "20260930032343",
+      "name": "owner_switches_the_fleet_engine_on",
+      "file": "supabase/migrations/20260930032343_owner_switches_the_fleet_engine_on.sql",
+      "md5": "3262220dc4ad4a730439aef5476dd8c8",
+      "appliedToProductionAt": "2026-09-30T03:23:43Z",
+      "recoveredOn": "2026-09-30",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, with NO trailing newline appended. Written to disk by decoding production's own base64 of those bytes in the shell, never pasted through a JSON tool boundary; octet_length and md5 of the file were compared against public.fn_ca_migration_text(version) before commit. This version had no file on origin/main or on any of the 778 remote branches, by version or by name. Timestamp follows version identifier; actual installation timestamp not separately recorded.",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/2630",
+      "refusedBy": [],
+      "liveVerdict": "Production read 2026-09-30: file is 3330 bytes, md5 3262220dc4ad4a730439aef5476dd8c8, equal to fn_ca_migration_text; production's bytes end in a newline and so does this file, and the header's box-drawing rules are U+2550 (three bytes each). Data-only: public.content_settings holds one row with engine_enabled=true and updated_at 2026-09-30T03:23:43.52529Z, the instant this ran. Its own pre-flight asserts engine_enabled=false, so replaying it would abort; it must never be re-applied."
     }
   ]
 }

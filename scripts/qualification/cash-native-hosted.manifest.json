@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 176139,
-      "sha256": "f24fb6e224f50b84265a9c8aebeda86c46078c25491e32ae64be68faae4d7e67"
+      "bytes": 176367,
+      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1163,5 +1163,16 @@
         }
       }
     ]
+  },
+  "horseObservationWindowIntegration20260930": {
+    "why": "Adds the Horse original observation-window isolated PostgreSQL qualification to existing accounting shard4; no existing cash route, assertion or source changed.",
+    "before": {
+      "bytes": 176139,
+      "sha256": "f24fb6e224f50b84265a9c8aebeda86c46078c25491e32ae64be68faae4d7e67"
+    },
+    "after": {
+      "bytes": 176367,
+      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+    }
   }
 }

@@ -47,3 +47,21 @@ replace a trigger, `CREATE OR REPLACE TRIGGER` takes the ordinary
 today (`20261001154709`, `40P01` on `ShareRowExclusiveLock` of `clubs`) is the
 ordinary multi-table ordering deadlock, not this hook; it is another agent's
 file and is left to them.
+
+## Addendum, 21:39 UTC: the seven locks are taken together
+
+With the DROPs gone, the second apply (run 36929916516) took no
+AccessExclusiveLock anywhere and still deadlocked - on `ShareRowExclusiveLock`
+for `chip_ledger`, the seventh table, held by a 28-second tournament RPC that
+needed one of the six tables `CREATE TRIGGER` had already locked one statement
+at a time. That is the ordinary ordering deadlock (the welcome-package file hit
+the same class three times today), and Postgres picks the victim by who
+notices first, so a live hand commit is as likely to die as the migration.
+
+The file now takes all seven `ShareRowExclusiveLock`s in one `LOCK TABLE`
+statement before any DDL, under a 250 ms `lock_timeout`, inside a `DO` block
+that rolls the partial set back on `lock_not_available` and tries again after
+100 ms (at most 240 tries). Nothing ever waits on the migration for longer than
+250 ms - under `deadlock_timeout` (1 s) - so no live transaction can be chosen
+as a deadlock victim because of it, and the `CREATE TRIGGER` statements find
+their locks already held. Same triggers, same refusal, same `observe` mode.

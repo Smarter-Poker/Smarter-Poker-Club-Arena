@@ -4,6 +4,9 @@ import { performance } from 'node:perf_hooks';
 import { HorseLogic } from './HorseLogic.js';
 import { seedFastRandom } from './HorseEval.js';
 import { reconstructPhase8Hand, type CapturedPhase8Hand } from './HorsePhase8ReplayFixture.js';
+import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
+import { HorseQualifiedAuthorityHolder } from './HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from './HorseQualifiedAuthority.test-support.js';
 
 const hands: CapturedPhase8Hand[] = JSON.parse(
   readFileSync(new URL('./fixtures/phase8-production-hands.json', import.meta.url), 'utf8')
@@ -58,4 +61,72 @@ describe('Phase 8 captured public-line reconstruction', () => {
       })
     );
   });
+});
+
+describe('Phase 8.3 qualified authority on the actual candidate receipt', () => {
+  function decideAt(hand: CapturedPhase8Hand, mode: 'shadow' | 'candidate') {
+    const { hero, gs } = reconstructPhase8Hand(hand);
+    seedFastRandom(hand.reviewId);
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      return HorseLogic.decide(
+        hero,
+        gs,
+        'balanced',
+        {},
+        { phase8Postflop: mode, mind: false, decisionTimeMs: 0 }
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  }
+
+  it.each(hands)(
+    'review $reviewId: a selected candidate is a valid live receipt only with usable authority',
+    (hand) => {
+      const worker = new HorseQualifiedAuthorityHolder('worker');
+      worker.apply(qualifiedTestAdmission(1));
+      const candidate = decideAt(hand, 'candidate');
+      const ledger = candidate.tournamentPostflop!;
+      expect(ledger).toMatchObject({ applied: true, selection: 'selected', authority: null });
+      expect(candidate.action).toBe(ledger.candidateAction);
+      // The Phase 7 receipt still names the action Phase 8 received.
+      expect(candidate.tournamentUtility?.selectedAction).toBe(ledger.baselineAction);
+      // A candidate without worker authority is refused by the client boundary.
+      expect(horseDecisionReceiptIsValid(candidate, 'nlh')).toBe(false);
+      ledger.authority = worker.receipt();
+      expect(horseDecisionReceiptIsValid(candidate, 'nlh')).toBe(true);
+      // An authority that is not usable cannot back a candidate.
+      worker.withdraw('test');
+      ledger.authority = worker.receipt();
+      expect(horseDecisionReceiptIsValid(candidate, 'nlh')).toBe(false);
+
+      // Shadow computes the same change and never applies or counts it.
+      const shadow = decideAt(hand, 'shadow');
+      expect(shadow.tournamentPostflop).toMatchObject({
+        applied: false,
+        changed: true,
+        selection: 'shadow_change',
+        candidateAction: ledger.candidateAction,
+      });
+      expect(shadow.action).toBe(ledger.baselineAction);
+      expect(horseDecisionReceiptIsValid(shadow, 'nlh')).toBe(true);
+      // A shadow ledger claiming application is malformed.
+      expect(
+        horseDecisionReceiptIsValid(
+          {
+            ...shadow,
+            action: ledger.candidateAction,
+            amount: ledger.candidateAmount ?? undefined,
+            tournamentPostflop: {
+              ...shadow.tournamentPostflop!,
+              applied: true,
+              selection: 'selected',
+            },
+          },
+          'nlh'
+        )
+      ).toBe(false);
+    }
+  );
 });

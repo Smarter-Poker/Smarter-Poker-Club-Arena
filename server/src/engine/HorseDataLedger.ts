@@ -538,7 +538,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase8Postflop',
-    'tournament postflop counterfactual; shadow by default; candidate mode is offline promotion only',
+    'tournament postflop counterfactual; shadow by default; live candidate mode only under protected-release qualified authority (worker-owned, never caller-supplied)',
     'Phase8'
   ),
   flag(
@@ -2146,6 +2146,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase8_execution_*',
     'ServerTableEngineTurns',
     'authoritative action acceptance, coercion, fallback or retired request',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_selection_*',
+    'HorseLogic -> ServerTableEngineTurns',
+    'none, shadow change (never applied), authority-backed selection, controller acceptance or withdrawal before acceptance',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_authority_*',
+    'HorseQualifiedAuthority -> workerRuntime / client / ServerTableEngineTurns',
+    'protected-release authority admission, local withdrawal and acceptance-time verdicts',
     'Phase8'
   ),
   receipt(

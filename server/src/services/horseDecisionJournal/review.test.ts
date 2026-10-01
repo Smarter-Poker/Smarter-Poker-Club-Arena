@@ -6,6 +6,7 @@ import {
   createHorseExecutionWitness,
   settleHorseExecutionWitness,
   retireHorseExecutionWitness,
+  withdrawHorsePhase8Selection,
 } from '../../engine/HorseExecutionWitness.js';
 import {
   captureHorseHandJournalContext,
@@ -13,6 +14,11 @@ import {
 } from '../../engine/HorseDecisionHandBinding.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import { HorseMind } from '../../engine/HorseMind.js';
+import {
+  HorseQualifiedAuthorityHolder,
+  HorsePhase8AuthorityGate,
+} from '../../engine/HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../../engine/HorseQualifiedAuthority.test-support.js';
 import { HorseLogic } from '../../engine/HorseLogic.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../../engine/HorseEval.js';
 import type { HorseDecision } from '../../types.js';
@@ -665,7 +671,7 @@ describe('private retained-hand journal consumer', () => {
     else if (change === 'origin') f.a.actions.at(-1)!.origin = 'horse_fallback';
     else if (change === 'prefix')
       f.d.snapshot.handJournalContext = { ...f.d.snapshot.handJournalContext!, actionCount: 22 };
-    let rows = f.rows();
+    const rows = f.rows();
     if (change === 'release')
       rows[1] = makeHorseJournalRecord({ ...rows[1]!, sourceRelease: 'b'.repeat(40) }, f.w);
     if (change === 'order') rows[1] = f.make('execution', 0 + 1, f.w);
@@ -723,6 +729,66 @@ describe('private retained-hand journal consumer', () => {
       retiredDecisions: 1,
     });
   });
+  it.each(['honest', 'tampered_reference', 'tampered_authority'] as const)(
+    'reconciles a Phase 8 selection withdrawn before acceptance (%s)',
+    (mode) => {
+      const f = fixture();
+      const s = f.d.snapshot;
+      const worker = new HorseQualifiedAuthorityHolder('review-worker');
+      worker.apply(qualifiedTestAdmission(1));
+      const ledger = (authority: unknown) => ({
+        version: 'horse-tournament-postflop-round1-v4',
+        mode: 'candidate',
+        changed: true,
+        applied: true,
+        selection: 'selected',
+        authority,
+        authorityVerdict: null,
+        baselineAction: 'call',
+        baselineAmount: null,
+        candidateAction: 'fold',
+        candidateAmount: null,
+        executionStatus: 'pending',
+        executedAction: null,
+        executedAmount: null,
+      });
+      // The worker journals its unstamped receipt; the client stamps the
+      // main generation before it builds the witness.
+      f.d.decision = {
+        action: 'fold',
+        thinkTime: 50,
+        tournamentPostflop: ledger(worker.receipt()),
+      } as unknown as HorseDecision;
+      const gate = new HorsePhase8AuthorityGate(() => qualifiedTestAdmission(1), 'review-main');
+      gate.refresh();
+      const delivered = {
+        ...f.d.decision,
+        tournamentPostflop: ledger(
+          mode === 'tampered_authority'
+            ? gate.stamp({ ...worker.receipt(), generation: 9 })
+            : gate.stamp(worker.receipt())
+        ),
+      } as unknown as HorseDecision;
+      const w = createHorseExecutionWitness(s, delivered, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      withdrawHorsePhase8Selection(w, s, 'withdrawn');
+      if (mode === 'tampered_reference')
+        (w as { selected: unknown }).selected = { action: 'call', amount: 2 };
+      settleHorseExecutionWitness(w, {
+        applied: true,
+        acceptedActions: f.w.acceptedActions,
+      });
+      f.w = w;
+      expect(w.phase8Authority?.selection).toBe('withdrawn_before_acceptance');
+      expect(reconcileHorseJournalHand(f.rows(), handKey).status).toBe(
+        mode === 'honest' ? 'reconciled' : 'incomplete'
+      );
+    }
+  );
   it('reconciles a coerced controller amount without calling it the intended wager', () => {
     const f = fixture();
     f.w.executionStatus = 'pending';

@@ -57,7 +57,33 @@ vi.mock('./horseDecision/index.js', async () => {
   };
 });
 
+// The main gate admits only the committed release selection (null today).
+// Replace that one export with a gate whose admission these tests control.
+const phase8Main = vi.hoisted(() => ({ admission: null as unknown }));
+vi.mock('./HorseQualifiedAuthority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./HorseQualifiedAuthority.js')>();
+  return {
+    ...actual,
+    liveHorsePhase8Authority: new actual.HorsePhase8AuthorityGate(
+      () =>
+        (phase8Main.admission as
+          | import('./HorseQualifiedAuthority.js').HorseAuthorityAdmission
+          | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      'turns-test-main'
+    ),
+  };
+});
+
 import { HandController } from './HandController.js';
+import {
+  HorseQualifiedAuthorityHolder,
+  liveHorsePhase8Authority,
+} from './HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from './HorseQualifiedAuthority.test-support.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
@@ -1508,3 +1534,230 @@ describe.each(['remainingVariantPolicy', 'jointPolicy'] as const)(
     });
   }
 );
+
+describe('Phase 8.3 acceptance-time authority recheck', () => {
+  let approval = 200;
+  beforeEach(() => {
+    enableBrainTelemetry();
+    drainFires();
+  });
+  /** A fresh, greater approval renews the process gate after any withdrawal. */
+  function authority() {
+    approval += 1;
+    phase8Main.admission = qualifiedTestAdmission(approval);
+    liveHorsePhase8Authority.refresh();
+    const worker = new HorseQualifiedAuthorityHolder(`turns-worker-${approval}`);
+    worker.apply(qualifiedTestAdmission(approval));
+    liveHorsePhase8Authority.observeWorker(worker.receipt());
+    return worker;
+  }
+  const ledger = (
+    worker: HorseQualifiedAuthorityHolder,
+    candidate: { action: string; amount: number | null },
+    baseline: { action: string; amount: number | null }
+  ) => ({
+    version: 'horse-tournament-postflop-round1-v4',
+    mode: 'candidate',
+    changed: true,
+    applied: true,
+    selection: 'selected',
+    authority: liveHorsePhase8Authority.stamp(worker.receipt()),
+    authorityVerdict: null,
+    baselineAction: baseline.action,
+    baselineAmount: baseline.amount,
+    candidateAction: candidate.action,
+    candidateAmount: candidate.amount,
+    executionStatus: 'pending',
+    executedAction: null,
+    executedAmount: null,
+  });
+  const result = (snapshot: any, receipt: any, lane: 'fast' | 'deep' = 'fast'): any => {
+    const decision: any = {
+      action: receipt.candidateAction,
+      ...(receipt.candidateAmount === null ? {} : { amount: receipt.candidateAmount }),
+      thinkTime: 1000,
+      tournamentPostflop: receipt,
+    };
+    decision.executionWitness = createHorseExecutionWitness(snapshot, decision, {
+      requestId: 91,
+      lane,
+      computeMs: 2,
+      governorScale: 1,
+    });
+    return {
+      type: lane === 'fast' ? ('FAST_RESULT' as const) : ('DEEP_RESULT' as const),
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 91 }),
+      requestId: 91,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision,
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    };
+  };
+
+  it('accepts a selected candidate under usable authority and records controller acceptance', async () => {
+    const worker = authority();
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = ledger(
+      worker,
+      { action: 'check', amount: null },
+      { action: 'bet', amount: 20 }
+    );
+    let witness: any;
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+      const r = result(s, receipt);
+      witness = r.decision.executionWitness;
+      return r;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(performAction).toHaveBeenCalledOnce();
+    expect(performAction.mock.calls[0][1]).toBe('check');
+    expect(receipt).toMatchObject({
+      applied: true,
+      selection: 'controller_accepted',
+      authorityVerdict: 'usable',
+      executionStatus: 'intended',
+    });
+    expect(witness.executionStatus).toBe('intended');
+    expect(witness.phase8Authority).toMatchObject({
+      selection: 'controller_accepted',
+      verdict: 'usable',
+    });
+    const fires = drainFires().map(({ feature }) => feature);
+    expect(fires).toContain('phase8_selection_controller_accepted');
+  });
+
+  it.each(['withdrawn', 'stale_generation', 'restarted', 'refresh_failed'] as const)(
+    'authority %s during think time executes the reference with an exact accepted-wager receipt',
+    async (verdict) => {
+      const worker = authority();
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const receipt = ledger(
+        worker,
+        { action: 'check', amount: null },
+        { action: 'bet', amount: 20 }
+      );
+      let witness: any;
+      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+        const r = result(s, receipt);
+        witness = r.decision.executionWitness;
+        return r;
+      });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(receipt.executionStatus).toBe('pending');
+      if (verdict === 'withdrawn') liveHorsePhase8Authority.withdraw('test_withdrawal');
+      if (verdict === 'stale_generation') {
+        worker.apply({ status: 'refused', reason: 'unreadable_evidence', transient: true });
+        worker.apply(qualifiedTestAdmission(approval));
+        liveHorsePhase8Authority.observeWorker(worker.receipt());
+      }
+      if (verdict === 'restarted') liveHorsePhase8Authority.forgetWorker(worker.epoch);
+      if (verdict === 'refresh_failed') {
+        phase8Main.admission = {
+          status: 'refused',
+          reason: 'unreadable_evidence',
+          transient: true,
+        };
+        liveHorsePhase8Authority.refresh();
+      }
+      await vi.advanceTimersByTimeAsync(1250);
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['bet', 20, 'horse_policy']);
+      expect(receipt).toMatchObject({
+        applied: false,
+        selection: 'withdrawn_before_acceptance',
+        authorityVerdict: verdict,
+        executionStatus: 'intended',
+        executedAction: 'bet',
+        executedAmount: 20,
+      });
+      // The witness was re-selected before acceptance, so the controller
+      // record matches it exactly and is not misreported as coerced.
+      expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+      expect(witness.executionStatus).toBe('intended');
+      expect(witness.phase8Authority).toMatchObject({
+        selection: 'withdrawn_before_acceptance',
+        verdict,
+        candidate: { action: 'check', amount: null },
+      });
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+      expect(drainFires().map(({ feature }) => feature)).toEqual(
+        expect.arrayContaining([
+          'phase8_selection_withdrawn_before_acceptance',
+          `phase8_authority_verdict_${verdict}`,
+        ])
+      );
+    }
+  );
+
+  it('deep work selected before a withdrawal cannot act after it', async () => {
+    const worker = authority();
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    state.currentBet = 20;
+    const base = engine.handController.getAuthoritativeActionState();
+    engine.handController.getAuthoritativeActionState = () => ({
+      ...base,
+      legalActions: ['fold', 'call', 'raise', 'all_in'],
+      toCall: 20,
+      minRaiseTo: 40,
+    });
+    vi.spyOn(ServerTableEngineTurns, 'secondLookPlan').mockReturnValue({ ok: true, afterMs: 100 });
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => ({
+      ...result(s, { candidateAction: 'call', candidateAmount: 20 }),
+      decision: { action: 'call', amount: 20, thinkTime: 1000 },
+    }));
+    const deepReceipt = ledger(
+      worker,
+      { action: 'fold', amount: null },
+      { action: 'call', amount: 20 }
+    );
+    let deepWitness: any;
+    decisionWorker.worker.decideDeep.mockImplementationOnce(async (s: any) => {
+      const r = result(s, deepReceipt, 'deep');
+      deepWitness = r.decision.executionWitness;
+      return r;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
+    expect(deepReceipt.executionStatus).toBe('pending');
+    liveHorsePhase8Authority.withdraw('withdrawn_during_think_time');
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(performAction).toHaveBeenCalledOnce();
+    expect(performAction.mock.calls[0].slice(1, 3)).toEqual(['call', 20]);
+    expect(deepReceipt).toMatchObject({
+      selection: 'withdrawn_before_acceptance',
+      authorityVerdict: 'withdrawn',
+      executionStatus: 'intended',
+    });
+    expect(deepWitness.executionStatus).toBe('intended');
+    expect(deepWitness.selected).toEqual({ action: 'call', amount: 20 });
+  });
+
+  it('a controller refusal of a selected candidate withdraws authority for this process', async () => {
+    const worker = authority();
+    const { engine, player, enginePlayer, state } = harness(false);
+    const receipt = ledger(
+      worker,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null }
+    );
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => result(s, receipt));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(receipt.executionStatus).toBe('fallback');
+    expect(receipt.selection).toBe('selected');
+    expect(liveHorsePhase8Authority.mainState()).toBe('withdrawn');
+    // Later work admitted under that worker generation is now refused.
+    expect(liveHorsePhase8Authority.check(liveHorsePhase8Authority.stamp(worker.receipt()))).toBe(
+      'withdrawn'
+    );
+  });
+});

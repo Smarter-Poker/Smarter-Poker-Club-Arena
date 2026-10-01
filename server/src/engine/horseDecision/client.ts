@@ -28,6 +28,7 @@ import {
   retireHorseExecutionWitness,
   onHorseExecutionFinalized,
 } from '../HorseExecutionWitness.js';
+import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -448,8 +449,15 @@ export class LiveHorseDecisionWorkerClient {
   private readonly readyTimer: ReturnType<typeof setTimeout>;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** Epoch of this client's worker Phase 8 authority, once it has reported. */
+  private phase8WorkerEpoch: string | null = null;
+
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
+    // A lane start (re)admits the main scheduler's copy of the committed
+    // release selection. A transient read failure here is a refresh failure,
+    // never a withdrawal and never a renewal.
+    liveHorsePhase8Authority.refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -635,6 +643,17 @@ export class LiveHorseDecisionWorkerClient {
     const owner = this.planOwners.get(result);
     if (!owner || owner.state === 'retired' || result.planIssueDisposition !== 'issued')
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
+    // Effect acceptance rechecks authority for a selected Phase 8 candidate.
+    // Effects issued beside a withdrawn selection retire instead of applying.
+    const phase8 = result.decision.tournamentPostflop;
+    if (phase8?.applied) {
+      const verdict = liveHorsePhase8Authority.check(phase8.authority);
+      if (verdict !== 'usable') {
+        noteFire(`phase8_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(new Error(`Horse plan commit refused: Phase 8 authority ${verdict}`));
+      }
+    }
     const request: CommitDecisionEffectsRequest = {
       generation: result.generation,
       fence: result.fence,
@@ -1228,6 +1247,15 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+      // FIFO order makes worker receipts monotonic. Observe before the
+      // witness so a withdrawal reported here already binds this decision.
+      if (message.phase8Authority) {
+        this.phase8WorkerEpoch = message.phase8Authority.epoch;
+        liveHorsePhase8Authority.observeWorker(message.phase8Authority);
+      }
+      const phase8Ledger = message.decision.tournamentPostflop;
+      if (phase8Ledger?.authority)
+        phase8Ledger.authority = liveHorsePhase8Authority.stamp(phase8Ledger.authority);
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -1309,6 +1337,8 @@ export class LiveHorseDecisionWorkerClient {
 
   private fail(error: Error): void {
     if (this.phase === 'failed' || this.phase === 'stopped') return;
+    // Work returned by a dead worker is restarted authority from here on.
+    liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1454,6 +1484,7 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

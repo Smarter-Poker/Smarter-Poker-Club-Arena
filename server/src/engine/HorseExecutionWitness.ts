@@ -4,6 +4,8 @@ import type { HorsePolicyGraphReceipt } from './HorsePolicyGraph.js';
 import { noteFire } from './BrainTelemetry.js';
 import { copyPhase6Attribution } from './HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceSha256 } from './HorseTournamentUtilityEvidence.js';
+import type { Phase8Selection } from './HorseTournamentPostflop.js';
+import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
   anchorHorseDecisionHand,
   type HorseDecisionHandAnchor,
@@ -22,6 +24,20 @@ export type HorseExecutionRetirement =
   | 'accepted_context_mismatch'
   | 'accepted_amount_unverifiable'
   | 'multiple_accepted_actions';
+
+/** Phase 8 authority binding: the exact continuation version, the worker
+ * authority generation that admitted the decision and its final selection
+ * outcome. Present whenever the decision carried a Phase 8 receipt. */
+export interface HorseWitnessPhase8Authority {
+  readonly continuationVersion: string;
+  readonly mode: 'shadow' | 'candidate';
+  selection: Phase8Selection;
+  readonly authority: HorseAuthorityReceipt | null;
+  /** Main scheduler verdict immediately before acceptance. */
+  verdict: HorseAuthorityVerdict | null;
+  readonly candidate: Readonly<{ action: ActionType; amount: number | null }>;
+  readonly reference: Readonly<{ action: ActionType; amount: number | null }>;
+}
 
 export interface HorseAcceptedAction {
   readonly record: Readonly<
@@ -53,6 +69,8 @@ export interface HorseExecutionWitness {
     heroSeat: number | null;
     boardCount: number | null;
   }>;
+  /** The intent the executor will submit. Readonly except for the one Phase 8
+   * authority withdrawal below, which re-selects the reference before acceptance. */
   readonly selected: Readonly<{ action: ActionType; amount: number | null }>;
   /** Canonical controller amount expected from the original request. Calls
    * record added chips; all-ins record the resulting street total. Null is
@@ -73,6 +91,8 @@ export interface HorseExecutionWitness {
     selectedAmount: number | null;
   }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
+  /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
+  readonly phase8Authority?: HorseWitnessPhase8Authority | null;
   readonly computeMs: number;
   readonly governorScale: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed' | 'unverified';
@@ -82,20 +102,11 @@ export interface HorseExecutionWitness {
   acceptedActions: HorseAcceptedAction[];
 }
 
-/** The client calls this only after matching the worker FIFO, type and fence.
- * Bind the canonical request already validated by the worker, not a fresh live
- * table snapshot that may have changed while the decision was computing.
- */
-export function createHorseExecutionWitness(
-  snapshot: LiveHorseDecisionSnapshot,
-  decision: HorseDecision,
-  result: {
-    requestId: number;
-    lane: HorseExecutionWitness['identity']['lane'];
-    computeMs: number;
-    governorScale: number;
-  }
-): HorseExecutionWitness {
+/** Controller amount the canonical request expects for `decision`. */
+export function expectedHorseExecutionAmount(
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  decision: Pick<HorseDecision, 'action' | 'amount'>
+): number | null {
   const chips = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0;
   let expectedAmount: number | null = null;
@@ -115,6 +126,62 @@ export function createHorseExecutionWitness(
     expectedAmount = Math.round(expectedAmount * 100) / 100;
     if (!Number.isFinite(expectedAmount)) expectedAmount = null;
   }
+  return expectedAmount;
+}
+
+/**
+ * The main scheduler found the authority behind a selected Phase 8 candidate
+ * unusable immediately before acceptance. The pending witness keeps the
+ * candidate in `phase8Authority` and re-selects the reference decision the
+ * shadow path would have executed, so the exact accepted-wager check compares
+ * the controller record against the action actually submitted.
+ */
+export function withdrawHorsePhase8Selection(
+  witness: HorseExecutionWitness | undefined,
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  verdict: HorseAuthorityVerdict
+): void {
+  const phase8 = witness?.phase8Authority;
+  if (!witness || witness.executionStatus !== 'pending' || !phase8) return;
+  if (phase8.selection !== 'selected') return;
+  const reference = { action: phase8.reference.action, amount: phase8.reference.amount };
+  const mutable = witness as {
+    -readonly [K in 'selected' | 'expectedExecutionAmount']: HorseExecutionWitness[K];
+  };
+  mutable.selected = Object.freeze(reference);
+  mutable.expectedExecutionAmount = expectedHorseExecutionAmount(snapshot, {
+    action: reference.action,
+    amount: reference.amount ?? undefined,
+  });
+  phase8.selection = 'withdrawn_before_acceptance';
+  phase8.verdict = verdict;
+}
+
+/** Record the usable verdict observed immediately before acceptance. */
+export function recordHorsePhase8Verdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const phase8 = witness?.phase8Authority;
+  if (witness?.executionStatus === 'pending' && phase8) phase8.verdict = verdict;
+}
+
+/** The client calls this only after matching the worker FIFO, type and fence.
+ * Bind the canonical request already validated by the worker, not a fresh live
+ * table snapshot that may have changed while the decision was computing.
+ */
+export function createHorseExecutionWitness(
+  snapshot: LiveHorseDecisionSnapshot,
+  decision: HorseDecision,
+  result: {
+    requestId: number;
+    lane: HorseExecutionWitness['identity']['lane'];
+    computeMs: number;
+    governorScale: number;
+  }
+): HorseExecutionWitness {
+  const expectedAmount = expectedHorseExecutionAmount(snapshot, decision);
+  const phase8 = decision.tournamentPostflop;
   return {
     version: 'horse-execution-witness-v4',
     handAnchor: anchorHorseDecisionHand(snapshot),
@@ -154,6 +221,25 @@ export function createHorseExecutionWitness(
     policyOwnership: decision.policyOwnership
       ? Object.freeze({ ...decision.policyOwnership })
       : null,
+    ...(phase8
+      ? {
+          phase8Authority: {
+            continuationVersion: phase8.version,
+            mode: phase8.mode,
+            selection: phase8.selection,
+            authority: phase8.authority ? Object.freeze({ ...phase8.authority }) : null,
+            verdict: null,
+            candidate: Object.freeze({
+              action: phase8.candidateAction,
+              amount: phase8.candidateAmount,
+            }),
+            reference: Object.freeze({
+              action: phase8.baselineAction,
+              amount: phase8.baselineAmount,
+            }),
+          },
+        }
+      : {}),
     policyGraph: decision.policyGraph
       ? {
           version: decision.policyGraph.version,
@@ -283,5 +369,11 @@ export function settleHorseExecutionWitness(
       : matched
         ? 'intended'
         : 'coerced';
+  if (
+    witness.phase8Authority?.selection === 'selected' &&
+    witness.phase8Authority.verdict === 'usable' &&
+    witness.executionStatus === 'intended'
+  )
+    witness.phase8Authority.selection = 'controller_accepted';
   countFinal(witness);
 }

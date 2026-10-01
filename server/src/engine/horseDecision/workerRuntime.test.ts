@@ -30,6 +30,8 @@ import {
 } from '../HorseTournamentPreflop.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import type { HorseAuthorityAdmission } from '../HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -2762,3 +2764,140 @@ it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
     }
   }
 );
+
+describe('Phase 8.3 worker-owned qualified authority', () => {
+  function authorityHarness(admission?: HorseAuthorityAdmission) {
+    const h = harness();
+    let safety: string | null = null;
+    const ledgers: Array<Record<string, unknown>> = [];
+    let tripOnDecision = false;
+    h.deps.admitPhase8Authority = admission ? () => admission : undefined;
+    h.deps.phase8SafetyDisabledReason = () => safety;
+    const decide = h.deps.decide;
+    h.deps.decide = (player, gameState, style, mods, opts) => {
+      const decision = decide(player, gameState, style, mods, opts);
+      // A minimal Phase 8 receipt as HorseLogic attaches it.
+      const ledger = { mode: opts?.phase8Postflop, authority: null };
+      ledgers.push(ledger);
+      if (tripOnDecision) safety = 'critical_commitment_increase';
+      return { ...decision, tournamentPostflop: ledger } as unknown as typeof decision;
+    };
+    return {
+      ...h,
+      ledgers,
+      tripSafety: (reason: string) => {
+        safety = reason;
+      },
+      tripOnNextDecision: () => {
+        tripOnDecision = true;
+      },
+      results: () =>
+        h.messages.filter(
+          (m): m is Extract<HorseDecisionWorkerResponse, { type: 'FAST_RESULT' | 'DEEP_RESULT' }> =>
+            m.type === 'FAST_RESULT' || m.type === 'DEEP_RESULT'
+        ),
+    };
+  }
+
+  it('without a committed selection every live decision is shadow and the caller may only turn it off', async () => {
+    const h = authorityHarness();
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive(rekey({ ...fastRequest(2), opts: { phase8Postflop: 'off' } }));
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase8Postflop)).toEqual(['shadow', 'off']);
+    expect(h.results().map((r) => r.phase8Authority?.state)).toEqual(['unselected', 'unselected']);
+    expect(h.ledgers[0].authority).toMatchObject({
+      state: 'unselected',
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      mainGeneration: null,
+    });
+  });
+
+  it('derives candidate mode from admitted authority and binds its generation to the ledger', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    expect(h.decisionOpts[0].phase8Postflop).toBe('candidate');
+    const result = h.results()[0];
+    expect(result.phase8Authority).toMatchObject({
+      state: 'usable',
+      generation: 1,
+      approvalGeneration: 1,
+    });
+    expect(h.ledgers[0].authority).toEqual(result.phase8Authority);
+  });
+
+  it('a caller still cannot supply candidate control when authority is usable', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.runtime.receive({
+      ...fastRequest(1),
+      opts: { phase8Postflop: 'candidate' },
+    } as unknown as FastHorseDecisionRequest);
+    await h.runtime.drain();
+    expect(h.decisionOpts).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'offline candidate controls are forbidden in live decision requests',
+    });
+  });
+
+  it('work queued before a withdrawal runs in shadow, and the deciding receipt is stale', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.tripOnNextDecision();
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive(fastRequest(2));
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase8Postflop)).toEqual(['candidate', 'shadow']);
+    const [first, second] = h.results();
+    // The first decision was admitted at generation 1; its own result already
+    // reports the withdrawal it caused, so the main scheduler sees it stale.
+    expect(h.ledgers[0].authority).toMatchObject({ state: 'usable', generation: 1 });
+    expect(first.phase8Authority).toMatchObject({
+      state: 'withdrawn',
+      generation: 2,
+      reason: 'safety_critical_commitment_increase',
+    });
+    expect(second.phase8Authority).toMatchObject({ state: 'withdrawn', generation: 2 });
+    expect(h.ledgers[1].authority).toMatchObject({ state: 'withdrawn' });
+  });
+
+  it('deep think-time work admits afresh and turns to shadow after a withdrawal', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    const request = fastRequest(1);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.results()[0];
+    if (fast.type !== 'FAST_RESULT') throw Error('expected FAST_RESULT');
+    expect(h.decisionOpts[0].phase8Postflop).toBe('candidate');
+    h.tripSafety('eligible_but_silent');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    const deep = h.results()[1];
+    expect(deep.type).toBe('DEEP_RESULT');
+    expect(h.decisionOpts[1].phase8Postflop).toBe('shadow');
+    expect(deep.phase8Authority).toMatchObject({
+      state: 'withdrawn',
+      reason: 'safety_eligible_but_silent',
+    });
+  });
+
+  it('a refused or transiently unreadable selection never yields candidate mode', async () => {
+    for (const admission of [
+      { status: 'refused', reason: 'hash_mismatch', transient: false },
+      { status: 'refused', reason: 'unreadable_evidence', transient: true },
+      { status: 'withdrawn', approvalGeneration: 1, reason: 'release_owner' },
+    ] as const) {
+      const h = authorityHarness(admission);
+      h.runtime.receive(fastRequest(1));
+      await h.runtime.drain();
+      expect(h.decisionOpts[0].phase8Postflop).toBe('shadow');
+      expect(h.results()[0].phase8Authority?.state).not.toBe('usable');
+    }
+  });
+});

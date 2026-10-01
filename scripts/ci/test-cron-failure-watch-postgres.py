@@ -26,6 +26,12 @@ started = False
 BOOT = r"""
 SET client_min_messages = warning;
 CREATE ROLE service_role NOLOGIN;
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+CREATE TABLE public.declared (proname text, ref text);
+CREATE FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text)
+RETURNS text LANGUAGE sql AS
+$$ INSERT INTO public.declared VALUES (p_proname, p_ref) RETURNING md5(pg_get_functiondef(('public.' || p_proname || '()')::regprocedure)) $$;
 CREATE SCHEMA cron;
 CREATE TABLE cron.job (jobid bigint PRIMARY KEY, jobname text, schedule text, command text, active boolean NOT NULL DEFAULT true);
 CREATE TABLE cron.job_run_details (runid bigserial PRIMARY KEY, jobid bigint, status text, return_message text,

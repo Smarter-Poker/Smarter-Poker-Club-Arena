@@ -537,6 +537,45 @@ REVOKE ALL ON FUNCTION public.fn_ca_balance_has_its_ledger_row() FROM PUBLIC, an
 -- 6. The triggers
 -- ---------------------------------------------------------------------------
 
+-- THE SEVEN LOCKS ARE TAKEN TOGETHER, OR NOT AT ALL (measured 2026-10-01 21:39 UTC)
+--
+--   The second apply (run 36929916516) deadlocked on ShareRowExclusiveLock:
+--   CREATE TRIGGER had locked club_members, clubs, table_seats,
+--   table_pending_addons, union_wallets and bbj_pools one statement at a time
+--   and was waiting for chip_ledger, which a 28-second tournament RPC held
+--   with RowExclusiveLock while it needed one of the six already taken. That
+--   is the ordinary two-table ordering deadlock, and the victim could as
+--   easily have been the live hand commit as the migration. So the locks are
+--   taken here, before any DDL, in ONE statement under a 250 ms lock_timeout:
+--   either all seven are granted together or the attempt is rolled back
+--   (the EXCEPTION block's subtransaction releases any partial set) and tried
+--   again after 100 ms. Nothing waits on us for longer than 250 ms, which is
+--   below deadlock_timeout (1 s), so no live transaction can ever be chosen
+--   as a deadlock victim because of this file. The CREATE TRIGGER statements
+--   below then find their ShareRowExclusiveLock already held.
+
+DO $m$
+DECLARE v_tries int := 0;
+BEGIN
+  PERFORM set_config('lock_timeout', '250ms', true);
+  LOOP
+    BEGIN
+      LOCK TABLE public.club_members, public.clubs, public.table_seats, public.table_pending_addons,
+                 public.union_wallets, public.bbj_pools, public.chip_ledger
+        IN SHARE ROW EXCLUSIVE MODE;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      v_tries := v_tries + 1;
+      IF v_tries >= 240 THEN
+        RAISE EXCEPTION 'the seven ShareRowExclusive locks could not be taken together in % tries (about 90 s); nothing was applied - apply once more when the felt is quieter, never in a loop', v_tries;
+      END IF;
+      PERFORM pg_sleep(0.1);
+    END;
+  END LOOP;
+  PERFORM set_config('lock_timeout', '8s', true);
+  RAISE NOTICE 'ledger invariant: seven ShareRowExclusive locks taken together after % failed tries', v_tries;
+END $m$;
+
 -- Nothing is dropped here (see the header): refuse, by name, if any of the
 -- fourteen already exists, instead of replacing it behind a DROP that would
 -- take AccessExclusiveLock on auth.users through the supautils hook.

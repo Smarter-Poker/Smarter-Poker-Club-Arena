@@ -300,12 +300,38 @@ hour old; no one needs to touch them.
 **No defect was found in the ownership machinery itself**, so no fix was shipped. The one new code in
 this change is test code: the probe, the Diamond handover case and the gate law.
 
+## Decided: no standby engine for now
+
+Decided by Claude on Dan's delegation of 2026-09-30 (Dan: "these are all for you to decide not me
+... FIX AND FINISH ALL OF THESE"; [`docs/DIAMOND-RULINGS.md`](../../DIAMOND-RULINGS.md), Ruling 24).
+
+This was question 1 below: "A standby again?" The answer is **no, not for now.** The engine stays one
+process, as Dan left it when he removed the standby on 2026-08-23.
+
+The takeover logic works in testing. R2 and R3 show it: a standby takes over only after the leader's
+lease is stale, and a cut-off leader stops dealing about 10 s before that. The reasons against a
+standby are these:
+
+- **A second server.** A standby is a second engine host that deals nothing and still has to be
+  released, watched and paid for.
+- **A dual-leader risk for little gain.** Two processes that can both believe they lead is exactly
+  what the lease rules exist to contain. R3 shows a partitioned leader keeps its role until it can
+  read the database. The gain is a crash outage of about 30 s instead of the container restart plus
+  30 s, while the supervisor already restarts the single engine.
+- **The gate already keeps extra engines off.** The scaling gate law
+  (`tests/additional-engine-workers-wait-for-the-scaling-gate.law.test.ts`) holds Caddy to one engine
+  upstream, and the sealed release refuses a second engine container.
+
+**Revisit when** human traffic makes a 30-second crash takeover worth a second server. Enabling a
+standby is then a visible change: the gate law and the release's one-container rule change in the
+same pull request.
+
 ## Questions for Dan
 
-1. **A standby again?** The leader/standby machinery works in isolation (R2 and R3: the standby takes
-   over only after the leader's lease is stale, and a cut-off leader stops dealing 10 s before that).
-   Running a warm standby would cut a crash's outage from "container restart plus 30 s" to about 30 s.
-   It was collapsed on 2026-08-23 by your decision. Keep it collapsed?
+1. ~~**A standby again?**~~ Decided on 2026-09-30, above. For the record, the question was this. The
+   leader/standby machinery works in isolation (R2 and R3). A warm standby would cut a crash's
+   outage from "container restart plus 30 s" to about 30 s. It was collapsed on 2026-08-23 by your
+   decision. Keep it collapsed?
 2. **Horizontal scaling, if ever needed**: one box with worker threads or several boxes, and Redis or
    NATS for the bus (the choices `server/src/scale/README.md` lists as yours). Nothing needs this
    today: production runs 450 to 650 tables on one engine with the equity pool at 2 workers.

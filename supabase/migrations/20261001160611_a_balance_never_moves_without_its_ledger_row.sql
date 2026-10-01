@@ -775,7 +775,7 @@ ON CONFLICT (table_name, trigger_name) DO UPDATE SET note = EXCLUDED.note;
 CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()
 RETURNS text[]
 LANGUAGE sql
-IMMUTABLE
+STABLE
 AS $function$
   SELECT ARRAY(
     SELECT DISTINCT x FROM unnest(ARRAY[

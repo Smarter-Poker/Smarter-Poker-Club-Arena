@@ -307,6 +307,14 @@ export abstract class ServerTableEngineBase {
   private teardownPromise: Promise<void> | null = null;
   /** Successful physical teardown, never inferred from the terminal fence alone. */
   private terminalTeardownComplete = false;
+  /**
+   * performStop reached its end: every owned writer it captured was joined
+   * (resolved or rejected), the bank capture ran and process resources were
+   * released. Unlike terminalTeardownComplete it does not claim that nothing
+   * failed, so a transient read or snapshot write that rejected during the
+   * stop does not make the stopped custody untransferable (2026-10-01).
+   */
+  private terminalTeardownDrained = false;
   /** True only after this object has owned the process-global table resources. */
   private claimedProcessOwnership: boolean = false;
   /** One causal hand-off from an asynchronously failed dealer to its owner. */
@@ -2127,6 +2135,7 @@ export abstract class ServerTableEngineBase {
       throw new Error('f06_hand_number_precision');
     const permit = await this.f06PermitFactory(String(handNumber));
     if (!this.running) throw new Error('f06_dealer_fenced');
+    this.f06ParkReleasedPermit = null;
     this.f06CurrentPermit = permit;
     try {
       await permit.reserve();
@@ -2194,6 +2203,15 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * The binding of the never-started permit this engine's stopped-custody park
+   * released (2026-10-01). The database closed that permit in the park's own
+   * transaction, so the permit object is gone, but a break that already holds
+   * this table as its stopped original still needs to know which permit the
+   * original held. Set only when the park names the permit back; never a
+   * source of hand authority.
+   */
+  private f06ParkReleasedPermit: Readonly<F06HandPermit['binding']> | null = null;
   private f06StoppedMovementProof: string | null = null;
   private f06StoppedMovementGuards = new Map<string, () => void>();
   /** Admit only this positively drained original object under a live, exact
@@ -2232,26 +2250,66 @@ export abstract class ServerTableEngineBase {
     assertSource();
     if (this.f06StoppedMovementProof !== proof) {
       if (this.f06StoppedMovementProof) throw new Error('f06_stopped_original_binding_changed');
+      /*
+       * THE PARK THAT RELEASED THE PERMIT ALREADY PROVED THE NO-START
+       * (2026-10-01).
+       *
+       * Table a2d8a54e ($100 Freeroll 6:00 AM): a lost fn_f06_begin_hand left
+       * its permit `unknown`, the zombie watchdog stopped the engine at
+       * 11:49:22Z, and the Manager parked the table as this break's stopped
+       * original (c0b625dd). The first custody claim missed, and before the
+       * retry the :53 maintenance announcement ran the stopped-custody park,
+       * which released that never-started permit `never_started` in its own
+       * transaction and dropped the permit object. Every later retirement of
+       * the break then refused here with `f06_stopped_original_permit_mismatch`
+       * because the permit it asked for no longer existed - 426 refusals and a
+       * table of nine players that dealt nothing for over an hour.
+       *
+       * The park's release is the same fact `finishF06OriginalNoStart` writes:
+       * the original's hand never started and never can. So a permit the park
+       * named back stands in for the live one; the exact park claim is still
+       * read and checked before movement is admitted.
+       */
       const permit = this.f06CurrentPermit;
+      const identity = permit ? permit.binding : this.f06ParkReleasedPermit;
       if (
-        !permit ||
-        permit.binding.table_id !== b.tableId ||
-        permit.binding.lifecycle !== b.tableIncarnation ||
-        permit.binding.tournament_id !== b.tournamentId ||
-        permit.binding.lease_generation !== b.leaseGeneration
+        !identity ||
+        identity.table_id !== b.tableId ||
+        identity.lifecycle !== b.tableIncarnation ||
+        identity.tournament_id !== b.tournamentId ||
+        identity.lease_generation !== b.leaseGeneration
       )
         throw new Error('f06_stopped_original_permit_mismatch');
-      await this.drainF06NeverStarted();
-      assertSource();
-      await this.finishF06OriginalNoStart(
-        { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
-        async () => {
-          assertSource();
-          const row = await readExactParkClaim();
-          assertSource();
-          return row;
-        }
-      );
+      if (permit) {
+        await this.drainF06NeverStarted();
+        assertSource();
+        await this.finishF06OriginalNoStart(
+          { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
+          async () => {
+            assertSource();
+            const row = await readExactParkClaim();
+            assertSource();
+            return row;
+          }
+        );
+      } else {
+        const row = (await readExactParkClaim()) as Record<string, unknown> | null;
+        assertSource();
+        if (
+          this.f06CurrentPermit !== null ||
+          !row ||
+          row.ok !== true ||
+          row.state !== 'park_requested' ||
+          row.break_id !== b.breakId ||
+          row.custody_id !== b.custodyId ||
+          row.revision !== b.durableRevision ||
+          row.custody_generation !== identity.lease_generation ||
+          row.tournament_id !== identity.tournament_id ||
+          row.source_table_id !== identity.table_id ||
+          row.lifecycle !== identity.lifecycle
+        )
+          throw new Error('f06_original_custody_unproven');
+      }
       // Retain exact positive evidence even if the post-await map assertion
       // fails. A different binding cannot turn it into new movement authority.
       this.f06StoppedMovementProof = proof;
@@ -4147,6 +4205,7 @@ export abstract class ServerTableEngineBase {
     console.log(
       `[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handsDealtThisSession} hands.`
     );
+    this.terminalTeardownDrained = true;
     if (failures.length > 0) {
       throw new AggregateError(
         failures,
@@ -6941,9 +7000,27 @@ export abstract class ServerTableEngineBase {
   adoptStoppedTimeBankCustody(original: ServerTableEngineBase): boolean {
     const custody = original.stoppedTimeBankCustody;
     if (!custody) return !original.hasUnretiredStoppedTimeBankCustody();
+    /*
+     * A TEARDOWN THAT REPORTED A FAILURE STILL HANDS ITS BANKS ON (2026-10-01).
+     *
+     * GameServer.replaceTableEngine accepts a stop that rejected once the
+     * original has released process ownership - "retaining the terminal
+     * object would turn a diagnostic into a permanent outage" - and then asks
+     * this method to carry the banks across. Requiring terminalTeardownComplete
+     * here refused exactly that case: a stop can only reject with failures, and
+     * a stop with failures never sets it. At 12:27Z a ten-second connect
+     * timeout to the database failed one post-commit stack read and one
+     * terminal snapshot flush on fifteen tournament tables at once; every
+     * replacement was refused here and each table stalled until the next
+     * process restart. What custody transfer needs is that the stop has
+     * drained (no writer of the original can still run) and that the banks
+     * were captured, which the guards below already prove; an unproven hand
+     * outcome stays fenced by the F06 permit rows and the unresolved-
+     * preparation check, not by this flag.
+     */
     if (
       original.stoppedTimeBankCustodyTransferred ||
-      !original.terminalTeardownComplete ||
+      !original.terminalTeardownDrained ||
       !original.hasReleasedProcessOwnership() ||
       original.timeBankAccountingUnconfirmed ||
       original.timeBankAccountingPending.size > 0 ||
@@ -7111,9 +7188,14 @@ export abstract class ServerTableEngineBase {
       outcome.status === 'parked' &&
       unstartedPermit !== null &&
       outcome.unstartedPermitReleased === unstartedPermit.permitId &&
+      permit !== null &&
       this.f06CurrentPermit === permit
-    )
+    ) {
+      // A break holding this table as its stopped original reads which
+      // permit was released (admitF06StoppedOriginalMovement).
+      this.f06ParkReleasedPermit = Object.freeze({ ...permit.binding });
       this.f06CurrentPermit = null;
+    }
     if (generation !== this.maintenanceCheckpointGeneration) return true;
     if (this.stoppedTimeBankCustody !== custody) return true;
     if (outcome.status !== 'parked') return true;

@@ -220,8 +220,13 @@ async function main() {
   // the Three.js chunk). Phase 5 (pop-up plate haptics) costs about 0.2kB.
   // Raw stays under the unchanged 10150kB ceiling; the initial-load limits and
   // the entry-module gate are untouched.
+  // The owner-requested first-club welcome package then added 16kB raw in its
+  // paired hosted build for strict RPC validation and the guarded Start From
+  // Zero console, without adding a dependency or vendor. Preserve the reviewed
+  // 20kB raw allowance while the first-paint and 2890kB gzip ceilings remain
+  // unchanged.
   const TOTAL_GZ_CEILING = 2890;
-  const TOTAL_RAW_CEILING = 10150;
+  const TOTAL_RAW_CEILING = 10170;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

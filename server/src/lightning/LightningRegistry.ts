@@ -305,7 +305,10 @@ export class LightningHosting {
     // Registered by onDealing, once the participants (and so the rooms) are known.
     void host.start();
     this.pending.add(host);
-    void host.whenFinished().then(() => this.pending.delete(host));
+    void host
+      .whenFinished()
+      .finally(() => this.pending.delete(host))
+      .catch(() => undefined);
     return host;
   }
 

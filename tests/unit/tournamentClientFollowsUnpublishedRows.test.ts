@@ -101,3 +101,11 @@ describe('the tournament lobby re-reads its board instead of joining a channel p
     expect(lobby).toMatch(/if \(seq !== loadSeqRef\.current\) return;\s*setTournaments\(mapped\)/);
   });
 });
+
+describe('the club tournament list re-reads itself', () => {
+  it('polls the list while visible and clears the poll', () => {
+    expect(clubPage).toMatch(/const listPoll = setInterval\(/);
+    expect(clubPage).toMatch(/CLUB_TOURNAMENT_LIST_REFRESH_MS\)/);
+    expect(clubPage).toMatch(/clearInterval\(listPoll\)/);
+  });
+});

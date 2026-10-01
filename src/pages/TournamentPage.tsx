@@ -105,6 +105,9 @@ function isLateRegOpen(t: TournamentEntryWindowRow): boolean {
 // Default fallback for unauthed (shouldn't happen in real app)
 const GUEST_USER = { id: 'guest', username: 'Guest' };
 
+/** How often a visible club tournament list re-reads itself. */
+const CLUB_TOURNAMENT_LIST_REFRESH_MS = 30_000;
+
 export default function TournamentPage() {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
@@ -489,8 +492,30 @@ export default function TournamentPage() {
       500
     );
 
+    /* THE LIST IS RE-READ, NOT ONLY HEARD (2026-10-01). `tournaments` left the
+       realtime publication on 2026-09-19, so the listener above never fires
+       and every card's status, entrants and pool froze at the first read
+       until the tab was hidden and shown again. A quiet re-read while the
+       page is visible keeps the list true; applyTournaments drops an
+       unchanged answer without a render. */
+    const listPoll = setInterval(() => {
+      if (document.hidden) return;
+      void (async () => {
+        try {
+          const data = await tournamentService.getTournaments(clubId);
+          if (!isMounted) return;
+          applyTournaments(data);
+          const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
+          if (updated) setSelectedTournament(updated);
+        } catch (e) {
+          reportError(e, 'TournamentPage.list_poll_failed');
+        }
+      })();
+    }, CLUB_TOURNAMENT_LIST_REFRESH_MS);
+
     return () => {
       isMounted = false;
+      clearInterval(listPoll);
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
       unsubChipsDistributed();

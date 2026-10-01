@@ -7,6 +7,8 @@ import { jointStateKey } from '../multiway/JointRangeSampler.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
+import { PHASE8_POLICY } from '../HorseTournamentPostflop.js';
+import { horseAuthorityReceiptIsWellFormed } from '../HorseQualifiedAuthority.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -370,6 +372,52 @@ export function horsePhase7EvidenceMismatch(
  * may be absent on legacy or caught-failure decisions; absence is not proof
  * of graph execution. A supplied graph must be complete, continuous and
  * action-only, and its final action must match the returned decision. */
+/**
+ * The Phase 8 receipt as the worker returns it. A changed action is legitimate
+ * only as an authority-backed selection: candidate mode, a usable worker
+ * authority receipt for the running continuation, and the final action equal
+ * to the ledger's candidate. Acceptance-time fields stay unset in the worker.
+ */
+export function horsePhase8LedgerIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  const wager = (action: unknown) => action === 'bet' || action === 'raise';
+  const authority = value.authority;
+  const authorityState = record(authority) ? authority.state : undefined;
+  const authorityVersion = record(authority) ? authority.continuationVersion : undefined;
+  if (
+    value.version !== PHASE8_POLICY.version ||
+    !['shadow', 'candidate'].includes(value.mode as string) ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.changed !== 'boolean' ||
+    !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||
+    value.authorityVerdict !== null ||
+    (authority !== null && !horseAuthorityReceiptIsWellFormed(authority)) ||
+    (authority !== null && authorityVersion !== PHASE8_POLICY.version)
+  )
+    return false;
+  if (value.mode === 'candidate' && authorityState !== 'usable') return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.selection === 'selected' &&
+    decision.action === value.candidateAction &&
+    (!wager(decision.action) || (decision.amount ?? null) === value.candidateAmount)
+  );
+}
+
+/** Phase 7 owns the action Phase 8 received; an applied candidate replaces it. */
+function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'amount'> {
+  const phase8 = value.tournamentPostflop;
+  if (record(phase8) && phase8.applied === true)
+    return {
+      action: phase8.baselineAction as HorseDecision['action'],
+      amount: (phase8.baselineAmount as number | null) ?? undefined,
+    };
+  return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
+}
+
 export function horseDecisionReceiptIsValid(
   value: unknown,
   expectedVariant?: string
@@ -394,12 +442,10 @@ export function horseDecisionReceiptIsValid(
     return false;
   if (
     value.tournamentUtility !== undefined &&
-    !horseTournamentUtilityReceiptIsValid(
-      value.tournamentUtility,
-      value as unknown as HorseDecision
-    )
+    !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(value))
   )
     return false;
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, value)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

@@ -75,7 +75,7 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     if (event.key !== 'Tab') return;
     const focusable = Array.from(
       dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href]'
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), a[href]'
       ) || []
     );
     if (!focusable.length) return;

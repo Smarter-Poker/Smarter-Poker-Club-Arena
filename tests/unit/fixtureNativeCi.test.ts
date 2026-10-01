@@ -34,10 +34,18 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
   const beat = ci.jobs['css-beats-e2e'].steps.find(
     (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"
   );
-  const commands = beat.run.split('\n').filter((line: string) => line.includes('playwright test'));
+  // Its own job since 2026-10-01, beside the beats; css-beats-gate requires both.
+  const playfieldStep = ci.jobs['diamond-playfield-e2e'].steps.find(
+    (step: { name?: string }) => step.name === 'Run the Diamond playfields'
+  );
+  const commands = [beat.run, playfieldStep.run]
+    .join('\n')
+    .split('\n')
+    .filter((line: string) => line.includes('playwright test'));
   const playfields = commands.filter((line: string) =>
     line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
   );
+  expect(beat.run).not.toContain('tests/e2e/css/diamond-games-playfield.spec.ts');
   expect(playfields).toHaveLength(1);
   expect(playfields[0]).toContain('--workers=1');
   // One retry since 2026-09-26, and a retried pass is named, never hidden:

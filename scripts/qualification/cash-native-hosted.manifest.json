@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 176672,
-      "sha256": "ab6ca99999f01277d65da4d22193638c9d72bfc772315932b643cc0edd5881b3"
+      "bytes": 182405,
+      "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 95620,
-      "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      "bytes": 95983,
+      "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
     }
   },
   "nativePgCron": {
@@ -1246,5 +1246,39 @@
         }
       }
     ]
+  },
+  "ledgerInvariantIntegration20261001": {
+    "why": "Adds the ledger-invariant isolated PostgreSQL proof (scripts/dev/test-ledger-invariant.sh: a balance never moves without its ledger row) to the existing accounting shard beside test-accounting-delivery.sh; no existing cash route, assertion or source changed. Re-pinned after merging main (#5713, #5718) into the branch.",
+    "before": {
+      "bytes": 176672,
+      "sha256": "ab6ca99999f01277d65da4d22193638c9d72bfc772315932b643cc0edd5881b3"
+    },
+    "after": {
+      "bytes": 176951,
+      "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+    }
+  },
+  "cssBeatGateSplit20261001": {
+    "why": "Splits the CSS Beat browser gate in two (2026-10-01): the Diamond playfield moves from css-beats-e2e into its own diamond-playfield-e2e job beside it, and the required 'CSS Beat E2E (multi-table + animations)' name moves to css-beats-gate, which passes only when both halves pass. fixtureNativeCi.test.ts reads the playfield command from the new job. No cash route, assertion, probe or accounting source changed.",
+    ".github/workflows/ci.yml": {
+      "before": {
+        "bytes": 176951,
+        "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+      },
+      "after": {
+        "bytes": 182405,
+        "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+      }
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "before": {
+        "bytes": 95620,
+        "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      },
+      "after": {
+        "bytes": 95983,
+        "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
+      }
+    }
   }
 }

@@ -20,12 +20,38 @@ import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.j
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
 import {
+  HorseQualifiedAuthorityHolder,
+  liveHorsePhase8Authority,
+  type HorseAuthorityAdmission,
+} from '../HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
+import {
   HorseDecisionAbortedError,
   HORSE_CAPTURE_LANE_MAX_QUEUED,
   HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
+
+// The process-wide main gate admits only the committed release selection,
+// which is null today. These tests replace that one export with a gate whose
+// admission they control; every other test keeps the unselected default.
+const phase8Main = vi.hoisted(() => ({ admission: null as unknown }));
+vi.mock('../HorseQualifiedAuthority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../HorseQualifiedAuthority.js')>();
+  return {
+    ...actual,
+    liveHorsePhase8Authority: new actual.HorsePhase8AuthorityGate(
+      () =>
+        (phase8Main.admission as HorseAuthorityAdmission | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      'client-test-main'
+    ),
+  };
+});
 
 class FakeWorker implements WorkerLike {
   readonly sent: unknown[] = [];
@@ -2288,4 +2314,125 @@ describe('/health shows the journal the Horse worker owns, not an empty main-thr
       vi.useRealTimers();
     }
   });
+});
+
+describe('Phase 8.3 qualified authority at the client boundary', () => {
+  let approval = 100;
+  function lane() {
+    approval += 1;
+    phase8Main.admission = qualifiedTestAdmission(approval);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const workerAuthority = new HorseQualifiedAuthorityHolder(`client-test-worker-${approval}`);
+    workerAuthority.apply(qualifiedTestAdmission(approval));
+    return { worker, client, workerAuthority };
+  }
+  const candidateLedger = (authority: unknown) => ({
+    version: 'horse-tournament-postflop-round1-v4',
+    mode: 'candidate',
+    eligible: true,
+    fired: true,
+    completed: true,
+    changed: true,
+    applied: true,
+    selection: 'selected',
+    authority,
+    authorityVerdict: null,
+    reason: 'candidate_changed',
+    reasons: [],
+    baselineAction: 'call',
+    baselineAmount: 4,
+    candidateAction: 'fold',
+    candidateAmount: null,
+    executionStatus: 'pending',
+    executedAction: null,
+    executedAmount: null,
+  });
+  function request(client: LiveHorseDecisionWorkerClient, fence: string) {
+    const input = snapshot(fence);
+    input.decisionKey = buildHorseDecisionKey(input);
+    return client.decideFast(input);
+  }
+
+  it('binds worker authority to the ledger and witness, and a worker exit restarts it', async () => {
+    const { worker, client, workerAuthority } = lane();
+    const pending = request(client, 'phase8-fence-1');
+    worker.emitMessage({
+      ...fastResult(1, 'phase8-fence-1'),
+      decision: {
+        action: 'fold',
+        thinkTime: 1500,
+        tournamentPostflop: candidateLedger(workerAuthority.receipt()),
+      },
+      phase8Authority: workerAuthority.receipt(),
+    });
+    const result = await pending;
+    const ledger = result.decision.tournamentPostflop!;
+    expect(ledger.authority).toMatchObject({
+      state: 'usable',
+      generation: workerAuthority.currentGeneration(),
+      mainGeneration: liveHorsePhase8Authority.mainGeneration(),
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+    });
+    expect(result.decision.executionWitness?.phase8Authority).toMatchObject({
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      mode: 'candidate',
+      selection: 'selected',
+      verdict: null,
+      candidate: { action: 'fold', amount: null },
+      reference: { action: 'call', amount: 4 },
+      authority: { generation: workerAuthority.currentGeneration() },
+    });
+    expect(liveHorsePhase8Authority.check(ledger.authority)).toBe('usable');
+    worker.emitExit(1);
+    expect(liveHorsePhase8Authority.check(ledger.authority)).toBe('restarted');
+    void client;
+  });
+
+  it('a withdrawal reported by a later result stales already returned work', async () => {
+    const { worker, client, workerAuthority } = lane();
+    const first = request(client, 'phase8-fence-2');
+    worker.emitMessage({
+      ...fastResult(1, 'phase8-fence-2'),
+      decision: {
+        action: 'fold',
+        thinkTime: 1500,
+        tournamentPostflop: candidateLedger(workerAuthority.receipt()),
+      },
+      phase8Authority: workerAuthority.receipt(),
+    });
+    const returned = (await first).decision.tournamentPostflop!;
+    expect(liveHorsePhase8Authority.check(returned.authority)).toBe('usable');
+    workerAuthority.withdraw('safety_critical_commitment_increase');
+    const second = request(client, 'phase8-fence-3');
+    worker.emitMessage({
+      ...fastResult(2, 'phase8-fence-3'),
+      phase8Authority: workerAuthority.receipt(),
+    });
+    await second;
+    expect(liveHorsePhase8Authority.check(returned.authority)).toBe('withdrawn');
+    expect(liveHorsePhase8Authority.mainState()).toBe('withdrawn');
+  });
+
+  it.each(['missing', 'withdrawn'] as const)(
+    'refuses a candidate ledger whose worker authority is %s',
+    async (mode) => {
+      const { worker, client, workerAuthority } = lane();
+      if (mode === 'withdrawn') workerAuthority.withdraw('test');
+      const pending = request(client, `phase8-fence-${mode}`);
+      worker.emitMessage({
+        ...fastResult(1, `phase8-fence-${mode}`),
+        decision: {
+          action: 'fold',
+          thinkTime: 1500,
+          tournamentPostflop: candidateLedger(
+            mode === 'missing' ? null : workerAuthority.receipt()
+          ),
+        },
+      });
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+    }
+  );
 });

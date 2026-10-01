@@ -1614,6 +1614,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-accounting-delivery.sh
+      - name: A balance never moves without its ledger row (refused by name at commit, every live shape commits)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-ledger-invariant.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
         if: matrix.shard == 1
         env:
@@ -2875,7 +2881,14 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: CSS Beat E2E (multi-table + animations)
+    # TWO HALVES, ONE GATE (2026-10-01). The required check named
+    # "CSS Beat E2E (multi-table + animations)" is now `css-beats-gate`, at the
+    # end of this file, and it passes only when this job AND
+    # `diamond-playfield-e2e` both pass. The Diamond playfield ran here, after
+    # the beats, on one worker for 7.1 of the job's 16 test minutes (run
+    # 36886817861); it builds its own bundle and needs neither this build nor
+    # the shared preview, so it runs beside this job instead of after it.
+    name: CSS Beat suites (multi-table, animations, Table Studio)
     runs-on: ubuntu-latest
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
@@ -3137,32 +3150,9 @@ jobs:
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
           PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
-          # Software WebGL must not compete with the other three browser workers.
-          # Keep the full real-scene transitions.
-          #
-          # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
-          # with --retries=0, so a SwiftShader timing flake in one of its real
-          # WebGL scenes turned a required check red and blocked a merge over
-          # nothing in the diff. It gets the same single retry as the suites
-          # above. A case that fails and then passes is Playwright's `flaky`
-          # status: the JSON report below is read by the next step, which names
-          # every flaky case as a warning and in the job summary, so a retried
-          # pass is seen rather than counted as clean. A case that fails twice
-          # still fails the job.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
 
-      # Reads the playfield invocation's JSON report and names every case that
-      # passed only on retry. Runs whether the suites passed or failed, and
-      # fails loudly if the suites reported success without a readable report.
-      - name: Name every Diamond playfield case that passed only on retry
-        if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
-        env:
-          PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
-          SUITE_OUTCOME: ${{ steps.css-beats.outcome }}
-        run: node scripts/ci/playwright-flaky-summary.mjs
-
-      # The same for the CSS Beat suites of the first invocation, which also
-      # run with one retry: a case that passed only on retry is named there too.
+      # The CSS Beat suites run with one retry: a case that passed only on
+      # retry is named, never counted as clean.
       - name: Name every CSS Beat case that passed only on retry
         if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
         env:
@@ -3219,3 +3209,124 @@ jobs:
           pid=$(cat /tmp/arena-preview.pid 2>/dev/null || echo "")
           [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
           exit 0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE DIAMOND PLAYFIELD, BESIDE THE BEATS (2026-10-01).
+  #
+  # The real Crash, Plinko, Donkey Cross and Mines scenes in software WebGL.
+  # Its spec bundles the components itself with esbuild and serves them through
+  # page.route, so it needs no build of the app and no preview server: only
+  # the dependencies and Chromium. It used to run inside css-beats-e2e after
+  # the beats, on one worker, for 7.1 minutes of every merge's critical path.
+  # Same admission as css-beats-e2e, and css-beats-gate below requires both.
+  # ───────────────────────────────────────────────────────────────────────────
+  diamond-playfield-e2e:
+    needs: changes
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: Diamond playfield (software WebGL)
+    runs-on: ubuntu-latest
+    # 7.1 minutes measured inside the old job; room for a slow browser install.
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The same tree as css-beats-e2e (both install with --ignore-scripts), so
+      # the same key: whichever job saves it first warms the other.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run the Diamond playfields
+        id: diamond-playfield
+        run: |
+            # Software WebGL must not compete with the other three browser workers.
+            # Keep the full real-scene transitions.
+            #
+            # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
+            # with --retries=0, so a SwiftShader timing flake in one of its real
+            # WebGL scenes turned a required check red and blocked a merge over
+            # nothing in the diff. It gets the same single retry as the suites
+            # above. A case that fails and then passes is Playwright's `flaky`
+            # status: the JSON report below is read by the next step, which names
+            # every flaky case as a warning and in the job summary, so a retried
+            # pass is seen rather than counted as clean. A case that fails twice
+            # still fails the job.
+            PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+
+      # Reads the playfield invocation's JSON report and names every case that
+      # passed only on retry. Runs whether the suite passed or failed, and
+      # fails loudly if the suite reported success without a readable report.
+      - name: Name every Diamond playfield case that passed only on retry
+        if: ${{ always() && (steps.diamond-playfield.outcome == 'success' || steps.diamond-playfield.outcome == 'failure') }}
+        env:
+          PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
+          SUITE_OUTCOME: ${{ steps.diamond-playfield.outcome }}
+        run: node scripts/ci/playwright-flaky-summary.mjs
+
+      - name: Preserve failed Diamond playfield browser evidence
+        if: ${{ failure() && steps.diamond-playfield.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE REQUIRED CHECK: BOTH HALVES OR NOTHING (2026-10-01).
+  #
+  # "CSS Beat E2E (multi-table + animations)" is the name the main ruleset
+  # requires (scripts/ci/apply-main-ruleset.mjs). It now belongs to this job,
+  # which runs no browser: it reads the two halves' results and passes only
+  # when both passed.
+  #
+  # FAILS CLOSED, for the reason css-beats-e2e spells out. `always()` makes it
+  # evaluate even when a half failed, was cancelled or was skipped by `needs:`;
+  # without it a failed half would skip this job, and a ruleset counts a
+  # skipped required check as SATISFIED. Its admission is the halves' own, so
+  # it is skipped exactly when they are meant to be (no src change, a
+  # superseded head) and runs, and judges, whenever they were meant to run.
+  # tests/the-css-beat-gate-requires-both-halves.law.test.ts pins all of it.
+  # ───────────────────────────────────────────────────────────────────────────
+  css-beats-gate:
+    needs: [changes, css-beats-e2e, diamond-playfield-e2e]
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: CSS Beat E2E (multi-table + animations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Both halves passed
+        env:
+          BEATS_RESULT: ${{ needs.css-beats-e2e.result }}
+          PLAYFIELD_RESULT: ${{ needs.diamond-playfield-e2e.result }}
+        run: |
+          echo "CSS Beat suites: $BEATS_RESULT"
+          echo "Diamond playfield: $PLAYFIELD_RESULT"
+          if [ "$BEATS_RESULT" != "success" ] || [ "$PLAYFIELD_RESULT" != "success" ]; then
+            echo "::error title=CSS Beat E2E::both halves must pass (CSS Beat suites: $BEATS_RESULT, Diamond playfield: $PLAYFIELD_RESULT)"
+            exit 1
+          fi

@@ -63,7 +63,7 @@ export default function PlayerBlockModal({
       if (event.key !== 'Tab') return;
 
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
       );
       if (!focusable?.length) return;
       const first = focusable[0];

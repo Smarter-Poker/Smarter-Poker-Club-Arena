@@ -645,7 +645,7 @@ export default function ChipTransferModal({
         if (e.key !== 'Tab') return;
         const focusable = Array.from(
           modalRef.current?.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
           ) ?? []
         );
         if (focusable.length === 0) return;

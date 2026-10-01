@@ -49,6 +49,7 @@ import ClubLaunchProgress, {
   useClubLaunchSkips,
 } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
+import ClubWelcomePackage from '../components/club/ClubWelcomePackage';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
 import {
   hasNewClubOpeningChecklist,
@@ -5598,6 +5599,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
+        {/* The Welcome Package receipt outlives the opening checklist latch.
+            Every owner club asks its authoritative RPC; old clubs answer
+            ineligible and render nothing, while an entitled first club keeps
+            its package and reset control after the checklist is complete. */}
+        {isOwner && <ClubWelcomePackage clubId={club.id} clubName={club.name} />}
         {showLaunchChecklist && (
           <ClubLaunchProgress
             key={`${club.id}:${currentUserId || 'unknown'}`}

@@ -57,6 +57,7 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
+import { uuid } from '../../utils/uuid';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
@@ -1459,6 +1460,74 @@ export default function TournamentDetails({
     tournamentId,
   ]);
 
+  /**
+   * ═══ A BUSTED PLAYER CAN RE-ENTER FROM THE LOBBY (2026-10-01) ═══
+   *
+   * In a re-entry event, process_tournament_rebuy accepts a seatless
+   * eliminated entry ('reentry', knockout candidate 'eliminated') for as long
+   * as the re-entry period is open, and seats it itself. The only door to it
+   * was the bust prompt on the felt, which lives for a few seconds; once that
+   * closed, this lobby - where a busted player lands - answered ELIMINATED
+   * and offered nothing, so the re-entry the event advertises could not be
+   * bought. TournamentService.canRebuy is the same player-aware eligibility
+   * the club page and the felt use; the RPC stays the authority.
+   */
+  const myEntryStatus = entries.find((e) => e.user_id === user?.id)?.status;
+  const [reEntryOffer, setReEntryOffer] = useState<{ cost: number } | null>(null);
+  const [isReEntering, setIsReEntering] = useState(false);
+  /** One token per visible offer: a retry after an unknown reply replays it. */
+  const reEntryTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const t = tournament;
+    if (!t || !user?.id || myEntryStatus !== 'eliminated' || !isLateStatus(t.status)) {
+      setReEntryOffer(null);
+      reEntryTokenRef.current = null;
+      return;
+    }
+    const userId = user.id;
+    void (async () => {
+      try {
+        const check = await tournamentService.canRebuy(t.id, userId);
+        if (!alive) return;
+        if (check.allowed) {
+          setReEntryOffer({ cost: tournamentService.quoteFromTournament(t, 'rebuy').totalCost });
+        } else {
+          setReEntryOffer(null);
+          reEntryTokenRef.current = null;
+        }
+      } catch (error) {
+        if (!alive) return;
+        reportError(error, 'TournamentDetails.reentry_eligibility_failed');
+        setReEntryOffer(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // Keyed on what decides eligibility, not on the row object's identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournament?.id, tournament?.status, tournament?.current_level, user?.id, myEntryStatus]);
+
+  const handleReEnter = async () => {
+    if (!tournament || !user || isReEntering) return;
+    const token = reEntryTokenRef.current ?? uuid();
+    reEntryTokenRef.current = token;
+    setIsReEntering(true);
+    try {
+      await tournamentService.processRebuy(tournament.id, user.id, token);
+      reEntryTokenRef.current = null;
+      setReEntryOffer(null);
+      toast.success('Re-Entry Confirmed. Your New Seat Is Ready.');
+      void loadTournament(undefined, { quiet: true });
+    } catch (error) {
+      reportError(error, 'TournamentDetails.reentry_failed');
+      toast.error(`Re-Entry failed: ${(error as Error).message || 'Unknown error'}`);
+    } finally {
+      setIsReEntering(false);
+    }
+  };
+
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
     if (!user) {
@@ -1840,6 +1909,23 @@ export default function TournamentDetails({
                 );
               }
               if (myEntry?.status === 'eliminated') {
+                if (reEntryOffer) {
+                  return (
+                    <>
+                      <button
+                        className="btn btn-register late-reg"
+                        type="button"
+                        onClick={() => void handleReEnter()}
+                        disabled={isReEntering}
+                      >
+                        {isReEntering
+                          ? 'Processing...'
+                          : `Re-Enter (${chipsCompact(reEntryOffer.cost)})`}
+                      </button>
+                      {watchBtn}
+                    </>
+                  );
+                }
                 return (
                   <>
                     <span className="tournament-status-badge cancelled">ELIMINATED</span>

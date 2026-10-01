@@ -12207,6 +12207,7 @@ function LiveTablePage({
   useEffect(() => {
     let isMounted = true;
     let durableCompletionRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let bountyMapPollTimer: ReturnType<typeof setInterval> | null = null;
     let durableCompletionRetryCycle = 0;
     let durableCompletionFailureReported = false;
     async function loadTableInfo() {
@@ -13131,6 +13132,41 @@ function LiveTablePage({
                 }
               });
             bountyChannelRef.current = bountyChannel;
+
+            /* ═══ THE BOUNTY BADGES ARE RE-READ, NOT ONLY HEARD (2026-10-01) ═══
+               `tournament_players` is not in the realtime publication (removed
+               by measurement on 2026-09-19 - the most written table on the
+               platform), so the UPDATE listener above never fires. The engine's
+               `bounty_collected` broadcast moves the heads of a knockout on this
+               table, but a head that changes anywhere else - a re-entry buying a
+               fresh head, a player balanced in from another table after this
+               page mounted - stayed as the mount read left it, so a PKO table
+               showed a missing or wrong bounty on exactly the player a call is
+               being priced against. One bounded read on a slow cadence keeps
+               every badge true; a failed read keeps the map the table has. */
+            const refreshBountyMap = async () => {
+              if (!isMounted || document.hidden) return;
+              const { data: rows, error: readErr } = await supabase
+                .from('tournament_players')
+                .select('user_id, current_bounty')
+                .eq('tournament_id', table.tournament_id)
+                .gt('current_bounty', 0);
+              if (!isMounted || readErr || !rows) return;
+              const next: Record<string, number> = {};
+              rows.forEach((p: { user_id: string; current_bounty: number }) => {
+                next[p.user_id] = p.current_bounty;
+              });
+              setTableState((prev) => {
+                const before = prev.bountyMap || {};
+                const keys = Object.keys(next);
+                const same =
+                  keys.length === Object.keys(before).length &&
+                  keys.every((k) => before[k] === next[k]);
+                return same ? prev : { ...prev, bountyMap: next };
+              });
+            };
+            if (bountyMapPollTimer) clearInterval(bountyMapPollTimer);
+            bountyMapPollTimer = setInterval(() => void refreshBountyMap(), 30_000);
           } else if (tournData?.spin_multiplier) {
             setTableState((prev) => ({
               ...prev,
@@ -14661,6 +14697,10 @@ function LiveTablePage({
       if (durableCompletionRetryTimer) {
         clearTimeout(durableCompletionRetryTimer);
         durableCompletionRetryTimer = null;
+      }
+      if (bountyMapPollTimer) {
+        clearInterval(bountyMapPollTimer);
+        bountyMapPollTimer = null;
       }
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
@@ -20484,8 +20524,100 @@ function LiveTablePage({
 
     let cancelled = false;
     let reloadTimer = 0;
+    /* Whether the last roster read had the hero in a chair - the only proof
+       this page has that a cancellation took THEIR buy-in back. */
+    let heroHeldSeat = false;
+    let cancelNoticeShown = false;
+
+    /**
+     * ═══ THE TOURNAMENT ROW IS POLLED, NOT ONLY HEARD (2026-10-01) ═══
+     *
+     * `tournaments` left the realtime publication by measurement on
+     * 2026-09-19 (scripts/ci/check-realtime-publication.mjs, KNOWN_UNPUBLISHED),
+     * so the UPDATE listener below joins, reports SUBSCRIBED and never fires.
+     * Every transition it carried was therefore invisible to a seat-first
+     * table: a Spin that the unfilled sweep (fn_spin_expire_unfilled) cancelled
+     * and refunded left the player at an empty felt that went on selling
+     * seats in a CANCELLED game with no word about their money, and the
+     * level-1 clock never started. One row read rides the roster poll and
+     * feeds the same handler the channel does.
+     */
+    const applyTournamentRow = (
+      row: {
+        status?: string;
+        current_level?: number;
+        level_started_at?: string;
+      } | null
+    ) => {
+      const status = String(row?.status ?? '').toUpperCase();
+      /* The game ENDED under us: no round is running, so the countdown
+         comes off rather than sitting at 0:00 forever (2026-08-28). This
+         is the live twin of the mount-time `gameIsOver` guard. */
+      if (['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)) {
+        /* A seat-first game that is CANCELLED before it dealt refunded every
+           seat (atomic_cancel_tournament). Tell the player who paid, once. */
+        if (status === 'CANCELLED' && heroHeldSeat && !cancelNoticeShown) {
+          cancelNoticeShown = true;
+          const label = seatFirstBuyIn?.label ?? 'Game';
+          heartbeatToastRef.current?.info?.(
+            `This ${label} Did Not Fill And Was Cancelled. Your Buy-In Was Refunded.`
+          );
+        }
+        setPlayHasBegun(true);
+        setLevelClock(null);
+        return;
+      }
+      if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
+        // The game left the selling state under us. Take the sheet down
+        // now — the D8 effect clears seatFirstBuyIn off this latch.
+        setPlayHasBegun(true);
+        /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
+           effect no longer fabricates a countdown for a REGISTERING
+           table (that was the phantom "LEVEL 1 · 2:57" every spectator
+           watched restart on every reload), and the engine's level_up
+           broadcast only fires from level 2. This transition IS level
+           1 starting, and the row carries its own stamp. */
+        const struct = blindStructRef.current;
+        const lvlIdx = Number(row?.current_level ?? 0);
+        const entry =
+          struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
+          struct.find((bl) => bl.level === lvlIdx + 1);
+        const durSec = entry
+          ? Number(entry.duration) ||
+            (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
+          : 0;
+        if (durSec > 0) {
+          const startedAtMs = row?.level_started_at ? Date.parse(row.level_started_at) : Date.now();
+          setLevelClock({
+            startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+            durationSec: durSec,
+          });
+        }
+      }
+    };
+
+    const reloadTournamentRow = async (): Promise<boolean> => {
+      if (!tournId) return false;
+      const { data: row, error } = await supabase
+        .from('tournaments')
+        .select('status, current_level, level_started_at')
+        .eq('id', tournId)
+        .maybeSingle();
+      if (cancelled) return true;
+      if (error) {
+        // An unanswered read is not a transition; the next poll asks again.
+        reportError(error, 'TablePage.seat_first_tournament_reload', { tableId, tournId });
+        return false;
+      }
+      if (!row) return false;
+      const status = String(row.status ?? '').toUpperCase();
+      applyTournamentRow(row as Parameters<typeof applyTournamentRow>[0]);
+      return status !== 'REGISTERING' && status !== 'ANNOUNCED';
+    };
 
     const reloadRoster = async () => {
+      if (await reloadTournamentRow()) return;
+      if (cancelled) return;
       const { data: seats, error } = await supabase
         .from('table_seats')
         .select('seat_number, user_id, stack, is_sitting_out, horse_id')
@@ -20498,6 +20630,7 @@ function LiveTablePage({
         return;
       }
       const seatRows = seats || [];
+      heroHeldSeat = !!userId && seatRows.some((s) => s.user_id === userId);
       const userIds = seatRows.map((s) => s.user_id).filter(Boolean);
       let profileMap = new Map<string, Record<string, unknown>>();
       if (userIds.length > 0) {
@@ -20599,51 +20732,14 @@ function LiveTablePage({
       channel.on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournId}` },
-        (payload) => {
-          const row = payload.new as {
-            status?: string;
-            current_level?: number;
-            level_started_at?: string;
-          } | null;
-          const status = String(row?.status ?? '').toUpperCase();
-          /* The game ENDED under us: no round is running, so the countdown
-             comes off rather than sitting at 0:00 forever (2026-08-28). This
-             is the live twin of the mount-time `gameIsOver` guard. */
-          if (['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)) {
-            setPlayHasBegun(true);
-            setLevelClock(null);
-            return;
-          }
-          if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
-            // The game left the selling state under us. Take the sheet down
-            // now — the D8 effect clears seatFirstBuyIn off this latch.
-            setPlayHasBegun(true);
-            /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
-               effect no longer fabricates a countdown for a REGISTERING
-               table (that was the phantom "LEVEL 1 · 2:57" every spectator
-               watched restart on every reload), and the engine's level_up
-               broadcast only fires from level 2. This transition IS level
-               1 starting, and the row on the wire carries its own stamp. */
-            const struct = blindStructRef.current;
-            const lvlIdx = Number(row?.current_level ?? 0);
-            const entry =
-              struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
-              struct.find((bl) => bl.level === lvlIdx + 1);
-            const durSec = entry
-              ? Number(entry.duration) ||
-                (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
-              : 0;
-            if (durSec > 0) {
-              const startedAtMs = row?.level_started_at
-                ? Date.parse(row.level_started_at)
-                : Date.now();
-              setLevelClock({
-                startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-                durationSec: durSec,
-              });
-            }
-          }
-        }
+        (payload) =>
+          applyTournamentRow(
+            payload.new as {
+              status?: string;
+              current_level?: number;
+              level_started_at?: string;
+            } | null
+          )
       );
     }
     channel.subscribe();

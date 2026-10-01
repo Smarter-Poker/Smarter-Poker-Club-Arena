@@ -473,6 +473,9 @@ const makeLobbyTab = (): TableInstance => ({
    and the <img> together if the artwork is ever re-cut transparent. */
 
 const MAX_TABLES = 4;
+/** How often an open Spin quick-join sheet re-asks which boards still have a
+ *  seat. The fleet fills a board in 90-350 s, so 5 s keeps a tap honest. */
+const QUICK_JOIN_SPIN_POLL_MS = 5_000;
 
 /* `parseTimed` LIVED HERE TOO, AND main DID NOT COMPILE (2026-09-05).
    Two agents fixed the same production outage the same day - the temporal
@@ -2857,9 +2860,12 @@ export default function MultiTablePage() {
    * (TournamentRecurringService). So a snapshot taken when "+" was pressed goes
    * stale in seconds, and the player taps a board that has already started.
    *
-   * `tables` and `tournaments` are both in the supabase_realtime publication,
-   * so the fill is already on the wire. This subscribes to it for exactly as
-   * long as the sheet is on screen.
+   * `tables` and `tournaments` LEFT the supabase_realtime publication by
+   * measurement on 2026-09-19 (scripts/ci/check-realtime-publication.mjs,
+   * KNOWN_UNPUBLISHED), so the listeners below join and never fire. The sheet
+   * therefore re-asks on a short poll for exactly as long as it is on screen
+   * (2026-10-01); the listeners stay for the day either table is published
+   * again and cost nothing until then.
    *
    * IT NEVER TOUCHES `loading`. Re-running the loader would set
    * `{ loading: true, rows: [] }` and flash a spinner over a list the player is
@@ -2923,10 +2929,12 @@ export default function MultiTablePage() {
         );
     }
     channel.subscribe();
+    const pollId = setInterval(refresh, QUICK_JOIN_SPIN_POLL_MS);
 
     return () => {
       cancelled = true;
       if (debounce) clearTimeout(debounce);
+      clearInterval(pollId);
       void supabase.removeChannel(channel);
     };
   }, [quickJoin.open, spinSheetScope]);

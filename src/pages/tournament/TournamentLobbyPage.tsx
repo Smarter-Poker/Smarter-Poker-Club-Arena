@@ -38,7 +38,6 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { totalBuyIn } from '../../utils/buyIn';
-import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
@@ -48,6 +47,9 @@ import { tournamentLobbyTimeGroup } from '../../utils/tournamentLobbyTimeGroup';
 import { TOURNAMENT_ARENA_EMBED } from '../../services/TournamentService';
 import { withDiamondSpinCeilings } from '../../services/diamondSpinCeilings';
 import type { TournamentArenaEmbed } from '../../components/tournament/details/types';
+
+/** How often a visible lobby re-reads its board. See the refresh effect. */
+const LOBBY_REFRESH_MS = 20_000;
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -167,9 +169,11 @@ export default function TournamentLobbyPage() {
   const statusFilterRef = useRef(statusFilter);
   statusFilterRef.current = statusFilter;
 
-  const loadTournamentsRef = useRef<() => void>(() => {});
+  const loadTournamentsRef = useRef<(opts?: { quiet?: boolean }) => void>(() => {});
   const tournamentsRef = useRef<Tournament[]>([]);
-  const channelRefsRef = useRef<Map<string, any>>(new Map());
+  /** Only the newest list read may paint: a slower answer to an earlier filter
+   *  (or an earlier poll) must never overwrite a newer one. */
+  const loadSeqRef = useRef(0);
 
   useEffect(() => {
     tournamentsRef.current = tournaments;
@@ -235,116 +239,48 @@ export default function TournamentLobbyPage() {
     };
   }, [clubId]);
 
-  // ── Broadcast: Subscribe to tournament events for all running tournaments ──
+  /**
+   * ═══ THE BOARD IS RE-READ, NOT JOINED ONE CHANNEL PER EVENT (2026-10-01) ═══
+   *
+   * This page used to join `t-break-<id>` for EVERY active tournament it
+   * listed, inside an effect keyed on the `tournaments` array. Two defects:
+   *
+   *   - A union board lists hundreds of live events (390 on one union at
+   *     2026-10-01 18:00Z) and one Realtime socket holds at most 100
+   *     channels (TournamentManagerBase.broadcast's header). Every join past
+   *     the cap was refused, on the same socket as the player's
+   *     notifications and table channels.
+   *   - Every broadcast it heard called setTournaments, which re-ran the
+   *     effect, whose cleanup unsubscribed EVERY channel before resubscribing
+   *     them all - a full re-join storm per level-up, per lobby viewer.
+   *
+   * And it was still not current: `tournaments` left the realtime
+   * publication on 2026-09-19, so status flips, entrant counts and prize
+   * pools only changed on a reload. A quiet re-read of the same scoped
+   * query on a 20 s cadence (visible tab only, and once on return to the
+   * tab) keeps every card true at a fixed, bounded cost.
+   */
   useEffect(() => {
-    // Get all running tournament IDs from current tournaments
-    const runningTournamentIds = tournamentsRef.current
-      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'BAGGED'].includes(t.status))
-      .map((t) => t.id);
-
-    // Cleanup old channels for tournaments no longer running
-    const channelMap = channelRefsRef.current;
-    /* keys(), not entries(): the loop closes a channel by KEY through the bus
-       and never touched the bound value, which read as an unused binding. */
-    for (const tourneyId of [...channelMap.keys()]) {
-      if (!runningTournamentIds.includes(tourneyId)) {
-        masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
-        channelMap.delete(tourneyId);
-      }
-    }
-
-    // Subscribe to new tournaments
-    runningTournamentIds.forEach((tournamentId) => {
-      if (channelMap.has(tournamentId)) return; // Already subscribed
-
-      const channelKey = `t-break-${tournamentId}`;
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on('broadcast', { event: 'tournament_event' }, (payload) => {
-          const eventType = payload.payload?.type;
-          const data = payload.payload?.payload;
-
-          /* Break events onto MasterBus — see tournamentEventBridge. */
-          relayTournamentEvent(tournamentId, payload.payload);
-
-          // Update the tournament in the list
-          setTournaments((prev) =>
-            prev.map((t) => {
-              if (t.id !== tournamentId) return t;
-
-              // Common updates for multiple event types
-              let updated = { ...t };
-
-              switch (eventType) {
-                case 'level_up':
-                case 'table_rebalance':
-                  // Just trigger a lightweight update if needed
-                  // The postgres_changes subscription should handle most of this
-                  break;
-
-                case 'player_eliminated':
-                  // Decrement player count
-                  if (data?.playerName) {
-                    updated = {
-                      ...updated,
-                      currentPlayers: Math.max(0, updated.currentPlayers - 1),
-                    };
-                  }
-                  break;
-
-                case 'late_reg_closed':
-                  // Status may have changed, no immediate UI change needed
-                  break;
-
-                case 'ADDON_PERIOD_START':
-                case 'ADDON_PERIOD_END':
-                  // No player count change
-                  break;
-
-                case 'tournament_break':
-                case 'break_ended':
-                case 'hand_for_hand':
-                case 'bubble_burst':
-                  // Status notifications, no state update needed
-                  break;
-              }
-
-              return updated;
-            })
-          );
-        })
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err)
-              reportError(err?.message || err, 'TournamentLobbyPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[TournamentLobbyPage] Realtime channel timed out');
-          }
-        });
-
-      channelMap.set(tournamentId, channel);
-    });
-
-    return () => {
-      // Cleanup all channels on unmount
-      for (const [, channel] of channelRefsRef.current.entries()) {
-        // Unsubscribe the channel properly
-        if (channel?.unsubscribe) {
-          channel.unsubscribe();
-        }
-      }
-      for (const [tourneyId] of channelRefsRef.current.entries()) {
-        masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
-      }
-      channelRefsRef.current.clear();
+    if (typeof document === 'undefined') return;
+    const refresh = () => {
+      if (document.hidden) return;
+      loadTournamentsRef.current({ quiet: true });
     };
-  }, [tournaments]);
+    const timer = setInterval(refresh, LOBBY_REFRESH_MS);
+    const onVisible = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [clubId, statusFilter]);
 
-  const loadTournaments = async () => {
+  const loadTournaments = async (opts?: { quiet?: boolean }) => {
     loadTournamentsRef.current = loadTournaments;
-    setLoading(true);
+    const seq = ++loadSeqRef.current;
+    if (!opts?.quiet) setLoading(true);
     try {
       // Fetch active tournaments first (REGISTERING/RUNNING/ANNOUNCED), then completed
       // Two queries to ensure active tournaments always appear regardless of limit
@@ -629,13 +565,14 @@ export default function TournamentLobbyPage() {
           diamond_spin_ceiling: t.diamond_spin_ceiling ?? null,
         }));
 
+        if (seq !== loadSeqRef.current) return;
         setTournaments(mapped);
       }
     } catch (error) {
       if (!isMounted.current) return;
       reportError(error, 'TournamentLobbyPage.Failed_to_load_tournaments');
     }
-    if (isMounted.current) setLoading(false);
+    if (isMounted.current && seq === loadSeqRef.current) setLoading(false);
   };
 
   /**

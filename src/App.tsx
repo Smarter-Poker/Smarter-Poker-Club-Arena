@@ -112,6 +112,10 @@ const TournamentResultsPage = lazyWithRetry(
   () => import('./pages/tournament/TournamentResultsPage')
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
+/* LIGHTNING PHASE 6: the one door to a Lightning Cluster. Resolves the
+   caller's pool session and opens its room in the table view, or shows the
+   Cluster's JOIN LIGHTNING entry. */
+const LightningEntryPage = lazyWithRetry(() => import('./pages/LightningEntryPage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
 // Keep the complete Daily Challenges presentation graph behind its route.
 // Auth/loading/crash paint is deliberately owned by the lazy route module so
@@ -2082,6 +2086,18 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Daily Bonus">
                         <DailyBonusPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                {/* LIGHTNING PHASE 6: /lightning/:clusterId, the one door to a
+                    Lightning Cluster. */}
+                <Route
+                  path="lightning/:clusterId"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Lightning">
+                        <LightningEntryPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

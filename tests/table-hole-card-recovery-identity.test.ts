@@ -46,6 +46,8 @@ function start(userId: string, response = Promise.resolve({ data: null, error: n
     supabase: { from },
     reportError: vi.fn(),
     heroCardFetchRef: { current: null },
+    // A physical table: no Lightning pool-session room.
+    lightningRoomRef: { current: null },
     heroCardsRecoveredRef: { current: false },
     heroHandRef: { current: 0 },
     tableStateRef: { current: { players: [], communityCards: [] } },

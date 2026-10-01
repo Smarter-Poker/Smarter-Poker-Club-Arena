@@ -1,0 +1,63 @@
+/* LIGHTNING PHASE 6: the Lightning controls.
+
+   A strip pinned just above the action row, on the right, clear of the hero's
+   name plate. It is position: fixed and out of flow, so it never feeds the
+   felt's geometry (the reserve is static; see TablePage.css), and it is
+   always mounted in a Lightning room, so it never enters or leaves between
+   hands. Only the words change: lit while folding is available, invisible and
+   inert otherwise. One action is a lit word, not a drawn button
+   (#ClubArenaConsole), the same treatment as .footer-action-bar__btn. */
+.lightning-fold-bar {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--sp-bottom-row-h, 64px) + env(safe-area-inset-bottom, 0px) + 6px);
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.lightning-fold-bar__btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 120ms linear;
+}
+
+.lightning-fold-bar__btn--quiet {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.lightning-fold-bar__btn:disabled {
+  opacity: 0;
+  cursor: default;
+  pointer-events: none;
+}
+
+.lightning-fold-bar__btn:active:not(:disabled) {
+  filter: brightness(1.3);
+}
+
+/* The neutral line for a gap between hands that has run long. */
+.lightning-next-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}

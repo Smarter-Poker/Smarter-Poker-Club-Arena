@@ -37,6 +37,23 @@ GRANT USAGE ON SCHEMA public,auth TO anon,authenticated,service_role;
 CREATE TABLE ca_declared_money_triggers(
  table_name text NOT NULL,trigger_name text NOT NULL,note text NOT NULL,
  PRIMARY KEY(table_name,trigger_name));
+CREATE TABLE ca_money_rpc_registry(
+ proname text PRIMARY KEY,status text NOT NULL,notes text NOT NULL);
+CREATE FUNCTION fn_fixture_money_registry_guard() RETURNS event_trigger LANGUAGE plpgsql AS $guard$
+DECLARE command record;
+BEGIN
+  FOR command IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP
+    IF command.object_identity LIKE 'public.fn_apply_club_welcome_economics(%'
+       AND NOT EXISTS(
+         SELECT 1 FROM ca_money_rpc_registry
+          WHERE proname='fn_apply_club_welcome_economics' AND status='approved'
+       ) THEN
+      RAISE EXCEPTION 'fixture refused unregistered welcome money writer';
+    END IF;
+  END LOOP;
+END $guard$;
+CREATE EVENT TRIGGER fixture_money_registry_guard ON ddl_command_end
+  WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION fn_fixture_money_registry_guard();
 CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,name text,is_union boolean DEFAULT false,union_id uuid,
  chip_treasury numeric DEFAULT 100000,bbj_enabled boolean DEFAULT false,bbj_rake_enabled boolean DEFAULT false,
  spins_enabled boolean DEFAULT false,spins_preseed_amount numeric DEFAULT 0,spins_wallet_funding text,
@@ -134,6 +151,7 @@ try:
     run('setup',SETUP)
     run('opening-definition-before', "SELECT pg_get_functiondef('fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);")
     run('install',MIGRATION.read_text())
+    run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'
     owner3='00000000-0000-4000-8000-000000000003'; c4='00000000-0000-4000-9000-000000000004'

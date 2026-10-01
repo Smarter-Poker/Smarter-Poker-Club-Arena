@@ -111,6 +111,15 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).toContain('club_welcome_package_funding');
   });
 
+  it('registers the private seeded-balance writer before production can create it', () => {
+    const registry = sql.indexOf("'fn_apply_club_welcome_economics','approved'");
+    const creation = sql.indexOf('CREATE FUNCTION public.fn_apply_club_welcome_economics');
+    expect(registry).toBeGreaterThan(0);
+    expect(registry).toBeLessThan(creation);
+    expect(sql).toContain('club_welcome_allocation ledger context');
+    expect(sql).toContain('Diamond Spins remain owner-acceptance-required');
+  });
+
   it('does not mutate tagline, membership, wallets or historical ledgers', () => {
     expect(sql).not.toMatch(/UPDATE public\.clubs SET[^;]*tagline/is);
     expect(sql).not.toMatch(

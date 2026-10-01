@@ -236,6 +236,14 @@ END $function$;
 REVOKE ALL ON FUNCTION public.fn_get_club_welcome_package(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_get_club_welcome_package(uuid) TO authenticated,service_role;
 
+-- Register the private balance writer before CREATE FUNCTION so the production
+-- event trigger can enforce the reviewed financial authority atomically.
+INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES (
+  'fn_apply_club_welcome_economics','approved',
+  'Private lifetime-first club welcome allocator. Runs only inside the owner-bound idempotent provisioning transaction; moves exactly the reviewed BBJ seed from clubs.chip_treasury into bbj_pools and delegates the reviewed Poker Spins seed to fn_spin_activate, with keyed club_welcome_allocation ledger context. Diamond Spins remain owner-acceptance-required and receive no automatic funds.'
+)
+ON CONFLICT (proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
+
 CREATE FUNCTION public.fn_apply_club_welcome_economics(
   p_club_id uuid,p_actor uuid,p_operation_id uuid,p_economics jsonb
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $function$

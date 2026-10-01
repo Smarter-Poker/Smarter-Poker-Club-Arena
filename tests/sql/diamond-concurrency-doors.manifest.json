@@ -841,7 +841,7 @@
       "len": 6164,
       "owner": "postgres",
       "grants": "NONE",
-      "bytes_from": "generated from production's text by migration 20260930235000 (pending apply)"
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_diamond_tournament_unregister(p_tournament_id uuid, p_user_id uuid, p_request_id uuid)",
@@ -849,7 +849,7 @@
       "len": 7720,
       "owner": "postgres",
       "grants": "NONE",
-      "bytes_from": "generated from production's text by migration 20260930235000 (pending apply)"
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_poker_guard_arena_structure()",
@@ -889,7 +889,7 @@
       "len": 7830,
       "owner": "postgres",
       "grants": "authenticated,service_role",
-      "bytes_from": "generated from production's text by migration 20260930235000 (pending apply)"
+      "bytes_from": "transported from production 2026-10-01 after 20260930235000 applied (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_raise_server_financial_alert(p_severity text, p_source text, p_message text, p_context jsonb, p_dedupe_key text, p_entity_id text)",

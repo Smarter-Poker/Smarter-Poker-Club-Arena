@@ -1,0 +1,68 @@
+name: Stats witness counts real gaps
+
+# ca_stats_health() and ca_stats_witness_audit() (migration 20260927144416).
+# Runs scripts/ci/test-stats-witness-real-gaps.py against a throwaway
+# PostgreSQL 17 cluster, never production: the exact pre-fix definitions
+# (prosrc md5 equal to the live functions) must report the false positives,
+# and the migration must report only the real missing hand, the real
+# unindexed seats and the real button disagreements.
+# The same command ci.yml would run, kept in its own file so the change does
+# not edit ci.yml. No timer (CLAUDE.md 10.85): pull_request only, scoped to
+# the paths it proves. ci.yml has no push trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20260927144416_stats_gap_and_witness_count_real_gaps_not_pending_projection.sql
+      - supabase/migrations/20260904222705_stats_phase_3_pulse_timezone_and_ev_coverage.sql
+      - supabase/migrations/20260908204006_stats_witness_checks_showdown_without_money_reconstruction.sql
+      - scripts/ci/test-stats-witness-real-gaps.py
+      - .github/workflows/stats-witness-real-gaps.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stats-witness-real-gaps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stats-witness-real-gaps:
+    name: Stats witness counts real gaps, not pending projection or dead buttons
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Stats witness counts real gaps, not pending projection or dead buttons
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-stats-witness-real-gaps.py --output artifacts/stats-witness-real-gaps
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stats-witness-real-gaps-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/stats-witness-real-gaps/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

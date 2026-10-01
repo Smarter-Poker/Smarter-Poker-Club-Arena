@@ -148,7 +148,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
-    "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+    "tests/unit/CashoutRequestModal.test.tsx": "d78e002502721f22d4d0d53baec2147c2cf3a3b103d9015f5ab671784b36e84c",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
@@ -180,7 +180,7 @@
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780",
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
-    "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
@@ -2480,6 +2480,20 @@
         "tests/fixtures/sep8-spin-custody/source-binding.json"
       ],
       "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
+    },
+    {
+      "file": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+      "from": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
+      "to": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
+      "on": "2026-10-01",
+      "why": "Phase 5 of the mobile graphics programme (2026-10-01): a SpadeConsole plate inside a pop-up now carries TapHaptic, which asks the vibration gate whether this is an iPhone browser. This test stubbed the whole gate with only fireVibration, so it now stubs only the buzz and keeps the rest of the gate real (importOriginal). No assertion, fixture, money path or expected value changed."
+    },
+    {
+      "file": "tests/unit/CashoutRequestModal.test.tsx",
+      "from": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+      "to": "d78e002502721f22d4d0d53baec2147c2cf3a3b103d9015f5ab671784b36e84c",
+      "on": "2026-10-01",
+      "why": "Phase 5 of the mobile graphics programme (2026-10-01): a SpadeConsole plate inside a pop-up now carries TapHaptic, which asks the vibration gate whether this is an iPhone browser. This test stubbed the whole gate with only fireVibration, so it now stubs only the buzz and keeps the rest of the gate real (importOriginal). No assertion, fixture, money path or expected value changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {

@@ -1491,6 +1491,23 @@ jobs:
       - name: Stranded player reads preserve every event and latest stack
         if: matrix.shard == 4
         run: python3 scripts/ci/test-stranded-player-read-postgres.py
+      - name: Interrupted contract index recovery preserves source and concurrent writers
+        id: contract_index_recovery
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          node --test scripts/ci/contract-index-recovery.test.mjs
+          python3 -B scripts/ci/test-contract-index-recovery-postgres.py --root "$GITHUB_WORKSPACE" --scratch-parent "$RUNNER_TEMP" --output "$GITHUB_WORKSPACE/artifacts/contract-index-recovery"
+      - name: Retain original contract index recovery proof
+        if: always() && matrix.shard == 4 && steps.contract_index_recovery.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-index-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/contract-index-recovery/
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Settlement conservation preserves full results through a narrow online index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
@@ -3275,19 +3292,19 @@ jobs:
       - name: Run the Diamond playfields
         id: diamond-playfield
         run: |
-            # Software WebGL must not compete with the other three browser workers.
-            # Keep the full real-scene transitions.
-            #
-            # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
-            # with --retries=0, so a SwiftShader timing flake in one of its real
-            # WebGL scenes turned a required check red and blocked a merge over
-            # nothing in the diff. It gets the same single retry as the suites
-            # above. A case that fails and then passes is Playwright's `flaky`
-            # status: the JSON report below is read by the next step, which names
-            # every flaky case as a warning and in the job summary, so a retried
-            # pass is seen rather than counted as clean. A case that fails twice
-            # still fails the job.
-            PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+          # Software WebGL must not compete with the other three browser workers.
+          # Keep the full real-scene transitions.
+          #
+          # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
+          # with --retries=0, so a SwiftShader timing flake in one of its real
+          # WebGL scenes turned a required check red and blocked a merge over
+          # nothing in the diff. It gets the same single retry as the suites
+          # above. A case that fails and then passes is Playwright's `flaky`
+          # status: the JSON report below is read by the next step, which names
+          # every flaky case as a warning and in the job summary, so a retried
+          # pass is seen rather than counted as clean. A case that fails twice
+          # still fails the job.
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
 
       # Reads the playfield invocation's JSON report and names every case that
       # passed only on retry. Runs whether the suite passed or failed, and

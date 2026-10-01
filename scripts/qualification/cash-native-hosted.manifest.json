@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 183099,
-      "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
+      "bytes": 183976,
+      "sha256": "cb93e14552a4c17ffabed60d48d781fe35d5f812556aeb3c9fe7b8f883b71adf"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 28871,
-      "sha256": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+      "bytes": 29170,
+      "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1335,6 +1335,35 @@
         "current": {
           "bytes": 99200,
           "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+        }
+      }
+    ]
+  },
+  "productionAlertsContractIndexRecovery20261001": {
+    "reason": "Route the exact interrupted contract-index recovery source and native guard proof through existing CI; preserve every financial source and historical audit record.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 183099,
+          "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
+        },
+        "current": {
+          "bytes": 183976,
+          "sha256": "cb93e14552a4c17ffabed60d48d781fe35d5f812556aeb3c9fe7b8f883b71adf"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 28871,
+          "sha256": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+        },
+        "current": {
+          "bytes": 29170,
+          "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
         }
       }
     ]

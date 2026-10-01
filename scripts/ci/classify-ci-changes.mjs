@@ -70,6 +70,8 @@ const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
 const strandedPlayerRead =
   /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
+const contractIndexRecovery =
+  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -278,6 +280,7 @@ export function classifyChangedPaths(paths) {
       matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
@@ -323,6 +326,7 @@ export function classifyChangedPaths(paths) {
       matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
       matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||

@@ -15,7 +15,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 
 const FOCUSABLE_SELECTORS =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
   isActive: boolean,

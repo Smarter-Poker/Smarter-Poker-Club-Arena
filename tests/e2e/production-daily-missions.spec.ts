@@ -10,6 +10,7 @@ import {
   type WebSocketRoute,
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { withoutTapSwitchNesting } from './helpers/axe-tap-switch';
 import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
@@ -72,8 +73,10 @@ async function expectNoAxeViolations(
     .include(selector)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
+  // A dialog's plates carry the iPhone tap switch: the one written exception.
+  const violations = await withoutTapSwitchNesting(page, results.violations);
   expect(
-    results.violations.map((violation) => ({
+    violations.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
       help: violation.help,

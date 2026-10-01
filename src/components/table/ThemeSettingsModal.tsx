@@ -786,7 +786,7 @@ export function ThemeSettingsModal({
     const focusable = () =>
       Array.from(
         activeDialog?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+          'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex="0"]'
         ) || []
       );
     // The purchase prompt's Buy plate is painted second (the steel Cancel

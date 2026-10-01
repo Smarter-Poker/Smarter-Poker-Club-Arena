@@ -16,6 +16,9 @@
 --       after the accrual; reads only.
 --   fn_cash_earning_club(...)                   which club a contributor earns in;
 --       here the table's club, as for a standalone club game.
+-- The arena switches the migrations assert are still closed (both false, as in production).
+CREATE TABLE IF NOT EXISTS public.ca_arena_settings (cash_games_enabled boolean NOT NULL DEFAULT false, tournaments_enabled boolean NOT NULL DEFAULT false);
+INSERT INTO public.ca_arena_settings DEFAULT VALUES;
 CREATE TABLE IF NOT EXISTS public.harness_cash_plans (rake_record_id uuid PRIMARY KEY, plan jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS public.harness_fee_plans (tournament_id uuid PRIMARY KEY, plan jsonb NOT NULL);
 CREATE OR REPLACE FUNCTION public.fn_accounting_cash_commission_plan(p_rake_record_id uuid) RETURNS jsonb

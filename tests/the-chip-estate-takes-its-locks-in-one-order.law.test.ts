@@ -38,6 +38,11 @@ const NAME = migrationNames()
   .at(-1);
 if (!NAME) throw new Error('the chip lock-order migration is missing');
 const MIG = migrationText(NAME);
+const REVERT_NAME = migrationNames()
+  .filter((n) => n.endsWith('_a_raked_hand_takes_its_club_wallet_where_it_did.sql'))
+  .at(-1);
+if (!REVERT_NAME) throw new Error('the raked-hand wallet revert is missing');
+const REVERT = migrationText(REVERT_NAME);
 const QUAL = resolve(__dirname, '..', 'scripts', 'qualification');
 const HARNESS = readFileSync(resolve(QUAL, 'chip-deadlocks.py'), 'utf8');
 const MANIFEST = JSON.parse(
@@ -161,13 +166,40 @@ describe('LAW: the chip estate takes its locks in one order', () => {
     }
   });
 
-  it('a raked hand takes the club wallet before the rake record, as a finish does', () => {
+  it("20261001000000 moved a raked hand's club wallet before the rake record", () => {
     const { oldText, newText } = clause(PINS[0][0]);
     const wallet =
       'PERFORM 1 FROM public.club_wallets WHERE club_id = p_club_id FOR NO KEY UPDATE;';
     expect(oldText).not.toContain(wallet);
     before(newText, 'fn_lock_cash_bank_accounting_week(', wallet);
     before(newText, wallet, 'INSERT INTO public.rake_records (');
+  });
+
+  it('20261001000500 puts it back, byte for byte: a finish must not queue behind raked hands', () => {
+    const decode = (name: 'v_old' | 'v_new') =>
+      [...sliceBetween(REVERT, `  ${name} := `, ';\n').matchAll(/E'((?:[^']|'')*)'/g)]
+        .map((m) => m[1].replace(/''/g, "'").replace(/\\n/g, '\n'))
+        .join('');
+    const { oldText, newText } = clause(PINS[0][0]);
+    expect(decode('v_old')).toBe(newText);
+    expect(decode('v_new')).toBe(oldText);
+    expect(REVERT).toContain("IF md5(v_def) <> 'ea7a4a403969a0fbe69f2216d63a0436' THEN");
+    expect(REVERT).toContain("IF md5(v_after) <> '0ef820b10c57d902b5ab2d5f9e2be8a6' THEN");
+    expect(REVERT).toContain(
+      "IF md5(replace(v_after, v_new, v_old)) <> 'ea7a4a403969a0fbe69f2216d63a0436' THEN"
+    );
+    expect(REVERT).toContain('IF v_n <> 1 THEN');
+    expect(REVERT).toMatch(
+      /^-- @live-proof: \(SELECT md5\(pg_get_functiondef\(p\.oid\)\) = '0ef820b10c57d902b5ab2d5f9e2be8a6'/m
+    );
+    expect(REVERT).toContain('two hit their 45 s statement timeout');
+    expect(HARNESS).toContain(
+      "REVERT = ROOT / 'supabase/migrations/20261001000500_a_raked_hand_takes_its_club_wallet_where_it_did.sql'"
+    );
+    expect(HARNESS).toContain(
+      "NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')"
+    );
+    expect(REVERT.replace(/--[^\n]*/g, ' ')).not.toMatch(/\bGRANT\b/i);
   });
 
   it('every commission writer takes the club key in club order before the rollup rows', () => {

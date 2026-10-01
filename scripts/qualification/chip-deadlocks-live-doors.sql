@@ -1637,3 +1637,19 @@ CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON public.rake_records RE
 CREATE TRIGGER trg_agent_commission_rollup_ins AFTER INSERT ON public.agent_commissions REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_insert();
 
 CREATE TRIGGER trg_sync_profile_total_hands AFTER INSERT OR DELETE OR UPDATE OF hands_played ON public.player_stats FOR EACH ROW EXECUTE FUNCTION fn_sync_profile_total_hands();
+
+-- Production's grants on the eight bodies the migrations change: owner postgres, EXECUTE for
+-- postgres and service_role only ({postgres=X/postgres,service_role=X/postgres}, read 2026-09-30).
+DO $g$
+DECLARE s text;
+BEGIN
+  FOREACH s IN ARRAY ARRAY[
+    'atomic_distribute_rake(uuid,uuid,uuid,integer,numeric,numeric,numeric,integer,jsonb,uuid,jsonb,text)',
+    'trg_agent_commission_rollup_insert()', 'fn_credit_agent_commissions_batch(jsonb)',
+    'fn_retry_cash_accounting_sources(integer)', 'fn_sync_profile_total_hands()',
+    'upsert_horse_mind_pairs(jsonb)', 'upsert_horse_mind_stats(jsonb)', 'upsert_horse_mind_stats_scoped(jsonb)']
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC', s);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION public.%s TO service_role', s);
+  END LOOP;
+END $g$;

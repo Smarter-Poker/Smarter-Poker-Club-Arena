@@ -35,6 +35,10 @@ DB = 'chip_deadlocks'
 PORT = '55481'
 GATE = 424242
 MIGRATION = ROOT / 'supabase/migrations/20261001000000_the_chip_estate_takes_its_locks_in_one_order.sql'
+# 20261001000500 reverses that migration's atomic_distribute_rake change (it made a tournament finish
+# queue behind raked hands on club_wallets in production); the AFTER state is both, in order.
+REVERT = ROOT / 'supabase/migrations/20261001000500_a_raked_hand_takes_its_club_wallet_where_it_did.sql'
+NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')
 PR5542_ORDER_LINE = '     ORDER BY s.uid::uuid\n'
 
 
@@ -175,9 +179,9 @@ def build(cl):
     return len(man['functions'])
 
 
-def apply_migration(cl):
-    """Execute the migration's own substitution block against the live bodies on this cluster."""
-    text = MIGRATION.read_text()
+def apply_migration(cl, path=MIGRATION):
+    """Execute a migration's own substitution block against the bodies on this cluster."""
+    text = path.read_text()
     m = re.search(r'^DO \$subs\$\n.*?^END \$subs\$;\n', text, re.S | re.M)
     if not m:
         raise SystemExit('the migration has no $subs$ block')
@@ -519,6 +523,7 @@ def main():
             if state == 'after':
                 ctl.close()
                 report['migration_subs_block_md5'] = apply_migration(cl)
+                report['revert_subs_block_md5'] = apply_migration(cl, REVERT)
                 projection2_functions(cl)
                 ctl = Session(cl, 'ctl')
             for case in CASES:
@@ -535,7 +540,7 @@ def main():
     report['finished'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     if a.out:
         pathlib.Path(a.out).write_text(json.dumps(report, indent=2) + '\n')
-    fixed = [r for r in report['results'] if r['state'] == 'after' and not r['case'].startswith('pr5542')]
+    fixed = [r for r in report['results'] if r['state'] == 'after' and r['case'] not in NOT_FIXED]
     ok = (all(r['deadlocks'] == 0 for r in fixed)
           and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before')
           and report['values_equal'])

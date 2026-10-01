@@ -23,7 +23,7 @@ chosen victim was waiting for, five pairs make up 98% of them:
 
 One order for every chip door: lanes and scopes (now including a per-club commission key), the
 tournament row, the banks (`club_wallets`, `union_wallets`, `clubs`), the club-day rollups under
-their bank or key, then player rows in player order. Pairs 1, 3, 4 and 5 now follow it:
+their bank or key, then player rows in player order. Pairs 1, 4 and 5 now follow it (pair 3's change was reverted, below):
 
 - `atomic_distribute_rake` locks the club wallet before inserting the rake record, whose triggers
   take the players' VIP carry and the club's day rake rows - the order a tournament finish
@@ -38,6 +38,15 @@ their bank or key, then player rows in player order. Pairs 1, 3, 4 and 5 now fol
 
 Each is an asserted substitution over the pinned live text (md5 before and after, reverse proved,
 owner and grants unchanged). No amount, receipt, refusal or grant changes.
+
+## Reverted: the raked hand's wallet-first lock
+
+Twelve minutes later `20261001000500_a_raked_hand_takes_its_club_wallet_where_it_did` restored
+`atomic_distribute_rake` byte for byte. Holding the club wallet from before the rake record made a
+hand hold it through the foreign-key checks the horse claims block, so the club's hands queued on
+the wallet and tournament finishes - which take the wallet first - queued behind them: two finish
+statement timeouts and 80 finish waits on the wallet in ten minutes, against none and 0 to 15 an
+hour before. Pair 3 is open again and reported; the other seven changes stand.
 
 ## Not changed: pair 2 (PR #5542)
 

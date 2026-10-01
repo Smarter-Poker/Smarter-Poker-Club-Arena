@@ -57,7 +57,9 @@ import { triggerHaptic } from '../services/HapticService';
 import '../components/console/SpadeConsole.css';
 import styles from './diamondGames.module.css';
 // The real game pages install the scene-health writer; the test page never does.
-import '../services/DiamondSceneRecorder';
+import { installDiamondSceneRecorder } from '../services/DiamondSceneRecorder';
+
+installDiamondSceneRecorder();
 
 interface Ticket {
   id: string;

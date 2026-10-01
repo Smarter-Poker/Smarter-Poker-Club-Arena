@@ -103,7 +103,9 @@ import CrashPointsStrip from '../components/games/CrashPointsStrip';
 import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
 // The real game pages install the scene-health writer; the test page never does.
-import '../services/DiamondSceneRecorder';
+import { installDiamondSceneRecorder } from '../services/DiamondSceneRecorder';
+
+installDiamondSceneRecorder();
 
 const MAX_CLIENT_SEED = 64;
 const POLL_MS = 320;

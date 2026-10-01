@@ -9,7 +9,8 @@ vi.mock('../../src/lib/analytics', () => analytics);
 const db = vi.hoisted(() => ({ rpc: vi.fn(() => Promise.resolve({ data: null, error: null })) }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: db }));
 // The app's writer, installed exactly as the game pages install it.
-import '../../src/services/DiamondSceneRecorder';
+import { installDiamondSceneRecorder } from '../../src/services/DiamondSceneRecorder';
+installDiamondSceneRecorder();
 import { readFileSync } from 'node:fs';
 import {
   createSceneTelemetry,
@@ -144,7 +145,7 @@ describe('the standalone test page stays away from accounts', () => {
       'DiamondWheelPage',
     ])
       expect(readFileSync(`src/pages/${page}.tsx`, 'utf8')).toContain(
-        "import '../services/DiamondSceneRecorder';"
+        'installDiamondSceneRecorder();'
       );
   });
 });

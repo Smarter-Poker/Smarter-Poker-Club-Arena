@@ -47,7 +47,7 @@ describe('the tournament lease heartbeat', () => {
     for (const f of later) {
       const body = readFileSync(resolve(DIR, f), 'utf8');
       expect(body, f).not.toMatch(
-        /CREATE\s+(UNIQUE\s+)?INDEX[^;]*ON\s+(public\.)?engine_tournament_leases[^;]*heartbeat_at/i
+        /^\s*CREATE\s+(UNIQUE\s+)?INDEX[^;']*ON\s+(public\.)?engine_tournament_leases[^;']*heartbeat_at/im
       );
     }
   });

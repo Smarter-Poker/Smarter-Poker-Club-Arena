@@ -153,11 +153,12 @@ try:
     run('setup',SETUP)
     run('opening-definition-before', "SELECT pg_get_functiondef('fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);")
     run('install-core',MIGRATION.read_text())
-    run('core-leaves-activation-triggers-detached',"SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_fence_welcome_package_schedule_spawn','trg_offer_lifetime_first_club_welcome') AND NOT tgisinternal;",'0')
+    run('core-leaves-hot-table-triggers-detached',"SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_fence_welcome_package_schedule_spawn','trg_remember_club_owner_transfer','trg_offer_lifetime_first_club_welcome') AND NOT tgisinternal;",'0')
     run('install-certification-cleanup',CLEANUP_MIGRATION.read_text())
     run('install-hot-trigger',HOT_TRIGGER_MIGRATION.read_text())
     run('hot-trigger-installed-once',"SELECT count(*),(SELECT count(*) FROM ca_declared_money_triggers WHERE table_name='tournaments' AND trigger_name='trg_fence_welcome_package_schedule_spawn') FROM pg_trigger WHERE tgname='trg_fence_welcome_package_schedule_spawn' AND NOT tgisinternal;",'1|1')
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')
+    run('owner-transfer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_remember_club_owner_transfer' AND NOT tgisinternal;",'1')
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'

@@ -36,11 +36,13 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).not.toContain('fn_ca_prepare_unused_welcome_certification_fixture');
     expect(sql).not.toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
     expect(sql).not.toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(sql).not.toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
     expect(hotTriggerSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(hotTriggerSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(hotTriggerSql).toContain("SET LOCAL lock_timeout = '15s';");
     expect(hotTriggerSql).toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
     expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
     expect(hotTriggerSql).not.toMatch(/LOCK TABLE/);
     expect(cleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(cleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
@@ -53,7 +55,7 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).toContain('club_owner_creation_history');
     expect(sql).toContain("false,'historical'");
     expect(sql).toContain("true,'prospective'");
-    expect(sql).toContain('trg_remember_club_owner_transfer');
+    expect(hotTriggerSql).toContain('trg_remember_club_owner_transfer');
     expect(sql).toContain(
       'public.fn_provision_first_club_welcome_package(NEW.club_id,NEW.request_id)'
     );

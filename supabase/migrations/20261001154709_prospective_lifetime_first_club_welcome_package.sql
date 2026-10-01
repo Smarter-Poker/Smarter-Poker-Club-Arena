@@ -56,8 +56,6 @@ BEGIN
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_remember_club_owner_transfer() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_remember_club_owner_transfer() TO service_role;
-CREATE TRIGGER trg_remember_club_owner_transfer AFTER UPDATE OF owner_id ON public.clubs
-FOR EACH ROW EXECUTE FUNCTION public.fn_remember_club_owner_transfer();
 
 CREATE TABLE public.club_welcome_package_receipts (
   club_id uuid PRIMARY KEY REFERENCES public.club_welcome_entitlements(club_id) ON DELETE RESTRICT,

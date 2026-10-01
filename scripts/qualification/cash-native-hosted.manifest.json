@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 99200,
-      "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+      "bytes": 100823,
+      "sha256": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
     }
   },
   "nativePgCron": {
@@ -1364,6 +1364,23 @@
         "current": {
           "bytes": 29170,
           "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
+        }
+      }
+    ]
+  },
+  "productionAlertsWeeklyFixtureIsolation20261001": {
+    "reason": "Reviewed appended fixture isolation and diagnostic regression only; original test prefix unchanged. Preserve cash source and historical audits. Native executable inputs unchanged.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 99200,
+          "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+        },
+        "current": {
+          "bytes": 100823,
+          "sha256": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
         }
       }
     ]

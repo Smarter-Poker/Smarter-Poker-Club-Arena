@@ -1,4 +1,5 @@
 import { capture } from '../../lib/analytics';
+import { supabase } from '../../lib/supabase';
 import { isNativePlatform, nativePlatform } from '../../lib/appBase';
 import { iosWebkitVersion, vibrationPath } from '../../utils/vibrationGate';
 
@@ -22,6 +23,14 @@ import { iosWebkitVersion, vibrationPath } from '../../utils/vibrationGate';
  *
  * Nothing personal is sent: no account, no club, no amounts. A visit with too
  * little motion to measure (under MIN_MOVING_FRAMES) sends nothing.
+ *
+ * WHERE IT LANDS (2026-10-01, the verification pass). analytics.ts sends
+ * nothing without VITE_POSTHOG_KEY, and no build of this platform sets it, so
+ * the same numbers also go to the platform's own database through
+ * fn_record_diamond_scene: a daily rollup per game, device kind, renderer and
+ * final tier with no user in it, read by platform admins as Diamond Scene
+ * Health on the admin dashboard (fn_diamond_scene_health). Fire and forget:
+ * a lost report never touches the game.
  */
 /** The 3D scenes, and the wheel, whose spins are drawn frame by frame too (Phase 4). */
 export type SceneGame = 'crash' | 'plinko' | 'crossing' | 'wheel';
@@ -52,9 +61,42 @@ function pixelRatio(): number {
   }
 }
 
+type SceneRecord = {
+  game: SceneGame;
+  device: ReturnType<typeof deviceKind>;
+  software: boolean;
+  endTier: number;
+  frames: number;
+  ms: number;
+  slow: number;
+  failure: SceneFailure | null;
+};
+
+/** The database copy of one summary or one failure. Never throws, never awaits in the caller. */
+function record(r: SceneRecord): void {
+  try {
+    void Promise.resolve(
+      supabase.rpc('fn_record_diamond_scene', {
+        p_game: r.game,
+        p_device: r.device,
+        p_software: r.software,
+        p_end_tier: r.endTier,
+        p_frames: Math.round(r.frames),
+        p_ms: Math.round(r.ms),
+        p_slow: Math.round(r.slow),
+        p_failure: r.failure,
+      })
+    ).catch(() => undefined);
+  } catch {
+    /* A lost report is a lost report. It never becomes the player's problem. */
+  }
+}
+
 /** One scene that could not draw. */
 export function reportSceneFailure(game: SceneGame, reason: SceneFailure): void {
-  capture('diamond_scene_failed', { game, reason, device: deviceKind(), dpr: pixelRatio() });
+  const device = deviceKind();
+  capture('diamond_scene_failed', { game, reason, device, dpr: pixelRatio() });
+  record({ game, device, software: false, endTier: 0, frames: 0, ms: 0, slow: 0, failure: reason });
 }
 
 export interface SceneTelemetry {
@@ -76,7 +118,15 @@ export function createSceneTelemetry(
     last = -1,
     endTier = options.startTier,
     sent = false;
-  return {
+  // A visit that ends by closing the tab never unmounts its scene, and that is
+  // the visit most worth hearing about: send the summary as the page goes.
+  const onPageHide = () => telemetry.end();
+  try {
+    window.addEventListener('pagehide', onPageHide);
+  } catch {
+    /* no window */
+  }
+  const telemetry: SceneTelemetry = {
     frame(now, moving) {
       if (!moving) {
         last = -1;
@@ -97,8 +147,23 @@ export function createSceneTelemetry(
       endTier = index;
     },
     end() {
+      try {
+        window.removeEventListener('pagehide', onPageHide);
+      } catch {
+        /* no window */
+      }
       if (sent || movingFrames < MIN_MOVING_FRAMES || movingMs <= 0) return;
       sent = true;
+      record({
+        game,
+        device: deviceKind(),
+        software: options.software,
+        endTier,
+        frames: movingFrames,
+        ms: movingMs,
+        slow,
+        failure: null,
+      });
       capture('diamond_scene_session', {
         game,
         device: deviceKind(),
@@ -112,4 +177,5 @@ export function createSceneTelemetry(
       });
     },
   };
+  return telemetry;
 }

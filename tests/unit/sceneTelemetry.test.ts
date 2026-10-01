@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analytics = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../../src/lib/analytics', () => analytics);
+const db = vi.hoisted(() => ({ rpc: vi.fn(() => Promise.resolve({ data: null, error: null })) }));
+vi.mock('../../src/lib/supabase', () => ({ supabase: db }));
 import {
   createSceneTelemetry,
   deviceKind,
@@ -16,7 +18,10 @@ import {
 const IPHONE =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1';
 
-beforeEach(() => analytics.capture.mockClear());
+beforeEach(() => {
+  analytics.capture.mockClear();
+  db.rpc.mockClear();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the scene summary', () => {
@@ -45,6 +50,39 @@ describe('the scene summary', () => {
     expect(props.fps).toBeLessThanOrEqual(56);
     expect(props.slow_share).toBeCloseTo(10 / 129, 1);
     expect(Object.keys(props)).not.toEqual(expect.arrayContaining(['userId', 'clubId']));
+    // The same numbers reach the platform's own rollup, once, with no user in them.
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+    expect(db.rpc).toHaveBeenCalledWith('fn_record_diamond_scene', {
+      p_game: 'crash',
+      p_device: 'ios_web',
+      p_software: false,
+      p_end_tier: 1,
+      p_frames: 129,
+      p_ms: expect.any(Number),
+      p_slow: 10,
+      p_failure: null,
+    });
+  });
+
+  it('sends the summary when the tab closes, and only once', () => {
+    const t = createSceneTelemetry('plinko', { software: true, startTier: 0 });
+    let now = 0;
+    for (let i = 0; i < 60; i++) t.frame((now += 16), true);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+    expect(db.rpc.mock.calls[0][1]).toMatchObject({ p_game: 'plinko', p_software: true });
+    t.end();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('never lets a refused write reach the game', async () => {
+    db.rpc.mockReturnValueOnce(Promise.reject(new Error('offline')));
+    const t = createSceneTelemetry('crash', { software: false, startTier: 0 });
+    let now = 0;
+    for (let i = 0; i < 60; i++) t.frame((now += 16), true);
+    expect(() => t.end()).not.toThrow();
+    await Promise.resolve();
   });
 
   it('measures only motion: settled frames and pauses are not counted', () => {
@@ -77,6 +115,15 @@ describe('a scene that could not draw', () => {
     expect(analytics.capture).toHaveBeenCalledWith(
       'diamond_scene_failed',
       expect.objectContaining({ game: 'plinko', reason: 'context_lost', device: 'android_web' })
+    );
+    expect(db.rpc).toHaveBeenCalledWith(
+      'fn_record_diamond_scene',
+      expect.objectContaining({
+        p_game: 'plinko',
+        p_device: 'android_web',
+        p_failure: 'context_lost',
+        p_frames: 0,
+      })
     );
   });
 });

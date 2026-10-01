@@ -97,9 +97,16 @@ describe('the parent decides from the engine lists', () => {
       resolve(__dirname, '../../server/src/engine/ServerTableEngine.ts'),
       'utf8'
     );
-    // Both snapshot builders (live and idle) publish it.
+    // Both snapshot builders publish it: the idle one in the engine, the live
+    // one in the shared projection the engine hands its postingBBToEnter to.
+    const projection = readFileSync(
+      resolve(__dirname, '../../server/src/engine/presentation/projectHandState.ts'),
+      'utf8'
+    );
     expect(
       engine.match(/posting_bb_user_ids: Array\.from\(this\.postingBBToEnter\)/g)
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(engine).toContain('postingBBToEnter: this.postingBBToEnter,');
+    expect(projection).toContain('posting_bb_user_ids: Array.from(ctx.postingBBToEnter)');
   });
 });

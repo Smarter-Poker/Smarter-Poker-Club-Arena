@@ -872,7 +872,10 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     /* "IF THERE IS AN ANTE, THAT NEEDS TO BE 'TAKEN FROM THE PLAYER AND ADDED
        TO THE POT PRE FLOP'." The pot already counted it (postBlinds adds a
        regular ante straight to state.pot); nothing showed it moving. */
-    const EVENTS = read('server/src/engine/ServerTableEngineHandEvents.ts');
+    // Lightning Phase 6 (2026-09-27): the antes_posted literal is a shared builder now.
+    const EVENTS =
+      read('server/src/engine/ServerTableEngineHandEvents.ts') +
+      read('server/src/engine/presentation/handEventFrames.ts');
     const PAGE = read('src/pages/TablePage.tsx');
     expect(EVENTS).toMatch(/type: 'antes_posted'/);
     expect(EVENTS).toMatch(/\.filter\(\(p\) => p && p\.kind === 'ante' && p\.amount > 0\)/);

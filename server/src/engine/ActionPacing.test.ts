@@ -253,7 +253,9 @@ describe('REGRESSION: a visual settle must never delay a STATE commit', () => {
     // unwritten state. The settle is purely visual and MUST come after.
     const assign = events.indexOf('this.currentHandWinnerIds = ');
     const settle = events.indexOf('await this.sleep(this.showdownSettleMs)');
-    const potWin = events.indexOf("type: 'pot_win'");
+    // Lightning Phase 6 (2026-09-27): the pot_win frame is built by
+    // potWinFrame (presentation/handEventFrames.ts); its emit is pinned here.
+    const potWin = events.indexOf('potWinFrame({');
     expect(assign).toBeGreaterThan(-1);
     expect(settle).toBeGreaterThan(-1);
     expect(potWin).toBeGreaterThan(-1);

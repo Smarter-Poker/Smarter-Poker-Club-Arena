@@ -1,0 +1,3 @@
+# server/src/lightning/ALightningHandsCardsAndMoneyStayWithTheirOwners.law.test.ts
+
+A Lightning hand's cards reach only their owners and its money moves only through settlement (Lightning Phase 6, 2026-09-27). LightningHandHost deals hands across anchor tables; a player's hole cards travel only in the private `hole_cards` frame to that player's own room (their pool_session_id), never in a room snapshot or hub event, and another player's cards reach a room only once tabled at showdown. The only call that moves a chip is fn_lightning_settle_hand, made at most once per hand under one request id; a hand that fails before it is abandoned and settles nothing, and no Lightning source writes a seat, stack, wallet or ledger.

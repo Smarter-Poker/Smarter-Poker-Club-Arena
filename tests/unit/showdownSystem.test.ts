@@ -23,8 +23,12 @@ import { sliceEnclosingBlock, sliceBlockAfter } from '../helpers/sourceWindow';
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
-const EVENTS = strip(read('server/src/engine/ServerTableEngineHandEvents.ts'));
-const ENGINE = strip(read('server/src/engine/ServerTableEngine.ts'));
+// Lightning Phase 6 (2026-09-27): the frame and snapshot literals moved into
+// the shared presentation both dealers use; the pins read engine + builders.
+const FRAMES = strip(read('server/src/engine/presentation/handEventFrames.ts'));
+const PRESENTATION = strip(read('server/src/engine/presentation/projectHandState.ts'));
+const EVENTS = strip(read('server/src/engine/ServerTableEngineHandEvents.ts')) + '\n' + FRAMES;
+const ENGINE = strip(read('server/src/engine/ServerTableEngine.ts')) + '\n' + PRESENTATION;
 const TABLE_PAGE = strip(read('src/pages/TablePage.tsx'));
 const SEAT = strip(read('src/components/table/SeatSlot.tsx'));
 const SEAT_CSS = read('src/components/table/SeatSlot.css');
@@ -223,7 +227,9 @@ describe('follow-up: AUTO-MUCK is a real setting, with no prompt (spec 37)', () 
  */
 describe('audit: the snapshot winners wire actually matches at both ends', () => {
   it('the engine emits user_id on snapshot winners (the key the mapper reads)', () => {
-    expect(sliceEnclosingBlock(ENGINE, 'winners:')).toMatch(/user_id:\s*w\.userId/);
+    expect(sliceEnclosingBlock(PRESENTATION, 'pot_index: w.potIndex ?? 0')).toMatch(
+      /user_id:\s*w\.userId/
+    );
   });
 
   it('the mapper accepts both user_id and legacy userId', () => {
@@ -235,7 +241,7 @@ describe('audit: the snapshot winners wire actually matches at both ends', () =>
 describe('audit: showdown event ordering and muck-label reconciliation', () => {
   it('the showdown event is emitted BEFORE the revealing snapshot', () => {
     const sdCase = EVENTS.slice(EVENTS.indexOf("case 'SHOWDOWN':"));
-    const emitAt = sdCase.indexOf("type: 'showdown',");
+    const emitAt = sdCase.indexOf('showdownFrame({');
     const broadcastAt = sdCase.indexOf('this.broadcastCurrentState()');
     expect(emitAt).toBeGreaterThan(-1);
     expect(broadcastAt).toBeGreaterThan(-1);
@@ -303,7 +309,8 @@ describe('polish: per-pot awards ride the wire end to end (spec 16/19/33)', () =
        them live after the sleep lost them to HAND_COMPLETE's reset, which is
        how pot_win died on every contested showdown. */
     expect(EVENTS).toMatch(/const capturedPotAwards = this\.buildPotAwardGroups\(\);/);
-    expect(EVENTS).toMatch(/pot_awards: capturedPotAwards/);
+    expect(EVENTS).toMatch(/pot_awards: (a\.)?capturedPotAwards/);
+    expect(EVENTS).toMatch(/potWinFrame\(\{[\s\S]*?capturedPotAwards,/);
     expect(TABLE_PAGE).toMatch(/buildAwardGroups\(/);
     expect(TABLE_PAGE).toMatch(/boardLabelFromAwards\(/);
   });

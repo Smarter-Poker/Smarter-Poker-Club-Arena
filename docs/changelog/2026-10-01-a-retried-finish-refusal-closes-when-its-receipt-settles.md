@@ -70,6 +70,15 @@ The check lives in its own workflow rather than in `ci.yml`, so `ci.yml`,
 manifest that pins them stay byte-identical to main;
 `scripts/ci/verify-source-bindings.py` passes on the branch.
 
+The migration also names its grant explicitly (`REVOKE ALL ... FROM PUBLIC,
+anon, authenticated` and `GRANT EXECUTE ... TO service_role`), which is the ACL
+production already holds and which `CREATE OR REPLACE` preserves, so it changes
+nothing live but lets `scripts/ci/check-definer-authorization.mjs` read the
+authorization from the file. It declares
+`-- @live-proof: md5(pg_get_functiondef(...)) = '472cdee8...'` (the postimage
+md5 its own readback asserts), so `tests/a-merged-migration-must-be-live.law.test.ts`
+and the live-migration check can tell whether production carries it.
+
 ## What This Does Not Change
 
 The refusals themselves continue. Decided spins and heads-up events take 15 to

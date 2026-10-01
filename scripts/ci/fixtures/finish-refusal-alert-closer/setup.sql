@@ -5,6 +5,8 @@
 -- body before the migration replaces it.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE ROLE service_role NOLOGIN;
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
 
 CREATE TABLE public.financial_alerts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

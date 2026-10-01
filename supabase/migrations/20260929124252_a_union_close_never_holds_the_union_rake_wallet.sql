@@ -29,6 +29,10 @@
 --
 -- @live-proof: to_regprocedure('public.fn_union_close_post_rake_debit(jsonb)') IS NOT NULL AND position('app.union_close_defer_rake_debit' in pg_get_functiondef('public.fn_union_settlement_cascade(uuid,timestamptz,timestamptz)'::regprocedure)) > 0
 -- Applied to production as version 20260929124252. Preimage-guarded.
+-- unqualified-write-ok: ca_settlements because every "UPDATE ca_settlements" in this
+--   file is a needle string inside a $n$ literal used to patch a function body
+--   with replace(); the real statement keeps its WHERE clause in the patched
+--   function. Nothing here is an UPDATE executed against the table.
 SET LOCAL lock_timeout = '5s';
 
 INSERT INTO public.ca_money_rpc_registry(proname,status,notes)

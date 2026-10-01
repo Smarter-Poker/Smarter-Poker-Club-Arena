@@ -1,6 +1,10 @@
 # Chip deadlocks, 2026-10-01: the pairs, the one order, and what it changed
 
-**Verdict:** PENDING_VERDICT
+**Verdict:** not a full tick. In like-for-like hours deadlocks fell by a quarter (1,429 on 30
+September, 1,083 on 1 October, 01:05-12:04 UTC, with 21% more cash raked hands): about 3,600 a day
+before, about 2,400 a day after. Pairs 1 and 5 are gone and pair 4 nearly so; pair 2 (PR #5542's,
+which that PR would not end) and pair 3 (fixed, then reverted; no safe order yet) are 95% of what
+is left, and `DatabaseDeadlocksElevated` still fires.
 
 Production counted 3,605 deadlocks in the 24 hours to 2026-09-30 23:16 UTC, over the
 `DatabaseDeadlocksElevated` line (10 in 10 minutes) in most minutes of the day. This file ranks them
@@ -50,7 +54,8 @@ Three paths swallow the deadlock and drop the work: `trg_ca_club_rake_daily_inse
 the hand is missing from `ca_club_rake_daily` (the Financials per-day rake; 130 warnings in the
 24 h), `fn_award_vip_points_from_rake` catches per award and the VIP points are not credited (15
 warnings), and `promo_apply_playthrough` swallows its `player_stats` failure and the wager is not
-added to `total_losses` (pair 2's 123). The first two are pair 3, now fixed; the third is pair 2.
+added to `total_losses` (pair 2's 123). The first two are pair 3 and the third is pair 2; what is
+left of each is under Production before and after.
 
 ## PR #5542
 
@@ -126,6 +131,9 @@ settlement lane while it waits, queued behind all of them. Production's log, rea
 | hand obligations' statement timeouts inside `atomic_distribute_rake` | 38 to 2,566 (median about 450)   | about 1,300                        |
 | deadlocks (all)                                                      | 34 to 340                        | 28                                 |
 
+From the apply to the revert four finishes hit that timeout (00:09:46, 00:11:51, 00:16:11, and
+00:17:55 for one begun before the revert landed); none has since, to 12:04 UTC.
+
 Fewer deadlocks, but a failed tournament settlement is worse than a deadlock the finish retries.
 `supabase/migrations/20261001000500_a_raked_hand_takes_its_club_wallet_where_it_did.sql` (md5
 `0951c9e1b4dda2878c41d5d262d6a3d9`) restores `atomic_distribute_rake` byte for byte (pinned
@@ -136,7 +144,8 @@ then `APPLIED AND RECORDED 20261001000500` at 00:17:19 UTC, twelve minutes after
 other seven changes stand. Pair 3 is open again: its order has to be one in which a finish never
 waits on a hand that is itself waiting on the horse claims - for example the finish taking its
 entrants' VIP carry rows before the wallet, or the horse claims no longer holding profiles
-`FOR UPDATE` across 500 claims. That needs its own measurement and is left for the lead.
+`FOR UPDATE` across 500 claims. That needs its own measurement; the decision is under Production
+before and after.
 
 ## The batch's up-front keys failed it whole - fixed
 
@@ -162,6 +171,21 @@ keys and never wait for one outside an item; refusals unchanged; nothing opened`
 holds the club's key, the batch runs with `lock_timeout 1s`) shows all three states: the original
 bodies complete; after 20261001000000 the batch fails whole with the lock timeout - production's
 00:07:30 failure; after 20261001001000 the call succeeds and only that item is refused for retry.
+
+The settler's cursor moved again at 01:27:00 UTC. It had already been about an hour behind when the
+first migration was applied (the conservation sweep's settler-lag check fired at 23:55 UTC on 30
+September); the failed batches then stopped it from about 00:04 to 01:27, and the backlog met the
+night's busiest cash hours (5,800 to 6,700 cash raked hands an hour from 01:00 to 05:00 UTC).
+Between about 03:00 and 05:00 it nearly stopped, with no batch error and one batch lock wait in
+the database log, so that part is in the engine's loop, not on a lock; the 02:00 hour's hands
+took until 05:25. It caught up at about 07:30 UTC:
+hands raked from 22:50 on 30 September to about 07:00 on 1 October were accrued up to 2 h 53 min
+late (hands from 02:00 waited 153 minutes on average); from 07:00 the wait is back to its usual 15
+to 22 minutes on average (the settler runs every 30 minutes), and the settler-lag check resolved at
+06:23. Nothing was lost: each of the 56,032 cash raked hands from 22:00 on 30 September to 12:00 on
+1 October has its first accounting receipt, no cash source is waiting for a retry (the only blocked
+work rows are the 35,994 legacy-unverified ones parked since 2026-09-20/21), and at 12:07:12 UTC
+the cursor's high-water mark was 12:05:42.
 
 ## Proved in isolation, before and after
 
@@ -205,14 +229,97 @@ unchanged, horse-mind values unchanged, estate checks passed, nothing opened`. T
 - Pins re-read immediately before apply: all eight unchanged.
 - `apply.sh` at 00:04:59 UTC: `APPLIED AND RECORDED 20261001000000` (finished 00:05:08 UTC); all
   eight `@live-proof` lines read true afterwards.
-- Pinned by `tests/the-chip-estate-takes-its-locks-in-one-order.law.test.ts` (8 cases).
+- Pinned by `tests/the-chip-estate-takes-its-locks-in-one-order.law.test.ts` (10 cases).
 
 ## Production before and after
 
-PENDING_MEASUREMENT
+Read passively: `pg_stat_database.deadlocks` every 5 minutes (`deadlocks-work/sampler.sh`) and the
+log's `detected deadlock` lines by pair (the queries are under Re-running). The after window opens
+8 s after the last apply (`20261001001000`, 01:05:09 UTC) and ends at the last sample before this
+was written: 01:05:17 to 12:04:00 UTC on 1 October, 10.98 hours, 132 samples none more than 304 s
+apart, no counter reset. The counter went from 7,318 to 8,401 - **1,083 deadlocks** - and the log
+has exactly 1,083 lines in the window. The rate has a daily shape (2,176 of the 3,605 fell outside
+these clock hours), so the like-for-like comparison is the same hours on 30 September, from the
+log (the sampler started at 23:59 UTC on 30 September).
+
+| deadlocks, by the rows the victim waited for | 24 h to 30 Sep 23:16 UTC | 30 Sep 01:05-12:04 UTC | 1 Oct 01:05-12:04 UTC |
+| -------------------------------------------- | ------------------------ | ---------------------- | --------------------- |
+| all                                          | 3,605                    | 1,429                  | **1,083**             |
+| 1 commission rollups                         | 1,111                    | 443                    | **0**                 |
+| 2 `player_stats` (PR #5542's pair)           | 961                      | 374                    | 630                   |
+| 3 VIP carry, `club_wallets`, day rake row    | 837                      | 353                    | 401                   |
+| 4 `profiles`                                 | 346                      | 113                    | **15**                |
+| 5 horse-mind                                 | 271                      | 110                    | **0**                 |
+| everything else                              | 79                       | 36                     | 37                    |
+
+| the same hours (read-only counts and the alert's own rows) | 30 Sep  | 1 Oct   |
+| ---------------------------------------------------------- | ------- | ------- |
+| hands dealt (`hand_history`)                               | 467,540 | 479,796 |
+| cash raked hands (`rake_records`)                          | 37,618  | 45,513  |
+| tournaments settled with rake (`rake_records`)             | 11,202  | 10,590  |
+| deadlocks per 1,000 cash raked hands                       | 38.0    | 23.8    |
+| `DatabaseDeadlocksElevated` firings, minutes firing        | 23, 278 | 15, 267 |
+
+**Per day: before 3,605; after about 2,400** (1,083 in 10.98 hours is 2,367 a day at that pace; if
+the evening keeps 30 September's shape, a whole day comes to about 2,700).
+
+What is left:
+
+- **Pair 2 rose**, 374 to 630: the batch was the victim in 380, the hand projection in 164, the
+  promo playthrough in 68, the retry in 4. Cash raked hands rose 21%, and the pair swings hard by
+  the hour on both days (0 to 135 an hour on 1 October, 3 to 94 on 30 September). Batch items that
+  pair 1 used to kill now go on to take their players' `player_stats` rows, but those were 277
+  of 37,618 items on 30 September, so they explain little of it. A batch victim is refused and
+  retried (none is waiting now); a promo victim's wager never reaches `total_losses`. PR #5542 would
+  not end it (above). What would is a shorter cash batch transaction: the engine sizes each call to
+  about 9 s (`server/src/services/cashAccountingBatchBudget.ts`), and the call keeps every row and
+  key it takes to its end. That is an engine change, left for the lead with PR #5542's owner.
+- **Pair 3 stays open**, 353 to 401: finishes waiting on VIP carry 174 to 204, hands waiting on a
+  club wallet 104 to 176, VIP awards inside a hand 4 to 7, promo 11 to 14, and the day rake row 60
+  to 0 (another agent's #5687 takes that row at commit since 1 October). Decided by Claude on Dan's
+  delegation of 2026-09-30 ("these are all for you to decide not me ... FIX AND FINISH ALL OF
+  THESE"): no second attempt from this line. The wallet-first order ended the pair and made
+  finishes queue (above), and the two orders left each make one busy row wait on another: a finish
+  taking every entrant's VIP carry row before the wallet would hold one row per player, across all
+  clubs, for its whole run; a hand awarding VIP after its wallet would hold the club's wallet while
+  it waits on a finish anywhere. Meanwhile each of these deadlocks resolves in about a second, both
+  sides retry, and the only work it is known to drop is the swallowed VIP award (7 in these hours, 4 the day
+  before).
+
+Side effects in the same hours (production log):
+
+| measure                                                               | 30 Sep        | 1 Oct           |
+| --------------------------------------------------------------------- | ------------- | --------------- |
+| finish statement timeouts (45 s)                                      | 0             | 0               |
+| finish lock timeouts (8 s, all but one or two at the settlement lane) | 856           | 1,227           |
+| finish waits over 1 s at its commission step (total time waiting)     | 855 (3,590 s) | 1,170 (5,207 s) |
+| hand obligations' statement timeouts                                  | 4,559         | 3,941           |
+| uncaught `deadlock detected` errors                                   | 389           | 417             |
+| cash batch or retry errors                                            | 0             | 0               |
+
+A finish now waits for a club's commission key where it used to wait for, and deadlock over, that
+club's rollup rows, and the batch takes its free keys when it starts rather than at its first item
+of the club. The finish's waits there grew 37% (45% in time) and its lane timeouts 43% (a timed-out
+finish is retried), against 21% more cash raked hands and 5% fewer tournaments; no finish timed out
+its statement. On 1 October the lane timeouts moved with the batch's own deadlocks: 12 to 43 an
+hour in the three hours with almost none (03:00, 04:00 and 08:00 UTC), up to 325 in the busiest.
+The passive data cannot split load from the key; the shorter batch is the lever for both.
 
 ## Re-running
 
 The isolated run is the command above. The production ranking is the query
 `select replaceRegexpAll(extract(log_attributes['parsed.context'], '^([^\n]*)'), '\\([0-9]+,[0-9]+\\)', '(*)'), extract(log_attributes['parsed.context'], 'PL/pgSQL function ([a-zA-Z0-9_]+)'), extract(log_attributes['parsed.query'], '(?:public\\.|"public"\\.")([a-zA-Z0-9_]+)'), count(*) from logs where source='postgres_logs' and event_message like 'process % detected deadlock while waiting%' group by 1,2,3`
 over a 24 h window; the partner of an uncaught one is in the `ERROR` line's `parsed.detail`.
+
+The before and after split by pair classifies the same lines (run it per window, at most 24 h):
+
+```sql
+select multiIf(rel in ('agent_commission_unsettled_rollup','ca_club_commission_daily') or (rel='agents' and inner_fn='fn_post_accounting_commission_source'), '1 commission rollups', rel='player_stats', '2 player_stats', rel in ('vip_points_carry','club_wallets','ca_club_rake_daily','ca_club_rake_daily_user') or (rel='club_members' and inner_fn='promo_apply_playthrough') or inner_fn='atomic_distribute_rake', '3 vip/wallet/day rake', rel='profiles' or inner_fn in ('fn_lock_daily_mission_user','fn_sync_profile_total_hands','claim_daily_challenge_serialized_body'), '4 profiles', rel like 'horse_mind%' or top like 'upsert_horse_mind%', '5 horse-mind', 'other') as family, count(*) as n
+from (select extract(log_attributes['parsed.context'], 'relation "([a-z_0-9]+)"') as rel,
+             extract(log_attributes['parsed.context'], 'PL/pgSQL function ([a-zA-Z0-9_]+)') as inner_fn,
+             extract(log_attributes['parsed.query'], '(?:public\\.|"public"\\.")([a-zA-Z0-9_]+)') as top
+      from logs where source='postgres_logs' and event_message like 'process % detected deadlock while waiting%')
+group by family order by family
+```
+
+The counter is `select deadlocks from pg_stat_database where datname='postgres'`, read every 300 s.

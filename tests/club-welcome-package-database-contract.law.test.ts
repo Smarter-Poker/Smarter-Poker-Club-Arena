@@ -16,11 +16,14 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(sql).toContain("SET LOCAL lock_timeout = '15s';");
     expect(sql).not.toContain("SET LOCAL lock_timeout = '5s';");
+    const authLock = sql.indexOf('LOCK TABLE auth.users IN ACCESS EXCLUSIVE MODE;');
     const requestLock = sql.indexOf(
       'LOCK TABLE public.club_creation_requests IN SHARE ROW EXCLUSIVE MODE;'
     );
     const clubLock = sql.indexOf('LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;');
     const firstDdl = sql.indexOf('CREATE TABLE public.club_welcome_entitlements');
+    expect(authLock).toBeGreaterThan(0);
+    expect(authLock).toBeLessThan(requestLock);
     expect(requestLock).toBeGreaterThan(0);
     expect(requestLock).toBeLessThan(clubLock);
     expect(clubLock).toBeLessThan(firstDdl);

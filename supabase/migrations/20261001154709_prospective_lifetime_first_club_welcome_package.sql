@@ -15,9 +15,10 @@ BEGIN;
 SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
--- Match the live club-creation door's relation order.  Taking the request
--- relation first means this migration waits without holding a conflicting
--- clubs lock, then carries both locks through the one atomic transaction.
+-- Match the live auth and club-creation doors' relation order.  The migration
+-- later needs the auth lock while reserved-account cleanup can move from auth
+-- into clubs, so it must wait on auth before holding either club relation.
+LOCK TABLE auth.users IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE public.club_creation_requests IN SHARE ROW EXCLUSIVE MODE;
 LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
 

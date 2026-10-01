@@ -22,7 +22,7 @@
  *
  * Refusals (exit 2, every reason named on stderr, nothing written): a missing,
  * duplicate or unexpected run, a missing receipt, a run not in promotion mode,
- * fewer than 1,024 pairs, a dirty checkout, a head / sourceSha256 /
+ * a requested pair count below 1,024, a dirty checkout, a head / sourceSha256 /
  * serverLockSha256 / continuation version that differs between runs, a
  * receipt that does not match its result, a run without a host record, or a
  * policy source that changed between the runs' head and this checkout (the
@@ -163,13 +163,19 @@ export function inspectRuns({ runsDir, hosts, fixture }) {
       })
     )
       reasons.push(`contract_mismatch:${key}`);
+    // A run asked for fewer pairs than the contract is a changed matrix and is
+    // refused. A run that asked for the contract and stopped early (the league
+    // ends a run at its first incomplete pair) is an unfavorable result: it is
+    // kept, recorded with its completed count, and the contract marks it not
+    // promotable. Dropping it would be selecting results.
     for (const [label, value] of [
       ['manifest', manifest.pairs],
       ['requested', result.requestedPairs],
-      ['completed', result.pairs],
     ])
       if (!(Number.isInteger(value) && value >= TOURNAMENT_PROMOTION_PAIRS))
         reasons.push(`pairs_below_contract:${key}:${label}=${value}`);
+    if (!Number.isInteger(result.pairs) || result.pairs < 0 || result.pairs > result.requestedPairs)
+      reasons.push(`pairs_out_of_range:${key}:${result.pairs}`);
     if (!same(summary, league.summarizeTournamentPromotion([result])))
       reasons.push(`receipt_mismatch:${key}:summary.json`);
     if (
@@ -242,6 +248,7 @@ function runRecord(r, hosts) {
     requestedPairs: x.requestedPairs,
     pairs: x.pairs,
     complete: x.complete,
+    pairsShortOfRequest: x.requestedPairs - x.pairs,
     decisions: x.decisions,
     eligible: x.eligible,
     fired: x.fired,
@@ -265,6 +272,7 @@ function runRecord(r, hosts) {
     confidence99: x.confidence99,
     promotable: r.promotable,
     baselineVerified: r.baseline.complete === true,
+    exitCode: hosts.exits?.[r.key] ?? null,
   };
 }
 

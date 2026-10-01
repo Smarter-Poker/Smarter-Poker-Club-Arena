@@ -298,7 +298,46 @@ describe('phase8-strength-assemble', () => {
   );
 
   it(
-    'refuses duplicate, mixed-source, short and unhosted runs',
+    'keeps a run that stopped short of its requested pairs as an unpromotable result',
+    async () => {
+      const file = path.join(runsDir, 'mystery-8101101', 'mystery-8101101.json');
+      const stopped = {
+        ...readJson(file),
+        pairs: 212,
+        complete: false,
+        conservationErrors: 2,
+        confidence99: pairedConfidence99(0, 0, 212),
+      };
+      stopped.promotionEligible = tournamentRunCanPromote(stopped);
+      write(file, stopped);
+      write(
+        path.join(runsDir, 'mystery-8101101', 'summary.json'),
+        summarizeTournamentPromotion([stopped])
+      );
+      const baselineFile = path.join(runsDir, 'mystery-8101101', 'baseline-verification.json');
+      const baseline = readJson(baselineFile);
+      baseline.runs[0].verified = tournamentBaselineRunVerified(stopped);
+      write(baselineFile, baseline);
+      const outcome = await assemble(`--out=${outDir()}`, '--fixture');
+      expect(outcome.reasons).toEqual([]);
+      const strength = readJson(path.join(outDir(), 'strength.json'));
+      const run = strength.runs.find((r: { run: string }) => r.run === 'mystery-8101101');
+      expect(run).toMatchObject({
+        pairs: 212,
+        requestedPairs: 1024,
+        pairsShortOfRequest: 812,
+        complete: false,
+        conservationErrors: 2,
+        promotable: false,
+      });
+      expect(strength.verdict.promoted).toBe(false);
+      expect(strength.verdict.reasons).toContain('mystery:8101101:not_promotable');
+    },
+    RUN_TIMEOUT_MS
+  );
+
+  it(
+    'refuses duplicate, mixed-source, shrunk and unhosted runs',
     async () => {
       // A second directory and a result that claims another run's identity.
       writeRun(path.join(root, 'extra'), 'mtt', 8101101);
@@ -312,9 +351,9 @@ describe('phase8-strength-assemble', () => {
       // A different source head on a later run.
       const manifest = path.join(runsDir, 'pko-8103307', 'manifest.json');
       write(manifest, { ...readJson(manifest), head: '0'.repeat(40) });
-      // Fewer than the contract's pairs.
-      const short = path.join(runsDir, 'spin-8102203', 'spin-8102203.json');
-      write(short, { ...readJson(short), pairs: 512 });
+      // A shrunk contract: the run asked for fewer pairs than 1,024.
+      const shrunk = path.join(runsDir, 'spin-8102203', 'manifest.json');
+      write(shrunk, { ...readJson(shrunk), pairs: 512 });
       // No host record.
       const hosts = readJson(hostsFile);
       delete hosts.runs['satellite-8103307'];
@@ -327,7 +366,7 @@ describe('phase8-strength-assemble', () => {
           'result_identity_mismatch:sng-8101101:mtt-8101101',
           'duplicate_run:mtt-8101101',
           'identity_mismatch:head',
-          'pairs_below_contract:spin-8102203:completed=512',
+          'pairs_below_contract:spin-8102203:manifest=512',
           'missing_host_record:satellite-8103307',
         ])
       );

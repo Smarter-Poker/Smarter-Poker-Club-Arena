@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
+    "tests/unit/fixtureNativeCi.test.ts": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -631,6 +631,28 @@
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "from": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83",
         "to": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      }
+    ]
+  },
+  "productionAlertsShardRuntimeDependencies20261001": {
+    "reason": "Remove unused compiler/header downloads from accounting shards 1/2; preserve complete runtime readiness, shards 3/4 native builds and all prior qualification and audit history.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd",
+        "current": "d68fda2b94a5fef5171e73ab30a3607aedcd29c16c8b1b173acefd8a0fb0be25"
+      }
+    ]
+  },
+  "productionAlertsMergedCssBeatRuntime20261001": {
+    "reason": "Preserve both parents complete audit histories and CSS beat/diamond work; bind actual merged source and nested metadata. No financial fixture assertions changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
+        "current": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
       }
     ]
   }

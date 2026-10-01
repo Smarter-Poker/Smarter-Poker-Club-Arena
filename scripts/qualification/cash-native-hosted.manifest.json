@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 182405,
-      "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+      "bytes": 183099,
+      "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 95983,
-      "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
+      "bytes": 99200,
+      "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
     }
   },
   "nativePgCron": {
@@ -1280,5 +1280,63 @@
         "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
       }
     }
+  },
+  "productionAlertsShardRuntimeDependencies20261001": {
+    "reason": "Remove unused compiler/header downloads from accounting shards 1/2; preserve complete runtime readiness, shards 3/4 native builds and all prior qualification and audit history.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 176951,
+          "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+        },
+        "current": {
+          "bytes": 177645,
+          "sha256": "cf38e19deb450e6a7d2e8817e8749a2faebaaa5c549760d48be3b152709bb160"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 95620,
+          "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+        },
+        "current": {
+          "bytes": 98837,
+          "sha256": "d68fda2b94a5fef5171e73ab30a3607aedcd29c16c8b1b173acefd8a0fb0be25"
+        }
+      }
+    ]
+  },
+  "productionAlertsMergedCssBeatRuntime20261001": {
+    "reason": "Preserve both parents complete audit histories and CSS beat/diamond work; bind actual merged source and nested metadata. No financial fixture assertions changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 182405,
+          "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+        },
+        "current": {
+          "bytes": 183099,
+          "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 95983,
+          "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
+        },
+        "current": {
+          "bytes": 99200,
+          "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+        }
+      }
+    ]
   }
 }

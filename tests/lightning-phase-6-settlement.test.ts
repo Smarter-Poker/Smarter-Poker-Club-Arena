@@ -252,12 +252,12 @@ describe('authority and law', () => {
 });
 
 describe('the proof around it', () => {
-  it('the harness applies the real chain through this file twice on its own port and counts fourteen sections', () => {
+  it('the harness applies the real chain through this file twice on its own port and counts twenty-two sections', () => {
     expect(HARNESS).toContain('port=${LIGHTNING_P6S_PORT:-55553}');
     expect(HARNESS).toContain(FILE);
     expect(HARNESS).toContain('-f "$p6_fixture" -f "$p6" -f "$s6_fixture"');
     expect(count(HARNESS, /-f "\$mine"/g)).toBe(2);
-    expect(HARNESS).toContain('if [ "$oks" != 14 ]; then');
+    expect(HARNESS).toContain('if [ "$oks" != 22 ]; then');
     expect(HARNESS).toContain(
       "IF v_bad IS DISTINCT FROM 'p9#28 true->false, p9#30 true->false, p9r#31 true->false, p9r#32 true->false, r2c#9 true->false' THEN"
     );
@@ -304,6 +304,157 @@ describe('the proof around it', () => {
       expect(CHANGELOG, p).toContain(p);
     expect(CHANGELOG).not.toContain('—');
     for (const h of CHANGELOG.match(/^#{1,3} .+$/gm) ?? []) {
+      const words = h
+        .replace(/^#+ /, '')
+        .replace(/`[^`]*`/g, '')
+        .split(/\s+/)
+        .filter((w) => /^[a-z]/.test(w));
+      expect(words, h).toEqual([]);
+    }
+  });
+});
+
+/**
+ * THE REMEDIATION, 20261001201216: the freeze freezes from every live mode, a
+ * frozen Cluster settles nothing, the session names its anchor seat, and the
+ * matcher forms nothing the host cannot deal. The same harness proves it on
+ * the same estate (sections 14 to 21); this reads what a catalogue cannot.
+ */
+describe('the remediation, 20261001201216', () => {
+  const FIX_FILE =
+    '20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql';
+  const FIX = fs.readFileSync(
+    process.env.LIGHTNING_P6R_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', FIX_FILE),
+    'utf8'
+  );
+  const FIX_CODE = FIX.split('\n')
+    .map((l) => l.replace(/--.*$/, ''))
+    .join('\n');
+  const FIX_LOG = read('docs', 'changelog', '2026-10-01-lightning-phase-6-remediation.md');
+  const HOST = read('server', 'src', 'lightning', 'LightningHandHost.ts');
+  /** One substitution block: its anchors, its replacements, its idempotency marker. */
+  function sub(tag: string) {
+    const start = FIX.indexOf(`DO $${tag}$`);
+    expect(start, tag).toBeGreaterThan(0);
+    const body = FIX.slice(start, FIX.indexOf(`$${tag}$;`, start + tag.length + 4));
+    const a = [...body.slice(0, body.indexOf('b text[]')).matchAll(/\$a\$([\s\S]*?)\$a\$/g)].map(
+      (m) => m[1]
+    );
+    const b = [...body.slice(body.indexOf('b text[]')).matchAll(/\$b\$([\s\S]*?)\$b\$/g)].map(
+      (m) => m[1]
+    );
+    return { body, a, b };
+  }
+
+  it('is one BEGIN and one COMMIT with a lock wait, and creates, grants and alters nothing', () => {
+    expect(count(FIX_CODE, /^BEGIN;$/gm)).toBe(1);
+    expect(count(FIX_CODE, /^COMMIT;$/gm)).toBe(1);
+    expect(FIX_CODE.trim().endsWith('COMMIT;')).toBe(true);
+    expect(FIX_CODE).toMatch(/^BEGIN;\s+SET LOCAL lock_timeout = '2s';/m);
+    expect(FIX_CODE).not.toMatch(
+      /\b(GRANT|REVOKE)\b|CREATE (TABLE|INDEX|TRIGGER)|ALTER TABLE|CREATE OR REPLACE FUNCTION/
+    );
+    expect(FIX_CODE).not.toContain('fn_table_seats_lightning_anchor_guard');
+  });
+  it.each([
+    ['sub_freeze', 'fn_lightning_settlement_freeze', "'already_frozen'", 1],
+    ['sub_settle', 'fn_lightning_settle_hand', "'cluster_frozen'", 2],
+    ['sub_session', 'fn_lightning_my_session', "'occupancy_id'", 2],
+    ['sub_plan', 'fn_lightning_match_plan', "'VARIANT_NOT_SUPPORTED'", 2],
+    ['sub_form', 'fn_lightning_match_and_form', "'cluster_has_no_front_table'", 2],
+  ])(
+    '%s substitutes %s anchor by anchor, refuses a blind one and is left alone once made',
+    (tag, name, marker, n) => {
+      const { body, a, b } = sub(tag);
+      expect(body).toContain(`'public.${name}(`);
+      expect(a.length).toBe(n);
+      expect(b.length).toBe(n);
+      expect(body).toContain(`IF position('${marker.replace(/'/g, "''")}' in v_src) = 0 THEN`);
+      expect(body).toContain('refusing to substitute blind');
+      expect(body).toContain(`c integer[] := ARRAY[${Array(n).fill(1).join(', ')}];`);
+      expect(b.join('')).toContain(marker);
+      expect(a.join('')).not.toContain(marker);
+    }
+  );
+  it('the freeze freezes from any mode but frozen and dead, records from_mode, and says frozen only when it is', () => {
+    const { a, b } = sub('sub_freeze');
+    expect(a[0]).toContain("cg.cluster_mode = 'lightning'");
+    expect(a[0]).toContain("'from_mode', 'lightning'");
+    expect(b[0]).not.toContain("cg.cluster_mode = 'lightning'");
+    expect(b[0]).toContain('WHERE cg.id = p_cluster_id FOR UPDATE;');
+    expect(b[0]).toContain("cg.cluster_mode NOT IN ('frozen', 'dead')");
+    expect(b[0]).toContain("'from_mode', v_from");
+    expect(b[0]).toContain("'frozen', v_froze OR v_from IS NOT DISTINCT FROM 'frozen'");
+    expect(b[0]).toContain("'already_frozen', v_from IS NOT DISTINCT FROM 'frozen'");
+    expect(b[0]).toMatch(
+      /IF v_froze THEN\s+BEGIN\s+v_alert_id := public\.fn_raise_server_financial_alert/
+    );
+    expect(b[0]).toMatch(
+      /IF v_froze THEN\s+INSERT INTO public\.cash_cluster_events[\s\S]*'cluster_frozen'/
+    );
+  });
+  it('a frozen Cluster is refused right after the instance is found dealing, before any write', () => {
+    const { a, b } = sub('sub_settle');
+    expect(a[1]).toContain("'instance_not_dealing'");
+    expect(b[1].startsWith(a[1])).toBe(true);
+    const added = b[1].slice(a[1].length).replace(/--.*$/gm, '');
+    expect(added).toContain("IF v_mode IS NOT DISTINCT FROM 'frozen' THEN");
+    expect(added).toContain("'reason', 'cluster_frozen', 'retry', false");
+    expect(added).not.toMatch(/\b(INSERT|UPDATE|DELETE|PERFORM)\b|FOR (UPDATE|SHARE)/);
+  });
+  it('the engine abandons on a refusal that is not frozen, so cluster_frozen ends the hand', () => {
+    expect(HOST).toContain('if (out.frozen) {');
+    expect(HOST).toContain('return void (await this.abandon(`settlement_refused:${out.reason}`));');
+  });
+  it('the session keeps every key and adds the anchor table, seat number and occupancy id', () => {
+    const { b } = sub('sub_session');
+    expect(b[0]).toContain('LEFT JOIN public.table_seats ts ON ts.id = ps.anchor_seat_id');
+    expect(b[0]).toContain('ts.table_id AS anchor_table_id, ts.seat_number, ts.occupancy_id');
+    expect(b[1]).toContain("'in_hand', v_hand IS NOT NULL,");
+    for (const k of [
+      "'anchor_table_id', s.anchor_table_id",
+      "'seat_number', s.seat_number",
+      "'occupancy_id', s.occupancy_id",
+    ])
+      expect(b[1], k).toContain(k);
+    expect(b.join('')).not.toContain("'instance_id'");
+  });
+  it('the matcher refuses pineapple with a diagnosis, and match_and_form refuses it and a missing front table up front', () => {
+    const plan = sub('sub_plan').b[1];
+    expect(plan).toContain("WHEN cg.variant = 'pineapple'");
+    expect(plan).toContain("WHEN tb.game_variant = 'pineapple'");
+    expect(plan).toContain("WHEN coalesce(tb.pineapple_holdem, false) THEN 'pineapple_holdem'");
+    expect(plan).toContain("'state', 'BLOCKED_WITH_REASON'");
+    expect(plan).toContain("'reason_code', 'VARIANT_NOT_SUPPORTED'");
+    expect(plan).toContain(
+      "'groups', '[]'::jsonb, 'refused', true, 'reason', 'variant_not_supported'"
+    );
+    const form = sub('sub_form').b[1];
+    expect(form).toContain('IF public.fn_cash_cluster_front_table(p_cluster_id) IS NULL THEN');
+    expect(form).toContain("'reason', 'cluster_has_no_front_table'");
+    expect(form).toContain("'reason', 'variant_not_supported'");
+    expect(form.indexOf("'cluster_has_no_front_table'")).toBeLessThan(
+      form.indexOf("'variant_not_supported'")
+    );
+  });
+  it('Law 10.5: no code mentions is_horse or horse_id, and it declares at least eight balanced proofs', () => {
+    expect(FIX_CODE).not.toMatch(/is_horse|horse_id/);
+    const proofs: string[] = declaredProofs(FIX);
+    expect(proofs.length).toBeGreaterThanOrEqual(8);
+    for (const p of proofs) expect(count(p, /\(/g), p).toBe(count(p, /\)/g));
+  });
+  it('the harness applies it twice after the Phase 6 file and proves it in eight sections', () => {
+    expect(HARNESS).toContain(FIX_FILE);
+    expect(HARNESS).toContain('LIGHTNING_P6R_MIGRATION');
+    expect(count(HARNESS, /-f "\$fix"/g)).toBe(2);
+    expect(HARNESS.indexOf('-f "$fixture/reapply.sql"')).toBeLessThan(HARNESS.indexOf('-f "$fix"'));
+    for (const n of ['14', '15', '16', '17', '18', '19', '20', '21'])
+      expect(HARNESS, n).toMatch(new RegExp(`\\\\echo '  ok  ${n} `));
+  });
+  it('the changelog uses title case headings and no em dash', () => {
+    expect(FIX_LOG).toContain('20261001201216');
+    expect(FIX_LOG).not.toContain('\u2014');
+    for (const h of FIX_LOG.match(/^#{1,3} .+$/gm) ?? []) {
       const words = h
         .replace(/^#+ /, '')
         .replace(/`[^`]*`/g, '')

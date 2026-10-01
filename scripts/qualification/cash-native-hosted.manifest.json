@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 176367,
-      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+      "bytes": 176646,
+      "sha256": "69aa4f3bf0323f5aacd63ded921418b0ff25b60909b29e4e15bd7c5278f26483"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1173,6 +1173,17 @@
     "after": {
       "bytes": 176367,
       "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+    }
+  },
+  "ledgerInvariantIntegration20261001": {
+    "why": "Adds the ledger-invariant isolated PostgreSQL proof (scripts/dev/test-ledger-invariant.sh: a balance never moves without its ledger row) to the existing accounting shard beside test-accounting-delivery.sh; no existing cash route, assertion or source changed.",
+    "before": {
+      "bytes": 176367,
+      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+    },
+    "after": {
+      "bytes": 176646,
+      "sha256": "69aa4f3bf0323f5aacd63ded921418b0ff25b60909b29e4e15bd7c5278f26483"
     }
   }
 }

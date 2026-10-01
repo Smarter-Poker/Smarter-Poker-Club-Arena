@@ -16,14 +16,12 @@ SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
 CREATE TABLE public.club_welcome_entitlements (
-  club_id uuid PRIMARY KEY REFERENCES public.clubs(id) ON DELETE RESTRICT,
+  club_id uuid PRIMARY KEY,
   owner_id uuid NOT NULL UNIQUE,
   creation_request_id uuid NOT NULL,
   package_version text NOT NULL DEFAULT 'welcome-v1' CHECK (package_version='welcome-v1'),
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-  UNIQUE(owner_id,creation_request_id),
-  FOREIGN KEY(owner_id,creation_request_id)
-    REFERENCES public.club_creation_requests(user_id,request_id) ON DELETE RESTRICT
+  UNIQUE(owner_id,creation_request_id)
 );
 
 -- Identity history deliberately has no club/request foreign key. Ownership
@@ -36,13 +34,6 @@ CREATE TABLE public.club_owner_creation_history (
   provenance text NOT NULL CHECK(provenance IN ('historical','prospective')),
   recorded_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
-
-INSERT INTO public.club_owner_creation_history
-  (owner_id,first_club_id,welcome_eligible,provenance,recorded_at)
-SELECT owner_id,(array_agg(id ORDER BY created_at NULLS LAST,id))[1],false,'historical',
-       COALESCE(min(created_at),transaction_timestamp())
-  FROM public.clubs WHERE owner_id IS NOT NULL GROUP BY owner_id
-ON CONFLICT(owner_id) DO NOTHING;
 
 CREATE FUNCTION public.fn_remember_club_owner_transfer() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $function$

@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / 'supabase/migrations/20261001154709_prospective_lifetime_first_club_welcome_package.sql'
 CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261001212300_welcome_certification_cleanup_runs_after_core.sql'
 HOT_TRIGGER_MIGRATION = ROOT / 'supabase/migrations/20261001224720_welcome_schedule_spawn_trigger_runs_after_core.sql'
+CLUB_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261001232445_welcome_club_owner_history_runs_after_core.sql'
+REQUEST_ACTIVATION_MIGRATION = ROOT / 'supabase/migrations/20261001232452_welcome_request_activation_runs_last.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -18,7 +20,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -154,11 +156,18 @@ try:
     run('opening-definition-before', "SELECT pg_get_functiondef('fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);")
     run('install-core',MIGRATION.read_text())
     run('core-leaves-hot-table-triggers-detached',"SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_fence_welcome_package_schedule_spawn','trg_remember_club_owner_transfer','trg_offer_lifetime_first_club_welcome') AND NOT tgisinternal;",'0')
+    run('core-leaves-hot-foreign-keys-detached',"SELECT count(*) FROM pg_constraint WHERE conname IN ('club_welcome_entitlements_club_fkey','club_welcome_entitlements_owner_request_fkey');",'0')
+    run('core-leaves-owner-history-empty',"SELECT count(*) FROM club_owner_creation_history;",'0')
     run('install-certification-cleanup',CLEANUP_MIGRATION.read_text())
     run('install-hot-trigger',HOT_TRIGGER_MIGRATION.read_text())
     run('hot-trigger-installed-once',"SELECT count(*),(SELECT count(*) FROM ca_declared_money_triggers WHERE table_name='tournaments' AND trigger_name='trg_fence_welcome_package_schedule_spawn') FROM pg_trigger WHERE tgname='trg_fence_welcome_package_schedule_spawn' AND NOT tgisinternal;",'1|1')
+    run('offer-stays-detached-after-tournament-fence',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'0')
+    run('install-club-history',CLUB_HISTORY_MIGRATION.read_text())
+    run('owner-transfer-trigger-and-club-fk-installed-once',"SELECT (SELECT count(*) FROM pg_trigger WHERE tgname='trg_remember_club_owner_transfer' AND NOT tgisinternal),(SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_club_fkey' AND convalidated);",'1|1')
+    run('offer-stays-detached-after-club-history',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'0')
+    run('install-request-activation',REQUEST_ACTIVATION_MIGRATION.read_text())
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')
-    run('owner-transfer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_remember_club_owner_transfer' AND NOT tgisinternal;",'1')
+    run('request-fk-installed-once',"SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_owner_request_fkey' AND convalidated;",'1')
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'

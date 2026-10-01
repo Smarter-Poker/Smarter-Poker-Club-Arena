@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 176367,
-      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+      "bytes": 181821,
+      "sha256": "cfc423bebe2c8274e0afcc0ea9e5845b47cb6a40791c563fcdc9ab3d2f579781"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 94734,
-      "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+      "bytes": 95097,
+      "sha256": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d"
     }
   },
   "nativePgCron": {
@@ -1173,6 +1173,29 @@
     "after": {
       "bytes": 176367,
       "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+    }
+  },
+  "cssBeatGateSplit20261001": {
+    "why": "Splits the CSS Beat browser gate in two (2026-10-01): the Diamond playfield moves from css-beats-e2e into its own diamond-playfield-e2e job beside it, and the required 'CSS Beat E2E (multi-table + animations)' name moves to css-beats-gate, which passes only when both halves pass. fixtureNativeCi.test.ts reads the playfield command from the new job. No cash route, assertion, probe or accounting source changed.",
+    ".github/workflows/ci.yml": {
+      "before": {
+        "bytes": 176367,
+        "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+      },
+      "after": {
+        "bytes": 181821,
+        "sha256": "cfc423bebe2c8274e0afcc0ea9e5845b47cb6a40791c563fcdc9ab3d2f579781"
+      }
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "before": {
+        "bytes": 94734,
+        "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+      },
+      "after": {
+        "bytes": 95097,
+        "sha256": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d"
+      }
     }
   }
 }

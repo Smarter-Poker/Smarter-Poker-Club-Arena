@@ -40,6 +40,11 @@ class FirstArchivedCompletionTests(unittest.TestCase):
   self.assertEqual(len(M.CHECKS),28);self.assertIn('winner_200_only',M.CHECKS);self.assertIn('fee_24_held',M.CHECKS)
   self.assertNotIn('checks',M.CHECKS);self.assertNotIn('__VERIFIED_PZ002',M.READBACK)
   self.assertIn("reference_status'='committed'",M.READBACK)
+ def test_sql_baseline_count_matches_exact_scoped_inventory(self):
+  import re
+  _,_,Q=M.modules()
+  count=re.search(r'count\(\*\) FROM jsonb_object_keys\(b\)\)=(\d+)',M.READBACK)
+  self.assertIsNotNone(count);self.assertEqual(int(count.group(1)),len(Q.SCOPED));self.assertEqual(len(Q.SCOPED),23)
  def test_variant_preserves_existing_paths(self):
   A,P,Q=M.modules();args=(Path('/qualified/pg17/bin'),M.ROOT,'00000000-0000-4000-8000-000000000009','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000003')
   original=A.body_plan(*args,A.IMAGE);bank=A.body_plan(*args,A.BANK_IMAGE);completion=A.body_plan(*args,A.COMPLETION_IMAGE)

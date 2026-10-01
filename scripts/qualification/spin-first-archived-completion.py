@@ -67,7 +67,7 @@ def validate(envelope,after):
 
 SQL='scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql'
 SQL_SHA='89402dfd140fd6b006e0bcd6737b6ce62a484a82c238bb1dc179175c880327a6'
-READBACK_SHA='60e416b5219ca9d5cf8f88bd6413b3f05b454c8df295b5bd6fd76346b66f5e10'
+READBACK_SHA='a1f868c99011cd2ff15d0a706d72877aee3fa113dd6f5a388503d92630c91901'
 
 def encode(value):
  if isinstance(value,Decimal):require(value.is_finite(),'nonfinite binding');return str(value)

@@ -67,3 +67,21 @@
     padding-right: 8px;
   }
 }
+
+/* ── Clip mode (Phase 9.1, 2026-09-30) ──────────────────────────────────────
+   The page as the hand clip renderer sees it: a headless 1280x720 viewport
+   with the stage filling it exactly. Fixed and on top so nothing the shell
+   mounts below the routes can reach the frame; no margin, no padding, no
+   max-width, nothing to scroll. */
+.shared-replay--clip {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: 1280px;
+  height: 720px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #030609;
+}

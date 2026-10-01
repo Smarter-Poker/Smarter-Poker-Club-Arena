@@ -1,19 +1,12 @@
--- DRAFT ONLY. NOT EXECUTED OR QUALIFIED AS A PRODUCTION PROBE.
--- Parent owns execution after exact protected delivery, installed-source/ACL
--- parity and unchanged original preimage/funding/lease readback.
--- ONE provider call containing BEGIN, SET LOCAL then ONE DO block, in the same
--- provider transaction. Never split these statements across calls. No DDL
--- and no full-production-table scans. The unhandled final exception aborts
--- every financial effect in this call; no COMMIT or caught success path.
--- A persistent rehearsal connection must drain PZ002 then ROLLBACK its aborted
--- transaction before independent durable readback; management calls must not
--- split BEGIN, timeout and DO into separate requests.
--- Expected PZ002 forces the entire call to abort. Any other error is failure.
--- Full native qualification and independent post-abort durable readback required.
--- Captures scoped table rows; does NOT promise rollback of sequence allocations.
+-- E-ONLY UNQUALIFIED COMMIT CANDIDATE. NEVER EXECUTE BEFORE NATIVE/TRANSPORT REVIEW.
+-- Derived financial checks from source-pinned27ee probe; THIS SCRIPT COMMITS.
+-- One canonical initial call and one same-operation replay in one service transaction.
+-- Final envelope is PRECOMMIT observation; independent committed-xid readback required.
+-- No DDL, permanent scratch or session-persistent settings. Unknown outcome requires
+-- immutable admission/terminal readback, never blind retry or a new operation identity.
 BEGIN;
 SET LOCAL statement_timeout='20s';
-DO $probe$
+DO $completion$
 DECLARE
  operation uuid := '341f02a3-4655-420c-b43b-3930b6d9ad8f';
  event uuid := '2aa4cba1-506f-426b-a1ba-d8e22e018533';
@@ -293,9 +286,19 @@ BEGIN
     (SELECT jsonb_agg(r->'id' ORDER BY (r->'id')::text) FROM jsonb_array_elements(before_state->'public.table_seats') r)
  OR (terminal->>'source_seat_count')::integer IS DISTINCT FROM 3 OR (terminal->>'released_seat_count')::integer IS DISTINCT FROM 1
  OR terminal->'released_seat_ids' IS DISTINCT FROM '["fd0e0c3a-1efa-4262-8122-4c05e328f9ac"]'::jsonb THEN RAISE EXCEPTION 'PROBE_TERMINAL_CHAIR_RECEIPT'; END IF;
- RAISE EXCEPTION USING ERRCODE='PZ002', MESSAGE='FIRST_ARCHIVED_ROLLBACK_PROVED:'||operation::text,
- DETAIL=jsonb_build_object('operation',operation,'event',event,'response',response,'before',before_state,'inside',inside_state,
- 'fee_capture_diagnostic',fee_diagnostic,
- 'bank_observations',bank_history,'replay_state',replay_state,'same_operation_response_and_nonbank_replay_unchanged',true,'transaction_will_abort_now',true,'sequence_rollback_claimed',false,'production_settlement_complete',false)::text;
+ -- Separate COMMIT candidate: this is NOT an abort diagnostic or a PZ002.
+ -- No financial writes after the final verified snapshot/constraint execution.
+ PERFORM set_config('ca.first_archived_completion_evidence',jsonb_build_object(
+ 'kind','first_archived_completion_before_commit_v1',
+ 'operation',operation,'event',event,'source_sha256',source_sha,
+ 'transaction_id',txid_current()::text,'transaction_started_at',transaction_timestamp(),
+ 'inside_observed_at',inside_observed_at,'final_observed_at',clock_timestamp(),
+ 'response',response,'before',before_state,'inside',inside_state,
+ 'fee_capture_diagnostic',fee_diagnostic,'bank_observations',bank_history,'replay_state',replay_state,
+ 'same_operation_response_and_nonbank_replay_unchanged',true,
+ 'transaction_will_commit',true,'commit_observed',false,
+ 'sequence_rollback_claimed',false,'production_settlement_complete',false)::text,true);
 END
-$probe$;
+$completion$;
+SELECT current_setting('ca.first_archived_completion_evidence')::jsonb AS evidence;
+COMMIT;

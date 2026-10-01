@@ -34,8 +34,9 @@ def validate(envelope,after):
  top=envelope['transaction_id'];require(B.number(top,2**64)>2,'completion xid malformed')
  fee=P.validate_fee_capture(envelope['fee_capture_diagnostic']);require(fee['transaction_id']==top,'actual fee/complete transaction differs')
  for key in ('before','inside','replay_state'):
-  r=envelope[key];require(isinstance(r,dict) and set(r)==Q.SCOPED and all(isinstance(v,list) for v in r.values()),'21 completion rowsets required')
+  r=envelope[key];require(isinstance(r,dict) and set(r)==Q.SCOPED and all(isinstance(v,list) for v in r.values()),'23 completion rowsets required')
  before,inside,replay=(envelope[k] for k in ('before','inside','replay_state'))
+ require(all(envelope[stage].get(name)==[] for stage in ('before','inside','replay_state') for name in ('public.accounting_tournament_fee_owner_bases', 'public.accounting_tournament_fee_owner_operations')),'fee owner basis must remain absent')
  require(Q.equal({k:v for k,v in inside.items() if k!=B.RELATION},{k:v for k,v in replay.items() if k!=B.RELATION}),'nonbank precommit replay differs')
  B.validate_history(envelope['bank_observations'],top,before[B.RELATION],inside[B.RELATION],replay[B.RELATION])
  admit=inside['smarter_private.spin_archived_first_admission'];leases=inside['public.engine_tournament_leases']
@@ -62,11 +63,11 @@ def validate(envelope,after):
  obs=w['bank_observation'];require(obs['snapshot_xmax']==parts[1] and Q.equal(B.observation(obs,top),rows[B.RELATION]),'bank projection/version not same statement')
  for r in obs['rows']:require(r['full_xid']!=top and not(r['status']=='committed' and int(r['full_xid']) in active),'own/active writer cannot be external')
  transition=B.pair(envelope['bank_observations'][2],obs,top)
- return {'candidate_only':True,'production_qualified':False,'completion_xid_observed_committed':True,'bank_transition':transition,'durable_nonbank_rowsets_exact':20,'fee_accounting_complete':False,'oldest_alert_complete':False,'sequence_rollback_claimed':False}
+ return {'candidate_only':True,'production_qualified':False,'completion_xid_observed_committed':True,'bank_transition':transition,'durable_nonbank_rowsets_exact':22,'fee_accounting_complete':False,'oldest_alert_complete':False,'sequence_rollback_claimed':False}
 
 SQL='scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql'
-SQL_SHA='24318112458ac4dba4f6a8a45f3682954eae5b9c0ff26cb520a5d98175426b66'
-READBACK_SHA='c38cfec5e1cceabdb61a24a0f2869c84e367f72e3dfffa4ce461d2f4f9e418e9'
+SQL_SHA='89402dfd140fd6b006e0bcd6737b6ce62a484a82c238bb1dc179175c880327a6'
+READBACK_SHA='60e416b5219ca9d5cf8f88bd6413b3f05b454c8df295b5bd6fd76346b66f5e10'
 
 def encode(value):
  if isinstance(value,Decimal):require(value.is_finite(),'nonfinite binding');return str(value)

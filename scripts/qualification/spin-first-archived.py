@@ -34,7 +34,7 @@ EVENT = '2aa4cba1-506f-426b-a1ba-d8e22e018533'
 SEED = ('full-columns.sql', 'first-captured-seed.sql', 'first-temporal-seed.sql')
 PROVIDER = ('full-functions.sql', 'fee-resolution-provider.sql', 'full-constraints.sql',
             'full-triggers.sql', 'full-access.sql', 'full-sequences.sql',
-            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql', 'first-manager-release-provider.sql')
+            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql', 'first-manager-release-provider.sql', 'first-fee-owner-current-provider.sql', 'first-fee-owner-current-readback.sql')
 LOCKS = 'scripts/qualification/spin-first-archived-locks.py'
 LOCKS_TEST = 'scripts/qualification/test_first_archived_locks.py'
 PRODUCTION_PROBE = 'scripts/qualification/spin-first-archived-production-probe.py'
@@ -49,7 +49,7 @@ POSTABORT_TEST='scripts/qualification/test_first_archived_postabort.py'
 POSTABORT_SQL=BASE+'first-postabort-bank-readback.sql'
 INPUTS = (MODULE, MANIFEST, COMPLETION, COMPLETION_CASES, COMPLETION_TEST, COMPLETION_SQL, COMPLETION_READBACK, POSTABORT, POSTABORT_TEST, POSTABORT_SQL, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
           *(BASE+n for n in (*SEED, *PROVIDER, 'first-captured-state.json',
-            'full-provider-catalog.json', 'full-authority-catalog.json',
+            'full-provider-catalog.json', 'full-authority-catalog.json', 'first-fee-owner-current-capture.json', 'first-fee-owner-operation-absence.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',
             'seating-receipts.json', 'schema-authority.json', 'original-launch-refusal.sql',
             'first-connected-probe.sql', 'first-temporal-state.json', 'first-recognition-capture.json', 'first-temporal-refusal.sql',
@@ -106,6 +106,9 @@ def validate_sources(files):
     for path in set(INPUTS)-{MANIFEST}:
         require(manifest['files'][path] == {'bytes':len(files[path]),'sha256':digest(files[path])},
                 'first archived source changed: '+path)
+    owner_raw=files[BASE+'first-fee-owner-current-capture.json']; operation_raw=files[BASE+'first-fee-owner-operation-absence.json']
+    require(digest(owner_raw)=='aa3806e3c56afbff8f4e59815faaa3900a2a1e44b2f363e2d85d128a801b5e23' and digest(operation_raw)=='9e5a47eff25c60003949643ec1c5fffab3ef5a83ee74c659ffbcf2f582059800','current fee owner capture differs')
+    require(decode(owner_raw)['rows'][0]['evidence']['basis_rows']==[] and decode(operation_raw)['rows'][0]['evidence']['owner_operations']==[],'original fee owner basis or operation was not absent')
     validate_recognition_capture(files)
     migration=files[MIGRATION].decode()
     require(len(re.findall(r'^BEGIN;$',migration,re.M))==1 and len(re.findall(r'^COMMIT;$',migration,re.M))==1,

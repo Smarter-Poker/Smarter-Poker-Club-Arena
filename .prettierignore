@@ -248,3 +248,7 @@ tests/fixtures/earlybird-fee-custody/*.json
 scripts/qualification/fixtures/archived-spin/first-recognition-capture.json
 scripts/qualification/fixtures/archived-spin/first-temporal-state.json
 scripts/qualification/spin-first-archived.manifest.json
+
+# Preserve original current-owner catalog response bytes.
+scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json
+scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json

@@ -22,7 +22,7 @@ BANK=C.load("archive_bank_observer",ROOT/"scripts/qualification/spin-first-archi
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA = "12d7f7e671f586f62a71f59b1488460f9d075f6c2802ba574e82af50ac9a681a"
+PROBE_SHA = "2e7d959ebe6470aa27948cfc8ddec0dd8cc1709acee3bba7b42d8c2e2fe002c1"
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 
@@ -33,13 +33,13 @@ def validate_fee_capture(d):
     require(d['kind']=='separate_original_capture_refusal' and d['operation']==OPERATION and d['event']==C.EVENT
         and d['rake_record_id']=='6d13847d-cbe2-473c-94e5-34dad1ce3efb'
         and d['sqlstate']=='23514' and d['message']=='cash_commission_earning_club_not_observed'
-        and d['owner_md5']=='b7e0c1cae9d65b9a0b3560dc3280991a'
+        and d['owner_md5']=='d7dae6781894ce817545116009a156b1'
         and d['invoker_role']==d['auth_role']=='service_role','fee capture original owner/refusal differs')
     require(isinstance(d['transaction_id'],str) and re.fullmatch(r'[1-9][0-9]{0,19}',d['transaction_id'])
         and int(d['transaction_id'])<2**64,'fee capture transaction identity malformed')
     require(isinstance(d['context'],str) and len(d['context'])<=16384
         and 'fn_ca_capture_tournament_fee_from_recorded_evidence' in d['context']
-        and 'fn_accounting_earning_contract' in d['context'],'fee capture actual context absent')
+        and 'fn_ca_capture_tournament_fee_from_recorded_evidence(uuid) line 269 at RAISE' in d['context'],'fee capture actual context absent')
     require(d['before']==d['after']=={'batches':[],'sources':[]},'fee capture provisional writes survived')
     return d
 
@@ -189,6 +189,7 @@ def protocol_error(raw,kind):
     return xid
 
 def validate_financial_detail(detail,observer_rows,archive):
+    require(all(detail[stage].get(name)==[] for stage in ('before','inside','replay_state') for name in ('public.accounting_tournament_fee_owner_bases', 'public.accounting_tournament_fee_owner_operations')),'fee owner basis must remain absent')
     before=detail['before'];inside=detail['inside'];account_keys=('public.club_members','public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools')
     archive.validate_account_delta({k:before[k] for k in account_keys},{k:inside[k] for k in account_keys},bank_observations=detail['bank_observations'])
     terminal=inside['public.tournament_terminal_settlements'][0]

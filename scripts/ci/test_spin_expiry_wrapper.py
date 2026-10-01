@@ -41,6 +41,7 @@ ARCHIVE_POSTABORT_SPEC = importlib.util.spec_from_file_location('first_archived_
 ARCHIVE_POSTABORT_MODULE = importlib.util.module_from_spec(ARCHIVE_POSTABORT_SPEC)
 ARCHIVE_POSTABORT_SPEC.loader.exec_module(ARCHIVE_POSTABORT_MODULE)
 FirstArchivedPostabortTests = ARCHIVE_POSTABORT_MODULE.FirstArchivedPostabortTests
+CurrentOwnerBasisAbsenceTests = ARCHIVE_POSTABORT_MODULE.CurrentOwnerBasisAbsenceTests
 ARCHIVE_BANK_SPEC = importlib.util.spec_from_file_location('first_archived_bank_controls', Path(__file__).resolve().parents[1] / 'qualification/test_first_archived_bank_observer.py')
 ARCHIVE_BANK_MODULE = importlib.util.module_from_spec(ARCHIVE_BANK_SPEC)
 ARCHIVE_BANK_SPEC.loader.exec_module(ARCHIVE_BANK_MODULE)

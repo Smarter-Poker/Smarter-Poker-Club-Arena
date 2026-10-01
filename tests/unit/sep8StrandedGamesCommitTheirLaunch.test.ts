@@ -1,9 +1,9 @@
 /**
  * THE SEPTEMBER 8 GAMES COMMIT THE LAUNCH THEIR ENGINE LOST (2026-10-01)
  *
- * Thirty Spins, heads-up Sit & Gos and heads-up duel satellites were dealt on
+ * Twenty-six Spins and heads-up Sit & Gos were dealt on
  * 2026-09-08, lost their engine before the launch's RUNNING commit, and sat in
- * REGISTERING for three weeks holding 1,593.60 chips of finalized pools. The
+ * REGISTERING for three weeks holding 1,223.10 chips of finalized pools. The
  * repair commits exactly the lost step through the launch's own door and lets
  * the finish authorities pay each event in its own transaction. These pins
  * keep the file from ever becoming a hand-written payout.
@@ -19,11 +19,14 @@ const body = MIGRATION.split('\n')
   .filter((line) => !line.trimStart().startsWith('--'))
   .join('\n');
 
+/** Seat-first duel satellites: their pre-agreement entry fee has no custody
+ * route through the satellite authority, so a launch would strand them
+ * RUNNING. They stay REGISTERING and out of this file. */
+const SATELLITES = ['097e3601', '20c75b67', '92c93927', 'a4262ba0'];
+
 const STRANDED = [
   '00f57d7b',
-  '097e3601',
   '106c4e13',
-  '20c75b67',
   '2aa4cba1',
   '2d6dadb7',
   '3843907b',
@@ -36,10 +39,8 @@ const STRANDED = [
   '8c6a20c5',
   '8d5969da',
   '90c4d93f',
-  '92c93927',
   '95e43b6e',
   '9cecb4fa',
-  'a4262ba0',
   'ab4125bc',
   'b3b65e07',
   'b5fae1b3',
@@ -53,14 +54,19 @@ const STRANDED = [
 ];
 
 describe('the September 8 stranded games commit their lost launch', () => {
-  it('names exactly the thirty events, each with a pre-image and a start before its first bust', () => {
+  it('declares a live proof a reader can run', () => {
+    expect(MIGRATION).toMatch(/^-- @live-proof: .+$/m);
+  });
+
+  it('names exactly the twenty-six Spins and Sit & Gos, each with a pre-image and a start before its first bust', () => {
     const ids = [
       ...body.matchAll(
         /"id":"([0-9a-f]{8})-[0-9a-f-]{27}","preimage":"[0-9a-f]{32}","started_at":"2026-09-08 [0-9:.]+\+00"/g
       ),
     ].map((m) => m[1]);
     expect(ids.sort()).toEqual([...STRANDED].sort());
-    expect(body).toContain('v_n <> 30 OR v_total IS DISTINCT FROM 1593.60');
+    for (const satellite of SATELLITES) expect(body).not.toContain(satellite);
+    expect(body).toContain('v_n <> 26 OR v_total IS DISTINCT FROM 1223.10');
     expect(body).toContain('SEP8_LAUNCH_PREIMAGE_CHANGED');
     expect(body).toMatch(/v_row\.started_at >= \(SELECT min\(p\.eliminated_at\)/);
   });

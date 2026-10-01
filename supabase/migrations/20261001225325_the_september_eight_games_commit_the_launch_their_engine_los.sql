@@ -2,22 +2,34 @@
 --
 -- THE SEPTEMBER 8 GAMES COMMIT THE LAUNCH THEIR ENGINE LOST (2026-10-01)
 --
--- WHAT WAS READ (production rows, 2026-10-01 ~22:30 UTC, read-only):
---   30 events created and dealt on 2026-09-08 still read status REGISTERING,
---   started_at NULL, prize_pool_finalized = true, every entry paid into an
---   open escrow (tournament_escrow.prize_balance = prize_pool, nothing out):
+-- @live-proof: (SELECT count(*) FROM public.tournament_launch_receipts r WHERE r.completed_at IS NOT NULL AND r.tournament_id IN ('00f57d7b-db16-4307-8e40-a47e24d4aa29','106c4e13-0da7-4b62-b849-119781d25d4f','2aa4cba1-506f-426b-a1ba-d8e22e018533','2d6dadb7-d1cb-4e03-980f-41fafce98afd','3843907b-dc12-40c3-9641-d2c66f4ebe7c','44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa','482e90bb-ef9d-4135-9067-9f0332c94142','659d3ec6-c584-42ea-956d-5fc2004ba566','6d359f61-d681-49ba-82f3-00493178e5b3','7284506c-093c-491a-8da7-5816bf1ccccf','8904c10b-6a47-4934-bdf2-def1b1e76f0b','8c6a20c5-a422-4177-8b93-efa371d5c14d','8d5969da-df76-44fa-8c83-5608b844ca06','90c4d93f-4577-4da2-bd9b-51b774019971','95e43b6e-c1c9-445e-a1d9-cbe711e3bac1','9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8','ab4125bc-a85e-45c6-b0a7-22417d75c0c5','b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99','b5fae1b3-b900-4670-85ef-76e3aa646734','b67ab0cb-e2d6-4955-8f43-4bff32551400','c2fd1c7e-9572-4b95-90dd-3b999777a145','dae6db50-4f35-4ffd-b8f5-b9f95d104c10','e62a97cc-40a8-4d70-a89d-04ca4cc20834','efd5455d-d188-4171-becb-1d35b016d06a','f58d6375-4bb4-4f80-a673-0460fcf2c1be','f5a6896b-b739-40e0-9f73-680ee36bc532')) = 26
+--
+-- WHAT WAS READ (production rows, 2026-10-01 ~22:30 UTC and again 23:20 UTC,
+-- read-only): 30 events created and dealt on 2026-09-08 still read status
+-- REGISTERING, started_at NULL, prize_pool_finalized = true, every entry
+-- paid into an open escrow (prize_balance = prize_pool, nothing out). This
+-- file launches the 26 of them whose finish authority can pay them:
 --     13 Spins (3 seats, drawn multiplier 2x, winner takes all)     446.00
 --     13 heads-up Sit & Gos (winner takes all)                       777.10
---      4 heads-up duel satellites (097e3601, 20c75b67, 92c93927,
---        a4262ba0; one seat each into a target that is now
---        COMPLETED, so the seat is delivered as its cash ticket)     370.50
---   Total finalized pools held:                                     1,593.60
---   28 of them are decided: one entrant still playing with every live chip
+--   Total finalized pools handed to their finish authorities:       1,223.10
+--   24 of them are decided: one entrant still playing with every live chip
 --   on the one live seat, the others eliminated with places recorded.
 --   Two Spins are NOT decided: 6d359f61 (645 v 555) and 8904c10b
 --   (2034 v 1966) each hold two live stacks and one eliminated 3rd place.
 --   No launch receipt, no terminal receipt, no payout row, no hand history
 --   left (retention), no lease that survives a pass.
+--   Every one of the 26 is in fn_ca_legacy_fee_custody_cohort (branch B,
+--   20260921013139), so the terminal authority pays the players and holds
+--   the pre-agreement entry fee in custody, as it did for the four Spins
+--   finished on 2026-09-21.
+--
+-- NOT IN THIS FILE: the four heads-up duel satellites 097e3601, 20c75b67,
+-- 92c93927 and a4262ba0 (370.50). The satellite authority settles the entry
+-- fee through fn_settle_tournament_rake and refuses (P0404) unless the fee
+-- is attributed; a 2026-09-08 fee predates every recorded agreement
+-- (tournament_fee_sources_require_reconciliation, read 2026-10-01), and the
+-- legacy custody cohort excludes satellites. Launching them would strand
+-- them RUNNING behind a refusal, so they stay REGISTERING, untouched.
 --
 -- WHY THEY ARE STUCK: the engine that dealt them died before the launch's
 -- RUNNING commit. Since then every pass starts a manager, sees "Only 1 of 2
@@ -27,17 +39,17 @@
 -- has since removed, so the launch completion can never prove the field.
 -- #5387 (first archived Spin) built a recovery admission for exactly ONE
 -- event, 2aa4cba1, bound by CHECK constraint and a hard-coded winner, and it
--- has never been invoked: it cannot finish the other 29. Every finish
+-- has never been invoked: it cannot finish the others. Every finish
 -- authority (fn_complete_tournament_terminal, fn_settle_satellite_tournament)
 -- holds a one-tournament settlement lane per transaction, so one migration
--- cannot pay 30 events itself, and a payout written by hand is forbidden
+-- cannot pay 26 events itself, and a payout written by hand is forbidden
 -- (CLAUDE.md 10.9.2).
 --
--- THE PATH (the 2026-09-11 lane D audit's proposal, completed for all 30):
+-- THE PATH (the 2026-09-11 lane D audit's proposal, completed for the 26):
 -- commit exactly the step the launch lost, through the launch's own door: an
 -- immutable tournament_launch_receipts row and the transaction-local
 -- app.atomic_tournament_launch marker that only launch completion sets, so
--- the freeze guard admits REGISTERING -> RUNNING for these 30 ids and nothing
+-- the freeze guard admits REGISTERING -> RUNNING for these 26 ids and nothing
 -- else. started_at is the moment the field was complete (the last paid entry,
 -- or the Spin reveal after it), always before the first elimination; for
 -- 2aa4cba1 it is the retained first-hand witness #5387 recorded. Then the
@@ -46,12 +58,9 @@
 --   finishSeatFirstGamesThatAreOver (RUNNING > 5 min, silent > 3 min, <= 1
 --   live stack) wakes the elimination sweep; the terminal authority pays the
 --   survivor the event's first prize (heads-up and 2x Spin: the whole
---   finalized pool) and records the eliminated entrant(s) in their places;
---   the satellite authority delivers the seat as its cash ticket (target
---   buy-in + fee: 200.00 / 20.00) to the winner and the pool remainder
---   (85.00 / 8.50) to second place, its own rule for a closed target; every
---   one closes escrow to exact zero, releases seats and tables and writes
---   its terminal receipt. The two undecided Spins resume dealing and finish
+--   finalized pool), records the eliminated entrant(s) in their places,
+--   holds the pre-agreement fee in legacy custody, closes the prize bank to
+--   exact zero, releases seats and tables and writes its terminal receipt. The two undecided Spins resume dealing and finish
 --   by play, which is their rule.
 -- Nobody is paid by this file, so nobody can be paid twice; nothing is taken
 -- from anybody; rake already taken stays where it is.
@@ -60,7 +69,7 @@
 -- window; every event must match, field for field, the md5 pre-image read on
 -- 2026-10-01 (status, start, pool, payout contract, roster with chips and
 -- places, live seats and stacks, escrow banks); none may own a launch
--- receipt, terminal receipt or payout row. Post-image: all 30 RUNNING with
+-- receipt, terminal receipt or payout row. Post-image: all 26 RUNNING with
 -- the stated started_at, receipts completed, roster/seats/escrow unchanged.
 
 BEGIN;
@@ -88,9 +97,7 @@ BEGIN
   -- id, md5 pre-image read 2026-10-01, started_at of the field that was dealt
   v_set := $set$[
     {"id":"00f57d7b-db16-4307-8e40-a47e24d4aa29","preimage":"0f685689b7837b27d7e5dacd17afbde5","started_at":"2026-09-08 14:48:30.508131+00"},
-    {"id":"097e3601-ccf9-4035-af40-eb35068d2652","preimage":"16d5ad319efa93b63230802f3638b508","started_at":"2026-09-08 14:42:36.201936+00"},
     {"id":"106c4e13-0da7-4b62-b849-119781d25d4f","preimage":"0534ad158c4977c6bb6edf3f80b8f717","started_at":"2026-09-08 14:45:14.369415+00"},
-    {"id":"20c75b67-7f78-4b29-b7df-9594faf62af0","preimage":"e4ceb53cb72391e7d46d9654f66b878f","started_at":"2026-09-08 14:50:57.103603+00"},
     {"id":"2aa4cba1-506f-426b-a1ba-d8e22e018533","preimage":"2bfad7b11141e0c19b9636e6cdb73a6b","started_at":"2026-09-08 14:48:56.020255+00"},
     {"id":"2d6dadb7-d1cb-4e03-980f-41fafce98afd","preimage":"49a0bc96bc7d54f1b9df01a60c77d6ec","started_at":"2026-09-08 14:50:50.155044+00"},
     {"id":"3843907b-dc12-40c3-9641-d2c66f4ebe7c","preimage":"b2a383296943ddd69ef1ed233569a912","started_at":"2026-09-08 14:45:08.984151+00"},
@@ -103,10 +110,8 @@ BEGIN
     {"id":"8c6a20c5-a422-4177-8b93-efa371d5c14d","preimage":"af3dbfe05d091574c2ac2ab658ece1ee","started_at":"2026-09-08 14:46:02.189607+00"},
     {"id":"8d5969da-df76-44fa-8c83-5608b844ca06","preimage":"bc5fd5531f8905752a4b4ccdb106e58e","started_at":"2026-09-08 14:39:30.684+00"},
     {"id":"90c4d93f-4577-4da2-bd9b-51b774019971","preimage":"1c399070c299cd0335307be86c361698","started_at":"2026-09-08 14:38:51.05798+00"},
-    {"id":"92c93927-614f-4168-a1f9-918849c0be19","preimage":"6920f28b9a387c68ce31926773932df1","started_at":"2026-09-08 14:44:13.678166+00"},
     {"id":"95e43b6e-c1c9-445e-a1d9-cbe711e3bac1","preimage":"23b58aed199798a7f571dd209c28ad0d","started_at":"2026-09-08 14:36:39.796+00"},
     {"id":"9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8","preimage":"72ed422807e26bd9d4969d5c771f1f6b","started_at":"2026-09-08 14:44:46.359+00"},
-    {"id":"a4262ba0-cd5f-4a94-a0f8-915a028cf3a7","preimage":"57a5301c2e418ee44645a11a42d08108","started_at":"2026-09-08 14:43:53.786944+00"},
     {"id":"ab4125bc-a85e-45c6-b0a7-22417d75c0c5","preimage":"377cd8bfb8b2261fbeef5ca38c176cf0","started_at":"2026-09-08 14:45:20.841112+00"},
     {"id":"b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99","preimage":"ab8d26737c898aaa6e8e6dd5333f4eee","started_at":"2026-09-08 14:46:19.311+00"},
     {"id":"b5fae1b3-b900-4670-85ef-76e3aa646734","preimage":"0ea255c8bee8f220ce78fe1ada304e41","started_at":"2026-09-08 14:47:09.369822+00"},
@@ -122,7 +127,7 @@ BEGIN
   SELECT count(*), sum(t.prize_pool) INTO v_n, v_total
     FROM public.tournaments t
    WHERE t.id IN (SELECT (e->>'id')::uuid FROM jsonb_array_elements(v_set) e);
-  IF v_n <> 30 OR v_total IS DISTINCT FROM 1593.60 THEN
+  IF v_n <> 26 OR v_total IS DISTINCT FROM 1223.10 THEN
     RAISE EXCEPTION 'SEP8_LAUNCH_SET_CHANGED: % events, % chips', v_n, v_total;
   END IF;
 
@@ -216,7 +221,7 @@ BEGIN
       RAISE EXCEPTION 'SEP8_LAUNCH_POSTIMAGE: % moved more than its launch', v_row.tournament_id;
     END IF;
   END LOOP;
-  RAISE NOTICE 'SEP8_LAUNCH_COMMITTED: 30 events RUNNING, 1593.60 in finalized pools handed to their finish authorities';
+  RAISE NOTICE 'SEP8_LAUNCH_COMMITTED: 26 events RUNNING, 1223.10 in finalized pools handed to their finish authorities';
 END
 $mig$;
 

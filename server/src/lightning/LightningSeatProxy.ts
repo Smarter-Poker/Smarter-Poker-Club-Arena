@@ -35,6 +35,21 @@ export class LightningSeatProxy implements ActionEngine {
     return host.handlePlayerAction(userId, action, amount, actionContext);
   }
 
+  /** POST /preaction from the room: armed for the named hand only. */
+  setPreAction(
+    userId: string,
+    action: string,
+    maxCallAmount?: number,
+    handId?: string
+  ): { success: boolean; error?: string; code?: string } {
+    const host = this.registry.hostForRoom(this.roomId);
+    if (!host) return { success: false, error: 'No active hand', code: 'NO_ACTIVE_HAND' };
+    if (host.roomOf(userId) !== this.roomId) {
+      return { success: false, error: 'Player not found at this table' };
+    }
+    return host.setPreAction(userId, action, maxCallAmount, handId);
+  }
+
   recordActionPerformance(_userId: string, _action: string, _processingMs: number): void {
     /* The fold leg is measured by the host (fold_ack); nothing else to record. */
   }

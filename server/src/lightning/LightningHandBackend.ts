@@ -91,7 +91,7 @@ export interface LightningSettleArgs {
 /** What one call answered. `transport` means the outcome is UNKNOWN. */
 export type LightningCallOutcome<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: string; transport?: boolean };
+  | { ok: false; reason: string; transport?: boolean; frozen?: boolean };
 
 export interface LightningHandBackend {
   beginDealing(
@@ -117,7 +117,9 @@ export interface LightningHandBackend {
     handId: string,
     playerId: string,
     requestId: string,
-    foldType: LightningFoldType
+    foldType: LightningFoldType,
+    /** The chips the folder has put in this hand's pot (p_committed). */
+    committed: number
   ): Promise<LightningCallOutcome<null>>;
   settle(
     args: LightningSettleArgs
@@ -166,6 +168,10 @@ async function okCall(
   if ('thrown' in out) return { ok: false, reason: `${fn}_threw`, transport: true };
   if (out.error) return { ok: false, reason: `${fn}_failed`, transport: true };
   const row = obj(out.data);
+  // A conservation disagreement FREEZES the Cluster rather than raising:
+  // terminal, never retried and never abandoned (fn_lightning_settle_hand).
+  if (row && row.ok !== true && row.frozen === true)
+    return { ok: false, reason: refusal(out.data), frozen: true };
   if (!row || row.ok !== true) return { ok: false, reason: refusal(out.data) };
   return { ok: true, value: row };
 }
@@ -307,12 +313,15 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
       return out.ok ? { ok: true, value: null } : out;
     },
 
-    async fastFold(handId, playerId, requestId, foldType) {
+    async fastFold(handId, playerId, requestId, foldType, committed) {
       const out = await okCall('fn_lightning_fast_fold', {
         p_hand_id: handId,
         p_player_id: playerId,
         p_request_id: requestId,
         p_fold_type: foldType,
+        // Always sent: without it the folder's whole stack stays held out of
+        // the next hand until this one settles.
+        p_committed: Math.round(committed * 100) / 100,
       });
       return out.ok ? { ok: true, value: null } : out;
     },

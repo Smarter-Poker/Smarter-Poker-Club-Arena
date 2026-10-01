@@ -51,7 +51,7 @@ export class RecordingHub {
 
 export interface FakeBackendOptions {
   /** Settlement answers: 'ok', 'transport' (unknown) or 'refuse', in order. */
-  settleScript?: Array<'ok' | 'transport' | 'refuse'>;
+  settleScript?: Array<'ok' | 'transport' | 'refuse' | 'frozen'>;
   rules?: Record<string, unknown>;
   participantsOverride?: (p: LightningParticipant[]) => LightningParticipant[];
 }
@@ -103,7 +103,12 @@ export function fakeBackend(
   const script = [...(opts.settleScript ?? ['ok'])];
   const calls = {
     settle: [] as LightningSettleArgs[],
-    fastFold: [] as Array<{ playerId: string; requestId: string; foldType: string }>,
+    fastFold: [] as Array<{
+      playerId: string;
+      requestId: string;
+      foldType: string;
+      committed: number;
+    }>,
     abandon: [] as string[],
     keepalive: 0,
     postCommit: [] as string[],
@@ -146,10 +151,18 @@ export function fakeBackend(
       calls.abandon.push(reason);
       return { ok: true as const, value: null };
     }),
-    fastFold: vi.fn(async (_h: string, playerId: string, requestId: string, foldType: string) => {
-      calls.fastFold.push({ playerId, requestId, foldType });
-      return { ok: true as const, value: null };
-    }),
+    fastFold: vi.fn(
+      async (
+        _h: string,
+        playerId: string,
+        requestId: string,
+        foldType: string,
+        committed: number
+      ) => {
+        calls.fastFold.push({ playerId, requestId, foldType, committed });
+        return { ok: true as const, value: null };
+      }
+    ),
     settle: vi.fn(
       async (
         a: LightningSettleArgs
@@ -159,6 +172,7 @@ export function fakeBackend(
         if (next === 'transport')
           return { ok: false, reason: 'fn_lightning_settle_hand_failed', transport: true };
         if (next === 'refuse') return { ok: false, reason: 'lease_mismatch' };
+        if (next === 'frozen') return { ok: false, reason: 'stack_invariant_failed', frozen: true };
         return { ok: true, value: { handHistoryId: uid(7777), receiptHash: 'r' } };
       }
     ),

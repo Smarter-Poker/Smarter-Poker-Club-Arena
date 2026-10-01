@@ -161,6 +161,8 @@ describe('fast fold and fold & watch', () => {
         playerId: waiting.user_id,
         requestId: lightningRequestId(formed.handId, `fold/${waiting.user_id}`),
         foldType: 'fast',
+        // p_committed is ALWAYS sent: what the folder already put in the pot.
+        committed: waiting.totalInvested,
       },
     ]);
     expect(t.released).toContainEqual({ playerId: waiting.user_id, why: 'fast' });
@@ -351,5 +353,76 @@ describe('fencing and settlement', () => {
     await flush();
     expect(t.host.lifecycle).toBe('abandoned');
     expect(t.calls.abandon).toEqual(['settlement_refused:lease_mismatch']);
+  });
+});
+
+describe('the phase 6 contracts: frozen settlement, the room snapshot, pre-actions', () => {
+  it('a settlement that froze the Cluster is terminal: never retried, never abandoned', async () => {
+    const formed = formedHand(2, 3000);
+    const frozen = vi.fn();
+    const t = buildHost(formed, [100, 100], {
+      settleScript: ['frozen'],
+      deps: { onClusterFrozen: frozen },
+    });
+    await t.host.start();
+    await playOut(t.host, mulberry32(14), (_u, legal) => (legal.includes('fold') ? 'fold' : null));
+    await flush();
+    expect(t.host.lifecycle).toBe('frozen');
+    expect(t.calls.settle).toHaveLength(1);
+    expect(t.calls.abandon).toEqual([]);
+    expect(frozen).toHaveBeenCalledWith(formed.clusterId);
+  });
+
+  it('every room snapshot carries the hand id and the lightning block, with the fold rule per player', async () => {
+    const formed = formedHand(3, 3100);
+    const t = buildHost(formed, [100, 100, 100], { rules: { name: 'Lightning NLH 1/2' } });
+    await t.host.start();
+    await flush();
+    const st = t.host.peekState()!;
+    for (const p of t.participants) {
+      const snap = t.hub
+        .inRoom(p.poolSessionId)
+        .filter((f) => f.kind === 'publish')
+        .at(-1)!.payload;
+      expect(snap.hand_id).toBe(formed.handId);
+      const me = st.players.find((x) => x.user_id === p.playerId)!;
+      const onTurn = st.currentPlayerSeat === me.seat;
+      expect(snap.lightning).toEqual({
+        hand_id: formed.handId,
+        cluster_id: formed.clusterId,
+        name: 'Lightning NLH 1/2',
+        small_blind: 1,
+        big_blind: 2,
+        variant: 'nlh',
+        // On the turn whenever fold is legal; before it only while facing a bet.
+        fast_fold_available: onTurn ? true : st.currentBet - me.bet > 0,
+      });
+      expect(JSON.stringify(snap)).not.toContain(formed.instanceId);
+    }
+  });
+
+  it('a pre-action arms only for its own hand and lands when the turn arrives', async () => {
+    const formed = formedHand(3, 3200);
+    const t = buildHost(formed, [100, 100, 100]);
+    await t.host.start();
+    await flush();
+    const st = t.host.peekState()!;
+    const waiting = st.players.find(
+      (p) => p.seat !== st.currentPlayerSeat && st.currentBet - p.bet > 0
+    )!;
+    expect(t.host.setPreAction(waiting.user_id, 'auto_fold', undefined, uid(1))).toMatchObject({
+      success: false,
+      code: 'STALE_HAND',
+    });
+    expect(
+      t.host.setPreAction(waiting.user_id, 'auto_fold', undefined, formed.handId).success
+    ).toBe(true);
+    await playOut(t.host, mulberry32(15), (_u, legal) =>
+      legal.includes('check') ? 'check' : 'call'
+    );
+    await flush();
+    const folded = t.calls.settle[0].results.find((r) => r.playerId === waiting.user_id)!;
+    expect(folded.foldType).toBe('normal');
+    expect(t.calls.fastFold.find((f) => f.playerId === waiting.user_id)?.foldType).toBe('normal');
   });
 });

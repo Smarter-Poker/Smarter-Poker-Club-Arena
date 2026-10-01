@@ -89,6 +89,7 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
     /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
     getActionEngine?: GameServer['getActionEngine'];
+    getPreActionEngine?: GameServer['getPreActionEngine'];
   };
 
 export interface RouterDeps {
@@ -540,7 +541,18 @@ export function createRouter(
     // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
     // cap armed) without removing them — see handlers/away.ts.
     if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
-    if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
+    if (method === 'POST' && url === '/preaction')
+      return handlePreaction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getPreActionEngine
+              ? gameServer.getPreActionEngine(tableId)
+              : (gameServer as Parameters<typeof handlePreaction>[2]['gameServer']).getTableEngine(
+                  tableId
+                ),
+        },
+      });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/leave-occupancy')
       return handleLeaveOccupancy(req, res, { gameServer });

@@ -89,7 +89,7 @@ export class LightningMetrics {
     );
     this.handsTotal = registry.counter(
       'poker_lightning_hands_total',
-      'Lightning hands by end (settled, abandoned, settlement_unknown)'
+      'Lightning hands by end (settled, abandoned, settlement_unknown, frozen)'
     );
     this.foldsTotal = registry.counter(
       'poker_lightning_folds_total',
@@ -109,7 +109,7 @@ export class LightningMetrics {
     if (Number.isFinite(ms) && ms >= 0) this.latencyMs.observe(ms, { segment });
   }
 
-  recordHand(outcome: 'settled' | 'abandoned' | 'settlement_unknown'): void {
+  recordHand(outcome: 'settled' | 'abandoned' | 'settlement_unknown' | 'frozen'): void {
     this.handsTotal.inc(1, { outcome });
   }
 

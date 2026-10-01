@@ -251,6 +251,12 @@ export class LightningSupervisor {
   private createWorker(clusterId: string, config: LightningConfig): LightningClusterWorker {
     if (this.deps.createWorker) return this.deps.createWorker(clusterId, config);
     const hosting = this.deps.hosting;
+    // A frozen Cluster (barrier or settlement): its worker stops for good.
+    const onFrozen = (id: string): void => {
+      if (this.workers.get(id) === worker) this.workers.delete(id);
+      this.metrics.setWorkers(this.workers.size);
+      void worker.stop();
+    };
     const worker: LightningClusterWorker = new LightningClusterWorker(clusterId, config, {
       rpc: this.rpc,
       presence: this.presence,
@@ -261,14 +267,15 @@ export class LightningSupervisor {
       ...(hosting
         ? {
             startHand: (hand) => {
-              hosting.startHand(hand, worker.currentConfig, () => worker.wake());
+              hosting.startHand(
+                hand,
+                worker.currentConfig,
+                () => worker.wake(),
+                (id) => onFrozen(id)
+              );
             },
             hasInstance: (id) => hosting.hasInstance(id),
-            onClusterFrozen: (id) => {
-              if (this.workers.get(id) === worker) this.workers.delete(id);
-              this.metrics.setWorkers(this.workers.size);
-              void worker.stop();
-            },
+            onClusterFrozen: (id) => onFrozen(id),
           }
         : {}),
     });

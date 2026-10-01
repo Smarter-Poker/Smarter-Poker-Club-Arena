@@ -18,7 +18,8 @@ export interface PreactionDeps {
           setPreAction(
             userId: string,
             action: string,
-            maxCallAmount?: number
+            maxCallAmount?: number,
+            handId?: string
           ): { success: boolean; [k: string]: unknown };
         }
       | null
@@ -38,7 +39,7 @@ export async function handlePreaction(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId, action, maxCallAmount } = body;
+    const { tableId, action, maxCallAmount, handId } = body;
     const userId = auth.userId;
 
     if (!tableId || !action) {
@@ -50,7 +51,13 @@ export async function handlePreaction(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.setPreAction(userId, action, maxCallAmount);
+    // `handId` comes only from a Lightning room, which arms for that hand alone.
+    const result = engine.setPreAction(
+      userId,
+      action,
+      maxCallAmount,
+      typeof handId === 'string' ? handId : undefined
+    );
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.preaction_error');

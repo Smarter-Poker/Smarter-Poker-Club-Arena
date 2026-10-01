@@ -166,7 +166,15 @@ export class LightningRegistry {
     } catch {
       return { ...REFUSED, reason: 'check_failed' };
     }
-    if (!ok) return REFUSED;
+    if (!ok) {
+      // An ended pool session is no room any more: refused as not found, the
+      // answer the client treats as 4404, and forgotten here.
+      if (!this.hostByRoom.has(roomId)) {
+        this.rooms.delete(roomId);
+        this.proxies.delete(roomId);
+      }
+      return REFUSED;
+    }
     if (!this.rooms.has(roomId)) {
       let clusterId: string | null = null;
       try {
@@ -264,7 +272,8 @@ export class LightningHosting {
   startHand(
     hand: LightningFormedHand,
     config: LightningConfig,
-    wake: () => void
+    wake: () => void,
+    onClusterFrozen?: (clusterId: string) => void
   ): LightningHandHost {
     let ledger = this.timeBanks.get(hand.clusterId);
     if (!ledger) {
@@ -286,6 +295,7 @@ export class LightningHosting {
         wake();
       },
       onDealing: (h) => registry.register(h),
+      onClusterFrozen: (clusterId) => onClusterFrozen?.(clusterId),
       onFinished: (h) => {
         registry.unregister(h);
         wake();

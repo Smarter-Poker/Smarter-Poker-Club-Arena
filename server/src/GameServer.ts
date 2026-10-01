@@ -89,6 +89,7 @@ import { LightningHosting, LightningRegistry } from './lightning/LightningRegist
 import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
 import type { LightningLease } from './lightning/LightningHandHost.js';
 import type { ActionEngine } from './handlers/action.js';
+import type { LightningSeatProxy } from './lightning/LightningSeatProxy.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -11070,6 +11071,11 @@ export class GameServer {
    * type for its ~850 engine-only callers.
    */
   getActionEngine(tableId: string): ActionEngine | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /** POST /preaction's engine: the table engine, or a Lightning room's seat proxy. */
+  getPreActionEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
     return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
   }
 

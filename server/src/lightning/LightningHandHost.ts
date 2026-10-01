@@ -55,6 +55,7 @@ import { PreciseActionTimer } from '../engine/PreciseActionTimer.js';
 import { TimeBankEngine, type TimeBankEvent } from '../engine/TimeBankEngine.js';
 import { DisconnectEngine } from '../engine/DisconnectEngine.js';
 import { playerActionContext } from '../engine/PlayerActionContext.js';
+import { PreActionEngine, type PreActionType } from '../engine/PreActionEngine.js';
 import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
@@ -222,6 +223,8 @@ export interface LightningHandHostDeps {
   onDealing?(host: LightningHandHost): void;
   /** The host is done, whatever the outcome. */
   onFinished?(host: LightningHandHost): void;
+  /** Settlement found a conservation disagreement and FROZE the Cluster. */
+  onClusterFrozen?(clusterId: string): void;
   now?: () => number;
 }
 
@@ -232,7 +235,8 @@ export type LightningHostState =
   | 'settling'
   | 'complete'
   | 'abandoned'
-  | 'settlement_unknown';
+  | 'settlement_unknown'
+  | 'frozen';
 
 const BETTING_STAGES = new Set<string>(['preflop', 'flop', 'turn', 'river']);
 const SETTLE_ATTEMPTS = 5;
@@ -294,6 +298,8 @@ export class LightningHandHost {
   private readonly timer: PreciseActionTimer;
   private readonly timeBank: TimeBankEngine;
   private readonly disconnect: DisconnectEngine;
+  /** Pre-actions, bound to THIS hand: a new hand is a new host, with none. */
+  private readonly preActions = new PreActionEngine();
   private readonly metrics: LightningMetrics;
   private readonly logger: LightningWorkerLogger;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -572,7 +578,10 @@ export class LightningHandHost {
 
   private isTerminal(): boolean {
     return (
-      this.state === 'complete' || this.state === 'abandoned' || this.state === 'settlement_unknown'
+      this.state === 'complete' ||
+      this.state === 'abandoned' ||
+      this.state === 'settlement_unknown' ||
+      this.state === 'frozen'
     );
   }
 
@@ -648,15 +657,54 @@ export class LightningHandHost {
         handHasWinners: this.winners.length > 0,
       },
     });
-    for (const [, room] of this.rooms()) this.deps.hub.publish(room, { ...base, table_id: room });
+    for (const [playerId, room] of this.rooms()) {
+      this.deps.hub.publish(room, {
+        ...base,
+        table_id: room,
+        hand_id: this.handId,
+        lightning: this.lightningBlock(playerId, state),
+      });
+    }
+  }
+
+  /**
+   * The client's Lightning block (phase 6 client contract). Never the
+   * instance id. `fast_fold_available` is the host's own rule: whenever fold
+   * is legal on the player's turn, or before it while they face a bet.
+   */
+  private lightningBlock(playerId: string, state: GameState | null): Record<string, unknown> {
+    const rules = this.rules!;
+    return {
+      hand_id: this.handId,
+      cluster_id: this.clusterId,
+      name: rules.name ?? null,
+      small_blind: Number(rules.small_blind),
+      big_blind: Number(rules.big_blind),
+      variant: String(rules.game_variant || 'nlh'),
+      fast_fold_available: state ? this.foldAvailable(playerId, state) : false,
+    };
+  }
+
+  /** May this player LIGHTNING FOLD (or FOLD & WATCH) right now? */
+  foldAvailable(playerId: string, state: GameState): boolean {
+    if (this.state !== 'dealing' || !this.hc) return false;
+    const me = state.players.find((p) => p.user_id === playerId);
+    if (!me || me.is_folded || me.is_all_in || this.pendingFolds.has(playerId)) return false;
+    if (!this.watching.has(playerId) || !BETTING_STAGES.has(state.stage)) return false;
+    if (state.currentPlayerSeat === me.seat) {
+      return this.hc.getAuthoritativeActionState(playerId)?.legalActions.includes('fold') === true;
+    }
+    return state.currentBet - me.bet > 0;
   }
 
   /** After an abandon: every room is told the felt is empty (the idle shape). */
   private publishIdle(): void {
     if (!this.rules) return;
-    for (const [, room] of this.rooms()) {
+    for (const [playerId, room] of this.rooms()) {
       this.deps.hub.publish(room, {
         table_id: room,
+        hand_id: this.handId,
+        lightning: this.lightningBlock(playerId, null),
         hand_number: this.handNumber,
         pot: 0,
         community_cards: [],
@@ -851,6 +899,9 @@ export class LightningHandHost {
           })
         );
         this.publishState();
+        if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
+          this.preActions.onBetPlaced(this.timerKey, actor);
+        }
         if (event.action === 'fold') this.afterFold(actor);
         break;
       }
@@ -956,6 +1007,13 @@ export class LightningHandHost {
       this.applyAction(userId, 'fold', undefined, 'player', pending);
       return;
     }
+    if (this.preActions.hasPreAction(this.timerKey, userId)) {
+      // The seat lights up for a readable beat (the engine's 250 ms), then the
+      // pre-action lands - armed for THIS hand only.
+      await this.sleep(250);
+      if (this.isTerminal() || this.hc !== hc || playerActionContext(hc) !== contextAtTurn) return;
+      if (this.runPreAction(userId)) return;
+    }
     const baseSec = Number(this.rules?.action_time_seconds) || 15;
     const grace = this.disconnect.isInReconnectGrace(this.timerKey, userId) ? 5 : 0;
     this.turnUser = userId;
@@ -977,6 +1035,65 @@ export class LightningHandHost {
       })
     );
     if (this.participants.get(userId)?.isHorse) this.scheduleHorse(userId, contextAtTurn);
+  }
+
+  /** Execute a queued pre-action now; true when it landed. */
+  private runPreAction(userId: string): boolean {
+    const st = this.hc?.getState();
+    const me = st?.players.find((p) => p.user_id === userId);
+    if (!st || !me) return false;
+    const toCall = Math.max(0, st.currentBet - me.bet);
+    const r = this.preActions.executePreAction(
+      this.timerKey,
+      userId,
+      toCall === 0,
+      toCall,
+      me.stack
+    );
+    if (!r.executed || !r.action) return false;
+    return this.applyAction(
+      userId,
+      r.action,
+      r.amount,
+      'pre_action',
+      r.action === 'fold' ? 'normal' : undefined
+    ).success;
+  }
+
+  /**
+   * POST /preaction from a Lightning room. An arm names the hand it is for;
+   * an arm for any other hand is refused, and a new hand starts with none.
+   */
+  setPreAction(
+    userId: string,
+    action: string,
+    maxCallAmount?: number,
+    handId?: string
+  ): { success: boolean; error?: string; code?: string } {
+    if (this.state !== 'dealing' || !this.hc) return { success: false, error: 'No active hand' };
+    if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
+    if (action === 'clear') {
+      this.preActions.clearPreAction(this.timerKey, userId);
+      return { success: true };
+    }
+    if (handId !== this.handId) {
+      return { success: false, error: 'That hand is over', code: 'STALE_HAND' };
+    }
+    const valid = ['auto_fold', 'auto_check_fold', 'auto_check', 'auto_call', 'auto_call_any'];
+    if (!valid.includes(action)) return { success: false, error: `Invalid pre-action: ${action}` };
+    const st = this.hc.getState();
+    const me = st.players.find((p) => p.user_id === userId);
+    if (!me || me.is_folded) return { success: false, error: 'Player not found at this table' };
+    this.preActions.setPreAction(
+      this.timerKey,
+      userId,
+      action as PreActionType,
+      maxCallAmount,
+      Math.max(0, st.currentBet - me.bet)
+    );
+    // Armed during the player's own turn: it acts now, as at a physical table.
+    if (st.currentPlayerSeat === me.seat && this.turnUser === userId) this.runPreAction(userId);
+    return { success: true };
   }
 
   private onClockExpired(userId: string, context: string | null): void {
@@ -1135,15 +1252,10 @@ export class LightningHandHost {
       return { success: false, error: 'Already folded' };
     if (me.is_all_in) return { success: false, error: 'Fold is not available' };
     if (!BETTING_STAGES.has(st.stage)) return { success: false, error: 'Fold is not available' };
-    if (st.currentPlayerSeat === me.seat) {
-      const auth = hc.getAuthoritativeActionState(userId);
-      if (!auth?.legalActions.includes('fold'))
-        return { success: false, error: 'Fold is not available' };
+    if (!this.foldAvailable(userId, st)) return { success: false, error: 'Fold is not available' };
+    if (st.currentPlayerSeat === me.seat)
       return this.applyAction(userId, 'fold', undefined, 'player', type);
-    }
-    // Before the turn: only while facing a bet, so the bettor stays live.
-    if (!(st.currentBet - me.bet > 0))
-      return { success: false, error: 'Fold is not available yet' };
+    // Before the turn: only while facing a bet (foldAvailable), so the bettor stays live.
     this.pendingFolds.set(userId, type);
     this.afterFold(userId);
     return { success: true };
@@ -1153,7 +1265,7 @@ export class LightningHandHost {
     userId: string,
     action: string,
     amount: number | undefined,
-    origin: 'player' | 'horse_policy' | 'horse_fallback' | 'unknown',
+    origin: 'player' | 'pre_action' | 'horse_policy' | 'horse_fallback' | 'unknown',
     foldType?: LightningFoldType
   ): { success: boolean; error?: string; code?: string } {
     const hc = this.hc;
@@ -1211,12 +1323,17 @@ export class LightningHandHost {
     this.releasedOrRecorded.add(userId);
     if (type !== 'fold_watch') this.watching.delete(userId);
     const ackAt = this.now();
+    // What the folder has put in the pot: no more can follow a fold.
+    const committed = cents(
+      this.hc?.getState().players.find((p) => p.user_id === userId)?.totalInvested ?? 0
+    );
     void this.withRetry(async () => {
       const out = await this.deps.backend.fastFold(
         this.handId,
         userId,
         lightningRequestId(this.handId, `fold/${userId}`),
-        type
+        type,
+        committed
       );
       if (!out.ok && out.transport) throw new Error(out.reason);
       return out;
@@ -1410,6 +1527,12 @@ export class LightningHandHost {
           }))
         : null,
       daily_mission_events: null,
+      // Weighted contributed rake: the uncalled amounts returned, by player.
+      returned_uncalled: Object.fromEntries(
+        state.players
+          .filter((p) => (p.returnedUncalled ?? 0) > 0)
+          .map((p) => [p.user_id, cents(p.returnedUncalled ?? 0)])
+      ),
       has_human: [...this.participants.values()].some((p) => !p.isHorse),
     };
   }
@@ -1457,6 +1580,18 @@ export class LightningHandHost {
           timestamp: this.now(),
         });
         this.metrics.recordHand('settled');
+        this.finish('hand_end');
+        return;
+      }
+      if (out.frozen) {
+        // A conservation disagreement: the database FROZE the Cluster. Terminal:
+        // never retried, never abandoned; the worker for the Cluster stops.
+        this.state = 'frozen';
+        this.metrics.recordHand('frozen');
+        this.logger.error(
+          `[LightningHost:${this.instanceId}] settlement froze the Cluster (${out.reason}); stopping its worker`
+        );
+        this.deps.onClusterFrozen?.(this.clusterId);
         this.finish('hand_end');
         return;
       }
@@ -1523,6 +1658,7 @@ export class LightningHandHost {
     }
     this.timeBank.dispose(this.timerKey);
     this.disconnect.dispose(this.timerKey);
+    this.preActions.dispose(this.timerKey);
     // Everyone not already freed by a fold is free now (the instance ended).
     for (const p of this.participants.values()) {
       const type = this.foldTypes.get(p.playerId);

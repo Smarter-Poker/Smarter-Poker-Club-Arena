@@ -305,3 +305,23 @@ describe('the seat proxy and the room door', () => {
     });
   });
 });
+
+describe('an ended pool session', () => {
+  it('is refused as not found (the client’s 4404) and forgotten', async () => {
+    const owner = uid(30);
+    const room = uid(31);
+    let open = true;
+    const registry = new LightningRegistry({
+      viewAccess: async () => open,
+      roomOwner: async () => ({ playerId: owner, clusterId: CLUSTER }),
+    });
+    expect((await registry.authorize(room, owner)).allowed).toBe(true);
+    expect(registry.isRoom(room)).toBe(true);
+    open = false;
+    expect(await registry.authorize(room, owner)).toMatchObject({
+      allowed: false,
+      reason: 'table_not_found',
+    });
+    expect(registry.isRoom(room)).toBe(false);
+  });
+});

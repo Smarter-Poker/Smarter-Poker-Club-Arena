@@ -19,6 +19,10 @@
  *   --qualification=<file>  default <out>/../phase8-qualification-YYYY-MM-DD.json
  *   --repo-root=<dir>       root that evidencePath is relative to (default: this checkout)
  *   --fixture               assemble fixture-mode runs (tests only); never qualifies
+ *   --defective=<file>      {"<objective>-<seed>": {status, reason, logTail}} for runs that
+ *                           ended without a result. They are recorded, never replaced; the
+ *                           contract then reports the matrix incomplete. A run that has a
+ *                           result cannot be declared defective.
  *
  * Refusals (exit 2, every reason named on stderr, nothing written): a missing,
  * duplicate or unexpected run, a missing receipt, a run not in promotion mode,
@@ -102,8 +106,9 @@ async function formatted(file, value) {
 }
 
 /** Read, check and summarize every run. Returns { reasons } or the assembly. */
-export function inspectRuns({ runsDir, hosts, fixture }) {
+export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
   const reasons = [];
+  const defectiveRuns = [];
   const mode = fixture ? 'fixture' : 'promotion';
   const { TOURNAMENT_LEAGUE_OBJECTIVES, TOURNAMENT_PROMOTION_SEEDS, TOURNAMENT_PROMOTION_PAIRS } =
     league;
@@ -118,15 +123,50 @@ export function inspectRuns({ runsDir, hosts, fixture }) {
     if (name.startsWith('.')) continue;
     if (!expectedKeys.has(name)) reasons.push(`unexpected_run_directory:${name}`);
   }
+  for (const key of Object.keys(defective)) {
+    const record = defective[key];
+    if (!expectedKeys.has(key)) reasons.push(`unknown_defective_run:${key}`);
+    else if (
+      !['defective', 'unavailable external input'].includes(record?.status) ||
+      typeof record?.reason !== 'string' ||
+      !record.reason
+    )
+      reasons.push(`invalid_defective_record:${key}`);
+  }
   const claimed = new Map();
   const runs = [];
+  const manifests = [];
   for (const { key, objective, seed } of expected) {
     const dir = path.join(runsDir, key);
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    const declared = defective[key];
+    const host = hosts.runs?.[key];
+    if (!host || !hosts.hosts?.[host]) reasons.push(`missing_host_record:${key}`);
+    const exists = existsSync(dir) && statSync(dir).isDirectory();
+    const files = exists ? readdirSync(dir).sort() : [];
+    if (declared) {
+      // A run is declared defective only when it produced no result. A run
+      // with a result is kept whatever it says; it can never be declared away.
+      if (files.includes(`${key}.json`)) reasons.push(`declared_defective_but_has_result:${key}`);
+      const manifest = files.includes('manifest.json')
+        ? readJson(path.join(dir, 'manifest.json'))
+        : null;
+      if (manifest) manifests.push(manifest);
+      defectiveRuns.push({
+        key,
+        objective,
+        seed,
+        dir: exists ? dir : null,
+        host,
+        receipts: RECEIPTS.filter((f) => files.includes(f)),
+        manifest,
+        declared,
+      });
+      continue;
+    }
+    if (!exists) {
       reasons.push(`missing_run:${key}`);
       continue;
     }
-    const files = readdirSync(dir).sort();
     for (const file of files)
       if (RESULT_FILE.test(file) && file !== `${key}.json` && !RECEIPTS.includes(file))
         reasons.push(`duplicate_result:${key}:${file}`);
@@ -190,8 +230,7 @@ export function inspectRuns({ runsDir, hosts, fixture }) {
     const promotable = league.tournamentRunCanPromote(result);
     if (result.promotionEligible !== promotable)
       reasons.push(`receipt_mismatch:${key}:promotionEligible`);
-    const host = hosts.runs?.[key];
-    if (!host || !hosts.hosts?.[host]) reasons.push(`missing_host_record:${key}`);
+    manifests.push(manifest);
     runs.push({
       key,
       objective,
@@ -207,13 +246,13 @@ export function inspectRuns({ runsDir, hosts, fixture }) {
   }
   for (const [claim, count] of claimed) if (count > 1) reasons.push(`duplicate_run:${claim}`);
   for (const field of ['head', 'sourceSha256', 'sourceFiles', 'serverLockSha256'])
-    if (new Set(runs.map((r) => r.manifest[field])).size > 1)
+    if (new Set(manifests.map((m) => m[field])).size > 1)
       reasons.push(`identity_mismatch:${field}`);
   if (new Set(runs.map((r) => r.result.version)).size > 1)
     reasons.push('identity_mismatch:version');
   if (runs.some((r) => r.result.version !== PHASE8_POLICY.version))
     reasons.push(`continuation_version_mismatch:${PHASE8_POLICY.version}`);
-  const head = runs[0]?.manifest.head;
+  const head = manifests[0]?.head;
   if (head) {
     try {
       execFileSync('git', ['cat-file', '-e', `${head}^{commit}`], {
@@ -230,7 +269,8 @@ export function inspectRuns({ runsDir, hosts, fixture }) {
       );
     }
   }
-  return { reasons, runs, head };
+  if (!runs.length) reasons.push('no_run_results');
+  return { reasons, runs, defectiveRuns, head };
 }
 
 function runRecord(r, hosts) {
@@ -280,7 +320,8 @@ export async function assemble(options) {
   const fixture = Boolean(options.fixture);
   const hosts = readJson(options.hosts);
   const context = options.context ? readJson(options.context) : null;
-  const inspected = inspectRuns({ runsDir: options.runs, hosts, fixture });
+  const defective = options.defective ? readJson(options.defective) : {};
+  const inspected = inspectRuns({ runsDir: options.runs, hosts, fixture, defective });
   const out = path.resolve(options.out);
   const dated = /^strength-(\d{4}-\d{2}-\d{2})$/.exec(path.basename(out));
   if (!dated) inspected.reasons.push('output_name_must_be_strength-YYYY-MM-DD');
@@ -299,7 +340,7 @@ export async function assemble(options) {
     inspected.reasons.push(`evidence_outside_${authority.HORSE_PHASE8_EVIDENCE_DIRECTORY}`);
   if (inspected.reasons.length) return { refused: true, reasons: inspected.reasons };
 
-  const { runs, head } = inspected;
+  const { runs, defectiveRuns, head } = inspected;
   const verdict = league.summarizeTournamentPromotion(runs.map((r) => r.result));
   const policyDigest = authority.horsePhase8PolicyDigest();
   const first = runs[0].manifest;
@@ -336,7 +377,22 @@ export async function assemble(options) {
     },
     hosts: hosts.hosts,
     hostAssignment: hosts.assignment ?? null,
+    matrixComplete: defectiveRuns.length === 0,
     runs: runs.map((r) => runRecord(r, hosts)),
+    defectiveRuns: defectiveRuns.map((d) => ({
+      run: d.key,
+      objective: d.objective,
+      seed: d.seed,
+      host: d.host,
+      hostLabel: hosts.hosts[d.host]?.label ?? null,
+      startedAt: d.manifest?.createdAt ?? null,
+      solverStores: d.manifest?.solverStores ?? null,
+      status: d.declared.status,
+      reason: d.declared.reason,
+      exitCode: hosts.exits?.[d.key] ?? null,
+      logTail: d.declared.logTail ?? null,
+      receipts: d.receipts,
+    })),
     verdict: {
       promoted: verdict.promoted,
       reasons: verdict.reasons,
@@ -369,6 +425,11 @@ export async function assemble(options) {
     copyFileSync(path.join(r.dir, `${r.key}.json`), path.join(out, 'runs', `${r.key}.json`));
     mkdirSync(path.join(out, 'runs', r.key));
     for (const f of RECEIPTS) copyFileSync(path.join(r.dir, f), path.join(out, 'runs', r.key, f));
+  }
+  for (const d of defectiveRuns) {
+    if (!d.receipts.length) continue;
+    mkdirSync(path.join(out, 'runs', d.key));
+    for (const f of d.receipts) copyFileSync(path.join(d.dir, f), path.join(out, 'runs', d.key, f));
   }
   writeFileSync(path.join(out, 'strength.json'), strengthText);
   mkdirSync(path.dirname(qualificationFile), { recursive: true });

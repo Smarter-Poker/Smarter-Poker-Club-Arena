@@ -337,6 +337,51 @@ describe('phase8-strength-assemble', () => {
   );
 
   it(
+    'records declared defective runs without a result and never lets a result be declared away',
+    async () => {
+      for (const f of ['spin-8103307.json', 'summary.json'])
+        rmSync(path.join(runsDir, 'spin-8103307', f));
+      const defectiveFile = path.join(root, 'defective.json');
+      write(defectiveFile, {
+        'spin-8103307': { status: 'defective', reason: 'solver store hydration timed out' },
+        'mtt-8101101': { status: 'defective', reason: 'an unfavorable run cannot be dropped' },
+      });
+      const refused = await assemble(
+        `--out=${outDir()}`,
+        '--fixture',
+        `--defective=${defectiveFile}`
+      );
+      expect(refused.code).toBe(2);
+      expect(refused.reasons).toEqual(['declared_defective_but_has_result:mtt-8101101']);
+
+      write(defectiveFile, {
+        'spin-8103307': { status: 'defective', reason: 'solver store hydration timed out' },
+      });
+      const outcome = await assemble(
+        `--out=${outDir()}`,
+        '--fixture',
+        `--defective=${defectiveFile}`
+      );
+      expect(outcome.reasons).toEqual([]);
+      const strength = readJson(path.join(outDir(), 'strength.json'));
+      expect(strength.matrixComplete).toBe(false);
+      expect(strength.runs).toHaveLength(17);
+      expect(strength.defectiveRuns).toEqual([
+        expect.objectContaining({
+          run: 'spin-8103307',
+          status: 'defective',
+          receipts: ['manifest.json', 'baseline-verification.json'],
+        }),
+      ]);
+      expect(strength.verdict.reasons).toEqual(
+        expect.arrayContaining(['spin:missing_or_duplicate_seed', 'incomplete_run_matrix'])
+      );
+      expect(existsSync(path.join(outDir(), 'runs', 'spin-8103307', 'manifest.json'))).toBe(true);
+    },
+    RUN_TIMEOUT_MS
+  );
+
+  it(
     'refuses duplicate, mixed-source, shrunk and unhosted runs',
     async () => {
       // A second directory and a result that claims another run's identity.

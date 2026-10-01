@@ -44,7 +44,9 @@ vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: s
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/hooks/useMeasuredWidth', () => ({ useMeasuredWidth: () => [null, 320] }));
 vi.mock('../../src/services/HapticService', () => ({ triggerHaptic: vi.fn() }));
-vi.mock('../../src/services/SoundService', () => ({ soundService: { playWin: vi.fn() } }));
+vi.mock('../../src/services/SoundService', () => ({
+  soundService: { playWin: vi.fn(), playBigWin: vi.fn() },
+}));
 /**
  * The board stands in for the scene: whatever the page has released is shown
  * as a count, and Land Released lands every released ball at once, reporting

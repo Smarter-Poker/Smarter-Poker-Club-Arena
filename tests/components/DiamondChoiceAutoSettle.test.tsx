@@ -1434,8 +1434,9 @@ describe('every choice names its chips, and every outcome has one name', () => {
     expect(said).toBe(
       'Booked At Street 12 At 20.00x. The Donkey Would Have Crossed Every Street, To 20.00x.'
     );
+    // Twenty times the stake: the shared receipt calls it a Big Win (src/utils/bigWin.ts).
     expect(detail).toBe(
-      'Your Prize Is Booked. Street 12 At 20.00x; The Donkey Would Have Crossed Every Street, To 20.00x.'
+      'Big Win. Your Prize Is Booked. Street 12 At 20.00x; The Donkey Would Have Crossed Every Street, To 20.00x.'
     );
   });
 

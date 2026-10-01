@@ -5,6 +5,11 @@
 #
 # Proves 20261001154813 against a running catalogue and a running estate, on
 # Postgres 17, socket only, on port 55553 (LIGHTNING_P6S_PORT overrides it).
+# Then its remediation, 20261001201216, on the same estate (sections 14-21):
+# the freeze freezes from every live mode, a frozen Cluster settles nothing,
+# the session names its anchor seat, the matcher forms nothing the host
+# cannot deal, and leave_pending goes through mid-hand.
+# LIGHTNING_P6R_MIGRATION overrides the remediation file the same way.
 #
 # THE CHAIN IS THE REAL ONE. The Lightning fixtures and every Lightning
 # migration from 20260920235343 through the matcher (20260926080332) in
@@ -60,9 +65,10 @@ r2c=$M/20260926072615_lightning_remediation_two_c_the_seat_is_the_anchor_and_the
 r2d=$M/20260926072638_lightning_remediation_two_d_the_seat_triggers_keep_the_pool_.sql
 p6=$M/20260926080332_lightning_phase_6_and_7_the_matcher_explains_every_idle_play.sql
 mine=${LIGHTNING_P6S_MIGRATION:-$M/20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_ancho.sql}
+fix=${LIGHTNING_P6R_MIGRATION:-$M/20261001201216_lightning_phase_6_remediation_a_frozen_cluster_settles_nothi.sql}
 for f in "$base_fixture" "$pop_fixture" "$p5_fixture" "$p9_fixture" "$r2_fixture" "$p6_fixture" "$s6_fixture" \
          "$phase1" "$phase1r" "$phase2" "$phase2r" "$phase3" "$phase3r" "$phase4" "$phase4r" \
-         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$mine"; do
+         "$phase5" "$phase5r" "$phase9" "$phase9r" "$r2a" "$r2b" "$r2c" "$r2d" "$p6" "$mine" "$fix"; do
   [ -f "$f" ] || { echo "FAIL: missing input $f"; exit 1; }
 done
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/lightning-p6s-test.XXXXXX")
@@ -1016,6 +1022,445 @@ END $$;
 ASSERT
 
 # ===========================================================================
+# THE REMEDIATION (20261001201216), proved on the same estate after the file
+# above: 14 its defects are real before it; 15-19 what it changes; 20 every
+# proof, its own and every earlier Lightning file's, against the estate it
+# leaves; 21 it is re-appliable.
+# ===========================================================================
+cat > "$fixture/fix-ground.sql" <<'ASSERT'
+-- Shared by the remediation sections: a conserving three-player spec (+3,
+-- -2, -1.50 with rake 0.50) in seat order.
+CREATE FUNCTION harness.spec3(p_hand uuid) RETURNS jsonb LANGUAGE plpgsql STABLE AS $f$
+DECLARE v jsonb := '{}'::jsonb; p uuid; k integer := 0;
+BEGIN
+  FOR p IN SELECT hp.player_id FROM public.lightning_hand_player hp WHERE hp.hand_id = p_hand ORDER BY hp.seat LOOP
+    k := k + 1;
+    v := v || jsonb_build_object(p::text, jsonb_build_object('d', CASE k WHEN 1 THEN 3.00 WHEN 2 THEN -2.00 ELSE -1.50 END,
+                                                             'c', CASE k WHEN 1 THEN 1.50 ELSE 2.00 END));
+  END LOOP;
+  RETURN v;
+END $f$;
+CREATE FUNCTION harness.stacks(p_game uuid) RETURNS text LANGUAGE sql STABLE AS $f$
+  SELECT string_agg(ts.id::text || ':' || coalesce(ts.stack::text, '') || ':' || coalesce(ts.left_at::text, ''), ',' ORDER BY ts.id)
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id WHERE tb.cluster_id = p_game;
+$f$;
+CREATE FUNCTION harness.freeze_now(p_game uuid, p_request uuid) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT public.fn_lightning_settlement_freeze(p_game, (SELECT cluster_epoch FROM public.cash_games WHERE id = p_game),
+           gen_random_uuid(), gen_random_uuid(), p_request, 'conservation', '{"probe": true}'::jsonb);
+$f$;
+
+-- 14 THE DEFECTS ARE REAL -------------------------------------------------------
+DO $$
+DECLARE v_g uuid; v_res jsonb; v_mode text; v_p uuid; v_plan jsonb;
+BEGIN
+  v_g := harness.cluster('R-GROUND');
+  INSERT INTO harness.s6 (k, game) VALUES ('r-ground', v_g);
+  -- A freeze in pending_off answers frozen and leaves the Cluster live.
+  BEGIN
+    UPDATE public.cash_games SET cluster_mode = 'pending_off' WHERE id = v_g;
+    v_res := harness.freeze_now(v_g, gen_random_uuid());
+    SELECT cluster_mode INTO v_mode FROM public.cash_games WHERE id = v_g;
+    RAISE EXCEPTION USING ERRCODE = 'PX614';
+  EXCEPTION WHEN SQLSTATE 'PX614' THEN NULL;
+  END;
+  IF (v_res ->> 'frozen')::boolean IS DISTINCT FROM true OR v_mode IS DISTINCT FROM 'pending_off' THEN
+    RAISE EXCEPTION 'FAIL 14: before the remediation a pending_off freeze did not answer frozen while leaving the Cluster pending_off, so its closure would prove nothing: % %', v_res, v_mode;
+  END IF;
+  -- The session does not name the anchor seat.
+  SELECT ps.player_id INTO v_p FROM public.lightning_pool_session ps WHERE ps.cluster_id = v_g AND ps.exited_at IS NULL ORDER BY ps.player_id LIMIT 1;
+  PERFORM set_config('request.jwt.claim.sub', v_p::text, true);
+  IF public.fn_lightning_my_session(v_g) ?| ARRAY['anchor_table_id', 'seat_number', 'occupancy_id']
+     OR public.fn_lightning_my_session(v_g) ->> 'pool_session_id' IS NULL THEN
+    RAISE EXCEPTION 'FAIL 14: before the remediation the session already named its anchor, or named nothing';
+  END IF;
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  -- A pineapple Cluster is matched into groups.
+  BEGIN
+    UPDATE public.cash_games SET variant = 'pineapple' WHERE id = v_g;
+    v_plan := public.fn_lightning_match(v_g, clock_timestamp(), ARRAY[]::uuid[], NULL);
+    RAISE EXCEPTION USING ERRCODE = 'PX614';
+  EXCEPTION WHEN SQLSTATE 'PX614' THEN NULL;
+  END;
+  IF jsonb_array_length(v_plan -> 'groups') < 1 THEN
+    RAISE EXCEPTION 'FAIL 14: before the remediation a pineapple Cluster formed no group, so its refusal would prove nothing: %', v_plan;
+  END IF;
+END $$;
+\echo '  ok  14 THE DEFECTS ARE REAL  before the remediation a freeze in pending_off answers frozen:true and leaves the Cluster pending_off, the session names no anchor seat, and a pineapple Cluster is matched into groups'
+ASSERT
+
+cat > "$fixture/fix-assertions.sql" <<'ASSERT'
+-- 15 THE FREEZE FREEZES FROM EVERY LIVE MODE --------------------------------------
+DO $$
+DECLARE v_g uuid; m text; v_res jsonb; v_mode text; v_frozen_ev bigint; v_failed_ev bigint; v_req uuid; v_payload jsonb;
+BEGIN
+  SELECT game INTO v_g FROM harness.s6 x6 WHERE x6.k = 'r-ground';
+  FOREACH m IN ARRAY ARRAY['lightning', 'pending_off', 'draining', 'dead'] LOOP
+    v_req := gen_random_uuid();
+    BEGIN
+      UPDATE public.cash_games SET cluster_mode = m WHERE id = v_g;
+      v_res := harness.freeze_now(v_g, v_req);
+      SELECT cluster_mode INTO v_mode FROM public.cash_games WHERE id = v_g;
+      SELECT count(*) FILTER (WHERE kind = 'cluster_frozen'), count(*) FILTER (WHERE kind = 'stack_invariant_failed')
+        INTO v_frozen_ev, v_failed_ev FROM public.cash_cluster_events WHERE game_id = v_g AND request_id = v_req;
+      SELECT payload INTO v_payload FROM public.cash_cluster_events WHERE game_id = v_g AND request_id = v_req AND kind = 'cluster_frozen';
+      RAISE EXCEPTION USING ERRCODE = 'PX615';
+    EXCEPTION WHEN SQLSTATE 'PX615' THEN NULL;
+    END;
+    IF m = 'dead' THEN
+      IF (v_res ->> 'frozen')::boolean IS DISTINCT FROM false OR (v_res ->> 'already_frozen')::boolean IS DISTINCT FROM false
+         OR v_mode IS DISTINCT FROM 'dead' OR v_frozen_ev <> 0 OR v_failed_ev <> 1 OR (v_res ->> 'alerted')::boolean THEN
+        RAISE EXCEPTION 'FAIL 15: a dead Cluster was reported frozen or frozen: % % % %', v_res, v_mode, v_frozen_ev, v_failed_ev;
+      END IF;
+    ELSIF (v_res ->> 'frozen')::boolean IS DISTINCT FROM true OR (v_res ->> 'already_frozen')::boolean IS DISTINCT FROM false
+       OR v_res ->> 'from_mode' IS DISTINCT FROM m OR v_res ->> 'cluster_mode' IS DISTINCT FROM 'frozen'
+       OR (v_res ->> 'retry')::boolean IS DISTINCT FROM false OR (v_res ->> 'alerted')::boolean IS DISTINCT FROM true
+       OR v_mode IS DISTINCT FROM 'frozen' OR v_frozen_ev <> 1 OR v_failed_ev <> 1
+       OR v_payload ->> 'from_mode' IS DISTINCT FROM m THEN
+      RAISE EXCEPTION 'FAIL 15: a % Cluster was not frozen with its real from_mode: % % % % %', m, v_res, v_mode, v_frozen_ev, v_failed_ev, v_payload;
+    END IF;
+  END LOOP;
+  IF (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'lightning' THEN
+    RAISE EXCEPTION 'FAIL 15: the probes left the Cluster changed';
+  END IF;
+END $$;
+\echo '  ok  15 THE FREEZE FREEZES FROM EVERY LIVE MODE  from lightning, pending_off and draining the Cluster is frozen, cluster_frozen and the answer carry the real from_mode, one alert is raised and the answer is frozen:true; a dead Cluster is not frozen and is answered frozen:false with only the evidence event'
+
+-- 16 A FROZEN CLUSTER SETTLES NOTHING; ITS HANDS ARE ABANDONED --------------------
+DO $$
+DECLARE v_g uuid; r jsonb; a_i uuid; a_h uuid; b_i uuid; b_h uuid; c_i uuid; c_h uuid; nb bigint; v_res jsonb;
+        v_req_a uuid := gen_random_uuid(); v_req_c uuid := gen_random_uuid(); v_req_x uuid := gen_random_uuid();
+        v_res_c jsonb; v_stacks text; v_ev bigint; p uuid;
+BEGIN
+  v_g := harness.cluster('R-FROZEN');
+  r := harness.form(v_g, (harness.at(v_g, true, true))[1:1] || (harness.at(v_g, false, false))[1:2]);
+  a_i := (r ->> 'instance_id')::uuid; a_h := (r ->> 'hand_id')::uuid;
+  r := harness.form(v_g, (harness.at(v_g, false, true))[1:1] || (harness.at(v_g, true, false))[1:2]);
+  b_i := (r ->> 'instance_id')::uuid; b_h := (r ->> 'hand_id')::uuid;
+  r := harness.form(v_g, (harness.at(v_g, true, false))[3:4] || (harness.at(v_g, false, false))[3:3]);
+  c_i := (r ->> 'instance_id')::uuid; c_h := (r ->> 'hand_id')::uuid;
+  PERFORM harness.deal(a_i); nb := harness.deal(b_i); PERFORM harness.deal(c_i);
+  -- C settles while the Cluster is live.
+  v_res_c := harness.settle(c_h, v_req_c, harness.results(c_h, harness.spec3(c_h)), 0.50, 0);
+  IF (v_res_c ->> 'ok')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16: the control hand did not settle: %', v_res_c;
+  END IF;
+  -- The Cluster leaves lightning; A fails conservation and freezes it.
+  UPDATE public.cash_games SET cluster_mode = 'pending_off' WHERE id = v_g;
+  v_stacks := harness.stacks(v_g);
+  v_res := harness.settle(a_h, v_req_a, harness.results(a_h, harness.spec3(a_h)), 0.25, 0);
+  IF (v_res ->> 'frozen')::boolean IS DISTINCT FROM true OR v_res ->> 'from_mode' IS DISTINCT FROM 'pending_off'
+     OR (v_res ->> 'already_frozen')::boolean IS DISTINCT FROM false OR v_res ->> 'invariant' IS DISTINCT FROM 'conservation'
+     OR (SELECT cluster_mode FROM public.cash_games WHERE id = v_g) IS DISTINCT FROM 'frozen'
+     OR (SELECT payload ->> 'from_mode' FROM public.cash_cluster_events WHERE game_id = v_g AND request_id = v_req_a AND kind = 'cluster_frozen') IS DISTINCT FROM 'pending_off'
+     OR harness.stacks(v_g) IS DISTINCT FROM v_stacks THEN
+    RAISE EXCEPTION 'FAIL 16: a pending_off settlement failure did not freeze the Cluster from pending_off: %', v_res;
+  END IF;
+  -- B, conserving and still dealing, is refused before anything is written.
+  v_res := harness.settle(b_h, gen_random_uuid(), harness.results(b_h, harness.spec3(b_h)), 0.50, 0);
+  IF v_res ->> 'reason' IS DISTINCT FROM 'cluster_frozen' OR (v_res ->> 'ok')::boolean IS DISTINCT FROM false
+     OR (v_res ->> 'retry')::boolean IS DISTINCT FROM false OR v_res ? 'frozen'
+     OR harness.stacks(v_g) IS DISTINCT FROM v_stacks
+     OR EXISTS (SELECT 1 FROM public.hand_history WHERE hand_number = nb)
+     OR EXISTS (SELECT 1 FROM public.lightning_settlement_marker)
+     OR (SELECT settle_receipt IS NOT NULL OR settle_request_id IS NOT NULL OR hand_history_id IS NOT NULL FROM public.lightning_hand WHERE hand_id = b_h)
+     OR EXISTS (SELECT 1 FROM public.lightning_hand_player WHERE hand_id = b_h AND (stack_after IS NOT NULL OR net_result IS NOT NULL))
+     OR (SELECT state FROM public.lightning_instance WHERE id = b_i) IS DISTINCT FROM 'dealing' THEN
+    RAISE EXCEPTION 'FAIL 16: a hand of a frozen Cluster was not refused cluster_frozen with nothing written: %', v_res;
+  END IF;
+  -- The hand settled before the freeze still answers its receipt.
+  v_res := harness.settle(c_h, v_req_c, harness.results(c_h, harness.spec3(c_h)), 0.50, 0);
+  IF (v_res ->> 'ok')::boolean IS DISTINCT FROM true OR (v_res ->> 'replay')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 16: a hand settled before the freeze did not replay its receipt: %', v_res;
+  END IF;
+  -- A second failure on the frozen Cluster: frozen, already, no second freeze or alert.
+  SELECT count(*) INTO v_ev FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'cluster_frozen';
+  v_res := harness.freeze_now(v_g, v_req_x);
+  IF (v_res ->> 'frozen')::boolean IS DISTINCT FROM true OR (v_res ->> 'already_frozen')::boolean IS DISTINCT FROM true
+     OR (v_res ->> 'alerted')::boolean IS DISTINCT FROM false OR v_res ->> 'cluster_mode' IS DISTINCT FROM 'frozen'
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND kind = 'cluster_frozen') IS DISTINCT FROM v_ev
+     OR (SELECT count(*) FROM public.cash_cluster_events WHERE game_id = v_g AND request_id = v_req_x AND kind = 'stack_invariant_failed') IS DISTINCT FROM 1::bigint THEN
+    RAISE EXCEPTION 'FAIL 16: an already frozen Cluster was frozen again or not reported frozen: %', v_res;
+  END IF;
+  -- The engine abandons both dealing instances; nothing moves and the anchors are free.
+  v_res := public.fn_lightning_instance_abandon(b_i, 'settlement_refused:cluster_frozen');
+  r := public.fn_lightning_instance_abandon(a_i, 'settlement_refused:settlement_invariant_failed');
+  IF (v_res ->> 'abandoned')::boolean IS DISTINCT FROM true OR v_res ->> 'was' IS DISTINCT FROM 'dealing'
+     OR (r ->> 'abandoned')::boolean IS DISTINCT FROM true
+     OR (SELECT count(*) FROM public.lightning_instance WHERE id IN (a_i, b_i) AND state = 'abandoned') IS DISTINCT FROM 2::bigint
+     OR harness.stacks(v_g) IS DISTINCT FROM v_stacks THEN
+    RAISE EXCEPTION 'FAIL 16: the frozen Cluster''s dealing instances were not abandoned with nothing moved: % %', v_res, r;
+  END IF;
+  FOR p IN SELECT hp.player_id FROM public.lightning_hand_player hp WHERE hp.hand_id IN (a_h, b_h) LOOP
+    IF public.fn_lightning_player_live_hand(p, v_g) IS NOT NULL THEN
+      RAISE EXCEPTION 'FAIL 16: player % of an abandoned hand is still held by it', p;
+    END IF;
+  END LOOP;
+END $$;
+\echo '  ok  16 A FROZEN CLUSTER SETTLES NOTHING  a conservation failure after the Cluster moved to pending_off freezes it from pending_off; a conserving hand still dealing is then refused cluster_frozen with no chip, marker, hand_history or Lightning record written; a hand settled before the freeze replays its receipt; a second failure answers frozen and already_frozen with no second freeze or alert; both dealing instances abandon and release their players with every stack as it was'
+
+-- 17 THE SESSION NAMES ITS ANCHOR SEAT ----------------------------------------------
+DO $$
+DECLARE v_g uuid; r jsonb; v_i uuid; v_h uuid; v_in uuid; v_idle uuid; v jsonb; s record;
+BEGIN
+  v_g := harness.cluster('R-SESSION');
+  UPDATE public.table_seats ts SET occupancy_id = gen_random_uuid()
+    FROM public.tables tb WHERE tb.id = ts.table_id AND tb.cluster_id = v_g AND ts.occupancy_id IS NULL;
+  v_in := (harness.at(v_g, false, false))[1];
+  v_idle := (harness.at(v_g, true, true))[1];
+  r := harness.form(v_g, ARRAY[v_in] || (harness.at(v_g, true, false))[1:2]);
+  v_i := (r ->> 'instance_id')::uuid; v_h := (r ->> 'hand_id')::uuid;
+  PERFORM harness.deal(v_i);
+  -- A human in a hand, anchored at the feeder.
+  SELECT ts.table_id, ts.seat_number, ts.occupancy_id, ps.id AS ps INTO s
+    FROM public.lightning_pool_session ps JOIN public.table_seats ts ON ts.id = ps.anchor_seat_id
+   WHERE ps.cluster_id = v_g AND ps.player_id = v_in AND ps.exited_at IS NULL;
+  PERFORM set_config('request.jwt.claim.sub', v_in::text, true);
+  SET LOCAL ROLE authenticated;
+  v := public.fn_lightning_my_session(v_g);
+  RESET ROLE;
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k)
+       IS DISTINCT FROM ARRAY['anchor_table_id', 'cluster_mode', 'hand_id', 'in_hand', 'occupancy_id', 'pool_session_id', 'seat_number', 'stack', 'state']
+     OR (v ->> 'anchor_table_id')::uuid IS DISTINCT FROM s.table_id
+     OR s.table_id = public.fn_cash_cluster_front_table(v_g)
+     OR (v ->> 'seat_number')::integer IS DISTINCT FROM s.seat_number
+     OR (v ->> 'occupancy_id')::uuid IS DISTINCT FROM s.occupancy_id OR s.occupancy_id IS NULL
+     OR (v ->> 'pool_session_id')::uuid IS DISTINCT FROM s.ps OR (v ->> 'hand_id')::uuid IS DISTINCT FROM v_h
+     OR (v ->> 'in_hand')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'FAIL 17: the player in a hand did not get their feeder anchor seat with every earlier key: %', v;
+  END IF;
+  -- An idle horse, anchored at the front table.
+  SELECT ts.table_id, ts.seat_number, ts.occupancy_id INTO s
+    FROM public.lightning_pool_session ps JOIN public.table_seats ts ON ts.id = ps.anchor_seat_id
+   WHERE ps.cluster_id = v_g AND ps.player_id = v_idle AND ps.exited_at IS NULL;
+  PERFORM set_config('request.jwt.claim.sub', v_idle::text, true);
+  SET LOCAL ROLE authenticated;
+  v := public.fn_lightning_my_session(v_g);
+  RESET ROLE;
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k)
+       IS DISTINCT FROM ARRAY['anchor_table_id', 'cluster_mode', 'in_hand', 'occupancy_id', 'pool_session_id', 'seat_number', 'stack', 'state']
+     OR (v ->> 'anchor_table_id')::uuid IS DISTINCT FROM public.fn_cash_cluster_front_table(v_g)
+     OR (v ->> 'seat_number')::integer IS DISTINCT FROM s.seat_number
+     OR (v ->> 'occupancy_id')::uuid IS DISTINCT FROM s.occupancy_id THEN
+    RAISE EXCEPTION 'FAIL 17: an idle horse did not get their front-table anchor seat: %', v;
+  END IF;
+  PERFORM set_config('request.jwt.claim.sub', gen_random_uuid()::text, true);
+  IF public.fn_lightning_my_session(v_g) IS DISTINCT FROM '{"pool_session_id": null}'::jsonb THEN
+    RAISE EXCEPTION 'FAIL 17: a stranger was given a session';
+  END IF;
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM public.fn_lightning_instance_abandon(v_i, 'p6r: session section done');
+END $$;
+\echo '  ok  17 THE SESSION NAMES ITS ANCHOR SEAT  as authenticated, a human in a hand reads every earlier key plus anchor_table_id, seat_number and occupancy_id of their feeder anchor seat, an idle horse the same of their front-table seat, and a stranger still {pool_session_id:null}'
+
+-- 18 THE MATCHER FORMS NOTHING THE HOST CANNOT DEAL ------------------------------------
+DO $$
+DECLARE v_g uuid; v jsonb; v_n bigint; v_front uuid; v_formed integer; v_pass bigint;
+BEGIN
+  v_g := harness.cluster('R-VARIANT');
+  v_front := public.fn_cash_cluster_front_table(v_g);
+  PERFORM public.fx6_set(v_g, '{"worker_mode": "form"}'::jsonb);
+  SELECT count(*) INTO v_n FROM public.lightning_pool_session WHERE cluster_id = v_g AND exited_at IS NULL;
+  -- The control: the same Cluster, nlh, forms.
+  BEGIN
+    v := public.fn_lightning_match_and_form(v_g, clock_timestamp(), ARRAY[]::uuid[], 2, gen_random_uuid());
+    v_formed := (v ->> 'formed')::integer;
+    RAISE EXCEPTION USING ERRCODE = 'PX618';
+  EXCEPTION WHEN SQLSTATE 'PX618' THEN NULL;
+  END;
+  IF coalesce(v_formed, 0) < 1 THEN
+    RAISE EXCEPTION 'FAIL 18: the nlh control formed nothing, so the refusals would prove nothing: %', v;
+  END IF;
+  -- Pineapple on the Cluster.
+  UPDATE public.cash_games SET variant = 'pineapple' WHERE id = v_g;
+  v := public.fn_lightning_match(v_g, clock_timestamp(), ARRAY[]::uuid[], NULL);
+  IF jsonb_array_length(v -> 'groups') <> 0 OR (v ->> 'refused')::boolean IS DISTINCT FROM true
+     OR v ->> 'reason' IS DISTINCT FROM 'variant_not_supported' OR v ->> 'variant' IS DISTINCT FROM 'pineapple'
+     OR jsonb_array_length(v -> 'diagnosis') IS DISTINCT FROM v_n::integer OR v_n < 18
+     OR EXISTS (SELECT 1 FROM jsonb_array_elements(v -> 'diagnosis') d
+                 WHERE d ->> 'state' IS DISTINCT FROM 'BLOCKED_WITH_REASON' OR d ->> 'reason_code' IS DISTINCT FROM 'VARIANT_NOT_SUPPORTED') THEN
+    RAISE EXCEPTION 'FAIL 18: a pineapple Cluster was not refused with every player diagnosed: %', v;
+  END IF;
+  SELECT count(*) INTO v_pass FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_g;
+  v := public.fn_lightning_match_and_form(v_g, clock_timestamp(), ARRAY[]::uuid[], 2, gen_random_uuid());
+  IF (v ->> 'ok')::boolean IS DISTINCT FROM false OR v ->> 'reason' IS DISTINCT FROM 'variant_not_supported'
+     OR (v ->> 'formed')::integer IS DISTINCT FROM 0
+     OR EXISTS (SELECT 1 FROM public.lightning_instance WHERE cluster_id = v_g)
+     OR (SELECT count(*) FROM public.cash_cluster_matcher_pass WHERE cluster_id = v_g) IS DISTINCT FROM v_pass THEN
+    RAISE EXCEPTION 'FAIL 18: match_and_form formed or recorded a pineapple pass: %', v;
+  END IF;
+  -- Pineapple hold'em on the host table of an nlh Cluster.
+  BEGIN
+    UPDATE public.cash_games SET variant = 'nlh' WHERE id = v_g;
+    UPDATE public.tables SET pineapple_holdem = true WHERE id = v_front;
+    v := public.fn_lightning_match(v_g, clock_timestamp(), ARRAY[]::uuid[], NULL);
+    RAISE EXCEPTION USING ERRCODE = 'PX618';
+  EXCEPTION WHEN SQLSTATE 'PX618' THEN NULL;
+  END;
+  IF v ->> 'variant' IS DISTINCT FROM 'pineapple_holdem' OR jsonb_array_length(v -> 'groups') <> 0 THEN
+    RAISE EXCEPTION 'FAIL 18: pineapple hold''em on the host table was matched: %', v;
+  END IF;
+  -- No front table.
+  BEGIN
+    UPDATE public.cash_games SET variant = 'nlh' WHERE id = v_g;
+    UPDATE public.tables SET is_deleted = true WHERE cluster_id = v_g;
+    v := public.fn_lightning_match_and_form(v_g, clock_timestamp(), ARRAY[]::uuid[], 2, gen_random_uuid());
+    v_formed := (SELECT count(*) FROM public.lightning_instance WHERE cluster_id = v_g);
+    RAISE EXCEPTION USING ERRCODE = 'PX618';
+  EXCEPTION WHEN SQLSTATE 'PX618' THEN NULL;
+  END;
+  IF v ->> 'reason' IS DISTINCT FROM 'cluster_has_no_front_table' OR (v ->> 'formed')::integer IS DISTINCT FROM 0 OR v_formed <> 0 THEN
+    RAISE EXCEPTION 'FAIL 18: a Cluster with no front table was not refused up front: % (%)', v, v_formed;
+  END IF;
+END $$;
+\echo '  ok  18 THE MATCHER FORMS NOTHING THE HOST CANNOT DEAL  the nlh control forms; a pineapple Cluster is planned with no group, refused variant_not_supported and every open-pool player diagnosed BLOCKED_WITH_REASON VARIANT_NOT_SUPPORTED; match_and_form refuses it unrecorded with no instance; pineapple hold''em on the host table is refused the same; a Cluster with no front table is refused cluster_has_no_front_table'
+
+-- 19 LEAVE PENDING MID-HAND; THE DEPARTURE WAITS FOR THE SETTLEMENT -----------------------
+DO $$
+DECLARE v_g uuid; r jsonb; v_i uuid; v_h uuid; p uuid; v_seat uuid; v_said text;
+BEGIN
+  v_g := harness.cluster('R-LEAVE');
+  p := (harness.at(v_g, true, true))[1];
+  r := harness.form(v_g, ARRAY[p] || (harness.at(v_g, false, false))[1:2]);
+  v_i := (r ->> 'instance_id')::uuid; v_h := (r ->> 'hand_id')::uuid;
+  PERFORM harness.deal(v_i);
+  v_seat := public.fxr_anchor(v_g, p);
+  UPDATE public.table_seats SET leave_pending = true WHERE id = v_seat;
+  IF (SELECT leave_pending FROM public.table_seats WHERE id = v_seat) IS DISTINCT FROM true
+     OR public.fn_lightning_player_live_hand(p, v_g) IS DISTINCT FROM v_h THEN
+    RAISE EXCEPTION 'FAIL 19: leave_pending was not set on the anchor of a player in a live hand';
+  END IF;
+  v_said := public.fxr_try(format('UPDATE public.table_seats SET stack = stack - 1 WHERE id = %L', v_seat));
+  IF v_said !~ '^PLT01: LIGHTNING_HAND_IN_PROGRESS' THEN
+    RAISE EXCEPTION 'FAIL 19: a stack change mid-hand was not refused: %', v_said;
+  END IF;
+  v_said := public.fxr_try(format('UPDATE public.table_seats SET left_at = clock_timestamp() WHERE id = %L', v_seat));
+  IF v_said !~ '^PLT01: LIGHTNING_HAND_IN_PROGRESS' THEN
+    RAISE EXCEPTION 'FAIL 19: a departure mid-hand was not refused: %', v_said;
+  END IF;
+  INSERT INTO harness.s6 (k, game, a, b) VALUES ('r-leave', v_g, v_seat, v_h);
+  INSERT INTO harness.s6 (k, game, a) VALUES ('r-leave-p', v_g, p);
+END $$;
+DO $$
+DECLARE v_g uuid; v_seat uuid; v_h uuid; p uuid; v_res jsonb; v_stack numeric;
+BEGIN
+  SELECT game, a, b INTO v_g, v_seat, v_h FROM harness.s6 x6 WHERE x6.k = 'r-leave';
+  SELECT a INTO p FROM harness.s6 x6 WHERE x6.k = 'r-leave-p';
+  -- leave_pending committed: the pool session is still open while the hand is live.
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_pool_session WHERE anchor_seat_id = v_seat AND exited_at IS NULL) THEN
+    RAISE EXCEPTION 'FAIL 19: leave_pending exited the pool while the hand was live';
+  END IF;
+  v_res := harness.settle(v_h, gen_random_uuid(), harness.results(v_h, harness.spec3(v_h)), 0.50, 0);
+  IF (v_res ->> 'ok')::boolean IS DISTINCT FROM true OR public.fn_lightning_player_live_hand(p, v_g) IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 19: the hand did not settle or still holds the player: %', v_res;
+  END IF;
+  SELECT stack INTO v_stack FROM public.table_seats WHERE id = v_seat;
+  -- The departure the cashout writes, after the settlement.
+  UPDATE public.table_seats SET left_at = clock_timestamp() WHERE id = v_seat;
+  UPDATE harness.s6 SET n = v_stack WHERE k = 'r-leave';
+END $$;
+DO $$
+DECLARE v_g uuid; v_seat uuid; p uuid; v_stack numeric;
+BEGIN
+  SELECT game, a, n INTO v_g, v_seat, v_stack FROM harness.s6 x6 WHERE x6.k = 'r-leave';
+  SELECT a INTO p FROM harness.s6 x6 WHERE x6.k = 'r-leave-p';
+  IF NOT EXISTS (SELECT 1 FROM public.lightning_pool_session ps
+                  WHERE ps.anchor_seat_id = v_seat AND ps.exited_at IS NOT NULL AND ps.exit_reason = 'anchor_seat_left'
+                    AND ps.ending_stack = v_stack)
+     OR EXISTS (SELECT 1 FROM public.lightning_pool_session WHERE cluster_id = v_g AND player_id = p AND exited_at IS NULL)
+     OR NOT EXISTS (SELECT 1 FROM public.cash_cluster_events e WHERE e.game_id = v_g AND e.kind = 'pool_player_left'
+                     AND (e.payload ->> 'anchor_seat_id')::uuid = v_seat) THEN
+    RAISE EXCEPTION 'FAIL 19: the departure after the settlement did not exit the pool with the settled stack';
+  END IF;
+END $$;
+\echo '  ok  19 LEAVE PENDING MID-HAND  leave_pending is set on the anchor of a horse in a live hand and the pool session stays open; a stack change and a departure mid-hand are still refused PLT01; after the hand settles the departure goes through and the pool-follows-seat path exits the pool with the settled stack and pool_player_left'
+ASSERT
+
+# 20 EVERY PROOF AGAINST THE ESTATE THE REMEDIATION LEAVES.
+{
+  printf '%s\n' 'CREATE TABLE harness.lpr (phase text, src text, n integer, lineno integer, ok boolean);'
+  gen_proofs fix fix "$fix" | sed 's/INSERT INTO harness.lp6/INSERT INTO harness.lpr/'
+} > "$fixture/fix-own-proofs.sql"
+{ predecessor_proofs prefix; gen_proofs prefix mine "$mine"; } > "$fixture/fix-proofs-before.sql"
+{ predecessor_proofs remediated; gen_proofs remediated mine "$mine"; } > "$fixture/fix-proofs-after.sql"
+fix_n=$(grep -c -- '^-- @live-proof: ' "$fix")
+if [ "$fix_n" -lt 8 ]; then
+  echo "FAIL 20: only $fix_n @live-proof lines in the remediation"
+  exit 1
+fi
+cat >> "$fixture/fix-own-proofs.sql" <<ASSERT
+DO \$lp\$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg('#' || n || ' (line ' || lineno || ')', ', ' ORDER BY n) INTO v_bad FROM harness.lpr WHERE ok IS DISTINCT FROM true;
+  IF v_bad IS NOT NULL OR (SELECT count(*) FROM harness.lpr) IS DISTINCT FROM ${fix_n}::bigint THEN
+    RAISE EXCEPTION 'FAIL 20: a proof of the remediation is not true: %', v_bad;
+  END IF;
+  SELECT string_agg(b.src || '#' || b.n || ' ' || coalesce(b.ok::text, 'error') || '->' || coalesce(a.ok::text, 'error'), ', ' ORDER BY b.src, b.n)
+    INTO v_bad
+    FROM harness.lp6 b FULL JOIN harness.lp6 a ON a.src = b.src AND a.n = b.n AND a.phase = 'remediated'
+   WHERE b.phase = 'prefix' AND (a.ok IS DISTINCT FROM b.ok OR a.src IS NULL);
+  IF v_bad IS NOT NULL
+     OR (SELECT count(*) FROM harness.lp6 WHERE phase = 'remediated') IS DISTINCT FROM (SELECT count(*) FROM harness.lp6 WHERE phase = 'prefix')
+     OR (SELECT count(*) FROM harness.lp6 WHERE phase = 'prefix') IS DISTINCT FROM (SELECT n + $(grep -c -- '^-- @live-proof: ' "$mine") FROM harness.s6 x6 WHERE x6.k = 'pred_n')
+     OR EXISTS (SELECT 1 FROM harness.lp6 WHERE phase = 'remediated' AND src = 'mine' AND ok IS DISTINCT FROM true) THEN
+    RAISE EXCEPTION 'FAIL 20: the remediation changed an earlier proof: %', v_bad;
+  END IF;
+  IF (SELECT array_agg(p.proname::text ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname ~ '^fn_lightning_' AND p.prosecdef)
+       IS DISTINCT FROM ARRAY['fn_lightning_bind_hand_number', 'fn_lightning_my_session', 'fn_lightning_settle_hand',
+                              'fn_lightning_settlement_freeze', 'fn_lightning_settlement_seats']
+     OR (SELECT array_agg(p.proname::text ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.proname ~ '^fn_lightning_' AND has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+       IS DISTINCT FROM ARRAY['fn_lightning_my_session'] THEN
+    RAISE EXCEPTION 'FAIL 20: the remediation moved a definer or a browser grant';
+  END IF;
+END \$lp\$;
+\echo '  ok  20 EVERY PROOF HOLDS  all ${fix_n} @live-proof expressions of the remediation are true; every @live-proof of the seventeen earlier Lightning files and of 20261001154813 evaluates exactly as it did before the remediation, on the same estate, and every one of 20261001154813 is true; the definers and the one browser grant are unchanged'
+ASSERT
+
+# 21 RE-APPLIABLE.
+cat > "$fixture/fix-precapture.sql" <<'ASSERT'
+CREATE TABLE harness.rcap AS
+SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+ WHERE n.nspname = 'public' AND p.prokind = 'f' AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_table_seats_lightning_anchor_guard')
+UNION ALL
+SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+  FROM unnest(ARRAY['lightning_hand', 'lightning_instance', 'hand_history', 'cash_cluster_events', 'cash_cluster_matcher_pass', 'lightning_settlement_marker']) x(t)
+UNION ALL
+SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode, '|' ORDER BY id)) FROM public.cash_games
+UNION ALL
+SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats;
+ASSERT
+cat > "$fixture/fix-reapply.sql" <<'ASSERT'
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(coalesce(a.what, b.what), ', ') INTO v_bad
+    FROM harness.rcap a FULL JOIN (
+      SELECT 'fn:' || p.oid::regprocedure::text AS what, md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '') || coalesce(obj_description(p.oid, 'pg_proc'), '')) AS v
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.prokind = 'f' AND (p.proname ~ '^fn_lightning_' OR p.proname = 'fn_table_seats_lightning_anchor_guard')
+      UNION ALL
+      SELECT 'rows:' || x.t, (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM public.%I', x.t), false, true, '')))[1]::text
+        FROM unnest(ARRAY['lightning_hand', 'lightning_instance', 'hand_history', 'cash_cluster_events', 'cash_cluster_matcher_pass', 'lightning_settlement_marker']) x(t)
+      UNION ALL
+      SELECT 'modes', md5(string_agg(id::text || ':' || cluster_mode, '|' ORDER BY id)) FROM public.cash_games
+      UNION ALL
+      SELECT 'stacks', md5(string_agg(id::text || ':' || coalesce(stack::text, ''), '|' ORDER BY id)) FROM public.table_seats
+    ) b ON b.what = a.what
+   WHERE a.v IS DISTINCT FROM b.v;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'FAIL 21: the second application of the remediation changed: %', v_bad;
+  END IF;
+  IF (SELECT count(*) FROM harness.rcap WHERE what LIKE 'fn:%') < 40 THEN
+    RAISE EXCEPTION 'FAIL 21: the capture is too small to prove anything';
+  END IF;
+END $$;
+\echo '  ok  21 THE REMEDIATION IS RE-APPLIABLE  applied a second time it leaves every fn_lightning_ body, acl and comment, the guard, six row counts, every Cluster mode and every seat stack exactly as they were'
+ASSERT
+
+# ===========================================================================
 # THE RUN.
 # ===========================================================================
 set +e
@@ -1032,7 +1477,16 @@ set +e
   -f "$fixture/live-proofs.sql" \
   -f "$fixture/precapture.sql" \
   -f "$mine" \
-  -f "$fixture/reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/reapply.sql" \
+  -f "$fixture/fix-ground.sql" \
+  -f "$fixture/fix-proofs-before.sql" \
+  -f "$fix" \
+  -f "$fixture/fix-proofs-after.sql" \
+  -f "$fixture/fix-assertions.sql" \
+  -f "$fixture/fix-own-proofs.sql" \
+  -f "$fixture/fix-precapture.sql" \
+  -f "$fix" \
+  -f "$fixture/fix-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1040,10 +1494,10 @@ if [ "$status" != 0 ]; then
   exit 1
 fi
 
-# FOURTEEN SECTIONS REPORTED, counted rather than eyeballed.
+# TWENTY-TWO SECTIONS REPORTED, counted rather than eyeballed.
 oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
-if [ "$oks" != 14 ]; then
-  echo "FAIL: $oks of the 14 sections reported, so this run proved less than this file claims"
+if [ "$oks" != 22 ]; then
+  echo "FAIL: $oks of the 22 sections reported, so this run proved less than this file claims"
   exit 1
 fi
-echo "PASS: Lightning Phase 6 settlement, 14 sections: every predecessor proof holds but the five superseded (the setting-reading guard and the no-definer, no-browser family rule), whose intent holds as containment; a dealing hand binds the allocator's number and the front table once; a six-player hand with humans and horses anchored at the front table and a feeder settles exact deltas through the unchanged physical door onto each anchor, writing hand_history, hand_atomic_commits with its envelope and the provenance receipt at the front table, and the post-commit processor pays its rake, drop and playthrough; a retry is the stored receipt; a stale lease, an abandoned instance and six other refusals move nothing; a conservation violation freezes the Cluster with its evidence; a fast-folding horse is legal at once, is dealt its stack less its committed chips, and ends exact whichever hand settles first, while fold and watch waits for the settlement and the anchor refuses a cashout until both are settled; the forged setting is refused and only this transaction's marker for this seat moves a stack; my_session answers only the caller; service_role alone may call the doors; every @live-proof holds and the file is re-appliable"
+echo "PASS: Lightning Phase 6 settlement and its remediation, 22 sections: every predecessor proof holds but the five superseded (the setting-reading guard and the no-definer, no-browser family rule), whose intent holds as containment; a dealing hand binds the allocator's number and the front table once; a six-player hand with humans and horses anchored at the front table and a feeder settles exact deltas through the unchanged physical door onto each anchor, writing hand_history, hand_atomic_commits with its envelope and the provenance receipt at the front table, and the post-commit processor pays its rake, drop and playthrough; a retry is the stored receipt; a stale lease, an abandoned instance and six other refusals move nothing; a conservation violation freezes the Cluster with its evidence; a fast-folding horse is legal at once, is dealt its stack less its committed chips, and ends exact whichever hand settles first, while fold and watch waits for the settlement and the anchor refuses a cashout until both are settled; the forged setting is refused and only this transaction's marker for this seat moves a stack; my_session answers only the caller; service_role alone may call the doors; every @live-proof holds and the file is re-appliable; after the remediation (20261001201216) a freeze freezes from lightning, pending_off and draining with its real from_mode and never reports a dead or unfrozen Cluster frozen, a frozen Cluster settles nothing and its dealing hands abandon with every stack as it was, the session names its anchor table, seat and occupancy, the matcher forms nothing for pineapple or a Cluster with no front table, leave_pending goes through mid-hand while the departure waits for the settlement and then exits the pool, every earlier proof evaluates as before and the remediation is re-appliable"

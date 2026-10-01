@@ -1,0 +1,656 @@
+{
+  "schema": "horse-phase8-useful-completion-repetitions-v1",
+  "machine": "local development Mac (Apple M3 Ultra, 28 logical CPUs, Node v26.3.0), shared with concurrently running agents; not fleet latency",
+  "populationSha256": "a9732fd888b0d54a8012dda6a2fccb79e81085a33c1e0677e42c5c6df3e35ad4",
+  "finalSource": {
+    "engineRevision": "4948e0ffd527adee5d898426f7abd84be0be09ab",
+    "note": "engine sources unchanged by this PR; three cold and three warm fresh processes, interleaved",
+    "runs": [
+      {
+        "rep": 1,
+        "pass": "cold",
+        "loadAverage1mStart": 13.25,
+        "eligible": 181,
+        "fired": 137,
+        "completed": 137,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 42,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.88,
+          "p95": 4.042,
+          "p99": 4.144,
+          "max": 4.153
+        },
+        "eligiblePolicyMsMax": 0.415,
+        "budgetStops": {
+          "future_rollout": 26,
+          "icm": 10,
+          "none": 139,
+          "sample": 6
+        }
+      },
+      {
+        "rep": 1,
+        "pass": "warm",
+        "loadAverage1mStart": 13.25,
+        "eligible": 181,
+        "fired": 151,
+        "completed": 151,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 28,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.784,
+          "p95": 4.014,
+          "p99": 4.154,
+          "max": 4.226
+        },
+        "eligiblePolicyMsMax": 0.075,
+        "budgetStops": {
+          "icm": 8,
+          "future_rollout": 17,
+          "none": 153,
+          "sample": 3
+        }
+      },
+      {
+        "rep": 2,
+        "pass": "cold",
+        "loadAverage1mStart": 12.99,
+        "eligible": 181,
+        "fired": 138,
+        "completed": 138,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 41,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.905,
+          "p95": 4.048,
+          "p99": 4.161,
+          "max": 4.251
+        },
+        "eligiblePolicyMsMax": 0.376,
+        "budgetStops": {
+          "future_rollout": 23,
+          "none": 140,
+          "icm": 8,
+          "sample": 10
+        }
+      },
+      {
+        "rep": 2,
+        "pass": "warm",
+        "loadAverage1mStart": 12.67,
+        "eligible": 181,
+        "fired": 157,
+        "completed": 157,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 22,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.702,
+          "p95": 4.012,
+          "p99": 4.119,
+          "max": 4.329
+        },
+        "eligiblePolicyMsMax": 0.064,
+        "budgetStops": {
+          "future_rollout": 12,
+          "none": 159,
+          "icm": 9,
+          "sample": 1
+        }
+      },
+      {
+        "rep": 3,
+        "pass": "cold",
+        "loadAverage1mStart": 12.21,
+        "eligible": 181,
+        "fired": 141,
+        "completed": 141,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 38,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.864,
+          "p95": 4.043,
+          "p99": 4.247,
+          "max": 4.3
+        },
+        "eligiblePolicyMsMax": 0.383,
+        "budgetStops": {
+          "icm": 12,
+          "none": 143,
+          "future_rollout": 18,
+          "sample": 8
+        }
+      },
+      {
+        "rep": 3,
+        "pass": "warm",
+        "loadAverage1mStart": 12.21,
+        "eligible": 181,
+        "fired": 152,
+        "completed": 152,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 27,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.85,
+          "p95": 4.01,
+          "p99": 4.174,
+          "max": 4.48
+        },
+        "eligiblePolicyMsMax": 0.067,
+        "budgetStops": {
+          "future_rollout": 17,
+          "none": 154,
+          "sample": 6,
+          "icm": 4
+        }
+      }
+    ]
+  },
+  "heldExperiment": {
+    "description": "allocation-free continuation helpers (strength validation loop, sort skipped for already seat-ordered copies, counted live seats, indexed future streets, per-candidate rollout key prefix); exact digest equality held; not shipped because completion did not improve",
+    "abbaProcessRuns": [
+      {
+        "side": "after",
+        "pass": "cold",
+        "loadAverage1mStart": 29.05,
+        "eligible": 181,
+        "fired": 145,
+        "completed": 145,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 34,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.676,
+          "p95": 4.013,
+          "p99": 4.056,
+          "max": 4.191
+        },
+        "eligiblePolicyMsMax": 0.391,
+        "budgetStops": {
+          "future_rollout": 19,
+          "none": 147,
+          "sample": 9,
+          "icm": 6
+        },
+        "run": "cold-after-1"
+      },
+      {
+        "side": "after",
+        "pass": "cold",
+        "loadAverage1mStart": 25.01,
+        "eligible": 181,
+        "fired": 144,
+        "completed": 144,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 35,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.596,
+          "p95": 4.017,
+          "p99": 4.079,
+          "max": 4.126
+        },
+        "eligiblePolicyMsMax": 0.354,
+        "budgetStops": {
+          "icm": 10,
+          "future_rollout": 19,
+          "none": 146,
+          "sample": 6
+        },
+        "run": "cold-after-2"
+      },
+      {
+        "side": "after",
+        "pass": "cold",
+        "loadAverage1mStart": 22.08,
+        "eligible": 181,
+        "fired": 140,
+        "completed": 140,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 38,
+          "continuation_sample_calibration": 2,
+          "budget_exhausted": 1
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.736,
+          "p95": 4.014,
+          "p99": 4.471,
+          "max": 10.056
+        },
+        "eligiblePolicyMsMax": 0.387,
+        "budgetStops": {
+          "icm": 8,
+          "future_rollout": 21,
+          "none": 142,
+          "sample": 10
+        },
+        "run": "cold-after-3"
+      },
+      {
+        "side": "before",
+        "pass": "cold",
+        "loadAverage1mStart": 29.05,
+        "eligible": 181,
+        "fired": 146,
+        "completed": 146,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 33,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.731,
+          "p95": 4.01,
+          "p99": 4.084,
+          "max": 4.194
+        },
+        "eligiblePolicyMsMax": 0.346,
+        "budgetStops": {
+          "future_rollout": 24,
+          "none": 148,
+          "sample": 4,
+          "icm": 5
+        },
+        "run": "cold-before-1"
+      },
+      {
+        "side": "before",
+        "pass": "cold",
+        "loadAverage1mStart": 26.75,
+        "eligible": 181,
+        "fired": 142,
+        "completed": 142,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 37,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.846,
+          "p95": 4.021,
+          "p99": 4.139,
+          "max": 4.192
+        },
+        "eligiblePolicyMsMax": 0.376,
+        "budgetStops": {
+          "future_rollout": 21,
+          "none": 144,
+          "icm": 9,
+          "sample": 7
+        },
+        "run": "cold-before-2"
+      },
+      {
+        "side": "before",
+        "pass": "cold",
+        "loadAverage1mStart": 22.08,
+        "eligible": 181,
+        "fired": 146,
+        "completed": 146,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 33,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.873,
+          "p95": 4.011,
+          "p99": 4.126,
+          "max": 4.149
+        },
+        "eligiblePolicyMsMax": 0.349,
+        "budgetStops": {
+          "future_rollout": 20,
+          "icm": 7,
+          "none": 148,
+          "sample": 6
+        },
+        "run": "cold-before-3"
+      },
+      {
+        "side": "after",
+        "pass": "warm",
+        "loadAverage1mStart": 28.64,
+        "eligible": 181,
+        "fired": 158,
+        "completed": 158,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 21,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.555,
+          "p95": 4.01,
+          "p99": 4.101,
+          "max": 4.193
+        },
+        "eligiblePolicyMsMax": 0.054,
+        "budgetStops": {
+          "future_rollout": 15,
+          "none": 160,
+          "icm": 4,
+          "sample": 2
+        },
+        "run": "warm-after-1"
+      },
+      {
+        "side": "after",
+        "pass": "warm",
+        "loadAverage1mStart": 25.01,
+        "eligible": 181,
+        "fired": 159,
+        "completed": 159,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 20,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.59,
+          "p95": 4.008,
+          "p99": 4.196,
+          "max": 4.427
+        },
+        "eligiblePolicyMsMax": 0.06,
+        "budgetStops": {
+          "future_rollout": 15,
+          "none": 161,
+          "sample": 1,
+          "icm": 4
+        },
+        "run": "warm-after-2"
+      },
+      {
+        "side": "after",
+        "pass": "warm",
+        "loadAverage1mStart": 20.8,
+        "eligible": 181,
+        "fired": 156,
+        "completed": 156,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 23,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.613,
+          "p95": 4.009,
+          "p99": 4.093,
+          "max": 4.243
+        },
+        "eligiblePolicyMsMax": 0.358,
+        "budgetStops": {
+          "future_rollout": 16,
+          "none": 158,
+          "icm": 6,
+          "sample": 1
+        },
+        "run": "warm-after-3"
+      },
+      {
+        "side": "before",
+        "pass": "warm",
+        "loadAverage1mStart": 26.75,
+        "eligible": 181,
+        "fired": 154,
+        "completed": 154,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 25,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.725,
+          "p95": 4.026,
+          "p99": 4.171,
+          "max": 4.255
+        },
+        "eligiblePolicyMsMax": 0.068,
+        "budgetStops": {
+          "future_rollout": 16,
+          "none": 156,
+          "icm": 4,
+          "sample": 5
+        },
+        "run": "warm-before-1"
+      },
+      {
+        "side": "before",
+        "pass": "warm",
+        "loadAverage1mStart": 23.48,
+        "eligible": 181,
+        "fired": 159,
+        "completed": 159,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 20,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.517,
+          "p95": 4.009,
+          "p99": 4.086,
+          "max": 4.135
+        },
+        "eligiblePolicyMsMax": 0.062,
+        "budgetStops": {
+          "icm": 6,
+          "none": 161,
+          "future_rollout": 10,
+          "sample": 4
+        },
+        "run": "warm-before-2"
+      },
+      {
+        "side": "before",
+        "pass": "warm",
+        "loadAverage1mStart": 19.37,
+        "eligible": 181,
+        "fired": 158,
+        "completed": 158,
+        "refusalsAmongEligible": {
+          "continuation_operation_budget": 21,
+          "continuation_sample_calibration": 2
+        },
+        "finalGateRefusalsAmongFired": {},
+        "latchReason": null,
+        "eligibleLatencyMs": {
+          "n": 181,
+          "p50": 2.593,
+          "p95": 4.008,
+          "p99": 4.237,
+          "max": 4.359
+        },
+        "eligiblePolicyMsMax": 0.254,
+        "budgetStops": {
+          "future_rollout": 14,
+          "none": 160,
+          "icm": 3,
+          "sample": 4
+        },
+        "run": "warm-before-3"
+      }
+    ],
+    "fullWorkDigestPasses": {
+      "measure": "whole-population HorseLogic.decide with clock frozen at 0, separate processes in A-B-B-A blocks, wall ms",
+      "beforeMedianMs": 2217.7,
+      "afterMedianMs": 2031.7,
+      "afterOverBeforePerBlock": [0.947, 0.989, 1.028, 0.782, 0.944, 0.907],
+      "digestsIdentical": true
+    },
+    "inProcessPairedCompare": {
+      "measure": "two compiled trees in one process, per-decision A-B-B-A, median ms; the first-loaded tree is favored when the trees differ, so only the swapped pair is interpretable",
+      "runs": [
+        {
+          "a": "dist-before",
+          "b": "dist",
+          "reps": 5,
+          "callsPerSide": 1820,
+          "sumOfMediansMsA": 1643.3030620000004,
+          "sumOfMediansMsB": 1747.9300239999993,
+          "decisionsFasterInB": 2,
+          "identicalDigests": 182
+        },
+        {
+          "a": "dist-before",
+          "b": "dist-before2",
+          "reps": 5,
+          "callsPerSide": 1820,
+          "sumOfMediansMsA": 1785.2212280000012,
+          "sumOfMediansMsB": 1788.4869314999992,
+          "decisionsFasterInB": 85,
+          "identicalDigests": 182
+        },
+        {
+          "a": "dist",
+          "b": "dist-before",
+          "reps": 5,
+          "callsPerSide": 1820,
+          "sumOfMediansMsA": 1745.1313920000002,
+          "sumOfMediansMsB": 1774.6498055000004,
+          "decisionsFasterInB": 34,
+          "identicalDigests": 182
+        }
+      ]
+    },
+    "abbaOrder": "per repetition: cold before, cold after, warm after, warm before"
+  },
+  "contendedRunsRetained": {
+    "note": "first A-B-B-A set ran at 1-minute load average about 48 on 28 logical CPUs from concurrent agents; wall overruns above 5 ms produced budget_exhausted refusals and, in three fresh processes, three consecutive overruns latched repeated_budget_breach; summaries as printed before the files were superseded",
+    "runs": [
+      {
+        "run": "cold-before-1",
+        "eligible": 181,
+        "completed": 106,
+        "refusals": {
+          "budget_exhausted": 22,
+          "continuation_operation_budget": 51,
+          "continuation_sample_calibration": 2
+        },
+        "latch": null
+      },
+      {
+        "run": "cold-before-2",
+        "eligible": 181,
+        "completed": 110,
+        "refusals": {
+          "continuation_operation_budget": 48,
+          "budget_exhausted": 21,
+          "continuation_sample_calibration": 2
+        },
+        "latch": null
+      },
+      {
+        "run": "cold-before-3",
+        "eligible": 181,
+        "completed": 114,
+        "refusals": {
+          "continuation_operation_budget": 49,
+          "budget_exhausted": 16,
+          "continuation_sample_calibration": 2
+        },
+        "latch": null
+      },
+      {
+        "run": "cold-after-1",
+        "eligible": 5,
+        "completed": 0,
+        "refusals": {
+          "continuation_operation_budget": 2,
+          "budget_exhausted": 3
+        },
+        "latch": "repeated_budget_breach"
+      },
+      {
+        "run": "cold-after-2",
+        "eligible": 27,
+        "completed": 5,
+        "refusals": {
+          "continuation_operation_budget": 13,
+          "budget_exhausted": 9
+        },
+        "latch": "repeated_budget_breach"
+      },
+      {
+        "run": "cold-after-3",
+        "eligible": 41,
+        "completed": 15,
+        "refusals": {
+          "continuation_operation_budget": 19,
+          "budget_exhausted": 6,
+          "continuation_sample_calibration": 1
+        },
+        "latch": "repeated_budget_breach"
+      },
+      {
+        "run": "warm-after-1",
+        "eligible": 181,
+        "completed": 134,
+        "refusals": {
+          "budget_exhausted": 8,
+          "continuation_operation_budget": 37,
+          "continuation_sample_calibration": 2
+        },
+        "latch": null
+      }
+    ]
+  }
+}

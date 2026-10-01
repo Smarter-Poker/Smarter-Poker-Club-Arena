@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6",
+    "scripts/ci/classify-ci-changes.mjs": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -27,7 +27,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+    "tests/unit/fixtureNativeCi.test.ts": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -437,9 +437,25 @@
       "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
     },
     {
+      "on": "2026-09-27",
+      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
+      "files": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "from": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+          "to": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        },
+        {
+          "file": "tests/unit/fixtureNativeCi.test.ts",
+          "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
+          "to": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        }
+      ]
+    },
+    {
       "file": "tests/unit/fixtureNativeCi.test.ts",
-      "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
-      "to": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+      "from": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd",
+      "to": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
       "on": "2026-10-01",
       "why": "CSS Beat gate split (2026-10-01): the Diamond playfield Playwright command moved from css-beats-e2e into its own diamond-playfield-e2e job, and the required check name moved to css-beats-gate, which passes only when both halves pass. This file changed only where it reads that command. No route, fixture, lane or assertion is removed or weakened."
     }
@@ -558,26 +574,6 @@
       }
     }
   },
-  "satellite_combined_main_integration_20260927": {
-    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
-    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
-    "updated_active_pins": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
-        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
-      }
-    ]
-  },
-  "settlement_conservation_index_20260927": {
-    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
-    "changes": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-      }
-    }
-  },
   "chipStoreCoverageQualification20260927": {
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
     "updates": {
@@ -610,5 +606,32 @@
     "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
     "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
     "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "productionAlertsCompletionIntegration20261001": {
+    "scope": "Preserve both merge parents and completion qualification; rebind actual merged source bytes. No native or production qualification implied.",
+    "ownParent": "65c059cb994c526a232b16e8a72e731910709211",
+    "protectedMain": "ec06319fe7197ea260173671dd590fcf26ca21eb",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d",
+        "current": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+      }
+    ]
+  },
+  "productionAlertsArchivedReaderRouting20261001": {
+    "reason": "Include postabort and bank-observer regression files in native archived Spin classification; explicitly guard five current capture/provider inputs and retain all prior assertions. Exact routing metadata restamp only.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "from": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192",
+        "to": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "from": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83",
+        "to": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      }
+    ]
   }
 }

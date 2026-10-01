@@ -148,7 +148,7 @@
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
     "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
-    "tests/unit/CashoutRequestModal.test.tsx": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+    "tests/unit/CashoutRequestModal.test.tsx": "d78e002502721f22d4d0d53baec2147c2cf3a3b103d9015f5ab671784b36e84c",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
@@ -180,7 +180,7 @@
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780",
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
-    "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6",
+    "scripts/ci/classify-ci-changes.mjs": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "031825cd66c9f7b6590eca7ea59a164a808299a24aaa252d00c4084344ea70fb",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "4fcd83c0e99696672b51ca2241dfcb7d71f96f0af56414a130a5c547c52fe656",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -437,12 +437,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+    "tests/unit/fixtureNativeCi.test.ts": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "a50a0ecc8d900f30d4a7825a1417caf937e1f495c521e945d6059c48633978dc",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "4400a6b5ebb502f191a0588b9561dd7545dfd637f14dac57b9a1414d8d897cb1",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -482,7 +482,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "79a788a36c09e8634c54d92c612c664790fa57a5da36e8f09c10f902a465955a",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "b1e2f5b84ca8e021f696f8fe0c85ce919471d60cd7d69c343234c1d0cfba36da",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -2482,23 +2482,79 @@
       "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
     },
     {
+      "on": "2026-09-27",
+      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
+      "files": [
+        {
+          "file": "scripts/ci/classify-ci-changes.mjs",
+          "from": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55",
+          "to": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        },
+        {
+          "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+          "from": "d575ba627a99bfc47b5606fd72ab43610443b8ee42df4b0ac47f628280048b8b",
+          "to": "928a23c38aad77dff7773c64cc03a99862eb9fbcc310acaa012768707abc123a"
+        },
+        {
+          "file": "tests/unit/fixtureNativeCi.test.ts",
+          "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
+          "to": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        },
+        {
+          "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+          "from": "c45c746ffb9c2da4f42cf42e1fbfc5d670e7e05fc21f387ae2053d69755f2e5f",
+          "to": "689f7745d18a6278fe856f4c86def444d080b971bf8f24723338abf26422317c"
+        },
+        {
+          "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+          "from": "103a6c5b078e845e9b105b2b3d363938623bc64aa1823a08d99e921a100c031e",
+          "to": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c"
+        }
+      ]
+    },
+    {
+      "on": "2026-10-01",
+      "why": "Preserve exact archived recognition capture and source-seal bytes from formatter mutation; only three archived-spin evidence paths added to prettier ignore. No financial assertions or historical records changed.",
+      "files": [
+        {
+          "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+          "from": "ea239f4b47a09f42fa0688e941afa4234d726d407840323976afc374bb493f4c",
+          "to": "df074e5e4b0f9024b9099102fcbfc6ec688e4afb2d08d3e3567a98627e42a2c1"
+        }
+      ]
+    },
+    {
+      "file": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+      "from": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
+      "to": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
+      "on": "2026-10-01",
+      "why": "Phase 5 of the mobile graphics programme (2026-10-01): a SpadeConsole plate inside a pop-up now carries TapHaptic, which asks the vibration gate whether this is an iPhone browser. This test stubbed the whole gate with only fireVibration, so it now stubs only the buzz and keeps the rest of the gate real (importOriginal). No assertion, fixture, money path or expected value changed."
+    },
+    {
+      "file": "tests/unit/CashoutRequestModal.test.tsx",
+      "from": "2bfab4801a83a8e300c9bb1c05a3ce3d9304a3b5824ca21e23b692aaf7e9a4ed",
+      "to": "d78e002502721f22d4d0d53baec2147c2cf3a3b103d9015f5ab671784b36e84c",
+      "on": "2026-10-01",
+      "why": "Phase 5 of the mobile graphics programme (2026-10-01): a SpadeConsole plate inside a pop-up now carries TapHaptic, which asks the vibration gate whether this is an iPhone browser. This test stubbed the whole gate with only fireVibration, so it now stubs only the buzz and keeps the rest of the gate real (importOriginal). No assertion, fixture, money path or expected value changed."
+    },
+    {
       "file": "tests/unit/fixtureNativeCi.test.ts",
-      "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
-      "to": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+      "from": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd",
+      "to": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
       "on": "2026-10-01",
       "why": "CSS Beat gate split (2026-10-01): the Diamond playfield Playwright command moved from css-beats-e2e into its own diamond-playfield-e2e job, and the required check name moved to css-beats-gate, which passes only when both halves pass. This file changed only where it reads that command. No route, fixture, lane or assertion is removed or weakened."
     },
     {
       "file": "tests/fixtures/earlybird-fee-custody/source-binding.json",
-      "from": "c950ca930c69c46fd3544f35237f5900fff56ef8670c2981981518fcfa767f4d",
-      "to": "79a788a36c09e8634c54d92c612c664790fa57a5da36e8f09c10f902a465955a",
+      "from": "ce17907ff5f8896fd0d24fe9fd986962f572fe35139426eab4ce78e917eb2eaf",
+      "to": "b1e2f5b84ca8e021f696f8fe0c85ce919471d60cd7d69c343234c1d0cfba36da",
       "on": "2026-10-01",
       "why": "Cascade of the 2026-10-01 restamp of tests/unit/fixtureNativeCi.test.ts for the CSS Beat gate split: this binding's only change is that restamp and its audit entry. No fixture body, route or assertion changed."
     },
     {
       "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
-      "from": "aaf5081d7b78661ff0ee4ce96849dbc584d223b7d62a988ac3116c0a9134cd69",
-      "to": "a50a0ecc8d900f30d4a7825a1417caf937e1f495c521e945d6059c48633978dc",
+      "from": "b2d0e8afb25a67e900312ce7089b1442cc3ec9cd6146392de1ccd2ccc082c4a0",
+      "to": "4400a6b5ebb502f191a0588b9561dd7545dfd637f14dac57b9a1414d8d897cb1",
       "on": "2026-10-01",
       "why": "Cascade of the 2026-10-01 restamp of tests/unit/fixtureNativeCi.test.ts for the CSS Beat gate split: this binding's only change is that restamp and its audit entry. No fixture body, route or assertion changed."
     }
@@ -2782,16 +2838,16 @@
     "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
     "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "current": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
+        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
+        "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "previous": "32993071b17bc72ae19c6a515feb6b64e4c3061b7805be27eea54dbca872cac5",
-        "current": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
+        "before": "32993053f035d9388c2e0d98f50a44ece7b290a1219f43d82a43ac79a02e7339",
+        "after": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
       },
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "previous": "301bb7166acbe61eac366ba1744f4bc403b785630f9426012135477940e9dae8",
-        "current": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
+        "before": "301bb769b458e0b91959b281f3c9fe62fec84774fda0f98788c0bf0e716d959f",
+        "after": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
       }
     }
   },
@@ -2927,44 +2983,6 @@
         "current": "dddcd001d044e098a60a02915d75ecb6dd0a255f95b88ceda232489dc13db779"
       }
     ]
-  },
-  "satellite_combined_main_integration_20260927": {
-    "base": "b4e5fbb8be9c8e9cbaa53a296edb24b89625f7f4",
-    "reason": "Integrate settlement attribution and both satellite index native qualifications; preserve every parent historical value.",
-    "updated_active_pins": [
-      {
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "before_sha256": "175b6f76cc7444bd2965f6277e47e815a0993bb76e37c1a17538043f5750cae7",
-        "after_sha256": "62ca243aa1e7c6392cf034d26dcce5061e463b90344728cde7eb8e0482095141"
-      },
-      {
-        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
-        "before_sha256": "734b3df06cae8e5a2d82885138fa59ad835cf313f72bcf14fdca8347d5ac2c41",
-        "after_sha256": "627e31c69176f5c1a159f1bbcb94f6b42efd6964c44d8fa6cc5046c4b0f49aac"
-      },
-      {
-        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "before_sha256": "7c9a72d19b33c5e3996237167442e477262fa5d443d434ef328e552be2363178",
-        "after_sha256": "13b9259dca1807cec2fb501887c48c7cc79f2aaa807f5b1de9682f49623286b3"
-      }
-    ]
-  },
-  "settlement_conservation_index_20260927": {
-    "reason": "Enforce complete unchanged settlement conservation native query, financial boundaries, authority and finite online/recovery qualification in required accounting shard; bind actual workflow/classifier and updated nested manifests without changing historical entries.",
-    "changes": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "before": "90cefba25593457b16e1f3a6370441fe8444c566b359e40d2580ab9f94a9885b",
-        "after": "95dabc7e631360eef4e6b8bce3fd047e169738d0ff347fe7e7c0c2f6cb3eb096"
-      },
-      "tests/fixtures/legacy-fee-finality/source-binding.json": {
-        "before": "32993053f035d9388c2e0d98f50a44ece7b290a1219f43d82a43ac79a02e7339",
-        "after": "cf8c854976cf7ea047b9871789d7ab23926bdeaecf30788bccb07c8853976629"
-      },
-      "tests/fixtures/sep8-spin-custody/source-binding.json": {
-        "before": "301bb769b458e0b91959b281f3c9fe62fec84774fda0f98788c0bf0e716d959f",
-        "after": "976c45a0a9a9dbe38c7fd5b5cda99b48cb82e2891d4b29692bd46982e279001e"
-      }
-    }
   },
   "chipStoreCoverageQualification20260927": {
     "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
@@ -3110,5 +3128,72 @@
     ],
     "reason": "Ruling 25 (docs/DIAMOND-RULINGS.md, Phase 10 line 2): a player's last-seen time is theirs alone, so the agent dashboard asks the presence door fn_profile_presence for who is online and reads the last hand played in the club from player_stats. agent-dashboard-durable-transfers.test.tsx answers that presence rpc with an empty list before its counted money rpcs, so every transfer and prepaid retry assertion is unchanged. discardedErrorReadRatchet.test.ts lowers three baselines exactly as its own shrink rule requires: DiamondService 1 -> 0 (the owner-door balance read binds and reports its error), OnlineFriendsPill 2 -> 1 (the profiles read binds its error), PresenceIndicator 1 -> 0 (presence comes from the presence door, which throws). No route, native phase, fixture or assertion is removed or weakened.",
     "verification": "python3 scripts/ci/verify-source-bindings.py; npx vitest run tests/components/agent-dashboard-durable-transfers.test.tsx tests/unit/discardedErrorReadRatchet.test.ts"
+  },
+  "productionAlertsCompletionIntegration20261001": {
+    "scope": "Preserve both merge parents and completion qualification; rebind actual merged source bytes. No native or production qualification implied.",
+    "ownParent": "65c059cb994c526a232b16e8a72e731910709211",
+    "protectedMain": "ec06319fe7197ea260173671dd590fcf26ca21eb",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d",
+        "current": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "983ee8c208596be291e58f8215ed074c08d32df71c754fd60eaf868a9c9f40fd",
+        "current": "f7e2bd884761a255044d43275fe42ac2517c16a3bca301407f74a304b384f2cd"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "0fdfa7a483427132fc5495cbb45c44b7aee9251516076532898467c43cb1d023",
+        "current": "0c1457747a6151dc43cc76eb5137760d9837210ec65ca1a170da81f7cffb1476"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous": "321f6b3354b070b6deadfa13a2d6e4133243ee76fd3d679ed00546933792815c",
+        "current": "ea239f4b47a09f42fa0688e941afa4234d726d407840323976afc374bb493f4c"
+      }
+    ]
+  },
+  "productionAlertsOriginalFeeOwnerCaptureFormatting20261001": {
+    "reason": "Preserve exact original Oct1 fee-owner catalog and operation-absence response bytes via two explicit .prettierignore entries. No existing exclusions, financial fixtures, assertions or prior audits changed.",
+    "changes": [
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "from": "df074e5e4b0f9024b9099102fcbfc6ec688e4afb2d08d3e3567a98627e42a2c1",
+        "to": "b3f7518837ae4a02d735e0eea57ab414cafad8ae8d2fa92bb443fc153b6e1acb"
+      }
+    ]
+  },
+  "productionAlertsArchivedReaderRouting20261001": {
+    "reason": "Include postabort and bank-observer regression files in native archived Spin classification; explicitly guard five current capture/provider inputs and retain all prior assertions. Exact routing metadata restamp only.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "from": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192",
+        "to": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "from": "f7e2bd884761a255044d43275fe42ac2517c16a3bca301407f74a304b384f2cd",
+        "to": "4fcd83c0e99696672b51ca2241dfcb7d71f96f0af56414a130a5c547c52fe656"
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "from": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83",
+        "to": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "from": "0c1457747a6151dc43cc76eb5137760d9837210ec65ca1a170da81f7cffb1476",
+        "to": "b2d0e8afb25a67e900312ce7089b1442cc3ec9cd6146392de1ccd2ccc082c4a0"
+      },
+      {
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "from": "b3f7518837ae4a02d735e0eea57ab414cafad8ae8d2fa92bb443fc153b6e1acb",
+        "to": "ce17907ff5f8896fd0d24fe9fd986962f572fe35139426eab4ce78e917eb2eaf"
+      }
+    ]
   }
 }

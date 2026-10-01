@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -8415,51 +8416,9 @@ export abstract class ServerTableEngineBase {
    * Uses Appendix B position naming convention.
    */
   protected getPositionLabels(dealerSeat: number, players: SeatPlayer[]): Map<number, string> {
-    const labels = new Map<number, string>();
-    const seats = players.map((p) => p.seat).sort((a, b) => a - b);
-    const n = seats.length;
-    if (n === 0) return labels;
-
-    // Find dealer seat index in sorted seats
-    let dealerIdx = seats.indexOf(dealerSeat);
-    if (dealerIdx === -1) {
-      // Dealer seat not found in active players — use first seat
-      dealerIdx = 0;
-    }
-
-    if (n === 2) {
-      // FIX 177: Bible V8 §4.2 + Appendix B: Heads-up → dealer=BTN (is also SB), other=BB
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'BB');
-    } else if (n === 3) {
-      // AUDIT FIX 2026-07-19: 3-handed is BTN, SB, BB — the button is NOT the SB
-      // (that's heads-up only). postBlinds posts SB at dealer+1 and BB at
-      // dealer+2, so the previous BTN/BB/UTG labels mislabeled the SB as BB and
-      // the BB as UTG on every 3-handed hand.
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-    } else {
-      // 4+ players — BTN, SB, BB, then positional names
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-
-      // Bible V8 Appendix B position names
-      const positionNames: Record<number, string[]> = {
-        4: ['UTG'],
-        5: ['UTG', 'CO'],
-        6: ['UTG', 'MP', 'CO'],
-        7: ['UTG', 'UTG+1', 'MP', 'CO'],
-        8: ['UTG', 'UTG+1', 'MP', 'MP+1', 'CO'],
-        9: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'HJ', 'CO'],
-      };
-      const names = positionNames[n] || positionNames[9] || [];
-      for (let i = 0; i < n - 3 && i < names.length; i++) {
-        labels.set(seats[(dealerIdx + 3 + i) % n], names[i]);
-      }
-    }
-    return labels;
+    // Part of the shared presentation (Lightning Phase 6, 2026-09-27): one
+    // implementation for every dealer. See src/engine/presentation/projectHandState.ts.
+    return positionLabelsFor(dealerSeat, players);
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

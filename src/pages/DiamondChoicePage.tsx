@@ -1229,6 +1229,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           clubUuid={uuid}
           awardId={round.award_id ?? null}
           chips={round.payout_chips}
+          stakeChips={round.bet_chips}
           // Neither game's receipt sings: each scene has already said what
           // happened in its own beat (the crossing's landing, the Mines board's
           // booked sting on a cash-out, 2026-09-26), and a lost round is not a

@@ -14,6 +14,9 @@ import { buildHorseDecisionKey } from './protocol.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import { settleHorseExecutionWitness } from '../HorseExecutionWitness.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
+import { HorseLogic } from '../HorseLogic.js';
+import { seedFastRandom } from '../HorseEval.js';
+import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
 import {
@@ -858,6 +861,37 @@ describe('LiveHorseDecisionWorkerClient', () => {
     };
     expect(() => worker.emitMessage(reply)).not.toThrow();
     await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
+  it('refuses a Phase 7 receipt whose evidence is not bound to the request it answers', async () => {
+    // A real, structurally valid utility receipt computed for another table.
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'river');
+    seedFastRandom(1500921);
+    const foreign = structuredClone(
+      HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          mind: false,
+          telemetry: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      )
+    );
+    expect(foreign.tournamentUtility?.evidence).toBeDefined();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('phase7-foreign'));
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'phase7-foreign');
+    reply.decision = foreign;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt: phase7_foreign_opponent');
     expect(client.status().phase).toBe('failed');
   });
   it.each(['fast', 'deep'] as const)(

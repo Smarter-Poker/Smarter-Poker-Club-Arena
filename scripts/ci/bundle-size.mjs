@@ -203,8 +203,30 @@ async function main() {
   // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
   // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
   // initial-load limits and the entry-module gate are unchanged.
-  const TOTAL_GZ_CEILING = 2880;
-  const TOTAL_RAW_CEILING = 10150;
+  // 2026-10-01: raised to 2890 gz for the mobile graphics programme, phases 4
+  // and 5, the same Diamond games programme the 2880 raise was for, under
+  // Dan's standing instruction for this session to build every phase in full
+  // ("YOU DECIDE"). Main had reached the ceiling exactly: PR #5706 and #5707
+  // both measured 2880kB gz on their merge refs, so any addition at all now
+  // fails. The search the ceiling's message asks for came first: a source-map
+  // audit of every chunk of a local main build (ef830c698a, 2875.3kB gz by
+  // this script's own arithmetic) found no module in two chunks, no vendor
+  // nested under another vendor, no base64 payload, and seven license
+  // comments totalling under 1kB raw. Phase 4 (the shared Big Win receipt,
+  // the Crash screen-reader line, the wheel's lite mode and its scene
+  // summary) costs 0.84kB gz in paired local builds: DiamondCrashPage +0.37,
+  // DiamondWheelPage +0.28, the scene summary's own small chunk +0.2 (it is
+  // now shared by the wheel and the 3D scenes, so it no longer rides inside
+  // the Three.js chunk). Phase 5 (pop-up plate haptics) costs about 0.2kB.
+  // Raw stays under the unchanged 10150kB ceiling; the initial-load limits and
+  // the entry-module gate are untouched.
+  // The owner-requested first-club welcome package then added 16kB raw in its
+  // paired hosted build for strict RPC validation and the guarded Start From
+  // Zero console, without adding a dependency or vendor. Preserve the reviewed
+  // 20kB raw allowance while the first-paint and 2890kB gzip ceilings remain
+  // unchanged.
+  const TOTAL_GZ_CEILING = 2890;
+  const TOTAL_RAW_CEILING = 10170;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

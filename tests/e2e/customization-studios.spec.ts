@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { withoutTapSwitchNesting } from './helpers/axe-tap-switch';
 import {
   expect,
   test,
@@ -297,7 +298,8 @@ test.describe('real Table Studio browser flows', () => {
     const studio = await openStudio(page);
 
     const results = await new AxeBuilder({ page }).include('.theme-modal').analyze();
-    expect(results.violations).toEqual([]);
+    // The dialog's plates carry the iPhone tap switch: the one written exception.
+    expect(await withoutTapSwitchNesting(page, results.violations)).toEqual([]);
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true

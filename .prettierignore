@@ -242,3 +242,13 @@ scripts/ci/fixtures/hand-submission/current-stack-authority-20260918.json
 # Lossless Early Bird fee, funding and prior-credit evidence uses numeric scale
 # in its original PostgreSQL fingerprints; the native source binding owns bytes.
 tests/fixtures/earlybird-fee-custody/*.json
+
+# Original archived-spin recognition response and its byte-bound source seal.
+# The qualification validator owns serialization; do not rewrite evidence.
+scripts/qualification/fixtures/archived-spin/first-recognition-capture.json
+scripts/qualification/fixtures/archived-spin/first-temporal-state.json
+scripts/qualification/spin-first-archived.manifest.json
+
+# Preserve original current-owner catalog response bytes.
+scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json
+scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json

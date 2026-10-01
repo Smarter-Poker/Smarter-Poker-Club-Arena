@@ -24,6 +24,7 @@ import {
   horseComputeMetadataIsValid,
   horseDecisionReceiptIsValid,
   horseSamplingStateIsValid,
+  horsePhase7EvidenceMismatch,
 } from '../../engine/horseDecision/responseValidation.js';
 import {
   horseJournalJson,
@@ -369,6 +370,7 @@ export function reconcileHorseJournalHand(
               admission.request.gameState.gameVariant
             ) ||
             !horsePhase6AttributionMatchesSnapshot(capture.decision, admission.request) ||
+            horsePhase7EvidenceMismatch(capture.decision, admission.request) !== null ||
             !effectsMatch(capture, admission.request)
           ) {
             throw Error();
@@ -523,7 +525,11 @@ export function reconcileHorseJournalHand(
           decisionRecord.sourceRelease !== executionRecord.sourceRelease
         )
           throw Error();
-        if (!horsePhase6AttributionMatchesSnapshot(d.decision, s)) throw Error();
+        if (
+          !horsePhase6AttributionMatchesSnapshot(d.decision, s) ||
+          horsePhase7EvidenceMismatch(d.decision, s) !== null
+        )
+          throw Error();
         const anchor = anchorHorseDecisionHand(s);
         if (anchor.status !== 'anchored' || journalHash(horseHandAnchorKey(anchor)) !== handKey)
           throw Error();

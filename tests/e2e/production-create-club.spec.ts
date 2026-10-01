@@ -104,6 +104,17 @@ test.describe('Production Create A Club Certificate', () => {
     await expect(page.getByLabel(/^100K Club Bank Chips$/)).toBeVisible({
       timeout: 60_000,
     });
+    const welcome = page.getByRole('region', { name: 'Opening Welcome Package', exact: true });
+    await expect(welcome).toBeVisible({ timeout: 60_000 });
+    await expect(welcome.getByText('Bad Beat Jackpot', { exact: true })).toBeVisible();
+    await expect(welcome.getByText('Spins', { exact: true })).toBeVisible();
+    await expect(welcome.getByText('Enabled', { exact: true })).toHaveCount(2);
+    await expect(welcome.getByText('Owner Acceptance Required', { exact: true })).toBeVisible();
+    await expect(welcome.getByText('9 Preloaded', { exact: true })).toBeVisible();
+    await expect(
+      welcome.getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })
+    ).toBeVisible();
+    await expect(welcome.getByText('Preloaded', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
   });
 });

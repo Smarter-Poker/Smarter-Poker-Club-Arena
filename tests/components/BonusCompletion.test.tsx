@@ -39,6 +39,50 @@ const reveal = (popup: HTMLElement) =>
  * spun for the player: a finished game rolled into a paid spin with no tap.
  * Now the receipt stays until the player taps, and every way off it is a tap.
  */
+describe('one big win, every game', () => {
+  it('marks five times the stake as a Big Win and sings the big chord when it sings', () => {
+    render(
+      <BonusCompletion clubId="shark-club" chips={50} stakeChips={10} detail="Round Complete." />
+    );
+    const popup = screen.getByRole('dialog', { name: '50.00 Chips' });
+    expect(popup).toHaveTextContent('Big Win');
+    expect(popup.querySelector('[data-big="true"]')).not.toBeNull();
+    expect(soundService.playBigWin).toHaveBeenCalledTimes(1);
+    expect(soundService.playWin).not.toHaveBeenCalled();
+    expect(triggerHaptic).toHaveBeenCalledWith('heavy');
+  });
+  it('keeps an ordinary win ordinary, and a silent receipt silent even when big', () => {
+    render(
+      <BonusCompletion clubId="shark-club" chips={49.99} stakeChips={10} detail="Round Complete." />
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Big Win');
+    expect(soundService.playWin).toHaveBeenCalledTimes(1);
+    cleanup();
+    vi.clearAllMocks();
+    render(
+      <BonusCompletion clubId="shark-club" chips={80} stakeChips={10} silent detail="Booked." />
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('Big Win');
+    expect(soundService.playBigWin).not.toHaveBeenCalled();
+    expect(soundService.playWin).not.toHaveBeenCalled();
+  });
+  it('never calls a lost round or an unknown stake big', () => {
+    render(
+      <BonusCompletion
+        clubId="shark-club"
+        chips={60}
+        stakeChips={10}
+        eyebrow="Guarantee Paid"
+        detail="Hit."
+      />
+    );
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Big Win');
+    cleanup();
+    render(<BonusCompletion clubId="shark-club" chips={60} detail="Round Complete." />);
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Big Win');
+  });
+});
+
 describe('bonus completion presentation', () => {
   it('shows every ledger digit and stays put: no timer returns to the wheel', () => {
     vi.useFakeTimers();

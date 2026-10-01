@@ -1,0 +1,203 @@
+.club-welcome {
+  --sc-max: 1000px;
+
+  width: calc(100% - 24px);
+  margin: 10px auto 12px;
+}
+
+.club-welcome__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding: 1cqw 0 2cqw;
+}
+
+.club-welcome__heading span {
+  display: block;
+  color: #45adff;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.club-welcome button {
+  appearance: none;
+  margin: 0;
+  padding: 1cqw 0;
+  border: 0;
+  color: #45adff;
+  background: transparent;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(69 173 255 / 62%);
+  cursor: pointer;
+}
+
+.club-welcome button:focus-visible,
+.club-welcome-reset input:focus-visible {
+  outline: 0.4cqw solid #8fd4ff;
+  outline-offset: 0.7cqw;
+}
+
+.club-welcome__rows {
+  border-top: 1px solid #000;
+}
+
+.club-welcome__rows > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3cqw;
+  min-height: 7cqw;
+  padding-block: 1.2cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.club-welcome__rows span {
+  color: #45adff;
+  font-size: 2.3cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.club-welcome__rows strong {
+  max-width: 52%;
+  color: #c8ffd2;
+  font-size: 2.5cqw;
+  letter-spacing: 0.04em;
+  text-align: right;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.7cqw rgb(53 217 90 / 50%);
+}
+
+.club-welcome__rows strong.is-acceptance {
+  color: #d6ad52;
+  text-shadow: 0 0 0.7cqw rgb(214 173 82 / 48%);
+}
+
+.club-welcome__notice {
+  margin: 0;
+  padding: 2.4cqw 0;
+  border-top: 1px solid #000;
+  color: #ff5b6e;
+  font-size: 2.5cqw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.club-welcome__notice.is-complete {
+  color: #c8ffd2;
+}
+
+.club-welcome__remove {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  color: #ff5b6e !important;
+  text-shadow: 0 0 0.8cqw rgb(240 40 73 / 62%) !important;
+}
+
+.club-welcome-reset__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 16px;
+  background: rgb(0 0 0 / 90%);
+}
+
+.club-welcome-reset.ac-popup {
+  width: min(100%, 480px);
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.club-welcome-reset__body {
+  display: grid;
+  gap: 2.2cqw;
+  padding: 1cqw 2cqw 3cqw;
+  text-align: center;
+}
+
+.club-welcome-reset__protection,
+.club-welcome-reset__refusal,
+.club-welcome-reset label {
+  color: #9aa5b3;
+  font-size: 3cqw;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.club-welcome-reset__body p {
+  margin: 0;
+}
+
+.club-welcome-reset__protection {
+  color: #c8ffd2;
+}
+
+.club-welcome-reset__refusal {
+  color: #ff5b6e;
+}
+
+.club-welcome-reset label strong {
+  color: #e4e7ec;
+}
+
+.club-welcome-reset input {
+  width: 100%;
+  min-height: 44px;
+  padding: 1.5cqw 2cqw;
+  border: 1px solid #45adff;
+  border-radius: 0;
+  background: #010203;
+  color: #f4f7fb;
+  font:
+    700 4cqw/1.2 Inter,
+    system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+.club-welcome-reset input:disabled {
+  border-color: #9aa5b3;
+  color: #9aa5b3;
+}
+
+@media (max-width: 760px) {
+  .club-welcome__heading span,
+  .club-welcome__rows span {
+    font-size: 2.8cqw;
+  }
+
+  .club-welcome__rows strong {
+    font-size: 3cqw;
+  }
+
+  .club-welcome__rows > div {
+    min-height: 11cqw;
+  }
+
+  .club-welcome-reset__protection,
+  .club-welcome-reset__refusal,
+  .club-welcome-reset label {
+    font-size: 3.4cqw;
+  }
+}

@@ -11,7 +11,12 @@ vi.mock('../../src/utils/animationSpeed', () => ({
   getAnimationSpeed: () => 1,
   prefersReducedMotion: () => false,
 }));
-vi.mock('../../src/utils/vibrationGate', () => ({ fireVibration: vi.fn() }));
+// Only the buzz is stubbed; the rest of the gate (TapHaptic asks it whether
+// this is an iPhone browser) stays real.
+vi.mock('../../src/utils/vibrationGate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/utils/vibrationGate')>()),
+  fireVibration: vi.fn(),
+}));
 vi.mock('../../src/components/tournament/CoinShower', () => ({ default: () => null }));
 vi.mock('../../src/utils/mediaBase', () => ({ mediaUrl: (path: string) => path }));
 vi.mock('canvas-confetti', () => ({ default: Object.assign(vi.fn(), { reset: vi.fn() }) }));

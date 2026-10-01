@@ -14,8 +14,8 @@
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
-    ".prettierignore": "e4c51f104e19181a85e69f8e2eacadac7ea3196392cae16cea3b79c1f9dbc7a4",
-    "tests/unit/fixtureNativeCi.test.ts": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+    ".prettierignore": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
+    "tests/unit/fixtureNativeCi.test.ts": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -75,12 +75,51 @@
       "why": "First archived Spin qualification adds only its own complete source/fixture/control routing and lookalike negative cases; 638 routing tests passed, including modified/deleted/renamed paths. Existing lanes and financial fixtures are unchanged. Nested binding changes carry this reviewed routing metadata only."
     },
     {
+      "on": "2026-09-27",
+      "why": "First archived completion adds its existing native qualification route and exact controls, with near-match refusal. Preserve every prior financial assertion and captured source. Nested bindings carry only these reviewed routing additions.",
+      "files": [
+        {
+          "file": "tests/unit/fixtureNativeCi.test.ts",
+          "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
+          "to": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        }
+      ]
+    },
+    {
+      "on": "2026-10-01",
+      "why": "Preserve exact archived recognition capture and source-seal bytes from formatter mutation; only three archived-spin evidence paths added to prettier ignore. No financial assertions or historical records changed.",
+      "files": [
+        {
+          "file": ".prettierignore",
+          "from": "e4c51f104e19181a85e69f8e2eacadac7ea3196392cae16cea3b79c1f9dbc7a4",
+          "to": "209a7e023ccec41300c4d68fc2e5bec56a135f17d96300a1d6bf755455d6e64a"
+        }
+      ]
+    },
+    {
+      "file": ".prettierignore",
+      "from": "209a7e023ccec41300c4d68fc2e5bec56a135f17d96300a1d6bf755455d6e64a",
+      "to": "09ce1f38a5e012220b004ee809caf9fdcf0e61d9d72e924fd82341de73d53874",
+      "on": "2026-10-01",
+      "why": "Preserve exact original Oct1 fee-owner catalog and operation-absence response bytes via two explicit .prettierignore entries. No existing exclusions, financial fixtures, assertions or prior audits changed."
+    },
+    {
       "file": "tests/unit/fixtureNativeCi.test.ts",
-      "from": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628",
-      "to": "f71fa935ac5a4f8425a984795b637a202baa5d3c97288d026104d4974e0fe82d",
+      "from": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd",
+      "to": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11",
       "on": "2026-10-01",
       "why": "CSS Beat gate split (2026-10-01): the Diamond playfield Playwright command moved from css-beats-e2e into its own diamond-playfield-e2e job, and the required check name moved to css-beats-gate, which passes only when both halves pass. This file changed only where it reads that command. No route, fixture, lane or assertion is removed or weakened."
     }
   ],
-  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping."
+  "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",
+  "productionAlertsArchivedReaderRouting20261001": {
+    "reason": "Include postabort and bank-observer regression files in native archived Spin classification; explicitly guard five current capture/provider inputs and retain all prior assertions. Exact routing metadata restamp only.",
+    "changes": [
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "from": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83",
+        "to": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      }
+    ]
+  }
 }

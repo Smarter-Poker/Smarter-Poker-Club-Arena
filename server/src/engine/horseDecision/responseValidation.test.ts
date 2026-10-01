@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { HorseDecision } from '../../types.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
@@ -7,6 +7,7 @@ import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.j
 import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
 import {
   horseDecisionReceiptIsValid,
+  horsePhase7EvidenceMismatch,
   horseTournamentUtilityReceiptIsValid,
 } from './responseValidation.js';
 
@@ -343,5 +344,92 @@ describe('bounded Horse response receipt validation', () => {
       expect(d.policyGraph?.transitions).toHaveLength(8);
       expect(horseDecisionReceiptIsValid(d), `${variant}:${street}`).toBe(true);
     }
+  });
+});
+
+describe('Phase 7 evidence is bound to the request at admission', () => {
+  // Real HorseLogic receipts. The structural validator cannot see the request;
+  // these named refusals recompute each binding from the request itself.
+  function decided(boards: 1 | 2) {
+    const { hero, state } = jointPolicyFixture('nlh', boards, 'tournament', 'river');
+    // Freeze only the local acquisition clock; budgets have their own tests.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      seedFastRandom(1500922);
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          mind: false,
+          telemetry: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+      return { request: structuredClone({ player: hero, gameState: state }), decision };
+    } finally {
+      clock.mockRestore();
+    }
+  }
+
+  it('admits real single-board and physical two-board receipts for their own request', () => {
+    const single = decided(1);
+    expect(single.decision.tournamentUtility?.evidence).toBeDefined();
+    expect(single.decision.tournamentUtility!.evidence!.sampler).toBeUndefined();
+    expect(horsePhase7EvidenceMismatch(single.decision, single.request)).toBeNull();
+    const joint = decided(2);
+    expect(joint.decision.tournamentUtility?.evidence?.sampler).toMatchObject({ boardCount: 2 });
+    expect(horseDecisionReceiptIsValid(structuredClone(joint.decision))).toBe(true);
+    expect(horsePhase7EvidenceMismatch(joint.decision, joint.request)).toBeNull();
+  });
+
+  it('refuses a structurally valid sampler for another state, board layout or a single board', () => {
+    const joint = decided(2);
+    const changed = structuredClone(joint.request);
+    changed.gameState.players[1].stack += 1;
+    expect(horsePhase7EvidenceMismatch(joint.decision, changed)).toBe('phase7_sampler_state');
+    const triple = structuredClone(joint.request);
+    triple.gameState.boardCount = 3;
+    expect(horsePhase7EvidenceMismatch(joint.decision, triple)).toBe('phase7_sampler_board_count');
+    const single = decided(1);
+    const grafted = structuredClone(single.decision);
+    grafted.tournamentUtility!.evidence = {
+      ...grafted.tournamentUtility!.evidence!,
+      sampler: joint.decision.tournamentUtility!.evidence!.sampler!,
+    };
+    expect(horsePhase7EvidenceMismatch(grafted, single.request)).toBe(
+      'phase7_sampler_single_board'
+    );
+  });
+
+  it('refuses a multi-board receipt with no physical acquisition (marginal draws)', () => {
+    const joint = decided(2);
+    const stripped = structuredClone(joint.decision);
+    const evidence = stripped.tournamentUtility!.evidence!;
+    stripped.tournamentUtility!.evidence = Object.fromEntries(
+      Object.entries(evidence).filter(([key]) => key !== 'sampler')
+    ) as typeof evidence;
+    // Shape alone was admissible before the request binding existed.
+    expect(horseTournamentUtilityReceiptIsValid(stripped.tournamentUtility, stripped)).toBe(true);
+    expect(horsePhase7EvidenceMismatch(stripped, joint.request)).toBe(
+      'phase7_marginal_multi_board'
+    );
+    // A legacy receipt carries no evidence and gains no authority to refuse.
+    const legacy = structuredClone(joint.decision);
+    delete legacy.tournamentUtility!.evidence;
+    expect(horsePhase7EvidenceMismatch(legacy, joint.request)).toBeNull();
+  });
+
+  it('refuses evidence naming an opponent who is not in the request', () => {
+    const single = decided(1);
+    const foreign = structuredClone(single.request);
+    const opponent = foreign.gameState.players.find(
+      (player) => player.user_id !== foreign.player.user_id && !player.is_folded
+    )!;
+    opponent.user_id = 'another-table-player';
+    expect(horsePhase7EvidenceMismatch(single.decision, foreign)).toBe('phase7_foreign_opponent');
   });
 });

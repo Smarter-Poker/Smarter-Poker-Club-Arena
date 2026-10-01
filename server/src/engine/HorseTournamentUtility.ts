@@ -50,7 +50,8 @@ import {
 const EPS = 0.005;
 const CONFIDENCE_Z_999 = 3.291;
 const MAX_ACTION_ICM_VECTORS = 2_048;
-const MAX_UTILITY_OUTCOMES = 160;
+/** Shared with worker response admission; one owner for the outcome ceiling. */
+export const MAX_UTILITY_OUTCOMES = 160;
 const MAX_EQUITY_CALIBRATION_ERROR = 0.025;
 const MIN_EFFECTIVE_OUTCOMES = 8;
 

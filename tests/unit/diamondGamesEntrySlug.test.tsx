@@ -47,6 +47,7 @@ describe('the entry is read for the club the server knows', () => {
       state.listeners.get('BALANCE_UPDATED')?.({
         payload: { userId: 'player-a', clubId: '00000000-0000-0000-0000-00000000beef' },
       });
+      await new Promise((r) => setTimeout(r, 300));
     });
     expect(state.read).toHaveBeenCalledTimes(2);
   });

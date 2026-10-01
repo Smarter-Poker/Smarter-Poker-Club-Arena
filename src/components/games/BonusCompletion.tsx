@@ -8,6 +8,7 @@ import { soundService } from '../../services/SoundService';
 import { triggerHaptic } from '../../services/HapticService';
 import DiamondWheelService, { type WheelBonusAward } from '../../services/DiamondWheelService';
 import { reportError } from '../../utils/errorReporter';
+import { isBigPayout } from '../../utils/bigWin';
 import styles from '../wheel/WheelWinReveal.module.css';
 import { BonusReceiptArt, type BonusReceiptGame } from './BonusReceiptArt';
 
@@ -37,6 +38,7 @@ export default function BonusCompletion({
   game,
   figure,
   cap,
+  stakeChips,
 }: {
   /** The route's club id, used for navigation. */
   clubId: string;
@@ -70,7 +72,14 @@ export default function BonusCompletion({
   figure?: number | null;
   /** Crash: the round's own cap as a multiplier, so the crown goes to a round booked at it. */
   cap?: number | null;
+  /**
+   * What the round staked, in chips. A win of five times it or more is a Big
+   * Win in every game (src/utils/bigWin.ts): the receipt says so, its rays burn
+   * gold, and when the receipt is the one that sings it sings the big chord.
+   */
+  stakeChips?: number | null;
 }) {
+  const big = eyebrow === undefined && isBigPayout(chips, stakeChips);
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [next, setNext] = useState<WheelBonusAward | null>(null);
@@ -87,9 +96,14 @@ export default function BonusCompletion({
   useEffect(() => {
     if (!visible || silent || sounded.current) return;
     sounded.current = true;
-    soundService.playWin();
-    triggerHaptic('success');
-  }, [visible, silent]);
+    if (big) {
+      soundService.playBigWin();
+      triggerHaptic('heavy');
+    } else {
+      soundService.playWin();
+      triggerHaptic('success');
+    }
+  }, [visible, silent, big]);
   // One read of the wheel's waiting awards (C1 lists them as pending_awards).
   // A wheel state without the field, or a read that fails, simply offers no
   // next game: the wheel itself still shows every award when the player returns.
@@ -143,7 +157,7 @@ export default function BonusCompletion({
         }}
       >
         <SpadeConsole
-          eyebrow={eyebrow ?? 'You Won'}
+          eyebrow={eyebrow ?? (big ? 'Big Win' : 'You Won')}
           title={title}
           pill="Paid"
           plates={
@@ -159,7 +173,7 @@ export default function BonusCompletion({
               : { primary: back }
           }
         >
-          <div className={styles.prize} aria-hidden="true">
+          <div className={styles.prize} aria-hidden="true" data-big={big ? 'true' : undefined}>
             <div className={styles.rays} />
             {game ? (
               // A receipt with an eyebrow is a round that was not won: the
@@ -170,7 +184,7 @@ export default function BonusCompletion({
             )}
           </div>
           <p className="sc-copy sc-copy--center" role="status">
-            {`${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail}`}
+            {`${big ? 'Big Win. ' : ''}${chips > 0 ? 'Your Prize Is Booked.' : 'No Chips Won This Round.'} ${detail}`}
             {proof ? ` ${proof}` : ''}
             {next ? ' Another Bonus Game Is Waiting For You.' : ''}
           </p>

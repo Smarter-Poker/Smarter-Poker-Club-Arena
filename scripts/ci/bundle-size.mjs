@@ -203,16 +203,34 @@ async function main() {
   // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
   // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
   // initial-load limits and the entry-module gate are unchanged.
-  // 2026-10-01: raised to 2890 gz / 10175 raw for the Lightning player
+  // 2026-10-01: raised to 2890 gz for the mobile graphics programme, phases 4
+  // and 5, the same Diamond games programme the 2880 raise was for, under
+  // Dan's standing instruction for this session to build every phase in full
+  // ("YOU DECIDE"). Main had reached the ceiling exactly: PR #5706 and #5707
+  // both measured 2880kB gz on their merge refs, so any addition at all now
+  // fails. The search the ceiling's message asks for came first: a source-map
+  // audit of every chunk of a local main build (ef830c698a, 2875.3kB gz by
+  // this script's own arithmetic) found no module in two chunks, no vendor
+  // nested under another vendor, no base64 payload, and seven license
+  // comments totalling under 1kB raw. Phase 4 (the shared Big Win receipt,
+  // the Crash screen-reader line, the wheel's lite mode and its scene
+  // summary) costs 0.84kB gz in paired local builds: DiamondCrashPage +0.37,
+  // DiamondWheelPage +0.28, the scene summary's own small chunk +0.2 (it is
+  // now shared by the wheel and the 3D scenes, so it no longer rides inside
+  // the Three.js chunk). Phase 5 (pop-up plate haptics) costs about 0.2kB.
+  // Raw stays under the unchanged 10150kB ceiling; the initial-load limits and
+  // the entry-module gate are untouched.
+  // 2026-10-01: raised again to 2900 gz / 10175 raw for the Lightning player
   // surface (spec Phase 6 client: the /lightning entry page, the LIGHTNING
   // FOLD and FOLD & WATCH bar, the next-hand notice and the lobby pool state),
   // under the owner's standing instruction to decide and finish the Lightning
   // build. Paired CI builds with the same dependencies: main (PR #5713 base)
   // measured 2880kB gz / 10144kB raw, exactly at the old ceiling; with the
-  // Lightning client 2888kB gz / 10163kB raw. No dependency was added, so no
+  // Lightning client 2888kB gz / 10163kB raw (+8kB gz, +19kB raw), which on
+  // top of the mobile graphics raise above lands at about 2889kB gz. No dependency was added, so no
   // vendor arrives twice; initial load is unchanged at 314kB gz and the
   // initial-load limits and the entry-module gate are untouched.
-  const TOTAL_GZ_CEILING = 2890;
+  const TOTAL_GZ_CEILING = 2900;
   const TOTAL_RAW_CEILING = 10175;
 
   const biggest = all

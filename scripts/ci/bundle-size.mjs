@@ -135,103 +135,10 @@ async function main() {
   const INITIAL_GZ_LIMIT = 320;
   const INITIAL_RAW_LIMIT = 1400;
 
-  /** Ceiling, not a budget. Trips on duplicated vendors or a library arriving
-   *  twice, not on the product gaining routes.
-   *
-   *  RAISED 2026-09-01 (Dan's call): 2400 -> 2600 gz, 8400 -> 9200 raw.
-   *
-   *  Not a waiver. The ceiling was set on 2026-08-21 against a 1862kB gz app
-   *  with ~29% of deliberate headroom for growth. That headroom is now gone:
-   *  on 2026-09-01 EVERY open pull request in the repository measured within
-   *  25kB of the ceiling, and main itself never measures at all because
-   *  Production Build only runs on pull_request. The first feature to arrive
-   *  after the room ran out was failing for the product's whole accumulated
-   *  history rather than for anything it did, which is precisely the failure
-   *  mode the block above says this gate must not have: "a codebase adding
-   *  routes is not a codebase getting worse".
-   *
-   *  Measured before raising it, so the growth is known to be growth:
-   *    main                          2328kB gz / 388 files  (local build)
-   *    same tree + table management  2355kB gz / 393 files  (local build)
-   *    ten heaviest chunks inspected: one copy each of react, error reporting,
-   *      supabase, motion and the chart runtime. No duplicated vendor, no
-   *      library arriving twice.
-   *
-   *  The two REAL regressions that measurement exposed were fixed rather than
-   *  absorbed, and both were on the initial load, the gate that actually
-   *  protects users. A root-mounted ticker was importing one function out of
-   *  the 1,482-line lobby view-model, and the eager app shell was statically
-   *  importing the operator command gateway. Entry cost of the feature fell
-   *  from +11kB gz to +3kB gz. INITIAL_GZ_LIMIT is deliberately untouched.
-   *
-   *  ~8% of headroom is a quarter of what the original author allowed. That is
-   *  intentional: enough that ordinary work is not blocked, little enough that
-   *  this comment gets read again soon rather than never.
-   */
-  // 2026-09-14: four requested Three.js games add one shared, lazy renderer.
-  // Paired builds with the same dependencies/config: main a00f5c5c measured
-  // 2527kB gz / 8963kB raw; Diamond Spins measured 2723kB gz / 9674kB raw.
-  // Source-map inspection found one copy of Three.js (129kB gz shared chunk)
-  // and unchanged single React, Supabase, Motion and chart vendors.
-  // Restored hosted build35184528688: 2651kB gz / 9444kB raw, initial297kB gz;
-  // reuse the original game-feature envelope below, with telemetry still removed.
-  // The remaining growth is the four game routes and their controls. The
-  // eager game-door imports were fixed first: initial load fell 311 -> 298kB
-  // gz, versus main's 296kB. No new source module enters first paint.
-  // This accounts for the new product surface with 77kB total headroom;
-  // initial-load limits and the entry-module gate remain unchanged.
-  // 2026-09-24: raised to 2840 with the owner's explicit approval (Dan, in the
-  // #5193 delivery session) for the club and union diamond commerce UI.
-  // Paired builds with the same dependencies: main 91837c041 2794kB gz; #5193
-  // 2816kB gz. A source-map audit of every chunk found no module in two
-  // chunks; the one duplicated vendor (immer 10 beside immer 11) was removed
-  // in #5196. The growth is new product surface: the staff Commerce Desk
-  // route (+14.6kB gz with its stylesheet) and the owner Diamond Costs page
-  // (+6.4kB gz). Initial load is unchanged at 307kB gz; the initial-load
-  // limits and the entry-module gate are untouched.
-  // 2026-09-26: raised to 2880 gz / 10150 raw with the owner's explicit
-  // approval (Dan, in the mobile spins delivery session: "Raise it to 2,880 /
-  // 10,150") for the Diamond bonus games programme, phases 3 to 6. Paired
-  // local builds with the same dependencies: main dd555bf57a measured 2835kB gz
-  // / 9999kB raw, one kilobyte of raw room left; main plus phases 3 and 4
-  // (Donkey Cross horizon, Plinko and Mines look) 2842kB / 10006kB (hosted);
-  // plus phase 5 (sound and haptics) 2844kB / 10029kB; plus phase 6 (reveals
-  // and landscape) 2846kB / 10042kB; all four together about 2848kB / 10065kB.
-  // Per-chunk diff against main: the growth is PlinkoBoard (+3.2kB gz),
-  // ChoiceScene (+2.7kB gz plus 0.7kB of CSS), CrashCurve and the new cues in
-  // the shared entry (+2.5kB gz); no module appears in two chunks and no
-  // vendor arrives twice (one Three.js chunk, one React, one Supabase). Initial
-  // load moves 306 -> 309kB gz, inside the untouched 320kB initial limit; the
-  // initial-load limits and the entry-module gate are unchanged.
-  // 2026-10-01: raised to 2890 gz for the mobile graphics programme, phases 4
-  // and 5, the same Diamond games programme the 2880 raise was for, under
-  // Dan's standing instruction for this session to build every phase in full
-  // ("YOU DECIDE"). Main had reached the ceiling exactly: PR #5706 and #5707
-  // both measured 2880kB gz on their merge refs, so any addition at all now
-  // fails. The search the ceiling's message asks for came first: a source-map
-  // audit of every chunk of a local main build (ef830c698a, 2875.3kB gz by
-  // this script's own arithmetic) found no module in two chunks, no vendor
-  // nested under another vendor, no base64 payload, and seven license
-  // comments totalling under 1kB raw. Phase 4 (the shared Big Win receipt,
-  // the Crash screen-reader line, the wheel's lite mode and its scene
-  // summary) costs 0.84kB gz in paired local builds: DiamondCrashPage +0.37,
-  // DiamondWheelPage +0.28, the scene summary's own small chunk +0.2 (it is
-  // now shared by the wheel and the 3D scenes, so it no longer rides inside
-  // the Three.js chunk). Phase 5 (pop-up plate haptics) costs about 0.2kB.
-  // Raw stays under the unchanged 10150kB ceiling; the initial-load limits and
-  // the entry-module gate are untouched.
-  // 2026-10-01: raised again to 2900 gz / 10175 raw for the Lightning player
-  // surface (spec Phase 6 client: the /lightning entry page, the LIGHTNING
-  // FOLD and FOLD & WATCH bar, the next-hand notice and the lobby pool state),
-  // under the owner's standing instruction to decide and finish the Lightning
-  // build. Paired CI builds with the same dependencies: main (PR #5713 base)
-  // measured 2880kB gz / 10144kB raw, exactly at the old ceiling; with the
-  // Lightning client 2888kB gz / 10163kB raw (+8kB gz, +19kB raw), which on
-  // top of the mobile graphics raise above lands at about 2889kB gz. No dependency was added, so no
-  // vendor arrives twice; initial load is unchanged at 314kB gz and the
-  // initial-load limits and the entry-module gate are untouched.
-  const TOTAL_GZ_CEILING = 2900;
-  const TOTAL_RAW_CEILING = 10175;
+  /* NO WHOLE-APP SIZE LIMIT (Dan, 2026-10-01: "there is no limit on the app
+     size ... it can be as large as it needs to be"). The whole-app total is
+     reported for visibility only; it never fails a build. Lazy routes cost a
+     session nothing until it opens them. */
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))
@@ -244,7 +151,7 @@ async function main() {
     '| Measure | Raw | Gzipped | Limit (gz) | Files |',
     '|---|---|---|---|---|',
     `| **Initial load** (what users download) | ${kb(initial.raw)}kB | **${kb(initial.gz)}kB** | ${INITIAL_GZ_LIMIT}kB | ${entry.length} |`,
-    `| Whole app (incl. lazy routes) | ${kb(total.raw)}kB | ${kb(total.gz)}kB | ${TOTAL_GZ_CEILING}kB ceiling | ${all.length} |`,
+    `| Whole app (incl. lazy routes) | ${kb(total.raw)}kB | ${kb(total.gz)}kB | no limit | ${all.length} |`,
     '',
     `Lazy chunks account for **${kb(total.gz - initial.gz)}kB gzipped** that no single session fetches.`,
     '',
@@ -279,18 +186,9 @@ async function main() {
       `Initial load ${kb(initial.raw)}kB raw exceeds ${INITIAL_RAW_LIMIT}kB.`
     );
   }
-  if (kb(total.gz) > TOTAL_GZ_CEILING) {
-    failed = fail(
-      `Whole app ${kb(total.gz)}kB gzipped exceeds the ${TOTAL_GZ_CEILING}kB ceiling. This is a bloat ceiling, not a growth budget: look for a duplicated vendor library before deleting features.`
-    );
-  }
-  if (kb(total.raw) > TOTAL_RAW_CEILING) {
-    failed = fail(`Whole app ${kb(total.raw)}kB raw exceeds the ${TOTAL_RAW_CEILING}kB ceiling.`);
-  }
-
   if (failed) process.exit(1);
   console.log(
-    `[bundle-size] OK — initial ${kb(initial.gz)}kB/${INITIAL_GZ_LIMIT}kB gz, total ${kb(total.gz)}kB/${TOTAL_GZ_CEILING}kB gz`
+    `[bundle-size] OK — initial ${kb(initial.gz)}kB/${INITIAL_GZ_LIMIT}kB gz, total ${kb(total.gz)}kB gz (no limit)`
   );
 }
 

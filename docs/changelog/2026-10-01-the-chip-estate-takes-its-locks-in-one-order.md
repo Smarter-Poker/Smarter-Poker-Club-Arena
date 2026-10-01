@@ -48,6 +48,16 @@ the wallet and tournament finishes - which take the wallet first - queued behind
 statement timeouts and 80 finish waits on the wallet in ten minutes, against none and 0 to 15 an
 hour before. Pair 3 is open again and reported; the other seven changes stand.
 
+## Fixed: the batch's up-front keys failed it whole
+
+The batch and retry waited for their clubs' commission keys outside the per-item refusal blocks;
+with the engine role's `lock_timeout 8s` and a finish holding a key, the whole batch failed
+(00:07:30 and 01:03:16 UTC) and the settler held its cursor at 00:03:25 - no cash commission
+accrued until the fix. `20261001001000_a_cash_batch_never_waits_for_a_commission_key` (applied
+01:05:09 UTC after `REHEARSAL OK`) makes both walks `pg_try_advisory_xact_lock`, stopping at the
+first key someone holds; the rest are taken per item in the trigger, where a timeout refuses one
+item for retry, as before.
+
 ## Not changed: pair 2 (PR #5542)
 
 PR #5542 orders Projection 2 of `fn_project_hand_side_effects_after_post_commit_20260908`. It is a

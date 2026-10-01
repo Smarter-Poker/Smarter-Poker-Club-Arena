@@ -38,6 +38,9 @@ MIGRATION = ROOT / 'supabase/migrations/20261001000000_the_chip_estate_takes_its
 # 20261001000500 reverses that migration's atomic_distribute_rake change (it made a tournament finish
 # queue behind raked hands on club_wallets in production); the AFTER state is both, in order.
 REVERT = ROOT / 'supabase/migrations/20261001000500_a_raked_hand_takes_its_club_wallet_where_it_did.sql'
+# 20261001001000 makes the batch and the retry TRY their up-front commission keys: waiting for one
+# outside an item put the whole batch behind the role's lock_timeout (8 s) and failed it whole.
+KEYS_FIX = ROOT / 'supabase/migrations/20261001001000_a_cash_batch_never_waits_for_a_commission_key.sql'
 NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')
 PR5542_ORDER_LINE = '     ORDER BY s.uid::uuid\n'
 
@@ -498,9 +501,28 @@ def case_pr5542(cl, ctl, run):
         return c.result()
 
 
+def case_batch_key_held(cl, ctl, run):
+    """A finish holds a club's commission key; the batch (lock_timeout 1 s, the role's 8 s scaled)
+    must refuse that one item for retry, never fail whole."""
+    I = ids(run, 'K', 'club', 'X', 'aX', 'p1', 'rr', 'hand', 'table')
+    seed_club(ctl, I['club'])
+    seed_profiles(ctl, I['X'], I['p1'])
+    seed_agent(ctl, I['aX'], I['club'], I['X'])
+    seed_cash_record(ctl, I['rr'], I['hand'], I['club'], I['table'], I['p1'], 1.00, [tier(I['X'], I['aX'], 0.30, 1)])
+    with Case(cl, ctl, run, 'batch-while-a-finish-holds-a-key',
+              'cash accrual batch while a tournament finish holds its club commission key (lock_timeout)') as c:
+        H, B = c.session('finish'), c.session('batch')
+        H.run("BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('agent-commission:%s',0));" % I['club'])
+        out = B.run("SET lock_timeout = '1s'; BEGIN; " + batch_sql(I['rr']))
+        c.notes['batch'] = outcome(out)
+        B.run('ROLLBACK;')
+        H.run('COMMIT;')
+        return c.result()
+
+
 CASES = [case_commission_one_club, case_commission_two_clubs, case_finish_vs_hand, case_finish_vs_two_hands,
          case_finish_vs_horse_claims] + [
-    (lambda fn: (lambda cl, ctl, run: case_horse_mind(cl, ctl, run, fn)))(fn) for fn in HORSE] + [case_pr5542]
+    (lambda fn: (lambda cl, ctl, run: case_horse_mind(cl, ctl, run, fn)))(fn) for fn in HORSE] + [case_pr5542, case_batch_key_held]
 
 
 def main():
@@ -524,6 +546,12 @@ def main():
                 ctl.close()
                 report['migration_subs_block_md5'] = apply_migration(cl)
                 report['revert_subs_block_md5'] = apply_migration(cl, REVERT)
+                ctl = Session(cl, 'ctl')
+                r = case_batch_key_held(cl, ctl, 'after-0000-0500')
+                ctl.close()
+                report['results'].append(r)
+                print('%-34s %-15s %s' % (r['case'], r['state'], r['batch']), flush=True)
+                report['keys_fix_subs_block_md5'] = apply_migration(cl, KEYS_FIX)
                 projection2_functions(cl)
                 ctl = Session(cl, 'ctl')
             for case in CASES:
@@ -540,10 +568,16 @@ def main():
     report['finished'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     if a.out:
         pathlib.Path(a.out).write_text(json.dumps(report, indent=2) + '\n')
-    fixed = [r for r in report['results'] if r['state'] == 'after' and r['case'] not in NOT_FIXED]
+    held = {r['state']: r['batch'] for r in report['results'] if r['case'] == 'batch-while-a-finish-holds-a-key'}
+    report['batch_while_a_key_is_held'] = held
+    keys_ok = (held.get('before') == 'completed' and held.get('after-0000-0500', '').startswith('error: ERROR:  canceling statement due to lock timeout')
+               and held.get('after', '').startswith('item refused and queued for retry'))
+    print('batch while a finish holds its key:', held, 'OK' if keys_ok else 'NOT AS CLAIMED')
+    fixed = [r for r in report['results'] if r['state'] == 'after' and r['case'] not in NOT_FIXED
+             and r['case'] != 'batch-while-a-finish-holds-a-key']
     ok = (all(r['deadlocks'] == 0 for r in fixed)
-          and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before')
-          and report['values_equal'])
+          and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before' and r['case'] != 'batch-while-a-finish-holds-a-key')
+          and report['values_equal'] and keys_ok)
     print('CHIP DEADLOCKS: %s' % ('every fixed pair deadlocks before and not after' if ok else 'NOT AS CLAIMED'))
     return 0 if ok else 1
 

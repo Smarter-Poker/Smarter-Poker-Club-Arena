@@ -11,6 +11,13 @@ const sql = readFileSync(
 );
 
 describe('prospective lifetime-first club welcome package database contract', () => {
+  it('installs atomically with the reviewed hot-relation lock window', () => {
+    expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(sql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(sql).not.toContain("SET LOCAL lock_timeout = '5s';");
+  });
+
   it('mints entitlement only from a new creation receipt and never backfills', () => {
     expect(sql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
     expect(sql).toContain('public.fn_club_membership_lock(NEW.user_id)');

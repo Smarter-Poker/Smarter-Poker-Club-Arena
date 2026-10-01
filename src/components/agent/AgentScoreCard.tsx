@@ -91,7 +91,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
 
       // Get active players: those who played a hand in THIS club in the last
       // 7 days (the club's player_stats). A player's platform-wide last-seen
-      // time is theirs and platform staff's alone (ruling 22,
+      // time is theirs and platform staff's alone (ruling 25,
       // docs/DIAMOND-RULINGS.md), and play here is what an agent's retention
       // measures.
       const uniquePlayerIds = [

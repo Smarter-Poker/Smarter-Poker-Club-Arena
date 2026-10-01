@@ -373,7 +373,7 @@ class UnionServiceClass {
     const adminUserIds = [...new Set(rows.map((a) => a.user_id).filter(Boolean))];
     if (adminUserIds.length > 0) {
       try {
-        // Public name columns only: a legal name is its owner's (ruling 22).
+        // Public name columns only: a legal name is its owner's (ruling 25).
         const { data: profiles } = await supabase
           .from('profiles')
           .select(`id, ${PLAYER_NAME_COLUMNS}`)
@@ -536,7 +536,7 @@ class UnionServiceClass {
     // Owner display names — one batched profiles lookup.
     if (ownerIds.length > 0) {
       try {
-        // Public name columns only: a legal name is its owner's (ruling 22).
+        // Public name columns only: a legal name is its owner's (ruling 25).
         const { data: profiles } = await supabase
           .from('profiles')
           .select(`id, ${PLAYER_NAME_COLUMNS}`)

@@ -26,7 +26,7 @@ describe('social graph profile resolution', () => {
   });
 
   it('accepts realtime presence immediately and otherwise the presence door, which is fresh by construction', () => {
-    /* Since ruling 22 (2026-10-01) the browser never receives last_seen: the
+    /* Since ruling 25 (2026-10-01) the browser never receives last_seen: the
        five-minute freshness test runs in fn_profile_presence, so the persisted
        answer passed here is already fresh, and a stale flag arrives as false. */
     expect(isSocialProfileOnline('a', new Set(['a']), false)).toBe(true);

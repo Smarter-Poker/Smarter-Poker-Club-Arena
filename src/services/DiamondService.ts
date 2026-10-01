@@ -204,7 +204,7 @@ export const DiamondService = {
    */
   async getBalance(userId: string): Promise<DiamondWallet> {
     // Read diamond balance from profiles (the actual source of truth), the
-    // player's own, through the owner door (ruling 22, src/lib/ownProfile.ts).
+    // player's own, through the owner door (ruling 25, src/lib/ownProfile.ts).
     const { data: profileData, error: profileError } = await ownProfile(userId)
       .select('diamonds')
       .maybeSingle();

@@ -125,18 +125,98 @@ neither can refuse a player.
 **If the aggregate needs to come down, the lever is the per-user daily cap**,
 which is one row per engine and identical for horses and humans.
 
-## Ruling 22 (2026-10-01): a profile shows strangers only what the table needs
+## Rulings 22, 23 and 24 (decided by Claude on Dan's delegation of 2026-09-30)
 
-Decided by Claude on Dan's delegation of 2026-09-30. Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE". It settles question 1 of the Phase 10 audit ([lines 1, 2 and 6](DIAMOND-PHASE-10-LINES-1-2-6-2026-09-29.md), line 2: "Which profile fields are public?").
+**Dan, 2026-09-30, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF THESE".**
 
-**The ruling.** A stranger sees only what playing with you needs: display name, username, avatar, player number and public statistics. Anything that reveals a person's money, real identity or whereabouts is readable only by that person and by platform staff (`fn_is_platform_admin()`: role admin, superadmin or god).
+Phase 11 left three questions open for Dan. He handed them back, so they are
+decided here by Claude on his delegation, and each is built. Like every ruling
+here, each binds every agent until Dan changes it.
 
-**The columns of `public.profiles`.**
+### Ruling 22: the Diamond Arena belongs to the system
 
-- **Their owner's and staff's only (SELECT revoked from `authenticated` and `anon`):** `diamonds`, `diamond_balance`, `diamond_multiplier`, `first_name`, `last_name`, `full_name`, `birth_year`, `city`, `state`, `country`, `last_seen`, `last_login`, `last_login_date`, `last_active`, `updated_at` (the presence heartbeat stamps it with `last_seen`, so it is last seen), `referred_by`, `poker_near_me_preferences` (it holds a last location and city).
-- **Already unreadable before this ruling, unchanged:** `email`, `phone`, `birthday`, `age_verified`, `age_verified_at`, `over_18_attested_at`, the `jurisdiction_*` and `kyc_*` columns, `stripe_customer_id`, `notification_token`, `mfa_required`, `is_farming_flagged`, `is_horse`, `horse_status`, `horse_profile`, `status_text`.
-- **Public, everything else.** Kept public because each is genuinely ambiguous, and said so: `is_online` (a presence signal the player controls with `showOnlineStatus`); the Hendon Mob figures and link (public tournament records); `home_casino`, `favorite_venue`, `home_poker_club` (where someone likes to play, which they chose to show); the social links; `is_vip`, `vip_tier`, `vip_expires_at` (they drive VIP styling others see); `referral_code`; `last_trivia_date`; `created_at`; and the settings and preference blobs other than `poker_near_me_preferences`.
+**Ruling.** The Diamond Arena's club row names the system account as its owner:
+`system@smarter.poker`, `00000000-0000-0000-0000-000000000001`, the estate's
+one non-person account. It is never a person's account, including the god
+account `daniel@smarter.poker` that owned it before. Platform staff, Dan
+included, run the arena through the staff doors. Those doors ask for the
+platform role and a live session, never for ownership.
 
-**How it is read now.** The owner reads their own row through `get_my_full_profile()`; platform staff through `get_full_profiles_for_staff(uuid[])`; who is online now through `fn_profile_presence(uuid[])`, a boolean by the five-minute heartbeat rule that never returns the heartbeat. Writes are unchanged: a player still edits their own private fields.
+**Why.** Phase 11 line 1 found that the arena's owner was a real platform
+account people sign in as. Every door that trusts a club's owner treated it as
+the arena's owner. It could edit the arena's club row, read its audit rows, run
+the club integrity report, reach the chip bomb-pot door for a Diamond table,
+and it was the only account that could open a Diamond hand. The arena has
+players and platform staff (ruling 16). An owner a person can sign in as is a
+third role that nothing in the design gives a job to. The system account has no
+password, no sign-in identity and no session, and it has never signed in, so
+nobody inherits the owner's authority. A club row cannot own itself
+(`clubs.owner_id` references `profiles`), so the arena's club row, Phase 2's
+one system Diamond identity, is owned by the system account.
 
-**Built.** Migration `20260930234000_a_profiles_private_fields_have_an_owner_and_a_staff_door` (the doors, and eleven database readers moved off the private fields); the Club Arena's reads moved in the same change; the World Hub's moved separately; the column revoke `20260930234500_a_profile_shows_strangers_only_what_the_table_needs` follows once both apps are live. Evidence: [profile privacy, 2026-10-01](evidence/profile-privacy-2026-10-01.md).
+**Built.** Migration `20260930235500_the_arena_belongs_to_the_system`, applied
+2026-09-30 and proved in rolled-back production rehearsals before and after. It
+does four things:
+
+- it names the system account as the arena's owner;
+- the owner-wallet trigger no longer gives a Diamond owner a chip membership
+  (that trigger had refused every change of the arena's owner);
+- a Diamond hand opens to platform staff with a live session;
+- the arena guard refuses any Diamond owner but the system account.
+
+Evidence:
+[the arena belongs to the system](./evidence/diamond-phase-11/the-arena-belongs-to-the-system.md),
+which also lists every function, policy, trigger, job and client path that
+reads the arena's owner. One side effect is Dan's to weigh: `daniel@smarter.poker`
+no longer has Commander access, which it had only by owning the arena.
+
+### Ruling 23: the multi-table walk plays only where nothing is real
+
+**Ruling.** `e2e-live/multitable-walk.mjs` is retired from production play. It
+refuses to run unless both of these hold:
+
+- it signs in as a test identity: an address ending in `.invalid`, the estate's
+  test-account marker (`fn_ca_is_fixture_account`; the post-deploy accounts are
+  `...@example.invalid`);
+- it targets a club flagged as a test club: `E2E_TEST_CLUB` names it, and its
+  `clubs.tags` holds `test-club`.
+
+It never plays Club JAQK, SHARK CLUB, Deep Stack Society or Midway Union, and
+it refuses a Diamond club or a retired one. Its sweeper, `cleanup-seats.mjs`,
+stands up only the same test identity.
+
+**Why.** The walk buys in and plays. It used to do that at the cheapest open
+table in Club JAQK, where horses play and people may sit, as whatever account
+the operator supplied. The README's "owner test account" named no particular
+account. That puts real chips at real tables under an account nobody chose on
+purpose. A walk that needs a real club to prove the multi-table layer is a walk
+that must not run against production. A test club and a test identity keep
+what it proves and remove what it risks.
+
+**Built.** `e2e-live/lib/test-only.mjs` holds the three checks: the named
+account, the saved browser state's account and the page's signed-in account.
+Every refusal comes before a browser opens or a seat is taken.
+`e2e-live/README.md` documents how to run the walk safely.
+`tests/the-multitable-walk-plays-only-where-nothing-is-real.law.test.ts` holds
+it. No production run was made. No club is tagged `test-club` today, so against
+production the walk refuses every time.
+
+### Ruling 24: no standby engine for now
+
+**Ruling.** The engine stays one process. No warm standby is run. Dan removed it
+on 2026-08-23.
+
+**Why.** The takeover logic works in testing. Phase 11's two-engine probe
+([engine ownership and scaling](./evidence/diamond-phase-11/engine-ownership-and-scaling.md),
+R2 and R3) shows a standby takes over only after the leader's lease is stale.
+But a standby adds a second server and a dual-leader risk, for little gain
+while the supervisor restarts the single engine: a crash costs the container
+restart plus 30 s instead of about 30 s. The scaling gate law
+(`tests/additional-engine-workers-wait-for-the-scaling-gate.law.test.ts`)
+already keeps extra engines off.
+
+**Revisit when** human traffic makes a 30-second crash takeover worth a second
+server. Enabling a standby then changes the gate law and the release's
+one-container rule in the same pull request.
+
+**Built.** Nothing to build. The decision is recorded in the evidence above.

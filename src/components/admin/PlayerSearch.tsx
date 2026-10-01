@@ -40,7 +40,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   const [loading, setLoading] = useState(false);
   const isMounted = useIsMounted();
   /* No email search: a player's email and last-active time are theirs and
-     platform staff's alone (ruling 22, docs/DIAMOND-RULINGS.md). `email` was
+     platform staff's alone (ruling 25, docs/DIAMOND-RULINGS.md). `email` was
      never granted to a browser, so this search 403'd whole on every run; it
      answers by handle and player id now. */
   const [searchType, setSearchType] = useState<'username' | 'id'>('username');

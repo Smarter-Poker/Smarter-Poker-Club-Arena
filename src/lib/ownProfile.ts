@@ -1,11 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  A PROFILE SHOWS STRANGERS ONLY WHAT THE TABLE NEEDS (ruling 22)
+ *  A PROFILE SHOWS STRANGERS ONLY WHAT THE TABLE NEEDS (ruling 25)
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Decided by Claude on Dan's delegation of 2026-09-30 ("these are all for you
  * to decide not me ... FIX AND FINISH ALL OF THESE"), docs/DIAMOND-RULINGS.md
- * ruling 22: a stranger sees only what playing with you needs - display name,
+ * ruling 25: a stranger sees only what playing with you needs - display name,
  * username, avatar, player number and public statistics. Anything that
  * reveals a person's money, real identity or whereabouts is readable only by
  * that person and by platform staff.

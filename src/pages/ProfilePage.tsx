@@ -167,7 +167,7 @@ const variantLabel = (v: string) => VARIANT_LABEL[v] || v.toUpperCase();
 /** The columns the credential needs. One string, used by every reader here. */
 /* This page is the player's OWN profile (activeProfileUserId is the signed-in
    account), and it shows their own Diamond balance, which only its owner reads
-   (ruling 22). Every read of it goes through the owner door, ownProfile(). */
+   (ruling 25). Every read of it goes through the owner door, ownProfile(). */
 const PROFILE_COLUMNS = `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, arena_avatar_url, use_avatar_as_profile_pic, created_at, diamonds, is_vip, vip_tier, vip_expires_at, login_streak, bio, player_tags`;
 
 function toUserProfile(profile: any): UserProfile {

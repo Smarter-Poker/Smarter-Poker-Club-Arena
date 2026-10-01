@@ -47,7 +47,7 @@ export function resolveSocialProfile(
  * online forever after a disconnected device disappears.
  *
  * Since 2026-10-01 that freshness test runs in the database: a player's
- * last-seen time is theirs alone (ruling 22, docs/DIAMOND-RULINGS.md), so the
+ * last-seen time is theirs alone (ruling 25, docs/DIAMOND-RULINGS.md), so the
  * browser never receives it, and `presenceOnline` is the presence door's
  * answer (fn_profile_presence, src/lib/ownProfile.ts readPresence), which
  * applies SOCIAL_PRESENCE_FRESH_MS to the flag before answering. An offline

@@ -378,7 +378,7 @@ export default function FriendsPage() {
                   supabase
                     .from('profiles')
                     /* Public columns only: a friend's last-seen time is
-                       theirs (ruling 22). Online-now comes from the presence
+                       theirs (ruling 25). Online-now comes from the presence
                        door below. */
                     .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
                     .in('id', ids),

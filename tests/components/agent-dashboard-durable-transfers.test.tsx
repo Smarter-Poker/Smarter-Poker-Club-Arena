@@ -50,7 +50,7 @@ vi.mock('../../src/core/MasterBus', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    // Presence (ruling 22) is its own door; the money rpcs this test counts
+    // Presence (ruling 25) is its own door; the money rpcs this test counts
     // are everything else.
     rpc: (...args: unknown[]) =>
       args[0] === 'fn_profile_presence'

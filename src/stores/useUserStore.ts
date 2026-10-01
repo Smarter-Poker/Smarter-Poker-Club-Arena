@@ -238,7 +238,7 @@ export const useUserStore = create<UserState>()(
            * the column. The store therefore never populated and the failure
            * was invisible. Explicit columns, all of them granted.
            */
-          /* THE OWNER DOOR (ruling 22, src/lib/ownProfile.ts). This is the
+          /* THE OWNER DOOR (ruling 25, src/lib/ownProfile.ts). This is the
              signed-in player's own row, and it carries their own real-name
              fields so the arena resolver can still keep a display_name that IS
              the legal name off the felt. A legal name is readable only by its

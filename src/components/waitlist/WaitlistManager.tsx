@@ -110,7 +110,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
       if (data && data.length > 0) {
         // Fetch profiles separately
         const userIds = data.map((e: any) => e.user_id);
-        // Public name columns only: a legal name is its owner's (ruling 22),
+        // Public name columns only: a legal name is its owner's (ruling 25),
         // and the arena calls a player by their handle.
         const { data: profiles } = await supabase
           .from('profiles')

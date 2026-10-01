@@ -170,7 +170,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
     setTarget({ state: 'loading' });
 
     (async () => {
-      // Diamond balance, the player's own, through the owner door (ruling 22).
+      // Diamond balance, the player's own, through the owner door (ruling 25).
       const { data: prof, error: profError } = await ownProfile(user.id)
         .select('diamonds')
         .maybeSingle();

@@ -132,7 +132,7 @@ describe('a profile shows the player, not the account state', () => {
 
   it('reads the real status_text column instead of aliasing status', () => {
     expect(code(src)).not.toContain('status_text:status');
-    // No last_seen: a player's last-seen time is theirs alone (ruling 22).
+    // No last_seen: a player's last-seen time is theirs alone (ruling 25).
     expect(code(src)).toContain("select('id, status_text, is_online')");
   });
 

@@ -22,7 +22,7 @@ export interface PlayerStatus {
   playingAt: string | null; // Current table name
   playingAtTableId: string | null; // Current table ID for deep-link
   isOnline: boolean;
-  /** Never filled: a player's last-seen time is theirs alone (ruling 22). */
+  /** Never filled: a player's last-seen time is theirs alone (ruling 25). */
   lastSeen?: string;
 }
 

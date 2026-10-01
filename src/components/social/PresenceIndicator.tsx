@@ -49,7 +49,7 @@ export default function PresenceIndicator({
          profiles.is_online and profiles.last_seen are real columns and are the
          only presence data that exists, so they are now the primary read
          rather than a fallback nobody could reach. */
-      /* 2026-10-01 (ruling 22): a player's last-seen time is theirs alone, so
+      /* 2026-10-01 (ruling 25): a player's last-seen time is theirs alone, so
          it is no longer read or shown here. Online-now comes from the presence
          door, which counts the flag only while its heartbeat is fresh - the
          raw flag alone was stale-true on 288 human rows. */

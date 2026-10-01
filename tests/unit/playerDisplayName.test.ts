@@ -196,7 +196,7 @@ describe('the query contract', () => {
     }
   });
 
-  it("names no real-name column: a legal name is its owner's alone (ruling 22)", () => {
+  it("names no real-name column: a legal name is its owner's alone (ruling 25)", () => {
     /* `authenticated` holds no SELECT on these, and Postgres refuses the whole
        statement that names one, so a list that carried them would 403 every
        screen that shows a name. The owner's own row still carries them, read

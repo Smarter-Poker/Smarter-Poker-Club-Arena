@@ -89,11 +89,11 @@ interface AgentProfile {
   display_name?: string;
   username?: string;
   avatar_url?: string;
-  /** Online now, from the presence door - never the heartbeat (ruling 22). */
+  /** Online now, from the presence door - never the heartbeat (ruling 25). */
   online?: boolean;
   /** The last hand this player played in THIS club: player_stats.updated_at,
       the club's own public statistics. A player's platform-wide last-seen
-      time is theirs and platform staff's alone (ruling 22,
+      time is theirs and platform staff's alone (ruling 25,
       docs/DIAMOND-RULINGS.md), so the agent's activity panel reads play here. */
   last_played?: string;
 }

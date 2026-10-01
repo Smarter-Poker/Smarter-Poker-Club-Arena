@@ -66,7 +66,7 @@ class ProfileServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        /* Public columns only (ruling 22): the balance, the login day and the
+        /* Public columns only (ruling 25): the balance, the login day and the
            row clock (which the presence heartbeat stamps) are their owner's,
            and this method takes any id. The owner reads theirs through
            ownProfile() (src/lib/ownProfile.ts). */
@@ -260,7 +260,7 @@ class ProfileServiceClass {
        SUM(player_stats.hands_played) maintained by trg_sync_profile_total_hands,
        and it sums to 6,764,566 over 1,006 players. */
     /* There is no winnings column, and the Diamond balance that stood in for
-       one is its owner's alone (ruling 22): a board of other players'
+       one is its owner's alone (ruling 25): a board of other players'
        balances is exactly what the ruling closes. Both metrics rank hands. */
     const orderColumn = {
       winnings: 'total_hands_played',

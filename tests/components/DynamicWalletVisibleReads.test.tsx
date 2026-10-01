@@ -51,7 +51,7 @@ vi.mock('../../src/lib/supabase', () => {
     supabase: {
       from,
       rpc: (name: string, args: unknown) => {
-        // The player's own balance is read through the owner door (ruling 22),
+        // The player's own balance is read through the owner door (ruling 25),
         // which answers like the profiles row did.
         if (name === 'get_my_full_profile') return from('profiles');
         fixture.rpc(name, args);

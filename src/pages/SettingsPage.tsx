@@ -494,7 +494,7 @@ export default function SettingsPage() {
       // Fetch user data from various tables
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
         /* The player's own record, so it may carry their own private fields
-           (last_login): read through the owner door (ruling 22). */
+           (last_login): read through the owner door (ruling 25). */
         ownProfile(user.id)
           /**
            * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).

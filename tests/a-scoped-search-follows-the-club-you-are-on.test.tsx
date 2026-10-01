@@ -146,7 +146,7 @@ describe('a scoped search follows the club you are on', () => {
 
     await searchFor(user, 'a');
     // The roster shows handles only: a player's email is theirs and platform
-    // staff's alone (ruling 22), so the search no longer selects it.
+    // staff's alone (ruling 25), so the search no longer selects it.
     await waitFor(() => expect(screen.getByText('aces_only')).toBeInTheDocument());
     expect(screen.queryByText('aces@clubA.example')).not.toBeInTheDocument();
 

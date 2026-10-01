@@ -432,7 +432,7 @@ class IdentityDNACore {
          silently never loads. `status` (granted, checked 2026-09-29) is how a
          closed account is recognised: 'deleted'. */
       /* No `updated_at`: the presence heartbeat stamps it with last_seen, so
-         it is its owner's (ruling 22) and naming it 403s this read WHOLE -
+         it is its owner's (ruling 25) and naming it 403s this read WHOLE -
          which the benign-error branch below would swallow, and the profile
          would silently never load. Nothing here reads it. */
       .select(

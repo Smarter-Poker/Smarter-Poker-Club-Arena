@@ -270,7 +270,7 @@ class AchievementTriggerServiceClass {
 
     const today = new Date().toISOString().slice(0, 10); // UTC calendar day
 
-    // The player's own streak day, which only its owner reads (ruling 22).
+    // The player's own streak day, which only its owner reads (ruling 25).
     const { data: profile, error: readErr } = await ownProfile(userId)
       .select('login_streak, last_login_date')
       .maybeSingle();

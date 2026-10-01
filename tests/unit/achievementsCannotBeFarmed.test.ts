@@ -35,7 +35,7 @@ vi.mock('../../src/lib/supabase', () => ({
         },
       };
     },
-    // The player's own streak day is read through the owner door (ruling 22):
+    // The player's own streak day is read through the owner door (ruling 25):
     // get_my_full_profile() filtered by id, then the columns.
     rpc: (name: string) =>
       name === 'get_my_full_profile'

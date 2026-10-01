@@ -103,7 +103,7 @@ const BASELINE = new Map<string, number>([
   // report a reason instead of an ignored error.
   ['src/services/DisputeService.ts', 1],
   // 1 -> 0 on 2026-10-01: the balance read goes through the owner door
-  // (ruling 22) and reports its error.
+  // (ruling 25) and reports its error.
   ['src/services/DiamondService.ts', 0],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.
@@ -166,7 +166,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CreditAdminPanel.tsx', 0],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],
   ['src/components/tournament/TournamentStartingTicker.tsx', 0],
-  // 2 -> 1 on 2026-10-01: the profiles read binds its error (ruling 22 moved it).
+  // 2 -> 1 on 2026-10-01: the profiles read binds its error (ruling 25 moved it).
   ['src/components/social/OnlineFriendsPill.tsx', 1],
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],

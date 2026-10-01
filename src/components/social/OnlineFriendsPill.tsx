@@ -60,7 +60,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
       const friendIds = friendships.map((f) => (f.user_id === userId ? f.friend_id : f.user_id));
 
       // Get profiles for friends: public columns only. A friend's last-seen
-      // time is theirs (ruling 22); who is online now comes from the presence
+      // time is theirs (ruling 25); who is online now comes from the presence
       // door, which applies the same five-minute heartbeat rule server-side.
       const [{ data: profiles, error: profilesError }, presence] = await Promise.all([
         supabase

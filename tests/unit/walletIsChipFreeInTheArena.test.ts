@@ -34,7 +34,7 @@ describe('The wallet asks an arena no chip question', () => {
         `${read} is issued without checking hasChipWallet`
       ).toBeGreaterThan(-1);
     }
-    // The player's own Diamond balance, through the owner door (ruling 22).
+    // The player's own Diamond balance, through the owner door (ruling 25).
     expect(fetch).toContain("ownProfile(userId).select('diamonds')");
   });
 

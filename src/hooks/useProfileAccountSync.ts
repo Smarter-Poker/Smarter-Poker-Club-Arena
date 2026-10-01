@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { STORAGE_KEYS } from '../lib/storage';
 import { PROFILE_PREFERENCE_DEFAULTS as defaults } from '../lib/profilePreferenceDefaults';
 import { masterBus } from '../core/MasterBus';
@@ -78,10 +78,11 @@ export function ProfileAccountSync() {
         versions[domain] === requestedVersions[domain] &&
         !request.signal.aborted;
       try {
-        const result = await supabase
-          .from('profiles')
+        /* The player's own row, through the owner door (ruling 25): the
+           `diamonds` domain is their balance, which only its owner reads, and
+           a column grant is not per row. */
+        const result = await ownProfile(userId)
           .select(`id,${domains.map((domain) => COLUMNS[domain]).join(',')}`)
-          .eq('id', userId)
           .abortSignal(request.signal)
           .maybeSingle();
         if (result.error) throw result.error;

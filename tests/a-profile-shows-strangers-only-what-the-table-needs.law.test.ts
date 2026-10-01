@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Phase 10 of the Diamond Arena programme, line 2 (public and private
- * fields). Ruling 22 (docs/DIAMOND-RULINGS.md), decided by Claude on Dan's
+ * fields). Ruling 25 (docs/DIAMOND-RULINGS.md), decided by Claude on Dan's
  * delegation of 2026-09-30: a stranger sees only what playing with you needs
  * - display name, username, avatar, player number and public statistics.
  * Anything that reveals a person's money, real identity or whereabouts is
@@ -101,14 +101,25 @@ const PLAYER_NAME_COLUMNS = (() => {
   return m[1];
 })();
 
-/** Resolve `${PLAYER_NAME_COLUMNS}` and same-file string constants. */
-function resolveConstants(text: string, file: string): string {
-  return text
-    .replace(/\$\{\s*PLAYER_NAME_COLUMNS\s*\}/g, PLAYER_NAME_COLUMNS)
-    .replace(/\$\{\s*([A-Z][A-Z0-9_]*)\s*\}/g, (all, name: string) => {
-      const m = file.match(new RegExp(`const ${name}\\s*=\\s*(['\`])([\\s\\S]*?)\\1`));
-      return m ? resolveConstants(m[2], file) : all;
-    });
+/** Every string constant declared in src, by name (first declaration wins). */
+const CONSTANTS = (() => {
+  const map = new Map<string, string>();
+  for (const path of sourceFiles(join(ROOT, 'src'))) {
+    const src = readFileSync(path, 'utf8');
+    const decl =
+      /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*(?::\s*string\s*)?=\s*(['`])([^'`]*?)\2/g;
+    for (const m of src.matchAll(decl)) if (!map.has(m[1])) map.set(m[1], m[3]);
+  }
+  map.set('PLAYER_NAME_COLUMNS', PLAYER_NAME_COLUMNS);
+  return map;
+})();
+
+/** Resolve `${CONSTANT}` references in a column list. */
+function resolveConstants(text: string, depth = 0): string {
+  if (depth > 4) return text;
+  return text.replace(/\$\{\s*([A-Z][A-Z0-9_]*)\s*\}/g, (all, name: string) =>
+    CONSTANTS.has(name) ? resolveConstants(CONSTANTS.get(name) as string, depth + 1) : all
+  );
 }
 
 /**
@@ -117,7 +128,7 @@ function resolveConstants(text: string, file: string): string {
  * (update and insert payloads) are not reads and may name a private column.
  */
 function profileReads() {
-  const reads: { where: string; read: string }[] = [];
+  const reads: { where: string; read: string; select: string }[] = [];
   for (const path of sourceFiles(join(ROOT, 'src'))) {
     const src = readFileSync(path, 'utf8');
     const blank = blankNonCode(src);
@@ -140,14 +151,27 @@ function profileReads() {
       }
       const stmt = src.slice(m.index, end);
       const parts: string[] = [];
+      const selects: string[] = [];
       const call =
         /\.(select|eq|neq|in|order|or|ilike|like|gte|lte|gt|lt|is|not|filter|match|contains|textSearch)\(\s*(['"`])((?:\\.|(?!\2)[\s\S])*?)\2/g;
       let c2: RegExpExecArray | null;
-      while ((c2 = call.exec(stmt))) parts.push(resolveConstants(c2[3], src));
+      while ((c2 = call.exec(stmt))) {
+        const text = resolveConstants(c2[3]);
+        parts.push(text);
+        if (c2[1] === 'select') selects.push(text);
+      }
       const bare = /\.select\(\s*([A-Z][A-Z0-9_]*)\s*\)/g;
-      while ((c2 = bare.exec(stmt))) parts.push(resolveConstants('${' + c2[1] + '}', src));
+      while ((c2 = bare.exec(stmt))) {
+        const text = resolveConstants('${' + c2[1] + '}');
+        parts.push(text);
+        selects.push(text);
+      }
       const line = src.slice(0, m.index).split('\n').length;
-      reads.push({ where: `${relative(ROOT, path)}:${line}`, read: parts.join(' | ') });
+      reads.push({
+        where: `${relative(ROOT, path)}:${line}`,
+        read: parts.join(' | '),
+        select: selects.join(' | '),
+      });
     }
   }
   return reads;
@@ -243,6 +267,9 @@ describe('LAW: a profile shows strangers only what the table needs', () => {
   it('never names a private column in a read of public.profiles', () => {
     const reads = profileReads();
     expect(reads.length).toBeGreaterThan(50);
+    // A computed column list cannot be checked, so a read names its columns.
+    const computed = reads.filter((r) => r.select.includes('${')).map((r) => r.where);
+    expect(computed, 'name the columns, or read your own row through ownProfile()').toEqual([]);
     const offending = reads
       .map((r) => ({ ...r, cols: PRIVATE.filter((c) => word(c).test(r.read)) }))
       .filter((r) => r.cols.length > 0)
@@ -267,6 +294,8 @@ describe('LAW: a profile shows strangers only what the table needs', () => {
       'src/pages/SettingsPage.tsx',
       'src/services/DiamondService.ts',
       'src/services/AchievementTriggerService.ts',
+      'src/stores/useUserStore.ts',
+      'src/hooks/useProfileAccountSync.ts',
     ]) {
       expect(read(file), file).toContain('ownProfile(');
     }

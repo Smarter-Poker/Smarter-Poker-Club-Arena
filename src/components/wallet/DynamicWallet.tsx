@@ -761,7 +761,7 @@ export default function DynamicWallet({
           const request = new AbortController();
           const deadline = setTimeout(() => request.abort(), 15_000);
           return Promise.all([
-            // The player's own balance, through the owner door (ruling 22).
+            // The player's own balance, through the owner door (ruling 25).
             ownProfile(userId).select('diamonds').abortSignal(request.signal).maybeSingle(),
             hasChipWallet
               ? supabase

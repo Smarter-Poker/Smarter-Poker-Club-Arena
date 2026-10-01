@@ -96,7 +96,7 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from,
-      // The player's own balance is read through the owner door (ruling 22),
+      // The player's own balance is read through the owner door (ruling 25),
       // which answers like the profiles row did.
       rpc: vi.fn((name: string) => (name === 'get_my_full_profile' ? from('profiles') : undefined)),
     },

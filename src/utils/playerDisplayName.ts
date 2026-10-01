@@ -164,7 +164,7 @@ export function playerDisplayName(
 /**
  * The columns a query must select for playerDisplayName() to work.
  *
- * NO REAL-NAME COLUMN (ruling 22, docs/DIAMOND-RULINGS.md, 2026-10-01). A
+ * NO REAL-NAME COLUMN (ruling 25, docs/DIAMOND-RULINGS.md, 2026-10-01). A
  * profile's legal name is readable only by its owner and by platform staff:
  * `authenticated` holds no SELECT on first_name, last_name or full_name, and
  * Postgres refuses the WHOLE statement that names one (42501), so this list

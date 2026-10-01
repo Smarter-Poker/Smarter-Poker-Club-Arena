@@ -143,6 +143,34 @@
 --   under a second; no table is created, no catalog row is written, nothing
 --   is locked.
 --
+-- NO DROP TRIGGER IF EXISTS, measured on production 2026-10-01 20:04 UTC
+--
+--   The first apply of this file (run 36918874377) deadlocked: the applier
+--   acquired AccessExclusiveLock on club_members after 2.9 s at the head of a
+--   twelve-deep queue of hand commits, then asked for AccessExclusiveLock on
+--   auth.users, which fourteen live sessions held through FK checks, and
+--   Postgres killed it (40P01). Nothing in this file names auth.users. A
+--   rolled-back probe on a cold table isolated the cause: on this database
+--   Supabase's supautils hook (supautils.drop_trigger_grants, 24 auth/storage/
+--   realtime tables for role postgres) turns EVERY `DROP TRIGGER [IF EXISTS]`
+--   run by postgres into AccessExclusiveLock on the target table AND on all 24
+--   granted tables - including auth.users, auth.sessions, auth.refresh_tokens
+--   and storage.objects - held until commit, even when the trigger does not
+--   exist and core Postgres would take AccessShareLock. `DROP POLICY IF EXISTS`
+--   is hooked the same way through supautils.policy_grants. `CREATE TRIGGER`
+--   and `CREATE CONSTRAINT TRIGGER` take only ShareRowExclusiveLock on their
+--   own table, measured in the same probe.
+--
+--   So this file creates its fourteen triggers without a preceding DROP. None
+--   of them exists anywhere this file can be applied (production read
+--   2026-10-01 19:59 UTC: zero; the CI harness starts from an empty database;
+--   the applier refuses a version already in schema_migrations). The DO block
+--   before section 6 refuses to continue if one does exist, so a half-installed
+--   state is reported by name rather than silently replaced. The same rule
+--   holds for every later migration on this database: never write DROP TRIGGER
+--   or DROP POLICY on a hot table while hands are being dealt; if a trigger
+--   must be replaced, CREATE OR REPLACE TRIGGER takes the ordinary lock.
+--
 -- CLAUDE.md section 2: one migration, one transaction; lock_timeout set because
 -- CREATE TRIGGER takes SHARE ROW EXCLUSIVE on hot tables; applied outside the
 -- :50-:03 break window through apply-merged-migration.yml only.
@@ -509,73 +537,75 @@ REVOKE ALL ON FUNCTION public.fn_ca_balance_has_its_ledger_row() FROM PUBLIC, an
 -- 6. The triggers
 -- ---------------------------------------------------------------------------
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.club_members;
+-- Nothing is dropped here (see the header): refuse, by name, if any of the
+-- fourteen already exists, instead of replacing it behind a DROP that would
+-- take AccessExclusiveLock on auth.users through the supautils hook.
+DO $m$
+DECLARE v_present text;
+BEGIN
+  SELECT string_agg(c.relname || '.' || tg.tgname, ', ' ORDER BY c.relname, tg.tgname) INTO v_present
+    FROM pg_trigger tg JOIN pg_class c ON c.oid = tg.tgrelid
+   WHERE c.relnamespace = 'public'::regnamespace
+     AND c.relname IN ('club_members','clubs','table_seats','table_pending_addons','union_wallets','bbj_pools','chip_ledger')
+     AND tg.tgname IN ('zy_ca_tally_balance_move','zz_ca_balance_has_its_ledger_row','zy_ca_tally_ledger_leg','zz_ca_ledger_row_has_its_balance');
+  IF v_present IS NOT NULL THEN
+    RAISE EXCEPTION 'the ledger invariant is already partly installed (%); read the live catalog before re-applying, this file does not DROP TRIGGER', v_present;
+  END IF;
+END $m$;
+
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF chip_balance, user_id, club_id OR DELETE ON public.club_members
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.club_members;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF chip_balance, user_id, club_id OR DELETE ON public.club_members
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.clubs;
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF chip_treasury, chip_pool OR DELETE ON public.clubs
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.clubs;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF chip_treasury, chip_pool OR DELETE ON public.clubs
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.table_seats;
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF stack, left_at, table_id OR DELETE ON public.table_seats
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.table_seats;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF stack, left_at, table_id OR DELETE ON public.table_seats
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.table_pending_addons;
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF amount, resolved_at, table_id OR DELETE ON public.table_pending_addons
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.table_pending_addons;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF amount, resolved_at, table_id OR DELETE ON public.table_pending_addons
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.union_wallets;
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, union_id OR DELETE
   ON public.union_wallets
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.union_wallets;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet, union_id OR DELETE
   ON public.union_wallets
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_balance_move ON public.bbj_pools;
 CREATE TRIGGER zy_ca_tally_balance_move
   AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance OR DELETE ON public.bbj_pools
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_balance_move();
-DROP TRIGGER IF EXISTS zz_ca_balance_has_its_ledger_row ON public.bbj_pools;
 CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row
   AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance OR DELETE ON public.bbj_pools
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_balance_has_its_ledger_row();
 
-DROP TRIGGER IF EXISTS zy_ca_tally_ledger_leg ON public.chip_ledger;
 CREATE TRIGGER zy_ca_tally_ledger_leg
   AFTER INSERT ON public.chip_ledger
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tally_ledger_leg();
-DROP TRIGGER IF EXISTS zz_ca_ledger_row_has_its_balance ON public.chip_ledger;
 CREATE CONSTRAINT TRIGGER zz_ca_ledger_row_has_its_balance
   AFTER INSERT ON public.chip_ledger
   DEFERRABLE INITIALLY DEFERRED

@@ -54,6 +54,14 @@
       "register": "TIER 2"
     },
     {
+      "name": "fn_union_rake_rollup_catchup",
+      "register": "TIER 2"
+    },
+    {
+      "name": "union-rake-rollup-catchup",
+      "register": "TIER 2"
+    },
+    {
       "name": "fn_ca_ledger_day_manifest_backfill",
       "register": "TIER 2"
     },

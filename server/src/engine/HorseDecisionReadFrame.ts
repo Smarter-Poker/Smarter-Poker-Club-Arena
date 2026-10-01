@@ -11,12 +11,19 @@ import {
   type RaiseResponsePlan,
 } from './HorseMind.js';
 import type { SeatPlayer } from '../types.js';
+import {
+  normalizeHorseObservationWindow,
+  type HorseObservationWindow,
+} from './HorseObservationWindow.js';
 
 /** Private portable read component, not a complete runtime checkpoint. Only
  * valid with observation disabled and speculative effects captured. Never
  * include this frame in public state, health, telemetry or worker replies. */
 export interface HorseDecisionReadFrame {
-  readonly version: 'horse-decision-reads-v1' | 'horse-decision-reads-v2';
+  readonly version:
+    | 'horse-decision-reads-v1'
+    | 'horse-decision-reads-v2'
+    | 'horse-decision-reads-v3';
   readonly bytes: number;
   readonly sha256: string;
   readonly json: string;
@@ -24,6 +31,7 @@ export interface HorseDecisionReadFrame {
 export const HORSE_DECISION_READ_FRAME_MAX_BYTES = 256 * 1024;
 const VERSION = 'horse-decision-reads-v1';
 const ALLOCATED_VERSION = 'horse-decision-reads-v2';
+const WINDOW_VERSION = 'horse-decision-reads-v3';
 const FIELDS = [
   'hands',
   'vpip',
@@ -56,14 +64,19 @@ const FIELDS = [
   'tankBetSDStrong',
 ] as const satisfies readonly (keyof OpponentStats)[];
 // A new consumed statistic must be considered explicitly in this codec.
-const completeFields: Exclude<keyof OpponentStats, (typeof FIELDS)[number]> extends never
+const completeFields: Exclude<
+  keyof OpponentStats,
+  (typeof FIELDS)[number] | 'sourceWindow'
+> extends never
   ? true
   : false = true;
 void completeFields;
 const PAIR_FIELDS = ['n3', 'opp3', 'nR', 'oppR'] as const;
 type Rows<T> = Array<[string, T]>;
 type Body = {
-  version: typeof VERSION | typeof ALLOCATED_VERSION;
+  version: typeof VERSION | typeof ALLOCATED_VERSION | typeof WINDOW_VERSION;
+  statsWindows?: Rows<HorseObservationWindow>;
+  scopedWindows?: Rows<HorseObservationWindow>;
   planContext?: HorsePlanContext;
   actors: string[];
   handKey: string | null;
@@ -153,6 +166,7 @@ function validateBody(
     !object(value) ||
     !exact(value, [
       'version',
+      ...(value.version === WINDOW_VERSION ? ['statsWindows', 'scopedWindows'] : []),
       ...(planContext === undefined ? [] : ['planContext']),
       'actors',
       'handKey',
@@ -163,7 +177,8 @@ function validateBody(
       'raisePlans',
       'outlooks',
     ]) ||
-    value.version !== (planContext === undefined ? VERSION : ALLOCATED_VERSION) ||
+    (value.version !== WINDOW_VERSION &&
+      value.version !== (planContext === undefined ? VERSION : ALLOCATED_VERSION)) ||
     (planContext !== undefined &&
       (!horsePlanContextIsValid(value.planContext) ||
         horsePlanContextKey(value.planContext) !== horsePlanContextKey(planContext))) ||
@@ -187,6 +202,25 @@ function validateBody(
     )
   )
     return fail();
+  if (value.version === WINDOW_VERSION) {
+    const windows = (rows: unknown, statRows: Rows<number[]>, allowed: ReadonlySet<string>) =>
+      validRows(rows, allowed, validWindow) &&
+      (rows as Rows<HorseObservationWindow>).length === statRows.length &&
+      (rows as Rows<HorseObservationWindow>).every(([id], i) => id === statRows[i][0]);
+    if (
+      !windows(value.statsWindows, value.stats as Rows<number[]>, b.stats) ||
+      !windows(value.scopedWindows, value.scoped as Rows<number[]>, b.scoped)
+    )
+      return fail();
+  }
+}
+
+function validWindow(value: unknown): boolean {
+  if (!object(value) || !exact(value, ['version', 'coverage', 'fromMs', 'toMs'])) return false;
+  const normalized = normalizeHorseObservationWindow(value);
+  return Object.keys(normalized).every(
+    (key) => value[key] === normalized[key as keyof HorseObservationWindow]
+  );
 }
 
 export function encodeHorseDecisionReads(
@@ -207,11 +241,26 @@ export function encodeHorseDecisionReads(
   };
   const stats = (map: Map<string, OpponentStats>, max: number) =>
     bounded(map, max).map(([id, row]): [string, number[]] => {
-      if (!object(row) || !exact(row, FIELDS)) return fail();
+      if (
+        !object(row) ||
+        !exact(row, [...FIELDS, ...(Object.hasOwn(row, 'sourceWindow') ? ['sourceWindow'] : [])])
+      )
+        return fail();
       return [id, FIELDS.map((f) => row[f])];
     });
+  // Do not alter predecessor bytes for metadata-absent historical views.
+  const boundedStats = bounded(view.stats, b.stats.size);
+  const boundedScoped = bounded(view.scoped, b.scoped.size);
+  const hasWindows = [boundedStats, boundedScoped].some((rows) =>
+    rows.some(([, row]) => object(row) && Object.hasOwn(row, 'sourceWindow'))
+  );
+  const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
+    [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: planContext === undefined ? VERSION : ALLOCATED_VERSION,
+    version: hasWindows ? WINDOW_VERSION : planContext === undefined ? VERSION : ALLOCATED_VERSION,
+    ...(hasWindows
+      ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
+      : {}),
     ...(planContext === undefined ? {} : { planContext }),
     actors: b.actors,
     handKey,
@@ -253,7 +302,8 @@ export function decodeHorseDecisionReads(
   if (
     !object(frame) ||
     !exact(frame, ['version', 'bytes', 'sha256', 'json']) ||
-    frame.version !== (planContext === undefined ? VERSION : ALLOCATED_VERSION) ||
+    (frame.version !== WINDOW_VERSION &&
+      frame.version !== (planContext === undefined ? VERSION : ALLOCATED_VERSION)) ||
     typeof frame.json !== 'string' ||
     frame.json.length > HORSE_DECISION_READ_FRAME_MAX_BYTES ||
     !Number.isSafeInteger(frame.bytes) ||
@@ -272,16 +322,20 @@ export function decodeHorseDecisionReads(
     return fail();
   }
   validateBody(body, b, handKey, planContext);
+  if (body.version !== frame.version) return fail();
   const view = HorseMind.createSandbox();
-  const stats = (rows: Rows<number[]>) =>
+  const stats = (rows: Rows<number[]>, windows?: Rows<HorseObservationWindow>) =>
     new Map(
-      rows.map(([id, values]) => [
+      rows.map(([id, values], i) => [
         id,
-        Object.fromEntries(FIELDS.map((f, i) => [f, values[i]])) as unknown as OpponentStats,
+        {
+          ...Object.fromEntries(FIELDS.map((f, i) => [f, values[i]])),
+          ...(windows ? { sourceWindow: normalizeHorseObservationWindow(windows[i][1]) } : {}),
+        } as unknown as OpponentStats,
       ])
     );
-  view.stats = stats(body.stats);
-  view.scoped = stats(body.scoped);
+  view.stats = stats(body.stats, body.statsWindows);
+  view.scoped = stats(body.scoped, body.scopedWindows);
   view.pairs = new Map(
     body.pairs.map(([id, v]) => [id, { n3: v[0], opp3: v[1], nR: v[2], oppR: v[3] }])
   );

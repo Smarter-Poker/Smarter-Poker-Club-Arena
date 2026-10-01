@@ -13,23 +13,65 @@ lines + screenshots BEFORE claiming any user-facing flow works.
   so `auth.json` is re-saved at the end of every run and an anonymous arena
   triggers a fresh credential login automatically.
 
-## Running (from the host with network access)
+## The multi-table walk never plays a real club (2026-09-30)
 
-    SP_EMAIL="<owner test account>" SP_PASS="<password>" \
+`multitable-walk.mjs` buys in and plays, so it is retired from production
+play. Decided by Claude on Dan's delegation of 2026-09-30 (Dan: "these are all
+for you to decide not me ... FIX AND FINISH ALL OF THESE";
+`docs/DIAMOND-RULINGS.md`, Ruling 23). It used to sit at the cheapest open
+table in Club JAQK, where horses play and people may sit, as whatever account
+the operator supplied. Now it refuses to start, before a browser opens, unless
+both of these hold:
+
+1. **It signs in as a test identity**: an address ending in `.invalid` (the
+   estate's test-account marker, `fn_ca_is_fixture_account`; the post-deploy
+   accounts are `...@example.invalid`). No person can hold such an address. It
+   checks `SP_EMAIL`, the account in the saved browser state (`E2E_AUTH`), and,
+   before it touches a seat, the account the page is really signed in as.
+2. **It targets a club flagged as a test club**: `E2E_TEST_CLUB` names the club
+   (its uuid or slug), and the club's `clubs.tags` holds `test-club`. The walk
+   reads that row from the public API before it starts, so it needs
+   `VITE_SUPABASE_URL` (defaults to the project) and `VITE_SUPABASE_ANON_KEY`.
+   It never plays Club JAQK, SHARK CLUB, Deep Stack Society or Midway Union,
+   whatever their tags say, and it refuses a Diamond club or a retired one.
+
+A refusal prints `REFUSED: <why>` and exits 2. No club carries the `test-club`
+tag today, so against production the walk refuses every time. That is the
+intent.
+
+`cleanup-seats.mjs` stands every live seat up, which cashes stacks out, so it
+runs as the walk's test identity only and refuses any other account.
+
+## Running it safely
+
+Only against a club made for it: a chip club whose members are test
+identities, tagged `test-club`, with at least two cash tables that have open
+seats. Tagging a club is a deliberate act, done by the club's owner or with the
+service role. Never tag a club real people play in.
+
+    SP_EMAIL="<test account>@example.invalid" SP_PASS="<password>" \
+    E2E_TEST_CLUB="<test club uuid or slug>" \
+    VITE_SUPABASE_ANON_KEY="<the project's public anon key>" \
     node e2e-live/multitable-walk.mjs
 
-Or use the wrapper: `bash scripts/e2e-host.sh multitable-walk`
+Or use the wrapper: `bash scripts/e2e-host.sh multitable-walk` with the same
+environment.
 
 Env knobs: `E2E_AUTH` (storageState path, default /tmp/e2e-work/auth.json),
-`E2E_SHOTS` (screenshot dir, default /tmp/e2e-shots).
+`E2E_SHOTS` (screenshot dir, default /tmp/e2e-shots). Start with an empty
+`E2E_AUTH` (or delete the file) when you change accounts: a saved state holding
+any other account is refused.
+
+The trainer walkthrough (`trainer-walkthrough.mjs`) buys nothing and keeps its
+own instructions below.
 
 ## Scripts
 
 - `trainer-walkthrough.mjs` — hub → trainer game → question panel on the
   table, solver actions, answer classification, EV in bb, no score artifacts,
   zero arena page errors. 10/10 PASS on 2026-08-20.
-- `multitable-walk.mjs` — arena → club → cheapest open cash table → SIT +
-  min buy-in → upper-left "+" (aria-label "Open another table") → embedded
+- `multitable-walk.mjs` — test identity + test club only (above) → the test
+  club → cheapest open cash table → SIT + min buy-in → upper-left "+" (aria-label "Open another table") → embedded
   lobby tab with table 1 still mounted → join table 2 → leave table 2 via
   table menu → LiveTablesBar dock on the lobby route → "Return to game" →
   leave table 1 (stack refund). Exact production selectors are documented

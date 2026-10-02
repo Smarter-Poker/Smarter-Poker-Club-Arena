@@ -3,6 +3,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
 import { retryTransient } from './transient-retry.mjs';
+import {
+  awaitPlatformThaw,
+  describeThaw,
+  freezeBudgetMs,
+} from './platform-freeze-window.mjs';
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -42,6 +47,106 @@ const retryRead = (label, operation) =>
     failureOf: (result) => result?.error,
     label,
   });
+
+/**
+ * A SCHEDULED MAINTENANCE BREAK IS NOT A BROKEN CLUB DOOR (2026-10-02).
+ *
+ * fn_create_club_atomic inserts into chip_transactions, so zz_freeze_guard
+ * refuses it for the five-plus minutes of every hourly break and of the extra
+ * certified recovery window the September 17 owner update allows (CLAUDE.md
+ * section 13). This certification used to report that refusal verbatim -
+ * "Atomic Create Failed: 55006 PLATFORM_FROZEN" - which reads as "authenticated
+ * club creation is broken" and is not what was measured. Run 37064989099 is
+ * exactly that: the 21:05:05Z recovery break was still enforced at 21:08, the
+ * create was refused, and the only thing wrong was the clock.
+ *
+ * CLAUDE.md 10.86 rule 1: a stop we scheduled is a third outcome and it gets
+ * its own name. So wait on the freeze's own end condition - fn_platform_frozen,
+ * with the budget read from engine_maintenance_break by
+ * scripts/ci/platform-freeze-window.mjs - and ask again. Three distinct
+ * endings, none of them silent:
+ *
+ *   thawed, then created        -> the certification continues, having said how
+ *                                  long it waited;
+ *   thawed, then refused again  -> a real defect, named as one;
+ *   never thawed / unreadable   -> UNKNOWN, named as UNKNOWN, never a pass.
+ *
+ * This is not a retry hiding a path that should have worked (CLAUDE.md 10.12):
+ * the live path is correct to refuse a write inside the freeze. What is being
+ * corrected is this check's reading of it.
+ *
+ * Two freezes is every freeze one run can legitimately meet - the hourly break
+ * plus one certified recovery window - which is the same bound and the same
+ * reason as PLATFORM_FREEZE_MAX_WAITS in production-e2e-account.mjs.
+ */
+const PLATFORM_FREEZE_MAX_WAITS = 2;
+
+const refusedForTheFreeze = (error) =>
+  Boolean(error) &&
+  (String(error.code || '') === '55006' ||
+    /PLATFORM_FROZEN/.test(String(error.message || '')) ||
+    /platform is on a scheduled maintenance break/i.test(String(error.message || '')));
+
+async function readBreakRow() {
+  const { data, error } = await admin
+    .from('engine_maintenance_break')
+    .select('phase,break_started_at,break_ends_at,enforce_freeze')
+    .limit(1);
+  // 10.86 rule 2: unreadable is not empty. A null row makes freezeBudgetMs fall
+  // back to the 15 minute ceiling the database itself enforces, and the caller
+  // says that is what happened.
+  if (error) {
+    console.log(
+      `[club-create-cert] the maintenance break row could not be read (${error.message}); ` +
+        "sizing the wait from the database's own 15 minute freeze ceiling."
+    );
+    return null;
+  }
+  return Array.isArray(data) ? data[0] || null : null;
+}
+
+async function waitOutPlatformFreeze() {
+  const result = await awaitPlatformThaw({
+    isFrozen: async () => {
+      const { data, error } = await admin.rpc('fn_platform_frozen');
+      if (error) throw new Error(error.message || 'fn_platform_frozen could not be read');
+      return data === true;
+    },
+    budgetMs: freezeBudgetMs(await readBreakRow(), Date.now()),
+  });
+  console.log(`[club-create-cert] ${describeThaw(result)}`);
+  return result;
+}
+
+/**
+ * Create one certification club, waiting out a scheduled freeze instead of
+ * reporting it as a club-creation failure.
+ */
+async function createClubThroughTheFreeze(player, label, args) {
+  for (let freezesWaited = 0; ; ) {
+    const { data: club, error } = await player.rpc('fn_create_club_atomic', args);
+    if (!error && club?.id) return club;
+    if (!refusedForTheFreeze(error)) {
+      throw new Error(
+        `${label}: ${error?.code || 'NO_CODE'} ${error?.message || 'No Club Returned'}`
+      );
+    }
+    if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+      throw new Error(
+        `${label}: the platform freeze refused the create across ${freezesWaited} complete ` +
+          'freezes, which is more than section 13 schedules.'
+      );
+    }
+    freezesWaited += 1;
+    console.log(
+      '[club-create-cert] the platform freeze refused the fixture create; waiting for the thaw.'
+    );
+    const thaw = await waitOutPlatformFreeze();
+    if (thaw.outcome !== 'thawed') {
+      throw new Error(`${label}: the create was refused for the freeze; ${describeThaw(thaw)}`);
+    }
+  }
+}
 
 function jwtClaims(accessToken, expectedUserId) {
   const encoded = String(accessToken || '').split('.')[1];
@@ -356,7 +461,7 @@ try {
     throw eligibilityError || new Error('Disposable User Is Not Eligible To Create A Club.');
   }
 
-  const { data: club, error: createError } = await player.rpc('fn_create_club_atomic', {
+  const club = await createClubThroughTheFreeze(player, 'Atomic Create Failed', {
     p_request_id: requestId,
     p_name: name,
     p_description: 'Production Club Creation Certification',
@@ -365,11 +470,6 @@ try {
     p_requires_approval: false,
     p_logo_url: publicLogo.publicUrl,
   });
-  if (createError || !club?.id) {
-    throw new Error(
-      `Atomic Create Failed: ${createError?.code || 'NO_CODE'} ${createError?.message || 'No Club Returned'}`
-    );
-  }
   clubIds.push(club.id);
 
   // This is a read-only receipt over an already committed, idempotently
@@ -711,7 +811,7 @@ try {
   }
 
   const presetRequestId = crypto.randomUUID();
-  const { data: presetClub, error: presetError } = await player.rpc('fn_create_club_atomic', {
+  const presetClub = await createClubThroughTheFreeze(player, 'Preset Create Failed', {
     p_request_id: presetRequestId,
     p_name: `Preset ${name}`.slice(0, 30),
     p_description: 'Production Placeholder Crest Certification',
@@ -720,11 +820,6 @@ try {
     p_requires_approval: false,
     p_logo_url: assetUrl,
   });
-  if (presetError || !presetClub?.id) {
-    throw new Error(
-      `Preset Create Failed: ${presetError?.code || 'NO_CODE'} ${presetError?.message || 'No Club Returned'}`
-    );
-  }
   clubIds.push(presetClub.id);
 
   const { data: secondWelcome, error: secondWelcomeError } = await retryRead(

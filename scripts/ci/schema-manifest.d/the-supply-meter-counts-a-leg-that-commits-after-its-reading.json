@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/claude-a5/supply-meter-late-legs-20261002 (applied as 20261002164500)",
+  "columns": {
+    "ca_supply_snapshots": ["late_mint", "late_burn", "restated_mint", "restated_burn", "restated_at"]
+  }
+}

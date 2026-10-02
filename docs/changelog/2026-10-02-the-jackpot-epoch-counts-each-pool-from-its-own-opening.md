@@ -80,3 +80,15 @@ Pinned by `tests/the-jackpot-epoch-counts-each-pool-from-its-own-opening.law.tes
 Its recording migration `20261001152917` guards the installed
 `fn_bbj_conservation_check` body at md5 `cd515fb2...`; after this lands the
 pre-image is the new body and that guard (and its fixture) needs re-pinning.
+
+## Follow-up: a pool the meter has not opened yet (20261002145612)
+
+After `20261002135140` was applied (14:46 UTC, recorded statements md5
+`03462418...` = the file on main), the epoch read healthy (`moved_since_recorded
+0.00`) but `lifetime.moved_since_resolution` read -100.00: pool `2032add6`,
+created 14:42:20 with its 100.00 welcome seed, had no meter baseline yet, so the
+lifetime set (found through baselines) missed its seed. `20261002145612` finds
+later pools by `COALESCE(baseline, created_at) > epoch` and only lets a pool
+WITH a baseline give legs back to the epoch residue, so the epoch figure is
+identical. Probe: both verdicts healthy, lifetime moved 0.00, seeds 5,400.00,
+burns 5,200.00.

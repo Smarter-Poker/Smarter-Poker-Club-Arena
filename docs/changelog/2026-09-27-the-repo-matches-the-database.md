@@ -98,3 +98,16 @@ within 24 hours or be marked superseded by a named file (a
 the default branch only, reads nothing from the branch but its filenames, and
 has no schedule. `tests/an-installed-migration-and-its-file-agree.law.test.ts`
 pins the alias table, the grace, the marker and the workflow's shape.
+
+## Update, 2026-10-02
+
+The 52 apply-time pairs and the September recoveries were recorded on `main`
+by the mirror bands (#5501 to #5508), so the alias table now holds no rows;
+its loader, its `superseded` section and both gates' support for it remain.
+Re-measured against all 5,234 rows of `schema_migrations`: 15 migrations
+installed between 2026-09-27 and 2026-10-01, more than 24 hours old, still had
+no file on `main`. They are recorded here headerless and byte-equal to
+`fn_ca_migration_text`, each with a manifest row. Their authored copies sit on
+pull requests idle since 2026-09-27/28 (#5450, #5460, #5467, #5479, #5481,
+#5482, #5484, #5521, #5532), which can drop them on their next merge of
+`main`.

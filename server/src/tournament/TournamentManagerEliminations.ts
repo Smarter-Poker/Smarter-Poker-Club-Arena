@@ -412,6 +412,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async runEliminationSweep(signal: AbortSignal): Promise<void> {
     let budgetRequeued = false;
     let completedWholeSweep = false;
+    /** This pass recorded the bust that left at most one player standing. */
+    let lastBustRecordedThisPass = false;
     const durableWakes = new Map(this.pendingManagerWakes);
     const durableWakeIds = [...durableWakes.keys()];
     const durableWakeReceipts: TournamentManagerWakeReceipt[] = durableWakeIds.map((id) => ({
@@ -470,6 +472,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const completedStage = (nextStage: number): boolean => {
       this.eliminationSweepCursor.advanceTo(nextStage);
       if (!this.eliminationWorkBudgetExpired()) return false;
+      /**
+       * A DECIDED GAME IS PAID IN THE ADMISSION THAT RECORDS ITS LAST BUST
+       * (2026-10-02).
+       *
+       * Read on production 16:17-16:32 UTC on 2026-10-02, engine 1-b4b20b86:
+       * 271 managers registered, 220 queued, the decided lane 119 deep and its
+       * oldest waiter 516 s. Of 896 Spins and Sit & Gos completed in the hour
+       * before, the admission that recorded the final bust waited a median
+       * 221 s for its slot (3 of 896 inside 15 s), and 410 of them (46%) were
+       * then sent to the BACK of that queue by this budget check, between the
+       * bust stage and the finish stage, and paid a median 549 s later. Spin
+       * 9ed8878f dealt its last hand at 16:18:14, recorded both busts at
+       * 16:24:46 and paid at 16:31:44; the work itself took four seconds.
+       *
+       * The budget exists so one tournament cannot hold a slot while others
+       * wait. A decided field has nothing left to share a slot for: no table
+       * can deal, the remaining work is bounded (the busts of one table, then
+       * the one terminal settlement), and every extra admission it is made to
+       * queue for is a full cycle of the whole platform's queue plus another
+       * slot spent re-reading what this pass already knows. So a decided field
+       * does not yield on the clock before its finish stage; it yields as
+       * usual after it. Manager stop and the scheduler's abort still end the
+       * pass at once.
+       */
+      if (nextStage <= FINISH_STAGE && (lastBustRecordedThisPass || this.fieldIsDecided()))
+        return false;
       if (!budgetRequeued) {
         budgetRequeued = true;
         this.requestEliminationSweep();
@@ -1223,6 +1251,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           } finally {
             this.closeEliminationMutationBatch();
           }
+          // The bust that leaves one player standing decides the field. The
+          // finish stage is reached in this admission (see completedStage), and
+          // any later wake this manager receives is served from the decided
+          // lane. Rebought players were never in this batch, so they still
+          // count as playing here.
+          if (committedThisPass > 0 && playingCount - committedThisPass <= 1) {
+            lastBustRecordedThisPass = true;
+            this.declareFieldDecided();
+          }
           // The pass recorded what it prepared; the clock decides the yield
           // from here, exactly as for every other stage.
           if (committedThisPass > 0 && this.eliminationWorkBudgetExpired()) {
@@ -1255,6 +1292,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       finishStage: {
         if (this.eliminationSweepCursor.nextStage > FINISH_STAGE) break finishStage;
+        // A decided field's finish is one bounded unit, admitted like the bust
+        // batch: the clock may not refuse its writes once it has started (a
+        // cohort satellite's qualifier completion asks
+        // eliminationMutationAllowed()). Stop and abort still refuse them.
+        if (lastBustRecordedThisPass || this.fieldIsDecided()) this.openEliminationMutationBatch();
         const satelliteFinish = await this.checkSatelliteQualifierCompletion();
         if (sweepStopped() || satelliteFinish === 'complete') return;
         if (satelliteFinish === 'pending') {
@@ -1427,6 +1469,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(3)) return;
       }
 
+      this.closeEliminationMutationBatch();
       finalDealStage: {
         if (this.eliminationSweepCursor.nextStage > 3) break finalDealStage;
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
@@ -1775,6 +1818,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(ackErr, 'Tournament.manager_wake_ack_threw');
         }
       }
+      this.closeEliminationMutationBatch();
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;

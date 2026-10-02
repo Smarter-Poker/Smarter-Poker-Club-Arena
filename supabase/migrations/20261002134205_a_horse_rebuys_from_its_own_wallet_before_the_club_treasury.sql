@@ -351,10 +351,7 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury_before_maintenance_gate(uuid,uuid,numeric,uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury_before_maintenance_gate(uuid,uuid,numeric,uuid) FROM anon;
-REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury_before_maintenance_gate(uuid,uuid,numeric,uuid) FROM authenticated;
-REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury_before_maintenance_gate(uuid,uuid,numeric,uuid) FROM service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury_before_maintenance_gate(uuid,uuid,numeric,uuid) FROM PUBLIC, anon, authenticated, service_role;
 
 DO $post$
 DECLARE s text := (SELECT p.prosrc FROM pg_proc p

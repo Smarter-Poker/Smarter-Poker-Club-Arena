@@ -571,6 +571,7 @@ jobs:
           node scripts/ci/check-monitoring-drift.mjs
           node scripts/ci/report-source-grep-tests.mjs --ratchet
           node scripts/ci/check-new-migration-version-collisions.mjs
+          node scripts/ci/check-added-club-fk-indexes.mjs
           GUARDS
 
           TOTAL=$(grep -c . "$OUT/list")

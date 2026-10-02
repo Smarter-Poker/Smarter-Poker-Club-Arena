@@ -129,7 +129,9 @@ BEGIN
      OR position('COALESCE(ut.bounty_pool,0)>COALESCE(ut.bounty_pool_paid,0)' in v_src) = 0
      OR position('WHERE ue.tournament_id=ut.id AND ue.closed_at IS NULL' in v_src) = 0
      OR position('hand_submission_retention_disposal' in v_src) = 0
-     OR position('f06_movement_boundary_retained' in v_src) = 0 THEN
+     OR position('f06_movement_boundary_retained' in v_src) = 0
+     OR position('hand_history_retention_policy' in v_src) = 0
+     OR position('horse_retention_days' in v_src) = 0 THEN
     RAISE EXCEPTION 'UNSETTLED_TOURNAMENT_RETENTION_UNPROVEN: the guard is not in the live body exactly once, or an earlier guard was lost' USING ERRCODE = '55000';
   END IF;
   IF v_src ~* '(^|\n)\s*delete\s+from\s+public\.rake_attributions' THEN

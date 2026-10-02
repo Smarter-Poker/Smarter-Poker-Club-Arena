@@ -1,4 +1,4 @@
--- 20261002115605_welcome_certification_may_delete_only_its_unused_board_tables
+-- 20261002115605_welcome_certification_deletes_only_its_unused_board_tables
 --
 -- The reserved Create Club certificate now reaches the exact idle welcome
 -- board cleanup, but production's irreversible tournament-table trigger

@@ -89,7 +89,7 @@ const boardOriginCleanupSql = readFileSync(
 const boardDeletePermitSql = readFileSync(
   resolve(
     __dirname,
-    '../supabase/migrations/20261002115605_welcome_certification_may_delete_only_its_unused_board_tables.sql'
+    '../supabase/migrations/20261002115605_welcome_certification_deletes_only_its_unused_board_tables.sql'
   ),
   'utf8'
 );

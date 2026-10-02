@@ -2556,6 +2556,15 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * Whether this manager has declared its field decided. The elimination
+   * sweep reads it to carry a decided field from its last bust straight into
+   * its finish in one admission (aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust).
+   */
+  protected fieldIsDecided(): boolean {
+    return this.fieldDecidedDeclared === true;
+  }
+
   /** A recovery that has read the field as decided wakes it through the decided lane. */
   requestDecidedEliminationSweep(reason: string): boolean {
     this.declareFieldDecided();

@@ -57,6 +57,9 @@ describe('a decided field does not hold the consolidation lane', () => {
     const scheduler = new TournamentEliminationScheduler({
       maxConcurrent: 4,
       consolidationSlots: 1,
+      // The decided lane's own slots are pinned by aDecidedGameIsNotWaitingBehindLiveOnes;
+      // this law is about the consolidation slot and the general slots.
+      decidedSlots: 0,
       sweepWarnMs: 0,
       startTimers: false,
     });

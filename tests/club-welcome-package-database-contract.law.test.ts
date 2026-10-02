@@ -72,6 +72,13 @@ const boardGameCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const boardLeaseCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002102542_welcome_certification_retires_stale_board_tournament_leases.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -597,6 +604,38 @@ describe('prospective lifetime-first club welcome package database contract', ()
     );
     expect(boardGameCleanupSql).not.toContain(
       'CREATE OR REPLACE FUNCTION public.fn_create_seat_first_game_atomic'
+    );
+
+    expect(boardLeaseCleanupSql).toContain(
+      'fn_ca_prepare_unused_welcome_certification_board_leases'
+    );
+    expect(boardLeaseCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
+    expect(boardLeaseCleanupSql).toContain("interval '10 minutes'");
+    expect(boardLeaseCleanupSql).toContain('FOR UPDATE NOWAIT');
+    expect(boardLeaseCleanupSql).toContain('protocol_version IS DISTINCT FROM 2');
+    expect(boardLeaseCleanupSql).toContain('f06_lease_has_pending_custody');
+    expect(boardLeaseCleanupSql).toContain(
+      'WELCOME_CERTIFICATION_BOARD_ACTIVE_OR_AMBIGUOUS_LEASE_REFUSED'
+    );
+    expect(boardLeaseCleanupSql).toContain(
+      'WELCOME_CERTIFICATION_BOARD_UNEXPECTED_TABLE_LEASE_REFUSED'
+    );
+    expect(boardLeaseCleanupSql).toContain('DELETE FROM public.engine_tournament_leases l');
+    expect(boardLeaseCleanupSql).not.toContain('DELETE FROM public.engine_table_leases');
+
+    const leasePreparation = boardLeaseCleanupSql.indexOf(
+      'v_leases:=public.fn_ca_prepare_unused_welcome_certification_board_leases(p_club_id)'
+    );
+    const fullBoardPreparation = boardLeaseCleanupSql.indexOf(
+      'v_board:=public.fn_ca_prepare_unused_welcome_certification_board_games(p_club_id)'
+    );
+    expect(leasePreparation).toBeGreaterThan(0);
+    expect(leasePreparation).toBeLessThan(fullBoardPreparation);
+    expect(boardLeaseCleanupSql).toContain(
+      "'board_tournament_leases_removed',COALESCE((v_leases->>'tournament_leases_removed')::integer,0)"
+    );
+    expect(boardLeaseCleanupSql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_leases(uuid)\n  FROM PUBLIC,anon,authenticated,service_role'
     );
   });
 });

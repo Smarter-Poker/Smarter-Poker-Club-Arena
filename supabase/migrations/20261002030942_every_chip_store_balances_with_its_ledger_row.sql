@@ -241,6 +241,7 @@ BEGIN
   END CASE;
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_ledger_tally_key(text, uuid, uuid) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. The balance side of the new stores
@@ -366,6 +367,7 @@ BEGIN
   RETURN NULL;
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_tally_store_move() FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 5. The check, judged by each store's own mode
@@ -443,6 +445,7 @@ BEGIN
   RETURN NULL;
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.fn_ca_balance_has_its_ledger_row() FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. The triggers: the nine locks first, together, or not at all

@@ -101,6 +101,8 @@ jobs:
             node scripts/ci/check-applied-migrations-are-recorded.mjs --fail --grace-hours 24
 
       - name: Every merged migration is installed within 24h or marked superseded
+        # Answered even when the first question fails: they are independent.
+        if: always()
         env:
           SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/ci/check-migrations-are-live.mjs --min-age-hours 24

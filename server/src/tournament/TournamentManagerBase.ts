@@ -5539,10 +5539,24 @@ export abstract class TournamentManagerBase {
          hand" though it dealt within seconds of launch. A window still open
          keeps its pre-seat hold; one already closed lets the database stamp
          the launch transaction's own instant. */
+      /* A FULL SPIN OR HEADS-UP DEALS NOW, NOT AT THE WINDOW CLOSE
+         (2026-10-02, later). A Spin or Heads-Up launches only when its last
+         seat is paid, and fn_take_seat_and_buy_in tells that player
+         starts_now. Holding the deal to the close of the human window then
+         holds nothing for anyone: measured on production, a human took the
+         third seat of Spin f92b0b22 at 18:40:43Z, the reveal ended at
+         18:41:09Z, and the first hand waited for the window close at
+         18:43:40Z - 170 s of a full table with no cards, which the table
+         watchdog then reported as "stalled 166s with no current seat". Only
+         the seat-first satellite keeps the old rule; its start is advertised. */
+      const startsWhenFull =
+        isPersistedSeatFirst(tournament) &&
+        readPersistedTournamentFormatContract(tournament) !== 'seat-first-satellite-v1';
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
       const scheduledStartIsAdvertised =
         Number.isFinite(scheduledStartMs) &&
+        !startsWhenFull &&
         (!isPersistedSeatFirst(tournament) || scheduledStartMs > Date.now());
       const requestedStartedAtIso = Number.isFinite(existingStartMs)
         ? new Date(existingStartMs).toISOString()

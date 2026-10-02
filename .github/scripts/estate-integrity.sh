@@ -413,24 +413,78 @@ $DELIB}"
 done
 
 # ── 3. Autopilot is alive ─────────────────────────────────────────────────
+#
+# A DELETED WORKFLOW IS NOT A LIVE ONE (2026-09-23). `gh run list` happily
+# returns the last historical run of a workflow file that no longer exists, so
+# Diamond-Arena read `autopilot completed/success` on every run after its own
+# PR #64 deleted the file. "The last run succeeded" and "it still runs" are not
+# the same claim, and only the second one is what this section is asserting.
+#
+# AND NEITHER IS A SWITCHED-OFF ONE (2026-10-02). That repair left the same
+# trap one level up (10.86 rule 4): `gh run list` returns the last historical
+# run of a workflow that is DISABLED just as happily as one that was deleted.
+# Measured 2026-10-02 - commander-shared, smarter-poker-workers and
+# PepNationLab each read `completed/failure`, and this section said of all three
+# "while it is red, pull requests stop being queued and the failure is silent
+# from the outside". Every clause of that was wrong. Their last runs were at
+# 2026-09-16T04:06/04:35/05:24Z and GitHub records all three workflows as
+# `disabled_manually`, set about an hour LATER and within eleven minutes of
+# each other - one deliberate, coordinated retirement, not three silent
+# failures. The September 17 owner instruction then wrote it down: a retired
+# autopilot "remain[s] inactive" and is a prerequisite for nothing (CLAUDE.md
+# 1.1, 1.2.5, 10.8 rule 3). A red run sixteen days ago is not what stopped that
+# queue, nothing is waiting on it, and there is no repair to ask anyone for.
+#
+# So the workflow's STATE is read FIRST, and a run conclusion is only allowed
+# to mean anything where the workflow can still run. The states are not one
+# fact: `disabled_manually` is somebody's decision, recorded by GitHub itself
+# at the moment they made it, while `disabled_inactivity` is nobody's - GitHub
+# switches a scheduled workflow off after 60 idle days - so that one IS drift
+# and gets said out loud. And a state that cannot be read is COULD NOT TELL,
+# never folded into on, off or green (10.86 rule 1).
 for r in "${REPOS[@]}"; do
-  # A DELETED WORKFLOW IS NOT A LIVE ONE (2026-09-23). `gh run list` happily
-  # returns the last historical run of a workflow file that no longer exists,
-  # so Diamond-Arena read `autopilot completed/success` on every run after its
-  # own PR #64 deleted the file. "The last run succeeded" and "it still runs"
-  # are not the same claim, and only the second one is what this section is
-  # asserting.
   if RETIRED_WHY=$(retired_reason ".github/workflows/agent-autopilot.yml" "$r"); then
     note "$r: autopilot retired in that repo (recorded), so no liveness is claimed for it"
     continue
   fi
+
+  WF_STATE=$(gh_ro "repos/Smarter-Poker/$r/actions/workflows" \
+    --jq '.workflows[] | select(.path==".github/workflows/agent-autopilot.yml") | .state')
+  if [ $? -ne 0 ]; then
+    add "**$r** — COULD NOT TELL whether Agent Autopilot is switched on: reading that repo's workflow list failed. A last-run conclusion means nothing without it - a disabled workflow keeps reporting its final run for ever - so nothing is claimed here either way."
+    continue
+  fi
+  WF_STATE=$(printf '%s' "$WF_STATE" | tr -d '[:space:]')
+
+  case "$WF_STATE" in
+    active) ;;
+    "")
+      # Section 2 already raises the absence of a shared guard file, with the
+      # digest table saying which repos do have it. Saying it twice would teach
+      # people to skim. What this must not do is claim liveness for it.
+      note "$r: autopilot's workflow file is absent (section 2 reports the absence), so no liveness is claimed for it"
+      continue ;;
+    disabled_manually)
+      note "$r: autopilot is switched off there (disabled_manually), so no liveness is claimed for it - the September 17 owner instruction retires autopilot and makes it no delivery's prerequisite"
+      continue ;;
+    disabled_inactivity)
+      add "**$r** — Agent Autopilot's workflow state is \`disabled_inactivity\`, which nobody chose: GitHub switches a scheduled workflow off by itself after 60 idle days. It will not run again until somebody re-enables it, and its last run goes on reporting green or red as though it still did."
+      continue ;;
+    *)
+      # A fourth state this audit has never seen. It is not on, not off by
+      # anyone's decision, and not absent, so it is COULD NOT TELL (10.86
+      # rule 1) rather than quietly sorted into the nearest known case.
+      add "**$r** — COULD NOT TELL whether Agent Autopilot is switched on: its workflow state reads \`$WF_STATE\`, which this audit does not recognise. Nothing is claimed about its last run until somebody decides what that state means."
+      continue ;;
+  esac
+
   C=$(gh run list --repo "Smarter-Poker/$r" --workflow agent-autopilot.yml --limit 1 \
         --json conclusion,status --jq '"\(.[0].status)/\(.[0].conclusion // "-")"' 2>/dev/null || echo "")
   case "$C" in
-    ""|"null/-")   add "**$r** — Agent Autopilot has never run. Nothing in that repo auto-merges, so every pull request waits for a human." ;;
+    ""|"null/-")   add "**$r** — Agent Autopilot is enabled and has never run. Nothing in that repo auto-merges, so every pull request waits for a human." ;;
     completed/failure|completed/timed_out)
-                   add "**$r** — Agent Autopilot's last run is \`$C\`. While it is red, pull requests stop being queued and the failure is silent from the outside." ;;
-    *)             note "$r: autopilot $C" ;;
+                   add "**$r** — Agent Autopilot is enabled and its last run is \`$C\`. While it is red, pull requests stop being queued and the failure is silent from the outside." ;;
+    *)             note "$r: autopilot active, $C" ;;
   esac
 done
 

@@ -42,6 +42,7 @@ import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js'
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
+import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
@@ -866,7 +867,7 @@ export class ScheduledTournamentService {
       // notification from a fresh transaction. fn_notify_guarantee_bank_short
       // dedupes on unread per recipient per bank, so a schedule that re-fails
       // every 30s poll produces ONE standing bell notification, not a storm.
-      if (/cannot guarantee/i.test(msg) && row.club_id) {
+      if (isGuaranteeBankRefusal(msg) && row.club_id) {
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: row.club_id,
         });
@@ -1796,7 +1797,7 @@ export class ScheduledTournamentService {
       );
       // Same pop-up rule as the scheduled spawn path: a guarantee refusal must
       // reach the owners, and the raising trigger cannot write it itself.
-      if (/cannot guarantee/i.test(msg) && (row as { club_id?: string }).club_id) {
+      if (isGuaranteeBankRefusal(msg) && (row as { club_id?: string }).club_id) {
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: (row as { club_id?: string }).club_id,
         });

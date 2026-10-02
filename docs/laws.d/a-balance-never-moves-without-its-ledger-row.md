@@ -48,10 +48,14 @@ pre-envelope shape, is refused by name (R12-R14 in the fixture). Proved on
 4,074 of 4,074 completed production cash hands: receipt fees = felt legs, to
 the cent.
 
-Staged: the migration installs mode `observe` (findings land in
-ca_ledger_invariant_findings, warned, committed) to measure one hour of live
-traffic on every covered account; the next migration flips the one row to
-`refuse`. The law refuses any later migration that sets the mode back to
-observe, drops or disables a tally or check trigger, or drops a guard function.
+Staged, and now refusing: the installer set mode `observe` (findings landed in
+ca_ledger_invariant_findings, warned, committed) to measure live traffic on
+every covered account; 20261002015339 flipped the one row to `refuse` on
+2026-10-02 after zero findings from 00:05 UTC under full traffic and a
+rolled-back probe of the jackpot payout, the one door with no traffic in the
+window. A drifting transaction no longer commits. The law requires the flip to
+be the last write to the row and refuses any later migration that writes
+`observe` back, drops or disables a tally or check trigger, or drops a guard
+function.
 
-installed mode: observe
+installed mode: refuse

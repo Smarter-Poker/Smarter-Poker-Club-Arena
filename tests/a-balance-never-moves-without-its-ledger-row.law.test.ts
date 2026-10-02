@@ -39,12 +39,14 @@
  * move, journal-only correction). CI runs it in the Server Engine lane; this
  * file pins what the migration and that harness must keep saying.
  *
- * STAGED. The migration installs ca_ledger_invariant_mode = 'observe' so one
- * hour of real traffic on every covered account is measured (findings land in
- * ca_ledger_invariant_findings) before a second migration flips the row to
- * 'refuse'. Until that migration exists this law pins observe as the installed
- * state and REFUSES a flip that is not its own named migration; once it exists
- * the law pins 'refuse' as the final state on main.
+ * STAGED, AND NOW REFUSING. The installer set ca_ledger_invariant_mode =
+ * 'observe' so real traffic on every covered account was measured (findings in
+ * ca_ledger_invariant_findings) before 20261002015339 flipped the row to
+ * 'refuse' (2026-10-02): zero findings from 00:05 UTC under full traffic, and
+ * the jackpot payout - the one live door with no traffic in the window - proved
+ * in a rolled-back probe. This law pins 'refuse' as the state on main: the flip
+ * is the last write to the row, and a later migration that writes 'observe'
+ * back (UPDATE or INSERT) is red.
  *
  * THE HAND COMMITS IN TWO TRANSACTIONS, AND EACH ONE BALANCES ON ITS OWN
  * (20261001231409). Observe mode's first 28 minutes found 4,491 findings, all
@@ -331,38 +333,63 @@ describe('a balance never moves without its ledger row', () => {
     expect(bootstrap).toContain('CREATE TABLE public.hand_atomic_commits (');
   });
 
-  it('observe is a measurement window with a named end: the installed mode, and the only hands that may change it', () => {
+  it('observe was a measurement window with a named end: 20261002015339 flips it to refuse, and nothing later moves it back', () => {
     const body = stripComments(installer);
     expect(body).toMatch(
       /INSERT INTO public\.ca_ledger_invariant_mode \(mode, reason\)\s+VALUES \('observe',/
     );
     const later = migrations.filter((f) => f > (installerName ?? ''));
-    // a flip is a write to the one row; a migration that merely reads the mode
-    // (20261001231409 reports it in its closing NOTICE) is not one
-    const flips = later.filter((f) =>
-      /UPDATE\s+(public\.)?ca_ledger_invariant_mode\b/i.test(
+    // a write to the one row is an UPDATE or an INSERT of it; a migration that
+    // merely reads the mode (20261001231409 reports it in its closing NOTICE)
+    // is not one
+    const writes = later.filter((f) =>
+      /(UPDATE|INSERT\s+INTO)\s+(public\.)?ca_ledger_invariant_mode\b/i.test(
         stripComments(readFileSync(join(MIG_DIR, f), 'utf8'))
       )
     );
-    for (const f of flips) {
+    for (const f of writes) {
       const sql = stripComments(readFileSync(join(MIG_DIR, f), 'utf8'));
       // the only sanctioned move is forward, to refuse, and never back
       expect(sql, `${f} may only set the invariant to refuse`).not.toMatch(
         /SET\s+mode\s*=\s*'observe'/i
       );
+      expect(sql, `${f} may not insert the invariant as observe`).not.toMatch(
+        /INSERT\s+INTO\s+(public\.)?ca_ledger_invariant_mode\b[\s\S]*?'observe'/i
+      );
       expect(sql, `${f} must not drop or disable the invariant`).not.toMatch(
         /(DROP|ALTER)\s+TABLE\s+(public\.)?(club_members|clubs|table_seats|table_pending_addons|union_wallets|bbj_pools|hand_atomic_commits|chip_ledger)\s+DISABLE TRIGGER\s+z[yz]_ca_/i
       );
     }
-    // once the flip has landed on main, refuse is the law; until then observe is pinned as stage 1
-    const finalMode = flips.length > 0 ? 'refuse' : 'observe';
+
+    // THE FLIP (2026-10-02). Its own named migration, one transaction, a
+    // preimage that aborts unless the row is still observe and nothing has been
+    // found since the 00:05 UTC fix, and a read-back of refuse.
+    const flipName = migrations.find((f) => f.endsWith('_the_ledger_invariant_refuses.sql'));
+    expect(flipName, 'migration *_the_ledger_invariant_refuses.sql').toBe(
+      '20261002015339_the_ledger_invariant_refuses.sql'
+    );
+    const flip = stripComments(readFileSync(join(MIG_DIR, flipName!), 'utf8'));
+    expect(flip.trim().startsWith('BEGIN;')).toBe(true);
+    expect(flip.trim().endsWith('COMMIT;')).toBe(true);
+    expect(flip).toMatch(/v_mode IS DISTINCT FROM 'observe'/);
+    expect(flip).toMatch(/found_at >= timestamptz '2026-10-02 00:05:00\+00'/);
+    expect(flip).toMatch(/UPDATE public\.ca_ledger_invariant_mode\s+SET mode = 'refuse'/);
+    expect(flip).toMatch(/IS DISTINCT FROM 'refuse' THEN\s+RAISE EXCEPTION/);
+
+    // the LAST write to the row on main is a write of refuse: that is the
+    // installed state, and the law registry says so
+    const last = writes[writes.length - 1];
+    expect(last, 'the last migration to write ca_ledger_invariant_mode').toBe(flipName);
+    expect(stripComments(readFileSync(join(MIG_DIR, last), 'utf8'))).toMatch(
+      /SET\s+mode\s*=\s*'refuse'/i
+    );
     const stateFile = join(
       ROOT,
       'docs',
       'laws.d',
       'a-balance-never-moves-without-its-ledger-row.md'
     );
-    expect(readFileSync(stateFile, 'utf8')).toContain(`installed mode: ${finalMode}`);
+    expect(readFileSync(stateFile, 'utf8')).toContain('installed mode: refuse');
   });
 
   it('no later migration drops a tally or check trigger, or stands the check down', () => {

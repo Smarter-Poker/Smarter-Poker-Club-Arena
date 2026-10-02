@@ -24,6 +24,11 @@ import fs from 'fs';
 import path from 'path';
 
 const dir = path.join(process.cwd(), 'supabase/migrations');
+// A hand-written flip of a Diamond rule: an UPDATE of ca_diamond_rule_modes
+// that sets mode = 'refuse'. Scoped to that table, so another switch's own
+// flip (ca_ledger_invariant_mode) is not mistaken for one.
+const DIAMOND_RULE_HAND_FLIP =
+  /UPDATE\s+(?:public\.)?ca_diamond_rule_modes\b[^;]*?SET\s+mode\s*=\s*'refuse'/gi;
 const files = fs.readdirSync(dir).filter((n) => n.endsWith('.sql'));
 const pick = (suffix: string) => {
   const f = files.find((n) => n.endsWith(suffix));
@@ -85,13 +90,18 @@ describe('refuse is reached only through fn_ca_diamond_rule_flip', () => {
         /CREATE OR REPLACE FUNCTION public\.fn_ca_diamond_rule_flip[\s\S]*?\$\$;\n/g,
         ''
       );
-      const hits = outsideFlip.match(/SET\s+mode\s*=\s*'refuse'/gi) ?? [];
+      const hits = outsideFlip.match(DIAMOND_RULE_HAND_FLIP) ?? [];
       expect(hits, `${f} flips a rule by hand`).toHaveLength(0);
     }
     // negative control: a hand-written flip is caught
     const bad =
       "UPDATE public.ca_diamond_rule_modes SET mode = 'refuse' WHERE rule = 'DR4:credit_without_reference';";
-    expect(bad.match(/SET\s+mode\s*=\s*'refuse'/gi)).toHaveLength(1);
+    expect(bad.match(DIAMOND_RULE_HAND_FLIP)).toHaveLength(1);
+    // scope control: another switch's own named flip migration is not a
+    // Diamond rule (20261002015339 flips ca_ledger_invariant_mode)
+    const other =
+      "UPDATE public.ca_ledger_invariant_mode\n   SET mode = 'refuse',\n       changed_at = now()\n WHERE singleton;";
+    expect(other.match(DIAMOND_RULE_HAND_FLIP)).toBeNull();
   });
 });
 

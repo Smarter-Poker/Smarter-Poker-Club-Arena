@@ -206,6 +206,9 @@ describe('Create Club production certification contract', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
 
     expect(script).toContain("'fn_get_club_welcome_package'");
+    expect(script).toContain('welcome package read for certification club');
+    expect(script).toContain('welcome package refusal read for certification club');
+    expect(script.match(/await retryTransient\(/g)).toHaveLength(4);
     expect(script).toContain('welcomeCash.length !== 9');
     expect(script).toContain('welcomeSchedules.length !== 1');
     expect(script).toContain("welcome?.status !== 'provisioned'");

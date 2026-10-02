@@ -93,6 +93,16 @@ function runAudit(mode: Mode) {
       '          *)                             printf \'[{"commit":{"committer":{"date":"2026-10-01T00:00:00Z"}}}]\\n\' ;;',
       '        esac',
       '        ;;',
+      // A SWITCHED-OFF WORKFLOW IS NOT A LIVE ONE (2026-10-02). Section 3 reads
+      // the workflow's state before it judges a run, so every fixture has to
+      // answer this endpoint. Here every repo's autopilot is enabled, which
+      // leaves this law's subject - present/empty/absent/unreadable CONTENT -
+      // the only thing under test.
+      '      */actions/workflows)',
+      '        WF_JSON=\'{"total_count":1,"workflows":[{"id":2,"name":"Agent Autopilot","path":".github/workflows/agent-autopilot.yml","state":"active"}]}\'',
+      '        shift 2',
+      '        if [ "${1:-}" = --jq ]; then printf \'%s\' "$WF_JSON" | jq -r "${2:-.}"; else printf \'%s\\n\' "$WF_JSON"; fi',
+      '        ;;',
       '      */contents/*)',
       '        case "$endpoint" in',
       '          *smarter-poker-workers*)',

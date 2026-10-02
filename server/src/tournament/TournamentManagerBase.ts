@@ -3033,7 +3033,7 @@ export abstract class TournamentManagerBase {
      * why a break runs a little over five minutes end to end.
      */
     try {
-      await supabase
+      const persisted = await supabase
         .from('tournaments')
         .update({
           on_break: true,
@@ -3041,6 +3041,14 @@ export abstract class TournamentManagerBase {
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
+      // Supabase returns a failed write rather than throwing it; report it
+      // through the same channel as a thrown one. Only a write that returned
+      // without an error proves the row now says the level clock is paused,
+      // and the Horse tournament context must not keep reporting a running
+      // clock for the rest of its refresh interval.
+      if (persisted.error)
+        reportError(persisted.error, 'TournamentManagerBase.pauseForBreak_persist');
+      else refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
     } catch (err) {
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }
@@ -9361,6 +9369,10 @@ export abstract class TournamentManagerBase {
           const remaining = Math.min(duration, duration - (Date.now() - anchor));
           this.blindTimerStartedAt = anchor;
           if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
+          // The thaw moved the durable anchor this process now runs on. The
+          // Horse tournament context must not keep the pre-thaw anchor, whose
+          // elapsed time still counts the frozen minutes.
+          refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
           if (remaining > 1000) {
             deferredWakeMs = remaining;
             return;

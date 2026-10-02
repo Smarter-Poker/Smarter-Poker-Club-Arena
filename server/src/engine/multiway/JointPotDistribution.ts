@@ -14,6 +14,22 @@ const unitsOf = (amount: number, unit: number) => {
   return Math.round(value);
 };
 
+/** Every index, holes read as undefined (the spread-array check's reading). */
+function everyIndex<T>(values: readonly T[], test: (value: T) => boolean): boolean {
+  for (let i = 0; i < values.length; i++) if (!test(values[i])) return false;
+  return true;
+}
+
+/** Set membership (SameValueZero) without building a Set for <= 10 seats. */
+const sameValueZero = (a: unknown, b: unknown) => a === b || (a !== a && b !== b);
+function hasRepeat<T>(values: readonly T[], read: (value: T) => unknown): boolean {
+  for (let i = 1; i < values.length; i++) {
+    const value = read(values[i]);
+    for (let j = 0; j < i; j++) if (sameValueZero(read(values[j]), value)) return true;
+  }
+  return false;
+}
+
 /** Prepare hypothetical seats after their candidate investments. This is
  * memory-only: no controller state or wallet is changed. Unmatched live
  * contributions are refunded before pot construction, as at settlement;
@@ -23,8 +39,8 @@ export function prepareJointPots(players: readonly SeatPlayer[], chipUnit: 0.01 
     ![0.01, 1].includes(chipUnit) ||
     players.length < 2 ||
     players.length > 10 ||
-    new Set(players.map((p) => p.user_id)).size !== players.length ||
-    new Set(players.map((p) => p.seat)).size !== players.length
+    hasRepeat(players, (p) => p.user_id) ||
+    hasRepeat(players, (p) => p.seat)
   )
     throw new Error('joint_pots_invalid_seats');
   const seats = players.map((p) => {
@@ -47,12 +63,17 @@ export function prepareJointPots(players: readonly SeatPlayer[], chipUnit: 0.01 
     return { ...p, cards: [] };
   });
   const refunds: Record<string, number> = Object.fromEntries(players.map((p) => [p.user_id, 0]));
-  const live = seats
-    .map((p) => ({ p, units: unitsOf(p.totalInvested - (p.deadInvested ?? 0), chipUnit) }))
-    .sort((a, b) => b.units - a.units);
-  if (!live[0].p.is_folded && live[0].units > live[1].units) {
-    const refund = (live[0].units - live[1].units) * chipUnit;
-    const player = live[0].p;
+  // Live units per seat (every seat validated in order), then the stable
+  // descending order's first two entries: the first seat holding the most
+  // units, and the most units among all other seats.
+  const units = seats.map((p) => unitsOf(p.totalInvested - (p.deadInvested ?? 0), chipUnit));
+  let top = 0;
+  for (let i = 1; i < units.length; i++) if (units[i] > units[top]) top = i;
+  let second = -Infinity;
+  for (let i = 0; i < units.length; i++) if (i !== top && units[i] > second) second = units[i];
+  if (!seats[top].is_folded && units[top] > second) {
+    const refund = (units[top] - second) * chipUnit;
+    const player = seats[top];
     refunds[player.user_id] = refund;
     player.stack = (unitsOf(player.stack, chipUnit) + unitsOf(refund, chipUnit)) * chipUnit;
     player.totalInvested =
@@ -98,38 +119,48 @@ export function settleJointScores(input: {
   const { prepared, sample, heroId, opponentIds } = input;
   const { chipUnit, seats, pots } = prepared;
   const boardCount = sample.boards.length;
+  const seated = (id: string) => seats.some((p) => p.user_id === id);
   if (
     ![1, 2, 3].includes(boardCount) ||
     !Number.isInteger(input.dealerSeat) ||
     input.dealerSeat < 1 ||
     input.dealerSeat > 10 ||
-    !seats.some((p) => p.user_id === heroId) ||
+    !seated(heroId) ||
     opponentIds.includes(heroId) ||
-    new Set(opponentIds).size !== opponentIds.length ||
-    opponentIds.some((id) => !seats.some((p) => p.user_id === id))
+    hasRepeat(opponentIds, (id) => id) ||
+    opponentIds.some((id) => !seated(id))
   )
     throw new Error('joint_scores_invalid_identity');
+  const validHigh = (n: number) => Number.isSafeInteger(n) && n >= 0;
+  const validLow = (n: number | null) => n === null || (Number.isSafeInteger(n) && n >= 0);
   for (const board of sample.boards) {
     if (
       board.opponentHigh.length !== opponentIds.length ||
       board.opponentLow.length !== opponentIds.length ||
-      ![board.heroHigh, ...board.opponentHigh].every((n) => Number.isSafeInteger(n) && n >= 0) ||
-      ![board.heroLow, ...board.opponentLow].every(
-        (n) => n === null || (Number.isSafeInteger(n) && n >= 0)
-      )
+      !validHigh(board.heroHigh) ||
+      !everyIndex(board.opponentHigh, validHigh) ||
+      !validLow(board.heroLow) ||
+      !everyIndex(board.opponentLow, validLow)
     )
       throw new Error('joint_scores_invalid_sample');
   }
   const awards: JointPotAward[] = [];
   const totals: Record<string, number> = Object.fromEntries(seats.map((p) => [p.user_id, 0]));
   const boardTotals = sample.boards.map(() => ({ ...totals }));
-  const order = (ids: string[]) =>
-    seats
-      .filter((p) => ids.includes(p.user_id))
-      .sort(
-        (a, b) =>
-          Number(a.seat <= input.dealerSeat) - Number(b.seat <= input.dealerSeat) || a.seat - b.seat
-      );
+  // A single winner needs no ordering; any larger set keeps the stable sort.
+  const order = (ids: string[]) => {
+    const found =
+      ids.length === 1
+        ? seats.filter((p) => p.user_id === ids[0])
+        : seats.filter((p) => ids.includes(p.user_id));
+    return found.length < 2
+      ? found
+      : found.sort(
+          (a, b) =>
+            Number(a.seat <= input.dealerSeat) - Number(b.seat <= input.dealerSeat) ||
+            a.seat - b.seat
+        );
+  };
   const award = (
     units: number,
     winners: string[],

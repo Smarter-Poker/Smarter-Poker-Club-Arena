@@ -2614,6 +2614,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (
           !decision.isBombPot &&
           this.tableInfo.bomb_pot_enabled === true &&
+          // A tournament never deals a bomb, manual or scheduled (P9.2).
+          !this.isTournamentTable() &&
           // PUSHED, NOT POLLED (2026-08-29). This block used to run on EVERY
           // non-bomb hand of every bomb table — one round trip on the hand-start
           // critical path to learn a flag that is false essentially always.

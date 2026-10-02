@@ -64,22 +64,85 @@
   color: var(--tl-text);
 }
 
+/* ONE ACTION IS A LIT WORD ON THE GLASS, NOT A DRAWN PILL (2026-10-02).
+   #ClubArenaConsole section 0: "If you catch yourself writing border-radius,
+   linear-gradient or box-shadow to make something LOOK LIKE a control, stop.
+   The control exists in the art." This was a 999px pill with a 1px accent
+   border and a --tl-surface-raised fill - a control drawn entirely in CSS,
+   which is the one thing the standard forbids outright. Every painted control
+   in Club Arena comes from Dan's master art, and a surface whose foot would
+   otherwise leave a second plate painted and empty prints its single action as
+   a lit word instead (section 5, step 5: "One way out uses foot='foot' and
+   prints that action as a lit word on the glass").
+
+   The rest of this panel was already right - rows on the glass, label over
+   value, a hairline rule opening each group - so only the control changed.
+
+   SIZED IN px, DELIBERATELY. The standard asks for cqw against the console
+   container, and there is no container here: .tl-panel declares no
+   container-type, so a container unit would resolve against the small viewport
+   instead of the panel and this one control would be the only thing on the
+   tournament Overview that resized with the window. The whole
+   tournament-lobby-3d family is px (.tl-section-head h3 is font-size: 12px),
+   and matching the host beats importing a unit the host cannot serve.
+
+   NO !important, DELIBERATELY. metallic-popups.css scopes its button chassis
+   to :where([role='dialog'], [aria-modal='true'], .drawer, .side-panel,
+   .afx-sheet, .glp) button. This panel renders on the TournamentDetails route,
+   which is none of those, so the longhand refusals of section 3.5 are not
+   needed and adding them would be noise.
+
+   The ink is --tl-accent, the family's own lit colour, which .md-stage__next
+   two rules above already uses. Reaching for the console's #45adff here would
+   make this the only element in the tournament lobby lit a different blue. */
 .md-stage__open {
+  appearance: none;
   align-self: flex-start;
+  min-width: 0;
+  /* 44px so it stays a real touch target on a phone, which is where the
+     tournament Overview is mostly read. */
   min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--tl-hairline, rgba(111, 220, 255, 0.14));
-  border-radius: var(--tl-radius-pill, 999px);
-  background: var(--tl-surface-raised, #223046);
-  color: var(--tl-text, #e8eaf0);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--tl-accent, #6fdcff);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-align: left;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 8px rgb(111 220 255 / 55%),
+    0 1px 2px rgb(0 0 0 / 85%);
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* The press is a brightening, the way every other lit word in this app
+   presses. Not a transform: nothing moves. */
+.md-stage__open:active {
+  filter: brightness(1.3);
 }
 
 .md-stage__open:focus-visible {
   outline: 2px solid var(--tl-accent, #6fdcff);
   outline-offset: 2px;
+}
+
+/* A lit word carries its affordance in colour and glow, and forced-colors
+   throws both away - so give it an edge there, the way the pill used to have
+   one. CreateTablePage.css does the same for its Back control. */
+@media (forced-colors: active) {
+  .md-stage__open {
+    border-bottom: 1px solid ButtonText;
+    color: ButtonText;
+  }
 }
 
 .md-stage__leader {

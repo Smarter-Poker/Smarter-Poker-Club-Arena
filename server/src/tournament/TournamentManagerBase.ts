@@ -166,6 +166,7 @@ import {
   type StageRpcOutcome,
 } from './multiDayStages.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
+import { refreshTournamentBrainContextAfterClockCommit } from '../services/TournamentBrainContext.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
 import { bindTournamentDataAuthorityMethods } from '../services/supabase/dataActorContext.js';
@@ -3353,6 +3354,9 @@ export abstract class TournamentManagerBase {
         throw new Error('Tournament break release did not acknowledge its exact level clock');
       }
       this.breakReleaseRefusals = 0;
+      // The row now says the level runs again from a new anchor. The Horse
+      // tournament context must not keep reporting the paused clock.
+      refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
       return;
     }
     // A stopped event, an outstanding blind publication, an add-on pause or
@@ -9169,6 +9173,9 @@ export abstract class TournamentManagerBase {
               `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
             );
           }
+          // The level clock is durable now. A context read that started before
+          // this write saw no anchor and reported `level_timing_missing`.
+          if (!error) refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
         })
         .catch((err: unknown) => {
           console.warn(
@@ -9581,6 +9588,10 @@ export abstract class TournamentManagerBase {
       }
       this.pendingBlindTransition = null;
       committed = { level, startedAt: levelStartedAt };
+      // The new level is committed on the tournament and every table. The
+      // Horse tournament context reads it now instead of up to one refresh
+      // interval later, when new hands would already be dealt at these stakes.
+      refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
       // Announce only after every table and the tournament accepted this level.
       for (const tableId of this.tableEngines.keys()) {
         // Phase X5 (2026-04-28): emit level_up discrete event so clients

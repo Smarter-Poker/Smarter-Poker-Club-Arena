@@ -72,9 +72,11 @@ vi.mock('./errorReporter.js', () => ({ reportError: h.reportError }));
 
 import {
   __clearTournamentBrainCache,
+  deriveBlindState,
   getTournamentBrainContextSnapshot,
   peekTournamentBrainContext,
   refreshTournamentBrainContext,
+  refreshTournamentBrainContextAfterClockCommit,
 } from './TournamentBrainContext.js';
 import { TOURNAMENT_CONTEXT_INCOMPLETE } from '../engine/HorseTournamentPreflop.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
@@ -978,5 +980,111 @@ describe('TournamentBrainContext lifecycle cache', () => {
       expect.any(Error),
       'TournamentBrainContext.recovery_funding_unavailable'
     );
+  });
+
+  it('reads a committed blind level at once instead of one refresh interval later', async () => {
+    successfulResponses();
+    refreshTournamentBrainContext('t-level-commit');
+    await settleRefresh();
+    expect(peekTournamentBrainContext('t-level-commit')?.currentLevel).toBe(0);
+
+    // The manager publishes level 2 one second later. The TTL paces background
+    // reads, so the lifecycle entry alone does not read again yet.
+    vi.setSystemTime(NOW + 1000);
+    h.responses.set('tournaments', {
+      data: {
+        ...tournamentRow(),
+        current_level: 1,
+        level_started_at: new Date(NOW + 1000).toISOString(),
+      },
+      error: null,
+    });
+    const reads = h.calls.filter((table) => table === 'tournaments').length;
+    refreshTournamentBrainContext('t-level-commit');
+    expect(h.calls.filter((table) => table === 'tournaments')).toHaveLength(reads);
+    expect(peekTournamentBrainContext('t-level-commit')?.currentLevel).toBe(0);
+
+    refreshTournamentBrainContextAfterClockCommit('t-level-commit');
+    await settleRefresh();
+    const committed = getTournamentBrainContextSnapshot('t-level-commit', NOW + 1000);
+    expect(committed.status).toBe('complete');
+    expect(committed.context).toMatchObject({
+      currentLevel: 1,
+      currentSmallBlind: 100,
+      currentBigBlind: 200,
+      currentAnte: 200,
+      levelElapsedMin: 0,
+      previousLevel: { level: 0, smallBlind: 50, bigBlind: 100, ante: 100, durationMin: 10 },
+    });
+    expect(committed.contextProvenance.source?.generation).toBe(2);
+    expect(committed.contextProvenance.source?.readStartedAtMs).toBe(NOW + 1000);
+  });
+
+  it('never lets a read that started before the clock commit publish over it', async () => {
+    successfulResponses();
+    let resolveOld!: (value: { data: unknown; error: null }) => void;
+    h.responses.set(
+      'tournaments',
+      new Promise<{ data: unknown; error: null }>((resolve) => {
+        resolveOld = resolve;
+      })
+    );
+    refreshTournamentBrainContext('t-level-fence');
+    // The level is committed while that first read is still in flight.
+    h.responses.set('tournaments', {
+      data: { ...tournamentRow(), current_level: 1 },
+      error: null,
+    });
+    refreshTournamentBrainContextAfterClockCommit('t-level-fence');
+    await settleRefresh();
+    const committed = getTournamentBrainContextSnapshot('t-level-fence', NOW);
+    expect(committed.context?.currentLevel).toBe(1);
+    expect(committed.contextProvenance.source?.generation).toBe(2);
+
+    resolveOld({ data: tournamentRow(), error: null });
+    await settleRefresh();
+    const after = getTournamentBrainContextSnapshot('t-level-fence', NOW);
+    expect(after.context?.currentLevel).toBe(1);
+    expect(after.contextProvenance.source).toBe(committed.contextProvenance.source);
+  });
+
+  it('reads nothing for a tournament no table in this process has asked for', async () => {
+    successfulResponses();
+    refreshTournamentBrainContextAfterClockCommit('t-level-unread');
+    await settleRefresh();
+    expect(h.calls).toEqual([]);
+    expect(peekTournamentBrainContext('t-level-unread')).toBeNull();
+  });
+
+  it('names the playable level before the current one from the same structure', () => {
+    const structure = [
+      { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 6 },
+      { level: 2, smallBlind: 15, bigBlind: 30, ante: 3, durationMinutes: 6 },
+      { isBreak: true, durationMinutes: 5 },
+      { level: 3, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 8 },
+    ];
+    const started = new Date(NOW - 60_000).toISOString();
+    expect(deriveBlindState(structure, 0, started, NOW).previousLevel).toBeNull();
+    expect(deriveBlindState(structure, 1, started, NOW).previousLevel).toEqual({
+      level: 0,
+      smallBlind: 10,
+      bigBlind: 20,
+      ante: 0,
+      durationMin: 6,
+    });
+    // A break between two levels is skipped: the hand before level 3 was dealt
+    // at level 2's stakes.
+    expect(deriveBlindState(structure, 3, started, NOW).previousLevel).toEqual({
+      level: 1,
+      smallBlind: 15,
+      bigBlind: 30,
+      ante: 3,
+      durationMin: 6,
+    });
+    // A paused clock still names the previous stakes; completeness is decided
+    // separately by the timing status.
+    const paused = deriveBlindState(structure, 1, started, NOW, { onBreak: true });
+    expect(paused.timingStatus).toBe('paused');
+    expect(paused.previousLevel?.bigBlind).toBe(20);
   });
 });

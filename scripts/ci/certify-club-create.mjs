@@ -148,9 +148,17 @@ try {
   }
   clubIds.push(club.id);
 
-  const { data: welcome, error: welcomeError } = await player.rpc('fn_get_club_welcome_package', {
-    p_club_id: club.id,
-  });
+  // This is a read-only receipt over an already committed, idempotently
+  // provisioned club. Production service_role/authenticated statements are
+  // bounded, so a load-spike timeout must be retried here instead of turning a
+  // successfully created and cleanly retired fixture into a false red.
+  const { data: welcome, error: welcomeError } = await retryTransient(
+    () => player.rpc('fn_get_club_welcome_package', { p_club_id: club.id }),
+    {
+      failureOf: (result) => result?.error,
+      label: `welcome package read for certification club ${club.id}`,
+    }
+  );
   const welcomeItems = Array.isArray(welcome?.items) ? welcome.items : [];
   const welcomeCash = welcomeItems.filter((item) => item?.entity_kind === 'cash_game');
   const welcomeSchedules = welcomeItems.filter(
@@ -485,9 +493,12 @@ try {
   }
   clubIds.push(presetClub.id);
 
-  const { data: secondWelcome, error: secondWelcomeError } = await player.rpc(
-    'fn_get_club_welcome_package',
-    { p_club_id: presetClub.id }
+  const { data: secondWelcome, error: secondWelcomeError } = await retryTransient(
+    () => player.rpc('fn_get_club_welcome_package', { p_club_id: presetClub.id }),
+    {
+      failureOf: (result) => result?.error,
+      label: `welcome package refusal read for certification club ${presetClub.id}`,
+    }
   );
   if (
     secondWelcomeError ||

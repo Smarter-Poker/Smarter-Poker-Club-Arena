@@ -338,6 +338,8 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.fn_ca_supply_snapshot() FROM PUBLIC, anon, authenticated;
 
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_supply_snapshot', 'migration 20261002164500_the_supply_meter_counts_a_leg_that_commits_after_its_reading');
+
 -- ---------------------------------------------------------------------------
 -- 3. The 13:05 -> 14:05 window is restated once, by the same rule
 -- ---------------------------------------------------------------------------

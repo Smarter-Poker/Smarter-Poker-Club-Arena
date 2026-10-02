@@ -93,6 +93,13 @@ const boardDeletePermitSql = readFileSync(
   ),
   'utf8'
 );
+const freshBoardCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002205511_welcome_certification_accepts_fresh_exact_board.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -754,5 +761,22 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(boardOriginCleanupSql).toContain(
       'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_origins(uuid)\n  FROM PUBLIC,anon,authenticated,service_role'
     );
+
+    expect(freshBoardCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(freshBoardCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(freshBoardCleanupSql).toContain('FRESH_BOARD_TOURNAMENT_DISCOVERY_PREIMAGE_REFUSED');
+    expect(freshBoardCleanupSql).toContain('FRESH_BOARD_TABLE_DISCOVERY_PREIMAGE_REFUSED');
+    expect(freshBoardCleanupSql).toContain('FRESH_BOARD_COMPLETE_ALLOWLIST_PREIMAGE_REFUSED');
+    expect(freshBoardCleanupSql).toContain('FRESH_BOARD_DISCOVERY_POSTIMAGE_REFUSED');
+    expect(freshBoardCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
+    expect(freshBoardCleanupSql).toContain('cardinality(v_board_tournaments) NOT IN (0,12)');
+    expect(freshBoardCleanupSql).toContain(
+      'v_expected_count IS DISTINCT FROM cardinality(v_board_tournaments)'
+    );
+    expect(freshBoardCleanupSql).toContain('l.acquired_at>=v_cutoff OR l.heartbeat_at>=v_cutoff');
+    expect(freshBoardCleanupSql).toContain('smarter_private.f06_lease_has_pending_custody');
+    expect(freshBoardCleanupSql).toContain("origin_kind IS DISTINCT FROM ''prelaunch''");
+    expect(freshBoardCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
+    expect(freshBoardCleanupSql).not.toMatch(/DELETE FROM public\.(clubs|players|wallets)/);
   });
 });

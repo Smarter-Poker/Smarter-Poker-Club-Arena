@@ -20,6 +20,8 @@ BOARD_GAME_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002085447_welcom
 BOARD_LEASE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002102542_welcome_certification_retires_stale_board_tournament_leases.sql'
 BOARD_ORIGIN_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002111120_welcome_certification_accepts_exact_prelaunch_origins.sql'
 BOARD_DELETE_PERMIT_MIGRATION = ROOT / 'supabase/migrations/20261002115605_welcome_certification_deletes_only_its_unused_board_tables.sql'
+FRESH_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002205511_welcome_certification_accepts_fresh_exact_board.sql'
+POST_RESET_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002210559_post_reset_welcome_certification_cleanup.sql'
 TERMINAL_TABLE_GUARD_MIGRATION = ROOT / 'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 _terminal_guard_source = TERMINAL_TABLE_GUARD_MIGRATION.read_text()
 TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
@@ -37,7 +39,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -56,6 +58,9 @@ def run_refusal(name, sql, expected_error):
 SETUP = r"""
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
 CREATE SCHEMA auth; CREATE SCHEMA extensions; CREATE SCHEMA smarter_private;
+CREATE FUNCTION fixture_uuid_min(uuid,uuid) RETURNS uuid LANGUAGE sql IMMUTABLE STRICT
+ AS $$SELECT least($1,$2)$$;
+CREATE AGGREGATE min(uuid)(SFUNC=fixture_uuid_min,STYPE=uuid,SORTOP=operator(<));
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.role',true),'')$$;
 CREATE TABLE auth.users(id uuid PRIMARY KEY,email text NOT NULL);
@@ -70,8 +75,12 @@ CREATE TABLE ca_chip_store_coverage(
 INSERT INTO ca_chip_store_coverage(store,treatment,counted_by,notes)
 VALUES('opening_setup','counted','leaderboard_liability','fixture mirrors production clearing coverage');
 CREATE TABLE chip_ledger(
- category text NOT NULL,
- CONSTRAINT chip_ledger_category_check CHECK(category IN ('club_opening_allocation'))
+ performed_by uuid,from_type text,from_entity_id uuid,from_label text,
+ to_type text,to_entity_id uuid,to_label text,amount numeric NOT NULL DEFAULT 0,
+ category text NOT NULL,club_id uuid,union_id uuid,description text,idempotency_key text,
+ pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,
+ metadata jsonb NOT NULL DEFAULT '{}',
+ CONSTRAINT chip_ledger_category_check CHECK(category IN ('club_opening_allocation','reversal'))
 );
 CREATE FUNCTION fn_fixture_money_registry_guard() RETURNS event_trigger LANGUAGE plpgsql AS $guard$
 DECLARE command record;
@@ -95,25 +104,38 @@ END $guard$;
 CREATE EVENT TRIGGER fixture_money_registry_guard ON ddl_command_end
   WHEN TAG IN ('CREATE FUNCTION') EXECUTE FUNCTION fn_fixture_money_registry_guard();
 CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,name text,is_union boolean DEFAULT false,union_id uuid,
- chip_treasury numeric DEFAULT 100000,bbj_enabled boolean DEFAULT false,bbj_rake_enabled boolean DEFAULT false,
+ chip_treasury numeric DEFAULT 100000,chip_pool numeric DEFAULT 0,promo_balance numeric DEFAULT 0,
+ insurance_balance numeric DEFAULT 0,bbj_enabled boolean DEFAULT false,bbj_rake_enabled boolean DEFAULT false,
  spins_enabled boolean DEFAULT false,spins_preseed_amount numeric DEFAULT 0,spins_wallet_funding text,
  created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
 CREATE TABLE club_creation_requests(user_id uuid NOT NULL,request_id uuid NOT NULL,club_id uuid NOT NULL REFERENCES clubs(id),PRIMARY KEY(user_id,request_id));
 CREATE TABLE union_clubs(club_id uuid,union_id uuid);
 CREATE TABLE club_members(club_id uuid,user_id uuid,chip_balance numeric DEFAULT 0,promo_balance numeric DEFAULT 0);
 CREATE TABLE agents(club_id uuid,user_id uuid);
-CREATE TABLE bbj_pools(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid,main_balance numeric,backup_balance numeric,
+CREATE TABLE bbj_pools(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid,union_id uuid,main_balance numeric,backup_balance numeric,
  promo_balance numeric,pool_amount numeric,hands_contributed integer DEFAULT 0,total_contributed numeric DEFAULT 0,
  total_paid_out numeric DEFAULT 0,hit_count integer DEFAULT 0,status text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
 CREATE TABLE bbj_contributions(pool_id uuid);
 CREATE TABLE bbj_payouts(pool_id uuid);
-CREATE TABLE spin_bonus_pools(club_id uuid PRIMARY KEY,balance numeric DEFAULT 0,seeded_amount numeric DEFAULT 0,
+CREATE TABLE spin_bonus_pools(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid UNIQUE,balance numeric DEFAULT 0,seeded_amount numeric DEFAULT 0,
  seed_source_wallet text,owner_kind text,offered_max_stake numeric DEFAULT 0,highest_stake numeric DEFAULT 0,
  total_deposited numeric DEFAULT 0,total_drawn numeric DEFAULT 0,spin_count integer DEFAULT 0,bonus_count integer DEFAULT 0,
- surplus_returned numeric DEFAULT 0,is_active boolean DEFAULT true,activated_at timestamptz,
+ surplus_returned numeric DEFAULT 0,seed_returned_amount numeric DEFAULT 0,is_active boolean DEFAULT true,activated_at timestamptz,
  deactivated_at timestamptz,
  updated_at timestamptz DEFAULT now());
 CREATE TABLE spin_reserve_ledger(club_id uuid,kind text,amount numeric,balance_after numeric,note text,tournament_id uuid);
+CREATE TABLE chip_transactions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid,amount numeric,
+ transaction_type text,notes text,balance_after numeric,metadata jsonb DEFAULT '{}',created_at timestamptz DEFAULT now());
+CREATE TABLE wheel_configs(host_id uuid PRIMARY KEY,host_kind text,enabled boolean);
+CREATE TABLE wheel_pools(host_id uuid PRIMARY KEY,spins bigint DEFAULT 0,intake_diamonds numeric DEFAULT 0,
+ chips_minted numeric DEFAULT 0,chips_paid numeric DEFAULT 0,diamonds_paid numeric DEFAULT 0);
+CREATE TABLE diamond_game_configs(host_id uuid,game text,host_kind text,enabled boolean,PRIMARY KEY(host_id,game));
+CREATE TABLE diamond_game_pools(host_id uuid,game text,rounds bigint DEFAULT 0,intake_diamonds numeric DEFAULT 0,
+ chips_minted numeric DEFAULT 0,chips_paid numeric DEFAULT 0,reserved_chips numeric DEFAULT 0,PRIMARY KEY(host_id,game));
+CREATE TABLE wheel_spins(host_id uuid);
+CREATE TABLE plinko_drops(host_id uuid);
+CREATE TABLE crash_rounds(host_id uuid);
+CREATE TABLE diamond_choice_rounds(host_id uuid);
 CREATE TABLE leaderboard_reward_program_versions(club_id uuid,version integer);
 CREATE TABLE cash_games(id uuid PRIMARY KEY,club_id uuid,enabled boolean DEFAULT true,state text DEFAULT 'live',closed_at timestamptz,closed_by uuid,updated_at timestamptz DEFAULT now());
 CREATE TABLE tournaments(id uuid PRIMARY KEY,club_id uuid,union_id uuid,schedule_id uuid,name text,
@@ -303,6 +325,125 @@ SELECT pg_get_triggerdef(t.oid,true),t.tgenabled
   FROM pg_trigger t WHERE t.tgname='tournament_table_terminal_close_is_irreversible';
 """)
     run('install-board-delete-permit',BOARD_DELETE_PERMIT_MIGRATION.read_text())
+    run('install-fresh-board-cleanup',FRESH_BOARD_CLEANUP_MIGRATION.read_text())
+    run('install-post-reset-cleanup',POST_RESET_CLEANUP_MIGRATION.read_text())
+    run('install-post-reset-fixture-builder',r"""
+CREATE FUNCTION test_shape_post_reset_welcome_fixture(p_club uuid,p_owner uuid) RETURNS void
+LANGUAGE plpgsql AS $fixture$
+DECLARE
+  v_operation uuid:=gen_random_uuid();
+  v_schedule uuid;
+  v_scheduled uuid;
+  v_cash uuid[];
+  v_initial_tables uuid[];
+  v_tournaments uuid[];
+  v_tables uuid[];
+  v_bbj uuid;
+  v_spin uuid;
+BEGIN
+  SELECT entity_id INTO v_schedule FROM club_welcome_package_items
+   WHERE club_id=p_club AND entity_kind='tournament_schedule';
+  SELECT COALESCE(array_agg(entity_id ORDER BY entity_id),'{}'),
+         COALESCE(array_agg(initial_table_id ORDER BY initial_table_id),'{}')
+    INTO v_cash,v_initial_tables FROM club_welcome_package_items
+   WHERE club_id=p_club AND entity_kind='cash_game';
+
+  INSERT INTO tournaments(id,club_id,schedule_id,name,game_type,variant,tournament_type,
+    buy_in_amount,buy_in_fee,max_players,min_players,table_size,starting_chips,current_players,status)
+  VALUES(gen_random_uuid(),p_club,v_schedule,'Daily 7 PM $25','NLH','freezeout','MTT',25,0,10000,2,9,20000,0,'REGISTERING')
+  RETURNING id INTO v_scheduled;
+  INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key,created_at)
+  VALUES(v_schedule,v_scheduled,'post-reset-scheduled',now()-interval '20 minutes');
+
+  WITH expected(name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,seats,stack) AS (
+    VALUES
+    ('NLH Heads-Up 1','NLH','sng','SNG',.95::numeric,.05::numeric,2,1000),
+    ('PLO4 Heads-Up 1','PLO4','sng','SNG',.95::numeric,.05::numeric,2,1000),
+    ('NLH Heads-Up 1 Turbo','NLH','sng','SNG',.95::numeric,.05::numeric,2,300),
+    ('PLO4 Heads-Up 1 Turbo','PLO4','sng','SNG',.95::numeric,.05::numeric,2,300),
+    ('1 Chip Spin NLH','NLH','spin','SPIN',1::numeric,0::numeric,3,300),
+    ('1 Chip Spin PLO4','PLO4','spin','SPIN',1::numeric,0::numeric,3,300),
+    ('1 Chip Spin PLO5','PLO5','spin','SPIN',1::numeric,0::numeric,3,300),
+    ('1 Chip Spin PLO6','PLO6','spin','SPIN',1::numeric,0::numeric,3,300),
+    ('1 Chip Deep Stack Spin NLH','NLH','spin','SPIN',1::numeric,0::numeric,3,1000),
+    ('1 Chip Deep Stack Spin PLO4','PLO4','spin','SPIN',1::numeric,0::numeric,3,1000),
+    ('1 Chip Deep Stack Spin PLO5','PLO5','spin','SPIN',1::numeric,0::numeric,3,1000),
+    ('1 Chip Deep Stack Spin PLO6','PLO6','spin','SPIN',1::numeric,0::numeric,3,1000)
+  )
+  INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+    max_players,min_players,table_size,starting_chips,current_players,status)
+  SELECT gen_random_uuid(),p_club,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+    seats,seats,seats,stack,0,'REGISTERING' FROM expected;
+
+  INSERT INTO tables(id,club_id,tournament_id,name,game_type,status,lifecycle,current_players,max_players,is_deleted)
+  SELECT gen_random_uuid(),p_club,t.id,t.name,'tournament','waiting','opening',0,t.max_players,false
+    FROM tournaments t WHERE t.club_id=p_club;
+  INSERT INTO tournament_table_origins(table_id,tournament_id,origin_kind)
+  SELECT id,tournament_id,'prelaunch' FROM tables
+   WHERE club_id=p_club AND tournament_id IS NOT NULL;
+  INSERT INTO engine_tournament_leases(tournament_id,instance_id,engine_version,acquired_at,
+    heartbeat_at,lease_generation,protocol_version)
+  SELECT id,'retired-post-reset-cert','fixture',now()-interval '20 minutes',
+    now()-interval '20 minutes',gen_random_uuid(),2 FROM tournaments WHERE club_id=p_club;
+
+  UPDATE tournaments SET status='CANCELLED',ended_at=now(),started_at=NULL,current_players=0
+   WHERE club_id=p_club;
+  UPDATE tables SET status='closed',lifecycle='closed',current_players=0 WHERE club_id=p_club;
+  INSERT INTO managed_game_schedules(game_kind,game_id,status,completed_at,result)
+  VALUES('tournament',v_scheduled,'cancelled',now(),'{"reason":"welcome_package_reset"}'),
+        ('table',(SELECT id FROM tables WHERE club_id=p_club AND tournament_id=v_scheduled),
+         'cancelled',now(),'{"reason":"welcome_package_reset"}');
+
+  UPDATE cash_games SET enabled=false,state='dormant',closed_at=now(),closed_by=p_owner
+   WHERE id=ANY(v_cash);
+  UPDATE tournament_schedules SET active=false WHERE id=v_schedule;
+  UPDATE clubs SET chip_treasury=100000,chip_pool=0,promo_balance=0,insurance_balance=0,
+    spins_enabled=false,bbj_enabled=false,bbj_rake_enabled=false WHERE id=p_club;
+  UPDATE bbj_pools SET main_balance=0,backup_balance=0,promo_balance=0,pool_amount=0,
+    hands_contributed=0,total_contributed=0,total_paid_out=0,hit_count=0,status='retired'
+   WHERE club_id=p_club RETURNING id INTO v_bbj;
+  UPDATE spin_bonus_pools SET balance=0,seeded_amount=0,seed_returned_amount=200,
+    total_deposited=0,total_drawn=0,spin_count=0,bonus_count=0,surplus_returned=0,
+    is_active=false,deactivated_at=now() WHERE club_id=p_club RETURNING id INTO v_spin;
+  INSERT INTO spin_reserve_ledger(club_id,kind,amount,balance_after,note)
+  VALUES(p_club,'seed_return',-200,0,'welcome_package_reset'),
+        (p_club,'deactivation',0,0,'welcome_package_reset');
+  INSERT INTO chip_ledger(performed_by,from_type,from_entity_id,from_label,to_type,to_entity_id,
+    to_label,amount,category,club_id,description,idempotency_key,pre_from_balance,
+    post_from_balance,pre_to_balance,post_to_balance,metadata)
+  VALUES(p_owner,'spin_reserve',v_spin,'Spin Reserve','club_treasury',p_club,'Club Treasury',
+    200,'reversal',p_club,'Welcome reset Spin seed return',
+    'spin-deactivation-seed-return:'||p_club::text||':200',200,0,99800,100000,
+    jsonb_build_object('reason','welcome_package_reset','operation_id',v_operation));
+  INSERT INTO chip_transactions(club_id,amount,transaction_type,notes,balance_after,metadata)
+  VALUES(p_club,100,'bbj_promo_sweep','Welcome reset BBJ return',100000,
+    jsonb_build_object('reason','welcome_package_reset','pool_id',v_bbj,
+                       'operation_id',v_operation));
+
+  INSERT INTO wheel_configs(host_id,host_kind,enabled) VALUES(p_club,'club',false);
+  INSERT INTO wheel_pools(host_id) VALUES(p_club);
+  INSERT INTO diamond_game_configs(host_id,game,host_kind,enabled)
+  SELECT p_club,game,'club',false FROM unnest(ARRAY['plinko','crash','crossing','mines']) game;
+  INSERT INTO diamond_game_pools(host_id,game)
+  SELECT p_club,game FROM unnest(ARRAY['plinko','crash','crossing','mines']) game;
+
+  UPDATE club_welcome_package_items SET retired_at=now(),reset_operation_id=v_operation
+   WHERE club_id=p_club;
+  SELECT COALESCE(array_agg(id ORDER BY id),'{}') INTO v_tournaments
+    FROM tournaments WHERE club_id=p_club;
+  SELECT COALESCE(array_agg(id ORDER BY id),'{}') INTO v_tables
+    FROM tables WHERE club_id=p_club;
+  INSERT INTO club_welcome_reset_receipts(club_id,operation_id,actor_id,result)
+  VALUES(p_club,v_operation,p_owner,jsonb_build_object(
+    'ok',true,'operation_id',v_operation,'package_version','welcome-v1',
+    'opening_grant_unwound',false,'owner_acceptance_receipts_preserved',true,
+    'returned_to_treasury',jsonb_build_object('bbj',100,'spin',200),
+    'removed',jsonb_build_object('cash_game_ids',to_jsonb(v_cash),
+      'schedule_ids',to_jsonb(ARRAY[v_schedule]),'tournament_ids',to_jsonb(v_tournaments),
+      'table_ids',to_jsonb(v_tables))));
+END
+$fixture$;
+""")
     controller_authority = run('controller-provenance-repair-authority-before-refusal',f"""
 SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
        p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
@@ -403,6 +544,28 @@ COMMIT;
     owner9='00000000-0000-4000-8000-000000000009'; c10='00000000-0000-4000-9000-000000000010'
     owner10='00000000-0000-4000-8000-000000000010'; c11='00000000-0000-4000-9000-000000000011'
     owner11='00000000-0000-4000-8000-000000000011'; c12='00000000-0000-4000-9000-000000000012'
+    owner12='00000000-0000-4000-8000-000000000012'; c13='00000000-0000-4000-9000-000000000013'
+    owner13='00000000-0000-4000-8000-000000000013'; c14='00000000-0000-4000-9000-000000000014'
+    owner14='00000000-0000-4000-8000-000000000014'; c15='00000000-0000-4000-9000-000000000015'
+    owner15='00000000-0000-4000-8000-000000000015'; c16='00000000-0000-4000-9000-000000000016'
+    owner16='00000000-0000-4000-8000-000000000016'; c17='00000000-0000-4000-9000-000000000017'
+    owner17='00000000-0000-4000-8000-000000000017'; c18='00000000-0000-4000-9000-000000000018'
+    owner18='00000000-0000-4000-8000-000000000018'; c19='00000000-0000-4000-9000-000000000019'
+    def shape_post_reset_fixture(case,owner,club):
+        run(case,f"""
+INSERT INTO auth.users VALUES('{owner}','ca-customization-cert-postdeploy-{club[-2:]}@example.invalid');
+INSERT INTO clubs(id,owner_id,name) VALUES('{club}','{owner}','Crest Cert Post Reset {club[-2:]}');
+INSERT INTO club_members(club_id,user_id) VALUES('{club}','{owner}');
+SET request.jwt.claim.sub='{owner}';
+INSERT INTO club_creation_requests VALUES('{owner}',gen_random_uuid(),'{club}');
+SELECT test_shape_post_reset_welcome_fixture('{club}','{owner}');
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{club}'),
+       (SELECT count(*) FROM tables WHERE club_id='{club}'),
+       (SELECT count(*) FROM managed_game_schedules
+         WHERE game_id IN (SELECT id FROM tournaments WHERE club_id='{club}')
+            OR game_id IN (SELECT id FROM tables WHERE club_id='{club}'))
+  FROM club_welcome_package_items WHERE club_id='{club}' AND retired_at IS NOT NULL;
+""",'\n10|13|22|2')
     run('prospective-first',f"SET request.jwt.claim.sub='{owner1}'; INSERT INTO clubs(id,owner_id) VALUES('{c1}','{owner1}'); INSERT INTO club_creation_requests VALUES('{owner1}',gen_random_uuid(),'{c1}'); SELECT count(*),count(*) FILTER(WHERE r.club_id IS NOT NULL),(SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c1}') FROM club_welcome_entitlements e LEFT JOIN club_welcome_package_receipts r USING(club_id) WHERE e.owner_id='{owner1}';",'1|1|10')
     run('lifetime-second-ineligible',f"SET request.jwt.claim.sub='{owner1}'; INSERT INTO clubs(id,owner_id) VALUES('{c2}','{owner1}'); INSERT INTO club_creation_requests VALUES('{owner1}',gen_random_uuid(),'{c2}'); SELECT count(*) FROM club_welcome_entitlements WHERE owner_id='{owner1}';",'1')
     run('existing-owner-ineligible',f"SET request.jwt.claim.sub='{owner2}'; INSERT INTO clubs(id,owner_id) VALUES('{c3}','{owner2}'); INSERT INTO club_creation_requests VALUES('{owner2}',gen_random_uuid(),'{c3}'); SELECT count(*) FROM club_welcome_entitlements WHERE owner_id='{owner2}';",'0')
@@ -452,12 +615,12 @@ WITH expected(name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,se
  INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
   max_players,min_players,table_size,starting_chips,current_players,status,created_at,updated_at)
  SELECT gen_random_uuid(),'{c11}',name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
-  seats,seats,seats,stack,0,'REGISTERING',now()-interval '10 minutes',now()-interval '10 minutes'
+  seats,seats,seats,stack,0,'REGISTERING',now(),now()
  FROM expected RETURNING id,name,max_players
 )
 INSERT INTO tables(id,club_id,tournament_id,name,game_type,status,current_players,max_players,is_deleted,created_at,updated_at)
 SELECT gen_random_uuid(),'{c11}',id,name,'tournament','waiting',0,max_players,false,
- now()-interval '10 minutes',now()-interval '10 minutes' FROM games;
+ now(),now() FROM games;
 INSERT INTO engine_tournament_leases(tournament_id,instance_id,engine_version,acquired_at,heartbeat_at,lease_generation,protocol_version)
 SELECT id,'retired-cert-engine','test',now()-interval '11 minutes',now()-interval '11 minutes',gen_random_uuid(),2
   FROM tournaments WHERE club_id='{c11}' AND schedule_id IS NULL;
@@ -490,10 +653,19 @@ INSERT INTO auth.users VALUES('{owner11}','ca-customization-cert-postdeploy-boar
 INSERT INTO clubs(id,owner_id,name) VALUES('{c12}','{owner11}','Crest Cert Board Active');
 INSERT INTO club_members(club_id,user_id) VALUES('{c12}','{owner11}');
 SET request.jwt.claim.sub='{owner11}'; INSERT INTO club_creation_requests VALUES('{owner11}',gen_random_uuid(),'{c12}');
-WITH g AS(
+WITH expected(name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,seats,stack) AS (
+ VALUES
+ ('NLH Heads-Up 1','NLH','sng','SNG',0.95,0.05,2,1000),('PLO4 Heads-Up 1','PLO4','sng','SNG',0.95,0.05,2,1000),
+ ('NLH Heads-Up 1 Turbo','NLH','sng','SNG',0.95,0.05,2,300),('PLO4 Heads-Up 1 Turbo','PLO4','sng','SNG',0.95,0.05,2,300),
+ ('1 Chip Spin NLH','NLH','spin','SPIN',1,0,3,300),('1 Chip Spin PLO4','PLO4','spin','SPIN',1,0,3,300),
+ ('1 Chip Spin PLO5','PLO5','spin','SPIN',1,0,3,300),('1 Chip Spin PLO6','PLO6','spin','SPIN',1,0,3,300),
+ ('1 Chip Deep Stack Spin NLH','NLH','spin','SPIN',1,0,3,1000),('1 Chip Deep Stack Spin PLO4','PLO4','spin','SPIN',1,0,3,1000),
+ ('1 Chip Deep Stack Spin PLO5','PLO5','spin','SPIN',1,0,3,1000),('1 Chip Deep Stack Spin PLO6','PLO6','spin','SPIN',1,0,3,1000)
+), g AS(
  INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
   max_players,min_players,table_size,starting_chips,current_players,status)
- VALUES(gen_random_uuid(),'{c12}','NLH Heads-Up 1','NLH','sng','SNG',0.95,0.05,2,2,2,1000,0,'REGISTERING')
+ SELECT gen_random_uuid(),'{c12}',name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+  seats,seats,seats,stack,0,'REGISTERING' FROM expected
  RETURNING id,name,max_players
 )
 INSERT INTO tables(id,club_id,tournament_id,name,game_type,status,current_players,max_players,is_deleted)
@@ -503,13 +675,6 @@ SELECT id,tournament_id,'prelaunch'
 FROM tables
 WHERE club_id='{c12}' AND tournament_id IS NOT NULL;
 SET request.jwt.claim.role='service_role';
-DO $x$ BEGIN PERFORM fn_ca_retire_welcome_certification_club('{c12}','fresh-board-cert');
- RAISE EXCEPTION 'fresh_board_not_refused'; EXCEPTION WHEN sqlstate '55000' THEN
- IF SQLERRM<>'WELCOME_CERTIFICATION_BOARD_LINEAGE_REFUSED' THEN RAISE; END IF; END $x$;
-SELECT is_active,(SELECT count(*) FROM tournaments WHERE club_id='{c12}'),
-       (SELECT count(*) FROM tables WHERE club_id='{c12}') FROM spin_bonus_pools WHERE club_id='{c12}';
-UPDATE tournaments SET created_at=now()-interval '10 minutes',updated_at=now()-interval '10 minutes' WHERE club_id='{c12}';
-UPDATE tables SET created_at=now()-interval '10 minutes',updated_at=now()-interval '10 minutes' WHERE club_id='{c12}';
 INSERT INTO engine_tournament_leases(tournament_id,instance_id,engine_version,acquired_at,heartbeat_at,lease_generation,protocol_version)
 SELECT id,'live-cert-engine','test',now(),now(),gen_random_uuid(),2 FROM tournaments WHERE club_id='{c12}';
 DO $x$ BEGIN PERFORM fn_ca_retire_welcome_certification_club('{c12}','fresh-lease-board-cert');
@@ -547,7 +712,92 @@ SELECT is_active,(SELECT count(*) FROM tournaments WHERE club_id='{c12}'),
        (SELECT count(*) FROM tournament_table_origins),
        (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
   FROM spin_bonus_pools WHERE club_id='{c12}';
-""",'t|1|10\nt|1|1\nt|1|1\nt|1|1\nt|1|1|1|0')
+""",'t|12|12\nt|12|12\nt|12|12\nt|12|12|12|0')
+    shape_post_reset_fixture('post-reset-success-setup',owner12,c13)
+    run('post-reset-success-cleans-only-mutable-fixture-state',f"""
+SET request.jwt.claim.role='service_role';
+WITH retired AS (
+  SELECT fn_ca_retire_welcome_certification_club('{c13}','post-reset-cert') result
+)
+SELECT result->>'cleanup_state',result->>'chips_retired' FROM retired;
+SELECT (SELECT count(*) FROM tables WHERE club_id='{c13}'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c13}'),
+       (SELECT count(*) FROM cash_games WHERE club_id='{c13}'),
+       (SELECT count(*) FROM tournament_schedules WHERE club_id='{c13}'),
+       (SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c13}'),
+       (SELECT count(*) FROM wheel_configs WHERE host_id='{c13}'),
+       (SELECT count(*) FROM diamond_game_configs WHERE host_id='{c13}'),
+       (SELECT count(*) FROM engine_tournament_leases l JOIN tournaments t ON t.id=l.tournament_id WHERE t.club_id='{c13}'),
+       (SELECT count(*) FROM tournament_schedule_spawns s JOIN tournament_schedules ts ON ts.id=s.schedule_id WHERE ts.club_id='{c13}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits),
+       (SELECT count(*) FROM spin_reserve_ledger WHERE club_id='{c13}'),
+       (SELECT count(*) FROM chip_ledger WHERE club_id='{c13}' AND category='reversal'),
+       (SELECT count(*) FROM chip_transactions WHERE club_id='{c13}' AND transaction_type='bbj_promo_sweep'),
+       (SELECT count(*) FROM spin_bonus_pools WHERE club_id='{c13}' AND seed_returned_amount=200),
+       (SELECT count(*) FROM bbj_pools WHERE club_id='{c13}' AND status='retired');
+""",'post_reset|100000.00\n0|0|0|0|0|0|0|0|0|0|4|1|1|1|1')
+
+    shape_post_reset_fixture('post-reset-cross-club-spawn-setup',owner13,c14)
+    run_refusal('post-reset-refuses-cross-club-schedule-backlink-atomically',f"""
+SET request.jwt.claim.role='service_role';
+INSERT INTO tournaments(id,club_id,name,status,ended_at,current_players)
+VALUES('00000000-0000-4000-a000-000000000014','00000000-0000-4000-9000-000000000099',
+       'Foreign Scheduled Tournament','CANCELLED',now(),0);
+UPDATE tournament_schedule_spawns SET tournament_id='00000000-0000-4000-a000-000000000014'
+ WHERE schedule_id=(SELECT entity_id FROM club_welcome_package_items
+                     WHERE club_id='{c14}' AND entity_kind='tournament_schedule');
+SELECT fn_ca_retire_welcome_certification_club('{c14}','cross-club-spawn-cert');
+""",'POST_RESET_CERTIFICATION_SCHEDULE_LINEAGE_REFUSED')
+    run('post-reset-cross-club-spawn-refusal-preserves-fixture',f"""
+SELECT (SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c14}'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c14}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c14}'),
+       (SELECT chip_treasury FROM clubs WHERE id='{c14}');
+""",'10|13|22|100000')
+
+    shape_post_reset_fixture('post-reset-board-shape-refusal-setup',owner14,c15)
+    run_refusal('post-reset-refuses-missing-board-shape-atomically',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE tournaments SET name='Broken Duplicate Board Slot'
+ WHERE id=(SELECT id FROM tournaments WHERE club_id='{c15}' AND schedule_id IS NULL ORDER BY id LIMIT 1);
+SELECT fn_ca_retire_welcome_certification_club('{c15}','bad-board-cert');
+""",'POST_RESET_CERTIFICATION_TOURNAMENT_GRAPH_REFUSED')
+    run('post-reset-board-shape-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c15}'),(SELECT chip_treasury FROM clubs WHERE id='{c15}') FROM tournaments WHERE club_id='{c15}';",'13|22|100000')
+
+    shape_post_reset_fixture('post-reset-unknown-activity-refusal-setup',owner15,c16)
+    run_refusal('post-reset-refuses-new-fk-bearing-tournament-activity-atomically',f"""
+SET request.jwt.claim.role='service_role';
+INSERT INTO tournament_rebuys(tournament_id)
+SELECT id FROM tournaments WHERE club_id='{c16}' AND schedule_id IS NULL ORDER BY id LIMIT 1;
+SELECT fn_ca_retire_welcome_certification_club('{c16}','activity-cert');
+""",'POST_RESET_CERTIFICATION_UNKNOWN_TOURNAMENT_ACTIVITY')
+    run('post-reset-activity-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM tournament_rebuys r JOIN tournaments t ON t.id=r.tournament_id WHERE t.club_id='{c16}'),(SELECT chip_treasury FROM clubs WHERE id='{c16}') FROM tournaments WHERE club_id='{c16}';",'13|1|100000')
+
+    shape_post_reset_fixture('post-reset-f06-refusal-setup',owner16,c17)
+    run_refusal('post-reset-refuses-pending-f06-custody-atomically',f"""
+SET request.jwt.claim.role='service_role';
+SET test.pending_custody='on';
+SELECT fn_ca_retire_welcome_certification_club('{c17}','f06-cert');
+""",'POST_RESET_CERTIFICATION_ACTIVE_LEASE_REFUSED')
+    run('post-reset-f06-refusal-preserves-fixture',f"SET test.pending_custody='off'; SELECT count(*),(SELECT count(*) FROM engine_tournament_leases l JOIN tournaments t ON t.id=l.tournament_id WHERE t.club_id='{c17}'),(SELECT chip_treasury FROM clubs WHERE id='{c17}') FROM tables WHERE club_id='{c17}';",'22|13|100000')
+
+    shape_post_reset_fixture('post-reset-financial-refusal-setup',owner17,c18)
+    run_refusal('post-reset-refuses-bad-seed-return-lineage-atomically',f"""
+SET request.jwt.claim.role='service_role';
+DELETE FROM spin_reserve_ledger WHERE club_id='{c18}' AND kind='seed_return';
+SELECT fn_ca_retire_welcome_certification_club('{c18}','financial-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
+    run('post-reset-financial-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM spin_reserve_ledger WHERE club_id='{c18}'),(SELECT chip_treasury FROM clubs WHERE id='{c18}') FROM tables WHERE club_id='{c18}';",'22|3|100000')
+
+    shape_post_reset_fixture('post-reset-managed-command-refusal-setup',owner18,c19)
+    run_refusal('post-reset-refuses-nonterminal-managed-command-atomically',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE managed_game_schedules SET status='pending',completed_at=NULL
+ WHERE schedule_id=(SELECT m.schedule_id FROM managed_game_schedules m
+   WHERE m.game_id IN (SELECT id FROM tournaments WHERE club_id='{c19}') LIMIT 1);
+SELECT fn_ca_retire_welcome_certification_club('{c19}','managed-cert');
+""",'POST_RESET_CERTIFICATION_MANAGED_COMMAND_REFUSED')
+    run('post-reset-managed-command-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM managed_game_schedules WHERE game_id IN (SELECT id FROM tournaments WHERE club_id='{c19}')),(SELECT chip_treasury FROM clubs WHERE id='{c19}') FROM tables WHERE club_id='{c19}';",'22|1|100000')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')
     results['passed']=all(c['passed'] for c in results['cases'])
 finally:

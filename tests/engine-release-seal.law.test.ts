@@ -200,6 +200,11 @@ set -euo pipefail
 if [ "$1" = -C ]; then shift 2; fi
 case "$1" in
   cat-file) exit 0 ;;
+  rev-list)
+    # A..B names B alone; any other range is empty.
+    [ "$2" = '${A_SHA}..${B_SHA}' ] && echo '${B_SHA}'
+    exit 0
+    ;;
   merge-base)
     [ "$2" = --is-ancestor ]
     older="$3"; newer="$4"

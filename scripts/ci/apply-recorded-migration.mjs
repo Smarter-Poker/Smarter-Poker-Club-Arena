@@ -64,6 +64,7 @@ import {
   validateRecoveryCatalog,
   validateRecoverySnapshots,
   MAX_SNAPSHOT_AGE_SECONDS,
+  recoverySnapshotDiagnostic,
 } from './contract-index-recovery.mjs';
 
 const DIR = 'supabase/migrations';
@@ -260,6 +261,9 @@ if (recovery) {
       if (refusal || minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED)
         throw new Error('recovery lacks full maintenance runway or database refuses DDL');
       const snapshots = (await client.query(RECOVERY_SNAPSHOTS)).rows;
+      console.log(
+        `[apply] recovery admission diagnostic: ${recoverySnapshotDiagnostic(snapshots)}`
+      );
       validateRecoverySnapshots(snapshots);
       console.log(
         `[apply] current snapshot admission ${snapshots[0].observed_at}: ${snapshots[0].holders} holder(s), oldest ${snapshots[0].oldest_age_seconds ?? 0}s <= ${MAX_SNAPSHOT_AGE_SECONDS}s; historical operation ${recovery.before}`

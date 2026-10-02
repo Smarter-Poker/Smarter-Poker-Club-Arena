@@ -87,6 +87,39 @@ export const RECOVERY_SNAPSHOTS = `SELECT clock_timestamp()::text AS observed_at
 // shared budget ends the wait, the run exits UNKNOWN and nothing retries.
 // The check still runs fresh before EACH DDL statement.
 export const MAX_SNAPSHOT_AGE_SECONDS = 60;
+// Fixed aggregate vocabulary only. Never reflect catalog/session fields such
+// as pid, user, query or prepared-transaction GID into retained workflow logs.
+export function recoverySnapshotDiagnostic(rows) {
+  const r = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  const holders = Number.isSafeInteger(r?.holders) && r.holders >= 0 ? r.holders : 'unknown';
+  const unknownAge =
+    Number.isSafeInteger(r?.unknown_age) && r.unknown_age >= 0 ? r.unknown_age : 'unknown';
+  const oldest =
+    r?.oldest_age_seconds === null
+      ? 'none'
+      : typeof r?.oldest_age_seconds === 'number' &&
+          Number.isFinite(r.oldest_age_seconds) &&
+          r.oldest_age_seconds >= 0
+        ? r.oldest_age_seconds
+        : 'unknown';
+  const prepared = r?.no_prepared === true ? 'no' : r?.no_prepared === false ? 'yes' : 'unknown';
+  let category = 'unknown';
+  if (r?.observer_authorized === true && prepared === 'yes') category = 'prepared-transaction';
+  else if (
+    r?.observer_authorized === true &&
+    prepared === 'no' &&
+    holders !== 'unknown' &&
+    unknownAge !== 'unknown'
+  ) {
+    category =
+      unknownAge > 0 ||
+      oldest === 'unknown' ||
+      (holders === 0 ? oldest !== 'none' : oldest === 'none' || oldest > MAX_SNAPSHOT_AGE_SECONDS)
+        ? 'older-or-unknown-holder'
+        : 'clear';
+  }
+  return `category=${category}; holders=${holders}; unknown_age=${unknownAge}; oldest_age_seconds=${oldest}; prepared=${prepared}`;
+}
 export function validateRecoveryCatalog(rows, request, recovered = false) {
   if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown recovery catalog');
   const r = rows[0];
@@ -123,12 +156,13 @@ export function validateRecoveryCatalog(rows, request, recovered = false) {
 export function validateRecoverySnapshots(rows) {
   const r = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
   const oldest = r ? r.oldest_age_seconds : undefined;
+  if (!r || r.observer_authorized !== true || r.no_prepared == null)
+    throw new Error('recovery admission state is unknown');
+  if (r.no_prepared === false) throw new Error('prepared transaction prevents recovery');
+  if (r.no_prepared !== true || !Number.isSafeInteger(r.holders) || r.holders < 0)
+    throw new Error('recovery admission state is unknown');
   if (
-    !r ||
-    r.observer_authorized !== true ||
-    r.no_prepared !== true ||
-    !Number.isSafeInteger(r.holders) ||
-    r.holders < 0 ||
+    !Number.isSafeInteger(r.unknown_age) ||
     r.unknown_age !== 0 ||
     (r.holders === 0
       ? oldest !== null
@@ -137,7 +171,7 @@ export function validateRecoverySnapshots(rows) {
         oldest < 0 ||
         oldest > MAX_SNAPSHOT_AGE_SECONDS)
   )
-    throw new Error('older/unknown snapshot or prepared transaction prevents recovery');
+    throw new Error('older/unknown snapshot prevents recovery');
   return r;
 }
 

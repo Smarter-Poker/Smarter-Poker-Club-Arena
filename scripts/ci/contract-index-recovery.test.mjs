@@ -10,6 +10,7 @@ import {
   recoveryStatement,
   validateRecoveryCatalog,
   validateRecoverySnapshots,
+  recoverySnapshotDiagnostic,
   MAX_SNAPSHOT_AGE_SECONDS,
   RECOVERY_FILE,
   RECOVERY_INDEX,
@@ -141,14 +142,52 @@ test('short live snapshots are admitted; old, unknown-age or prepared work refus
     'unauthorized observer': { ...postgrest, observer_authorized: false },
     'unknown observer': { ...postgrest, observer_authorized: undefined },
   };
-  for (const [label, r] of Object.entries(refusals))
-    assert.throws(
-      () => validateRecoverySnapshots([r]),
-      /older\/unknown snapshot or prepared transaction prevents recovery/,
-      label
-    );
+  for (const [label, r] of Object.entries(refusals)) {
+    const expected = label.includes('prepared transaction')
+      ? /prepared transaction prevents recovery/
+      : label.includes('observer') ||
+          label.includes('holder count') ||
+          label.includes('prepared state')
+        ? /recovery admission state is unknown/
+        : /older\/unknown snapshot prevents recovery/;
+    assert.throws(() => validateRecoverySnapshots([r]), expected, label);
+  }
   for (const rows of [[], [idle, idle], null, undefined, [null]])
     assert.throws(() => validateRecoverySnapshots(rows));
+});
+test('refused admission diagnostic is categorical, aggregate-only and logged before validation', () => {
+  const sensitive = {
+    observed_at: '2026-10-02 18:21:33.765+00',
+    observer_authorized: true,
+    holders: 3,
+    unknown_age: 0,
+    oldest_age_seconds: 90.5,
+    no_prepared: true,
+    pid: 1234,
+    user: 'secret-role',
+    query: 'select private_payload',
+    gid: 'secret-prepared-name',
+  };
+  assert.equal(
+    recoverySnapshotDiagnostic([sensitive]),
+    'category=older-or-unknown-holder; holders=3; unknown_age=0; oldest_age_seconds=90.5; prepared=no'
+  );
+  assert.equal(
+    recoverySnapshotDiagnostic([{ ...sensitive, oldest_age_seconds: 12, no_prepared: false }]),
+    'category=prepared-transaction; holders=3; unknown_age=0; oldest_age_seconds=12; prepared=yes'
+  );
+  assert.equal(
+    recoverySnapshotDiagnostic([{ ...sensitive, observer_authorized: false, holders: '3' }]),
+    'category=unknown; holders=unknown; unknown_age=0; oldest_age_seconds=90.5; prepared=no'
+  );
+  for (const secret of [sensitive.user, sensitive.query, sensitive.gid, String(sensitive.pid)])
+    assert.ok(!recoverySnapshotDiagnostic([sensitive]).includes(secret));
+
+  const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
+  assert.ok(
+    source.indexOf('recoverySnapshotDiagnostic(snapshots)') <
+      source.indexOf('validateRecoverySnapshots(snapshots)')
+  );
 });
 test('owning applier keeps bounded single recovery before unchanged migration body', () => {
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');

@@ -8,9 +8,12 @@ const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const publishableKey = process.env.VITE_SUPABASE_ANON_KEY;
 const assetUrl = process.env.CLUB_CREATE_CERT_ASSET_URL;
+const databaseUrl = process.env.DATABASE_URL;
 
-if (!url || !serviceKey || !publishableKey || !assetUrl) {
-  throw new Error('Club Create Certification Requires Supabase And Asset Environment Variables.');
+if (!url || !serviceKey || !publishableKey || !assetUrl || !databaseUrl) {
+  throw new Error(
+    'Club Create Certification Requires Supabase, Database, And Asset Environment Variables.'
+  );
 }
 
 const admin = createClient(url, serviceKey, {
@@ -40,29 +43,229 @@ const retryRead = (label, operation) =>
     label,
   });
 
-async function cleanupLegacyDirectCertificates() {
-  const legacy = [];
+function jwtClaims(accessToken, expectedUserId) {
+  const encoded = String(accessToken || '').split('.')[1];
+  if (!encoded) throw new Error('Authenticated Session Did Not Return JWT Claims.');
+  const claims = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+  if (claims?.sub !== expectedUserId || claims?.role !== 'authenticated') {
+    throw new Error('Authenticated Session JWT Claims Did Not Match The Certification Player.');
+  }
+  return claims;
+}
+
+const sortedIds = (values) => [...(Array.isArray(values) ? values : [])].map(String).sort();
+const sameIds = (left, right) =>
+  JSON.stringify(sortedIds(left)) === JSON.stringify(sortedIds(right));
+
+async function certifyWelcomeResetInsideRollback({
+  claims,
+  clubId,
+  operationId,
+  cashIds,
+  tableIds,
+  scheduleId,
+}) {
+  const { Client } = await import('pg');
+  const client = new Client({
+    connectionString: databaseUrl,
+    application_name: 'club-create-certification-welcome-reset-rollback',
+  });
+  let began = false;
+  let result;
+  let operationError;
+  let rollbackError;
+
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    began = true;
+    await client.query("SET LOCAL statement_timeout = '120s'");
+    await client.query("SET LOCAL lock_timeout = '15s'");
+    await client.query(
+      "SELECT set_config('request.jwt.claims',$1::text,true), set_config('request.jwt.claim.sub',$2::text,true)",
+      [JSON.stringify(claims), claims.sub]
+    );
+
+    await client.query('SET LOCAL ROLE service_role');
+    const expectedResponse = await client.query(
+      `SELECT
+        COALESCE((SELECT jsonb_agg(g.id ORDER BY g.id)
+          FROM public.cash_games g WHERE g.club_id=$1::uuid),'[]'::jsonb) AS cash_game_ids,
+        COALESCE((SELECT jsonb_agg(t.id ORDER BY t.id)
+          FROM public.tables t WHERE t.club_id=$1::uuid),'[]'::jsonb) AS table_ids,
+        COALESCE((SELECT jsonb_agg(s.id ORDER BY s.id)
+          FROM public.tournament_schedules s WHERE s.club_id=$1::uuid),'[]'::jsonb) AS schedule_ids,
+        COALESCE((SELECT jsonb_agg(t.id ORDER BY t.id)
+          FROM public.tournaments t WHERE t.club_id=$1::uuid),'[]'::jsonb) AS tournament_ids`,
+      [clubId]
+    );
+    const expected = expectedResponse.rows?.[0];
+    if (
+      !sameIds(expected?.cash_game_ids, cashIds) ||
+      !sortedIds(tableIds).every((id) => sortedIds(expected?.table_ids).includes(id)) ||
+      !sortedIds(expected?.schedule_ids).includes(String(scheduleId))
+    ) {
+      throw new Error(
+        'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'
+      );
+    }
+
+    await client.query('SET LOCAL ROLE authenticated');
+    const resetResponse = await client.query(
+      'SELECT public.fn_remove_first_club_welcome_games($1::uuid,$2::uuid) AS result',
+      [clubId, operationId]
+    );
+    const resetResult = resetResponse.rows?.[0]?.result;
+    if (
+      !sameIds(resetResult?.removed?.cash_game_ids, expected?.cash_game_ids) ||
+      !sameIds(resetResult?.removed?.table_ids, expected?.table_ids) ||
+      !sameIds(resetResult?.removed?.schedule_ids, expected?.schedule_ids) ||
+      !sameIds(resetResult?.removed?.tournament_ids, expected?.tournament_ids)
+    ) {
+      throw new Error('Welcome Reset Receipt Did Not Name The Complete Independent Package Graph.');
+    }
+    // The owner-authenticated mutation above is the behavior under test. Its
+    // complete financial readback also needs the service role because reserve
+    // balances are deliberately not visible to players. Both remain inside
+    // this same never-committed transaction and the authenticated JWT claims
+    // remain installed for the whole observation.
+    await client.query('SET LOCAL ROLE service_role');
+    const readbackResponse = await client.query(
+      `SELECT
+        (SELECT to_jsonb(c) FROM (
+          SELECT chip_treasury,bbj_enabled,bbj_rake_enabled,spins_enabled,spins_preseed_amount
+          FROM public.clubs WHERE id=$1::uuid
+        ) c) AS club,
+        (SELECT to_jsonb(s) FROM (
+          SELECT balance,seeded_amount,is_active
+          FROM public.spin_bonus_pools WHERE club_id=$1::uuid
+        ) s) AS spin,
+        (SELECT to_jsonb(b) FROM (
+          SELECT main_balance,backup_balance,promo_balance,status
+          FROM public.bbj_pools WHERE club_id=$1::uuid AND union_id IS NULL
+        ) b) AS bbj,
+        COALESCE((SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id) FROM (
+          SELECT id,enabled,state FROM public.cash_games WHERE id=ANY($2::uuid[])
+        ) g),'[]'::jsonb) AS cash_games,
+        COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM (
+          SELECT id,status,current_players FROM public.tables WHERE id=ANY($3::uuid[])
+        ) t),'[]'::jsonb) AS tables,
+        COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM (
+          SELECT id,active FROM public.tournament_schedules WHERE id=ANY($4::uuid[])
+        ) s),'[]'::jsonb) AS schedules,
+        COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM (
+          SELECT id,status FROM public.tournaments WHERE id=ANY($5::uuid[])
+        ) t),'[]'::jsonb) AS tournaments,
+        COALESCE((SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id) FROM (
+          SELECT id,status FROM public.managed_game_schedules
+          WHERE status IN ('scheduled','executing') AND
+            ((game_kind='tournament' AND game_id=ANY($5::uuid[])) OR
+             (game_kind='table' AND game_id=ANY($3::uuid[])))
+        ) m),'[]'::jsonb) AS active_managed_commands,
+        COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.game) FROM (
+          SELECT game,enabled FROM public.diamond_game_configs WHERE host_id=$1::uuid
+        ) d),'[]'::jsonb) AS diamond_configs,
+        (SELECT to_jsonb(w) FROM (
+          SELECT enabled FROM public.wheel_configs WHERE host_id=$1::uuid
+        ) w) AS wheel_config,
+        COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM (
+          SELECT host_id FROM public.diamond_spins_owner_consents WHERE host_id=$1::uuid
+        ) a),'[]'::jsonb) AS diamond_consents`,
+      [
+        clubId,
+        expected.cash_game_ids,
+        expected.table_ids,
+        expected.schedule_ids,
+        expected.tournament_ids,
+      ]
+    );
+    result = {
+      reset: resetResult,
+      readback: readbackResponse.rows?.[0],
+      expected,
+    };
+  } catch (error) {
+    operationError = error;
+  } finally {
+    if (began) {
+      try {
+        // Observe the destructive path without leaving it behind. The pristine
+        // welcome package remains in place for the guarded fixture cleanup.
+        await client.query('ROLLBACK');
+      } catch (error) {
+        rollbackError = error;
+      }
+    }
+    await client.end();
+  }
+
+  if (rollbackError) {
+    throw new AggregateError(
+      operationError ? [operationError, rollbackError] : [rollbackError],
+      'Welcome Reset Certification Could Not Prove Its Transaction Rolled Back.'
+    );
+  }
+  if (operationError) throw operationError;
+  return result;
+}
+
+async function cleanupResidualDirectCertificates() {
+  const residual = [];
   for (let page = 1; ; page += 1) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
     if (error) throw new Error(`Legacy Certificate Inventory Failed: ${error.message}`);
     const users = data?.users || [];
-    legacy.push(
+    residual.push(
       ...users.filter((user) =>
-        /^club-create-cert-.+@smarter-poker\.invalid$/i.test(String(user.email || ''))
+        /^(?:club-create-cert-.+@smarter-poker\.invalid|ca-customization-cert-postdeploy-direct-.+@example\.invalid)$/i.test(
+          String(user.email || '')
+        )
       )
     );
     if (users.length < 1000) break;
   }
 
-  for (const fixture of legacy) {
+  for (const fixture of residual) {
     const { data: ownedClubs, error: clubError } = await admin
       .from('clubs')
       .select('id')
-      .eq('owner_id', fixture.id)
-      .limit(1);
-    if (clubError) throw new Error(`Legacy Certificate Club Check Failed: ${clubError.message}`);
-    if (ownedClubs?.length) {
-      throw new Error(`Refusing To Remove Legacy Certificate ${fixture.id}: It Still Owns A Club.`);
+      .eq('owner_id', fixture.id);
+    if (clubError) throw new Error(`Residual Certificate Club Check Failed: ${clubError.message}`);
+
+    for (const ownedClub of ownedClubs || []) {
+      const { data: retired, error: retirementError } = await retryTransient(
+        () =>
+          admin.rpc('fn_ca_retire_welcome_certification_club', {
+            p_club_id: ownedClub.id,
+            p_reason: 'cert-residue-recovery',
+          }),
+        {
+          failureOf: (result) => result?.error,
+          label: `residual certification club retirement ${ownedClub.id}`,
+        }
+      );
+      if (retirementError || retired?.success === false) {
+        throw (
+          retirementError ||
+          new Error(`Residual Certification Club ${ownedClub.id} Refused Retirement.`)
+        );
+      }
+      if (retired?.already_gone || Number(retired?.chips_retired) !== 100000) {
+        throw new Error(
+          `Residual Certification Club ${ownedClub.id} Retired ${retired?.chips_retired ?? 'Unknown'} Chips Instead Of 100000.`
+        );
+      }
+    }
+
+    const { data: remainingClubs, error: remainingClubError } = await admin
+      .from('clubs')
+      .select('id')
+      .eq('owner_id', fixture.id);
+    if (remainingClubError || remainingClubs?.length) {
+      throw (
+        remainingClubError ||
+        new Error(`Residual Certificate ${fixture.id} Still Owns A Club After Recovery.`)
+      );
     }
 
     const folder = `club-logos/${fixture.id}`;
@@ -78,6 +281,15 @@ async function cleanupLegacyDirectCertificates() {
         throw new Error(`Legacy Certificate Asset Cleanup Failed: ${removeError.message}`);
       }
     }
+    const { data: remainingAssets, error: remainingAssetError } = await admin.storage
+      .from('club-assets')
+      .list(folder, { limit: 100 });
+    if (remainingAssetError || remainingAssets?.length) {
+      throw (
+        remainingAssetError ||
+        new Error(`Residual Certificate ${fixture.id} Still Owns Club Logo Assets.`)
+      );
+    }
 
     await cleanupProductionE2EAccount({
       record: { id: fixture.id, email: fixture.email },
@@ -85,12 +297,14 @@ async function cleanupLegacyDirectCertificates() {
     });
   }
 
-  if (legacy.length) {
-    console.log(`Removed And Verified ${legacy.length} Legacy Create Club Certificate Account(s).`);
+  if (residual.length) {
+    console.log(
+      `Removed And Verified ${residual.length} Residual Create Club Certificate Account(s).`
+    );
   }
 }
 
-await cleanupLegacyDirectCertificates();
+await cleanupResidualDirectCertificates();
 
 try {
   const { data: created, error: createUserError } = await admin.auth.admin.createUser({
@@ -117,8 +331,12 @@ try {
   if (profileError) throw new Error(`Profile Fixture Failed: ${profileError.message}`);
 
   const player = createClient(url, publishableKey, { auth: { persistSession: false } });
-  const { error: signInError } = await player.auth.signInWithPassword({ email, password });
+  const { data: signedIn, error: signInError } = await player.auth.signInWithPassword({
+    email,
+    password,
+  });
   if (signInError) throw signInError;
+  const authenticatedClaims = jwtClaims(signedIn.session?.access_token, userId);
 
   const assetResponse = await fetch(assetUrl);
   if (!assetResponse.ok) throw new Error(`Crest Asset Returned HTTP ${assetResponse.status}.`);
@@ -430,99 +648,66 @@ try {
     throw resetImpactError || new Error('Pristine Welcome Package Was Not Resettable.');
   }
   const resetOperationId = crypto.randomUUID();
-  const { data: reset, error: resetError } = await player.rpc(
-    'fn_remove_first_club_welcome_games',
-    { p_club_id: club.id, p_operation_id: resetOperationId }
-  );
+  const {
+    reset,
+    readback: resetReadback,
+    expected: resetExpected,
+  } = await certifyWelcomeResetInsideRollback({
+    claims: authenticatedClaims,
+    clubId: club.id,
+    operationId: resetOperationId,
+    cashIds,
+    tableIds: initialTableIds,
+    scheduleId: schedule.id,
+  });
   if (
-    resetError ||
     reset?.ok !== true ||
     Number(reset?.returned_to_treasury?.bbj) !== 100 ||
     Number(reset?.returned_to_treasury?.spin) !== 200 ||
     reset?.owner_acceptance_receipts_preserved !== true
   ) {
-    throw resetError || new Error('Welcome Package Did Not Reset To A Conserved Zero State.');
+    throw new Error('Welcome Package Did Not Reset To A Conserved Zero State.');
   }
-  const [
-    resetClubRead,
-    resetSpinRead,
-    resetBbjRead,
-    resetCashRead,
-    resetScheduleRead,
-    resetDiamondRead,
-    resetWheelRead,
-    resetConsentRead,
-  ] = await Promise.all([
-    retryRead(`reset club read for certification club ${club.id}`, () =>
-      admin
-        .from('clubs')
-        .select('chip_treasury,bbj_enabled,bbj_rake_enabled,spins_enabled,spins_preseed_amount')
-        .eq('id', club.id)
-        .single()
-    ),
-    retryRead(`reset spin read for certification club ${club.id}`, () =>
-      admin
-        .from('spin_bonus_pools')
-        .select('balance,seeded_amount,is_active')
-        .eq('club_id', club.id)
-        .single()
-    ),
-    retryRead(`reset BBJ read for certification club ${club.id}`, () =>
-      admin
-        .from('bbj_pools')
-        .select('main_balance,backup_balance,promo_balance,status')
-        .eq('club_id', club.id)
-        .single()
-    ),
-    retryRead(`reset cash game read for certification club ${club.id}`, () =>
-      admin.from('cash_games').select('id,enabled,state').in('id', cashIds)
-    ),
-    retryRead(`reset schedule read for certification club ${club.id}`, () =>
-      admin.from('tournament_schedules').select('id,active').eq('id', schedule.id).single()
-    ),
-    retryRead(`reset diamond config read for certification club ${club.id}`, () =>
-      admin.from('diamond_game_configs').select('game,enabled').eq('host_id', club.id)
-    ),
-    retryRead(`reset wheel config read for certification club ${club.id}`, () =>
-      admin.from('wheel_configs').select('enabled').eq('host_id', club.id).single()
-    ),
-    retryRead(`reset diamond consent read for certification club ${club.id}`, () =>
-      admin.from('diamond_spins_owner_consents').select('host_id').eq('host_id', club.id)
-    ),
-  ]);
-  const resetReadError = [
-    resetClubRead,
-    resetSpinRead,
-    resetBbjRead,
-    resetCashRead,
-    resetScheduleRead,
-    resetDiamondRead,
-    resetWheelRead,
-    resetConsentRead,
-  ]
-    .map((read) => read.error)
-    .find(Boolean);
+  const resetClubRead = resetReadback?.club;
+  const resetSpinRead = resetReadback?.spin;
+  const resetBbjRead = resetReadback?.bbj;
+  const resetCashRead = resetReadback?.cash_games;
+  const resetTableRead = resetReadback?.tables;
+  const resetScheduleRead = resetReadback?.schedules;
+  const resetTournamentRead = resetReadback?.tournaments;
+  const resetManagedCommandRead = resetReadback?.active_managed_commands;
+  const resetDiamondRead = resetReadback?.diamond_configs;
+  const resetWheelRead = resetReadback?.wheel_config;
+  const resetConsentRead = resetReadback?.diamond_consents;
   if (
-    resetReadError ||
-    Number(resetClubRead.data?.chip_treasury) !== 100000 ||
-    resetClubRead.data?.bbj_enabled !== false ||
-    resetClubRead.data?.bbj_rake_enabled !== false ||
-    resetClubRead.data?.spins_enabled !== false ||
-    Number(resetClubRead.data?.spins_preseed_amount) !== 0 ||
-    Number(resetSpinRead.data?.balance) !== 0 ||
-    Number(resetSpinRead.data?.seeded_amount) !== 0 ||
-    resetSpinRead.data?.is_active !== false ||
-    Number(resetBbjRead.data?.main_balance) !== 0 ||
-    Number(resetBbjRead.data?.backup_balance) !== 0 ||
-    Number(resetBbjRead.data?.promo_balance) !== 0 ||
-    resetBbjRead.data?.status !== 'retired' ||
-    resetCashRead.data?.some((row) => row.enabled || row.state !== 'dormant') ||
-    resetScheduleRead.data?.active !== false ||
-    resetDiamondRead.data?.some((row) => row.enabled) ||
-    resetWheelRead.data?.enabled !== false ||
-    resetConsentRead.data?.length !== 0
+    Number(resetClubRead?.chip_treasury) !== 100000 ||
+    resetClubRead?.bbj_enabled !== false ||
+    resetClubRead?.bbj_rake_enabled !== false ||
+    resetClubRead?.spins_enabled !== false ||
+    Number(resetClubRead?.spins_preseed_amount) !== 0 ||
+    Number(resetSpinRead?.balance) !== 0 ||
+    Number(resetSpinRead?.seeded_amount) !== 0 ||
+    resetSpinRead?.is_active !== false ||
+    Number(resetBbjRead?.main_balance) !== 0 ||
+    Number(resetBbjRead?.backup_balance) !== 0 ||
+    Number(resetBbjRead?.promo_balance) !== 0 ||
+    resetBbjRead?.status !== 'retired' ||
+    resetCashRead?.length !== resetExpected?.cash_game_ids?.length ||
+    resetCashRead?.some((row) => row.enabled || row.state !== 'dormant') ||
+    resetTableRead?.length !== resetExpected?.table_ids?.length ||
+    resetTableRead?.some((row) => row.status !== 'closed' || Number(row.current_players) !== 0) ||
+    resetScheduleRead?.length !== resetExpected?.schedule_ids?.length ||
+    resetScheduleRead?.some((row) => row.active !== false) ||
+    resetTournamentRead?.length !== resetExpected?.tournament_ids?.length ||
+    resetTournamentRead?.some(
+      (row) => !['CANCELLED', 'CANCELED'].includes(String(row.status || '').toUpperCase())
+    ) ||
+    resetManagedCommandRead?.length !== 0 ||
+    resetDiamondRead?.some((row) => row.enabled) ||
+    resetWheelRead?.enabled !== false ||
+    resetConsentRead?.length !== 0
   ) {
-    throw resetReadError || new Error('Welcome Reset Readback Was Not A True Zero State.');
+    throw new Error('Welcome Reset Readback Was Not A True Zero State.');
   }
 
   const presetRequestId = crypto.randomUUID();
@@ -577,6 +762,35 @@ try {
   );
 } finally {
   const cleanupFailures = [];
+  if (userId) {
+    const { data: ownedClubs, error: ownedClubsError } = await admin
+      .from('clubs')
+      .select('id,name,is_union,union_id')
+      .eq('owner_id', userId);
+    if (ownedClubsError) {
+      cleanupFailures.push(
+        new Error(`Certification Could Not Inventory Its Owned Clubs: ${ownedClubsError.message}`)
+      );
+    } else {
+      const unexpected = (ownedClubs || []).filter(
+        (club) =>
+          !/^(?:Preset )?Crest Cert /.test(String(club.name || '')) ||
+          club.is_union === true ||
+          club.union_id != null
+      );
+      if (unexpected.length) {
+        cleanupFailures.push(
+          new Error(
+            `Certification Owner Has Unexpected Club State: ${unexpected.map((club) => club.id).join(', ')}`
+          )
+        );
+      } else {
+        for (const club of ownedClubs || []) {
+          if (!clubIds.includes(club.id)) clubIds.push(club.id);
+        }
+      }
+    }
+  }
   // Append-only financial records intentionally prevent a plain hard delete:
   // clubs -> chip_transactions is ON DELETE SET NULL, which is an UPDATE on an
   // append-only journal (and chip_transactions.club_id is NOT NULL, so it could
@@ -616,9 +830,15 @@ try {
         }
       );
       if (error) {
-        console.error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`);
+        cleanupFailures.push(new Error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`));
       } else if (data && data.success === false) {
-        console.error(`Fixture Cleanup Refused For ${clubId}: ${data.error}`);
+        cleanupFailures.push(new Error(`Fixture Cleanup Refused For ${clubId}: ${data.error}`));
+      } else if (data?.already_gone || Number(data?.chips_retired) !== 100000) {
+        cleanupFailures.push(
+          new Error(
+            `Fixture ${clubId} Retired ${data?.chips_retired ?? 'Unknown'} Chips Instead Of 100000.`
+          )
+        );
       } else {
         console.log(
           `Fixture ${clubId} retired: ${data?.chips_retired ?? 0} chips returned to the Mint.`
@@ -651,6 +871,18 @@ try {
     const { error: storageError } = await admin.storage.from('club-assets').remove([logoPath]);
     if (storageError) {
       cleanupFailures.push(new Error(`Fixture Asset Cleanup Failed: ${storageError.message}`));
+    }
+    const folder = logoPath.slice(0, logoPath.lastIndexOf('/'));
+    const fileName = logoPath.slice(logoPath.lastIndexOf('/') + 1);
+    const { data: remainingAssets, error: remainingAssetError } = await admin.storage
+      .from('club-assets')
+      .list(folder, { limit: 100, search: fileName });
+    if (remainingAssetError) {
+      cleanupFailures.push(
+        new Error(`Fixture Asset Verification Failed: ${remainingAssetError.message}`)
+      );
+    } else if (remainingAssets?.some((asset) => asset.name === fileName)) {
+      cleanupFailures.push(new Error(`Fixture Asset ${logoPath} Still Exists After Cleanup.`));
     }
   }
   if (userId) {

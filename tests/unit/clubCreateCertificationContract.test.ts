@@ -66,7 +66,7 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('"$origin_sha" == "$expected"');
     expect(workflow).toContain('"$public_sha" == "$expected"');
     expect(workflow).toContain('cancel-in-progress: false');
-    expect(workflow).toContain('timeout-minutes: 30');
+    expect(workflow).toContain('timeout-minutes: 60');
     expect(workflow).toContain('--workers=1 --retries=0');
   });
 
@@ -98,8 +98,12 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('cleanupProductionE2EAccount({');
     expect(script).toContain('record: { id: userId, email }');
     expect(script).not.toContain('Fixture User Delete Skipped');
-    expect(script).toContain('await cleanupLegacyDirectCertificates()');
-    expect(script).toContain('It Still Owns A Club.');
+    expect(script).toContain('await cleanupResidualDirectCertificates()');
+    expect(script).toContain('cert-residue-recovery');
+    expect(script).toContain('Still Owns A Club After Recovery.');
+    expect(script).toContain(
+      "Retired ${retired?.chips_retired ?? 'Unknown'} Chips Instead Of 100000"
+    );
     expect(account).toContain("const LEGACY_DIRECT_PREFIX = 'club-create-cert-'");
     expect(migration).toContain("md5(v_old) <> '5097fd85191359890d70eb84c4ce507c'");
     expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
@@ -209,8 +213,16 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('const retryRead = (label, operation) =>');
     expect(script).toContain('welcome package read for certification club');
     expect(script).toContain('welcome package refusal read for certification club');
-    expect(script.match(/retryRead\(/g)?.length).toBeGreaterThan(15);
-    expect(script).toContain("player.rpc(\n    'fn_remove_first_club_welcome_games'");
+    expect(script.match(/retryRead\(/g)?.length).toBeGreaterThanOrEqual(15);
+    expect(script).toContain('certifyWelcomeResetInsideRollback({');
+    expect(script).toContain(
+      'SELECT public.fn_remove_first_club_welcome_games($1::uuid,$2::uuid) AS result'
+    );
+    expect(script).toContain('SET LOCAL ROLE authenticated');
+    expect(script).toContain("set_config('request.jwt.claims',$1::text,true)");
+    expect(script).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(script).toContain("await client.query('ROLLBACK')");
+    expect(script).not.toContain("await client.query('COMMIT')");
     expect(script).toContain('welcomeCash.length !== 9');
     expect(script).toContain('welcomeSchedules.length !== 1');
     expect(script).toContain("welcome?.status !== 'provisioned'");
@@ -222,6 +234,24 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain("getByText('9 Preloaded', { exact: true })");
     expect(spec).toContain("getByText('Owner Acceptance Required', { exact: true })");
     expect(spec).toContain("getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })");
+  });
+
+  it('fails closed around independent reset preimages and exact residue cleanup', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+
+    expect(script).toContain(
+      'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'
+    );
+    expect(script).toContain(
+      'Welcome Reset Receipt Did Not Name The Complete Independent Package Graph.'
+    );
+    expect(script).toContain(".select('id,name,is_union,union_id')");
+    expect(script).toContain('Certification Owner Has Unexpected Club State:');
+    expect(script).toContain('data?.already_gone || Number(data?.chips_retired) !== 100000');
+    expect(script).toContain('Fixture Cleanup Failed For ${clubId}: ${error.message}');
+    expect(script).toContain('Fixture Cleanup Refused For ${clubId}: ${data.error}');
+    expect(script).toContain('Still Owns Club Logo Assets.');
+    expect(script).toContain('Still Exists After Cleanup.');
   });
 
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {

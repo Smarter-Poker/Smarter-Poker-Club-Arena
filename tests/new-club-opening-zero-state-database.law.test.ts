@@ -92,8 +92,28 @@ describe('new club opening package and zero-state database law', () => {
       expect(certificate).toContain(`.from('${table}')`);
     }
     expect(certificate).toContain("'fn_get_club_welcome_package_reset_impact'");
-    expect(certificate).toContain("'fn_remove_first_club_welcome_games'");
-    expect(certificate).toContain('Number(resetClubRead.data?.chip_treasury) !== 100000');
+    expect(certificate).toContain('public.fn_remove_first_club_welcome_games');
+    expect(certificate).toContain('Number(resetClubRead?.chip_treasury) !== 100000');
+    expect(certificate).toContain('connectionString: databaseUrl');
+    expect(certificate).toContain('SET LOCAL ROLE authenticated');
+    expect(certificate).toContain("set_config('request.jwt.claims',$1::text,true)");
+    expect(certificate).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(certificate).toContain("await client.query('ROLLBACK')");
+    expect(certificate).not.toContain("await client.query('COMMIT')");
+    expect(certificate).toContain('AS tables');
+    expect(certificate).toContain('AS tournaments');
+    expect(certificate).toContain('AS active_managed_commands');
+    const authenticatedRole = certificate.indexOf('SET LOCAL ROLE authenticated');
+    const mutation = certificate.indexOf('public.fn_remove_first_club_welcome_games');
+    const preimageReadRole = certificate.indexOf('SET LOCAL ROLE service_role');
+    const financialReadRole = certificate.indexOf('SET LOCAL ROLE service_role', mutation);
+    const readback = certificate.indexOf('AS cash_games');
+    const rollback = certificate.indexOf("await client.query('ROLLBACK')");
+    expect(preimageReadRole).toBeLessThan(authenticatedRole);
+    expect(authenticatedRole).toBeLessThan(mutation);
+    expect(mutation).toBeLessThan(financialReadRole);
+    expect(financialReadRole).toBeLessThan(readback);
+    expect(readback).toBeLessThan(rollback);
     expect(certificate).not.toMatch(
       /retryTransient\([\s\S]{0,300}fn_remove_first_club_welcome_games/
     );

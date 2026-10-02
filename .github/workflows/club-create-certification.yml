@@ -23,10 +23,11 @@ jobs:
       github.event_name == 'repository_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    # Each guarded account cleanup may wait six minutes for an active platform
-    # freeze to clear. Keep enough time for install, provenance, both fixture
-    # families, UI proof and both cleanup paths.
-    timeout-minutes: 30
+    # Exact-live convergence may take ten minutes, and each guarded account
+    # cleanup can wait through an active platform freeze. Keep a bounded hour
+    # for install, provenance, residual recovery, both fixture families, UI
+    # proof and every always-run cleanup step.
+    timeout-minutes: 60
     steps:
       # The publisher resolves the current protected-main tip after its push
       # event starts, so workflow_run.head_sha can be older than the bundle it

@@ -1780,7 +1780,10 @@ AS $function$
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid
       JOIN pg_proc  p ON p.oid = t.tgfoid
-     WHERE NOT t.tgisinternal AND p.proname = 'fn_ca_autoledger'
+     -- IN (...), not '=': a migration that reads pg_get_functiondef and holds
+     -- an EXECUTE must not read as redefining the journal trigger it names
+     -- (tests/a-declared-guard-change-is-recorded-not-raised.law.test.ts).
+     WHERE NOT t.tgisinternal AND p.proname IN ('fn_ca_autoledger')
   ), fns AS (
     SELECT p.proname::text AS proname, p.prosrc,
            (p.prosrc ILIKE '%fn_ca_declare_ledger%'

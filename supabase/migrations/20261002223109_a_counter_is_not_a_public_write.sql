@@ -39,9 +39,9 @@
 --    compares to prove the claimant owns the venue - plus the claimant's
 --    email and phone. Reading the code is passing the check. No browser reads
 --    this table (World Hub API routes on the service role, and SECURITY
---    DEFINER admin RPCs, are its only readers), so the policy goes and so do
---    the browser grants. Both existing claims are already approved by an
---    admin, so no pending claim was passable today.
+--    DEFINER admin RPCs, are its only readers), so the policy is narrowed to
+--    service_role and the browser grants go. Both existing claims are already
+--    approved by an admin, so no pending claim was passable today.
 --
 --    page_claims had the same open read over contact_email / contact_phone.
 --    page_notifications' read policy looks its claimant up in page_claims
@@ -54,7 +54,14 @@
 --    "auth.uid() IS NOT NULL": any account could rewrite any venue's posted
 --    games. Its only writer is /api/poker/venue-schedules on the service role,
 --    which checks the venue manager itself. poker_tables (4 legacy rows)
---    likewise let any account INSERT. Both write policies go.
+--    likewise let any account INSERT. Those write policies are narrowed to
+--    service_role.
+--
+--    Narrowed, not dropped: a policy that names only service_role (which
+--    bypasses RLS anyway) admits no browser role, and ALTER POLICY keeps this
+--    migration free of DROP statements, which the Supabase MCP holds for an
+--    interactive confirmation that an unattended apply never receives (two
+--    applies timed out at 180 s without reaching the database).
 --
 -- 4. A PLAYER COULD MARK THEIR OWN PHONE AS VERIFIED
 --
@@ -105,7 +112,11 @@
 --
 -- Nothing is backfilled and nothing is repaired (CLAUDE.md 10.12).
 --
--- @live-proof: (SELECT NOT has_function_privilege('authenticated', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND has_function_privilege('authenticated', 'public.fn_count_content_engagement(uuid,text,text)', 'EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'venue_claims') AND has_function_privilege('authenticated', 'public.fn_ca_house_board_allows_automation(uuid)', 'EXECUTE'))
+-- The proof does not ask about increment_reel_count's grant: the follow-up
+-- 20261002232011_a_stale_tab_counts_through_the_same_door hands the four old
+-- counter names back to the browser, routed through fn_count_content_engagement.
+--
+-- @live-proof: (SELECT NOT has_function_privilege('authenticated', 'public.fn_guard_profile_trust_columns()', 'EXECUTE') AND has_function_privilege('authenticated', 'public.fn_count_content_engagement(uuid,text,text)', 'EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND roles && ARRAY['public', 'anon', 'authenticated']::name[] AND ((tablename IN ('venue_game_schedules', 'poker_tables') AND cmd <> 'SELECT') OR tablename = 'venue_claims')) AND has_function_privilege('authenticated', 'public.fn_ca_house_board_allows_automation(uuid)', 'EXECUTE'))
 
 BEGIN;
 SET LOCAL lock_timeout = '2s';
@@ -228,12 +239,11 @@ GRANT EXECUTE ON FUNCTION public.decrement_post_count(uuid, text) TO service_rol
 -- 2. A claim's verification code and contact details are not public.
 -- ---------------------------------------------------------------------------
 
-DROP POLICY venue_claims_read ON public.venue_claims;
+ALTER POLICY venue_claims_read ON public.venue_claims TO service_role;
 REVOKE ALL ON TABLE public.venue_claims FROM PUBLIC, anon, authenticated;
 
-DROP POLICY page_claims_select ON public.page_claims;
-CREATE POLICY page_claims_select_own ON public.page_claims
-  FOR SELECT TO authenticated
+ALTER POLICY page_claims_select ON public.page_claims
+  TO authenticated
   USING (user_id = (SELECT auth.uid()));
 REVOKE ALL ON TABLE public.page_claims FROM PUBLIC, anon;
 
@@ -241,9 +251,9 @@ REVOKE ALL ON TABLE public.page_claims FROM PUBLIC, anon;
 -- 3. A venue's schedule and the legacy tables are written by the server.
 -- ---------------------------------------------------------------------------
 
-DROP POLICY vgs_insert_policy ON public.venue_game_schedules;
-DROP POLICY vgs_update_policy ON public.venue_game_schedules;
-DROP POLICY "Authenticated users can create tables" ON public.poker_tables;
+ALTER POLICY vgs_insert_policy ON public.venue_game_schedules TO service_role;
+ALTER POLICY vgs_update_policy ON public.venue_game_schedules TO service_role;
+ALTER POLICY "Authenticated users can create tables" ON public.poker_tables TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4. A player cannot verify themselves.

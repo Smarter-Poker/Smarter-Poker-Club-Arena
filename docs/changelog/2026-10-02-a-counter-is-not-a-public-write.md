@@ -37,14 +37,14 @@ Migration `20261002223109_a_counter_is_not_a_public_write`, one transaction:
   even anon could execute them. Now service role only.
 - **Venue claims.** `venue_claims_read USING (true)` let anyone read `verification_code`, the code
   `/api/public/venue/verify` compares, along with the claimant's email and phone. Reading the code
-  is passing the check. The policy is dropped and the browser grants are revoked; only the API
-  routes and the admin RPCs read the table.
+  is passing the check. The policy now names only `service_role` and the browser grants are
+  revoked; only the API routes and the admin RPCs read the table.
 - **Page claims.** Anyone could read the contact email and phone. A claimant now sees only their
   own claim, which is exactly the lookup the `page_notifications` policy makes.
 - **Venue schedules.** The INSERT and UPDATE policies only required "signed in", so any account
-  could rewrite any venue's posted games. The write policies are dropped;
+  could rewrite any venue's posted games. The write policies now name only `service_role`;
   `/api/poker/venue-schedules`, on the service role, is the writer.
-- **`poker_tables`.** Any account could INSERT. The policy is dropped.
+- **`poker_tables`.** Any account could INSERT. The policy now names only `service_role`.
 - **Profile trust columns.** A player could set their own `email_verified`, `phone_verified`,
   `access_tier`, `tier`, `skill_tier` and `level`. `phone_verified` is what the duplicate-phone
   guard in `/api/sms/verify-otp` matches on. `trg_guard_profile_trust_columns` now refuses a
@@ -59,6 +59,13 @@ Migration `20261002223109_a_counter_is_not_a_public_write`, one transaction:
   it, and Postgres checks the privilege before `NOT is_bot` can short-circuit. Fixed with
   `GRANT EXECUTE ... TO authenticated`; the function is a stable read of `clubs.is_platform`. This
   was the only expression of its kind on the database.
+
+The open policies are narrowed with `ALTER POLICY ... TO service_role` rather than dropped. A
+policy naming only `service_role` (which bypasses RLS anyway) admits no browser role. The first two
+applies used `DROP POLICY`, and the Supabase MCP holds a DROP for an interactive confirmation; with
+nobody there to answer, both timed out at 180 s without reaching the database. PR #5876 merged
+with that DROP text before the apply; the follow-up makes the file the text that ran (applied as
+schema_migrations `20261002231610`).
 
 ## World Hub
 

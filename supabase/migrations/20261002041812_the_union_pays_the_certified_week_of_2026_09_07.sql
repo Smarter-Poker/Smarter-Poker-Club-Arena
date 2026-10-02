@@ -41,7 +41,7 @@
 -- @live-proof: (SELECT count(*) = 2 FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-07 07:00:00+00' AND discharged_operation_id = 'e5b10b0a-4b5a-4a57-8804-1347b1910786')
 
 BEGIN;
-SET LOCAL lock_timeout = '5s';
+SET LOCAL lock_timeout = '30s';
 SET LOCAL statement_timeout = '840s';
 
 DO $op$

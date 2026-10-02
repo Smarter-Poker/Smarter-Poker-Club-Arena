@@ -1,0 +1,3 @@
+# tests/a-house-mint-carries-its-reason.law.test.ts
+
+A house mint carries its reason (2026-10-02): fn_ca_fund_club writes its own mint-register row with its reason, linked to its journal leg, and clears its declaration; at commit fn_ca_issuance_leg_is_registered refuses a leg that issues chips into circulation without an operation key and a system_mint or system_burn leg no door registered, so a raw UPDATE under a hand-set system_mint declaration never commits; the BBJ payout self-test nets shares returned to the pool and asserts conservation on both hits; the 1,800.00 stranded in twelve pools of six deleted certification clubs is retired through the journal

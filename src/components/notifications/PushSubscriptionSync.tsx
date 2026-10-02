@@ -19,9 +19,13 @@
  * 'granted', so it cannot steal the permission dialog from the first-run flow.
  * Throttled to once per hour per device. Errors are never surfaced.
  *
+ * It NEVER ENROLLS (2026-09-27). Browser permission belongs to the origin, not
+ * to an account, so it runs with repairOnly and the server refreshes only an
+ * enrollment this account already holds on this device.
+ *
  * The throttle key is shared with the World Hub's copy of this component on
- * purpose. Both repair the SAME root-scope subscription (see lib/pushClient.ts
- * on why Club Arena enrols against /sw.js), so a player who has both surfaces
+ * purpose. Both repair the SAME /push/ subscription (see lib/pushClient.ts on
+ * why both apps enrol against /push/sw.js), so a player who has both surfaces
  * open should get one repair per hour, not two.
  */
 import { useEffect, useRef } from 'react';
@@ -71,7 +75,9 @@ export default function PushSubscriptionSync() {
       running.current = true;
       lastRunRef.current = Date.now();
       try {
-        await enablePush();
+        // repairOnly: refresh what THIS account already enrolled on this
+        // device; never enroll whichever account happens to be signed in.
+        await enablePush({ repairOnly: true });
         try {
           localStorage.setItem(SYNC_KEY, String(Date.now()));
         } catch {

@@ -57,6 +57,9 @@ describe('the decided lane', () => {
   it('admits a decided game at the next free slot, ahead of 200 queued live games', async () => {
     const scheduler = new TournamentEliminationScheduler({
       maxConcurrent: 4,
+      // The general-slot rule on its own; the decided lane's own slots are
+      // pinned in 'the decided lane has slots of its own' below.
+      decidedSlots: 0,
       sweepWarnMs: 0,
       startTimers: false,
     });
@@ -85,6 +88,9 @@ describe('the decided lane', () => {
   it('always leaves one general slot to live work while decided games queue', async () => {
     const scheduler = new TournamentEliminationScheduler({
       maxConcurrent: 4,
+      // The general-slot rule on its own; the decided lane's own slots are
+      // pinned in 'the decided lane has slots of its own' below.
+      decidedSlots: 0,
       sweepWarnMs: 0,
       startTimers: false,
     });
@@ -122,6 +128,107 @@ describe('the decided lane', () => {
       unregister();
       expect(scheduler.setDecided('spin')).toBe(false);
       expect(scheduler.snapshot().decided).toBe(0);
+    } finally {
+      scheduler.stop();
+    }
+  });
+});
+
+describe('the decided lane has slots of its own (2026-10-02)', () => {
+  it('a decided game starts at once while every general slot is busy and 200 live games queue', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 4,
+      decidedSlots: 2,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const h = held();
+    try {
+      for (let i = 0; i < 200; i++) {
+        scheduler.register({ tournamentId: `live-${i}`, run: h.run(`live-${i}`) });
+      }
+      scheduler.register({ tournamentId: 'decided-spin', run: h.run('decided-spin') });
+      await flush();
+      expect(h.started).toEqual(['live-0', 'live-1', 'live-2', 'live-3']);
+      for (let i = 0; i < 200; i++) scheduler.wake(`live-${i}`);
+
+      // No general slot is released: the decided game must not need one.
+      expect(scheduler.setDecided('decided-spin')).toBe(true);
+      scheduler.wake('decided-spin');
+      await flush();
+
+      expect(h.started[4]).toBe('decided-spin');
+      expect(scheduler.snapshot()).toMatchObject({
+        decidedCapacity: 2,
+        decidedLaneRunning: 1,
+        decidedRunning: 0,
+        decidedQueued: 0,
+      });
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  it('decided games fill their own slots first, then all but one general slot, and live work keeps one', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 4,
+      decidedSlots: 2,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const h = held();
+    try {
+      for (let i = 0; i < 4; i++) {
+        scheduler.register({ tournamentId: `busy-${i}`, run: h.run(`busy-${i}`) });
+      }
+      await flush();
+      for (let i = 0; i < 10; i++) {
+        scheduler.register({ tournamentId: `decided-${i}`, run: h.run(`decided-${i}`) });
+        // Registration queues its first pass; the decided mark moves that place.
+        expect(scheduler.setDecided(`decided-${i}`)).toBe(true);
+      }
+      scheduler.register({ tournamentId: 'live-mtt', run: h.run('live-mtt') });
+      scheduler.wake('live-mtt');
+      await flush();
+      // The two decided slots run beside four busy general slots.
+      expect(h.started).toEqual(['busy-0', 'busy-1', 'busy-2', 'busy-3', 'decided-0', 'decided-1']);
+
+      for (let i = 0; i < 4; i++) {
+        h.release(`busy-${i}`);
+        await flush();
+      }
+      expect(h.started.slice(6)).toEqual(['decided-2', 'decided-3', 'decided-4', 'live-mtt']);
+      expect(scheduler.snapshot()).toMatchObject({
+        decidedLaneRunning: 2,
+        decidedRunning: 3,
+        decidedQueued: 5,
+      });
+
+      // A finished decided game hands its own slot to the next one.
+      h.release('decided-0');
+      await flush();
+      expect(h.started[10]).toBe('decided-5');
+      expect(scheduler.snapshot()).toMatchObject({ decidedLaneRunning: 2, decidedQueued: 4 });
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  it('a live game never takes a decided slot', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      decidedSlots: 2,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const h = held();
+    try {
+      for (let i = 0; i < 3; i++) {
+        scheduler.register({ tournamentId: `live-${i}`, run: h.run(`live-${i}`) });
+      }
+      await flush();
+      expect(h.started).toEqual(['live-0']);
+      expect(scheduler.snapshot()).toMatchObject({ decidedLaneRunning: 0, queued: 2 });
     } finally {
       scheduler.stop();
     }

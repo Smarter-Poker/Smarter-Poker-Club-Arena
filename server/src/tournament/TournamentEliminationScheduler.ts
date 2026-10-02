@@ -83,6 +83,29 @@ export const DEFAULT_CONSOLIDATION_SLOTS = 1;
  */
 export const DECIDED_LANE_LEAVES_LIVE_SLOTS = 1;
 
+/**
+ * A DECIDED GAME HAS SLOTS OF ITS OWN (2026-10-02).
+ *
+ * The decided lane above only ORDERS admission to the general slots, so a
+ * decided game still waits for a general slot to come free, and while the
+ * decided lane is long it waits for every decided game ahead of it as well.
+ * Read on production 16:17-16:32 UTC on 2026-10-02, engine 1-b4b20b86: the
+ * decided lane was 119 deep with its oldest waiter at 516 s, all three of the
+ * general slots it may hold were busy, and the admission that recorded a
+ * Spin's or Sit & Go's final bust waited a median 221 s for one (3 of 896
+ * inside 15 s). The work behind each of those admissions takes seconds.
+ *
+ * So, like consolidation, decided work gets DEFAULT_DECIDED_SLOTS physical
+ * slots of its own beside the general cap, served before it reaches for a
+ * general slot. The extra concurrency exists only while a decided game is
+ * actually waiting to be paid, it is bounded, and finishing the game retires
+ * its manager, so this pool drains itself. A decided field's admission runs
+ * from its last bust through its finish without yielding to the clock
+ * (TournamentManagerEliminations completedStage), so one admission per game
+ * is the normal case and the pool is sized for that.
+ */
+export const DEFAULT_DECIDED_SLOTS = 2;
+
 const registeredGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_registered',
   'Tournament managers registered with the one process-wide elimination scheduler.'
@@ -128,7 +151,7 @@ for (const outcome of ['completed', 'failed', 'timed_out']) {
 }
 
 type QueueKind = 'consolidation' | 'decided' | 'urgent' | 'routine';
-type SlotLane = 'consolidation' | 'general';
+type SlotLane = 'consolidation' | 'decided' | 'general';
 
 type ManagerSnapshot = ReturnType<TournamentManagerBase['getLifecycleDiagnosticSnapshot']>;
 interface RegistrationDiagnostics {
@@ -200,6 +223,8 @@ export interface TournamentEliminationSchedulerOptions {
   urgentBurst?: number;
   /** Physical slots reserved for the consolidation lane, beside maxConcurrent. */
   consolidationSlots?: number;
+  /** Physical slots reserved for decided games, beside maxConcurrent. */
+  decidedSlots?: number;
   startTimers?: boolean;
   now?: () => number;
 }
@@ -282,7 +307,11 @@ export interface TournamentEliminationSchedulerSnapshot {
   consolidationOldestWaitMs: number;
   decided: number;
   decidedQueued: number;
+  /** Decided games running on general slots (bounded by all-but-one of them). */
   decidedRunning: number;
+  /** The decided lane's own physical slots, and how many of them are running. */
+  decidedCapacity: number;
+  decidedLaneRunning: number;
 }
 
 const QUEUE_KIND_RANK: Record<QueueKind, number> = {
@@ -307,6 +336,7 @@ export class TournamentEliminationScheduler {
   private readonly sweepWarnMs: number;
   private readonly urgentBurst: number;
   private readonly consolidationSlots: number;
+  private readonly decidedSlots: number;
   private readonly now: () => number;
   private readonly entries = new Map<string, Entry>();
   /** Physical promises, including unregistered/replaced entries, by tournament. */
@@ -321,6 +351,8 @@ export class TournamentEliminationScheduler {
   private decidedRunningCount = 0;
   /** Physical runs holding a consolidation-lane slot (a subset of runningCount). */
   private consolidationRunningCount = 0;
+  /** Physical runs holding a decided-lane slot of its own (a subset of runningCount). */
+  private decidedLaneRunningCount = 0;
   private urgentRunStreak = 0;
   private wakeOrder = 0;
   private allSlotsStalledReported = false;
@@ -342,6 +374,7 @@ export class TournamentEliminationScheduler {
       0,
       Math.floor(options.consolidationSlots ?? DEFAULT_CONSOLIDATION_SLOTS)
     );
+    this.decidedSlots = Math.max(0, Math.floor(options.decidedSlots ?? DEFAULT_DECIDED_SLOTS));
     this.now = options.now ?? (() => Date.now());
 
     if (options.startTimers !== false) {
@@ -393,6 +426,16 @@ export class TournamentEliminationScheduler {
       this.consolidationSlots +
       Math.min(this.stalledCount('consolidation'), this.consolidationSlots)
     );
+  }
+
+  /** The decided lane's own slots, with the same stall compensation rule. */
+  private decidedCapacityNow(): number {
+    return this.decidedSlots + Math.min(this.stalledCount('decided'), this.decidedSlots);
+  }
+
+  /** Physical runs on general slots: everything not on a reserved lane slot. */
+  private generalRunningCount(): number {
+    return this.runningCount - this.consolidationRunningCount - this.decidedLaneRunningCount;
   }
 
   /**
@@ -638,6 +681,8 @@ export class TournamentEliminationScheduler {
       decided,
       decidedQueued,
       decidedRunning: this.decidedRunningCount,
+      decidedCapacity: this.decidedSlots,
+      decidedLaneRunning: this.decidedLaneRunningCount,
     };
   }
 
@@ -738,6 +783,7 @@ export class TournamentEliminationScheduler {
     this.activeEntries.clear();
     this.runningCount = 0;
     this.consolidationRunningCount = 0;
+    this.decidedLaneRunningCount = 0;
     this.decidedRunningCount = 0;
     this.allSlotsStalledReported = false;
     this.refreshMetrics(true);
@@ -971,7 +1017,15 @@ export class TournamentEliminationScheduler {
           if (entry.isActive?.() === false) continue;
           this.dispatch(entry, 'consolidation');
         }
-        while (this.runningCount - this.consolidationRunningCount < this.capacityNow()) {
+        while (this.decidedLaneRunningCount < this.decidedCapacityNow()) {
+          const entry = this.shiftValid(this.decidedQueue);
+          if (!entry) break;
+          entry.queuedAs = null;
+          entry.enqueuedAt = null;
+          if (entry.isActive?.() === false) continue;
+          this.dispatch(entry, 'decided');
+        }
+        while (this.generalRunningCount() < this.capacityNow()) {
           const entry = this.next();
           if (!entry) break;
           entry.queuedAs = null;
@@ -990,6 +1044,7 @@ export class TournamentEliminationScheduler {
     entry.running = true;
     entry.runningLane = lane;
     if (lane === 'consolidation') this.consolidationRunningCount++;
+    if (lane === 'decided') this.decidedLaneRunningCount++;
     entry.runningDecided = lane === 'general' && entry.decided;
     if (entry.runningDecided) this.decidedRunningCount++;
     entry.diagnosticOperationId = null;
@@ -1008,6 +1063,9 @@ export class TournamentEliminationScheduler {
       entry.running = false;
       if (entry.runningLane === 'consolidation') {
         this.consolidationRunningCount = Math.max(0, this.consolidationRunningCount - 1);
+      }
+      if (entry.runningLane === 'decided') {
+        this.decidedLaneRunningCount = Math.max(0, this.decidedLaneRunningCount - 1);
       }
       if (entry.runningDecided) {
         this.decidedRunningCount = Math.max(0, this.decidedRunningCount - 1);
@@ -1055,7 +1113,8 @@ export class TournamentEliminationScheduler {
         this.refreshMetrics(true);
         const snapshot = this.snapshot();
         if (
-          snapshot.running - snapshot.consolidationRunning >= snapshot.capacity &&
+          snapshot.running - snapshot.consolidationRunning - snapshot.decidedLaneRunning >=
+            snapshot.capacity &&
           this.stalledCount('general') >= snapshot.capacity &&
           !this.allSlotsStalledReported
         ) {

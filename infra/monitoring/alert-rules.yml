@@ -2316,19 +2316,24 @@ groups:
             an allocation cause nor imminent OOM; retain the separate critical alert.
           runbook: 'docs/runbooks/engine-memory.md'
 
-      # Retain the historical 1.6 GiB warning, not a process cap or an exact
-      # present-day build fit: other resident memory and workloads vary.
+      # RE-MEASURED 2026-10-02. The 1.6 GiB line came from the 3.8 GiB host of
+      # September 13/14. The engine now runs horse decision workers on a 16 GiB
+      # host, and over the 48 h to 2026-10-02 18:00Z its hourly RSS maximum
+      # ranged 1.73-2.94 GiB with the main V8 heap flat at 0.47-0.93 GiB - no
+      # growth across restarts, yet the old line fired continuously. 4 GiB sits
+      # well above that steady band, so a firing means growth again.
       - alert: EngineProcessMemoryHigh
         expr: |
-          poker_engine_process_rss_bytes > 1717986918
+          poker_engine_process_rss_bytes > 4294967296
         for: 15m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the retained 1.6 GiB process-memory warning'
+          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 4 GiB process-memory warning'
           description: |
-            Engine process RSS has exceeded 1.6 GiB for fifteen minutes.
+            Engine process RSS has exceeded 4 GiB for fifteen minutes - above
+            the 1.7-2.9 GiB steady band measured on 2026-10-02.
             Compare whole-process RSS, main-isolate V8 usage, worker activity,
             external memory and threads. poker_engine_native_main_arena_bytes
             is current [heap] virtual extent, not RSS or allocation ownership.

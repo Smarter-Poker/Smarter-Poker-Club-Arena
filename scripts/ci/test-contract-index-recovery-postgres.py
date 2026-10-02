@@ -39,8 +39,8 @@ def send(p,sql):
 def finish(p,label):
  if not p.stdin.closed:p.stdin.close()
  p.wait(timeout=70);out=p.stdout.read();err=p.stderr.read();(output/(label+'.stdout')).write_text(out);(output/(label+'.stderr')).write_text(err);(output/(label+'.sql')).write_text(child_sql[p.pid]);(output/(label+'.receipt.json')).write_text(json.dumps({'pid':p.pid,'exit_code':p.returncode,'sql_sha256':hashlib.sha256(child_sql[p.pid].encode()).hexdigest(),'stdout_sha256':hashlib.sha256(out.encode()).hexdigest(),'stderr_sha256':hashlib.sha256(err.encode()).hexdigest()}));return p.returncode,err
-def wait(sql):
- deadline=time.monotonic()+15
+def wait(sql,seconds=15):
+ deadline=time.monotonic()+seconds
  while time.monotonic()<deadline:
   if q(sql)=='t':return
   time.sleep(.05)
@@ -54,7 +54,7 @@ def rows(sql):return json.loads(q('SELECT coalesce(json_agg(x),\'[]\'::json) FRO
 try:
  assert ' 17.' in run([pg/'postgres','--version'])
  run([pg/'initdb','-D',data,'-U','postgres','--auth-local=trust','--auth-host=reject','--no-locale','-E','UTF8'])
- with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories='"+str(sock)+"'\nautovacuum=off\n")
+ with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories='"+str(sock)+"'\nautovacuum=off\nmax_prepared_transactions=2\n")
  run([pg/'pg_ctl','-D',data,'-l',work/'server.log','-w','start']);started=True
  assert json.loads(q("SELECT json_build_object('host',inet_server_addr(),'dir',current_setting('data_directory'),'listen',current_setting('listen_addresses'))"))=={'host':None,'dir':str(data),'listen':''}
  historical_path=root/'supabase/migrations/20260902110000_published_game_contracts_are_promises.sql'
@@ -69,16 +69,36 @@ try:
  observed=q("SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')")
  queries=api('queries');catalog=rows(queries['catalog']);oid=catalog[0]['oid'];api('catalog',oid=oid,rows=catalog,recovered=False)
  snapshot_sql=queries['snapshots']
- blocked=api('snapshots',oid=oid,rows=rows(snapshot_sql));assert blocked['accepted'] is False and 'snapshot' in blocked['error']
+ def admission():
+  r=rows(snapshot_sql);return r[0],api('snapshots',oid=oid,rows=r)
+ # Admission is by age (MAX_SNAPSHOT_AGE_SECONDS=60), not by presence: the
+ # real snapshot that just interrupted the build is short and is admitted.
+ seen,verdict=admission();assert verdict['accepted'] is True,verdict
+ assert seen['holders']==1 and seen['unknown_age']==0 and 0<=seen['oldest_age_seconds']<60,seen
+ # A read-committed transaction holds no snapshot between statements but still
+ # holds its table lock, which REINDEX CONCURRENTLY also waits on.
+ old_xact=child("SET application_name='contract_recovery_old_transaction'; BEGIN; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='contract_recovery_old_transaction' AND state='idle in transaction' AND backend_xmin IS NULL AND backend_xid IS NULL)")
+ seen,verdict=admission();assert verdict['accepted'] is True and seen['holders']==2,seen
+ # Let both real holders age past the bound; no clock or catalog is faked.
+ wait("SELECT count(*)=2 FROM pg_stat_activity WHERE application_name IN ('contract_recovery_old_snapshot','contract_recovery_old_transaction') AND clock_timestamp()-xact_start>interval '61 seconds'",90)
+ seen,blocked=admission();assert blocked['accepted'] is False and 'snapshot' in blocked['error'] and seen['oldest_age_seconds']>60,seen
  send(snapshot,'ROLLBACK;\n');assert finish(snapshot,'snapshot-release')[0]==0
- assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
+ seen,verdict=admission();assert verdict['accepted'] is False and seen['holders']==1 and seen['oldest_age_seconds']>60,seen
+ send(old_xact,'ROLLBACK;\n');assert finish(old_xact,'old-transaction-release')[0]==0
+ seen,verdict=admission();assert verdict['accepted'] is True and seen['holders']==0 and seen['oldest_age_seconds'] is None,seen
+ # A prepared transaction refuses even with no live holder at all.
+ q("BEGIN; SELECT pg_current_xact_id(); PREPARE TRANSACTION 'contract_recovery_prepared';")
+ seen,verdict=admission();assert verdict['accepted'] is False and seen['no_prepared'] is False and seen['holders']==0,seen
+ q("COMMIT PREPARED 'contract_recovery_prepared';")
+ seen,verdict=admission();assert verdict['accepted'] is True and seen['no_prepared'] is True,seen
  statement=api('statement',oid=oid);assert statement=='REINDEX INDEX CONCURRENTLY public.managed_game_contract_versions_game_id_id_idx'
- # Already-active transactions newer than historical provenance must now refuse.
+ # A snapshot newer than the historical provenance is judged by its own age.
  late_snapshot=child("SET application_name='contract_recovery_race_snapshot'; BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
  wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='contract_recovery_race_snapshot' AND state='idle in transaction' AND backend_xmin IS NOT NULL)")
- assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is False
- send(late_snapshot,'ROLLBACK;\n');assert finish(late_snapshot,'newer-snapshot-refusal-release')[0]==0
- assert api('snapshots',oid=oid,rows=rows(snapshot_sql))['accepted'] is True
+ seen,verdict=admission();assert verdict['accepted'] is True and seen['holders']==1,seen
+ send(late_snapshot,'ROLLBACK;\n');assert finish(late_snapshot,'newer-snapshot-release')[0]==0
+ assert admission()[1]['accepted'] is True
  # A different snapshot arriving after final admission is an unavoidable race.
  # Cause a genuine bounded interrupted REINDEX, never manufacture pg_index flags.
  race=child("SET application_name='contract_after_admission_snapshot'; BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT id FROM public.managed_game_contract_versions LIMIT 1;\n")
@@ -116,7 +136,7 @@ try:
  assert q("SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.managed_game_contract_versions t WHERE id<=2000")==baseline
  assert q('SELECT count(*) FROM public.managed_game_contract_versions')=='2001'
  passed=True
- (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'guard_refused_actual_old_snapshot':True,'newer_snapshot_refused':True,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
+ (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'short_snapshot_admitted':True,'old_snapshot_refused':True,'old_transaction_without_snapshot_refused':True,'prepared_transaction_refused':True,'max_snapshot_age_seconds':60,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
 finally:
  for p in children:
   if p.poll() is None:

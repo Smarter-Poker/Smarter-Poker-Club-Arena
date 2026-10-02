@@ -66,6 +66,12 @@ refuse` in `docs/laws.d`. Planted regressions, both red: a later migration
 `UPDATE ... SET mode = 'observe'`, and a later `INSERT ... VALUES ('observe')
 ON CONFLICT DO UPDATE`.
 
+`tests/law/DiamondRulesRefuseOnlyByAFlipSomeoneRead.law.test.ts` refused any
+migration anywhere containing `SET mode = 'refuse'`, so it read this flip of a
+different switch as a hand-written Diamond rule flip. Its pattern is now
+scoped to an `UPDATE` of `ca_diamond_rule_modes`, with its negative control
+kept and a scope control added for this migration's shape.
+
 If a live path is ever refused, the answer is to fix that writer at its line
 (CLAUDE.md 10.11). If the refusal is stopping play before that fix can land,
 the row may go back to `observe` only through a migration applied by

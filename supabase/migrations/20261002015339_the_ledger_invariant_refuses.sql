@@ -42,6 +42,7 @@
 -- moved underneath it: the mode must still be observe, and nothing may have
 -- been found since the fix landed. A data change only: no DDL, no reload.
 -- ===========================================================================
+-- @live-proof: (SELECT mode FROM public.ca_ledger_invariant_mode) = 'refuse'
 
 BEGIN;
 

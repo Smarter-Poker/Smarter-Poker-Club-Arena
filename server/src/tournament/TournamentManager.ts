@@ -3693,7 +3693,27 @@ export class TournamentManager extends TournamentManagerEliminations {
           for (const t of sourceTables) {
             const safe = await this.waitForHandComplete(t);
             if (!this.eliminationMutationAllowed()) return;
-            if (!safe) unsafeTables.add(t);
+            if (safe) continue;
+            unsafeTables.add(t);
+            /* A DEFERRED MOVE FENCES ITS SOURCE (2026-10-02). This check is a
+               snapshot, and a dealing table is between hands for a moment
+               only, so a move deferred here was deferred again on every
+               sweep. Production 2026-10-02 05:03-05:05Z: event 09a56a25 sat
+               9/9/9/1, its six moves "Deferring ... still in-hand" every
+               sweep while one player waited alone. Arm the same move fence
+               `claimTournamentMoveBoundary` arms (it expires on its own if
+               never claimed): the source stops at its next boundary and its
+               park edge wakes the sweep that moves the player. */
+            const sourceEngine = this.tableEngines.get(t);
+            if (sourceEngine && this.gameServer.ownsTournamentTableEngine(t, sourceEngine))
+              void sourceEngine
+                .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0)
+                .catch((error) =>
+                  reportError(error, 'Tournament.rebalance_source_hold_failed', {
+                    tournamentId: this.tournamentId,
+                    tableId: t,
+                  })
+                );
           }
           // TOURNEY-AUDIT 2026-07-24 (sweep 4): drop moves from tables still
           // in-hand instead of moving players with stale mid-hand stacks.

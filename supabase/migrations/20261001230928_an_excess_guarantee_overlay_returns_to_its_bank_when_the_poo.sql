@@ -153,6 +153,14 @@ BEGIN
 END;
 $function$;
 
+-- Register the private balance writer before CREATE FUNCTION so the production
+-- event trigger (fn_ca_money_rpc_registry_guard) admits it atomically.
+INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES (
+  'fn_ca_return_excess_start_overlay_locked','approved',
+  'Owner-only helper called by fn_apply_prize_guarantee before it finalizes an unfinalized pool. Credits back to the exact union_wallets.chip_balance or clubs.chip_treasury that funded the start-time guarantee overlay the part that money collected since made unnecessary (least(funded, pool - max(guarantee, collected))), journaled as one keyed reversal leg out of prize_liability (tourney:<id>:guarantee_overlay_excess_return) with the escrow overlay debit, in the same subtransaction as the finalization. Never touches a finalized pool or a player wallet.'
+)
+ON CONFLICT (proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
+
 CREATE FUNCTION public.fn_ca_return_excess_start_overlay_locked(p_tournament_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql

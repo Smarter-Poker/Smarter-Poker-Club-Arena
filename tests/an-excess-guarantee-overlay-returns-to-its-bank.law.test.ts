@@ -87,4 +87,13 @@ describe('an excess guarantee overlay returns to its bank when the pool is final
       'REVOKE ALL ON FUNCTION public.fn_ca_return_excess_start_overlay_locked(uuid) FROM PUBLIC, anon, authenticated, service_role;'
     );
   });
+  it('registers the balance writer before it is created', () => {
+    const reg = SQL.indexOf(
+      "INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES (\n  'fn_ca_return_excess_start_overlay_locked','approved',"
+    );
+    expect(reg).toBeGreaterThan(0);
+    expect(reg).toBeLessThan(
+      SQL.indexOf('CREATE FUNCTION public.fn_ca_return_excess_start_overlay_locked(')
+    );
+  });
 });

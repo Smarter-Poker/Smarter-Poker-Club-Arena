@@ -154,8 +154,8 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('createdClub?.id');
     expect(spec).toContain('escapeRegExp(createdClubRef)');
     expect(spec).not.toContain('/\\/clubs\\/[0-9a-f-]{36}');
-    expect(spec).toContain('getByLabel(/^100K Club Bank Chips$/)');
-    expect(spec).not.toContain('getByText(/100K/).first()');
+    expect(spec).toContain('getByLabel(/^99\\.7K Club Bank Chips$/)');
+    expect(spec).not.toContain('getByText(/99\\.7K/).first()');
   });
 
   it('certifies the first-club package, lifetime-second refusal and visible package rows', () => {

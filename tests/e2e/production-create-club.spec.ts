@@ -101,7 +101,9 @@ test.describe('Production Create A Club Certificate', () => {
     });
     // Prove the painted opening-bank command, not the hidden screen-reader
     // wallet announcement that happens to contain the same number.
-    await expect(page.getByLabel(/^100K Club Bank Chips$/)).toBeVisible({
+    // The club starts at 100K, then the atomic welcome transaction moves the
+    // reviewed 100 BBJ seed and 200 Spins seed into their club-owned reserves.
+    await expect(page.getByLabel(/^99\.7K Club Bank Chips$/)).toBeVisible({
       timeout: 60_000,
     });
     const welcome = page.getByRole('region', { name: 'Opening Welcome Package', exact: true });

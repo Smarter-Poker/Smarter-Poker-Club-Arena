@@ -1,0 +1,3 @@
+# tests/a-club-rake-total-is-not-a-lock-on-the-club-wallet.law.test.ts
+
+A raked cash hand never writes its club's single `club_wallets` row: `atomic_distribute_rake` keeps the hand's rake and BBJ totals per (club, table) in `club_table_rake_totals`, where each row has one writer, and `fn_club_money_panel` shows the wallet column plus that sum. The per-hand wallet UPDATE was held to COMMIT by every hand and every finish of the club and caused 1,518 statement timeouts and 180 voided hands on 2026-10-02; the law pins its removal, the table's shape and privileges, both md5 images, and the harness that proves the before/after on the real function.

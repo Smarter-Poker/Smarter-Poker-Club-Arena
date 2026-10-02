@@ -12,6 +12,15 @@ vi.mock('../services/TournamentBrainContext.js', async (importOriginal) => ({
   refreshTournamentBrainContextAfterClockCommit: brainContext.refreshAfterClockCommit,
 }));
 
+// Pass-through spy: the manager's reports still reach the real reporter, and
+// vi.restoreAllMocks restores that implementation rather than removing it.
+const errors = vi.hoisted(() => ({ reportError: vi.fn() }));
+vi.mock('../services/errorReporter.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/errorReporter.js')>();
+  errors.reportError = vi.fn(actual.reportError);
+  return { ...actual, reportError: errors.reportError };
+});
+
 const TOURNAMENT_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 
 function deferred<T>() {
@@ -240,6 +249,7 @@ describe('tournament break lifecycle fence', () => {
 describe('a break start refreshes the Horse tournament context after its write', () => {
   beforeEach(() => {
     brainContext.refreshAfterClockCommit.mockReset();
+    errors.reportError.mockClear();
   });
 
   it('asks for the paused clock only once the on_break write has returned', async () => {
@@ -283,6 +293,14 @@ describe('a break start refreshes the Horse tournament context after its write',
       await manager.pauseForBreak(300_000);
       expect(persist.eq).toHaveBeenCalledOnce();
       expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
+      // A returned error is reported exactly like a thrown one.
+      expect(errors.reportError).toHaveBeenCalledOnce();
+      expect(errors.reportError).toHaveBeenCalledWith(
+        fault === 'returned error'
+          ? { message: 'temporary database failure' }
+          : expect.objectContaining({ message: 'database unavailable' }),
+        'TournamentManagerBase.pauseForBreak_persist'
+      );
     }
   );
 });

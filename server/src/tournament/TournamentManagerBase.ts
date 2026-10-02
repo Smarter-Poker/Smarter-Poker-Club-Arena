@@ -3032,10 +3032,14 @@ export abstract class TournamentManagerBase {
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
-      // The row now says the level clock is paused. The Horse tournament
-      // context must not keep reporting a running clock for the rest of its
-      // refresh interval; only a returned write proves the pause is durable.
-      if (!persisted.error) refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
+      // Supabase returns a failed write rather than throwing it; report it
+      // through the same channel as a thrown one. Only a write that returned
+      // without an error proves the row now says the level clock is paused,
+      // and the Horse tournament context must not keep reporting a running
+      // clock for the rest of its refresh interval.
+      if (persisted.error)
+        reportError(persisted.error, 'TournamentManagerBase.pauseForBreak_persist');
+      else refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
     } catch (err) {
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }

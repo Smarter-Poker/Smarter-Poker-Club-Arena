@@ -85,7 +85,9 @@ describe("a club's rake total is not a lock on its wallet", () => {
 
   it('the panel reads wallet plus tables, so the figure it shows does not change', () => {
     expect(CODE).toContain("'1374b5a7a5759e631a8f3ebda5199c91'");
-    expect(CODE).toMatch(/FROM public\.club_table_rake_totals t[\s\S]*WHERE t\.club_id = p_club_id/);
+    expect(CODE).toMatch(
+      /FROM public\.club_table_rake_totals t[\s\S]*WHERE t\.club_id = p_club_id/
+    );
     expect(CODE).toContain('PANEL_DOES_NOT_READ_THE_TABLE_TOTALS');
   });
 

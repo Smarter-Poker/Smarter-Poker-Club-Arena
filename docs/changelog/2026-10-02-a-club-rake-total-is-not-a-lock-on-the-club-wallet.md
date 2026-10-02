@@ -47,11 +47,11 @@ The columns are a statistic, not a balance:
 Only three SQL functions touch the columns. No page, no engine code and no World Hub route reads
 them (checked on main and in `pg_proc` today):
 
-| function | before | after |
-| --- | --- | --- |
-| `atomic_distribute_rake` | adds every hand to the club row | adds it to the hand's (club, table) row |
-| `fn_settle_tournament_rake` | adds tournament net rake under the finish's own lock | unchanged (the finish already holds the row) |
-| `fn_club_money_panel` | shows `period_rake_collected` as a standalone club's rake treasury | shows the wallet column plus the sum of the club's tables |
+| function                    | before                                                             | after                                                     |
+| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| `atomic_distribute_rake`    | adds every hand to the club row                                    | adds it to the hand's (club, table) row                   |
+| `fn_settle_tournament_rake` | adds tournament net rake under the finish's own lock               | unchanged (the finish already holds the row)              |
+| `fn_club_money_panel`       | shows `period_rake_collected` as a standalone club's rake treasury | shows the wallet column plus the sum of the club's tables |
 
 `period_*` has never been reset, so the panel shows exactly what it would have shown. Nothing was
 backfilled and nothing was repaired.

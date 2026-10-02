@@ -786,8 +786,11 @@ describe('a failed read never leaves a spinner', () => {
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Spin 100', exact: true }));
     await waitFor(() => expect(backend.spin).toHaveBeenCalledTimes(1));
-    fireEvent.click(await screen.findByRole('button', { name: 'Land Wheel' }));
-    const reveal = screen.getByRole('dialog');
+    // The wheel turns once the receipt is in, not when the request leaves: a
+    // click before that hits a disabled wheel and nothing reveals.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Land Wheel' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Land Wheel' }));
+    const reveal = await screen.findByRole('dialog');
     fireEvent.animationEnd(reveal.querySelector('[data-motion="keep"]')!);
     fireEvent.click(within(reveal).getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

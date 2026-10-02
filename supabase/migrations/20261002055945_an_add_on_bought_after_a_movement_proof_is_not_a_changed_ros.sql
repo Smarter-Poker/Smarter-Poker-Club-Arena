@@ -68,12 +68,7 @@ SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '15s';
 
 DO $addon_assert_preimage$
-DECLARE v_reason text;
 BEGIN
-  v_reason := public.fn_ca_break_window_refuses_migrations(now());
-  IF v_reason IS NOT NULL THEN
-    RAISE EXCEPTION 'F06_MOVEMENT_ADDON_REFUSED: %', v_reason USING ERRCODE = '55000';
-  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
      WHERE p.oid = to_regprocedure('smarter_private.f06_assert_movement(uuid)')

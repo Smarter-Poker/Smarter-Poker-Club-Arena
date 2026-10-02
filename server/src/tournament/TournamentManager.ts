@@ -3357,6 +3357,9 @@ export class TournamentManager extends TournamentManagerEliminations {
     });
   }
 
+  /** Same short-table bound as TableBalancer.shouldBreakTable. */
+  private static readonly SHORT_BREAK_SOURCE_PLAYERS = 3;
+
   /**
    * Players still seated on sources whose park has not begun. Their break
    * will place them on the tables the balancer sees, so a new plan must leave
@@ -3578,8 +3581,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       players: t.players.map((p) => ({ ...p })),
       reservedSeats: t.reservedSeats ? [...t.reservedSeats] : t.reservedSeats,
     });
+    // A roster chair with no live seat (an unrecorded bust) is refused by the
+    // move door, so it is not a free seat for a waiting park either.
     const freeSeats = (tables: BalancerTable[]) =>
-      tables.reduce((sum, t) => sum + Math.max(0, t.maxSeats - t.playerCount), 0);
+      tables.reduce(
+        (sum, t) => sum + Math.max(0, t.maxSeats - t.playerCount - (t.reservedSeats?.length ?? 0)),
+        0
+      );
     let plannedBoard = balancerTables.map(copyTable);
     const breakSources: string[] = [];
     for (;;) {
@@ -3600,11 +3608,21 @@ export class TournamentManager extends TournamentManagerEliminations {
           continue;
         }
         // Players of a park that has not begun still need seats here, so a
-        // pass adds no further park that would take them. The first choice
-        // is the single break this step always made: a park that can never
-        // begin (production 2026-10-02, f8c6f298 left 1/1/9 with its full
-        // table parked since 04:51Z) must not stop two lone players merging.
-        if (breakSources.length > 0 && freeSeats(remaining) < unbegunDemand) continue;
+        // pass adds no park that would take them. One exception: a park that
+        // can never begin (production 2026-10-02, f8c6f298 left 1/1/9 with its
+        // full table parked since 04:51Z) must not stop lone players merging,
+        // so the first choice of a pass may still be a SHORT table.
+        //
+        // A FULL TABLE NEVER JUMPS THE QUEUE (2026-10-02). The exception used
+        // to cover any first choice. Production 13:09-13:28Z: event 4d2afa41
+        // had one 7-player park that could not begin, and every later pass
+        // parked one more 7-9 player table past it, each taking seats the
+        // others needed, until ten nine-handed tables sat frozen at once
+        // (`destinations_full:5_of_9`, PokerTablesFrozen). A table this big
+        // is a consolidation, not a stranded player, and it waits its turn.
+        const shortSource = bt.playerCount <= TournamentManager.SHORT_BREAK_SOURCE_PLAYERS;
+        if ((breakSources.length > 0 || !shortSource) && freeSeats(remaining) < unbegunDemand)
+          continue;
         chosen = bt.tableId;
         plannedBoard = remaining;
         break;

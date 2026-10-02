@@ -501,6 +501,26 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     await write;
     expect(e.isMaintenanceStateDurable()).toBe(true);
   });
+  it('asks a lost debit again before refusing the park write, so the restart gate opens', async () => {
+    // 2026-10-02 07:53Z: a debit's answer was lost in a database lock storm,
+    // the park write threw "Time bank accounting outcome is unconfirmed", the
+    // census re-ask answered "it had committed" 400 ms later, and nothing
+    // wrote the park again: the table held the 07:55 restart certificate shut.
+    const e = await saved();
+    e.pauseForMaintenance(120000);
+    await e.presenceSave;
+    e.unresolvedTimeBankDebits.set('debit-lost', { userId: user, seconds: 3 });
+    e.timeBankAccountingUnconfirmed = true;
+    data.rpc.mockResolvedValue({ data: { success: true, idempotent_replay: true }, error: null });
+    await e.persistPresenceForRestart('parked');
+    expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank', {
+      p_user_id: user,
+      p_seconds: 3,
+      p_request_id: 'debit-lost',
+    });
+    expect(e.maintenanceDurabilityReason()).toBeNull();
+    expect(e.isMaintenanceStateDurable()).toBe(true);
+  });
   it('orders a slow announcement before the final bank snapshot', async () => {
     const e = await saved();
     let release!: () => void;

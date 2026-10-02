@@ -7331,6 +7331,19 @@ export abstract class ServerTableEngineBase {
           await Promise.all(this.timeBankAccountingPending);
         }
         if (generation !== this.maintenanceCheckpointGeneration) return;
+        /* ASK A LOST DEBIT AGAIN BEFORE REFUSING THE PARK (2026-10-02).
+           At 07:53Z a debit's answer was lost in a database lock storm, this
+           write threw, the census re-asked the debit by its id 400 ms later
+           ("it had committed") - and nothing ever wrote the park again, so
+           the table held the 07:55 restart certificate shut until the pause
+           safety timeout. The stopped-custody writer already re-asks first
+           (persistStoppedTimeBankCustody); the parked writer does the same.
+           The same id answers from its receipt, so this never charges twice;
+           a debit that is still unknown keeps the refusal below. */
+        if (this.timeBankAccountingUnconfirmed && this.unresolvedTimeBankDebits.size > 0) {
+          await this.resolveUnconfirmedTimeBankDebits();
+          if (generation !== this.maintenanceCheckpointGeneration) return;
+        }
         if (this.timeBankAccountingUnconfirmed) {
           throw new Error('Time bank accounting outcome is unconfirmed');
         }

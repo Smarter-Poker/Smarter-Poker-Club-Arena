@@ -129,6 +129,7 @@ export class StateMachine<S extends string> {
 //   RUNNING → RUNNING:   hand completes, next hand starts
 //   RUNNING → PAUSED:    admin pause, break, or hand-for-hand
 //   PAUSED → RUNNING:    resume
+//   PAUSED → CLOSING:    stopped while paused (break, hand-for-hand, maintenance)
 //   RUNNING → WAITING:   player count drops below 2
 //   RUNNING → CLOSING:   admin close or all leave
 //   CLOSING → CLOSED:    cleanup complete
@@ -145,6 +146,10 @@ const TABLE_TRANSITIONS: StateTransition<TableStatus>[] = [
   { from: 'paused', to: 'running' },
   { from: 'running', to: 'waiting' },
   { from: 'running', to: 'closing' },
+  // A table stopped while paused (a tournament break, hand-for-hand, the
+  // maintenance park) closes like any other: 34 refused paused -> closing
+  // transitions per hour left these tables reporting 'paused' after stop.
+  { from: 'paused', to: 'closing' },
   { from: 'closing', to: 'closed' },
   { from: 'waiting', to: 'closing' },
   { from: 'empty', to: 'closing' },

@@ -815,6 +815,55 @@ describe('a certification fixture that leaked must not wedge the next certificat
     expect(run.wait).not.toHaveBeenCalled();
   });
 
+  it('prints only the reserved fixture graph when package-game classification refuses cleanup', async () => {
+    const clubId = '11111111-1111-4111-8111-111111111111';
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-graph-diagnostic-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({ id: USER_ID, email: STALE_EMAIL })
+    );
+    const errorBody = {
+      code: '55000',
+      message: 'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/clubs?')) {
+        return Response.json([
+          { id: clubId, name: 'Crest Cert 1790000000000-abc', owner_id: USER_ID },
+        ]);
+      }
+      if (url.includes('/rpc/fn_ca_retire_welcome_certification_club')) {
+        return Response.json(errorBody, { status: 500 });
+      }
+      if (url.includes('/club_welcome_package_items?')) {
+        return Response.json([{ slot_key: 'nlh6', entity_kind: 'cash_game', entity_id: 'cash-1' }]);
+      }
+      if (url.includes('/cash_games?')) return Response.json([{ id: 'cash-1' }]);
+      if (url.includes('/tournament_schedules?')) return Response.json([{ id: 'schedule-1' }]);
+      if (url.includes('/tables?club_id=')) {
+        return Response.json([{ id: 'table-1', role: 'unexpected' }]);
+      }
+      if (url.includes('/tables?cluster_id=')) {
+        return Response.json([{ id: 'table-foreign', club_id: 'foreign-club' }]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow(/WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES/);
+
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('reserved fixture graph diagnostic')
+    );
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"role":"unexpected"'));
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"table-foreign"'));
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
   it('treats a replayed retirement as success (the door answers already_gone)', async () => {
     const model = world(
       [{ id: '11111111-1111-4111-8111-111111111111', name: 'Crest Cert 1790000000000-abc' }],

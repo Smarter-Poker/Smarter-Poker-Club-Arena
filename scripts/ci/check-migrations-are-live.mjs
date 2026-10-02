@@ -94,6 +94,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { loadAliases } from './migration-aliases.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = join(ROOT, 'supabase', 'migrations');
@@ -108,6 +109,39 @@ const flag = (name, fallback) => {
 };
 const REQUIRE_PROOF = argv.includes('--require-proof');
 const DAYS = Number(flag('days', '21'));
+
+/**
+ * THE PULL-REQUEST FORM OF THIS QUESTION (2026-09-27).
+ *
+ * The scheduled audit accuses a merged migration the moment it is not live.
+ * On a pull request that is too early for somebody else's migration merged a
+ * minute ago, so .github/workflows/migration-ledger-reconciled.yml runs this
+ * with --min-age-hours: a file younger than that (by the version stamp, UTC)
+ * that is not live yet is listed as in flight; an older one fails the branch.
+ * The scheduled audit passes no flag and is exactly as strict as before.
+ */
+const MIN_AGE_HOURS = Number(flag('min-age-hours', '0'));
+
+export function stampedAt(file) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/.exec(String(file));
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+
+/**
+ * EXPLICITLY MARKED (2026-09-27). The repository's own marker for a file that
+ * must never run because a later file replaced it - honoured by
+ * check-migrations-applied.mjs since 2026-09-07 - is honoured here too, on the
+ * same terms: it must NAME the superseding version, and a file with that
+ * version must exist in this directory. "Superseded" is the easiest lie to tell
+ * about a migration that simply never ran, so an unverifiable claim is ignored
+ * and the file is judged like any other.
+ */
+export function supersededBy(sql, dirFiles) {
+  const m = String(sql).slice(0, 400).match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
+  if (!m) return null;
+  return dirFiles.some((f) => f.startsWith(`${m[1]}_`)) ? m[1] : null;
+}
 
 function windowFloor() {
   const since = flag('since', null);
@@ -400,11 +434,35 @@ function main() {
   if (recorded.size === 0) die('schema_migrations returned no names at all');
   const recordedPrefixes = new Set([...recorded].map((n) => n.slice(0, NAME_PREFIX)));
 
+  // Apply-time aliases (scripts/ci/migration-aliases.mjs): the same migration
+  // recorded under the version and name the Supabase MCP gave it.
+  const dirFiles = readdirSync(DIR);
+  const aliases = loadAliases(ROOT, { files: dirFiles });
+  if (aliases.error) die(`the alias table is unreadable: ${aliases.error}`);
+  for (const r of aliases.rejected) console.error(`[migrations-are-live] alias refused: ${r}`);
+  const aliasedLive = (file) =>
+    (aliases.byFile.get(file) || []).some(
+      (row) =>
+        recorded.has(String(row.appliedName)) ||
+        recordedPrefixes.has(String(row.appliedName).slice(0, NAME_PREFIX))
+    );
+
   const unmatched = [];
+  const superseded = [];
   for (const file of files) {
     const slug = file.slice(file.indexOf('_') + 1, -4);
     if (recorded.has(slug) || recordedPrefixes.has(slug.slice(0, NAME_PREFIX))) continue;
-    unmatched.push({ file, slug, sql: readFileSync(join(DIR, file), 'utf8') });
+    if (aliasedLive(file)) continue;
+    const sql = readFileSync(join(DIR, file), 'utf8');
+    const by = supersededBy(sql, dirFiles) || aliases.superseded.get(file)?.by || null;
+    if (by) {
+      superseded.push({ file, by });
+      continue;
+    }
+    unmatched.push({ file, slug, sql });
+  }
+  for (const s of superseded) {
+    console.log(`[migrations-are-live] explicitly marked: ${s.file} is SUPERSEDED BY ${s.by} and must never run.`);
   }
 
   console.log(
@@ -539,11 +597,17 @@ function main() {
 
   // ── the verdict ────────────────────────────────────────────────────────────
   const notApplied = [];
+  const inFlight = [];
   const unverifiable = [];
   for (const m of unmatched) {
     const gone = m.objects.filter((o) => missing.has(`${o.kind}\t${o.name}`));
     const bad = falseProofs.get(m.file) || [];
     if (gone.length > 0 || bad.length > 0) {
+      const at = stampedAt(m.file);
+      if (MIN_AGE_HOURS > 0 && at !== null && Date.now() - at < MIN_AGE_HOURS * 3600000) {
+        inFlight.push({ ...m, gone, bad });
+        continue;
+      }
       notApplied.push({ ...m, gone, bad });
     } else if (m.objects.length === 0 && m.proofs.length === 0) {
       unverifiable.push(m);
@@ -573,6 +637,12 @@ function main() {
     }
   }
 
+  for (const m of inFlight) {
+    console.log(
+      `[migrations-are-live] in flight (younger than ${MIN_AGE_HOURS}h, not failed yet): ${m.file}`
+    );
+  }
+
   if (notApplied.length > 0) {
     console.error('\n[migrations-are-live] MERGED BUT NOT LIVE:\n');
     for (const m of notApplied) {
@@ -582,8 +652,9 @@ function main() {
     }
     console.error(
       '\n  These are in the repository and not in the database. Apply each one with the\n' +
-        '  Supabase MCP apply_migration, or - if it was superseded - delete the file in\n' +
-        '  the same pull request that says why.\n'
+        '  Supabase MCP apply_migration, or - if it was superseded - put\n' +
+        '  "-- SUPERSEDED BY <version>" on its first line, naming the file that replaced it,\n' +
+        '  in a pull request that says why. History is never deleted.\n'
     );
     process.exit(1);
   }

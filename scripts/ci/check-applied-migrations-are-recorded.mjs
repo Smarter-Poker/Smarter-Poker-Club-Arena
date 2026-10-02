@@ -46,6 +46,7 @@ import { readdirSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadAliases } from './migration-aliases.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -65,6 +66,56 @@ function defaultSince() {
 }
 
 const SINCE = argValue('--since', defaultSince());
+
+/**
+ * IN FLIGHT IS NOT MISSING, FOR A WHILE (2026-09-27).
+ *
+ * This check used to be scheduled-only, because an agent applies a migration
+ * and its pull request lands minutes or hours later, and failing every other
+ * branch in that window would be an outage of its own. The price was that a
+ * gap was reported twice a day to an issue nobody read, and 1,270 of them
+ * accumulated. So it now also runs on every pull request and every push to
+ * main (.github/workflows/migration-ledger-reconciled.yml) with a GRACE: a gap
+ * younger than --grace-hours is listed as in flight and does not fail; an
+ * older one fails. The applied version is the apply time the Supabase MCP
+ * stamped, in UTC, so its age is read from the version itself.
+ */
+const GRACE_HOURS = Number(argValue('--grace-hours', '0'));
+
+/**
+ * A pull request that ADDS the missing file must be able to pass. The trusted
+ * PR-time job checks out main, never the branch, so the branch's own new
+ * migration filenames are passed in as data (names only - nothing from the
+ * branch is executed) and indexed alongside main's.
+ */
+function extraFiles() {
+  const raw = [argValue('--extra-files', ''), process.env.MIGRATION_EXTRA_FILES || '']
+    .join('\n')
+    .split(/[\n,]/)
+    .map((s) => s.trim().split('/').pop())
+    .filter(Boolean);
+  return raw.filter((f) => /^[0-9A-Za-z_.-]+\.sql$/.test(f));
+}
+
+/** `20260927153827` -> the Date it names, in UTC. Anything else -> null. */
+export function appliedAt(version) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(String(version));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Split gaps into those still inside the grace window and those past it. */
+export function splitByGrace(missing, graceHours, now = Date.now()) {
+  const inFlight = [];
+  const overdue = [];
+  for (const m of missing) {
+    const at = appliedAt(m.version);
+    if (graceHours > 0 && at && now - at.getTime() < graceHours * 3600000) inFlight.push(m);
+    else overdue.push(m);
+  }
+  return { inFlight, overdue };
+}
 const URL_BASE = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -211,12 +262,26 @@ export async function siblingMigrationFiles(
 }
 
 async function repoIndex() {
-  return indexFrom([...readdirSync(DIR), ...(await siblingMigrationFiles())]);
+  return indexFrom([...readdirSync(DIR), ...extraFiles(), ...(await siblingMigrationFiles())]);
 }
 
-export function recordedBy(index, migration) {
-  if (index.versions.has(migration.version)) return true;
-  const name = String(migration.name || '').toLowerCase();
+/**
+ * THREE SHAPES THIS USED TO MISS (2026-09-27), all measured against the full
+ * history rather than the seven-day window:
+ *
+ *   - a name stored WITH its extension (`20260311_bbj_player_id_column.sql`),
+ *     which never equals a file stem;
+ *   - a version that is not a stamp at all but the whole stem
+ *     (`20260819_ca_player_stats_full_rpc`, recorded with an empty name);
+ *   - a migration recorded under an apply-time version AND name, whose file
+ *     carries the author's - see scripts/ci/migration-aliases.mjs.
+ */
+export function recordedBy(index, migration, aliases) {
+  const version = String(migration.version || '');
+  if (index.versions.has(version)) return true;
+  if (index.names.has(version.toLowerCase())) return true;
+  if (aliases?.byVersion?.has(version)) return true;
+  const name = String(migration.name || '').toLowerCase().replace(/\.sql$/, '');
   if (name.length === 0) return false;
   if (index.names.has(name)) return true;
   const bare = withoutStamp(name);
@@ -259,10 +324,18 @@ async function main() {
   requireEnvironment();
   const applied = await appliedMigrations();
   const index = await repoIndex();
-  const missing = applied.filter((m) => !recordedBy(index, m));
+  const aliases = loadAliases(undefined, { files: readdirSync(DIR) });
+  if (aliases.error) {
+    // COULD NOT TELL (10.86): without the alias table a known pair reads as a
+    // gap, and a gap reported falsely is the alarm people learn to ignore.
+    throw new Error(`the alias table is unreadable: ${aliases.error}`);
+  }
+  for (const r of aliases.rejected) console.error(`[applied-migrations-recorded] alias refused: ${r}`);
+  const missing = applied.filter((m) => !recordedBy(index, m, aliases));
+  const { inFlight, overdue } = splitByGrace(missing, GRACE_HOURS);
 
   if (AS_JSON) {
-    console.log(JSON.stringify({ since: SINCE, applied: applied.length, missing }, null, 1));
+    console.log(JSON.stringify({ since: SINCE, applied: applied.length, missing, inFlight, overdue }, null, 1));
   } else if (missing.length === 0) {
     console.log(
       `[applied-migrations-recorded] OK — all ${applied.length} migration(s) applied since ${SINCE} have a file in ${DIR} or a sibling repo.`
@@ -279,10 +352,20 @@ async function main() {
     console.log('  repo would not have them. Export each one and commit it — the applied SQL is');
     console.log('  in supabase_migrations.schema_migrations.statements, and the file should be');
     console.log('  named for the version it was applied under so the two can be tied together.');
+    console.log('  If the same change is already here under its author\'s version and name,');
+    console.log('  add a row to scripts/ci/applied-migration-aliases.json instead.');
     console.log('');
+    if (GRACE_HOURS > 0) {
+      console.log(
+        `  ${inFlight.length} of them are younger than ${GRACE_HOURS}h (in flight; not failed), ` +
+          `${overdue.length} are older (failed).`
+      );
+      for (const m of inFlight) console.log(`    in flight: ${m.version}  ${m.name}`);
+      console.log('');
+    }
   }
 
-  if (missing.length > 0 && FAIL_ON_GAP) process.exit(1);
+  if (overdue.length > 0 && FAIL_ON_GAP) process.exit(1);
 }
 
 /* Guarded so a test can import indexFrom/recordedBy without this script

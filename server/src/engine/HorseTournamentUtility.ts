@@ -218,6 +218,10 @@ export function selectContinuationSamples(
   return Array.from({ length: count }, (_, i) => samples[Math.floor((i * available) / count)]);
 }
 
+/** Decision-local rollout results by settled local-stack key, then by
+ * sample index * 2 + blind-level identity (at most two levels). */
+type FutureRolloutCache = Map<string, Array<FutureHandResult | undefined>>;
+
 interface UtilityWorkspace {
   field: FieldState;
   estimateCache: Map<string, Estimate>;
@@ -865,6 +869,37 @@ function winnersFor(
   return { high, low };
 }
 
+/** Action-wide facts every candidate/sample settlement reads unchanged. */
+interface SettlementPlan {
+  /** Last public seat holding hero's id (the id map's winner), or -1. */
+  heroSeat: number;
+  /** Clockwise response order after hero, as public-seat indices. */
+  responseOrder: number[];
+  evidenceById: Map<string, TournamentUtilityOpponentEvidence>;
+}
+
+function settlementPlan(input: TournamentUtilityInput): SettlementPlan {
+  let heroSeat = -1;
+  for (let index = 0; index < input.players.length; index++)
+    if (input.players[index].user_id === input.hero.user_id) heroSeat = index;
+  const heroSeatNumber = heroSeat < 0 ? 0 : input.players[heroSeat].seat;
+  // The same stable comparison the per-sample seat copies used; seat numbers
+  // are never changed by a settlement, so the permutation is action-wide.
+  const responseOrder = input.players
+    .map((_, index) => index)
+    .sort(
+      (a, b) =>
+        Number(input.players[a].seat <= heroSeatNumber) -
+          Number(input.players[b].seat <= heroSeatNumber) ||
+        input.players[a].seat - input.players[b].seat
+    );
+  return {
+    heroSeat,
+    responseOrder,
+    evidenceById: new Map(input.opponents.map((evidence) => [evidence.userId, evidence])),
+  };
+}
+
 function settleSample(args: {
   input: TournamentUtilityInput;
   field: FieldState;
@@ -872,13 +907,15 @@ function settleSample(args: {
   sample: TournamentUtilityShowdownSample;
   sampleIndex: number;
   payoutWeight: number;
+  plan: SettlementPlan;
 }): BranchResult | null {
-  const { input, field, candidate, sample } = args;
+  const { input, field, candidate, sample, plan } = args;
+  if (plan.heroSeat < 0) return null;
   const vector = field.stacks.slice();
   const seats = input.players.map((player) => ({ ...player, cards: [...player.cards] }));
-  const seatById = new Map(seats.map((player) => [player.user_id, player]));
-  const hero = seatById.get(input.hero.user_id);
-  if (!hero) return null;
+  let seatsById: Map<string, SeatPlayer> | undefined;
+  const seatById = () => (seatsById ??= new Map(seats.map((player) => [player.user_id, player])));
+  const hero = seats[plan.heroSeat];
 
   const commit = (player: SeatPlayer, requested: number): void => {
     const amount = Math.min(Math.max(0, requested), Math.max(0, player.stack));
@@ -894,15 +931,13 @@ function settleSample(args: {
   else commit(hero, candidate.investment);
 
   const wager = candidate.kind === 'bet' || candidate.kind === 'raise' || candidate.kind === 'jam';
-  const evidenceById = new Map(input.opponents.map((evidence) => [evidence.userId, evidence]));
+  const evidenceById = plan.evidenceById;
   let discretionaryCallers = 0;
   let forcedCallers = 0;
   // Earlier calls change the next responder's available pot. Use actual
   // clockwise action order, not the storage order of the public seat array.
-  const responseOrder = seats
-    .slice()
-    .sort((a, b) => Number(a.seat <= hero.seat) - Number(b.seat <= hero.seat) || a.seat - b.seat);
-  for (const opponent of responseOrder) {
+  for (const seatIndex of plan.responseOrder) {
+    const opponent = seats[seatIndex];
     if (
       opponent.user_id === hero.user_id ||
       opponent.is_folded ||
@@ -1016,7 +1051,7 @@ function settleSample(args: {
     for (let layerIndex = 0; layerIndex < branchPots.length; layerIndex++) {
       const layer = branchPots[layerIndex];
       const liveEligible = layer.eligiblePlayers.filter(
-        (userId) => !seatById.get(userId)?.is_folded
+        (userId) => !seatById().get(userId)?.is_folded
       );
       if (liveEligible.length === 0) return null;
       const boardAmount = layer.amount / sample.boards.length;
@@ -1053,7 +1088,7 @@ function settleSample(args: {
   let heroFinishedPaid = false;
   if (heroBusted) {
     const startOf = (userId: string): number => {
-      const player = seatById.get(userId)!;
+      const player = seatById().get(userId)!;
       return player.stack + player.totalInvested;
     };
     const heroStart = startOf(input.hero.user_id);
@@ -1137,8 +1172,9 @@ function settleSample(args: {
     conservationError: Math.abs(total - field.conservationTarget),
     shortStackCollision:
       Boolean(input.continuation) &&
-      seats.some((p) => {
-        const original = input.players.find((x) => x.user_id === p.user_id)!;
+      seats.some((p, seatIndex) => {
+        // Public ids are unique (the id map above); the copy keeps its index.
+        const original = input.players[seatIndex];
         return (
           p.user_id !== hero.user_id &&
           !p.is_folded &&
@@ -1364,8 +1400,9 @@ function evaluateCandidate(args: {
   estimate: (vector: number[]) => Estimate;
   payoutWeight: number;
   futureDraws: Map<string, FutureHandDraw>;
-  futureResults: Map<string, FutureHandResult>;
+  futureResults: FutureRolloutCache;
   vectorKey: (vector: number[], rounded: boolean) => string;
+  plan: SettlementPlan;
 }): CandidateEvaluation {
   const chipMoment = { sum: 0, square: 0 };
   const payoutMoment = { sum: 0, square: 0 };
@@ -1387,6 +1424,20 @@ function evaluateCandidate(args: {
   let futureForcedPaid = 0;
   const methods = new Set<IcmMethod>();
   const vectors = new Set<string>();
+  // The blind-level bounds are fixed for the whole action. A rollout is
+  // identified by its sample, its level's (smallBlind, bigBlind, ante,
+  // anteType) and its settled local stacks; equal level fields share one
+  // identity exactly as their formatted key did.
+  const futureConfig = args.input.continuation?.futureHands;
+  const futureLevels = futureConfig
+    ? futureConfig.nextLevelDue
+      ? futureConfig.levels.slice(-1)
+      : futureConfig.levels
+    : [];
+  const levelIdentity = futureLevels.map(
+    (level) => `${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}`
+  );
+  const levelSlot = levelIdentity.map((key) => levelIdentity.indexOf(key));
 
   for (let index = 0; index < args.input.showdownSamples.length; index++) {
     if (
@@ -1401,6 +1452,7 @@ function evaluateCandidate(args: {
     const weight = args.sampleWeights[index] ?? 0;
     if (weight <= 0) continue;
     let branch = settleSample({
+      plan: args.plan,
       input: args.input,
       field: args.field,
       candidate: args.candidate,
@@ -1419,7 +1471,7 @@ function evaluateCandidate(args: {
     let selectedForecast: Estimate | undefined;
     let selectedRecovery: OptionEstimate | undefined;
     if (future && !branch.heroBusted) {
-      const levels = future.nextLevelDue ? future.levels.slice(-1) : future.levels;
+      const levels = futureLevels;
       if (!levels.length || levels.length > 2)
         return { ledger: null, unavailableReason: 'candidate_settlement' };
       const bounds: Array<{
@@ -1433,9 +1485,15 @@ function evaluateCandidate(args: {
       // Both blind-level bounds start from the same settled snapshot. Check
       // its complete immutable field once before either rollout copies it.
       const branchKey = args.vectorKey(branch.vector, false);
-      for (const level of levels) {
-        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${branchKey}`;
-        const cachedRollout = args.futureResults.get(rolloutKey);
+      let branchRollouts = args.futureResults.get(branchKey);
+      if (!branchRollouts) {
+        branchRollouts = [];
+        args.futureResults.set(branchKey, branchRollouts);
+      }
+      for (let levelIndex = 0; levelIndex < levels.length; levelIndex++) {
+        const level = levels[levelIndex];
+        const rolloutSlot = index * 2 + levelSlot[levelIndex];
+        const cachedRollout = branchRollouts[rolloutSlot];
         const work = args.input.continuation?.work;
         if (work) {
           if (cachedRollout) work.rolloutCacheHits++;
@@ -1462,7 +1520,7 @@ function evaluateCandidate(args: {
             unavailableReason: expired ? 'operation_budget' : 'candidate_settlement',
           };
         }
-        args.futureResults.set(rolloutKey, rollout);
+        branchRollouts[rolloutSlot] = rollout;
         const next = {
           ...branch,
           vector: rollout.vector,
@@ -1790,7 +1848,8 @@ function evaluateWithWorkspace(
     return { result: null, unavailableReason: 'sample_calibration' };
   }
   const futureDraws = new Map<string, FutureHandDraw>();
-  const futureResults = new Map<string, FutureHandResult>();
+  const futureResults: FutureRolloutCache = new Map();
+  const plan = settlementPlan(input);
   const candidateEvaluations = actionCandidates.map((candidate) => {
     const evaluated = evaluateCandidate({
       input,
@@ -1803,6 +1862,7 @@ function evaluateWithWorkspace(
       futureDraws,
       futureResults,
       vectorKey,
+      plan,
     });
     if (work && evaluated.unavailableReason === null) work.candidatesCompleted++;
     return evaluated;

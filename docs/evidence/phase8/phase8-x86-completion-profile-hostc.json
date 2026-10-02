@@ -1,0 +1,108 @@
+{
+  "before": {
+    "sampledMsUnderEvaluateTournamentPostflop": 926.1,
+    "selfTop": [
+      { "fn": "simulateTournamentFutureHands engine/HorseTournamentFutureHand.js", "ms": 149.9 },
+      { "fn": "calculatePots engine/PokerEngine.js", "ms": 100.2 },
+      { "fn": "simulateTournamentContinuation engine/HorseTournamentContinuation.js", "ms": 90.5 },
+      { "fn": "settleSample engine/HorseTournamentUtility.js", "ms": 79 },
+      { "fn": "evaluateCandidate engine/HorseTournamentUtility.js", "ms": 65.2 },
+      { "fn": "prepareJointPots multiway/JointPotDistribution.js", "ms": 34.7 },
+      { "fn": "(anonymous) engine/HorseTournamentFutureHand.js", "ms": 33.9 },
+      { "fn": "(anonymous) engine/HorseTournamentUtility.js", "ms": 32 },
+      { "fn": "estimate engine/HorseTournamentUtility.js", "ms": 30.2 },
+      { "fn": "settleJointScores multiway/JointPotDistribution.js", "ms": 25.7 },
+      { "fn": "(anonymous) engine/PokerEngine.js", "ms": 24.1 },
+      { "fn": "vectorKey engine/HorseTournamentUtility.js", "ms": 22.2 },
+      { "fn": "estimate engine/IcmModel.js", "ms": 21.7 },
+      { "fn": "calculateContestablePot engine/PokerEngine.js", "ms": 19.3 },
+      { "fn": "canonical engine/HorseTournamentUtilityEvidence.js", "ms": 14 },
+      { "fn": "(anonymous) multiway/JointPotDistribution.js", "ms": 13.5 },
+      { "fn": "(anonymous) engine/HorseTournamentContinuation.js", "ms": 13.1 },
+      { "fn": "settleFutureHand engine/HorseTournamentFutureHand.js", "ms": 12.4 },
+      { "fn": "evaluateWithWorkspace engine/HorseTournamentUtility.js", "ms": 8 },
+      { "fn": "contact engine/HorseTournamentFutureHand.js", "ms": 7.4 }
+    ],
+    "inclusiveTop": [
+      { "fn": "evaluateWithWorkspace engine/HorseTournamentUtility.js", "ms": 902.4 },
+      { "fn": "(anonymous) engine/HorseTournamentUtility.js", "ms": 846.9 },
+      { "fn": "evaluateCandidate engine/HorseTournamentUtility.js", "ms": 827.6 },
+      { "fn": "simulateTournamentFutureHands engine/HorseTournamentFutureHand.js", "ms": 411.8 },
+      { "fn": "settleSample engine/HorseTournamentUtility.js", "ms": 255.4 },
+      { "fn": "simulateTournamentContinuation engine/HorseTournamentContinuation.js", "ms": 191.3 },
+      { "fn": "calculatePots engine/PokerEngine.js", "ms": 118.1 },
+      { "fn": "calculateContestablePot engine/PokerEngine.js", "ms": 102.4 },
+      { "fn": "estimate engine/HorseTournamentUtility.js", "ms": 87.2 },
+      { "fn": "prepareJointPots multiway/JointPotDistribution.js", "ms": 63 },
+      { "fn": "(anonymous) engine/HorseTournamentFutureHand.js", "ms": 42.8 },
+      { "fn": "estimate engine/IcmModel.js", "ms": 38.3 },
+      {
+        "fn": "buildHorseTournamentUtilityEvidence engine/HorseTournamentUtilityEvidence.js",
+        "ms": 37.6
+      },
+      { "fn": "settleJointScores multiway/JointPotDistribution.js", "ms": 35.4 },
+      {
+        "fn": "horseTournamentUtilityInputSha256 engine/HorseTournamentUtilityEvidence.js",
+        "ms": 30.8
+      },
+      { "fn": "utilityMaterialSha256 engine/HorseTournamentUtilityEvidence.js", "ms": 30 },
+      { "fn": "(anonymous) engine/PokerEngine.js", "ms": 27.2 },
+      { "fn": "responseFoldProbability engine/HorseTournamentUtility.js", "ms": 26.8 },
+      { "fn": "vectorKey engine/HorseTournamentUtility.js", "ms": 23.2 },
+      { "fn": "settleFutureHand engine/HorseTournamentFutureHand.js", "ms": 18 }
+    ]
+  },
+  "after": {
+    "sampledMsUnderEvaluateTournamentPostflop": 711.4,
+    "selfTop": [
+      { "fn": "calculatePots engine/PokerEngine.js", "ms": 93.5 },
+      { "fn": "simulateTournamentFutureHands engine/HorseTournamentFutureHand.js", "ms": 92.9 },
+      { "fn": "settleSample engine/HorseTournamentUtility.js", "ms": 60.5 },
+      { "fn": "evaluateCandidate engine/HorseTournamentUtility.js", "ms": 52 },
+      { "fn": "simulateTournamentContinuation engine/HorseTournamentContinuation.js", "ms": 36.4 },
+      { "fn": "prepareJointPots multiway/JointPotDistribution.js", "ms": 32 },
+      { "fn": "(anonymous) engine/HorseTournamentUtility.js", "ms": 26.4 },
+      { "fn": "(anonymous) engine/PokerEngine.js", "ms": 24.8 },
+      { "fn": "estimate engine/HorseTournamentUtility.js", "ms": 21.6 },
+      { "fn": "settleJointScores multiway/JointPotDistribution.js", "ms": 20.9 },
+      { "fn": "estimate engine/IcmModel.js", "ms": 20.8 },
+      { "fn": "vectorKey engine/HorseTournamentUtility.js", "ms": 19.4 },
+      { "fn": "calculateContestablePot engine/PokerEngine.js", "ms": 17.6 },
+      { "fn": "(anonymous) multiway/JointPotDistribution.js", "ms": 14.6 },
+      { "fn": "canonical engine/HorseTournamentUtilityEvidence.js", "ms": 12.6 },
+      { "fn": "settleFutureHand engine/HorseTournamentFutureHand.js", "ms": 12.2 },
+      { "fn": "(anonymous) engine/HorseTournamentFutureHand.js", "ms": 11.5 },
+      { "fn": "utilityMaterialSha256 engine/HorseTournamentUtilityEvidence.js", "ms": 9.2 },
+      { "fn": "lowerBound engine/IcmModel.js", "ms": 8.5 },
+      { "fn": "evaluateWithWorkspace engine/HorseTournamentUtility.js", "ms": 7.5 }
+    ],
+    "inclusiveTop": [
+      { "fn": "evaluateWithWorkspace engine/HorseTournamentUtility.js", "ms": 689.5 },
+      { "fn": "(anonymous) engine/HorseTournamentUtility.js", "ms": 635.4 },
+      { "fn": "evaluateCandidate engine/HorseTournamentUtility.js", "ms": 618.8 },
+      { "fn": "simulateTournamentFutureHands engine/HorseTournamentFutureHand.js", "ms": 263.5 },
+      { "fn": "settleSample engine/HorseTournamentUtility.js", "ms": 217.7 },
+      { "fn": "calculatePots engine/PokerEngine.js", "ms": 114.8 },
+      { "fn": "simulateTournamentContinuation engine/HorseTournamentContinuation.js", "ms": 113 },
+      { "fn": "calculateContestablePot engine/PokerEngine.js", "ms": 94.9 },
+      { "fn": "estimate engine/HorseTournamentUtility.js", "ms": 76.6 },
+      { "fn": "prepareJointPots multiway/JointPotDistribution.js", "ms": 65.6 },
+      { "fn": "estimate engine/IcmModel.js", "ms": 37.5 },
+      {
+        "fn": "buildHorseTournamentUtilityEvidence engine/HorseTournamentUtilityEvidence.js",
+        "ms": 34.7
+      },
+      { "fn": "settleJointScores multiway/JointPotDistribution.js", "ms": 32.7 },
+      {
+        "fn": "horseTournamentUtilityInputSha256 engine/HorseTournamentUtilityEvidence.js",
+        "ms": 28.8
+      },
+      { "fn": "utilityMaterialSha256 engine/HorseTournamentUtilityEvidence.js", "ms": 27.8 },
+      { "fn": "(anonymous) engine/PokerEngine.js", "ms": 27.7 },
+      { "fn": "responseFoldProbability engine/HorseTournamentUtility.js", "ms": 27.3 },
+      { "fn": "vectorKey engine/HorseTournamentUtility.js", "ms": 20.5 },
+      { "fn": "settleFutureHand engine/HorseTournamentFutureHand.js", "ms": 19.4 },
+      { "fn": "(anonymous) multiway/JointPotDistribution.js", "ms": 19 }
+    ]
+  }
+}

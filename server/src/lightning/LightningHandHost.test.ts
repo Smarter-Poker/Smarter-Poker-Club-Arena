@@ -17,6 +17,7 @@ vi.mock('../services/supabase/client.js', () => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const { mulberry32 } = await import('../engine/HandFuzzer.js');
+const { HorseLogic } = await import('../engine/HorseLogic.js');
 const kit = await import('../testing/lightningHostTestKit.js');
 const { lightningRequestId } = await import('./LightningHandHost.js');
 const { buildHost, formedHand, flush, playOut, uid } = kit;
@@ -267,6 +268,46 @@ describe('the clock, the time bank and a horse', () => {
     );
   });
 
+  /**
+   * Pin a horse's tempo, keeping the real brain's action and amount. The live
+   * tempo is a random mixture (V14): most answers land inside the clock, but
+   * a "tank" deliberately runs into a usable bank, and a long hand runs well
+   * past a minute. Left random, a test that asserts "no bank" or "done inside
+   * 60 s" fails a few percent of the time (engine release 37021851186), so
+   * each test below pins the tempo it is about.
+   */
+  function pinHorseTempo(
+    t: ReturnType<typeof buildHost>,
+    thinkTime: (decisionIndex: number) => number
+  ): void {
+    const brain = t.horseLane.raw.decideFast.getMockImplementation()!;
+    let n = 0;
+    t.horseLane.raw.decideFast.mockImplementation(async (...args: any[]) => {
+      const r: any = await (brain as any)(...args);
+      return { ...r, decision: { ...r.decision, thinkTime: thinkTime(n++) } };
+    });
+  }
+
+  /** Every voluntary action came through the horse's own decision, never the clock. */
+  function everyActionWasTheHorses(t: ReturnType<typeof buildHost>): void {
+    // Blinds are forced and an uncalled bet's return is the dealer's, not a seat's.
+    const acted = (
+      (t.host as any).actions as Array<{ origin?: string; historyEvent?: string }>
+    ).filter((a) => a.origin !== 'forced' && !a.historyEvent);
+    expect(acted.length).toBeGreaterThan(0);
+    expect(acted.map((a) => a.origin)).toEqual(acted.map(() => 'horse_policy'));
+  }
+
+  /** Advance the fake clock a second at a time until the hand is done. */
+  async function playHorsesOut(t: ReturnType<typeof buildHost>): Promise<void> {
+    // A budget no legitimate hand can reach: every action is a few fake
+    // seconds, and fake time costs nothing - the loop leaves when it is done.
+    for (let i = 0; i < 1_800 && t.host.lifecycle === 'dealing'; i++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await flush(4);
+    }
+  }
+
   it('a horse acts through the same clock and the same door, inside its deadline', async () => {
     vi.useFakeTimers({
       toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
@@ -274,14 +315,47 @@ describe('the clock, the time bank and a horse', () => {
     const formed = formedHand(2, 2400);
     const horses = new Set(formed.players);
     const t = buildHost(formed, [100, 100], { horses });
+    // A considered beat on every decision: well inside the 15 s clock.
+    pinHorseTempo(t, () => 4_000);
     await t.host.start();
-    for (let i = 0; i < 60 && t.host.lifecycle === 'dealing'; i++) {
-      await vi.advanceTimersByTimeAsync(1_000);
-      await flush(4);
-    }
+    await playHorsesOut(t);
     expect(t.host.lifecycle).toBe('complete');
+    expect(t.horseLane.calls.length).toBeGreaterThan(0);
     // No horse ever ran out its clock: no time bank was spent and nobody timed out.
     expect(t.hub.frames.some((f) => f.payload.type === 'TIME_BANK_ACTIVATED')).toBe(false);
+    everyActionWasTheHorses(t);
+    expect(t.calls.settle).toHaveLength(1);
+  });
+
+  it('a horse that tanks runs into its bank, not out of its clock, and still acts', async () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+    const formed = formedHand(2, 2450);
+    const horses = new Set(formed.players);
+    const t = buildHost(formed, [100, 100], { horses });
+    // The first decision tanks (the brain's bank sentinel: clock + 2 s of bank),
+    // every later one is a beat.
+    pinHorseTempo(t, (i) => (i === 0 ? HorseLogic.THINK_TIMEBANK_SENTINEL : 4_000));
+    await t.host.start();
+    await playHorsesOut(t);
+    expect(t.host.lifecycle).toBe('complete');
+    const bank = t.hub.frames.filter((f) => f.payload.type === 'TIME_BANK_ACTIVATED');
+    expect(bank.length).toBeGreaterThan(0);
+    const tanker = bank[0].payload.playerId;
+    // It acted inside the bank: the bank stopped on its action, never ran dry,
+    // and the clock never folded it.
+    expect(
+      t.hub.frames.some(
+        (f) => f.payload.type === 'TIME_BANK_STOPPED' && f.payload.playerId === tanker
+      )
+    ).toBe(true);
+    expect(
+      t.hub.frames.some(
+        (f) => f.payload.type === 'TIME_BANK_EXPIRED' || f.payload.type === 'TIME_BANK_DEPLETED'
+      )
+    ).toBe(false);
+    everyActionWasTheHorses(t);
     expect(t.calls.settle).toHaveLength(1);
   });
 });

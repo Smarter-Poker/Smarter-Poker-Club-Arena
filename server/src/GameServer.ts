@@ -3499,13 +3499,25 @@ export class GameServer {
          down that same absolute instant, so both must adopt the committed row
          before any table resumes. Managers without an active window return
          without I/O; failures are isolated per event and their live timer
-         keeps re-reading the durable deadline. */
+         keeps re-reading the durable deadline.
+
+         It has also moved level_started_at for every running event that was
+         not on the synchronized break, whose level wake was armed from the
+         pre-freeze anchor and would otherwise fire the frozen minutes early.
+         The same pass tells the Horse tournament context to reread the
+         committed clock. A manager on the break, or with no armed level
+         clock, makes no level-clock read. */
       await Promise.all(
         [...this.tournamentEngines.values()].map(async (manager) => {
           try {
             await manager.resyncAddOnPeriodAfterMaintenanceThaw();
           } catch (error) {
             reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+          }
+          try {
+            await manager.resyncLevelClockAfterMaintenanceThaw();
+          } catch (error) {
+            reportError(error, 'GameServer.level_clock_thaw_resync_failed');
           }
         })
       );
@@ -7044,7 +7056,12 @@ export class GameServer {
           // table is between hands, so a frozen hand is reaped on its usual
           // clock and its replacement arrives parked (maintenanceBreak.adopt,
           // prepareManagedTableEngineForPlay).
-          const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
+          // ...and not while the maintenance break still holds the table
+          // (2026-10-02): see MaintenanceBreak.isHoldingTable.
+          const heldByMaintenanceBreak =
+            engine.isMaintenancePaused() && this.maintenanceBreak.isHoldingTable(id);
+          const pausedTooLong =
+            !heldByMaintenanceBreak && engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {

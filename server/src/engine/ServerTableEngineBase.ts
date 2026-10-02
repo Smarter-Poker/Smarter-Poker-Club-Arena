@@ -7429,8 +7429,21 @@ export abstract class ServerTableEngineBase {
       this.handForHandPaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused
-    )
+    ) {
+      /**
+       * THE BREAK'S MINUTES ARE NOT CHARGED TO WHOEVER HOLDS THE TABLE NEXT
+       * (2026-10-02). `pausedSinceMs` was stamped at the :53 announcement and
+       * survives this early return, so the authority still holding the table -
+       * a tournament break waiting on the thaw, hand-for-hand - inherited the
+       * whole maintenance hold against GameServer.MAX_HEALTHY_PAUSE_MS. At
+       * 16:03 on 2026-10-02 that hold was already ten minutes, so a tournament
+       * table resumed by the break and still parked by its own event read as
+       * "paused too long" the moment the break let go. Its own pause is judged
+       * from here, on its own budget.
+       */
+      if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
       return;
+    }
     this.releasePauseGate();
   }
 

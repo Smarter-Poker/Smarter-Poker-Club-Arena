@@ -111,16 +111,19 @@ function transport(answer: (request: Request) => Answer): void {
   );
 }
 
-/** Four players left, three of them on zero, with the evidence the door needs. */
-function threeBustsOfFour(): void {
+/**
+ * Four players left, three of them on zero, with the evidence the door needs.
+ * `players` widens the field so the batch leaves more than one standing.
+ */
+function threeBustsOfFour(players = 4): void {
   transport((request) => {
     if (request.table === 'tournament_players') {
       if (request.columns === 'user_id, chips')
         return { data: bustedIds.map((user_id) => ({ user_id, chips: 0 })) };
-      if (request.head && has(request, 'status', 'eq', 'playing')) return { count: 4 };
+      if (request.head && has(request, 'status', 'eq', 'playing')) return { count: players };
       if (request.columns === 'position') return { data: [] };
-      if (request.head && has(request, 'position', 'is', null)) return { count: 4 };
-      if (request.head) return { count: 4 };
+      if (request.head && has(request, 'position', 'is', null)) return { count: players };
+      if (request.head) return { count: players };
     }
     if (request.table === 'tournament_knockout_candidates') {
       return {
@@ -200,7 +203,9 @@ describe('the batch the sweep prepared is the batch it records', () => {
     const startedAt = await sweep(manager);
 
     // The reads outran the budget before the first mutation was attempted.
-    expect(eliminated[0].at - startedAt).toBeGreaterThan(TournamentManagerBase.SWEEP_WORK_BUDGET_MS);
+    expect(eliminated[0].at - startedAt).toBeGreaterThan(
+      TournamentManagerBase.SWEEP_WORK_BUDGET_MS
+    );
     // ...and the whole batch was recorded anyway, worst place first, in hand order.
     expect(eliminated.map((e) => [e.userId, e.place])).toEqual([
       [bustedIds[0], 4],
@@ -215,7 +220,10 @@ describe('the batch the sweep prepared is the batch it records', () => {
   });
 
   it('closes the batch window with the pass and yields through the scheduler', async () => {
-    threeBustsOfFour();
+    // Five players, so two are left standing: a live field, which yields to
+    // the budget after its bust stage. A batch that leaves one standing goes
+    // on to its finish instead (aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust).
+    threeBustsOfFour(5);
     const { manager, eliminated } = bustStageManager();
     // Observe the window from inside the sweep: the sweep's own finally clears
     // the deadline afterwards, so only the moment of closing can say whether

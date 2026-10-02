@@ -43,6 +43,7 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
+import { GuaranteeRefusalBackoff } from './guaranteeRefusalBackoff.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
@@ -547,6 +548,39 @@ export class ScheduledTournamentService {
    */
   private readonly refusedSeatFirstSchedules = new Set<string>();
 
+  /**
+   * Refused guaranteed spawns wait until the answer can have changed: the
+   * funding bank grew by the refusal's shortfall, or a 5-to-30-minute recheck
+   * passed. See guaranteeRefusalBackoff.ts. The database stays the judge.
+   */
+  private readonly guaranteeBackoff = new GuaranteeRefusalBackoff();
+  /** One funding-bank read per club per poll, shared by every deferred spawn. */
+  private fundingBankReads = new Map<string, Promise<number | null>>();
+
+  /** The bank that funds this club's overlays: its union's wallet, else its treasury. */
+  private readonly readFundingBank = (clubId: string): Promise<number | null> => {
+    const cached = this.fundingBankReads.get(clubId);
+    if (cached) return cached;
+    const read = (async (): Promise<number | null> => {
+      const { data: club, error } = await supabase
+        .from('clubs')
+        .select('chip_treasury, union_id')
+        .eq('id', clubId)
+        .maybeSingle();
+      if (error || !club) return null;
+      if (!club.union_id) return Number(club.chip_treasury ?? 0);
+      const { data: wallet, error: walletErr } = await supabase
+        .from('union_wallets')
+        .select('chip_balance')
+        .eq('union_id', club.union_id)
+        .maybeSingle();
+      if (walletErr) return null;
+      return Number(wallet?.chip_balance ?? 0);
+    })();
+    this.fundingBankReads.set(clubId, read);
+    return read;
+  };
+
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
   }
@@ -623,6 +657,7 @@ export class ScheduledTournamentService {
     if (!this.lifecycleIsCurrent(generation) || isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
+    this.fundingBankReads = new Map();
     try {
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
@@ -779,7 +814,14 @@ export class ScheduledTournamentService {
     if (!dueNow) return;
 
     const startTime = new Date(now.getTime() + 5 * 60 * 1000);
-    await this.spawnInstance(schedule, cfg, intervalSpawnKey(schedule.id, now), startTime);
+    await this.spawnInstance(
+      schedule,
+      cfg,
+      intervalSpawnKey(schedule.id, now),
+      startTime,
+      // the interval key changes every minute; its refusal is the schedule's
+      `${schedule.id}:interval`
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -790,8 +832,13 @@ export class ScheduledTournamentService {
     schedule: TournamentScheduleRow,
     cfg: Record<string, unknown>,
     spawnKey: string,
-    startTime: Date
+    startTime: Date,
+    deferralKey: string = spawnKey
   ): Promise<void> {
+    // A spawn the bank refused is asked again only when the answer can have
+    // changed (guaranteeRefusalBackoff.ts), not on every 60-second poll.
+    if (!(await this.guaranteeBackoff.shouldAttempt(deferralKey, this.readFundingBank))) return;
+
     // Resolve everything that can fail BEFORE claiming the spawn key, so a
     // skipped spawn (e.g. satellite target not found yet) is retried next poll
     // instead of being burned forever.
@@ -821,6 +868,7 @@ export class ScheduledTournamentService {
         // one collides with the earlier one that is still pre-start. Holding
         // the key would burn the 21:00 game for the day. Releasing lets it be
         // retried each poll and spawn the moment the earlier instance starts.
+        this.guaranteeBackoff.settled(deferralKey);
         console.log(
           `[ScheduledTournaments] "${row.name}" already live pre-start - spawn ${spawnKey} deferred`
         );
@@ -868,6 +916,12 @@ export class ScheduledTournamentService {
       // dedupes on unread per recipient per bank, so a schedule that re-fails
       // every 30s poll produces ONE standing bell notification, not a storm.
       if (isGuaranteeBankRefusal(msg) && row.club_id) {
+        await this.guaranteeBackoff.refused(
+          deferralKey,
+          String(row.club_id),
+          msg,
+          this.readFundingBank
+        );
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: row.club_id,
         });
@@ -879,9 +933,12 @@ export class ScheduledTournamentService {
             'ScheduledTournaments.guarantee_notify_failed'
           );
         }
+      } else {
+        this.guaranteeBackoff.settled(deferralKey);
       }
       return;
     }
+    this.guaranteeBackoff.settled(deferralKey);
 
     const { error: linkErr } = await supabase
       .from('tournament_schedule_spawns')
@@ -1632,6 +1689,8 @@ export class ScheduledTournamentService {
 
   private async maybeRestartTournament(old: Record<string, unknown>): Promise<void> {
     if (typeof old.id !== 'string' || !old.id || !old.ended_at || !old.club_id || !old.name) return;
+    const deferralKey = `restart:${old.id}`;
+    if (!(await this.guaranteeBackoff.shouldAttempt(deferralKey, this.readFundingBank))) return;
 
     /**
      * A SEAT-FIRST FORMAT IS NEVER RESTARTED ON A CLOCK (Dan, 2026-09-01).
@@ -1787,6 +1846,7 @@ export class ScheduledTournamentService {
     if (insertErr || !created) {
       const msg = insertErr?.message ?? 'unknown';
       if (insertErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+        this.guaranteeBackoff.settled(deferralKey);
         return; // concurrent restart won the race — the clone exists
       }
       reportError(
@@ -1798,6 +1858,12 @@ export class ScheduledTournamentService {
       // Same pop-up rule as the scheduled spawn path: a guarantee refusal must
       // reach the owners, and the raising trigger cannot write it itself.
       if (isGuaranteeBankRefusal(msg) && (row as { club_id?: string }).club_id) {
+        await this.guaranteeBackoff.refused(
+          deferralKey,
+          String((row as { club_id?: string }).club_id),
+          msg,
+          this.readFundingBank
+        );
         const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
           p_club_id: (row as { club_id?: string }).club_id,
         });
@@ -1807,9 +1873,12 @@ export class ScheduledTournamentService {
             'ScheduledTournaments.guarantee_notify_failed'
           );
         }
+      } else {
+        this.guaranteeBackoff.settled(deferralKey);
       }
       return;
     }
+    this.guaranteeBackoff.settled(deferralKey);
 
     // No horse seeding here: restart clones are manual club events, and
     // GameServer's past-start top-up fills any short field once the clock hits.

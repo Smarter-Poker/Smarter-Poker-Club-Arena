@@ -5,6 +5,7 @@ import {
   readPersistedTournamentFormatContract,
 } from '../tournament/tournamentEntryCapacity.js';
 import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
+import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -435,7 +436,7 @@ const DB_GAME_TYPE: Record<string, string> = {
  * the caller breaks out of its retry loop on a true return.
  */
 function isGuaranteeRefusal(error: { message?: string } | null | undefined): boolean {
-  return /cannot guarantee/i.test(String(error?.message ?? ''));
+  return isGuaranteeBankRefusal(error?.message);
 }
 
 async function notifyGuaranteeShort(clubId: string | null | undefined, where: string) {

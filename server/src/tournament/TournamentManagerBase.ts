@@ -2448,12 +2448,9 @@ export abstract class TournamentManagerBase {
   /** Wake this manager without exposing the process scheduler to GameServer. */
   requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
     if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
-    // A DECIDED FIELD IS NOT WAITING BEHIND ONE THAT CAN DEAL (2026-10-01).
-    // The decided-but-RUNNING board has read at most one live player: no hand
-    // can be dealt and only the finish stage can pay the winner. In the general
-    // FIFO that pass waited up to 30 minutes behind 577 queued managers
-    // (aDecidedOrHeldFieldIsNotWaitingBehindOneThatCanDeal).
-    if (reason === 'stalled_decided_survivor') this.declareConsolidationOutstanding(true);
+    // A decided field is served from the decided lane (requestDecidedEliminationSweep),
+    // never the one-slot consolidation lane: 208 decided Spins marked consolidating
+    // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
     const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
     if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));

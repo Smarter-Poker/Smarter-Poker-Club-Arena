@@ -3357,6 +3357,25 @@ export class TournamentManager extends TournamentManagerEliminations {
     });
   }
 
+  /**
+   * Players still seated on sources whose park has not begun. Their break
+   * will place them on the tables the balancer sees, so a new plan must leave
+   * that many seats free. Unknown is null, never zero.
+   */
+  private async unbegunBreakDemand(): Promise<number | null> {
+    const sources = [...this.durableTournamentBreaks.values()]
+      .filter((state) => state.state === 'park_requested' && state.members.length === 0)
+      .map((state) => state.source_table_id);
+    if (sources.length === 0) return 0;
+    const { data, error } = await supabase
+      .from('table_seats')
+      .select('table_id')
+      .in('table_id', sources)
+      .is('left_at', null);
+    if (error || !data) return null;
+    return data.length;
+  }
+
   protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
     try {
@@ -3527,42 +3546,118 @@ export class TournamentManager extends TournamentManagerEliminations {
     const balancerTables = await this.loadBalancerTables(liveTableIds, 'balanceInitial');
     if (!balancerTables) return;
 
-    // ── STEP 1: Check if any table should be broken (merged into others) ──
-    for (const bt of balancerTables) {
-      if (this.tableBalancer.shouldBreakTable(bt, balancerTables)) {
-        const otherTables = balancerTables.filter((t) => t.tableId !== bt.tableId);
-        const breakMoves = this.tableBalancer.breakTable(bt, otherTables);
+    // ── STEP 1: Break every table that should be broken (merged into others) ──
+    //
+    // EVERY SHORT TABLE IS BROKEN IN THE SAME PASS (2026-10-01).
+    //
+    // This step used to request ONE park and then `break` to wait for the next
+    // sweep. A source that is mid-hand cannot begin until its hand ends (the
+    // one-second probe logs `source_park_probe_missed`), so each table cost
+    // about one hand of its own plus a redrive, one after another. Production
+    // 2026-10-01 ~20:18Z: event e604d224 held 25 players on 17 tables, nine of
+    // them single-player tables, while its breaks crept along one every 6-10 s
+    // (f06_operations 20:16-20:21Z). Industry standard is that every short
+    // table is broken at its own next hand boundary.
+    //
+    // So the whole plan is made at once, on a simulated board: each chosen
+    // source is removed and its players placed on the tables that remain, so
+    // the next choice sees the seats the earlier ones will take. Unbegun parks
+    // from earlier sweeps keep their seats too (`unbegunBreakDemand`), so no
+    // table is parked whose players could not be placed. Every chosen source
+    // is parked durably, its dealer is fenced at once so all of them stop at
+    // their own hand boundary together, and each is then worked as before;
+    // one whose hand is still running is claimed on its park edge.
+    const unbegunDemand = await this.unbegunBreakDemand();
+    if (!this.eliminationMutationAllowed()) return;
+    if (unbegunDemand === null) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return;
+    }
+    const copyTable = (t: BalancerTable): BalancerTable => ({
+      ...t,
+      players: t.players.map((p) => ({ ...p })),
+      reservedSeats: t.reservedSeats ? [...t.reservedSeats] : t.reservedSeats,
+    });
+    const freeSeats = (tables: BalancerTable[]) =>
+      tables.reduce((sum, t) => sum + Math.max(0, t.maxSeats - t.playerCount), 0);
+    let plannedBoard = balancerTables.map(copyTable);
+    const breakSources: string[] = [];
+    for (;;) {
+      let chosen: string | null = null;
+      for (const bt of plannedBoard) {
+        if (!this.tableBalancer.shouldBreakTable(bt, plannedBoard)) continue;
+        // Empty-source retirement is discovered through its original durable
+        // operation above; emptiness never creates a new whole-break intent.
+        if (bt.playerCount === 0) continue;
+        const remaining = plannedBoard.filter((t) => t.tableId !== bt.tableId).map(copyTable);
+        const breakMoves = this.tableBalancer.breakTable(bt, remaining);
 
         // The balancer says this table should close but cannot yet place its
         // full roster. That is outstanding work, not a balanced state. Keep a
         // single coalesced retry due without reviving the old per-manager poll.
-        // Empty-source retirement is discovered through its original durable
-        // operation above; emptiness never creates a new whole-break intent.
         if (bt.playerCount > 0 && breakMoves.length !== bt.playerCount) {
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           continue;
         }
-
-        if (breakMoves.length === bt.playerCount && bt.playerCount > 0) {
-          const requested = await this.requestTournamentBreakPark(bt.tableId);
-          if (!this.eliminationMutationAllowed()) return;
-          if (requested?.ok) await this.recoverTournamentBreak(requested);
-          this.breakOccurredThisCycle = true;
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-          // Preserve the current admitted sweep's continuation only after this
-          // exact durable operation acknowledged cleanup. A park request or an
-          // unresolved move/close is not a retired table.
-          if (
-            requested?.ok &&
-            this.eliminationMutationAllowed() &&
-            !this.durableTournamentBreaks.has(requested.break_id) &&
-            !this.tableEngines.has(bt.tableId) &&
-            !this.gameServer.getTableEngine(bt.tableId)
-          )
-            return { kind: 'table-retired', tableId: bt.tableId };
-          break; // Rebuild board after the new durable source exclusion.
-        }
+        // Players of a park that has not begun still need seats here.
+        if (freeSeats(remaining) < unbegunDemand) continue;
+        chosen = bt.tableId;
+        plannedBoard = remaining;
+        break;
       }
+      if (!chosen) break;
+      breakSources.push(chosen);
+    }
+
+    if (breakSources.length > 0) {
+      const requestedBreaks: TournamentTableBreakState[] = [];
+      for (const tableId of breakSources) {
+        if (requestedBreaks.length > 0 && this.eliminationWorkBudgetExpired()) break;
+        const requested = await this.requestTournamentBreakPark(tableId);
+        if (!this.eliminationMutationAllowed()) return;
+        if (!requested?.ok) continue;
+        requestedBreaks.push(requested);
+        // The durable park precedes the fence. Fence now, so every source
+        // stops at its own next boundary instead of waiting for its turn; the
+        // engine's park edge wakes the sweep that claims it.
+        const sourceEngine = this.tableEngines.get(tableId);
+        if (sourceEngine && this.gameServer.ownsTournamentTableEngine(tableId, sourceEngine))
+          void sourceEngine
+            .parkForTournamentMove(this.tournamentMoveBoundaryOwner, 0, true)
+            .catch((error) =>
+              reportError(error, 'Tournament.break_source_hold_failed', {
+                tournamentId: this.tournamentId,
+                tableId,
+              })
+            );
+      }
+      this.breakOccurredThisCycle = true;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      let everyBreakRetired = requestedBreaks.length === breakSources.length;
+      let retiredTableId: string | null = null;
+      for (const [index, requested] of requestedBreaks.entries()) {
+        // A source left unworked is parked and fenced; its park edge and the
+        // redrive below claim it in the next admission.
+        if (index > 0 && this.eliminationWorkBudgetExpired()) {
+          everyBreakRetired = false;
+          break;
+        }
+        await this.recoverTournamentBreak(requested);
+        if (!this.eliminationMutationAllowed()) return;
+        const sourceId = requested.source_table_id;
+        // Preserve the current admitted sweep's continuation only after this
+        // exact durable operation acknowledged cleanup. A park request or an
+        // unresolved move/close is not a retired table.
+        if (
+          !this.durableTournamentBreaks.has(requested.break_id) &&
+          !this.tableEngines.has(sourceId) &&
+          !this.gameServer.getTableEngine(sourceId)
+        )
+          retiredTableId = sourceId;
+        else everyBreakRetired = false;
+      }
+      if (everyBreakRetired && retiredTableId && this.eliminationMutationAllowed())
+        return { kind: 'table-retired', tableId: retiredTableId };
     }
 
     // ── STEP 2: Standard gap-1 rebalancing across remaining tables ──

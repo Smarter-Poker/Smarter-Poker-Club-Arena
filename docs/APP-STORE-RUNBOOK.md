@@ -190,13 +190,15 @@ behaves inside the app:
   seconds (`src/components/games/framePacer.ts`). The quality governor drops
   pixel ratio and shadows on a slow GPU. Inside WKWebView and the Android
   WebView this is the same code; nothing to configure.
-- **What real phones report.** Every scene visit sends `diamond_scene_session`
-  and every scene that cannot draw sends `diamond_scene_failed`, with
-  `device` set to `app_ios` or `app_android` inside the app
-  (`src/components/games/sceneTelemetry.ts`). The wheel sends the same summary
-  as game `wheel`. After the first TestFlight and internal-testing builds,
-  these events in PostHog are the answer to "does it run well on phones",
-  split by app and browser.
+- **What real phones report.** Every scene visit records how the device drew
+  it, and every scene that cannot draw records why, with the device kind set
+  to `app_ios` or `app_android` inside the app
+  (`src/components/games/sceneTelemetry.ts`). The wheel records the same as
+  game `wheel`. The numbers land in the platform's own database
+  (`fn_record_diamond_scene`, a daily rollup with no user in it) and read
+  back on the admin dashboard as Diamond Scene Health, per game and kind of
+  device. After the first TestFlight and internal-testing builds, that panel
+  answers "does it run well on phones", split by app and browser.
 - **Haptics.** Inside the app every buzz goes through `@capacitor/haptics`
   (`src/lib/native/haptics.ts`): the Big Win receipt's heavy impact, the game
   plates and the pop-up plates. `TapHaptic`, the invisible switch an iPhone

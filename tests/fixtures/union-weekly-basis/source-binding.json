@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6",
+    "scripts/dev/test-union-weekly-basis.py": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -89,6 +89,8 @@
     "supabase/migrations/20260926042810_the_period_calculator_reads_one_week_of_attributions.sql": "e59b14a01109bba5c4c38083123772cd8429b1024489a400eccba2eb3f9390cb",
     "supabase/migrations/20260930232349_a_page_recompute_reads_only_changed_evidence_rederived.sql": "0b51f4b340a78c0fe87b337f1632ca62c667742dbb8ea97896a51552b9fecb6a",
     "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "97c8e07642ccbfaf15b8b92eb86f908518eab0592b2e99d1bb23c43934a62c0f",
-    "tests/fixtures/union-weekly-basis/page-evidence-regression.sql": "6c6cd0be50d0d2c7d76588c10815ebec418c5f7bf3faba7e155399ec5bc32885"
+    "tests/fixtures/union-weekly-basis/page-evidence-regression.sql": "6c6cd0be50d0d2c7d76588c10815ebec418c5f7bf3faba7e155399ec5bc32885",
+    "supabase/migrations/20260926140858_owner_authorized_legacy_discharge_of_the_deferred_rakeback_w.sql": "034b3ca5d166781f4fb6fedb18aa52ed414e47f34d043d1a6cfc22502304984c",
+    "tests/fixtures/owner-legacy-discharge/regression.sql": "19aacf1a33c87ad16b13669ef0df0d890366b615a7b6df44f21beefb40915503"
   }
 }

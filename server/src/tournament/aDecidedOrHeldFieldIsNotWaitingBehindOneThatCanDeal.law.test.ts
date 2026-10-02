@@ -22,8 +22,9 @@
  *
  * A decided field and a field parked on a qualifier boundary cannot deal, and
  * the only thing that can move either is this manager's sweep. Like a spread
- * field (aFieldThatCannotDealIsNotWaitingBehindOneThatCan), both are served
- * from the consolidation lane.
+ * field (aFieldThatCannotDealIsNotWaitingBehindOneThatCan), a held boundary is
+ * served from the consolidation lane; a decided field is served from the
+ * decided lane (aDecidedFieldDoesNotHoldTheConsolidationLane).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -66,23 +67,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('a decided field asks for its finish pass from the consolidation lane', () => {
-  it('the decided-but-RUNNING wake moves the manager to the lane before it is queued', () => {
-    const order: string[] = [];
-    vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockImplementation(
-      (id: string, on: boolean) => {
-        order.push(`lane:${id}:${on}`);
-        return true;
-      }
-    );
-    vi.spyOn(tournamentEliminationScheduler, 'wake').mockImplementation((id: string) => {
-      order.push(`wake:${id}`);
-      return true;
-    });
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+describe('a decided field asks for its finish pass from the decided lane, not the consolidation lane', () => {
+  // Superseded 2026-10-01 by aDecidedFieldDoesNotHoldTheConsolidationLane:
+  // marking every decided game consolidating filled the lane's one slot.
+  it('the decided-but-RUNNING wake does not mark the manager consolidating', () => {
+    const setConsolidating = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating');
+    vi.spyOn(tournamentEliminationScheduler, 'wake').mockReturnValue(true);
     const m = manager();
     expect(m.requestEliminationSweep('stalled_decided_survivor')).toBe(true);
-    expect(order).toEqual([`lane:${tournamentId}:true`, `wake:${tournamentId}`]);
+    expect(setConsolidating).not.toHaveBeenCalled();
   });
 
   it('an ordinary wake leaves the lane alone', () => {

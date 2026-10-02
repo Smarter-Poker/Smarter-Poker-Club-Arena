@@ -2,7 +2,9 @@ import { maintenanceSupabase, supabase } from '../services/supabase.js';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
+  parseLegacyFeeCustodyOrigin,
   verifyTournamentCompletionReceipt,
+  type LegacyFeeCustodyOrigin,
   type TournamentTerminalSettlementMode,
   type VerifiedTournamentCompletionReceipt,
 } from './completionSettlementReceipt.js';
@@ -162,6 +164,45 @@ function storedParameters(raw: unknown): TerminalSettlementParameters | null {
   return { settlementMode: mode, winnerId: winner };
 }
 
+/**
+ * A LEGACY CUSTODY RECEIPT IS PROVEN BY THE DATABASE'S OWN ORIGIN (2026-10-02)
+ *
+ * A version 3 receipt pays the players and holds the event's pre-agreement
+ * fee in custody. The engine used to recognise that custody only for 13 event
+ * ids compiled into the verifier, so when the 26 September 8 Spins and
+ * heads-up Sit & Gos (20261001225325, every one a member of
+ * fn_ca_legacy_fee_custody_cohort) committed their terminal receipts at 02:16Z,
+ * each winner paid once and the escrow closed to the held fee, the engine
+ * called all 26 "outcome unknown", stopped their table engines and raised 26
+ * CRITICAL alerts. The origin is now read from the database, from the same
+ * obligation row the cohort reads (fn_ca_legacy_fee_custody_origin), and the
+ * receipt is verified field for field against it. An unread origin proves
+ * nothing, so the receipt stays unverified exactly as before.
+ */
+async function readLegacyFeeCustodyOrigin(
+  tournamentId: string
+): Promise<LegacyFeeCustodyOrigin | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_ca_legacy_fee_custody_origin', {
+      p_tournament_id: tournamentId,
+    });
+    return error ? null : parseLegacyFeeCustodyOrigin(data, tournamentId);
+  } catch {
+    return null;
+  }
+}
+
+async function verifyTerminalReceipt(
+  raw: unknown,
+  tournamentId: string,
+  mode: TournamentTerminalSettlementMode,
+  winnerId: string | null
+): Promise<VerifiedTournamentCompletionReceipt | null> {
+  const origin =
+    record(raw).receipt_version === 3 ? await readLegacyFeeCustodyOrigin(tournamentId) : null;
+  return verifyTournamentCompletionReceipt(raw, tournamentId, mode, winnerId, origin);
+}
+
 /** Read an existing immutable result through its serialized verifier; never pay. */
 export async function readCommittedTournamentTerminalReceipt(
   tournamentId: string
@@ -182,7 +223,7 @@ export async function readCommittedTournamentTerminalReceipt(
   });
   if (response.error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(response.error));
   const outcome = record(response.data);
-  const receipt = verifyTournamentCompletionReceipt(
+  const receipt = await verifyTerminalReceipt(
     outcome.receipt,
     tournamentId,
     stored.settlementMode,
@@ -259,7 +300,7 @@ async function adoptStoredTerminalReceipt(
           if (replayError) {
             lastFailure = `replay with stored parameters refused: ${errorMessage(replayError)}`;
           } else {
-            const receipt = verifyTournamentCompletionReceipt(
+            const receipt = await verifyTerminalReceipt(
               replay,
               tournamentId,
               stored.settlementMode,
@@ -398,7 +439,7 @@ export async function requestTournamentTerminalReceipt(
         ? await terminalAuthority.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
         : await terminalAuthority.rpc('fn_complete_tournament_terminal', request);
       if (!error) {
-        const receipt = verifyTournamentCompletionReceipt(
+        const receipt = await verifyTerminalReceipt(
           data,
           tournamentId,
           settlementMode,
@@ -469,7 +510,7 @@ export async function requestTournamentTerminalReceipt(
         outcome.definitively_not_committed === false &&
         outcome.status === 'COMPLETED'
       ) {
-        const receipt = verifyTournamentCompletionReceipt(
+        const receipt = await verifyTerminalReceipt(
           outcome.receipt,
           tournamentId,
           settlementMode,

@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/ledger-allstores/fix/ledger-invariant-all-stores. PROMISED, not yet observed: migration 20261002030942_every_chip_store_balances_with_its_ledger_row is applied through apply-merged-migration.yml after the protected merge, never from a branch (CLAUDE.md section 2; a probe never carries DDL). The store side of the ledger invariant: the per-store mode table, the store tally function and its pair helper, and the Diamond-event scope.",
+  "tables": ["ca_ledger_invariant_store_mode"],
+  "functions": ["fn_ca_tally_store_move", "fn_ca_tally_pair", "fn_ca_tournament_counts"]
+}

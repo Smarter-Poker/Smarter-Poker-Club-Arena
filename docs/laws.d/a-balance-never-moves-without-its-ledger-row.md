@@ -33,10 +33,29 @@ its snapshot. The one split-write it found, promo_apply_playthrough releasing
 promo into chip_balance under a stand-down with no leg, is fixed at its line in
 the same migration, pinned to the live body's md5.
 
-Staged: the migration installs mode `observe` (findings land in
-ca_ledger_invariant_findings, warned, committed) to measure one hour of live
-traffic on every covered account; the next migration flips the one row to
-`refuse`. The law refuses any later migration that sets the mode back to
-observe, drops or disables a tally or check trigger, or drops a guard function.
+The hand commits in two transactions, and each one balances on its own
+(20261001231409). Observe mode's first 28 minutes recorded 4,491 findings, all
+on `table_stack`, all one pair: the accepted-hand transaction moves the seats by
+inflow - rake - bbj with no leg, and the later obligations transaction posts the
+fee legs (rake to the union wallet or chip retirement, the drop to the jackpot
+pool, the insurance bank's leg) with no felt move. The legs cannot be posted at
+commit without queueing every hand of a club on its club_wallets row inside the
+commit path (1,122 statement timeouts on that row in two hours), so the rule is
+applied the other way round: the hand's receipt (hand_atomic_commits) counts
+rake + bbj - inflow as FELT from the moment its envelope is stored to the moment
+it completes, in the transaction that posts the legs. Either half alone, or the
+pre-envelope shape, is refused by name (R12-R14 in the fixture). Proved on
+4,074 of 4,074 completed production cash hands: receipt fees = felt legs, to
+the cent.
 
-installed mode: observe
+Staged, and now refusing: the installer set mode `observe` (findings landed in
+ca_ledger_invariant_findings, warned, committed) to measure live traffic on
+every covered account; 20261002015339 flipped the one row to `refuse` on
+2026-10-02 after zero findings from 00:05 UTC under full traffic and a
+rolled-back probe of the jackpot payout, the one door with no traffic in the
+window. A drifting transaction no longer commits. The law requires the flip to
+be the last write to the row and refuses any later migration that writes
+`observe` back, drops or disables a tally or check trigger, or drops a guard
+function.
+
+installed mode: refuse

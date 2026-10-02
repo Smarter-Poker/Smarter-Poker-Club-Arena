@@ -11,6 +11,9 @@ import {
 
 const analytics = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../../src/lib/analytics', () => analytics);
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: { rpc: vi.fn(() => Promise.resolve({ data: null, error: null })) },
+}));
 vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playSpinStart: vi.fn(),

@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6",
+    "scripts/dev/test-union-weekly-basis.py": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -411,7 +411,7 @@
     "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
     "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
     "tests/fixtures/legacy-fee-finality/pko-original-cohort.json": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
     "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
     "tests/fixtures/legacy-fee-finality/fn_settle_tournament_rake.sql": "c24c8dedae18ea4d59f8a61ca70c11ea68c2d271ab58350b2932fdb8c1276589",
     "tests/fixtures/legacy-fee-finality/pko-original-fees.json": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "fd92fe081f832d37be31c463511919306c1c15ee97ec452fde52e777080b67c6",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -439,10 +439,10 @@
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
     "tests/unit/fixtureNativeCi.test.ts": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
-    "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+    "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "a84f74c0f48d7b272b5e79471b000fd754ced01cb16435f2b3c7c0a31a00cdf6",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2557,6 +2557,55 @@
       "to": "4400a6b5ebb502f191a0588b9561dd7545dfd637f14dac57b9a1414d8d897cb1",
       "on": "2026-10-01",
       "why": "Cascade of the 2026-10-01 restamp of tests/unit/fixtureNativeCi.test.ts for the CSS Beat gate split: this binding's only change is that restamp and its audit entry. No fixture body, route or assertion changed."
+    },
+    {
+      "file": "scripts/dev/test-union-weekly-basis.py",
+      "from": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6",
+      "to": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad",
+      "on": "2026-10-02",
+      "why": "Restamped for 20260926140858 (owner-authorized legacy discharge of the two deferred rakeback weeks): scripts/dev/test-union-weekly-basis.py installs that migration right after 20260921022924 and runs tests/fixtures/owner-legacy-discharge/regression.sql last. Only those two run() lines and their comments were added; nothing else changed."
+    },
+    {
+      "file": "tests/fixtures/union-weekly-basis/source-binding.json",
+      "from": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757",
+      "to": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp for 20260926140858: the nested binding re-pins scripts/dev/test-union-weekly-basis.py and adds pins for the new migration and its regression. Every other pinned byte is unchanged."
+    },
+    {
+      "file": "tests/fixtures/union-weekly-basis/source-binding.json",
+      "from": "2819d36f59c8c1458cf767cd019340f119c1d5eb24d870d9762ac3b458ea53b2",
+      "to": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of 20260926140858 (registry row moved above the CREATE FUNCTION); every other pinned byte is unchanged."
+    },
+    {
+      "file": "server/src/tournament/completionSettlementReceipt.ts",
+      "from": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+      "to": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The compiled list of 13 legacy fee custody events is removed: verifyTournamentCompletionReceipt takes the custody origin the database holds (fn_ca_legacy_fee_custody_origin, over the obligation row fn_ca_legacy_fee_custody_cohort reads) as a fifth argument, and parseLegacyFeeCustodyOrigin parses it for exactly one event. Every custody and resolution comparison is unchanged; only the source of the expected amount, fingerprint, source count and recognized count moved from the engine to the database. The list had called 26 committed September 8 receipts outcome unknown."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs",
+      "from": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+      "to": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The decoder now requires the database custody origin; the harness passes PostgreSQL's own custody answer from the same native receipt (fn_ca_tournament_fee_custody_receipt raises unless it equals fn_ca_legacy_fee_custody_cohort). Receipt sources, modes, expected counts and states are unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "fd92fe081f832d37be31c463511919306c1c15ee97ec452fde52e777080b67c6",
+      "to": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "a84f74c0f48d7b272b5e79471b000fd754ced01cb16435f2b3c7c0a31a00cdf6",
+      "to": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -3069,12 +3118,12 @@
       {
         "path": "scripts/dev/test-union-weekly-basis.py",
         "previous_sha256": "b115c778fc00bc5ecf3daf80a96dbb1386c01cfca42971ebdc684de32140dcc4",
-        "sha256": "719cf408b30fbe775f0d84c39e7456ac7758754faacdf337da7d7b1559d96ce6"
+        "sha256": "0c7c959a54275a9595f8817aac84514415d9bfc829114376bf1f9f9e5da726ad"
       },
       {
         "path": "tests/fixtures/union-weekly-basis/source-binding.json",
         "previous_sha256": "496c8c0abd58f76a1e8418dbcd5922ea6b11fef4876118031ad54a0c9f38044b",
-        "sha256": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757"
+        "sha256": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b"
       }
     ],
     "reason": "20260927160709 merged (PR #5475) and was never applied: its preimage assertion names md5(prosrc) 80f40737 (the 20260926042810 body), and production runs adea6633, which is that body with the ONE certificate-loop expression 20260927155651 step 3c rewrote (the tournament-fee agreement instant, now fn_accounting_tournament_source_terms_at). Proved byte for byte: 042810's body with that replacement hashes to the live prosrc. 20260930232349 is 160709 with the preimage set to adea6633, that expression carried into the installed calculator so applying it cannot revert 155651, the page-path and table comments naming the new version, and the postimage set to cb7f9eab. The union weekly basis cluster now takes 155651's step 3c (its two terms-at functions verbatim, then its replacement) after installing 042810, and applies 20260930232349 in place of 160709.",

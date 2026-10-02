@@ -73,6 +73,8 @@ export function diamondWheelPageFixture() {
       // cue was added. PLINKO_PEG_GAP_MS mirrors src/services/SoundService.ts.
       SoundService: `export const soundService=new Proxy({},{get:()=>()=>{}});export const haptic=new Proxy({},{get:()=>()=>{}});export const PLINKO_PEG_GAP_MS=30;`,
       HapticService: `export const triggerHaptic=()=>{};`,
+      // The scene-health writer reaches the database; a layout fixture records nothing.
+      DiamondSceneRecorder: `export const installDiamondSceneRecorder=()=>{};`,
     };
     const result = await build({
       stdin: {

@@ -16,14 +16,12 @@ SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
 CREATE TABLE public.club_welcome_entitlements (
-  club_id uuid PRIMARY KEY REFERENCES public.clubs(id) ON DELETE RESTRICT,
+  club_id uuid PRIMARY KEY,
   owner_id uuid NOT NULL UNIQUE,
   creation_request_id uuid NOT NULL,
   package_version text NOT NULL DEFAULT 'welcome-v1' CHECK (package_version='welcome-v1'),
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-  UNIQUE(owner_id,creation_request_id),
-  FOREIGN KEY(owner_id,creation_request_id)
-    REFERENCES public.club_creation_requests(user_id,request_id) ON DELETE RESTRICT
+  UNIQUE(owner_id,creation_request_id)
 );
 
 -- Identity history deliberately has no club/request foreign key. Ownership
@@ -37,13 +35,6 @@ CREATE TABLE public.club_owner_creation_history (
   recorded_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
 
-INSERT INTO public.club_owner_creation_history
-  (owner_id,first_club_id,welcome_eligible,provenance,recorded_at)
-SELECT owner_id,(array_agg(id ORDER BY created_at NULLS LAST,id))[1],false,'historical',
-       COALESCE(min(created_at),transaction_timestamp())
-  FROM public.clubs WHERE owner_id IS NOT NULL GROUP BY owner_id
-ON CONFLICT(owner_id) DO NOTHING;
-
 CREATE FUNCTION public.fn_remember_club_owner_transfer() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $function$
 BEGIN
@@ -56,8 +47,6 @@ BEGIN
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_remember_club_owner_transfer() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_remember_club_owner_transfer() TO service_role;
-CREATE TRIGGER trg_remember_club_owner_transfer AFTER UPDATE OF owner_id ON public.clubs
-FOR EACH ROW EXECUTE FUNCTION public.fn_remember_club_owner_transfer();
 
 CREATE TABLE public.club_welcome_package_receipts (
   club_id uuid PRIMARY KEY REFERENCES public.club_welcome_entitlements(club_id) ON DELETE RESTRICT,
@@ -238,7 +227,7 @@ GRANT EXECUTE ON FUNCTION public.fn_get_club_welcome_package(uuid) TO authentica
 -- event trigger can enforce the reviewed financial authority atomically.
 INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES (
   'fn_apply_club_welcome_economics','approved',
-  'Private lifetime-first club welcome allocator. Runs only inside the owner-bound idempotent provisioning transaction; moves exactly the reviewed BBJ seed from clubs.chip_treasury into bbj_pools and delegates the reviewed Poker Spins seed to fn_spin_activate, with keyed club_welcome_allocation ledger context. Diamond Spins remain owner-acceptance-required and receive no automatic funds.'
+  'Private lifetime-first club welcome allocator. Runs only inside the owner-bound idempotent provisioning transaction; moves exactly the reviewed BBJ seed from clubs.chip_treasury into bbj_pools and delegates the reviewed Poker Spins seed to fn_spin_activate, with keyed club_opening_allocation ledger context. Diamond Spins remain owner-acceptance-required and receive no automatic funds.'
 )
 ON CONFLICT (proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
 
@@ -264,8 +253,11 @@ BEGIN
   IF EXISTS(SELECT 1 FROM public.bbj_pools WHERE club_id=p_club_id) THEN
     RAISE EXCEPTION 'WELCOME_BBJ_POOL_ALREADY_EXISTS' USING ERRCODE='55000';
   END IF;
-  PERFORM set_config('app.ledger_category','club_welcome_allocation',true);
-  PERFORM set_config('app.ledger_counterparty','welcome_package',true);
+  PERFORM set_config('app.ledger_category','club_opening_allocation',true);
+  -- Journal both allocations through the already-declared opening clearing
+  -- store: treasury -> opening_setup -> BBJ / Spin reserve. The clearing
+  -- store nets to zero inside this transaction.
+  PERFORM set_config('app.ledger_counterparty','opening_setup',true);
   PERFORM set_config('app.ledger_counterparty_entity',p_club_id::text,true);
   PERFORM set_config('app.ledger_idempotency_key','club-welcome:'||p_operation_id::text||':bbj',true);
   UPDATE public.clubs SET chip_treasury=chip_treasury-v_bbj,bbj_enabled=true,

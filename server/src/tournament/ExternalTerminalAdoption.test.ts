@@ -216,6 +216,20 @@ function fixture(
         },
         error: null,
       };
+    if (name === 'fn_ca_legacy_fee_custody_origin') {
+      // The custody origin the database holds for this event (20261002034540).
+      expect(args).toEqual({ p_tournament_id: TOURNAMENT_ID });
+      return {
+        data: {
+          tournament_id: TOURNAMENT_ID,
+          amount: 17,
+          source_fingerprint: 'f67bf12ee0b00c954b6f8403de9718fe',
+          source_count: 34,
+          recognized_source_count: 0,
+        },
+        error: null,
+      };
+    }
     expect(name).toBe('fn_resolve_tournament_terminal_outcome');
     expect(args).toEqual({
       p_tournament_id: TOURNAMENT_ID,
@@ -285,6 +299,7 @@ describe('external committed completion outranks an obsolete entry reprice', () 
     expect(transport.rpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_close_tournament_entry_window',
       'fn_resolve_tournament_terminal_outcome',
+      'fn_ca_legacy_fee_custody_origin',
     ]);
     expect(transport.report).not.toHaveBeenCalled();
   });

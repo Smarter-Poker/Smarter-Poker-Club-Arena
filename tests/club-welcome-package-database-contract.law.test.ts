@@ -16,10 +16,59 @@ const cleanupSql = readFileSync(
   ),
   'utf8'
 );
+const ledgerCounterpartyRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002002030_welcome_allocations_use_the_declared_opening_clearing_store.sql'
+  ),
+  'utf8'
+);
+const ledgerCategoryRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002010726_welcome_allocations_use_the_declared_opening_category.sql'
+  ),
+  'utf8'
+);
+const derivedTableCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
+  ),
+  'utf8'
+);
+const authoritativeLeaseRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
+  ),
+  'utf8'
+);
+const controllerProvenanceRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002051400_welcome_certification_accepts_its_controller_created_tables.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
     '../supabase/migrations/20261001224720_welcome_schedule_spawn_trigger_runs_after_core.sql'
+  ),
+  'utf8'
+);
+const clubHistorySql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001232445_welcome_club_owner_history_runs_after_core.sql'
+  ),
+  'utf8'
+);
+const requestActivationSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261001232452_welcome_request_activation_runs_last.sql'
   ),
   'utf8'
 );
@@ -36,24 +85,50 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).not.toContain('fn_ca_prepare_unused_welcome_certification_fixture');
     expect(sql).not.toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
     expect(sql).not.toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(sql).not.toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
+    expect(sql).not.toContain('REFERENCES public.clubs');
+    expect(sql).not.toContain('REFERENCES public.club_creation_requests');
+    expect(sql).not.toMatch(
+      /INSERT INTO public\.club_owner_creation_history\s+\(owner_id,first_club_id,welcome_eligible,provenance,recorded_at\)/
+    );
     expect(hotTriggerSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(hotTriggerSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(hotTriggerSql).toContain("SET LOCAL lock_timeout = '15s';");
     expect(hotTriggerSql).toContain('CREATE TRIGGER trg_fence_welcome_package_schedule_spawn');
-    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).not.toContain('trg_offer_lifetime_first_club_welcome');
+    expect(hotTriggerSql).not.toContain('trg_remember_club_owner_transfer');
     expect(hotTriggerSql).not.toMatch(/LOCK TABLE/);
+    expect(clubHistorySql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(clubHistorySql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(clubHistorySql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(clubHistorySql).toContain('CREATE TRIGGER trg_remember_club_owner_transfer');
+    expect(clubHistorySql).toContain('ADD CONSTRAINT club_welcome_entitlements_club_fkey');
+    expect(clubHistorySql).not.toContain('trg_offer_lifetime_first_club_welcome');
+    expect(clubHistorySql).not.toContain('trg_fence_welcome_package_schedule_spawn');
+    expect(requestActivationSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(requestActivationSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(requestActivationSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(requestActivationSql).toContain(
+      'ADD CONSTRAINT club_welcome_entitlements_owner_request_fkey'
+    );
+    expect(requestActivationSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(requestActivationSql.indexOf('ADD CONSTRAINT')).toBeLessThan(
+      requestActivationSql.indexOf('CREATE TRIGGER')
+    );
+    expect(requestActivationSql).not.toContain('trg_fence_welcome_package_schedule_spawn');
+    expect(requestActivationSql).not.toContain('trg_remember_club_owner_transfer');
     expect(cleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(cleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(cleanupSql).not.toMatch(/LOCK TABLE/);
   });
 
   it('mints entitlement only from a new creation receipt and never backfills', () => {
-    expect(hotTriggerSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
+    expect(requestActivationSql).toContain('CREATE TRIGGER trg_offer_lifetime_first_club_welcome');
     expect(sql).toContain('public.fn_club_membership_lock(NEW.user_id)');
     expect(sql).toContain('club_owner_creation_history');
     expect(sql).toContain("false,'historical'");
     expect(sql).toContain("true,'prospective'");
-    expect(sql).toContain('trg_remember_club_owner_transfer');
+    expect(clubHistorySql).toContain('trg_remember_club_owner_transfer');
     expect(sql).toContain(
       'public.fn_provision_first_club_welcome_package(NEW.club_id,NEW.request_id)'
     );
@@ -145,8 +220,18 @@ describe('prospective lifetime-first club welcome package database contract', ()
     const creation = sql.indexOf('CREATE FUNCTION public.fn_apply_club_welcome_economics');
     expect(registry).toBeGreaterThan(0);
     expect(registry).toBeLessThan(creation);
-    expect(sql).toContain('club_welcome_allocation ledger context');
+    expect(sql).toContain('club_opening_allocation ledger context');
+    expect(sql).toContain("set_config('app.ledger_category','club_opening_allocation',true)");
+    expect(sql).not.toContain("set_config('app.ledger_category','club_welcome_allocation',true)");
     expect(sql).toContain('Diamond Spins remain owner-acceptance-required');
+    expect(sql).toContain("set_config('app.ledger_counterparty','opening_setup',true)");
+    expect(sql).not.toContain("set_config('app.ledger_counterparty','welcome_package',true)");
+    expect(ledgerCounterpartyRepairSql).toContain('replace(v_def,v_anchor,v_replacement)');
+    expect(ledgerCounterpartyRepairSql).toContain("store='opening_setup' AND treatment='counted'");
+    expect(ledgerCounterpartyRepairSql).not.toContain('INSERT INTO public.ca_chip_store_coverage');
+    expect(ledgerCategoryRepairSql).toContain('replace(v_def,v_anchor,v_replacement)');
+    expect(ledgerCategoryRepairSql).toContain("conname='chip_ledger_category_check'");
+    expect(ledgerCategoryRepairSql).not.toContain('DROP CONSTRAINT chip_ledger_category_check');
   });
 
   it('does not mutate tagline, membership, wallets or historical ledgers', () => {
@@ -179,6 +264,52 @@ describe('prospective lifetime-first club welcome package database contract', ()
     );
     expect(cleanupSql.indexOf('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY')).toBeLessThan(
       cleanupSql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_tables)')
+    );
+  });
+
+  it('retires every idle package-derived cash table and all 100,000 opening chips', () => {
+    expect(derivedTableCleanupSql).toContain('v_initial_tables <@ v_tables');
+    expect(derivedTableCleanupSql).toContain('t.cluster_id=ANY(v_cash)');
+    expect(derivedTableCleanupSql).toContain("t.role NOT IN('main','feeder')");
+    expect(derivedTableCleanupSql).toContain(
+      "t.lifecycle NOT IN('opening','live','breaking','closed')"
+    );
+    expect(derivedTableCleanupSql).toContain('t.created_by IS NOT NULL');
+    expect(derivedTableCleanupSql).toContain('t.created_by IS DISTINCT FROM v_club.owner_id');
+    expect(controllerProvenanceRepairSql).toContain(
+      't.created_by IS DISTINCT FROM v_club.owner_id'
+    );
+    expect(controllerProvenanceRepairSql).toContain("SET LOCAL lock_timeout = '15s'");
+    expect(controllerProvenanceRepairSql).toContain("SET LOCAL statement_timeout = '120s'");
+    expect(derivedTableCleanupSql).not.toContain('t.engine_lease_owner IS NOT NULL');
+    expect(derivedTableCleanupSql).not.toContain('t.engine_lease_expires_at IS NOT NULL');
+    expect(derivedTableCleanupSql).toContain('public.engine_table_leases');
+    expect(authoritativeLeaseRepairSql).toContain('FROM public.engine_table_leases l');
+    expect(authoritativeLeaseRepairSql).toContain(
+      "'public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure"
+    );
+    expect(authoritativeLeaseRepairSql).not.toContain(
+      'fn_ca_prepare_unused_welcome_certification_fixture(uuid,text)'
+    );
+    expect(authoritativeLeaseRepairSql).toContain(
+      'WELCOME_CERTIFICATION_AUTHORITATIVE_LEASE_GUARD_NOT_INSTALLED'
+    );
+    expect(derivedTableCleanupSql).toContain('public.cash_game_roster');
+    expect(derivedTableCleanupSql).toContain('public.table_pending_addons');
+    expect(derivedTableCleanupSql).toContain('DELETE FROM public.cash_cluster_events');
+    expect(derivedTableCleanupSql).toContain("'cert-retire-bbj:'||p_club_id::text");
+    expect(derivedTableCleanupSql).toContain("'cert-retire-spin:'||p_club_id::text");
+    expect(derivedTableCleanupSql).toContain("l.kind='seed'");
+    expect(derivedTableCleanupSql).toContain("l.kind='activation'");
+    expect(derivedTableCleanupSql).toContain("VALUES(p_club_id,'adjustment',-v_spin_seed,0");
+    expect(derivedTableCleanupSql).toContain('WELCOME_CERTIFICATION_PHYSICAL_GRAPH_REFUSED');
+    expect(derivedTableCleanupSql).toContain('WELCOME_CERTIFICATION_RETIREMENT_REFUSED');
+    expect(derivedTableCleanupSql).toContain("'child_chips_retired',v_child_retired");
+    expect(derivedTableCleanupSql).toContain(
+      "round(COALESCE((v_retired->>'chips_retired')::numeric,0)+v_child,2)"
+    );
+    expect(derivedTableCleanupSql.indexOf('FROM public.cash_games')).toBeLessThan(
+      derivedTableCleanupSql.indexOf('FROM public.clubs WHERE id=p_club_id FOR UPDATE')
     );
   });
 });

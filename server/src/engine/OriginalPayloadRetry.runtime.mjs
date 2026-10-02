@@ -43,7 +43,12 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
   const post = method(settlement, 'postHandTasks');
   const hh = readCurrent('services/supabase/handHistory.ts');
   const ha = ts.createSourceFile('hh.ts', hh, ts.ScriptTarget.Latest, true);
-  const hfunctions = ['logHandHistory', 'insertHandHistoryRow', 'tournamentStackProofIsExact'].map(
+  const hfunctions = [
+    'logHandHistory',
+    'insertHandHistoryRow',
+    'tournamentStackProofIsExact',
+    'isLedgerInvariantRefusal',
+  ].map(
     (n) =>
       ha.statements
         .find((x) => ts.isFunctionDeclaration(x) && x.name?.text === n)

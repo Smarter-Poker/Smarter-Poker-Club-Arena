@@ -55,16 +55,17 @@ export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
  * deterministic refusal and a standing one.
  */
 export const LEDGER_INVARIANT_REFUSED = 'LEDGER_INVARIANT_REFUSED';
-const LEDGER_INVARIANT_REFUSAL =
-  /^REFUSED: balance_moved_(?:without_its_ledger_row|against_settlement_suspense)\b/;
 
+/** Self-contained (no module constant): the runtime probes evaluate it alone. */
 export function isLedgerInvariantRefusal(
   error: { code?: unknown; message?: unknown } | null | undefined
 ): boolean {
   if (!error) return false;
   return (
     String(error.code ?? '') === '23514' &&
-    LEDGER_INVARIANT_REFUSAL.test(String(error.message ?? '').trim())
+    /^REFUSED: balance_moved_(?:without_its_ledger_row|against_settlement_suspense)\b/.test(
+      String(error.message ?? '').trim()
+    )
   );
 }
 

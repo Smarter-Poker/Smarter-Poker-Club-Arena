@@ -356,13 +356,19 @@ describe('every chip store balances with its ledger row', () => {
     expect(flip).toMatch(/found_at >= timestamptz '2026-10-02 04:14:45\+00'/);
     expect(flip).toMatch(/UPDATE public\.ca_ledger_invariant_store_mode\s+SET mode = 'refuse'/);
     expect(flip).toMatch(/WHERE mode <> 'refuse'\) THEN\s+RAISE EXCEPTION/);
-    // the last migration to write the store modes writes refuse
+    // the last migration to write the fifteen store modes writes refuse; a later
+    // write may only add a new judgement (settlement_suspense, below) or refuse
     const writes = migrations.filter((f) =>
       /(UPDATE|INSERT\s+INTO)\s+(public\.)?ca_ledger_invariant_store_mode\b/i.test(
         stripComments(read(f))
       )
     );
-    expect(writes[writes.length - 1]).toBe(flipName);
+    expect(writes).toContain(flipName);
+    for (const f of writes.filter((w) => w > flipName!)) {
+      const sql = stripComments(read(f));
+      expect(sql, `${f} writes a store mode after the flip`).toMatch(/'settlement_suspense'/);
+      expect(sql).not.toMatch(/SET\s+mode\s*=\s*'observe'/i);
+    }
     expect(
       readFileSync(
         join(ROOT, 'docs', 'laws.d', 'every-chip-store-balances-with-its-ledger-row.md'),
@@ -406,6 +412,189 @@ describe('every chip store balances with its ledger row', () => {
       'Q5 a satellite ticket',
       'Q10 a Diamond event',
       'M1 one transaction, an observed promo drift and a felt drift: the felt still refuses',
+    ]) {
+      expect(regression).toContain(shape);
+    }
+  });
+});
+
+/**
+ * ===========================================================================
+ *  NO BALANCE MOVES AGAINST SETTLEMENT SUSPENSE (2026-10-02)
+ * ===========================================================================
+ *
+ * A store balances when its delta equals the legs that name it; that says
+ * nothing about where the other end of the leg went. The journal triggers
+ * (fn_ca_autoledger, fn_club_members_ledger_writer) default an undeclared
+ * write's counter-leg to settlement_suspense, which holds no balance and is
+ * outside the supply count. So every store could balance and chips still
+ * appear from, or vanish into, suspense. Migration
+ * *_no_balance_moves_against_settlement_suspense.sql counts every suspense leg
+ * in the tally (before the journal-only correction exemption) and refuses, at
+ * commit, a transaction that wrote one AND moved any covered balance:
+ * `REFUSED: balance_moved_against_settlement_suspense`. A journal-only
+ * correction moves no balance and still commits.
+ *
+ * The law reads the LATEST definition of each function across every migration,
+ * so a later migration that redefines either body without the suspense rule
+ * goes red (the negative proof below plants exactly that).
+ */
+const SUSPENSE_SUFFIX = '_no_balance_moves_against_settlement_suspense.sql';
+
+function latestBody(sqlFiles: string[], fn: string): string {
+  let body = '';
+  for (const raw of sqlFiles) {
+    const sql = stripComments(raw);
+    const i = sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
+    if (i >= 0) body = sql.slice(i, sql.indexOf('$function$;', i));
+  }
+  return body;
+}
+
+/** What is missing from the suspense rule in the latest bodies; [] when whole. */
+function suspenseRuleGaps(sqlFiles: string[]): string[] {
+  const gaps: string[] = [];
+  const tally = latestBody(sqlFiles, 'fn_ca_tally_ledger_leg');
+  const count = tally.search(
+    /IF NEW\.from_type = 'settlement_suspense' OR NEW\.to_type = 'settlement_suspense' THEN\s+PERFORM public\.fn_ca_ledger_tally_add\('settlement_suspense', 's', abs\(NEW\.amount\)\);/
+  );
+  const exempt = tally.indexOf("NEW.metadata ->> 'posted_via' = 'fn_ca_post_correction'");
+  if (count < 0) gaps.push('the tally does not count suspense legs');
+  else if (exempt >= 0 && exempt < count)
+    gaps.push('the journal-only correction exemption runs before the suspense count');
+  const check = latestBody(sqlFiles, 'fn_ca_balance_has_its_ledger_row');
+  if (
+    !/v_s := round\(COALESCE\(\(t -> 'settlement_suspense' ->> 's'\)::numeric, 0\), 2\);/.test(
+      check
+    )
+  )
+    gaps.push('the commit check does not read the suspense tally');
+  if (
+    !/WHERE e\.key <> 'settlement_suspense'\s+AND round\(COALESCE\(\(e\.value ->> 'b'\)::numeric, 0\), 2\) <> 0;/.test(
+      check
+    )
+  )
+    gaps.push('the commit check does not ask whether a covered balance moved');
+  if (
+    !/sm\.store = 'settlement_suspense'\),\s+\(SELECT m\.mode FROM public\.ca_ledger_invariant_mode m LIMIT 1\),\s+'refuse'\);/.test(
+      check
+    )
+  )
+    gaps.push('the suspense judgement does not fall back to refuse');
+  if (
+    !check.includes(
+      "RAISE EXCEPTION 'REFUSED: balance_moved_against_settlement_suspense suspense_legs=% moved=%'"
+    )
+  )
+    gaps.push('the refusal is not named');
+  return gaps;
+}
+
+describe('no balance moves against settlement suspense', () => {
+  const suspenseName = migrations.find((f) => f.endsWith(SUSPENSE_SUFFIX));
+
+  it('the migration exists after every store refuses, is one transaction, locks chip_ledger first, pins what it replaces, and drops nothing', () => {
+    expect(suspenseName, `migration *${SUSPENSE_SUFFIX}`).toBe(
+      '20261002065836_no_balance_moves_against_settlement_suspense.sql'
+    );
+    expect(suspenseName! > '20261002042417_every_chip_store_refuses.sql').toBe(true);
+    const body = stripComments(read(suspenseName!));
+    expect(body.trim().startsWith('BEGIN;')).toBe(true);
+    expect(body.trim().endsWith('COMMIT;')).toBe(true);
+    expect(body).toMatch(/set_config\('lock_timeout', '250ms', true\)/);
+    expect(body).toMatch(/LOCK TABLE public\.chip_ledger IN SHARE ROW EXCLUSIVE MODE;/);
+    expect(body.indexOf('LOCK TABLE')).toBeLessThan(
+      body.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_tally_ledger_leg')
+    );
+    expect(body).not.toMatch(/^\s*DROP\s+(TRIGGER|POLICY|FUNCTION)\b/im);
+    expect(body).toMatch(/'fn_ca_tally_ledger_leg',\s+'[0-9a-f]{32}'/);
+    expect(body).toMatch(/'fn_ca_balance_has_its_ledger_row', '[0-9a-f]{32}'/);
+    // it judges suspense; it never writes a ledger leg or moves the open suspense balance
+    expect(body).not.toMatch(/INSERT\s+INTO\s+public\.chip_ledger\b/i);
+    expect(body).not.toMatch(/fn_ca_post_correction\s*\(/);
+  });
+
+  it('the latest tally counts every suspense leg before the correction exemption, and the latest commit check refuses a balance moved against it', () => {
+    expect(suspenseRuleGaps(all)).toEqual([]);
+  });
+
+  it('NEGATIVE PROOF: a later body without the suspense rule goes red', () => {
+    const plantedTally = `
+      BEGIN;
+      CREATE OR REPLACE FUNCTION public.fn_ca_tally_ledger_leg()
+       RETURNS trigger LANGUAGE plpgsql AS $function$
+      BEGIN
+        IF NEW.category = 'correction' AND NEW.metadata ->> 'posted_via' = 'fn_ca_post_correction' THEN
+          RETURN NULL;
+        END IF;
+        PERFORM public.fn_ca_ledger_tally_add(
+          public.fn_ca_ledger_tally_key(NEW.to_type, NEW.to_entity_id, NEW.club_id), 'l', NEW.amount);
+        RETURN NULL;
+      END;
+      $function$;
+      COMMIT;`;
+    expect(suspenseRuleGaps([...all, plantedTally])).toEqual([
+      'the tally does not count suspense legs',
+    ]);
+    const check = latestBody(all, 'fn_ca_balance_has_its_ledger_row');
+    const plantedCheck = `
+      BEGIN;
+      CREATE OR REPLACE FUNCTION public.fn_ca_balance_has_its_ledger_row()
+       RETURNS trigger LANGUAGE plpgsql AS $function$
+      ${check
+        .slice(check.indexOf('DECLARE'))
+        .replace(
+          /RAISE EXCEPTION 'REFUSED: balance_moved_against_settlement_suspense[^;]*;/,
+          'NULL;'
+        )}$function$;
+      COMMIT;`;
+    expect(suspenseRuleGaps([...all, plantedCheck])).toEqual(['the refusal is not named']);
+  });
+
+  it('the judgement has its own mode row, installed in observe, and no migration deletes it or moves it back', () => {
+    const body = stripComments(read(suspenseName!));
+    expect(body).toMatch(
+      /INSERT INTO public\.ca_ledger_invariant_store_mode \(store, mode, reason\)\s+VALUES \('settlement_suspense', 'observe',/
+    );
+    for (const f of migrations) {
+      const sql = stripComments(read(f));
+      expect(sql, `${f} must not delete a store mode row`).not.toMatch(
+        /DELETE\s+FROM\s+(public\.)?ca_ledger_invariant_store_mode\b/i
+      );
+    }
+    for (const f of migrations.filter((m) => m > suspenseName!)) {
+      expect(stripComments(read(f)), `${f} may only move suspense forward, to refuse`).not.toMatch(
+        /UPDATE\s+(public\.)?ca_ledger_invariant_store_mode\s+SET\s+mode\s*=\s*'observe'/i
+      );
+    }
+  });
+
+  it('the executable proof applies the real migration after every store proof and plants the suspense regressions', () => {
+    const script = readFileSync(join(ROOT, 'scripts', 'dev', 'test-ledger-invariant.sh'), 'utf8');
+    expect(script).toContain(`*${SUSPENSE_SUFFIX}`);
+    expect(script.indexOf('suspense-bootstrap.sql')).toBeGreaterThan(
+      script.indexOf('stores-regression.sql')
+    );
+    expect(script.indexOf('-f "$suspense"')).toBeGreaterThan(
+      script.indexOf('suspense-bootstrap.sql')
+    );
+    expect(script.indexOf('suspense-regression.sql')).toBeGreaterThan(
+      script.indexOf('-f "$suspense"')
+    );
+    const regression = readFileSync(join(FIXTURE_DIR, 'suspense-regression.sql'), 'utf8');
+    expect(regression).toContain(
+      "v_msg NOT LIKE 'REFUSED: balance_moved_against_settlement_suspense %'"
+    );
+    for (const shape of [
+      'X1 an undeclared member-wallet credit',
+      'X2 an undeclared union rake debit',
+      'X3 a door stands the journal down and writes its own leg out of suspense',
+      'X4 a covered balance moves and suspense is reached through a label with no balance',
+      'X5 a correction label does not hide a suspense leg beside a balance move',
+      'Y1 a declared buy-in',
+      'Y2 a journal-only suspense restatement',
+      'Y3 a journal-only suspense leg to a label with no balance',
+      'Z1 a member wallet credited 9 out of suspense',
     ]) {
       expect(regression).toContain(shape);
     }

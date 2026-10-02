@@ -80,6 +80,25 @@ CREATE TABLE public.bbj_pools (
   promo_balance  numeric NOT NULL DEFAULT 0
 );
 
+-- The hand receipt (production columns, information_schema.columns read
+-- 2026-10-01): inserted by the stack core in the accepted-hand transaction,
+-- given its post-commit envelope in the same transaction, completed by the
+-- obligations transaction that posts the fee legs.
+CREATE TABLE public.hand_atomic_commits (
+  table_id                  uuid NOT NULL REFERENCES public.tables(id),
+  hand_number               bigint NOT NULL UNIQUE,
+  hand_id                   uuid NOT NULL UNIQUE,
+  payload_hash              text NOT NULL,
+  stack_result              jsonb NOT NULL,
+  committed_at              timestamptz NOT NULL DEFAULT clock_timestamp(),
+  post_commit_payload       jsonb,
+  post_commit_request_hash  text,
+  post_commit_payload_hash  text,
+  post_commit_completed_at  timestamptz,
+  post_commit_result        jsonb,
+  PRIMARY KEY (table_id, hand_number)
+);
+
 CREATE TABLE public.chip_ledger (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   performed_by    uuid,

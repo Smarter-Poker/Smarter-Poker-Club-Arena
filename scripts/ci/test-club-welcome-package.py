@@ -19,6 +19,13 @@ UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002073
 BOARD_GAME_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002085447_welcome_certification_retires_idle_orphan_tournaments.sql'
 BOARD_LEASE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002102542_welcome_certification_retires_stale_board_tournament_leases.sql'
 BOARD_ORIGIN_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002111120_welcome_certification_accepts_exact_prelaunch_origins.sql'
+BOARD_DELETE_PERMIT_MIGRATION = ROOT / 'supabase/migrations/20261002115605_welcome_certification_may_delete_only_its_unused_board_tables.sql'
+TERMINAL_TABLE_GUARD_MIGRATION = ROOT / 'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+_terminal_guard_source = TERMINAL_TABLE_GUARD_MIGRATION.read_text()
+TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
+    _terminal_guard_source.index('CREATE OR REPLACE FUNCTION public.fn_tournament_table_terminal_close_is_irreversible()'):
+    _terminal_guard_source.index('-- Hand stack settlement', _terminal_guard_source.index('CREATE OR REPLACE FUNCTION public.fn_tournament_table_terminal_close_is_irreversible()'))
+]
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -30,7 +37,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -118,7 +125,8 @@ CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,union_id uuid,cluster_id uu
  name text,game_type text DEFAULT 'cash',created_by uuid,role text DEFAULT 'main',main_index integer DEFAULT 1,
  lifecycle text DEFAULT 'opening',status text,current_players integer,
  max_players integer,is_deleted boolean DEFAULT false,created_at timestamptz DEFAULT now(),
- engine_lease_owner text,engine_lease_expires_at timestamptz,updated_at timestamptz DEFAULT now());
+ engine_lease_owner text,engine_lease_expires_at timestamptz,updated_at timestamptz DEFAULT now(),
+ terminal_closed_at timestamptz);
 CREATE TABLE tournament_table_origins(
  table_id uuid PRIMARY KEY REFERENCES tables(id) ON DELETE CASCADE,
  tournament_id uuid NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
@@ -223,12 +231,13 @@ INSERT INTO clubs(id,owner_id) VALUES('00000000-0000-4000-9000-000000000099','00
 """
 
 try:
-    r=command([pg/'initdb','-D',cluster/'data','-U','postgres','--auth-local=trust','--auth-host=reject','--no-locale','--encoding=UTF8'])
+    r=command([pg/'initdb','-D',cluster/'data','-U','postgres','--auth-local=trust','--auth-host=reject','--no-locale','--encoding=UTF8','-c','shared_memory_type=mmap'])
     if r.returncode: raise RuntimeError(r.stderr)
-    with (cluster/'data/postgresql.conf').open('a') as f: f.write(f"\nlisten_addresses=''\nunix_socket_directories='{socket}'\nport={port}\ndynamic_shared_memory_type=mmap\nshared_buffers='16MB'\n")
+    with (cluster/'data/postgresql.conf').open('a') as f: f.write(f"\nlisten_addresses=''\nunix_socket_directories='{socket}'\nport={port}\nshared_memory_type=mmap\ndynamic_shared_memory_type=mmap\nshared_buffers='16MB'\n")
     r=command([pg/'pg_ctl','-D',cluster/'data','-l',cluster/'server.log','-w','start'])
     if r.returncode: raise RuntimeError(r.stderr+'\n'+(cluster/'server.log').read_text())
     run('setup',SETUP)
+    run('install-terminal-table-durability-guard-preimage',TERMINAL_TABLE_GUARD_FIXTURE)
     run('opening-definition-before', "SELECT pg_get_functiondef('fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);")
     run('install-core',MIGRATION.read_text())
     run('core-leaves-hot-table-triggers-detached',"SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_fence_welcome_package_schedule_spawn','trg_remember_club_owner_transfer','trg_offer_lifetime_first_club_welcome') AND NOT tgisinternal;",'0')
@@ -283,6 +292,17 @@ SELECT pg_get_functiondef(p.oid)=b.expected_definition,
     run('install-board-game-cleanup',BOARD_GAME_CLEANUP_MIGRATION.read_text())
     run('install-board-lease-cleanup',BOARD_LEASE_CLEANUP_MIGRATION.read_text())
     run('install-board-origin-cleanup',BOARD_ORIGIN_CLEANUP_MIGRATION.read_text())
+    run('durability-guard-preimage',"""
+SELECT r.rolname,p.prosecdef,p.proconfig::text,
+       has_function_privilege('anon',p.oid,'EXECUTE'),
+       has_function_privilege('authenticated',p.oid,'EXECUTE'),
+       has_function_privilege('service_role',p.oid,'EXECUTE')
+  FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+ WHERE p.oid='fn_tournament_table_terminal_close_is_irreversible()'::regprocedure;
+SELECT pg_get_triggerdef(t.oid,true),t.tgenabled
+  FROM pg_trigger t WHERE t.tgname='tournament_table_terminal_close_is_irreversible';
+""")
+    run('install-board-delete-permit',BOARD_DELETE_PERMIT_MIGRATION.read_text())
     controller_authority = run('controller-provenance-repair-authority-before-refusal',f"""
 SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
        p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
@@ -315,6 +335,63 @@ SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::tex
     run('request-fk-installed-once',"SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_owner_request_fkey' AND convalidated;",'1')
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
     run('board-cleanup-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_ca_prepare_unused_welcome_certification_board_games';",'system|t')
+    run('durability-guard-still-refuses-ordinary-direct-delete',"""
+BEGIN;
+INSERT INTO tournaments(id,club_id,status)
+VALUES('00000000-0000-4000-a000-000000000001','00000000-0000-4000-9000-000000000099','REGISTERING');
+INSERT INTO tables(id,club_id,tournament_id,status,current_players)
+VALUES('00000000-0000-4000-b000-000000000001','00000000-0000-4000-9000-000000000099',
+       '00000000-0000-4000-a000-000000000001','waiting',0);
+SET request.jwt.claim.role='service_role';
+DO $x$ BEGIN
+  DELETE FROM tables WHERE id='00000000-0000-4000-b000-000000000001';
+  RAISE EXCEPTION 'ordinary_durable_table_delete_not_refused';
+EXCEPTION WHEN sqlstate '55000' THEN
+  IF SQLERRM NOT LIKE 'tournament table % is durable and cannot be deleted' THEN RAISE; END IF;
+END $x$;
+SELECT count(*),(SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM tables WHERE id='00000000-0000-4000-b000-000000000001';
+ROLLBACK;
+""",'1|0')
+    run('durability-permit-is-bound-to-its-original-transaction',"""
+INSERT INTO tournaments(id,club_id,status)
+VALUES('00000000-0000-4000-a000-000000000002','00000000-0000-4000-9000-000000000099','REGISTERING');
+INSERT INTO tables(id,club_id,tournament_id,status,current_players)
+VALUES('00000000-0000-4000-b000-000000000002','00000000-0000-4000-9000-000000000099',
+       '00000000-0000-4000-a000-000000000002','waiting',0);
+INSERT INTO smarter_private.ca_welcome_certification_table_delete_permits(
+  transaction_id,table_id,tournament_id,club_id
+) VALUES(
+  pg_current_xact_id(),'00000000-0000-4000-b000-000000000002',
+  '00000000-0000-4000-a000-000000000002','00000000-0000-4000-9000-000000000099'
+);
+""")
+    run('stale-durability-permit-cannot-authorize-a-later-transaction',"""
+SET request.jwt.claim.role='service_role';
+DO $x$ BEGIN
+  DELETE FROM tables WHERE id='00000000-0000-4000-b000-000000000002';
+  RAISE EXCEPTION 'stale_permit_was_reused';
+EXCEPTION WHEN sqlstate '55000' THEN
+  IF SQLERRM NOT LIKE 'tournament table % is durable and cannot be deleted' THEN RAISE; END IF;
+END $x$;
+SELECT count(*),(SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM tables WHERE id='00000000-0000-4000-b000-000000000002';
+BEGIN;
+RESET request.jwt.claim.role;
+DELETE FROM smarter_private.ca_welcome_certification_table_delete_permits
+ WHERE table_id='00000000-0000-4000-b000-000000000002';
+INSERT INTO smarter_private.ca_welcome_certification_table_delete_permits(
+  transaction_id,table_id,tournament_id,club_id
+) VALUES(
+  pg_current_xact_id(),'00000000-0000-4000-b000-000000000002',
+  '00000000-0000-4000-a000-000000000002','00000000-0000-4000-9000-000000000099'
+);
+DELETE FROM tables WHERE id='00000000-0000-4000-b000-000000000002';
+DELETE FROM tournaments WHERE id='00000000-0000-4000-a000-000000000002';
+SELECT count(*),(SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM tables WHERE id='00000000-0000-4000-b000-000000000002';
+COMMIT;
+""",'1|1\n0|0')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'
     owner3='00000000-0000-4000-8000-000000000003'; c4='00000000-0000-4000-9000-000000000004'
@@ -389,6 +466,12 @@ SELECT id,tournament_id,'prelaunch' FROM tables
  WHERE club_id='{c11}' AND tournament_id IN
    (SELECT id FROM tournaments WHERE club_id='{c11}' AND schedule_id IS NULL);
 SET request.jwt.claim.role='service_role';
+DO $x$ BEGIN
+  DELETE FROM tables WHERE id=(SELECT id FROM tables WHERE club_id='{c11}' AND tournament_id IS NOT NULL LIMIT 1);
+  RAISE EXCEPTION 'certification_shaped_direct_delete_not_refused';
+EXCEPTION WHEN sqlstate '55000' THEN
+  IF SQLERRM NOT LIKE 'tournament table % is durable and cannot be deleted' THEN RAISE; END IF;
+END $x$;
 WITH retired AS (
  SELECT fn_ca_retire_welcome_certification_club('{c11}','board-cert') AS result
 )
@@ -398,9 +481,10 @@ SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c11}'),
        (SELECT count(*) FROM tables WHERE club_id='{c11}'),
        (SELECT count(*) FROM engine_tournament_leases),
        (SELECT count(*) FROM tournament_table_origins),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits),
        (SELECT NOT is_active AND balance=0 FROM spin_bonus_pools WHERE club_id='{c11}')
   FROM club_welcome_package_items WHERE club_id='{c11}';
-""",'12|12|12|3\n0|0|0|0|0|t')
+""",'12|12|12|3\n0|0|0|0|0|0|t')
     run('certification-board-cleanup-refuses-fresh-and-active-atomically',f"""
 INSERT INTO auth.users VALUES('{owner11}','ca-customization-cert-postdeploy-board-active@example.invalid');
 INSERT INTO clubs(id,owner_id,name) VALUES('{c12}','{owner11}','Crest Cert Board Active');
@@ -460,8 +544,10 @@ DO $x$ BEGIN PERFORM fn_ca_retire_welcome_certification_club('{c12}','active-boa
  IF SQLERRM<>'WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY' THEN RAISE; END IF; END $x$;
 SELECT is_active,(SELECT count(*) FROM tournaments WHERE club_id='{c12}'),
        (SELECT count(*) FROM tournament_rebuys),
-       (SELECT count(*) FROM tournament_table_origins) FROM spin_bonus_pools WHERE club_id='{c12}';
-""",'t|1|10\nt|1|1\nt|1|1\nt|1|1\nt|1|1|1')
+       (SELECT count(*) FROM tournament_table_origins),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM spin_bonus_pools WHERE club_id='{c12}';
+""",'t|1|10\nt|1|1\nt|1|1\nt|1|1\nt|1|1|1|0')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')
     results['passed']=all(c['passed'] for c in results['cases'])
 finally:

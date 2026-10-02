@@ -175,10 +175,10 @@ describe('the double-count rule, which is the one that fails silently', () => {
     ) as string;
     const start = src.indexOf('private async horseLoadMap');
     const body = src.slice(start, src.indexOf('private static atCapacity'));
-    expect(body).toContain('tournaments!inner(status, start_time)');
-    expect(body).toMatch(
-      /\.or\(`start_time\.is\.null,start_time\.lte\.\$\{horizonIso\}`, \{ referencedTable: 'tournaments' \}\)/
-    );
+    // Driven from the open events since 2026-10-02 (see
+    // HorseRegistrationLoadRead.test.ts): the horizon filters the event row.
+    expect(body).toContain(".from('tournaments')");
+    expect(body).toMatch(/\.or\(`start_time\.is\.null,start_time\.lte\.\$\{horizonIso\}`\)/);
     expect(body).toContain('REGISTRATION_LOAD_HORIZON_MS');
   });
 

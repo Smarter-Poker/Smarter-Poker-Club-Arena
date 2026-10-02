@@ -1458,6 +1458,34 @@ function refTournament(ref: LoadRef): string | null {
   return ref.tournament_id || null;
 }
 
+/** One open event as the registration-load read returns it. */
+export interface OpenEventRegistrations {
+  id?: string | null;
+  tournament_players?: { user_id?: string | null } | Array<{ user_id?: string | null }> | null;
+}
+
+/**
+ * One load reference per registration, keyed by its event. PostgREST returns a
+ * to-many embed as an array, but read a single object too rather than silently
+ * losing a booking and handing out a horse that is already at four games.
+ */
+export function flattenOpenEventRegistrations(
+  events: readonly OpenEventRegistrations[]
+): Array<{ user_id: string; tournament_id: string }> {
+  const out: Array<{ user_id: string; tournament_id: string }> = [];
+  for (const event of events) {
+    const tournamentId = event?.id ? String(event.id) : null;
+    if (!tournamentId) continue;
+    const embedded = event.tournament_players;
+    const players = Array.isArray(embedded) ? embedded : embedded ? [embedded] : [];
+    for (const player of players) {
+      if (player?.user_id)
+        out.push({ user_id: String(player.user_id), tournament_id: tournamentId });
+    }
+  }
+  return out;
+}
+
 /**
  * Games-per-horse, from the two things that constitute a commitment: a live
  * seat, and a registration in a tournament that has not started yet.
@@ -4878,10 +4906,20 @@ export class TournamentRecurringService {
          counting in buildHorseLoadMap is unchanged; this bounds what it is
          fed. */
       const horizonIso = new Date(Date.now() + REGISTRATION_LOAD_HORIZON_MS).toISOString();
+      /* THE READ STARTS FROM THE OPEN EVENTS (2026-10-02). It used to start
+         from every open registration (~2,000 rows, most in RUNNING events)
+         ordered by user_id and probe `tournaments` once per row; PostgREST
+         puts LIMIT/OFFSET inside that join, so the planner could never turn
+         it around. 110,931 calls at a 422 ms mean and ~18,000 buffers each,
+         and at every maintenance-break thaw 23-43 of them in one minute hit
+         the 8 s statement timeout, so every waiting seat-first board got
+         "top-up added 0 of 1 needed". Reading the ~350 events inside the
+         horizon and their registrations through (tournament_id, status) is
+         the same set of rows in ~2,000 buffers. Paged by the event's primary
+         key; an event's registrations arrive whole inside its row. */
       const { data: chunk, error: regErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, tournament_id, tournaments!inner(status, start_time)')
-        .in('status', ['registered', 'playing'])
+        .from('tournaments')
+        .select('id, tournament_players!tournament_players_tournament_id_fkey!inner(user_id)')
         /* BAGGED (multi-day, 2026-09-24) OCCUPIES ITS FIELD. Between two days
            the event holds no seat - the bag vacated every chair - so the
            seat read above counts nothing for it, yet every surviving horse
@@ -4889,13 +4927,10 @@ export class TournamentRecurringService {
            'playing' registration is that game, and a bagged event's
            start_time is in the past, so the horizon below always counts it.
            No double count: a BAGGED event has no live seat. */
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])
-        .or(`start_time.is.null,start_time.lte.${horizonIso}`, { referencedTable: 'tournaments' })
-        // Same unstable-pagination hazard as the seat read above: a horse is
-        // registered for several events at once, so user_id alone does not
-        // order these rows deterministically.
-        .order('user_id', { ascending: true })
-        .order('tournament_id', { ascending: true })
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])
+        .or(`start_time.is.null,start_time.lte.${horizonIso}`)
+        .in('tournament_players.status', ['registered', 'playing'])
+        .order('id', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (regErr) {
         reportError(
@@ -4905,7 +4940,7 @@ export class TournamentRecurringService {
         return null;
       }
       if (!chunk) return null;
-      regRows.push(...chunk);
+      regRows.push(...flattenOpenEventRegistrations(chunk as OpenEventRegistrations[]));
       if (chunk.length < PAGE) break;
     }
 

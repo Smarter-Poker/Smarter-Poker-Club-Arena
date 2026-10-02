@@ -119,3 +119,19 @@ describe('it is scoped and bounded', () => {
     expect(SWEEP).toContain('GameServer.seat_first_finish_sweep_failed');
   });
 });
+
+describe('a game that ended while the sweep looked is not a failure', () => {
+  /* 2026-10-02 12:03Z: in the first pass after the break thaw, 22 decided
+     games were RUNNING on the board read and had left RUNNING (their own
+     managers finished them) by the custody read, which answers exactly that
+     with F06_DRAINED_CUSTODY_EVENT_CHANGED. That is the outcome the sweep
+     wanted, not a failure, and it was paging as one 22 times. */
+  it('skips the definite "no longer RUNNING" custody answer, and reports every other', () => {
+    expect(SWEEP).toMatch(
+      /err instanceof F06DrainedCustodyUnprovenError &&\s+err\.outcome === 'refused' &&\s+err\.code === 'F06_DRAINED_CUSTODY_EVENT_CHANGED'/
+    );
+    const skip = SWEEP.indexOf("err.code === 'F06_DRAINED_CUSTODY_EVENT_CHANGED'");
+    expect(skip).toBeGreaterThan(-1);
+    expect(SWEEP.indexOf('GameServer.seat_first_finish_sweep_failed')).toBeGreaterThan(skip);
+  });
+});

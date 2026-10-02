@@ -5511,11 +5511,21 @@ export abstract class TournamentManagerBase {
        * its transaction time into the new receipt; an incomplete replay then
        * adopts that stored value instead of reconstructing it locally.
        */
+      /* A SEAT-FIRST GAME STARTS WHEN IT STARTS (2026-10-02). Its
+         start_time is the close of the human window, not an advertised
+         start: a board that waited half an hour for its field was stamped
+         started_at at that close and read as "RUNNING 30 minutes without a
+         hand" though it dealt within seconds of launch. A window still open
+         keeps its pre-seat hold; one already closed lets the database stamp
+         the launch transaction's own instant. */
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
+      const scheduledStartIsAdvertised =
+        Number.isFinite(scheduledStartMs) &&
+        (!isPersistedSeatFirst(tournament) || scheduledStartMs > Date.now());
       const requestedStartedAtIso = Number.isFinite(existingStartMs)
         ? new Date(existingStartMs).toISOString()
-        : Number.isFinite(scheduledStartMs)
+        : scheduledStartIsAdvertised
           ? new Date(scheduledStartMs).toISOString()
           : null;
       const requestedLaunchId = nodeCrypto.randomUUID();

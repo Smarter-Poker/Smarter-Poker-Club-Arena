@@ -21,6 +21,7 @@ import {
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 import {
+  F06DrainedCustodyUnprovenError,
   f06CustodyRefusalKey,
   f06RecoveryDispositionOwner,
   prepareF06SuccessorAdmission,
@@ -10247,6 +10248,18 @@ export class GameServer {
           );
         }
       } catch (err) {
+        /* ENDED WHILE WE LOOKED (2026-10-02). The custody read answers
+           F06_DRAINED_CUSTODY_EVENT_CHANGED only when the event is no longer
+           RUNNING: its own manager finished it between this pass's board read
+           and here (22 of them in the first pass after the 12:02Z thaw). That
+           is the outcome this sweep exists for, not a failure. */
+        if (
+          err instanceof F06DrainedCustodyUnprovenError &&
+          err.outcome === 'refused' &&
+          err.code === 'F06_DRAINED_CUSTODY_EVENT_CHANGED'
+        ) {
+          continue;
+        }
         reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
       }
     }

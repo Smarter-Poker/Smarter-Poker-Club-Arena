@@ -476,19 +476,63 @@ export async function retireCertificationClubWithRetry({
   reason,
   fetchImpl = fetch,
   wait,
+  environment = process.env,
+  databaseClientFactory,
 }) {
+  const retire = async () => {
+    const databaseUrl = environment.DATABASE_URL || '';
+    if (!databaseUrl) {
+      return serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
+        { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
+        fetchImpl
+      );
+    }
+
+    // The production service_role is intentionally capped at eight seconds.
+    // A full welcome fixture owns tables, schedules and seeded treasuries, so
+    // its guarded all-or-nothing retirement can legitimately take longer.
+    // Function-local settings cannot extend a timer which Postgres armed when
+    // the outer statement began.  The certificate therefore uses its existing
+    // database credential and sends the larger bounded budget as a separate
+    // statement before invoking the same service-role-only retirement door.
+    const client = databaseClientFactory
+      ? await databaseClientFactory(databaseUrl)
+      : new (await import('pg')).Client({
+          connectionString: databaseUrl,
+          application_name: 'club-create-certification-retirement',
+        });
+    await client.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL statement_timeout = '120s'");
+      await client.query("SET LOCAL lock_timeout = '15s'");
+      await client.query("SET LOCAL request.jwt.claim.role = 'service_role'");
+      const response = await client.query(
+        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+        [clubId, reason]
+      );
+      await client.query('COMMIT');
+      return response.rows?.[0]?.result;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Preserve the original error. The idempotent guarded door plus the
+        // caller's readback determines whether an unknown result committed.
+      }
+      throw error;
+    } finally {
+      await client.end();
+    }
+  };
   let result;
   try {
-    result = await retryTransient(
-      () =>
-        serviceRequest(
-          configuration,
-          '/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
-          { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
-          fetchImpl
-        ),
-      { wait, label: `retirement of certification club ${clubId}` }
-    );
+    result = await retryTransient(retire, {
+      wait,
+      label: `retirement of certification club ${clubId}`,
+    });
   } catch (error) {
     if (
       error?.code === '55000' &&
@@ -649,6 +693,7 @@ export async function retireProductionCreateClubFixtures({
   wait,
   record,
   reason = 'ui-cert-cleanup',
+  databaseClientFactory,
 } = {}) {
   const path = fixturePath(environment);
   const account = record || (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
@@ -692,6 +737,8 @@ export async function retireProductionCreateClubFixtures({
       reason,
       fetchImpl,
       wait,
+      environment,
+      databaseClientFactory,
     });
   }
   const remaining = await serviceRequest(

@@ -23,6 +23,7 @@ BOARD_DELETE_PERMIT_MIGRATION = ROOT / 'supabase/migrations/20261002115605_welco
 FRESH_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002205511_welcome_certification_accepts_fresh_exact_board.sql'
 POST_RESET_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002210559_post_reset_welcome_certification_cleanup.sql'
 POST_RESET_UUID_ORDER_MIGRATION = ROOT / 'supabase/migrations/20261002223819_post_reset_cleanup_orders_uuid_values.sql'
+POST_RESET_ATOMIC_BOARD_MIGRATION = ROOT / 'supabase/migrations/20261002231724_post_reset_cleanup_accepts_atomic_board_absence.sql'
 TERMINAL_TABLE_GUARD_MIGRATION = ROOT / 'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 _terminal_guard_source = TERMINAL_TABLE_GUARD_MIGRATION.read_text()
 TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
@@ -40,7 +41,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -383,8 +384,65 @@ $restore$;
     run('restore-post-reset-uuid-order-config',
         "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
     run('verify-restored-post-reset-uuid-order',POST_RESET_UUID_ORDER_MIGRATION.read_text())
+    run('install-post-reset-atomic-board',POST_RESET_ATOMIC_BOARD_MIGRATION.read_text())
+    run('reinstall-post-reset-atomic-board',POST_RESET_ATOMIC_BOARD_MIGRATION.read_text())
+    run('post-reset-atomic-board-catalog-contract',r"""
+SELECT md5(p.prosrc),p.prosecdef,r.rolname,p.proconfig,
+       NOT p.proleakproof,p.proparallel='u',
+       has_function_privilege('anon',p.oid,'EXECUTE'),
+       has_function_privilege('authenticated',p.oid,'EXECUTE'),
+       has_function_privilege('service_role',p.oid,'EXECUTE'),
+       EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+               WHERE a.privilege_type='EXECUTE' AND a.grantee<>p.proowner),
+       p.prosrc LIKE '%cardinality(v_board_tournaments) NOT IN(0,12)%',
+       p.prosrc LIKE '%v_expected_count IS DISTINCT FROM cardinality(v_board_tournaments)%'
+  FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+ WHERE p.oid='fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure;
+""",'d784a67061328a136e0ec6da61c1973e|t|postgres|{"search_path=public, pg_temp"}|t|t|f|f|f|f|t|t')
+    run('tamper-post-reset-atomic-board-source',r"""
+DO $tamper$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  IF strpos(v_definition,E'BEGIN\n  IF COALESCE')=0 THEN
+    RAISE EXCEPTION 'fixture source preimage missing';
+  END IF;
+  EXECUTE replace(v_definition,E'BEGIN\n  IF COALESCE',
+                  E'BEGIN\n  -- atomic board digest drift\n  IF COALESCE');
+END
+$tamper$;
+""")
+    run_refusal('refuse-tampered-post-reset-atomic-board-source',
+                POST_RESET_ATOMIC_BOARD_MIGRATION.read_text(),
+                'POST_RESET_ATOMIC_BOARD_SOURCE_DIGEST_REFUSED')
+    run('restore-post-reset-atomic-board-source',r"""
+DO $restore$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  EXECUTE replace(v_definition,E'BEGIN\n  -- atomic board digest drift\n  IF COALESCE',
+                  E'BEGIN\n  IF COALESCE');
+END
+$restore$;
+""")
+    run('verify-restored-post-reset-atomic-board',POST_RESET_ATOMIC_BOARD_MIGRATION.read_text())
+    run('tamper-post-reset-atomic-board-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public;")
+    run_refusal('refuse-tampered-post-reset-atomic-board-config',
+                POST_RESET_ATOMIC_BOARD_MIGRATION.read_text(),
+                'POST_RESET_ATOMIC_BOARD_POSTIMAGE_REFUSED')
+    run('restore-post-reset-atomic-board-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
+    run('verify-restored-post-reset-atomic-board-config',POST_RESET_ATOMIC_BOARD_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
-CREATE FUNCTION test_shape_post_reset_welcome_fixture(p_club uuid,p_owner uuid) RETURNS void
+CREATE FUNCTION test_shape_post_reset_welcome_fixture(
+  p_club uuid,p_owner uuid,p_board_count integer DEFAULT 12,
+  p_materialize_schedule boolean DEFAULT true
+) RETURNS void
 LANGUAGE plpgsql AS $fixture$
 DECLARE
   v_operation uuid:=gen_random_uuid();
@@ -397,6 +455,9 @@ DECLARE
   v_bbj uuid;
   v_spin uuid;
 BEGIN
+  IF p_board_count NOT BETWEEN 0 AND 12 THEN
+    RAISE EXCEPTION 'invalid post-reset board count';
+  END IF;
   SELECT entity_id INTO v_schedule FROM club_welcome_package_items
    WHERE club_id=p_club AND entity_kind='tournament_schedule';
   SELECT COALESCE(array_agg(entity_id ORDER BY entity_id),'{}'),
@@ -404,12 +465,14 @@ BEGIN
     INTO v_cash,v_initial_tables FROM club_welcome_package_items
    WHERE club_id=p_club AND entity_kind='cash_game';
 
-  INSERT INTO tournaments(id,club_id,schedule_id,name,game_type,variant,tournament_type,
-    buy_in_amount,buy_in_fee,max_players,min_players,table_size,starting_chips,current_players,status)
-  VALUES(gen_random_uuid(),p_club,v_schedule,'Daily 7 PM $25','NLH','freezeout','MTT',25,0,10000,2,9,20000,0,'REGISTERING')
-  RETURNING id INTO v_scheduled;
-  INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key,created_at)
-  VALUES(v_schedule,v_scheduled,'post-reset-scheduled',now()-interval '20 minutes');
+  IF p_materialize_schedule THEN
+    INSERT INTO tournaments(id,club_id,schedule_id,name,game_type,variant,tournament_type,
+      buy_in_amount,buy_in_fee,max_players,min_players,table_size,starting_chips,current_players,status)
+    VALUES(gen_random_uuid(),p_club,v_schedule,'Daily 7 PM $25','NLH','freezeout','MTT',25,0,10000,2,9,20000,0,'REGISTERING')
+    RETURNING id INTO v_scheduled;
+    INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key,created_at)
+    VALUES(v_schedule,v_scheduled,'post-reset-scheduled',now()-interval '20 minutes');
+  END IF;
 
   WITH expected(name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,seats,stack) AS (
     VALUES
@@ -430,6 +493,11 @@ BEGIN
     max_players,min_players,table_size,starting_chips,current_players,status)
   SELECT gen_random_uuid(),p_club,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
     seats,seats,seats,stack,0,'REGISTERING' FROM expected;
+  DELETE FROM tournaments
+   WHERE id IN (
+     SELECT id FROM tournaments WHERE club_id=p_club AND schedule_id IS NULL
+      ORDER BY name,id OFFSET p_board_count
+   );
 
   INSERT INTO tables(id,club_id,tournament_id,name,game_type,status,lifecycle,current_players,max_players,is_deleted)
   SELECT gen_random_uuid(),p_club,t.id,t.name,'tournament','waiting','opening',0,t.max_players,false
@@ -445,10 +513,12 @@ BEGIN
   UPDATE tournaments SET status='CANCELLED',ended_at=now(),started_at=NULL,current_players=0
    WHERE club_id=p_club;
   UPDATE tables SET status='closed',lifecycle='closed',current_players=0 WHERE club_id=p_club;
-  INSERT INTO managed_game_schedules(game_kind,game_id,status,completed_at,result)
-  VALUES('tournament',v_scheduled,'cancelled',now(),'{"reason":"welcome_package_reset"}'),
-        ('table',(SELECT id FROM tables WHERE club_id=p_club AND tournament_id=v_scheduled),
-         'cancelled',now(),'{"reason":"welcome_package_reset"}');
+  IF p_materialize_schedule THEN
+    INSERT INTO managed_game_schedules(game_kind,game_id,status,completed_at,result)
+    VALUES('tournament',v_scheduled,'cancelled',now(),'{"reason":"welcome_package_reset"}'),
+          ('table',(SELECT id FROM tables WHERE club_id=p_club AND tournament_id=v_scheduled),
+           'cancelled',now(),'{"reason":"welcome_package_reset"}');
+  END IF;
 
   UPDATE cash_games SET enabled=false,state='dormant',closed_at=now(),closed_by=p_owner
    WHERE id=ANY(v_cash);
@@ -607,21 +677,30 @@ COMMIT;
     owner16='00000000-0000-4000-8000-000000000016'; c17='00000000-0000-4000-9000-000000000017'
     owner17='00000000-0000-4000-8000-000000000017'; c18='00000000-0000-4000-9000-000000000018'
     owner18='00000000-0000-4000-8000-000000000018'; c19='00000000-0000-4000-9000-000000000019'
-    def shape_post_reset_fixture(case,owner,club):
+    owner19='00000000-0000-4000-8000-000000000019'; c20='00000000-0000-4000-9000-000000000020'
+    owner20='00000000-0000-4000-8000-000000000020'; c21='00000000-0000-4000-9000-000000000021'
+    owner21='00000000-0000-4000-8000-000000000021'; c22='00000000-0000-4000-9000-000000000022'
+    owner22='00000000-0000-4000-8000-000000000022'; c23='00000000-0000-4000-9000-000000000023'
+    owner23='00000000-0000-4000-8000-000000000023'; c24='00000000-0000-4000-9000-000000000024'
+    owner24='00000000-0000-4000-8000-000000000024'; c25='00000000-0000-4000-9000-000000000025'
+    def shape_post_reset_fixture(case,owner,club,board_count=12,materialize_schedule=True):
+        tournament_count=board_count+(1 if materialize_schedule else 0)
+        table_count=9+tournament_count
+        command_count=2 if materialize_schedule else 0
         run(case,f"""
 INSERT INTO auth.users VALUES('{owner}','ca-customization-cert-postdeploy-{club[-2:]}@example.invalid');
 INSERT INTO clubs(id,owner_id,name) VALUES('{club}','{owner}','Crest Cert Post Reset {club[-2:]}');
 INSERT INTO club_members(club_id,user_id) VALUES('{club}','{owner}');
 SET request.jwt.claim.sub='{owner}';
 INSERT INTO club_creation_requests VALUES('{owner}',gen_random_uuid(),'{club}');
-SELECT test_shape_post_reset_welcome_fixture('{club}','{owner}');
+SELECT test_shape_post_reset_welcome_fixture('{club}','{owner}',{board_count},{str(materialize_schedule).lower()});
 SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{club}'),
        (SELECT count(*) FROM tables WHERE club_id='{club}'),
        (SELECT count(*) FROM managed_game_schedules
          WHERE game_id IN (SELECT id FROM tournaments WHERE club_id='{club}')
             OR game_id IN (SELECT id FROM tables WHERE club_id='{club}'))
   FROM club_welcome_package_items WHERE club_id='{club}' AND retired_at IS NOT NULL;
-""",'\n10|13|22|2')
+""",f'\n10|{tournament_count}|{table_count}|{command_count}')
     run('prospective-first',f"SET request.jwt.claim.sub='{owner1}'; INSERT INTO clubs(id,owner_id) VALUES('{c1}','{owner1}'); INSERT INTO club_creation_requests VALUES('{owner1}',gen_random_uuid(),'{c1}'); SELECT count(*),count(*) FILTER(WHERE r.club_id IS NOT NULL),(SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c1}') FROM club_welcome_entitlements e LEFT JOIN club_welcome_package_receipts r USING(club_id) WHERE e.owner_id='{owner1}';",'1|1|10')
     run('lifetime-second-ineligible',f"SET request.jwt.claim.sub='{owner1}'; INSERT INTO clubs(id,owner_id) VALUES('{c2}','{owner1}'); INSERT INTO club_creation_requests VALUES('{owner1}',gen_random_uuid(),'{c2}'); SELECT count(*) FROM club_welcome_entitlements WHERE owner_id='{owner1}';",'1')
     run('existing-owner-ineligible',f"SET request.jwt.claim.sub='{owner2}'; INSERT INTO clubs(id,owner_id) VALUES('{c3}','{owner2}'); INSERT INTO club_creation_requests VALUES('{owner2}',gen_random_uuid(),'{c3}'); SELECT count(*) FROM club_welcome_entitlements WHERE owner_id='{owner2}';",'0')
@@ -854,6 +933,119 @@ UPDATE managed_game_schedules SET status='pending',completed_at=NULL
 SELECT fn_ca_retire_welcome_certification_club('{c19}','managed-cert');
 """,'POST_RESET_CERTIFICATION_MANAGED_COMMAND_REFUSED')
     run('post-reset-managed-command-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM managed_game_schedules WHERE game_id IN (SELECT id FROM tournaments WHERE club_id='{c19}')),(SELECT chip_treasury FROM clubs WHERE id='{c19}') FROM tables WHERE club_id='{c19}';",'22|1|100000')
+
+    shape_post_reset_fixture('post-reset-zero-board-zero-schedule-setup',owner19,c20,0,False)
+    run('post-reset-zero-board-zero-schedule-cleans',f"""
+SET request.jwt.claim.role='service_role';
+WITH retired AS (
+  SELECT fn_ca_retire_welcome_certification_club('{c20}','zero-board-cert') result
+)
+SELECT result->>'cleanup_state',result->>'chips_retired' FROM retired;
+SELECT (SELECT count(*) FROM clubs WHERE id='{c20}' AND chip_treasury=0),
+       (SELECT count(*) FROM tables WHERE club_id='{c20}'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c20}'),
+       (SELECT count(*) FROM cash_games WHERE club_id='{c20}'),
+       (SELECT count(*) FROM tournament_schedules WHERE club_id='{c20}'),
+       (SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c20}'),
+       (SELECT count(*) FROM wheel_configs WHERE host_id='{c20}'),
+       (SELECT count(*) FROM diamond_game_configs WHERE host_id='{c20}'),
+       (SELECT count(*) FROM engine_tournament_leases l JOIN tournaments t ON t.id=l.tournament_id WHERE t.club_id='{c20}'),
+       (SELECT count(*) FROM tournament_schedule_spawns s JOIN tournament_schedules ts ON ts.id=s.schedule_id WHERE ts.club_id='{c20}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits),
+       (SELECT count(*) FROM spin_reserve_ledger WHERE club_id='{c20}'),
+       (SELECT count(*) FROM chip_ledger WHERE club_id='{c20}' AND category='reversal'),
+       (SELECT count(*) FROM chip_transactions WHERE club_id='{c20}' AND transaction_type='bbj_promo_sweep'),
+       (SELECT count(*) FROM spin_bonus_pools WHERE club_id='{c20}' AND seed_returned_amount=200),
+       (SELECT count(*) FROM bbj_pools WHERE club_id='{c20}' AND status='retired');
+""",'post_reset|100000.00\n1|0|0|0|0|0|0|0|0|0|0|4|1|1|1|1')
+
+    shape_post_reset_fixture('post-reset-full-board-zero-schedule-setup',owner20,c21,12,False)
+    run('post-reset-full-board-zero-schedule-cleans',f"""
+SET request.jwt.claim.role='service_role';
+WITH retired AS (
+  SELECT fn_ca_retire_welcome_certification_club('{c21}','full-board-no-schedule-cert') result
+)
+SELECT result->>'cleanup_state',result->>'chips_retired' FROM retired;
+SELECT (SELECT count(*) FROM clubs WHERE id='{c21}' AND chip_treasury=0),
+       (SELECT count(*) FROM tables WHERE club_id='{c21}'),
+       (SELECT count(*) FROM tournaments WHERE club_id='{c21}'),
+       (SELECT count(*) FROM cash_games WHERE club_id='{c21}'),
+       (SELECT count(*) FROM tournament_schedules WHERE club_id='{c21}'),
+       (SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c21}'),
+       (SELECT count(*) FROM wheel_configs WHERE host_id='{c21}'),
+       (SELECT count(*) FROM diamond_game_configs WHERE host_id='{c21}'),
+       (SELECT count(*) FROM engine_tournament_leases l JOIN tournaments t ON t.id=l.tournament_id WHERE t.club_id='{c21}'),
+       (SELECT count(*) FROM tournament_schedule_spawns s JOIN tournament_schedules ts ON ts.id=s.schedule_id WHERE ts.club_id='{c21}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits),
+       (SELECT count(*) FROM spin_reserve_ledger WHERE club_id='{c21}'),
+       (SELECT count(*) FROM chip_ledger WHERE club_id='{c21}' AND category='reversal'),
+       (SELECT count(*) FROM chip_transactions WHERE club_id='{c21}' AND transaction_type='bbj_promo_sweep'),
+       (SELECT count(*) FROM spin_bonus_pools WHERE club_id='{c21}' AND seed_returned_amount=200),
+       (SELECT count(*) FROM bbj_pools WHERE club_id='{c21}' AND status='retired');
+""",'post_reset|100000.00\n1|0|0|0|0|0|0|0|0|0|0|4|1|1|1|1')
+
+    shape_post_reset_fixture('post-reset-partial-board-refusal-setup',owner21,c22,5,False)
+    run_refusal('post-reset-refuses-partial-board-atomically',f"""
+SET request.jwt.claim.role='service_role';
+SELECT fn_ca_retire_welcome_certification_club('{c22}','partial-board-cert');
+""",'POST_RESET_CERTIFICATION_TOURNAMENT_GRAPH_REFUSED')
+    run('post-reset-partial-board-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c22}'),(SELECT chip_treasury FROM clubs WHERE id='{c22}') FROM tournaments WHERE club_id='{c22}';",'5|14|100000')
+
+    shape_post_reset_fixture('post-reset-duplicate-board-refusal-setup',owner22,c23,12,False)
+    run_refusal('post-reset-refuses-duplicate-board-slot-atomically',f"""
+SET request.jwt.claim.role='service_role';
+WITH source AS (
+  SELECT * FROM tournaments WHERE club_id='{c23}' ORDER BY name,id LIMIT 1
+), target AS (
+  SELECT id FROM tournaments WHERE club_id='{c23}' ORDER BY name,id OFFSET 1 LIMIT 1
+)
+UPDATE tournaments t SET name=s.name,game_type=s.game_type,variant=s.variant,
+  tournament_type=s.tournament_type,buy_in_amount=s.buy_in_amount,buy_in_fee=s.buy_in_fee,
+  max_players=s.max_players,min_players=s.min_players,table_size=s.table_size,
+  starting_chips=s.starting_chips
+ FROM source s,target x WHERE t.id=x.id;
+SELECT fn_ca_retire_welcome_certification_club('{c23}','duplicate-board-cert');
+""",'POST_RESET_CERTIFICATION_TOURNAMENT_GRAPH_REFUSED')
+    run('post-reset-duplicate-board-refusal-preserves-fixture',f"""
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c23}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c23}'),
+       (SELECT chip_treasury FROM clubs WHERE id='{c23}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM club_welcome_package_items WHERE club_id='{c23}';
+""",'10|12|21|100000|0')
+
+    shape_post_reset_fixture('post-reset-extra-tournament-refusal-setup',owner23,c24,12,False)
+    run_refusal('post-reset-refuses-extra-tournament-atomically',f"""
+SET request.jwt.claim.role='service_role';
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+  max_players,min_players,table_size,starting_chips,current_players,status,ended_at)
+VALUES(gen_random_uuid(),'{c24}','Unrelated Tournament','NLH','freezeout','MTT',25,0,
+  10000,2,9,20000,0,'CANCELLED',now());
+SELECT fn_ca_retire_welcome_certification_club('{c24}','extra-tournament-cert');
+""",'POST_RESET_CERTIFICATION_TOURNAMENT_GRAPH_REFUSED')
+    run('post-reset-extra-tournament-refusal-preserves-fixture',f"""
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c24}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c24}'),
+       (SELECT chip_treasury FROM clubs WHERE id='{c24}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM club_welcome_package_items WHERE club_id='{c24}';
+""",'10|13|21|100000|0')
+
+    shape_post_reset_fixture('post-reset-receipt-mismatch-refusal-setup',owner24,c25,12,False)
+    run_refusal('post-reset-refuses-tournament-receipt-mismatch-atomically',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE club_welcome_reset_receipts
+ SET result=jsonb_set(result,'{{removed,tournament_ids}}','[]'::jsonb)
+ WHERE club_id='{c25}';
+SELECT fn_ca_retire_welcome_certification_club('{c25}','receipt-mismatch-cert');
+""",'POST_RESET_CERTIFICATION_TOURNAMENT_GRAPH_REFUSED')
+    run('post-reset-receipt-mismatch-refusal-preserves-fixture',f"""
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c25}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c25}'),
+       (SELECT chip_treasury FROM clubs WHERE id='{c25}'),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits)
+  FROM club_welcome_package_items WHERE club_id='{c25}';
+""",'10|12|21|100000|0')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')
     results['passed']=all(c['passed'] for c in results['cases'])
 finally:

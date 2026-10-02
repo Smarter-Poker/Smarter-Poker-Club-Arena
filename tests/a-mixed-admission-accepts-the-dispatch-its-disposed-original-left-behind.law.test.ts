@@ -95,7 +95,10 @@ describe('a mixed admission accepts the dispatch its disposed original left behi
       'utf8'
     );
     expect(lane).toContain(FILE);
-    expect(lane).toContain(`${SIG} ${POST_MD5} ${POST_DEF_MD5}`);
+    // regprocedure::text omits the public schema on the lane's search_path.
+    expect(lane).toContain(
+      `'fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb) ${POST_MD5} ${POST_DEF_MD5}'`
+    );
   });
 
   it('is one transaction with explicit grants, and is the newest definition', () => {

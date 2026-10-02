@@ -37,6 +37,13 @@ const derivedTableCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const authoritativeLeaseRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -261,8 +268,13 @@ describe('prospective lifetime-first club welcome package database contract', ()
       "t.lifecycle NOT IN('opening','live','breaking','closed')"
     );
     expect(derivedTableCleanupSql).toContain('t.created_by IS NOT NULL');
-    expect(derivedTableCleanupSql).toContain('t.engine_lease_owner IS NOT NULL');
+    expect(derivedTableCleanupSql).not.toContain('t.engine_lease_owner IS NOT NULL');
+    expect(derivedTableCleanupSql).not.toContain('t.engine_lease_expires_at IS NOT NULL');
     expect(derivedTableCleanupSql).toContain('public.engine_table_leases');
+    expect(authoritativeLeaseRepairSql).toContain('FROM public.engine_table_leases l');
+    expect(authoritativeLeaseRepairSql).toContain(
+      'WELCOME_CERTIFICATION_AUTHORITATIVE_LEASE_GUARD_NOT_INSTALLED'
+    );
     expect(derivedTableCleanupSql).toContain('public.cash_game_roster');
     expect(derivedTableCleanupSql).toContain('public.table_pending_addons');
     expect(derivedTableCleanupSql).toContain('DELETE FROM public.cash_cluster_events');

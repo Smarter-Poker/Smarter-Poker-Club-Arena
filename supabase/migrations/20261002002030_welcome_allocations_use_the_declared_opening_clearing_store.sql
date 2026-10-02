@@ -7,6 +7,7 @@
 --
 -- opening_setup nets to zero in the same transaction. This migration changes
 -- no balance, club, player, game, tournament, history, or ledger row.
+-- @live-proof: (SELECT p.prosrc LIKE '%set_config(''app.ledger_counterparty'',''opening_setup'',true)%' AND p.prosrc NOT LIKE '%welcome_package%' FROM pg_proc p WHERE p.oid = 'public.fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure)
 BEGIN;
 SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';

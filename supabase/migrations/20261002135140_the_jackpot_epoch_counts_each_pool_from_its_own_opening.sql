@@ -2,6 +2,8 @@
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-02 13:51:40 UTC.
 --
+-- @live-proof: (SELECT position('''absorbed_by_later_openings''' IN pg_get_functiondef('public.fn_bbj_conservation_check()'::regprocedure)) > 0 AND position('''journalled_burns_after_epoch''' IN pg_get_functiondef('public.fn_bbj_conservation_check()'::regprocedure)) > 0)
+--
 -- WHAT WAS WRONG. Incident f3e82f59 (fn_ca_conservation_sweep:
 -- fn_bbj_conservation_check, 11 occurrences from 02:52 UTC) said the BBJ epoch
 -- was short: moved_since_recorded -4,400.00 at 12:52, -4,600.00 at 13:42.

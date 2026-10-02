@@ -1,0 +1,3 @@
+# server/src/engine/aShortTableIsMergedNotPaired.law.test.ts
+
+When a tournament breaks a table of three or fewer players, `TableBalancer.breakTable` sends them to the fullest table that still has a free chair, not the least full. Least-full spreading paired every lone player with another lone player whenever a field was spread one per table, so checkTableBalance planned 23 lone tables into a dozen heads-up pairs and the field never formed a full table (Midday Free Buy, 23 players on 23 tables, 2026-10-02). The law plans that board and pins the result at 9, 9 and 5, pins the fullest-with-a-chair choice and its table-id tie break, and pins that a bigger break still spreads to the least-full tables.

@@ -159,3 +159,42 @@ not a retry hiding a path that should have worked (10.12): the live path is righ
 to refuse, and what was corrected is this check's reading of it.
 
 Pinned by `tests/unit/clubCreateCertificationWaitsOutTheFreeze.test.ts`.
+
+## Correction, 23:30Z: two of the three fixes were already landed by other agents
+
+Three pull requests merged inside the same half hour, each from a different
+agent, and two of them cover sections 1 and 2 above:
+
+- **#5875** `fix(certification): order reset UUIDs without min`, migration
+  `20261002223819_post_reset_cleanup_orders_uuid_values`, applied. It takes the
+  same single operation id as `(array_agg(reset_operation_id ORDER BY
+reset_operation_id))[1]`, which is equivalent to the cast here and already
+  live: `fn_ca_prepare_post_reset_welcome_certification_fixture` no longer
+  contains `min(reset_operation_id)`.
+- **#5876** `fix(security): a counter is not a public write`, migrations
+  `20261002231610` and `20261002232315`, applied. It is a stronger fix than
+  section 1's: a browser calling `increment_reel_count` is now routed into
+  `fn_count_content_engagement(uuid,text,text)`, which records one view or one
+  share for `auth.uid()` at most once a day per piece of content, and any other
+  field raises 42501. `fn_ca_browser_reachable_telemetry()` returns zero rows.
+
+`20261002225231` and `20261002225448` were therefore merged in #5878 as duplicate
+work and were **never applied**. They are deleted, with their two
+migration-text tests, in the follow-up to #5878.
+
+They were not merely redundant, they were a hazard. Both carry a _later_ version
+than the migrations that are live, and both are `CREATE OR REPLACE FUNCTION` over
+the whole body. Applying `20261002225448` would have replaced #5876's
+engagement-receipt routing with this file's field check, silently dropping the
+daily cap and the `content_engagement_receipts` writer, and applying
+`20261002225231` would have made #5875's `@live-proof` false. Preserving another
+agent's work means deleting mine, not shipping the later SHA over it.
+
+What survives from this task is the one thing nobody else had: section 3, the
+freeze-aware fixture create in `scripts/ci/certify-club-create.mjs`, with
+`tests/unit/clubCreateCertificationWaitsOutTheFreeze.test.ts`.
+
+The lesson for the next agent is narrow and worth the sentence: on this repo a
+red workflow is a shared symptom, and between rebasing and merging, three other
+agents merged. **Re-read `origin/main` for the defect you are fixing immediately
+before you merge, not only before you branch.**

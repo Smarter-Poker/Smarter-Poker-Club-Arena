@@ -112,7 +112,11 @@
 --
 -- Nothing is backfilled and nothing is repaired (CLAUDE.md 10.12).
 --
--- @live-proof: (SELECT NOT has_function_privilege('authenticated', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND has_function_privilege('authenticated', 'public.fn_count_content_engagement(uuid,text,text)', 'EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND roles && ARRAY['public', 'anon', 'authenticated']::name[] AND ((tablename IN ('venue_game_schedules', 'poker_tables') AND cmd <> 'SELECT') OR tablename = 'venue_claims')) AND has_function_privilege('authenticated', 'public.fn_ca_house_board_allows_automation(uuid)', 'EXECUTE'))
+-- The proof does not ask about increment_reel_count's grant: the follow-up
+-- 20261002232011_a_stale_tab_counts_through_the_same_door hands the four old
+-- counter names back to the browser, routed through fn_count_content_engagement.
+--
+-- @live-proof: (SELECT NOT has_function_privilege('authenticated', 'public.fn_guard_profile_trust_columns()', 'EXECUTE') AND has_function_privilege('authenticated', 'public.fn_count_content_engagement(uuid,text,text)', 'EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND roles && ARRAY['public', 'anon', 'authenticated']::name[] AND ((tablename IN ('venue_game_schedules', 'poker_tables') AND cmd <> 'SELECT') OR tablename = 'venue_claims')) AND has_function_privilege('authenticated', 'public.fn_ca_house_board_allows_automation(uuid)', 'EXECUTE'))
 
 BEGIN;
 SET LOCAL lock_timeout = '2s';

@@ -31,3 +31,13 @@ regressions refused by name, eleven live shapes committed, and an observed
 promo drift beside a felt drift in one transaction, where the felt still
 refuses. No later migration may move a store back to observe, or drop or
 disable the store triggers or their functions.
+
+Staged, and now refusing: 20261002030942 installed the nine new stores in
+`observe` at 04:14:45 UTC on 2026-10-02; 20261002042417 moved them to `refuse`
+after zero findings under full traffic and rolled-back probes of the doors that
+had no traffic. The same migration retired fn_clawback_chips_atomic, which
+credited an agent wallet through the agents.business_balance mirror (the
+journal trigger never fires for it) out of a column holding no chips. The law
+requires the flip to be the last write to ca_ledger_invariant_store_mode.
+
+installed mode: refuse

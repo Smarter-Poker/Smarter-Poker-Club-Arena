@@ -47,8 +47,12 @@ describe('fn_f06_withdraw_unplaceable_park', () => {
     expect(flat).toContain('PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation');
     expect(flat).toContain("'park_requested'::text,p_park_custody_id,p_park_revision");
     expect(flat).toContain('o.manifest IS NOT NULL OR o.close_receipt IS NOT NULL');
+    expect(flat).toContain('OR o.custody_generation IS DISTINCT FROM p_lease_generation');
     expect(flat).toContain(
-      "(p_tournament_id,p_lifecycle,o.origin_generation,'never_started'::text,o.custody_id)"
+      "(p_tournament_id,p_lifecycle,'never_started'::text) OR h.evidence_id IS NULL"
+    );
+    expect(flat).toContain(
+      '(h.generation IS DISTINCT FROM o.origin_generation AND h.generation IS DISTINCT FROM o.custody_generation)'
     );
     expect(flat).toContain("WHERE table_id=p_table_id AND state='reserved'");
     expect(flat).toContain('smarter_private.f06_hand_dispatch WHERE permit_id=h.permit_id');

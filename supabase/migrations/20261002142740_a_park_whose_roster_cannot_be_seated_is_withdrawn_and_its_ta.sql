@@ -39,11 +39,14 @@
 --     the last-table continuation; a replay must name the same withdrawal;
 --   * the park is exactly the one named, park_requested, never manifested,
 --     closed, cleaned or aborted, with no member and no attempt, and its
---     custody is its origin generation's own;
---   * the table's latest hand permit is never_started by that generation with
---     the park's custody as evidence, no permit of the table is reserved, and
---     no hand at or after it has any commit, history, private state, hole
---     cards, dispatch or open snapshot;
+--     custody is held by the caller, the live lease holder;
+--   * the table's latest hand permit is never_started (terminal) by the
+--     generation that parked it or the one holding its custody, no permit of
+--     the table is reserved, and no hand at or after it has any commit,
+--     history, private state, hole cards, dispatch or open snapshot. After an
+--     engine restart the successor re-claims the park under a new custody id
+--     (4d2afa41 at 14:34Z: d8185c67 and 157ca851 now name 787428f3), so the
+--     permit's evidence need not equal the park's current custody;
 --   * the event is RUNNING, the table is open in this lifecycle and is NOT the
 --     last open table (that one takes the continuation);
 --   * every seated chair is a playing registration with the same chips, and
@@ -140,18 +143,24 @@ BEGIN
  SELECT * INTO o FROM smarter_private.f06_operations WHERE break_id=p_break_id FOR UPDATE;
  IF NOT FOUND OR (o.tournament_id,o.source_table_id,o.lifecycle,o.state,o.custody_id,o.revision)
  IS DISTINCT FROM (p_tournament_id,p_table_id,p_lifecycle,'park_requested'::text,p_park_custody_id,p_park_revision)
- OR o.custody_generation IS NULL OR o.origin_generation IS DISTINCT FROM o.custody_generation
+ -- Only the park's current custodian, which f06_prefix proved is the live
+ -- lease holder, withdraws it.
+ OR o.custody_generation IS DISTINCT FROM p_lease_generation
  OR o.manifest IS NOT NULL OR o.close_receipt IS NOT NULL OR o.cleanup_kind IS NOT NULL
  OR o.abort_receipt_id IS NOT NULL
  OR EXISTS(SELECT 1 FROM smarter_private.f06_members WHERE break_id=o.break_id)
  OR EXISTS(SELECT 1 FROM smarter_private.f06_attempts WHERE break_id=o.break_id) THEN
  RAISE EXCEPTION 'F06_WITHDRAWAL_EXACT_PREMANIFEST_PARK' USING ERRCODE='55000'; END IF;
- -- The park's own cancellation of the next hand is the positive witness that
- -- nothing is in flight on this table.
+ -- The table's latest hand permit, decided never_started (a terminal,
+ -- immutable outcome) by the generation that parked it or the one that holds
+ -- its custody now, is the positive witness that nothing is in flight. A
+ -- successor that re-claimed the park after an engine restart holds a new
+ -- custody id, so the witness's evidence is not required to equal it.
  SELECT * INTO h FROM smarter_private.f06_hand_permits WHERE table_id=p_table_id
  ORDER BY hand_number DESC LIMIT 1 FOR UPDATE;
- IF NOT FOUND OR (h.tournament_id,h.lifecycle,h.generation,h.state,h.evidence_id) IS DISTINCT FROM
- (p_tournament_id,p_lifecycle,o.origin_generation,'never_started'::text,o.custody_id)
+ IF NOT FOUND OR (h.tournament_id,h.lifecycle,h.state) IS DISTINCT FROM
+ (p_tournament_id,p_lifecycle,'never_started'::text) OR h.evidence_id IS NULL
+ OR (h.generation IS DISTINCT FROM o.origin_generation AND h.generation IS DISTINCT FROM o.custody_generation)
  OR EXISTS(SELECT 1 FROM smarter_private.f06_hand_permits WHERE table_id=p_table_id AND state='reserved') THEN
  RAISE EXCEPTION 'F06_WITHDRAWAL_POSITIVE_ORIGINAL_REQUIRED' USING ERRCODE='55000'; END IF;
  IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:hand:'||h.permit_id::text,0)) THEN
@@ -209,7 +218,7 @@ BEGIN
  movement:=smarter_private.f06_movement_prior(p_tournament_id,p_table_id);
  INSERT INTO smarter_private.f06_no_start_continuations
  (break_id,permit_id,tournament_id,table_id,lifecycle,hand_number,original_generation,current_generation,park,permit,roster,prior_committed)
- VALUES(o.break_id,h.permit_id,p_tournament_id,p_table_id,p_lifecycle,h.hand_number,h.generation,p_lease_generation,to_jsonb(o),to_jsonb(h),roster,
+ VALUES(o.break_id,h.permit_id,p_tournament_id,p_table_id,p_lifecycle,h.hand_number,o.origin_generation,p_lease_generation,to_jsonb(o),to_jsonb(h),roster,
  jsonb_build_object('kind','unplaceable_park_withdrawal','roster_size',jsonb_array_length(roster),
  'free_seats',free_seats,'destination_tables',destinations,'movement_prior',movement))
  RETURNING * INTO receipt;
@@ -236,7 +245,7 @@ BEGIN
   SELECT * INTO p FROM pg_proc
    WHERE oid = to_regprocedure('public.fn_f06_withdraw_unplaceable_park(uuid,uuid,uuid,bigint,uuid,uuid,bigint)');
   IF NOT FOUND
-     OR md5(p.prosrc) IS DISTINCT FROM '5bbaa9b2feb01e8ecdf8efaabd30f244'
+     OR md5(p.prosrc) IS DISTINCT FROM 'bda3af4b7eb6977b9375fce72d731b9f'
      OR pg_get_userbyid(p.proowner) IS DISTINCT FROM 'postgres'
      OR NOT p.prosecdef OR p.provolatile IS DISTINCT FROM 'v'
      OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog, public, smarter_private']

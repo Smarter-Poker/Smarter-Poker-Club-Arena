@@ -438,11 +438,14 @@ export class TournamentTableBreakRpc {
       uuid(row.break_id) !== state.break_id ||
       uuid(row.park_custody_id) !== state.custody_id ||
       decimal(row.park_revision) !== state.revision ||
-      uuid(row.original_generation) !== state.custody_generation
+      // The custodian withdraws; the park may have been made by an earlier
+      // generation (re-claimed after an engine restart).
+      uuid(row.lease_generation) !== state.custody_generation
     )
       throw new Error('F06 unplaceable park withdrawal identity mismatch');
     uuid(row.receipt_id);
     uuid(row.permit_id);
+    uuid(row.original_generation);
     if (BigInt(decimal(row.hand_number)) < 1n) throw new Error('F06 withdrawal hand missing');
     return true;
   }

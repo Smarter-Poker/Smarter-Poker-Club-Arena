@@ -200,8 +200,7 @@ BEGIN
    FOR UPDATE;
 
   IF EXISTS(SELECT 1 FROM public.tables t WHERE t.id=ANY(v_tables)
-            AND (COALESCE(t.current_players,0)<>0 OR t.engine_lease_owner IS NOT NULL
-              OR t.engine_lease_expires_at IS NOT NULL))
+            AND COALESCE(t.current_players,0)<>0)
      OR EXISTS(SELECT 1 FROM public.table_seats s WHERE s.table_id=ANY(v_tables))
      OR EXISTS(SELECT 1 FROM public.table_sessions s WHERE s.table_id=ANY(v_tables))
      OR EXISTS(SELECT 1 FROM public.engine_table_leases l WHERE l.table_id=ANY(v_tables))

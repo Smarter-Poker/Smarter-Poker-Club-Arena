@@ -1,8 +1,22 @@
--- SUPERSEDED BY 20261002153151: never installed; its install attempt timed out on a chip_ledger scan and rolled back.
--- 20261002145829_a_standalone_club_banks_its_retired_rake_at_the_weekly_close.sql
+-- 20261002153151_a_standalone_club_banks_its_retired_rake_from_its_dispositio.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- SUPERSEDES 20261002145829 (merged, never installed). Its first install
+-- attempt at 15:26 UTC summed the retired legs from chip_ledger, a cold-cache
+-- scan of millions of rows that ran past the 120 s apply budget while the first
+-- week's treasury credit already held Deep Stack Society's clubs row, and about
+-- 330 engine statements timed out before it rolled back. Nothing committed.
+-- This version reads the same amounts from the two immutable DISPOSITION
+-- RECEIPTS the hand paths write with each retirement leg, which are indexed by
+-- week (0.6 s for a full week, measured), and takes lock_timeout 15 s:
+--   cash: accounting_cash_bank_receipts (union_id IS NULL, club, banked_at);
+--         the receipt's amount equals its retirement leg by construction.
+--   fees: tournament_rake_settlements (destination chip_retirement:<club>,
+--         settled_at); one row per tournament, written with its fee legs.
+-- Both equal the chip_ledger retirement legs to the cent for every closed week
+-- (09-14: 185,562.68 / 52,545.90; 09-21: 279,799.97 / 89,356.54).
 --
 -- WHAT THIS CHANGES, AND WHY:
 --
@@ -24,9 +38,9 @@
 -- after measured HandProjection timeouts, so the rake is banked ONCE A WEEK
 -- instead, the way a union club's share arrives in the union close:
 --
---   fn_bank_standalone_week_rake(club, week) sums exactly the legs the hand
---   paths retired for that club in that week (cash legs that carry their
---   standalone bank receipt, plus standalone tournament fee legs) and credits
+--   fn_bank_standalone_week_rake(club, week) sums the disposition receipts of
+--   the rake the hand paths retired for that club in that week (cash bank
+--   receipts, standalone tournament fee settlements) and credits
 --   that sum to the club treasury through the sanctioned issuance door
 --   fn_ca_fund_club (system_mint -> club_treasury leg, ca_mint_ledger register
 --   row with the reason, idempotency key standalone-rake-bank:<club>:<week>).
@@ -54,6 +68,8 @@
 --   as they are.
 
 BEGIN;
+
+SET LOCAL lock_timeout = '15s';
 
 CREATE FUNCTION public.fn_bank_standalone_week_rake(
   p_club_id uuid, p_period_start timestamptz, p_period_end timestamptz)
@@ -89,24 +105,17 @@ BEGIN
     RAISE EXCEPTION 'standalone_rake_bank_unknown_club' USING ERRCODE = '22023';
   END IF;
 
-  -- Cash: the hand's retirement leg, proved by its standalone bank receipt.
-  SELECT COALESCE(sum(l.amount), 0) INTO v_cash
-    FROM public.chip_ledger l
-   WHERE l.club_id = p_club_id AND l.category = 'burn'
-     AND l.from_type = 'table_stack' AND l.to_type = 'chip_retirement'
-     AND l.status = 'posted'
-     AND l.created_at >= p_period_start AND l.created_at < p_period_end
-     AND EXISTS (SELECT 1 FROM public.accounting_cash_bank_receipts b
-                  WHERE b.club_ledger_id = l.id AND b.union_id IS NULL
-                    AND b.club_id = p_club_id);
-  -- Tournament fees: the standalone fee retirement fn_settle_tournament_rake writes.
-  SELECT COALESCE(sum(l.amount), 0) INTO v_fees
-    FROM public.chip_ledger l
-   WHERE l.club_id = p_club_id AND l.category = 'burn'
-     AND l.from_type = 'prize_liability' AND l.to_type = 'chip_retirement'
-     AND l.status = 'posted' AND l.tournament_id IS NOT NULL
-     AND l.description LIKE 'Standalone tournament fee retired%'
-     AND l.created_at >= p_period_start AND l.created_at < p_period_end;
+  -- Cash: the standalone bank receipt every retired cash rake leg carries.
+  SELECT COALESCE(sum(b.amount), 0) INTO v_cash
+    FROM public.accounting_cash_bank_receipts b
+   WHERE b.union_id IS NULL AND b.club_id = p_club_id
+     AND b.club_ledger_id IS NOT NULL
+     AND b.banked_at >= p_period_start AND b.banked_at < p_period_end;
+  -- Tournament fees: the settlement row of every standalone fee retirement.
+  SELECT COALESCE(sum(s.amount), 0) INTO v_fees
+    FROM public.tournament_rake_settlements s
+   WHERE s.destination = 'chip_retirement:' || p_club_id::text
+     AND s.settled_at >= p_period_start AND s.settled_at < p_period_end;
   v_total := v_cash + v_fees;
   IF v_total <= 0 THEN
     RETURN jsonb_build_object('ok', true, 'amount', 0, 'club_id', p_club_id,

@@ -1,7 +1,7 @@
 # A Standalone Club Banks Its Retired Rake At The Weekly Close
 
 **Date:** 2026-10-02
-**Migration:** `20261002145829_a_standalone_club_banks_its_retired_rake_at_the_weekly_close.sql`
+**Migration:** `20261002153151_a_standalone_club_banks_its_retired_rake_from_its_dispositio.sql` (supersedes `20261002145829`, which never installed)
 **Follows:** `2026-10-02-a-horse-rebuys-from-its-own-wallet-before-the-club-treasury.md`
 
 ## The Bug
@@ -14,9 +14,10 @@ treasury that had no inflow. It is the only club with retired standalone rake.
 
 ## The Fix
 
-- `fn_bank_standalone_week_rake(club, week)`: sums the week's retired standalone legs
-  for the club (cash legs with their standalone bank receipt, standalone tournament fee
-  legs) and credits the sum to the treasury through `fn_ca_fund_club`, key
+- `fn_bank_standalone_week_rake(club, week)`: sums the disposition receipts of the
+  week's retired standalone rake for the club (`accounting_cash_bank_receipts` with no
+  union, `tournament_rake_settlements` to `chip_retirement:<club>`; both equal the
+  ledger legs to the cent) and credits the sum to the treasury through `fn_ca_fund_club`, key
   `standalone-rake-bank:<club>:<week>`. Closed weeks only; a replay is a no-op.
 - `fn_process_weekly_accounting_scope`: one statement added in the standalone branch,
   inside the money block, before round 2. Preimage md5 pinned, anchor counted, postimage
@@ -53,3 +54,12 @@ Production probe in one self-aborting DO block: week 09-14 banked 238,108.58, we
 369,156.51, treasury +607,265.09, register +607,265.09, replay no-op, the open week
 refused; `fn_ca_fund_club` passed every deferred constraint under
 `SET CONSTRAINTS ALL IMMEDIATE`.
+
+## First Install Attempt
+
+`20261002145829` summed the legs from `chip_ledger` directly. Its install at 15:26 UTC
+hit a cold-cache scan that ran past the 120 s apply budget after the first week's credit
+had taken Deep Stack Society's `clubs` row; about 330 engine statements timed out in the
+two minutes before it rolled back, and nothing committed. It is marked superseded. The
+replacement reads the indexed disposition receipts (under 1 s for both weeks, measured)
+and takes `lock_timeout = 15s`.

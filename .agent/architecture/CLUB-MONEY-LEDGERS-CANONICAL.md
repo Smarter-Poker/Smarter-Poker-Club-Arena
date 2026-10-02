@@ -76,7 +76,8 @@ Since `20260917181100` a standalone or private game's rake is retired at the han
 `20260929040413` removed after measured HandProjection timeouts.
 
 The treasury still owns that rake. `fn_bank_standalone_week_rake(club, week)` sums
-exactly the legs the hands retired for that club in that week and credits that sum to
+the disposition receipts of the rake the hands retired for that club in that week
+(cash bank receipts, standalone tournament fee settlements) and credits that sum to
 `chip_treasury` through `fn_ca_fund_club` (key `standalone-rake-bank:<club>:<week>`,
 register row with the reason). The standalone branch of
 `fn_process_weekly_accounting_scope` calls it inside the money block, before round 2

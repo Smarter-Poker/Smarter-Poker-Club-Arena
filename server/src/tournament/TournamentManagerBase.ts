@@ -9074,6 +9074,8 @@ export abstract class TournamentManagerBase {
   } | null = null;
   private blindTransitionInFlight = false;
   private blindClockNeedsThawResync = false;
+  /** The structure the armed level wake will hand to advanceBlindLevel. */
+  private blindWakeStructure: any[] | null = null;
   private blindClockTerminalCommitted = false;
 
   /** Stop level work once a verified terminal receipt exists, even while
@@ -9090,6 +9092,7 @@ export abstract class TournamentManagerBase {
   private scheduleBlindLevelWake(blindStructure: any[], delayMs: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindWakeStructure = blindStructure;
     this.blindTimer = this.setLifecycleTimeout(() => {
       this.blindTimer = null;
       return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
@@ -10710,13 +10713,22 @@ export abstract class TournamentManagerBase {
       !Number.isFinite(anchor)
     )
       return;
-    this.blindClockNeedsThawResync = false;
-    this.blindTimerStartedAt = anchor;
-    if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
-    const blindStructure = this.tournamentCache?.blind_structure || [];
+    // Re-arm with the structure the armed wake would have used, never one
+    // read from elsewhere. Without it, without the row this manager runs on
+    // (levelDurationMs reads its acceleration), or without a real duration,
+    // nothing here is changed: the flag stays set and the armed wake rereads
+    // the anchor itself. setTimeout(NaN) would fire at once.
+    const blindStructure = this.blindWakeStructure;
+    if (!this.tournamentCache || !Array.isArray(blindStructure) || blindStructure.length === 0)
+      return;
     const current = this.resolveBlindLevel(blindStructure, level) || blindStructure[0];
     const duration = this.levelDurationMs(current);
+    if (!Number.isFinite(duration) || duration <= 0) return;
     const remaining = Math.min(duration, duration - (Date.now() - anchor));
+    if (!Number.isFinite(remaining)) return;
+    this.blindClockNeedsThawResync = false;
+    this.blindTimerStartedAt = anchor;
+    this.tournamentCache.level_started_at = clock.level_started_at;
     this.scheduleBlindLevelWake(blindStructure, Math.max(1000, remaining));
   }
 

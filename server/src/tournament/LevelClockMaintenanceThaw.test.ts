@@ -232,6 +232,47 @@ describe('a level clock that runs through the maintenance freeze', () => {
     expect(rpc).toHaveBeenCalledOnce();
   });
 
+  it.each(['an empty armed structure', 'no tournament row', 'a non-finite level duration'])(
+    'changes nothing and leaves the armed wake to reread the anchor given %s',
+    async (fault) => {
+      const { row, state, read, rpc } = fixture();
+      if (fault === 'an empty armed structure') state.scheduleBlindLevelWake([], 9 * 60_000);
+      await freezeAndThaw(row);
+      if (fault === 'no tournament row') state.tournamentCache = null;
+      if (fault === 'a non-finite level duration') state.levelDurationMs = () => NaN;
+      const armed = state.blindTimer;
+      const cachedAnchor = state.tournamentCache?.level_started_at;
+      await state.resyncLevelClockAfterMaintenanceThaw();
+      setMaintenanceFrozen(false);
+      expect(read).toHaveBeenCalledOnce();
+      // No re-arm: the original wake, its pre-freeze anchor and the cache stand.
+      expect(state.blindTimer).toBe(armed);
+      expect(state.blindClockNeedsThawResync).toBe(true);
+      expect(state.blindTimerStartedAt).toBe(Date.parse('2026-09-10T12:00:00.000Z'));
+      expect(state.tournamentCache?.level_started_at).toBe(cachedAnchor);
+      // Not even a deferred NaN wake: nothing fires before the original deadline.
+      await vi.advanceTimersByTimeAsync(60_000 - 1);
+      expect(state.blindTimer).toBe(armed);
+      expect(read).toHaveBeenCalledOnce();
+      expect(rpc).not.toHaveBeenCalled();
+    }
+  );
+
+  it('re-arms with the structure the armed wake would have used', async () => {
+    const { row, state, rpc } = fixture();
+    await freezeAndThaw(row);
+    // The cached row's structure is not what the wake was armed with.
+    state.tournamentCache.blind_structure = [];
+    await state.resyncLevelClockAfterMaintenanceThaw();
+    setMaintenanceFrozen(false);
+    handLandsAfterThaw(state);
+    expect(state.blindClockNeedsThawResync).toBe(false);
+    expect(state.blindWakeStructure).toBe(structure);
+    await vi.advanceTimersByTimeAsync(8 * 60_000);
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc.mock.calls[0]?.[1]).toMatchObject({ p_next_level: 1, p_big_blind: 100 });
+  });
+
   it('adopts the anchor of a level that came due inside the freeze', async () => {
     const { row, state, read, rpc } = fixture();
     await vi.advanceTimersByTimeAsync(60_000);

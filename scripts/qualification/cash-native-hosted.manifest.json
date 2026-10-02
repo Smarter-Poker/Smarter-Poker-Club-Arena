@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 184660,
-      "sha256": "2daf8050fe978108d0fe65b916c622a9b86264c25a0a9f4ccb9400cb75c6a4d1"
+      "bytes": 184718,
+      "sha256": "f91641fa8094425d7dcad88f625e9222ebefa84b41835c797e7b3ad10fb1282c"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1398,6 +1398,23 @@
         "current": {
           "bytes": 184660,
           "sha256": "2daf8050fe978108d0fe65b916c622a9b86264c25a0a9f4ccb9400cb75c6a4d1"
+        }
+      }
+    ]
+  },
+  "addedClubFkIndexGuard20261002": {
+    "reason": "Append node scripts/ci/check-added-club-fk-indexes.mjs to the pull-request Invariant guards (parallel) list in typecheck_compile: a static read of the migration files a branch adds, failing when a foreign key into public.clubs has no full index leading on its column. One line; no accounting runner, fixture, cash input or assertion changes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 184660,
+          "sha256": "2daf8050fe978108d0fe65b916c622a9b86264c25a0a9f4ccb9400cb75c6a4d1"
+        },
+        "current": {
+          "bytes": 184718,
+          "sha256": "f91641fa8094425d7dcad88f625e9222ebefa84b41835c797e7b3ad10fb1282c"
         }
       }
     ]

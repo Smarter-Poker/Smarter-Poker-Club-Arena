@@ -2632,6 +2632,32 @@ export class MaintenanceBreak {
     return this.phase !== 'idle';
   }
 
+  /**
+   * Is this break still the authority holding `tableId`? (2026-10-02)
+   *
+   * True for the whole break - last hand, countdown, and the certified-release
+   * wait after the thaw - and then, per table, until that table's resume wave
+   * has fired. A table in wave 7 is still being held ON PURPOSE for the ten
+   * seconds the waves take to reach it.
+   *
+   * GameServer's zombie sweep asks this before it applies its "paused for
+   * longer than any legitimate pause" bound. That bound is measured from the
+   * :53 announcement, and the break legitimately holds a table well past it:
+   * on 2026-10-02 the database certified the 16:00 release for 16:02:59, the
+   * waves reached the last tables at 16:03:10, and every table still waiting
+   * for its wave crossed ten minutes paused at 16:03:00. The sweep at 16:03:04
+   * found 198 of them (the fleet-wide guard stood down), the pass at 16:03:09
+   * rebuilt the 80 still left - tables the break was about to resume itself.
+   *
+   * Bounded: once the last wave has fired nothing is pending by design, so a
+   * table whose resume threw is judged on the ordinary clock again.
+   */
+  isHoldingTable(tableId: string): boolean {
+    if (this.isActive()) return true;
+    const waves = this.resumeWaves;
+    return waves !== null && waves.finishedAt === null && this.pendingResumeTables.has(tableId);
+  }
+
   remainingMs(): number {
     if (this.phase !== 'counting_down' || this.breakEndsAt === 0) return 0;
     return Math.max(0, this.breakEndsAt - this.now());

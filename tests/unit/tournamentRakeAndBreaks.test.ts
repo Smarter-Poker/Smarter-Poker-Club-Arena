@@ -212,6 +212,20 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(BASE).toMatch(/pauseAfterHand\(TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS/);
   });
 
+  it('the bound is not applied while the maintenance break is still the one holding the table', () => {
+    // 2026-10-02 16:03Z: the break released at 16:02:59 and its waves reached
+    // the last tables at 16:03:10, so tables still waiting for their wave had
+    // been paused past ten minutes (since the :53 announcement). The sweep
+    // rebuilt 80 of them. The exemption is the break's own hold, per table,
+    // and only for a table that carries the break's flag.
+    expect(GAME_SERVER).toMatch(
+      /const heldByMaintenanceBreak =\s*engine\.isMaintenancePaused\(\) && this\.maintenanceBreak\.isHoldingTable\(id\);/
+    );
+    expect(GAME_SERVER).toMatch(
+      /const pausedTooLong =\s*!heldByMaintenanceBreak && engine\.msPaused\(\) > GameServer\.MAX_HEALTHY_PAUSE_MS;/
+    );
+  });
+
   it('the ceiling exceeds a full break plus the last-hand grace', () => {
     // 5 min break + 2 min grace = 7 min worst legitimate case.
     expect(10 * 60 * 1000).toBeGreaterThan(5 * 60 * 1000 + 2 * 60 * 1000);
@@ -655,7 +669,11 @@ describe('a paused table parks whatever it was doing', () => {
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand or tournament-move pause it did not set.
     const maint = blankNonCode(sliceMethod(ENGINE_BASE, 'resumeFromMaintenance(): void'));
-    const maintenanceGate = /if\s*\(([\s\S]*?)\)\s*return;/.exec(maint)?.[1];
+    // A block, not a bare return, since 2026-10-02: the early exit restarts
+    // the paused clock for the authority still holding the table.
+    const maintenanceGate = /if\s*\(([\s\S]*?)\)\s*\{\s*if \(this\.pausedSinceMs !== 0\)/.exec(
+      maint
+    )?.[1];
     expect(maintenanceGate).toBeDefined();
     expect(maintenanceGate).toContain('this.tournamentMovePauseOwners.size > 0');
     expect(maintenanceGate).toContain('this.handForHandPaused');

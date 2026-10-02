@@ -7044,7 +7044,12 @@ export class GameServer {
           // table is between hands, so a frozen hand is reaped on its usual
           // clock and its replacement arrives parked (maintenanceBreak.adopt,
           // prepareManagedTableEngineForPlay).
-          const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
+          // ...and not while the maintenance break still holds the table
+          // (2026-10-02): see MaintenanceBreak.isHoldingTable.
+          const heldByMaintenanceBreak =
+            engine.isMaintenancePaused() && this.maintenanceBreak.isHoldingTable(id);
+          const pausedTooLong =
+            !heldByMaintenanceBreak && engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {

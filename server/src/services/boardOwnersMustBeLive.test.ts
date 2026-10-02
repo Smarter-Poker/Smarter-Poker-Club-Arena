@@ -14,7 +14,7 @@ import {
   BOARD_OWNER_GONE_BACKOFF_MS,
   isBoardOwnerGoneRefusal,
   liveBoardOwners,
-} from './TournamentRecurringService';
+} from './TournamentRecurringService.js';
 
 const RECURRING = readFileSync(
   join(process.cwd(), 'src/services/TournamentRecurringService.ts'),

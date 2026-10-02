@@ -13,6 +13,7 @@ LEDGER_COUNTERPARTY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/2026100200203
 LEDGER_CATEGORY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002010726_welcome_allocations_use_the_declared_opening_category.sql'
 DERIVED_TABLE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
 AUTHORITATIVE_LEASE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
+CONTROLLER_PROVENANCE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002051400_welcome_certification_accepts_its_controller_created_tables.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -24,7 +25,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -34,6 +35,11 @@ def run(name, sql, expected=None):
     results['cases'].append({'name':name,'passed':ok,'expected':expected,'observed':got})
     if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
     return got
+def run_refusal(name, sql, expected_error):
+    r=command(psql,sql); got=r.stdout.rstrip('\n'); ok=r.returncode!=0 and expected_error in r.stderr
+    (out/f'{name}.log').write_text('-- SQL\n'+sql+'\n-- OUT\n'+r.stdout+'\n-- ERR\n'+r.stderr)
+    results['cases'].append({'name':name,'passed':ok,'expected':expected_error,'observed':r.stderr.rstrip('\n')[-2000:]})
+    if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
 
 SETUP = r"""
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
@@ -200,6 +206,64 @@ try:
     run('install-ledger-category-repair',LEDGER_CATEGORY_REPAIR_MIGRATION.read_text())
     run('install-derived-table-cleanup',DERIVED_TABLE_CLEANUP_MIGRATION.read_text())
     run('install-authoritative-lease-repair',AUTHORITATIVE_LEASE_REPAIR_MIGRATION.read_text())
+    controller_old = 't.created_by IS NOT NULL'
+    controller_new = '(t.created_by IS NOT NULL AND t.created_by IS DISTINCT FROM v_club.owner_id)'
+    controller_unknown = '(t.created_by IS DISTINCT FROM v_club.owner_id)'
+    controller_signature = "'public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure"
+    downgrade_controller_provenance = f"""
+DO $downgrade$
+DECLARE v_source text;
+BEGIN
+  SELECT pg_get_functiondef({controller_signature}) INTO v_source;
+  IF position('{controller_new}' IN v_source)=0 THEN
+    RAISE EXCEPTION 'fixture expected the controller-owner guard';
+  END IF;
+  EXECUTE replace(v_source,'{controller_new}','{controller_old}');
+END
+$downgrade$;
+CREATE TEMP TABLE controller_provenance_before AS
+SELECT replace(pg_get_functiondef(p.oid),'{controller_old}','{controller_new}') AS expected_definition,
+       p.proowner,p.proacl,p.proconfig,p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+"""
+    verify_controller_provenance = f"""
+SELECT pg_get_functiondef(p.oid)=b.expected_definition,
+       (p.proowner,p.proacl,p.proconfig,p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows)
+         IS NOT DISTINCT FROM
+       (b.proowner,b.proacl,b.proconfig,b.prosecdef,b.provolatile,b.proparallel,b.procost,b.prorows),
+       position('{controller_new}' IN pg_get_functiondef(p.oid))>0
+  FROM pg_proc p CROSS JOIN controller_provenance_before b
+ WHERE p.oid={controller_signature};
+"""
+    run('install-controller-provenance-repair-from-old-definition',
+        downgrade_controller_provenance+CONTROLLER_PROVENANCE_REPAIR_MIGRATION.read_text()+verify_controller_provenance,
+        't|t|t')
+    controller_authority = run('controller-provenance-repair-authority-before-refusal',f"""
+SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
+       p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+""")
+    mismatch_controller_provenance = f"""
+BEGIN;
+DO $mismatch$
+DECLARE v_source text;
+BEGIN
+  SELECT pg_get_functiondef({controller_signature}) INTO v_source;
+  IF position('{controller_new}' IN v_source)=0 THEN
+    RAISE EXCEPTION 'fixture expected the repaired controller-owner guard';
+  END IF;
+  EXECUTE replace(v_source,'{controller_new}','{controller_unknown}');
+END
+$mismatch$;
+"""+CONTROLLER_PROVENANCE_REPAIR_MIGRATION.read_text()
+    run_refusal('controller-provenance-repair-refuses-unknown-definition',
+                mismatch_controller_provenance,
+                'WELCOME_CERTIFICATION_CONTROLLER_PROVENANCE_GUARD_NOT_FOUND')
+    run('controller-provenance-repair-refusal-rolls-back-definition-and-authority',f"""
+SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
+       p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+""",controller_authority)
     run('welcome-ledger-counterparty-is-declared-clearing-store',"SELECT position('welcome_package' in prosrc),position('opening_setup' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('welcome-ledger-category-is-declared-opening-allocation',"SELECT position('club_welcome_allocation' in prosrc),position('club_opening_allocation' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')
@@ -221,7 +285,7 @@ try:
     run('reset-discovers-both-schedule-links',f"SET request.jwt.claim.sub='{owner1}'; DELETE FROM hand_history; WITH s AS(SELECT entity_id FROM club_welcome_package_items WHERE club_id='{c1}' AND entity_kind='tournament_schedule'), a AS(INSERT INTO tournaments(id,club_id,schedule_id,status) SELECT gen_random_uuid(),'{c1}',entity_id,'REGISTERING' FROM s RETURNING id), b AS(INSERT INTO tournaments(id,club_id,status) VALUES(gen_random_uuid(),'{c1}','REGISTERING') RETURNING id) INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key) SELECT s.entity_id,b.id,'backlink' FROM s,b; SELECT jsonb_array_length(fn_get_club_welcome_package_reset_impact('{c1}')->'tournament_ids');",'2')
     run('owner-reset-soft-retires',f"SET request.jwt.claim.sub='{owner1}'; SELECT fn_remove_first_club_welcome_games('{c1}',gen_random_uuid())->>'ok'; SELECT count(*) FROM tournaments WHERE club_id='{c1}' AND status='CANCELLED'; SELECT count(*) FROM club_welcome_package_items WHERE club_id='{c1}' AND retired_at IS NOT NULL;",'true\n2\n10')
     run('retired-schedule-fences-spawn',f"SET request.jwt.claim.sub='{owner1}'; DO $x$ DECLARE s uuid; BEGIN SELECT entity_id INTO s FROM club_welcome_package_items WHERE club_id='{c1}' AND entity_kind='tournament_schedule'; BEGIN INSERT INTO tournaments(id,club_id,schedule_id,status) VALUES(gen_random_uuid(),'{c1}',s,'REGISTERING'); RAISE EXCEPTION 'spawn_not_fenced'; EXCEPTION WHEN sqlstate '55000' THEN NULL; END; END $x$; SELECT 'refused';",'refused')
-    run('certification-cleanup-package-derived-table',f"INSERT INTO auth.users VALUES('{owner4}','ca-customization-cert-postdeploy-native@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c5}','{owner4}','Crest Cert Native'); INSERT INTO club_members(club_id,user_id) VALUES('{c5}','{owner4}'); SET request.jwt.claim.sub='{owner4}'; INSERT INTO club_creation_requests VALUES('{owner4}',gen_random_uuid(),'{c5}'); INSERT INTO tables(id,club_id,cluster_id,game_type,created_by,role,main_index,lifecycle,status,current_players) SELECT gen_random_uuid(),'{c5}',entity_id,'cash',NULL,'feeder',NULL,'opening','waiting',0 FROM club_welcome_package_items WHERE club_id='{c5}' AND entity_kind='cash_game' ORDER BY slot_key LIMIT 1; INSERT INTO cash_cluster_events(game_id,table_id) SELECT cluster_id,id FROM tables WHERE club_id='{c5}' ORDER BY id DESC LIMIT 1; SET request.jwt.claim.role='service_role'; SELECT fn_ca_retire_welcome_certification_club('{c5}','native-cert')->>'chips_retired'; SELECT count(*),(SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c5}'),(SELECT count(*) FROM club_owner_creation_history WHERE owner_id='{owner4}'),(SELECT count(*) FROM cash_cluster_events),(SELECT sum(amount) FROM spin_reserve_ledger WHERE club_id='{c5}') FROM tables WHERE club_id='{c5}';",'100000.00\n0|0|0|0|0.00')
+    run('certification-cleanup-package-derived-table',f"INSERT INTO auth.users VALUES('{owner4}','ca-customization-cert-postdeploy-native@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c5}','{owner4}','Crest Cert Native'); INSERT INTO club_members(club_id,user_id) VALUES('{c5}','{owner4}'); SET request.jwt.claim.sub='{owner4}'; INSERT INTO club_creation_requests VALUES('{owner4}',gen_random_uuid(),'{c5}'); INSERT INTO tables(id,club_id,cluster_id,game_type,created_by,role,main_index,lifecycle,status,current_players) SELECT gen_random_uuid(),'{c5}',entity_id,'cash','{owner4}','feeder',NULL,'opening','waiting',0 FROM club_welcome_package_items WHERE club_id='{c5}' AND entity_kind='cash_game' ORDER BY slot_key LIMIT 1; INSERT INTO cash_cluster_events(game_id,table_id) SELECT cluster_id,id FROM tables WHERE club_id='{c5}' ORDER BY id DESC LIMIT 1; SET request.jwt.claim.role='service_role'; SELECT fn_ca_retire_welcome_certification_club('{c5}','native-cert')->>'chips_retired'; SELECT count(*),(SELECT count(*) FROM club_welcome_entitlements WHERE club_id='{c5}'),(SELECT count(*) FROM club_owner_creation_history WHERE owner_id='{owner4}'),(SELECT count(*) FROM cash_cluster_events),(SELECT sum(amount) FROM spin_reserve_ledger WHERE club_id='{c5}') FROM tables WHERE club_id='{c5}';",'100000.00\n0|0|0|0|0.00')
     run('certification-cleanup-refuses-activity',f"INSERT INTO auth.users VALUES('{owner5}','ca-customization-cert-postdeploy-active@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c6}','{owner5}','Crest Cert Active'); INSERT INTO club_members(club_id,user_id) VALUES('{c6}','{owner5}'); SET request.jwt.claim.sub='{owner5}'; INSERT INTO club_creation_requests VALUES('{owner5}',gen_random_uuid(),'{c6}'); INSERT INTO table_seats(table_id) SELECT initial_table_id FROM club_welcome_package_items WHERE club_id='{c6}' AND entity_kind='cash_game' LIMIT 1; SET request.jwt.claim.role='service_role'; DO $x$ BEGIN PERFORM fn_ca_prepare_unused_welcome_certification_fixture('{c6}'); RAISE EXCEPTION 'activity_not_refused'; EXCEPTION WHEN sqlstate '55000' THEN IF SQLERRM<>'WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY' THEN RAISE; END IF; END $x$; SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c6}') FROM club_welcome_package_items WHERE club_id='{c6}';",'10|9')
     run('certification-cleanup-refuses-protected-estate',f"INSERT INTO auth.users VALUES('{owner6}','ca-customization-cert-postdeploy-protected@example.invalid'); INSERT INTO clubs(id,owner_id,name) VALUES('{c7}','{owner6}','Crest Cert Protected'); INSERT INTO club_members(club_id,user_id) VALUES('{c7}','{owner6}'); SET request.jwt.claim.sub='{owner6}'; INSERT INTO club_creation_requests VALUES('{owner6}',gen_random_uuid(),'{c7}'); SET request.jwt.claim.role='service_role'; DO $x$ BEGIN PERFORM fn_ca_prepare_unused_welcome_certification_fixture('{c7}'); RAISE EXCEPTION 'protected_not_refused'; EXCEPTION WHEN sqlstate '42501' THEN IF SQLERRM<>'WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED' THEN RAISE; END IF; END $x$; SELECT count(*),(SELECT count(*) FROM tables WHERE club_id='{c7}') FROM club_welcome_package_items WHERE club_id='{c7}';",'10|9')
     run('acl',"SELECT has_function_privilege('anon','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE'),has_function_privilege('authenticated','fn_provision_first_club_welcome_package(uuid,uuid)','EXECUTE');",'f|t')

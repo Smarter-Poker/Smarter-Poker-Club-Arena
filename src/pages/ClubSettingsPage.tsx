@@ -1095,6 +1095,7 @@ export default function ClubSettingsPage() {
         open_obligations?: unknown;
         union_affiliated?: unknown;
         already_retired?: unknown;
+        pristine_welcome_retire_available?: unknown;
       } | null;
       const members = Number(impact?.members ?? NaN);
       const runningTables = Number(impact?.running_tables ?? NaN);
@@ -1105,6 +1106,7 @@ export default function ClubSettingsPage() {
       const openObligations = Number(impact?.open_obligations ?? NaN);
       const unionAffiliated = impact?.union_affiliated;
       const alreadyRetired = impact?.already_retired;
+      const pristineWelcomeRetireAvailable = impact?.pristine_welcome_retire_available;
       const numericValues = [
         members,
         runningTables,
@@ -1119,7 +1121,8 @@ export default function ClubSettingsPage() {
         typeof impact !== 'object' ||
         numericValues.some((value) => !Number.isFinite(value) || value < 0) ||
         typeof unionAffiliated !== 'boolean' ||
-        typeof alreadyRetired !== 'boolean'
+        typeof alreadyRetired !== 'boolean' ||
+        typeof pristineWelcomeRetireAvailable !== 'boolean'
       ) {
         throw new Error('The retirement check returned something unreadable.');
       }
@@ -1134,6 +1137,7 @@ export default function ClubSettingsPage() {
         openObligations,
         unionAffiliated,
         alreadyRetired,
+        pristineWelcomeRetireAvailable,
       });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_load_retirement_impact');
@@ -2023,6 +2027,12 @@ export default function ClubSettingsPage() {
             {impactLoading && <p className="delete-impact">Checking Retirement Readiness...</p>}
             {!impactLoading && retirementImpact && (
               <ul className="delete-impact">
+                {retirementImpact.pristineWelcomeRetireAvailable && (
+                  <li>
+                    Exact Unused Welcome Package Verified — Opening Games And 100,000-Chip Grant
+                    Will Be Unwound Atomically
+                  </li>
+                )}
                 <li>{retirementImpact.members.toLocaleString()} Membership Records Retained</li>
                 <li>{retirementImpact.runningTables.toLocaleString()} Running Tables To Close</li>
                 <li>{retirementImpact.activeTournaments.toLocaleString()} Active Tournaments</li>

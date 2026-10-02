@@ -172,6 +172,15 @@
   justify-self: start;
 }
 
+.welcomeSummary {
+  display: grid;
+  gap: 1.6cqw;
+  padding: 3cqw 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
 .hint {
   justify-self: center;
   text-align: center;
@@ -328,7 +337,8 @@
   touch-action: manipulation;
 }
 
-.toggleRow.toggleRow + .toggleRow {
+.toggleRow.toggleRow + .toggleRow,
+.toggleHelp + .toggleRow {
   border-top: 1px solid #000 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
@@ -357,6 +367,13 @@
 
 .toggleState {
   flex: 0 0 auto;
+}
+
+.toggleHelp {
+  margin: -1cqw 0 2cqw;
+  color: #9aa5b3;
+  font-size: max(12px, 2.4cqw);
+  line-height: 1.4;
 }
 
 /* The agreement lays the kit's tick well (sc-check) beside its words, so it
@@ -477,6 +494,7 @@
 
   .field,
   .section,
+  .welcomeSummary,
   .terms {
     transition: none !important;
     opacity: 1 !important;

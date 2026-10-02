@@ -1,0 +1,4 @@
+{
+  "_owner": "create-club-deep-audit-20261002. Declares the two private, retained implementations renamed by migration 20261002152925 so the public retirement wrappers can add the authoritative unused-welcome unwind without duplicating the audited 20260906 bodies. The nightly schema refresh must absorb these identities after the migration is live.",
+  "functions": ["fn_club_retirement_impact_core_20260906", "fn_retire_settled_club_core_20260906"]
+}

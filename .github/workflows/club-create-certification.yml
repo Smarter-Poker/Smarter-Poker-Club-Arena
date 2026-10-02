@@ -101,6 +101,7 @@ jobs:
           path: |
             test-results/create-club-ready-mobile.png
             test-results/create-club-opened-mobile.png
+            test-results/create-club-retire-ready-mobile.png
             playwright-report/
           if-no-files-found: warn
           retention-days: 14

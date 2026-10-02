@@ -145,6 +145,7 @@ export interface ClubRetirementImpact {
   openObligations: number;
   unionAffiliated: boolean;
   alreadyRetired: boolean;
+  pristineWelcomeRetireAvailable: boolean;
 }
 
 /**
@@ -159,6 +160,11 @@ export function blockingRetirementReason(impact: ClubRetirementImpact): string |
   if (impact.unionAffiliated) {
     return 'Leave the union first, or retire a union estate through Union Administration.';
   }
+  // The server proved that every apparent game/obligation and all 100,000
+  // chips are the exact unused opening package. The retirement transaction
+  // will unwind those resources atomically before applying the ordinary
+  // zero-impact lifecycle gate.
+  if (impact.pristineWelcomeRetireAvailable) return null;
   if (impact.runningTables > 0) {
     return `Close the ${impact.runningTables} running table${
       impact.runningTables === 1 ? '' : 's'

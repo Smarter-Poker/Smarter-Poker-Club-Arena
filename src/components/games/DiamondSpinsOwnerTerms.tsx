@@ -32,16 +32,31 @@ const percent = (bps: number) => `${(bps / 100).toLocaleString()}%`;
 export default function DiamondSpinsOwnerTerms({
   clubId,
   onAccepted,
+  onStatusChange,
 }: {
   clubId: string | null;
   onAccepted?: () => void;
+  onStatusChange?: (accepted: boolean) => void;
 }) {
   const { user } = useAuthUser();
   return (
-    <OwnerTerms key={`${user?.id ?? ''}:${clubId ?? ''}`} clubId={clubId} onAccepted={onAccepted} />
+    <OwnerTerms
+      key={`${user?.id ?? ''}:${clubId ?? ''}`}
+      clubId={clubId}
+      onAccepted={onAccepted}
+      onStatusChange={onStatusChange}
+    />
   );
 }
-function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?: () => void }) {
+function OwnerTerms({
+  clubId,
+  onAccepted,
+  onStatusChange,
+}: {
+  clubId: string | null;
+  onAccepted?: () => void;
+  onStatusChange?: (accepted: boolean) => void;
+}) {
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -85,7 +100,10 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
     let cancelled = false;
     request(false)
       .then((value) => {
-        if (!cancelled) setAgreement(value);
+        if (!cancelled) {
+          setAgreement(value);
+          onStatusChange?.(value.acknowledged);
+        }
       })
       .catch((e) => {
         reportError(e, 'DiamondSpinsOwnerTerms.load');
@@ -94,7 +112,7 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
     return () => {
       cancelled = true;
     };
-  }, [clubId, reload, request]);
+  }, [clubId, onStatusChange, reload, request]);
   // The base receipt opens the games; the addendum is a notice the owner
   // acknowledges. Both are permanent receipts, so nothing is re-accepted.
   const baseOpen = agreement?.accepted === true;
@@ -106,7 +124,9 @@ function OwnerTerms({ clubId, onAccepted }: { clubId: string | null; onAccepted?
     setBusy(true);
     setError(null);
     try {
-      setAgreement(await request(true));
+      const next = await request(true);
+      setAgreement(next);
+      onStatusChange?.(next.acknowledged);
       onAccepted?.();
     } catch (e) {
       reportError(e, 'DiamondSpinsOwnerTerms.accept');

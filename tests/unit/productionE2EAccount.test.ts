@@ -670,6 +670,7 @@ describe('certification-club retirement transport contract', () => {
       ["SET LOCAL statement_timeout = '120s'"],
       ["SET LOCAL lock_timeout = '15s'"],
       ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      ["SET LOCAL app.club_retirement_maintenance = 'on'"],
       [
         'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
         [clubId, reason],
@@ -708,6 +709,7 @@ describe('certification-club retirement transport contract', () => {
       ["SET LOCAL statement_timeout = '120s'"],
       ["SET LOCAL lock_timeout = '15s'"],
       ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      ["SET LOCAL app.club_retirement_maintenance = 'on'"],
       [
         'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
         [clubId, reason],

@@ -17,6 +17,7 @@ import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
+import type { ClubWelcomePackageState } from '../../services/ClubWelcomePackageService';
 import './ClubOpeningWizard.css';
 
 interface Props {
@@ -27,6 +28,8 @@ interface Props {
   initialTagline?: string | null;
   /** Promo Wallet chips the club already holds. A new club holds none. */
   clubPromoBalance?: number | null;
+  /** The immutable server receipt for benefits funded during club creation. */
+  welcomePackage?: ClubWelcomePackageState | null;
   onClose: () => void;
   onComplete: (result: { clubBankAfter: number; spinsEnabled: boolean; tagline: string }) => void;
 }
@@ -129,6 +132,7 @@ export default function ClubOpeningWizard({
   clubBank,
   initialTagline,
   clubPromoBalance,
+  welcomePackage,
   onClose,
   onComplete,
 }: Props) {
@@ -138,15 +142,21 @@ export default function ClubOpeningWizard({
   const [rakeMode, setRakeMode] = useState<'house' | 'custom'>('house');
   const [rakePercent, setRakePercent] = useState(10);
   const [rakeCap, setRakeCap] = useState(3);
-  const [bbjAnswer, setBbjAnswer] = useState<OpeningAnswer>(null);
+  const packageEconomics =
+    welcomePackage?.status === 'provisioned' ? welcomePackage.economics : null;
+  const packageBbjFunded = packageEconomics?.bbjEnabled === true;
+  const packageSpinsFunded = packageEconomics?.spinsEnabled === true;
+  const [bbjAnswer, setBbjAnswer] = useState<OpeningAnswer>(packageBbjFunded ? 'enabled' : null);
   const bbjEnabled = bbjAnswer === 'enabled';
-  const [bbjSeed, setBbjSeed] = useState(100);
-  const [bbjFundingConfirmed, setBbjFundingConfirmed] = useState(false);
-  const [spinsEnabled, setSpinsEnabled] = useState(false);
-  const [spinFundingConfirmed, setSpinFundingConfirmed] = useState(false);
-  const [spinMaxStake, setSpinMaxStake] = useState(1);
+  const [bbjSeed, setBbjSeed] = useState(packageEconomics?.bbjSeed ?? 100);
+  const [bbjFundingConfirmed, setBbjFundingConfirmed] = useState(packageBbjFunded);
+  const [spinsEnabled, setSpinsEnabled] = useState(packageSpinsFunded);
+  const [spinFundingConfirmed, setSpinFundingConfirmed] = useState(packageSpinsFunded);
+  const [spinMaxStake, setSpinMaxStake] = useState(packageEconomics?.spinMaxStake ?? 1);
   const spinCoverageMinimum = Math.max(100, requiredSeedForStake(spinMaxStake));
-  const [spinSeed, setSpinSeed] = useState(requiredSeedForStake(1));
+  const [spinSeed, setSpinSeed] = useState(
+    packageEconomics?.spinSeed ?? requiredSeedForStake(packageEconomics?.spinMaxStake ?? 1)
+  );
   const [promoAnswer, setPromoAnswer] = useState<OpeningAnswer>(null);
   const promoEnabled = promoAnswer === 'enabled';
   const [promoFundingConfirmed, setPromoFundingConfirmed] = useState(false);
@@ -178,6 +188,23 @@ export default function ClubOpeningWizard({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stepsRef = useRef<HTMLElement>(null);
 
+  /* The receipt can finish loading while the full-page wizard is already
+     opening. Adopt its immutable principals immediately so a fast owner can
+     never submit the old Not Now defaults into the server's reuse contract. */
+  useEffect(() => {
+    if (packageBbjFunded && packageEconomics) {
+      setBbjAnswer('enabled');
+      setBbjSeed(packageEconomics.bbjSeed);
+      setBbjFundingConfirmed(true);
+    }
+    if (packageSpinsFunded && packageEconomics) {
+      setSpinsEnabled(true);
+      setSpinSeed(packageEconomics.spinSeed);
+      setSpinMaxStake(packageEconomics.spinMaxStake);
+      setSpinFundingConfirmed(true);
+    }
+  }, [packageBbjFunded, packageEconomics, packageSpinsFunded]);
+
   /* A new step opens at its own top, not wherever the last one was scrolled
      to, and its name is brought into view in the step rail, which is wider
      than a phone and used to leave the current step off the right edge. The
@@ -204,8 +231,8 @@ export default function ClubOpeningWizard({
 
   const allocation = useMemo(
     () =>
-      (bbjEnabled ? bbjSeed : 0) +
-      (spinsEnabled ? spinSeed : 0) +
+      (bbjEnabled && !packageBbjFunded ? bbjSeed : 0) +
+      (spinsEnabled && !packageSpinsFunded ? spinSeed : 0) +
       (promoEnabled ? promoBudget : 0) +
       (leaderboardRewardsEnabled ? leaderboardPrizeBudget : 0),
     [
@@ -217,6 +244,8 @@ export default function ClubOpeningWizard({
       promoBudget,
       leaderboardRewardsEnabled,
       leaderboardPrizeBudget,
+      packageBbjFunded,
+      packageSpinsFunded,
     ]
   );
   const remaining = clubBank - allocation;
@@ -596,14 +625,16 @@ export default function ClubOpeningWizard({
                 <span className="club-setup-wizard__eyebrow">Bad Beat Protection</span>
                 <h2 className="sc-ink--silver">Do You Want A Bad Beat Jackpot?</h2>
                 <p>
-                  Enabled Clubs Must Seed The Main Jackpot With At Least 100 Chips. Future BBJ Drops
-                  Continue Funding The Main, Backup, And Promotional Banks.
+                  {packageBbjFunded
+                    ? `The Welcome Package Already Enabled And Funded BBJ With ${exactChips(bbjSeed)} Chips. This Setup Reuses That Recorded Baseline And Does Not Debit It Again.`
+                    : 'Enabled Clubs Must Seed The Main Jackpot With At Least 100 Chips. Future BBJ Drops Continue Funding The Main, Backup, And Promotional Banks.'}
                 </p>
                 <div className="club-setup-wizard__choice-grid">
                   <button
                     type="button"
                     className={bbjAnswer === 'enabled' ? 'is-selected' : ''}
                     aria-pressed={bbjAnswer === 'enabled'}
+                    disabled={packageBbjFunded}
                     onClick={() => {
                       if (bbjAnswer !== 'enabled') setBbjFundingConfirmed(false);
                       setBbjAnswer('enabled');
@@ -616,6 +647,7 @@ export default function ClubOpeningWizard({
                     type="button"
                     className={bbjAnswer === 'not_now' ? 'is-selected' : ''}
                     aria-pressed={bbjAnswer === 'not_now'}
+                    disabled={packageBbjFunded}
                     onClick={() => {
                       setBbjAnswer('not_now');
                       setBbjFundingConfirmed(false);
@@ -625,7 +657,7 @@ export default function ClubOpeningWizard({
                     <span>Record The Decision Without Funding</span>
                   </button>
                 </div>
-                {bbjEnabled && (
+                {bbjEnabled && !packageBbjFunded && (
                   <>
                     <div className="club-setup-wizard__fields">
                       <label>
@@ -661,14 +693,16 @@ export default function ClubOpeningWizard({
                 <span className="club-setup-wizard__eyebrow">Multiplier Coverage</span>
                 <h2 className="sc-ink--silver">Do You Want To Offer Spins?</h2>
                 <p>
-                  Spins Require Operator Capital To Cover Two Top-Tier Payouts At The Largest Buy-In
-                  You Offer. The Minimum Is 100 Chips, And Higher Boards Require More Coverage.
+                  {packageSpinsFunded
+                    ? `The Welcome Package Already Opened The Spin And Heads-Up Boards With ${exactChips(spinSeed)} Chips Of Coverage. This Setup Reuses That Reserve And Does Not Debit It Again.`
+                    : 'Spins Require Operator Capital To Cover Two Top-Tier Payouts At The Largest Buy-In You Offer. The Minimum Is 100 Chips, And Higher Boards Require More Coverage.'}
                 </p>
                 <div className="club-setup-wizard__choice-grid">
                   <button
                     type="button"
                     className={spinsEnabled ? 'is-selected' : ''}
                     aria-pressed={spinsEnabled}
+                    disabled={packageSpinsFunded}
                     onClick={() => {
                       setSpinsEnabled(true);
                       setSpinFundingConfirmed(false);
@@ -682,6 +716,7 @@ export default function ClubOpeningWizard({
                     type="button"
                     className={!spinsEnabled ? 'is-selected' : ''}
                     aria-pressed={!spinsEnabled}
+                    disabled={packageSpinsFunded}
                     onClick={() => {
                       setSpinsEnabled(false);
                       setSpinFundingConfirmed(false);
@@ -691,7 +726,7 @@ export default function ClubOpeningWizard({
                     <span>Keep Spins Closed For Launch</span>
                   </button>
                 </div>
-                {spinsEnabled && (
+                {spinsEnabled && !packageSpinsFunded && (
                   <div className="club-setup-wizard__fields two-columns">
                     <label>
                       Largest Spin Buy-In
@@ -729,7 +764,7 @@ export default function ClubOpeningWizard({
                     </label>
                   </div>
                 )}
-                {spinsEnabled && (
+                {spinsEnabled && !packageSpinsFunded && (
                   <FundingConfirmation
                     title="Spin Funding Confirmation"
                     amount={spinSeed}
@@ -1012,12 +1047,22 @@ export default function ClubOpeningWizard({
                   </div>
                   <div>
                     <span>Bad Beat Jackpot</span>
-                    <strong>{bbjEnabled ? `${compactChips(bbjSeed)} Chips` : 'Not Enabled'}</strong>
+                    <strong>
+                      {packageBbjFunded
+                        ? `${compactChips(bbjSeed)} Chips · Already Funded`
+                        : bbjEnabled
+                          ? `${compactChips(bbjSeed)} Chips`
+                          : 'Not Enabled'}
+                    </strong>
                   </div>
                   <div>
                     <span>Spin Reserve</span>
                     <strong>
-                      {spinsEnabled ? `${compactChips(spinSeed)} Chips` : 'Not Enabled'}
+                      {packageSpinsFunded
+                        ? `${compactChips(spinSeed)} Chips · Already Funded`
+                        : spinsEnabled
+                          ? `${compactChips(spinSeed)} Chips`
+                          : 'Not Enabled'}
                     </strong>
                   </div>
                   <div>

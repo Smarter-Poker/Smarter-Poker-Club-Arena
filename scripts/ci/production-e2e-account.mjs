@@ -509,6 +509,12 @@ export async function retireCertificationClubWithRetry({
       await client.query("SET LOCAL statement_timeout = '120s'");
       await client.query("SET LOCAL lock_timeout = '15s'");
       await client.query("SET LOCAL request.jwt.claim.role = 'service_role'");
+      // The published UI now proves the real retained-record retirement door
+      // before this fixture-only hard cleanup runs. Its retained child rows
+      // are intentionally immutable, so open the narrowly-scoped maintenance
+      // gate for this service-role transaction. The cleanup RPC still proves
+      // the reserved account, fixture name, zero activity and protected IDs.
+      await client.query("SET LOCAL app.club_retirement_maintenance = 'on'");
       const response = await client.query(
         'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
         [clubId, reason]

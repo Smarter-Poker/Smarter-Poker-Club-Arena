@@ -52,6 +52,10 @@ import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import ClubWelcomePackage from '../components/club/ClubWelcomePackage';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
 import {
+  clubWelcomePackageService,
+  type ClubWelcomePackageState,
+} from '../services/ClubWelcomePackageService';
+import {
   hasNewClubOpeningChecklist,
   hasOwnClubPicture,
   mayHaveNewClubOpeningChecklist,
@@ -994,6 +998,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
   const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
+  const [welcomePackageState, setWelcomePackageState] = useState<ClubWelcomePackageState | null>(
+    null
+  );
   const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
   const [agentSetupRevision, setAgentSetupRevision] = useState(0);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
@@ -1040,6 +1047,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     launchSkips.completedAt
   );
   const toast = useToast();
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setWelcomePackageState(null);
+      return;
+    }
+    let current = true;
+    void clubWelcomePackageService
+      .get(club.id)
+      .then((next) => {
+        if (current) setWelcomePackageState(next);
+      })
+      .catch((error) => {
+        reportError(error, 'ClubHomePage.Welcome_package_state');
+        if (current) setWelcomePackageState(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [club?.id, club?.owner_id, currentUserId]);
   useEffect(() => {
     if (
       !club?.id ||
@@ -4789,6 +4815,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const tournamentKinds = tournaments.map((tournament) =>
     classifyTournament(tournament as unknown as LobbyTournamentRow)
   );
+  /* Package receipts are the creation transaction's durable truth. They make
+     these launch steps complete before delayed lobby/realtime rows arrive. */
+  const welcomeItems =
+    welcomePackageState?.status === 'provisioned'
+      ? welcomePackageState.items.filter((item) => item.retiredAt === null)
+      : [];
+  const welcomeHasCashSlot = (prefix: string) =>
+    welcomeItems.some((item) => item.entityKind === 'cash_game' && item.slotKey.startsWith(prefix));
+  const welcomeHasMttSchedule = welcomeItems.some(
+    (item) =>
+      item.entityKind === 'tournament_schedule' && item.slotKey === 'daily_25_freezeout_1900'
+  );
+  const welcomeSpinsEnabled = welcomePackageState?.economics?.spinsEnabled === true;
   /* The opening setup wizard is the one REQUIRED step: it cannot be skipped.
      Every other step is optional, may be skipped, and a skip can be undone. */
   const launchTaskList: ClubLaunchTask[] = [
@@ -4829,7 +4868,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'nlh',
       label: 'Open Your First NLH Table',
       detail: 'Create A No-Limit Hold’em Cash Game',
-      complete: hasCashCategory('HOLDEM'),
+      complete: welcomeHasCashSlot('classic_nlh_') || hasCashCategory('HOLDEM'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('HOLDEM'),
@@ -4838,7 +4877,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'plo',
       label: 'Open Your First PLO Table',
       detail: 'Create A Pot-Limit Omaha Cash Game',
-      complete: hasCashCategory('OMAHA'),
+      complete: welcomeHasCashSlot('classic_plo') || hasCashCategory('OMAHA'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('OMAHA'),
@@ -4847,7 +4886,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'limit',
       label: 'Open Your First Limit Table',
       detail: 'Create A Fixed-Limit Cash Game',
-      complete: hasCashCategory('LIMIT'),
+      complete: welcomeHasCashSlot('classic_flh_') || hasCashCategory('LIMIT'),
       optional: true,
       actionLabel: 'Create Table',
       onAction: () => openCreationFor('LIMIT'),
@@ -4856,7 +4895,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'mtt',
       label: 'Schedule Your First MTT',
       detail: 'Publish A Multi-Table Tournament',
-      complete: tournamentKinds.includes('mtt'),
+      complete: welcomeHasMttSchedule || tournamentKinds.includes('mtt'),
       optional: true,
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
@@ -4867,7 +4906,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       detail: club.spins_enabled
         ? 'Create A Three-Player Spin Event'
         : 'Enable And Fund Spins First',
-      complete: tournamentKinds.includes('spin'),
+      complete: welcomeSpinsEnabled || tournamentKinds.includes('spin'),
       optional: true,
       actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
       onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
@@ -4876,7 +4915,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'heads-up',
       label: 'Launch Your First Heads Up Game',
       detail: 'Create A Two-Player Duel',
-      complete: tournamentKinds.includes('sng'),
+      complete: welcomeSpinsEnabled || tournamentKinds.includes('sng'),
       optional: true,
       actionLabel: 'Create Heads Up',
       onAction: () => openCreationFor('SNG'),
@@ -5603,7 +5642,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             Every owner club asks its authoritative RPC; old clubs answer
             ineligible and render nothing, while an entitled first club keeps
             its package and reset control after the checklist is complete. */}
-        {isOwner && <ClubWelcomePackage clubId={club.id} clubName={club.name} />}
+        {isOwner && (
+          <ClubWelcomePackage
+            clubId={club.id}
+            clubName={club.name}
+            onStateChange={setWelcomePackageState}
+          />
+        )}
         {showLaunchChecklist && (
           <ClubLaunchProgress
             key={`${club.id}:${currentUserId || 'unknown'}`}
@@ -6028,6 +6073,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           clubName={club.name}
           clubBank={Number(club.chip_treasury) || 0}
           initialTagline={club.tagline ?? null}
+          welcomePackage={welcomePackageState}
           onClose={() => {
             setShowOpeningWizard(false);
             /* A close can follow a setup the server already holds (the

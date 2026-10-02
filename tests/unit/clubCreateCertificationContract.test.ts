@@ -176,6 +176,21 @@ describe('Create Club production certification contract', () => {
     expect(spec).not.toContain('getByText(/99\\.7K/).first()');
   });
 
+  it('retires the created club through the published owner controls before cleanup', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain('`./clubs/${createdClubRef}/settings`');
+    expect(spec).toContain("getByRole('dialog', { name: 'Retire Club', exact: true })");
+    expect(spec).toContain("getByLabel('Type The Club Name To Confirm:', { exact: true })");
+    expect(spec).toContain("endsWith('/rest/v1/rpc/fn_retire_settled_club')");
+    expect(spec).toContain('expect(confirmRetirement).toBeEnabled');
+    expect(workflow).toContain('test-results/create-club-retire-ready-mobile.png');
+    expect(workflow.indexOf('Create A Club Through The Published User Interface')).toBeLessThan(
+      workflow.indexOf('Retire The Created Club')
+    );
+  });
+
   it('certifies the first-club package, lifetime-second refusal and visible package rows', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
     const spec = read('tests/e2e/production-create-club.spec.ts');

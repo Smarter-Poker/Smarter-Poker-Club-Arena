@@ -111,6 +111,7 @@ import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
 import {
   leaseHeartbeatSessionsToPrometheus,
+  resolveLeaseHeartbeatSessionUrl,
   stopLeaseHeartbeatSessions,
 } from './services/leaseHeartbeatSession.js';
 import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
@@ -812,6 +813,9 @@ export class GameServer {
             this.tableEngines.get(tableId) === captured &&
             captured.getEngineLeaseAuthority()?.generation === generations.get(tableId)
           ) {
+            // The database ANSWERED and named another holder, a stale row or
+            // none: the only way a cash heartbeat can say "taken".
+            (this.cashLeasesRefutedByDatabase ??= new WeakSet()).add(captured);
             lostEngines.set(tableId, captured);
           }
         }
@@ -1196,9 +1200,21 @@ export class GameServer {
       if (this.tableEngines.get(tableId) !== engine || this.tournamentOwnedTables.has(tableId)) {
         continue;
       }
+      /* "I COULD NOT TELL" IS NOT "ANOTHER INSTANCE TOOK IT" (2026-10-02).
+         The tournament half has said which since 2026-09-26; the cash half
+         still blamed "another engine instance" for every loss. In the
+         2026-10-02 22:27Z storm ~340 tables reported that while one instance
+         existed and its rows still named it: the proof had simply run out
+         while PostgREST's pool answered nobody. Both are fenced the same. */
+      const refuted = this.cashLeasesRefutedByDatabase?.has(engine) === true;
       reportError(
-        new Error(`Lost the deal-lease on table ${tableId} to another engine instance`),
-        'GameServer.table_lease_lost'
+        new Error(
+          refuted
+            ? `Lost the deal-lease on table ${tableId}: the database named another holder, a stale row or none`
+            : `Table ${tableId} could not prove its deal-lease inside its window: no heartbeat answer arrived, and the database did not say it moved`
+        ),
+        'GameServer.table_lease_lost',
+        { tableId, verdict: refuted ? 'refuted' : 'unproven' }
       );
       engine.fenceForEngineLeaseLoss('cash_table_lease_lost', false);
       lostCashEngines.push([tableId, engine]);
@@ -1621,6 +1637,8 @@ export class GameServer {
   private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
   /** Managers a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
   private tournamentLeasesRefutedByDatabase?: WeakSet<TournamentManager>;
+  /** Cash engines a heartbeat ANSWER refuted (taken, stale, missing, other generation). */
+  private cashLeasesRefutedByDatabase?: WeakSet<ServerTableEngine>;
   /** Discovery-launched resume admissions not yet settled, by launch time. */
   private tournamentResumesInFlight = new Map<string, number>();
   /**
@@ -3618,6 +3636,10 @@ export class GameServer {
 
   private async performStart(generation: number): Promise<void> {
     const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+    // The lease heartbeat's own login, read from Vault when the host sets no
+    // ENGINE_PG_LISTEN_URL (migration 20261002223745). Not awaited: until it
+    // answers, heartbeats use the shared client exactly as before.
+    void resolveLeaseHeartbeatSessionUrl();
     // E2E test mode — when set, MAINTENANCE_MODE still applies (no auto-spawn,
     // no recurring tournaments, no horse fleet) but a single table engine is
     // booted for this exact tableId so a tester can sit down and play hands

@@ -22,6 +22,11 @@
 -- minutes end to end on 2026-10-01; starting at :40 puts its money rounds
 -- after the :55 maintenance break instead of inside it.
 --
+-- The CASE is parenthesised: PL/pgSQL reads an IF condition up to the first
+-- bare THEN, so an unparenthesised CASE WHEN ... THEN ends the condition early
+-- (the first install attempt, 2026-10-02 02:07Z, was refused with 42601 and
+-- rolled back; nothing was applied).
+--
 -- @live-proof: position('A BOOK THIS SCHEDULER ALREADY CLOSED' in pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) > 0
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -33,11 +38,11 @@ DECLARE s regprocedure:='public.fn_process_weekly_accounting_scope(uuid,uuid)'::
  y text:=$n$        -- A BOOK THIS SCHEDULER ALREADY CLOSED (20261002) is not re-proved:
         -- its evidence was certified before it was paid, and only that close
         -- writes status 'complete'. Anything else is checked as before.
-        AND CASE WHEN EXISTS(SELECT 1 FROM public.union_accounting_runs q
+        AND (CASE WHEN EXISTS(SELECT 1 FROM public.union_accounting_runs q
                     WHERE q.union_id=v_union.id AND q.period_start=v_from AND q.period_end=v_end
                       AND q.status='complete')
              THEN true
-             ELSE public.fn_union_pnl_close_quality(v_union.id,v_from,v_end)->>'status'='ready' END THEN
+             ELSE public.fn_union_pnl_close_quality(v_union.id,v_from,v_end)->>'status'='ready' END) THEN
         v_from:=v_end; CONTINUE;$n$;
  j bigint;
 BEGIN

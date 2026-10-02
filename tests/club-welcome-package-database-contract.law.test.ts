@@ -65,6 +65,13 @@ const unmaterializedSpawnCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const boardGameCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002085447_welcome_certification_retires_idle_orphan_tournaments.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -472,6 +479,112 @@ describe('prospective lifetime-first club welcome package database contract', ()
     );
     expect(unmaterializedSpawnCleanupSql).toContain(
       'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+    );
+  });
+
+  it('retires only the exact idle reserved one-chip board behind the seat-first creation fence', () => {
+    expect(boardGameCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(boardGameCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(boardGameCleanupSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(boardGameCleanupSql).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(boardGameCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
+    expect(boardGameCleanupSql).toContain('s.is_active AND s.activated_at IS NOT NULL');
+    expect(boardGameCleanupSql).toContain('s.deactivated_at IS NULL');
+    expect(boardGameCleanupSql).toContain("l.kind='seed'");
+    expect(boardGameCleanupSql).toContain('l.amount=200 AND l.balance_after=200');
+    expect(boardGameCleanupSql).toContain("l.kind='activation'");
+    expect(boardGameCleanupSql).toContain('GET DIAGNOSTICS v_changed=ROW_COUNT');
+    expect(boardGameCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_POOL_DEACTIVATION_REFUSED');
+    for (const name of [
+      'NLH Heads-Up 1',
+      'PLO4 Heads-Up 1',
+      'NLH Heads-Up 1 Turbo',
+      'PLO4 Heads-Up 1 Turbo',
+      '1 Chip Spin NLH',
+      '1 Chip Spin PLO4',
+      '1 Chip Spin PLO5',
+      '1 Chip Spin PLO6',
+      '1 Chip Deep Stack Spin NLH',
+      '1 Chip Deep Stack Spin PLO4',
+      '1 Chip Deep Stack Spin PLO5',
+      '1 Chip Deep Stack Spin PLO6',
+    ])
+      expect(boardGameCleanupSql).toContain(`'${name}'`);
+    expect(boardGameCleanupSql).toContain('cardinality(v_board_tournaments)>12');
+    expect(boardGameCleanupSql).toContain("interval '5 minutes'");
+    expect(boardGameCleanupSql).toContain("fk.confrelid='public.tournaments'::regclass");
+    expect(boardGameCleanupSql).toContain('cardinality(fk.conkey)=1');
+    expect(boardGameCleanupSql).toContain(
+      "NOT (child_ns.nspname='public' AND child.relname='tables')"
+    );
+    expect(boardGameCleanupSql).toContain(
+      "EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I WHERE %I=ANY($1))'"
+    );
+    expect(boardGameCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_LINEAGE_REFUSED');
+    expect(boardGameCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
+    expect(boardGameCleanupSql).toContain('ORDER BY s.schedule_id FOR UPDATE');
+    for (const guardedRelation of [
+      'tournament_players',
+      'tournament_escrow',
+      'tournament_payouts',
+      'tournament_obligations',
+      'tournament_registrations',
+      'tournament_registration_approvals',
+      'tournament_waitlists',
+      'tournament_tickets',
+      'table_seats',
+      'table_sessions',
+      'engine_table_leases',
+      'engine_tournament_leases',
+      'table_waitlist',
+      'table_pending_addons',
+      'table_hole_cards',
+      'hand_state_snapshots',
+      'table_cashout_history',
+      'insurance_transactions',
+      'hand_history',
+      'managed_game_schedules',
+    ])
+      expect(boardGameCleanupSql).toContain(`public.${guardedRelation}`);
+
+    const activityGuard = boardGameCleanupSql.indexOf(
+      'WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY'
+    );
+    const cancelCommands = boardGameCleanupSql.indexOf(
+      "UPDATE public.managed_game_schedules SET status='cancelled'"
+    );
+    const deleteTables = boardGameCleanupSql.indexOf(
+      'DELETE FROM public.tables WHERE id=ANY(v_board_tables)'
+    );
+    const deleteTournaments = boardGameCleanupSql.indexOf(
+      'DELETE FROM public.tournaments WHERE id=ANY(v_board_tournaments)'
+    );
+    expect(activityGuard).toBeGreaterThan(0);
+    expect(activityGuard).toBeLessThan(cancelCommands);
+    expect(cancelCommands).toBeLessThan(deleteTables);
+    expect(deleteTables).toBeLessThan(deleteTournaments);
+
+    const boardPreparation = boardGameCleanupSql.indexOf(
+      'v_board:=public.fn_ca_prepare_unused_welcome_certification_board_games(p_club_id)'
+    );
+    const schedulePreparation = boardGameCleanupSql.indexOf(
+      'v_schedule:=public.fn_ca_prepare_unused_welcome_certification_schedule_spawns(p_club_id)'
+    );
+    const fixturePreparation = boardGameCleanupSql.indexOf(
+      'v_prepared:=public.fn_ca_prepare_unused_welcome_certification_fixture(p_club_id)'
+    );
+    const retirement = boardGameCleanupSql.indexOf(
+      'v_retired:=public.fn_ca_retire_certification_club(p_club_id,p_reason)'
+    );
+    expect(boardPreparation).toBeGreaterThan(0);
+    expect(boardPreparation).toBeLessThan(schedulePreparation);
+    expect(schedulePreparation).toBeLessThan(fixturePreparation);
+    expect(fixturePreparation).toBeLessThan(retirement);
+    expect(boardGameCleanupSql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_games(uuid)\n  FROM service_role'
+    );
+    expect(boardGameCleanupSql).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_create_seat_first_game_atomic'
     );
   });
 });

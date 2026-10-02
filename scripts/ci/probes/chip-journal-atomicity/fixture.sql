@@ -54,6 +54,21 @@ CREATE FUNCTION fn_actor_can_manage_club_treasury(uuid) RETURNS boolean LANGUAGE
 CREATE FUNCTION fn_cash_rejoin_floor(uuid,uuid) RETURNS numeric LANGUAGE sql AS 'SELECT NULL::numeric';
 CREATE FUNCTION fn_cash_session_open(uuid,uuid,numeric) RETURNS void LANGUAGE sql AS 'INSERT INTO cash_baselines VALUES($1,$2,$3)';
 CREATE FUNCTION fn_cash_session_add_baseline(uuid,uuid,numeric) RETURNS void LANGUAGE sql AS 'INSERT INTO cash_baselines VALUES($1,$2,$3)';
+-- The human add-on door, as the horse money core calls it for the part of a
+-- rebuy its own wallet pays (20261002134205). Stubbed to its two balance
+-- moves: the wallet debit (journaled by the club_members ledger writer where
+-- the case installs it) and the seat credit. Its real body, wallet journal and
+-- funding receipt are production-proven; this probe owns journal atomicity.
+CREATE OR REPLACE FUNCTION atomic_table_addon_before_maintenance_announcement_gate(p_user_id uuid,p_table_id uuid,p_amount numeric,p_apply_to_seat boolean DEFAULT true,p_idempotency_key text DEFAULT NULL)
+RETURNS numeric LANGUAGE plpgsql AS $$
+DECLARE v numeric;
+BEGIN
+ UPDATE club_members SET chip_balance=chip_balance-p_amount
+  WHERE user_id=p_user_id AND chip_balance>=p_amount RETURNING chip_balance INTO v;
+ IF v IS NULL THEN RAISE EXCEPTION 'Insufficient club chips for add-on'; END IF;
+ UPDATE table_seats SET stack=stack+p_amount WHERE table_id=p_table_id AND user_id=p_user_id AND left_at IS NULL;
+ RETURN v;
+END $$;
 CREATE TABLE hand_history(id uuid,table_id uuid,hand_number int,created_at timestamptz);
 CREATE TABLE tournaments(id uuid,is_private boolean,union_id uuid,status text,prize_pool_finalized boolean,current_level integer,late_reg_levels integer,rebuy_levels integer,late_reg_mins integer,started_at timestamptz,max_players integer);
 CREATE TABLE tournament_players(id uuid DEFAULT gen_random_uuid(), tournament_id uuid,user_id uuid,username text,chips numeric,status text,is_satellite_qualifier boolean,source_satellite_id uuid,current_bounty numeric DEFAULT 0,UNIQUE(tournament_id,user_id));

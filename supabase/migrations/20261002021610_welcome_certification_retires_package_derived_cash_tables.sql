@@ -184,7 +184,7 @@ BEGIN
                    OR t.union_id IS NOT NULL OR t.tournament_id IS NOT NULL
                    OR t.game_type IS DISTINCT FROM 'cash'
                    OR (NOT(t.id=ANY(v_initial_tables)) AND (
-                     t.created_by IS NOT NULL
+                     (t.created_by IS NOT NULL AND t.created_by IS DISTINCT FROM v_club.owner_id)
                      OR t.role IS NULL OR t.role NOT IN('main','feeder')
                      OR t.lifecycle IS NULL
                      OR t.lifecycle NOT IN('opening','live','breaking','closed')

@@ -44,6 +44,13 @@ const authoritativeLeaseRepairSql = readFileSync(
   ),
   'utf8'
 );
+const controllerProvenanceRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002051400_welcome_certification_accepts_its_controller_created_tables.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -268,6 +275,10 @@ describe('prospective lifetime-first club welcome package database contract', ()
       "t.lifecycle NOT IN('opening','live','breaking','closed')"
     );
     expect(derivedTableCleanupSql).toContain('t.created_by IS NOT NULL');
+    expect(derivedTableCleanupSql).toContain('t.created_by IS DISTINCT FROM v_club.owner_id');
+    expect(controllerProvenanceRepairSql).toContain(
+      't.created_by IS DISTINCT FROM v_club.owner_id'
+    );
     expect(derivedTableCleanupSql).not.toContain('t.engine_lease_owner IS NOT NULL');
     expect(derivedTableCleanupSql).not.toContain('t.engine_lease_expires_at IS NOT NULL');
     expect(derivedTableCleanupSql).toContain('public.engine_table_leases');

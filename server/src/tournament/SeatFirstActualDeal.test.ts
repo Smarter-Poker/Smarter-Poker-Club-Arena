@@ -583,6 +583,27 @@ describe('actual manager launch reaches the first hand and action timer after th
     expect(f.blindStarts).toEqual([NOW + 60_000]);
   });
 
+  /* A SEAT-FIRST GAME STARTS WHEN IT STARTS (2026-10-02). Its start_time is
+     the close of the human window, not an advertised start. Seven Spins and
+     Heads-Ups filled at 12:12Z were stamped started_at 11:40-11:42Z (their
+     window close) and read as "RUNNING 30 minutes without a hand" although
+     each dealt within 30 seconds of launch. A window already closed leaves
+     the instant to the database's own launch transaction. */
+  it.each([
+    ['Spin', { spin: true }],
+    ['Heads-Up', { spin: false }],
+  ] as const)(
+    'stamps a %s whose human window closed long ago with its real launch instant',
+    async (_name, options) => {
+      const f = fixture({ ...options, preseatLead: -30 * 60_000 });
+      await f.started;
+      await settle();
+      const begin = rpc.mock.calls.find(([name]) => name === 'fn_begin_tournament_launch_atomic');
+      expect(begin?.[1]?.p_started_at).toBeNull();
+      expect(f.row.started_at).toBe(new Date(NOW).toISOString());
+    }
+  );
+
   it('starts a timed MTT at the admitted instant even when preparation consumes part of the lead', async () => {
     const f = fixture({ spin: false, timed: true, preseatLead: 60_000, setupDelay: 20_000 });
     await settle();

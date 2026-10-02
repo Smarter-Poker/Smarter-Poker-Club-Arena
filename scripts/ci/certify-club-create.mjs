@@ -34,6 +34,12 @@ let userId;
 const clubIds = [];
 let logoPath;
 
+const retryRead = (label, operation) =>
+  retryTransient(operation, {
+    failureOf: (result) => result?.error,
+    label,
+  });
+
 async function cleanupLegacyDirectCertificates() {
   const legacy = [];
   for (let page = 1; ; page += 1) {
@@ -152,12 +158,9 @@ try {
   // provisioned club. Production service_role/authenticated statements are
   // bounded, so a load-spike timeout must be retried here instead of turning a
   // successfully created and cleanly retired fixture into a false red.
-  const { data: welcome, error: welcomeError } = await retryTransient(
-    () => player.rpc('fn_get_club_welcome_package', { p_club_id: club.id }),
-    {
-      failureOf: (result) => result?.error,
-      label: `welcome package read for certification club ${club.id}`,
-    }
+  const { data: welcome, error: welcomeError } = await retryRead(
+    `welcome package read for certification club ${club.id}`,
+    () => player.rpc('fn_get_club_welcome_package', { p_club_id: club.id })
   );
   const welcomeItems = Array.isArray(welcome?.items) ? welcome.items : [];
   const welcomeCash = welcomeItems.filter((item) => item?.entity_kind === 'cash_game');
@@ -208,12 +211,16 @@ try {
     throw new Error('First Club Welcome Cash-Game Matrix Did Not Match Welcome-v1.');
   }
 
-  const { data: membership, error: membershipError } = await admin
-    .from('club_members')
-    .select('role,status,chip_balance')
-    .eq('club_id', club.id)
-    .eq('user_id', userId)
-    .single();
+  const { data: membership, error: membershipError } = await retryRead(
+    `owner membership read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('club_members')
+        .select('role,status,chip_balance')
+        .eq('club_id', club.id)
+        .eq('user_id', userId)
+        .single()
+  );
   if (
     membershipError ||
     membership?.role !== 'owner' ||
@@ -223,11 +230,15 @@ try {
     throw membershipError || new Error('Owner Membership Was Not Created Correctly.');
   }
 
-  const { data: storedClub, error: storedClubError } = await admin
-    .from('clubs')
-    .select('logo_url,avatar_url,chip_treasury,bbj_enabled,spins_enabled')
-    .eq('id', club.id)
-    .single();
+  const { data: storedClub, error: storedClubError } = await retryRead(
+    `club identity read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('clubs')
+        .select('logo_url,avatar_url,chip_treasury,bbj_enabled,spins_enabled')
+        .eq('id', club.id)
+        .single()
+  );
   if (
     storedClubError ||
     storedClub?.logo_url !== publicLogo.publicUrl ||
@@ -243,11 +254,15 @@ try {
     );
   }
 
-  const { data: funding, error: fundingError } = await admin
-    .from('club_welcome_package_funding')
-    .select('destination,amount,balance_after')
-    .eq('club_id', club.id)
-    .order('destination');
+  const { data: funding, error: fundingError } = await retryRead(
+    `welcome funding read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('club_welcome_package_funding')
+        .select('destination,amount,balance_after')
+        .eq('club_id', club.id)
+        .order('destination')
+  );
   if (
     fundingError ||
     !Array.isArray(funding) ||
@@ -262,11 +277,10 @@ try {
     throw fundingError || new Error('Welcome BBJ And Spin Funding Receipts Were Not Exact.');
   }
 
-  const { data: canonicalWallet, error: canonicalWalletError } = await admin
-    .from('club_wallets')
-    .select('club_id,chip_balance')
-    .eq('club_id', club.id)
-    .single();
+  const { data: canonicalWallet, error: canonicalWalletError } = await retryRead(
+    `canonical wallet read for certification club ${club.id}`,
+    () => admin.from('club_wallets').select('club_id,chip_balance').eq('club_id', club.id).single()
+  );
   if (
     canonicalWalletError ||
     canonicalWallet?.club_id !== club.id ||
@@ -277,14 +291,18 @@ try {
 
   const cashIds = welcomeCash.map((item) => item.entity_id);
   const initialTableIds = welcomeCash.map((item) => item.initial_table_id);
-  const { data: cashRows, error: cashRowsError } = await admin
-    .from('cash_games')
-    .select('id,template_name,variant,sb,bb,enabled,state')
-    .in('id', cashIds);
-  const { data: initialTables, error: initialTablesError } = await admin
-    .from('tables')
-    .select('id,cluster_id,status,lifecycle')
-    .in('id', initialTableIds);
+  const { data: cashRows, error: cashRowsError } = await retryRead(
+    `welcome cash game read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('cash_games')
+        .select('id,template_name,variant,sb,bb,enabled,state')
+        .in('id', cashIds)
+  );
+  const { data: initialTables, error: initialTablesError } = await retryRead(
+    `welcome table read for certification club ${club.id}`,
+    () => admin.from('tables').select('id,cluster_id,status,lifecycle').in('id', initialTableIds)
+  );
   if (
     cashRowsError ||
     initialTablesError ||
@@ -313,11 +331,15 @@ try {
     );
   }
 
-  const { data: schedule, error: scheduleError } = await admin
-    .from('tournament_schedules')
-    .select('id,name,active,days_of_week,start_times_utc,interval_minutes,config')
-    .eq('id', welcomeSchedules[0].entity_id)
-    .single();
+  const { data: schedule, error: scheduleError } = await retryRead(
+    `welcome schedule read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('tournament_schedules')
+        .select('id,name,active,days_of_week,start_times_utc,interval_minutes,config')
+        .eq('id', welcomeSchedules[0].entity_id)
+        .single()
+  );
   if (
     scheduleError ||
     schedule?.name !== 'Daily $25 Freezeout' ||
@@ -334,11 +356,15 @@ try {
     );
   }
 
-  const { data: spinRecurrence, error: spinRecurrenceError } = await admin
-    .from('spin_bonus_pools')
-    .select('club_id,is_active,balance,seeded_amount,offered_max_stake')
-    .eq('club_id', club.id)
-    .single();
+  const { data: spinRecurrence, error: spinRecurrenceError } = await retryRead(
+    `spin recurrence read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('spin_bonus_pools')
+        .select('club_id,is_active,balance,seeded_amount,offered_max_stake')
+        .eq('club_id', club.id)
+        .single()
+  );
   if (
     spinRecurrenceError ||
     spinRecurrence?.is_active !== true ||
@@ -351,19 +377,23 @@ try {
     );
   }
 
-  const { data: diamondConfigs, error: diamondConfigsError } = await admin
-    .from('diamond_game_configs')
-    .select('game,enabled,min_bet_diamonds,max_bet_diamonds,purchased_only')
-    .eq('host_id', club.id);
-  const { data: wheelConfig, error: wheelConfigError } = await admin
-    .from('wheel_configs')
-    .select('enabled,purchased_only')
-    .eq('host_id', club.id)
-    .single();
-  const { data: diamondConsent, error: diamondConsentError } = await admin
-    .from('diamond_spins_owner_consents')
-    .select('host_id')
-    .eq('host_id', club.id);
+  const { data: diamondConfigs, error: diamondConfigsError } = await retryRead(
+    `diamond config read for certification club ${club.id}`,
+    () =>
+      admin
+        .from('diamond_game_configs')
+        .select('game,enabled,min_bet_diamonds,max_bet_diamonds,purchased_only')
+        .eq('host_id', club.id)
+  );
+  const { data: wheelConfig, error: wheelConfigError } = await retryRead(
+    `wheel config read for certification club ${club.id}`,
+    () =>
+      admin.from('wheel_configs').select('enabled,purchased_only').eq('host_id', club.id).single()
+  );
+  const { data: diamondConsent, error: diamondConsentError } = await retryRead(
+    `diamond consent read for certification club ${club.id}`,
+    () => admin.from('diamond_spins_owner_consents').select('host_id').eq('host_id', club.id)
+  );
   if (
     diamondConfigsError ||
     wheelConfigError ||
@@ -389,9 +419,12 @@ try {
     );
   }
 
-  const { data: resetImpact, error: resetImpactError } = await player.rpc(
-    'fn_get_club_welcome_package_reset_impact',
-    { p_club_id: club.id }
+  const { data: resetImpact, error: resetImpactError } = await retryRead(
+    `welcome reset impact read for certification club ${club.id}`,
+    () =>
+      player.rpc('fn_get_club_welcome_package_reset_impact', {
+        p_club_id: club.id,
+      })
   );
   if (resetImpactError || resetImpact?.can_reset !== true) {
     throw resetImpactError || new Error('Pristine Welcome Package Was Not Resettable.');
@@ -420,26 +453,42 @@ try {
     resetWheelRead,
     resetConsentRead,
   ] = await Promise.all([
-    admin
-      .from('clubs')
-      .select('chip_treasury,bbj_enabled,bbj_rake_enabled,spins_enabled,spins_preseed_amount')
-      .eq('id', club.id)
-      .single(),
-    admin
-      .from('spin_bonus_pools')
-      .select('balance,seeded_amount,is_active')
-      .eq('club_id', club.id)
-      .single(),
-    admin
-      .from('bbj_pools')
-      .select('main_balance,backup_balance,promo_balance,status')
-      .eq('club_id', club.id)
-      .single(),
-    admin.from('cash_games').select('id,enabled,state').in('id', cashIds),
-    admin.from('tournament_schedules').select('id,active').eq('id', schedule.id).single(),
-    admin.from('diamond_game_configs').select('game,enabled').eq('host_id', club.id),
-    admin.from('wheel_configs').select('enabled').eq('host_id', club.id).single(),
-    admin.from('diamond_spins_owner_consents').select('host_id').eq('host_id', club.id),
+    retryRead(`reset club read for certification club ${club.id}`, () =>
+      admin
+        .from('clubs')
+        .select('chip_treasury,bbj_enabled,bbj_rake_enabled,spins_enabled,spins_preseed_amount')
+        .eq('id', club.id)
+        .single()
+    ),
+    retryRead(`reset spin read for certification club ${club.id}`, () =>
+      admin
+        .from('spin_bonus_pools')
+        .select('balance,seeded_amount,is_active')
+        .eq('club_id', club.id)
+        .single()
+    ),
+    retryRead(`reset BBJ read for certification club ${club.id}`, () =>
+      admin
+        .from('bbj_pools')
+        .select('main_balance,backup_balance,promo_balance,status')
+        .eq('club_id', club.id)
+        .single()
+    ),
+    retryRead(`reset cash game read for certification club ${club.id}`, () =>
+      admin.from('cash_games').select('id,enabled,state').in('id', cashIds)
+    ),
+    retryRead(`reset schedule read for certification club ${club.id}`, () =>
+      admin.from('tournament_schedules').select('id,active').eq('id', schedule.id).single()
+    ),
+    retryRead(`reset diamond config read for certification club ${club.id}`, () =>
+      admin.from('diamond_game_configs').select('game,enabled').eq('host_id', club.id)
+    ),
+    retryRead(`reset wheel config read for certification club ${club.id}`, () =>
+      admin.from('wheel_configs').select('enabled').eq('host_id', club.id).single()
+    ),
+    retryRead(`reset diamond consent read for certification club ${club.id}`, () =>
+      admin.from('diamond_spins_owner_consents').select('host_id').eq('host_id', club.id)
+    ),
   ]);
   const resetReadError = [
     resetClubRead,
@@ -493,12 +542,9 @@ try {
   }
   clubIds.push(presetClub.id);
 
-  const { data: secondWelcome, error: secondWelcomeError } = await retryTransient(
-    () => player.rpc('fn_get_club_welcome_package', { p_club_id: presetClub.id }),
-    {
-      failureOf: (result) => result?.error,
-      label: `welcome package refusal read for certification club ${presetClub.id}`,
-    }
+  const { data: secondWelcome, error: secondWelcomeError } = await retryRead(
+    `welcome package refusal read for certification club ${presetClub.id}`,
+    () => player.rpc('fn_get_club_welcome_package', { p_club_id: presetClub.id })
   );
   if (
     secondWelcomeError ||
@@ -514,11 +560,10 @@ try {
     );
   }
 
-  const { data: storedPreset, error: storedPresetError } = await admin
-    .from('clubs')
-    .select('logo_url,avatar_url')
-    .eq('id', presetClub.id)
-    .single();
+  const { data: storedPreset, error: storedPresetError } = await retryRead(
+    `placeholder crest read for certification club ${presetClub.id}`,
+    () => admin.from('clubs').select('logo_url,avatar_url').eq('id', presetClub.id).single()
+  );
   if (
     storedPresetError ||
     storedPreset?.logo_url !== assetUrl ||

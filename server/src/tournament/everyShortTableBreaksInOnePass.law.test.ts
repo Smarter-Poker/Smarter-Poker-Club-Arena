@@ -109,35 +109,40 @@ describe('every short table breaks in one pass', () => {
   });
 
   it('a park from an earlier pass that has not begun keeps the seats its players need', async () => {
-    const board = [table(0, 8), table(1, 1)];
-    const m = manager(board);
-    // An earlier pass parked a one-player table whose hand has not ended yet.
-    m.rememberTournamentBreak({
-      ok: true,
-      reason: null,
-      break_id: id(4000),
-      tournament_id: EVENT,
-      source_table_id: id(2099),
-      lifecycle: '1',
-      state: 'park_requested',
-      revision: '0',
-      custody_id: null,
-      custody_generation: null,
-      terminal_handoff_required: false,
-      members: [],
-    });
-    vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
-      if (name !== 'table_seats') throw new Error(`unexpected table ${name}`);
-      return {
-        select: () => ({
-          in: () => ({ is: async () => ({ data: [{ table_id: id(2099) }], error: null }) }),
-        }),
-      };
-    }) as any);
-    await m.checkTableBalance();
-    // Breaking table 1 into table 0 would fill it, leaving no seat for the
-    // earlier park's player: that park would stand frozen with nowhere to go.
-    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    const plan = async (pendingPlayers: number) => {
+      vi.restoreAllMocks();
+      const board = [table(0, 7), table(1, 1), table(2, 1), table(3, 1)];
+      const m = manager(board);
+      // An earlier pass parked a table whose hand has not ended yet.
+      m.rememberTournamentBreak({
+        ok: true,
+        reason: null,
+        break_id: id(4000),
+        tournament_id: EVENT,
+        source_table_id: id(2099),
+        lifecycle: '1',
+        state: 'park_requested',
+        revision: '0',
+        custody_id: null,
+        custody_generation: null,
+        terminal_handoff_required: false,
+        members: [],
+      });
+      vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
+        if (name !== 'table_seats') throw new Error(`unexpected table ${name}`);
+        const rows = Array.from({ length: pendingPlayers }, () => ({ table_id: id(2099) }));
+        return {
+          select: () => ({ in: () => ({ is: async () => ({ data: rows, error: null }) }) }),
+        };
+      }) as any);
+      await m.checkTableBalance();
+      return m.requestTournamentBreakPark.mock.calls.length;
+    };
+    // Nothing waiting: both spare single tables are parked together.
+    expect(await plan(0)).toBe(2);
+    // Ten players waiting for seats: the pass still makes the one break this
+    // step always made, but parks nothing more that would take their seats.
+    expect(await plan(10)).toBe(1);
   });
 
   it('the 09a56a25 shape: a gap move deferred by a running hand fences its source', async () => {

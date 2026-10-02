@@ -3599,8 +3599,12 @@ export class TournamentManager extends TournamentManagerEliminations {
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           continue;
         }
-        // Players of a park that has not begun still need seats here.
-        if (freeSeats(remaining) < unbegunDemand) continue;
+        // Players of a park that has not begun still need seats here, so a
+        // pass adds no further park that would take them. The first choice
+        // is the single break this step always made: a park that can never
+        // begin (production 2026-10-02, f8c6f298 left 1/1/9 with its full
+        // table parked since 04:51Z) must not stop two lone players merging.
+        if (breakSources.length > 0 && freeSeats(remaining) < unbegunDemand) continue;
         chosen = bt.tableId;
         plannedBoard = remaining;
         break;

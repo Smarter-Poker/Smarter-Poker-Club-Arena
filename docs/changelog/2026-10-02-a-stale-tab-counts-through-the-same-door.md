@@ -48,9 +48,26 @@ comment. `trig_update_post_comment_count` had already counted that delete, so th
 deletes were counted twice. That call is now refused, and the trigger counts the delete once. The
 page swallows the error, as it always did.
 
+## Reconciled with 20261002225448
+
+Another agent's PR #5878 merged at 23:26, before it had been applied:
+`20261002225448_a_browser_moves_only_the_reel_counters_it_is_the_evidence_fo`. It reached the
+same two reel routines from the other side. It required a signed-in viewer and allowed only
+`share_count` / `view_count`, with no once-a-day key and with browser decrements of those two
+fields still allowed. If it had been applied as merged, a signed-in browser could have added a
+view in a loop and could have taken a rival's views down.
+
+Both files now carry one identical text for the two reel routines. It keeps every check that file
+introduced, word for word, so its own law (`aBrowserMovesOnlyTheReelCountersItIsTheEvidenceFor`)
+holds. It also adds the two checks that close those gaps: the receipt, and no browser decrement.
+Whichever file is applied last, the result is the same; the harness case
+`the-other-reel-migration-changes-nothing` proves the md5 does not move. It was applied in that
+form at 23:28 (schema_migrations `20261002232859`), which satisfies both files' `@live-proof`. The case
+`a-browser-cannot-take-a-reel-count-down` covers the decrement.
+
 ## Proof
 
-`scripts/ci/test-a-stale-tab-counts-through-the-same-door.py` (17 cases, all green). It runs
+`scripts/ci/test-a-stale-tab-counts-through-the-same-door.py` (19 cases, all green). It runs
 against both texts of the first migration: the one merged in #5876 and the one that ran.
 
 It loads production's exact counter text; the md5 of all four is pinned in the case

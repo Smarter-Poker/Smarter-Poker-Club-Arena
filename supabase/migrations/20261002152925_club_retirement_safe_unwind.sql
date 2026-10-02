@@ -1,4 +1,4 @@
--- 20261002152925_club_retirement_unwinds_unused_welcome_and_closes_lifecycle_gaps
+-- 20261002152925_club_retirement_safe_unwind
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-02 15:29:25 UTC.
 --

@@ -3,10 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const migration = readFileSync(
-  resolve(
-    __dirname,
-    '../supabase/migrations/20261002152925_club_retirement_unwinds_unused_welcome_and_closes_lifecycle_gaps.sql'
-  ),
+  resolve(__dirname, '../supabase/migrations/20261002152925_club_retirement_safe_unwind.sql'),
   'utf8'
 ).toLowerCase();
 const welcomeUnwindMigration = readFileSync(

@@ -17,7 +17,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20261002152925_club_retirement_unwinds_unused_welcome_and_closes_lifecycle_gaps.sql'
+MIGRATION = ROOT / 'supabase/migrations/20261002152925_club_retirement_safe_unwind.sql'
 PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
 SCRATCH = ROOT / '.native-test-tmp'
 SCRATCH.mkdir(exist_ok=True)

@@ -5,6 +5,9 @@
 # tests/fixtures/ledger-invariant. Every refusal case plants the regression and
 # proves the named refusal at commit; every pass case is a live money-path shape.
 set -euo pipefail
+# macOS: a postmaster listening on TCP aborts ("became multithreaded during
+# startup") unless LC_ALL names a valid locale.
+export LC_ALL="${LC_ALL:-C}"
 root=$(git rev-parse --show-toplevel)
 pgbin=${PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/ledger-invariant-test.XXXXXX")
@@ -20,8 +23,15 @@ cleanup() {
 trap cleanup EXIT
 mkdir "$fixture/socket"
 "$pgbin/initdb" -D "$fixture/data" -A trust --no-locale -E UTF8 >/dev/null
+# A ledger refusal is recorded outside its rollback (20261002135708): the
+# recorder connects back over TCP as its own login with the password the
+# migration generated and kept in Vault. Production's project host asks that
+# login for scram; so does the fixture, ahead of initdb's trust lines, so the
+# recorded rows prove the unseen password authenticates.
+{ echo "host all ca_ledger_refusal_recorder 127.0.0.1/32 scram-sha-256"; cat "$fixture/data/pg_hba.conf"; } > "$fixture/pg_hba.conf"
+mv "$fixture/pg_hba.conf" "$fixture/data/pg_hba.conf"
 "$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
-  -o "-k $fixture/socket -p 55493 -h ''" start >/dev/null
+  -o "-k $fixture/socket -p 55493 -h 127.0.0.1" start >/dev/null
 started=1
 migration=$(ls "$root"/supabase/migrations/*_a_balance_never_moves_without_its_ledger_row.sql | head -1)
 # The hand receipt joins the felt (20261001231409): the fees a cash hand takes
@@ -36,7 +46,12 @@ stores=$(ls "$root"/supabase/migrations/*_every_chip_store_balances_with_its_led
 # balances with a leg whose other end is suspense is refused, installed after
 # every store proof has run unchanged.
 suspense=$(ls "$root"/supabase/migrations/*_no_balance_moves_against_settlement_suspense.sql | head -1)
-export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UTC -c client_min_messages=notice'
+# A ledger refusal is recorded outside its rollback (20261002135708): a refused
+# transaction rolls back whole, and its record, its count and its incident
+# must exist afterwards. Installed last, after every judgement has been proved
+# unchanged; the three settings point the recorder's loopback at this fixture.
+recorder=$(ls "$root"/supabase/migrations/*_a_ledger_refusal_is_recorded_outside_its_rollback.sql | head -1)
+export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UTC -c client_min_messages=notice -c ca.ledger_refusal_recorder_host=127.0.0.1 -c ca.ledger_refusal_recorder_port=55493 -c ca.ledger_refusal_recorder_sslmode=disable'
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55493 -d postgres \
   -f "$root/tests/fixtures/ledger-invariant/bootstrap.sql" \
   -f "$root/tests/fixtures/ledger-invariant/setup.sql" \
@@ -48,5 +63,8 @@ export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UT
   -f "$root/tests/fixtures/ledger-invariant/stores-regression.sql" \
   -f "$root/tests/fixtures/ledger-invariant/suspense-bootstrap.sql" \
   -f "$suspense" \
-  -f "$root/tests/fixtures/ledger-invariant/suspense-regression.sql"
-echo "ledger invariant: every refusal named, every live shape committed, on every chip store, and nothing balances against suspense"
+  -f "$root/tests/fixtures/ledger-invariant/suspense-regression.sql" \
+  -f "$root/tests/fixtures/ledger-invariant/refusal-bootstrap.sql" \
+  -f "$recorder" \
+  -f "$root/tests/fixtures/ledger-invariant/refusal-regression.sql"
+echo "ledger invariant: every refusal named, every live shape committed, on every chip store, nothing balances against suspense, and every refusal is recorded outside its rollback"

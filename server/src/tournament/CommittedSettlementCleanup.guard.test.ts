@@ -397,8 +397,11 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     // being a BARE return. It now logs and re-arms the sweep, because the break
     // holds the platform five minutes an hour and a decided event that is
     // dropped inside one has no hands left to trigger another attempt
-    // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned).
-    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen())');
+    // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned). On 2026-10-02
+    // the gate became the settlement predicate: the same freeze, except that
+    // a decided event is still paid during the announced last-hand window
+    // until TERMINAL_SETTLEMENT_LEAD_MS before the break (freezeState.ts).
+    const firstFreeze = finish.indexOf('if (isTerminalSettlementFrozen())');
     const frozenRefusal = sliceEnclosingBlock(
       finish,
       'finish deferred: the platform is frozen for the maintenance break'

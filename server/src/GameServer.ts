@@ -159,6 +159,7 @@ import { processMemoryHealth } from './observability/processMemory.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
+  reopenSweepIdChunks,
   freshHumanWindowMs,
   type LiveTournamentRow,
   type TournamentTableRow,
@@ -9980,36 +9981,46 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    const { data: liveRows, error: liveErr } = await supabase
-      .from('tournaments')
-      .select('id, status, start_time')
-      .in('status', ['REGISTERING', 'RUNNING'])
-      .limit(500);
-    if (liveErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-        'GameServer.reopen_sweep_tournament_read_failed'
-      );
-      return;
+    /* Every live tournament, a page at a time: one 500-row read left the
+       tail of a 594-tournament board out of the sweep entirely. */
+    const tournaments: LiveTournamentRow[] = [];
+    const PAGE = 500;
+    for (let from = 0; ; from += PAGE) {
+      const { data: liveRows, error: liveErr } = await supabase
+        .from('tournaments')
+        .select('id, status, start_time')
+        .in('status', ['REGISTERING', 'RUNNING'])
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (liveErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
+          'GameServer.reopen_sweep_tournament_read_failed'
+        );
+        return;
+      }
+      const page = (liveRows ?? []) as LiveTournamentRow[];
+      tournaments.push(...page);
+      if (page.length < PAGE) break;
     }
-    const tournaments = (liveRows ?? []) as LiveTournamentRow[];
     if (tournaments.length === 0) return;
 
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, tournament_id, status, is_deleted, created_at')
-      .in(
-        'tournament_id',
-        tournaments.map((t) => String(t.id))
-      );
-    if (tableErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-        'GameServer.reopen_sweep_table_read_failed'
-      );
-      return;
+    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    const tables: TournamentTableRow[] = [];
+    for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
+      const { data: tableRows, error: tableErr } = await supabase
+        .from('tables')
+        .select('id, tournament_id, status, is_deleted, created_at')
+        .in('tournament_id', chunk);
+      if (tableErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
+          'GameServer.reopen_sweep_table_read_failed'
+        );
+        return;
+      }
+      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
     }
-    const tables = (tableRows ?? []) as TournamentTableRow[];
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
        table being closed - that is exactly what stranded 411 of them on
@@ -10018,11 +10029,11 @@ export class GameServer {
       .filter((t) => t.is_deleted !== true && String(t.status ?? '').toLowerCase() === 'closed')
       .map((t) => String(t.id));
     const openSeatsByTable = new Map<string, number>();
-    if (closedIds.length > 0) {
+    for (const chunk of reopenSweepIdChunks(closedIds)) {
       const { data: seatRows, error: seatErr } = await supabase
         .from('table_seats')
         .select('table_id')
-        .in('table_id', closedIds)
+        .in('table_id', chunk)
         .is('left_at', null);
       if (seatErr) {
         reportError(

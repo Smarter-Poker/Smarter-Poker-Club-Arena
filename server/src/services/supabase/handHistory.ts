@@ -39,6 +39,36 @@ export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
   'HAND_SUBMISSION_TABLE_MISSING',
 ]);
 
+/**
+ * THE LEDGER INVARIANT REFUSED THE HAND (2026-10-02).
+ *
+ * fn_ca_balance_has_its_ledger_row judges every chip movement at COMMIT and,
+ * when a balance and its chip_ledger legs disagree, refuses the whole
+ * transaction: SQLSTATE 23514, `REFUSED: balance_moved_without_its_ledger_row`
+ * or `REFUSED: balance_moved_against_settlement_suspense`. The rollback leaves
+ * every seat at its pre-hand stack, and the refusing session has already
+ * recorded the refusal and raised a critical incident on its own connection
+ * (migration 20261002135708). The answer is a property of the request and the
+ * door, not of the network: the same request is refused the same way every
+ * time. Replaying it thirteen times over forty seconds, then rebuilding the
+ * table every five seconds into the same answer, hid it behind delay; it is a
+ * deterministic refusal and a standing one.
+ */
+export const LEDGER_INVARIANT_REFUSED = 'LEDGER_INVARIANT_REFUSED';
+
+/** Self-contained (no module constant): the runtime probes evaluate it alone. */
+export function isLedgerInvariantRefusal(
+  error: { code?: unknown; message?: unknown } | null | undefined
+): boolean {
+  if (!error) return false;
+  return (
+    String(error.code ?? '') === '23514' &&
+    /^REFUSED: balance_moved_(?:without_its_ledger_row|against_settlement_suspense)\b/.test(
+      String(error.message ?? '').trim()
+    )
+  );
+}
+
 /** The door's standing refusal, named, for the one table it was asked about. */
 export class RetainedHandSubmissionRefusedError extends Error {
   constructor(
@@ -64,6 +94,10 @@ export async function resumeRetainedHandSubmission(
   });
   if (error) {
     const code = String(error.message ?? '').trim();
+    // The retained hand replays into the same ledger refusal on every start:
+    // hold the table (its seats are at their pre-hand stacks), never rebuild it.
+    if (isLedgerInvariantRefusal(error))
+      throw new RetainedHandSubmissionRefusedError(tableId, LEDGER_INVARIANT_REFUSED);
     if (RETAINED_HAND_STANDING_REFUSALS.has(code))
       throw new RetainedHandSubmissionRefusedError(tableId, code);
     throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
@@ -876,6 +910,13 @@ async function insertHandHistoryRow(
       const { data, error } = submission
         ? await supabase.rpc('fn_ca_commit_hand_submission', submission)
         : await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+      if (isLedgerInvariantRefusal(error)) {
+        // Deterministic: the database refused this exact transaction at
+        // COMMIT and recorded the refusal outside its rollback. The identical
+        // replay is refused identically, so it is a semantic refusal, not a
+        // lost response.
+        throw new Error(`atomic hand commit refused (ledger_invariant): ${String(error!.message)}`);
+      }
       const result = (data ?? {}) as AtomicCommitResult;
       if (!error && result.success === true && result.atomic_hand_commit === true) {
         if (

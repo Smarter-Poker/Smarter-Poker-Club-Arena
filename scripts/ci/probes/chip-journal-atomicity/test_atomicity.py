@@ -594,7 +594,10 @@ if mode=="fixed":
     " AND EXISTS(SELECT 1 FROM chip_ledger WHERE to_type='chip_retirement' AND category='burn' AND amount=5)"
     " AND EXISTS(SELECT 1 FROM accounting_cash_bank_receipts WHERE club_ledger_id IS NOT NULL AND amount=5)",
   "seat_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
-  "reload_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
+  # A horse rebuys from its own wallet first (20261002134205): this horse
+  # holds 100 in its club wallet, so the treasury does not pay at all.
+  "reload_funding":"(SELECT chip_treasury FROM clubs)=100 AND (SELECT chip_balance FROM club_members)=95"
+    " AND (SELECT sum(stack) FROM table_seats)=15",
  }
  for name,operation in cases.items():
   run("BEGIN;"+setup+operation+";"+f"""

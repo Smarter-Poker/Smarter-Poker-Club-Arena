@@ -23,6 +23,13 @@ const ledgerCounterpartyRepairSql = readFileSync(
   ),
   'utf8'
 );
+const ledgerCategoryRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002010726_welcome_allocations_use_the_declared_opening_category.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -192,13 +199,18 @@ describe('prospective lifetime-first club welcome package database contract', ()
     const creation = sql.indexOf('CREATE FUNCTION public.fn_apply_club_welcome_economics');
     expect(registry).toBeGreaterThan(0);
     expect(registry).toBeLessThan(creation);
-    expect(sql).toContain('club_welcome_allocation ledger context');
+    expect(sql).toContain('club_opening_allocation ledger context');
+    expect(sql).toContain("set_config('app.ledger_category','club_opening_allocation',true)");
+    expect(sql).not.toContain("set_config('app.ledger_category','club_welcome_allocation',true)");
     expect(sql).toContain('Diamond Spins remain owner-acceptance-required');
     expect(sql).toContain("set_config('app.ledger_counterparty','opening_setup',true)");
     expect(sql).not.toContain("set_config('app.ledger_counterparty','welcome_package',true)");
     expect(ledgerCounterpartyRepairSql).toContain('replace(v_def,v_anchor,v_replacement)');
     expect(ledgerCounterpartyRepairSql).toContain("store='opening_setup' AND treatment='counted'");
     expect(ledgerCounterpartyRepairSql).not.toContain('INSERT INTO public.ca_chip_store_coverage');
+    expect(ledgerCategoryRepairSql).toContain('replace(v_def,v_anchor,v_replacement)');
+    expect(ledgerCategoryRepairSql).toContain("conname='chip_ledger_category_check'");
+    expect(ledgerCategoryRepairSql).not.toContain('DROP CONSTRAINT chip_ledger_category_check');
   });
 
   it('does not mutate tagline, membership, wallets or historical ledgers', () => {

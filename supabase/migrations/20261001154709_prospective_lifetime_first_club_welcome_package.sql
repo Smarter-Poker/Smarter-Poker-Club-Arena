@@ -227,7 +227,7 @@ GRANT EXECUTE ON FUNCTION public.fn_get_club_welcome_package(uuid) TO authentica
 -- event trigger can enforce the reviewed financial authority atomically.
 INSERT INTO public.ca_money_rpc_registry (proname,status,notes) VALUES (
   'fn_apply_club_welcome_economics','approved',
-  'Private lifetime-first club welcome allocator. Runs only inside the owner-bound idempotent provisioning transaction; moves exactly the reviewed BBJ seed from clubs.chip_treasury into bbj_pools and delegates the reviewed Poker Spins seed to fn_spin_activate, with keyed club_welcome_allocation ledger context. Diamond Spins remain owner-acceptance-required and receive no automatic funds.'
+  'Private lifetime-first club welcome allocator. Runs only inside the owner-bound idempotent provisioning transaction; moves exactly the reviewed BBJ seed from clubs.chip_treasury into bbj_pools and delegates the reviewed Poker Spins seed to fn_spin_activate, with keyed club_opening_allocation ledger context. Diamond Spins remain owner-acceptance-required and receive no automatic funds.'
 )
 ON CONFLICT (proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
 
@@ -253,7 +253,7 @@ BEGIN
   IF EXISTS(SELECT 1 FROM public.bbj_pools WHERE club_id=p_club_id) THEN
     RAISE EXCEPTION 'WELCOME_BBJ_POOL_ALREADY_EXISTS' USING ERRCODE='55000';
   END IF;
-  PERFORM set_config('app.ledger_category','club_welcome_allocation',true);
+  PERFORM set_config('app.ledger_category','club_opening_allocation',true);
   -- Journal both allocations through the already-declared opening clearing
   -- store: treasury -> opening_setup -> BBJ / Spin reserve. The clearing
   -- store nets to zero inside this transaction.

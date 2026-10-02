@@ -51,6 +51,13 @@ const controllerProvenanceRepairSql = readFileSync(
   ),
   'utf8'
 );
+const scheduleSpawnCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002065156_welcome_certification_retires_idle_schedule_spawns.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -311,5 +318,127 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(derivedTableCleanupSql.indexOf('FROM public.cash_games')).toBeLessThan(
       derivedTableCleanupSql.indexOf('FROM public.clubs WHERE id=p_club_id FOR UPDATE')
     );
+  });
+
+  it('retires only the exact reserved idle schedule-spawn graph in one bounded transaction', () => {
+    expect(scheduleSpawnCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(scheduleSpawnCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(scheduleSpawnCleanupSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(scheduleSpawnCleanupSql).toContain("SET LOCAL statement_timeout = '120s';");
+
+    expect(scheduleSpawnCleanupSql).toContain(
+      'public.fn_ca_prepare_unused_welcome_certification_schedule_spawns'
+    );
+    expect(scheduleSpawnCleanupSql).toContain("COALESCE(auth.role(), '') <> 'service_role'");
+    expect(scheduleSpawnCleanupSql).toContain(
+      'SELECT 1 FROM public.club_welcome_entitlements e WHERE e.club_id=p_club_id'
+    );
+    for (const protectedClubId of [
+      'a0000000-0000-0000-0000-000000000001',
+      'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+      '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3',
+      'fade0000-0000-0000-0000-000000000001',
+    ])
+      expect(scheduleSpawnCleanupSql).toContain(`'${protectedClubId}'::uuid`);
+    expect(scheduleSpawnCleanupSql).toContain('WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED');
+    expect(scheduleSpawnCleanupSql).toContain(
+      "v_club.name NOT LIKE 'Crest Cert %' AND v_club.name NOT LIKE 'Preset Crest Cert %'"
+    );
+    expect(scheduleSpawnCleanupSql).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
+    expect(scheduleSpawnCleanupSql).toContain(
+      "LIKE 'ca-customization-cert-postdeploy-%@example.invalid'"
+    );
+    expect(scheduleSpawnCleanupSql).toContain('COALESCE(v_club.is_union,false)');
+    expect(scheduleSpawnCleanupSql).toContain('v_club.union_id IS NOT NULL');
+    expect(scheduleSpawnCleanupSql).toContain(
+      'EXISTS(SELECT 1 FROM public.union_clubs u WHERE u.club_id=p_club_id)'
+    );
+    expect(scheduleSpawnCleanupSql).toContain('cardinality(v_schedules)<>1');
+    expect(scheduleSpawnCleanupSql).toContain('cardinality(v_cash)<>9');
+    expect(scheduleSpawnCleanupSql).toContain('WELCOME_CERTIFICATION_SCHEDULE_LINEAGE_REFUSED');
+    expect(scheduleSpawnCleanupSql).toContain('WELCOME_CERTIFICATION_CASH_LINEAGE_REFUSED');
+    expect(scheduleSpawnCleanupSql).toContain('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED');
+    expect(scheduleSpawnCleanupSql).toContain(
+      'WELCOME_CERTIFICATION_TOURNAMENT_TABLE_LINEAGE_REFUSED'
+    );
+
+    expect(scheduleSpawnCleanupSql).toContain(
+      'SELECT t.id FROM public.tournaments t WHERE t.schedule_id=ANY(v_schedules)'
+    );
+    expect(scheduleSpawnCleanupSql).toContain(
+      'SELECT s.tournament_id FROM public.tournament_schedule_spawns s'
+    );
+    expect(scheduleSpawnCleanupSql).toContain('s.schedule_id=ANY(v_schedules)');
+    expect(scheduleSpawnCleanupSql).toContain('t.club_id IS DISTINCT FROM p_club_id');
+    expect(scheduleSpawnCleanupSql).toContain('t.union_id IS NOT NULL');
+    expect(scheduleSpawnCleanupSql).toContain('t.cluster_id IS NOT NULL');
+    expect(scheduleSpawnCleanupSql).toContain(
+      'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+    );
+    for (const guardedRelation of [
+      'tournament_players',
+      'tournament_escrow',
+      'tournament_payouts',
+      'tournament_obligations',
+      'tournament_registrations',
+      'tournament_registration_approvals',
+      'tournament_waitlists',
+      'tournament_tickets',
+      'table_seats',
+      'table_sessions',
+      'engine_table_leases',
+      'engine_tournament_leases',
+      'table_waitlist',
+      'table_pending_addons',
+      'table_hole_cards',
+      'hand_state_snapshots',
+      'table_cashout_history',
+      'insurance_transactions',
+      'hand_history',
+      'managed_game_schedules',
+    ])
+      expect(scheduleSpawnCleanupSql).toContain(`public.${guardedRelation}`);
+    expect(scheduleSpawnCleanupSql).not.toContain('public.tournament_rebuys');
+
+    const activityGuard = scheduleSpawnCleanupSql.indexOf(
+      'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+    );
+    const cancelCommands = scheduleSpawnCleanupSql.indexOf(
+      "UPDATE public.managed_game_schedules SET status='cancelled'"
+    );
+    const deleteBacklinks = scheduleSpawnCleanupSql.indexOf(
+      'DELETE FROM public.tournament_schedule_spawns WHERE schedule_id=ANY(v_schedules)'
+    );
+    const deleteTables = scheduleSpawnCleanupSql.indexOf(
+      'DELETE FROM public.tables WHERE id=ANY(v_tables)'
+    );
+    const deleteTournaments = scheduleSpawnCleanupSql.indexOf(
+      'DELETE FROM public.tournaments WHERE id=ANY(v_tournaments)'
+    );
+    expect(activityGuard).toBeGreaterThan(0);
+    expect(activityGuard).toBeLessThan(cancelCommands);
+    expect(cancelCommands).toBeLessThan(deleteBacklinks);
+    expect(deleteBacklinks).toBeLessThan(deleteTables);
+    expect(deleteTables).toBeLessThan(deleteTournaments);
+    expect(scheduleSpawnCleanupSql).not.toMatch(
+      /(DELETE FROM|UPDATE) public\.accepted_event_operations/
+    );
+  });
+
+  it('prepares schedule spawns before the existing fixture and retirement doors', () => {
+    const schedulePreparation = scheduleSpawnCleanupSql.indexOf(
+      'v_schedule:=public.fn_ca_prepare_unused_welcome_certification_schedule_spawns(p_club_id)'
+    );
+    const fixturePreparation = scheduleSpawnCleanupSql.indexOf(
+      'v_prepared:=public.fn_ca_prepare_unused_welcome_certification_fixture(p_club_id)'
+    );
+    const retirement = scheduleSpawnCleanupSql.indexOf(
+      'v_retired:=public.fn_ca_retire_certification_club(p_club_id,p_reason)'
+    );
+    expect(schedulePreparation).toBeGreaterThan(0);
+    expect(schedulePreparation).toBeLessThan(fixturePreparation);
+    expect(fixturePreparation).toBeLessThan(retirement);
+    expect(scheduleSpawnCleanupSql).toContain("'schedule_tournaments_removed'");
+    expect(scheduleSpawnCleanupSql).toContain("'schedule_tables_removed'");
   });
 });

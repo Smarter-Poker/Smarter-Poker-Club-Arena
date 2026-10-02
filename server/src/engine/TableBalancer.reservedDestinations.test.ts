@@ -42,17 +42,19 @@ describe('table breaks use physically available destination chairs', () => {
   );
 
   it('continues at another destination after the first usable table runs out of unreserved chairs', () => {
+    // A short source fills the fullest table first (a short table is merged,
+    // not paired), so the first usable table is the fuller one here.
     const source = table('source', 3);
-    const first = table('first', 1, [3, 4, 5, 6, 7, 8, 9]);
+    const first = table('first', 6, [8, 9]);
     const second = table('second', 4);
     const moves = new TableBalancer().breakTable(source, [first, second]);
 
     expect(moves).toHaveLength(3);
     expect(moves.map((move) => move.toTableId)).toEqual(['first', 'second', 'second']);
-    expect(moves[0].toSeat).toBe(2);
+    expect(moves[0].toSeat).toBe(7);
     expect(new Set(moves.map((move) => move.playerId)).size).toBe(3);
     expect(first.reservedSeats).not.toContain(moves[0].toSeat);
-    expect(first.playerCount).toBe(2);
+    expect(first.playerCount).toBe(7);
     expect(second.playerCount).toBe(6);
     expect(new Set(second.players.map((p) => p.seat)).size).toBe(6);
   });

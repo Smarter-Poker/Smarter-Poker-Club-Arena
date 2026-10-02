@@ -145,6 +145,45 @@ describe('every short table breaks in one pass', () => {
     expect(await plan(10)).toBe(1);
   });
 
+  it('the 4d2afa41 shape: a full table never jumps an unbegun park', async () => {
+    const plan = async (pendingPlayers: number) => {
+      vi.restoreAllMocks();
+      // 4/6/6/6 at nine-handed tables: the 4-player table is the emptiest and
+      // the field can absorb it (TableBalancer soft capacity), but it is not
+      // a stranded short table.
+      const board = [table(0, 4), table(1, 6), table(2, 6), table(3, 6)];
+      const m = manager(board);
+      m.rememberTournamentBreak({
+        ok: true,
+        reason: null,
+        break_id: id(4001),
+        tournament_id: EVENT,
+        source_table_id: id(2098),
+        lifecycle: '1',
+        state: 'park_requested',
+        revision: '0',
+        custody_id: null,
+        custody_generation: null,
+        terminal_handoff_required: false,
+        members: [],
+      });
+      vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
+        if (name !== 'table_seats') throw new Error(`unexpected table ${name}`);
+        const rows = Array.from({ length: pendingPlayers }, () => ({ table_id: id(2098) }));
+        return {
+          select: () => ({ in: () => ({ is: async () => ({ data: rows, error: null }) }) }),
+        };
+      }) as any);
+      await m.checkTableBalance();
+      return m.requestTournamentBreakPark.mock.calls.map((call: unknown[]) => call[0] as string);
+    };
+    // Nothing waiting: the 4-player table is consolidated.
+    expect(await plan(0)).toEqual([id(2000)]);
+    // Nine players of an earlier park still need the seats it would take:
+    // no further park, so one stuck park cannot cascade into frozen tables.
+    expect(await plan(9)).toEqual([]);
+  });
+
   it('the 09a56a25 shape: a gap move deferred by a running hand fences its source', async () => {
     // 9/9/9/1: the lone player cannot be broken into full tables, so players
     // come to them; every source table is in the middle of a hand.

@@ -63,3 +63,20 @@ Migration `20261002065836_no_balance_moves_against_settlement_suspense`:
 - `tests/every-chip-store-balances-with-its-ledger-row.law.test.ts` reads the
   latest body of both functions across every migration and plants a body
   without the rule to prove it goes red.
+
+## Observe window and the flip
+
+- `20261002065836` applied by `apply-merged-migration.yml` run 36979372900 at
+  07:36:04 UTC (PR #5795, merge `cfe2820de3`).
+- Both modes proved live in rolled-back DO blocks at 07:37: an undeclared +0.01
+  member-wallet credit recorded `settlement_suspense b=0.01 s=0.01 observe`;
+  with the row set to refuse inside the probe, the same write was refused,
+  SQLSTATE 23514, `REFUSED: balance_moved_against_settlement_suspense
+suspense_legs=0.01 moved=player_wallet:... 0.01`.
+- 07:36:04 - 08:06:40 UTC, across the 07:53 break and the 08:00 thaw: 7,609
+  legs, 9,923 hands, zero suspense legs, zero findings. No live writer moves a
+  balance against suspense, so there was no writer to fix.
+- `20261002073930_nothing_balances_against_settlement_suspense` flips the row
+  to `refuse` (preimage: still observe, zero `settlement_suspense` findings
+  since 07:36:04, both bodies as installed). The law requires it to be the last
+  write to that row.

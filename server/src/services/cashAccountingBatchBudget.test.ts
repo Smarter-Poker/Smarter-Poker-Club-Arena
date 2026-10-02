@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   cashAccountingBatchSize,
   BATCH_BUDGET_FRACTION,
+  COMMISSION_KEY_HOLD_MS,
   PER_ITEM_MS,
   MIN_BATCH,
   MAX_BATCH,
@@ -22,7 +23,21 @@ describe('the cash accounting batch is derived from the budget that binds', () =
   });
 
   it('grows when the client is given a longer budget', () => {
-    expect(cashAccountingBatchSize(50_000)).toBeGreaterThan(cashAccountingBatchSize(15_000));
+    expect(cashAccountingBatchSize(50_000, PER_ITEM_MS, 60_000)).toBeGreaterThan(
+      cashAccountingBatchSize(15_000, PER_ITEM_MS, 60_000)
+    );
+  });
+
+  it('holds a club commission key no longer than a tournament finish may wait for it', () => {
+    // 2026-10-02: 31 items held the key ~5-9 s while a finish waited on it
+    // holding its union's finish lane, so every winner in that union waited.
+    const n = cashAccountingBatchSize(15_000);
+    expect(n * PER_ITEM_MS).toBeLessThanOrEqual(COMMISSION_KEY_HOLD_MS);
+    expect(n).toBeGreaterThan(1);
+    // A longer client budget does not lengthen the hold.
+    expect(cashAccountingBatchSize(50_000)).toBe(n);
+    // A shorter hold budget shrinks the batch.
+    expect(cashAccountingBatchSize(15_000, PER_ITEM_MS, 600)).toBeLessThan(n);
   });
 
   it('shrinks when an item gets more expensive', () => {
@@ -35,11 +50,12 @@ describe('the cash accounting batch is derived from the budget that binds', () =
     for (const bad of [0, -1, NaN, Infinity, -Infinity]) {
       expect(cashAccountingBatchSize(bad)).toBe(MIN_BATCH);
       expect(cashAccountingBatchSize(15_000, bad)).toBe(MIN_BATCH);
+      expect(cashAccountingBatchSize(15_000, PER_ITEM_MS, bad)).toBe(MIN_BATCH);
     }
   });
 
   it('never returns less than one item or more than the ceiling', () => {
     expect(cashAccountingBatchSize(1)).toBe(MIN_BATCH);
-    expect(cashAccountingBatchSize(10_000_000)).toBe(MAX_BATCH);
+    expect(cashAccountingBatchSize(10_000_000, PER_ITEM_MS, 10_000_000)).toBe(MAX_BATCH);
   });
 });

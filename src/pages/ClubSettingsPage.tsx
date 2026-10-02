@@ -2029,7 +2029,7 @@ export default function ClubSettingsPage() {
               <ul className="delete-impact">
                 {retirementImpact.pristineWelcomeRetireAvailable && (
                   <li>
-                    Exact Unused Welcome Package Verified — Opening Games And 100,000-Chip Grant
+                    Exact Unused Welcome Package Verified - Opening Games And 100,000-Chip Grant
                     Will Be Unwound Atomically
                   </li>
                 )}

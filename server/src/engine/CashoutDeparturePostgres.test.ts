@@ -2038,7 +2038,10 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
             error += String(data);
           });
           child.once('error', reject);
-          child.once('exit', (code) => {
+          // `exit` can fire before the stdio streams have drained. Waiting for
+          // `close` guarantees the complete JSON row is present before parsing,
+          // which matters when both psql processes finish almost simultaneously.
+          child.once('close', (code) => {
             if (code !== 0) reject(new Error(error));
             else {
               try {

@@ -1,12 +1,25 @@
 # Diamond Stats Asset Dimension
 
-Status: The Client Half Is Merged. The SQL Below Is Not Applied.
+Status: Done. Applied 2026-09-29 As `20260920065728_a_diamond_hand_keeps_its_own_statistics`.
 
-Owner action required. Everything in this note was read off production
-read-only on 2026-09-20. Nothing here has been applied: production database
-writes were refused for the delivery lane that found it, and the repository's
-pre-push hook refuses a pull request carrying a migration that is not already
-live.
+The plan below was written on 2026-09-20 and is kept as the record of the
+finding. What was applied differs from it in three ways, each explained in the
+migration's header and in
+`docs/changelog/2026-09-29-diamond-phase-10-a-diamond-hand-keeps-its-own-statistics.md`:
+
+- The asset is set from the hand by a BEFORE INSERT OR UPDATE trigger on both
+  tables, not stamped by the projection alone: four other functions write the
+  same tables, and two of them can reach a new hand before the projection does.
+  The projection is not edited.
+- No index is built and the check constraint is added `NOT VALID`: both would
+  have held an exclusive lock on a 17.9-million-row table that every hand's
+  projection writes (a plain scan of it took 9.5 s).
+- Eight readers are scoped, not seven: the stats page's scans of
+  `ca_hand_player_stat` live in `ca_player_stats_full`, which
+  `ca_player_stats_overview_v2` wraps, and its tournament block is scoped too.
+  Retention keeps each asset its own window.
+
+Everything below was read off production read-only on 2026-09-20.
 
 ## The Finding
 

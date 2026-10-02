@@ -103,8 +103,10 @@ describe('the ledger rows name the other player', () => {
   const hook = readFileSync(resolve(process.cwd(), 'src/hooks/useDiamondLedger.ts'), 'utf8');
   const page = readFileSync(resolve(process.cwd(), 'src/pages/PlayerWalletPage.tsx'), 'utf8');
   it('the hook reads metadata and surfaces counterpartyId by direction', () => {
+    // `description` left this list on 2026-09-30: unread since phase 6 moved
+    // the copy to `player_line`, so it was dead weight on a money query.
     expect(hook).toContain(
-      "'id, type, transaction_type, amount, description, created_at, metadata'"
+      "'id, type, transaction_type, amount, player_line, created_at, metadata'"
     );
     expect(hook).toContain("direction === 'out' ? meta.recipient_id : meta.sender_id");
     expect(hook).toContain('counterpartyId: string | null;');

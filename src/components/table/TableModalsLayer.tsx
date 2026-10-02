@@ -402,6 +402,9 @@ export interface TableModalsLayerProps {
     isCurrentUser?: boolean;
   }>;
   leaderboardPeriod: 'session' | 'day' | 'week' | 'month' | 'allTime';
+  /** A Diamond table's board (Phase 10, line 1): still asking, answered, or
+   *  could not tell. A chip table passes nothing and renders as it always has. */
+  leaderboardDiamondState?: 'loading' | 'ready' | 'failed';
   onCloseLeaderboard: () => void;
   onLeaderboardPeriodChange: (p: 'session' | 'day' | 'week' | 'month' | 'allTime') => void;
 
@@ -445,6 +448,9 @@ export interface TableModalsLayerProps {
   // Share Hand
   showShareHand: boolean;
   sharedHandData: any;
+  /** The hand_history id behind `sharedHandData` when the share came from
+      a stored record (Previous Hand detail); null for the live snapshot. */
+  sharedHandId?: string | null;
   onCloseShareHand: () => void;
 
   // Tournament Add-On
@@ -671,6 +677,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showLeaderboard,
     leaderboardPlayers,
     leaderboardPeriod,
+    leaderboardDiamondState,
     onCloseLeaderboard,
     onLeaderboardPeriodChange,
     // Leave Confirm
@@ -688,6 +695,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Share Hand
     showShareHand,
     sharedHandData,
+    sharedHandId = null,
     onCloseShareHand,
     // Add-On
     addOnPeriod,
@@ -1212,6 +1220,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         players={leaderboardPlayers}
         period={leaderboardPeriod}
         onPeriodChange={onLeaderboardPeriodChange}
+        isLoading={leaderboardDiamondState === 'loading'}
+        unavailable={leaderboardDiamondState === 'failed'}
+        currency={leaderboardDiamondState ? 'Diamonds' : undefined}
       />
 
       {/* Leave Table Confirmation */}
@@ -1308,7 +1319,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Share Hand */}
       {showShareHand && sharedHandData && (
-        <ShareHand isOpen={showShareHand} onClose={onCloseShareHand} hand={sharedHandData} />
+        <ShareHand
+          isOpen={showShareHand}
+          onClose={onCloseShareHand}
+          hand={sharedHandData}
+          handId={sharedHandId}
+        />
       )}
 
       {/* Tournament Add-On Modal */}

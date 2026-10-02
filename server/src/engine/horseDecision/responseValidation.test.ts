@@ -1,10 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { HorseDecision } from '../../types.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
-import { horseDecisionReceiptIsValid } from './responseValidation.js';
+import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
+import {
+  horseDecisionReceiptIsValid,
+  horsePhase7EvidenceMismatch,
+  horseTournamentUtilityReceiptIsValid,
+} from './responseValidation.js';
 
 function receipt(): HorseDecision {
   const graph = new HorsePolicyGraph(() => 0);
@@ -17,7 +22,199 @@ function receipt(): HorseDecision {
   return graph.finish(decision);
 }
 
+let capturedUtilityDecision: HorseDecision | undefined;
+function utilityReceipt(): HorseDecision {
+  if (!capturedUtilityDecision) {
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'river');
+    seedFastRandom(1500921);
+    capturedUtilityDecision = HorseLogic.decide(
+      hero,
+      state,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        decisionTimeMs: 0,
+        phase8Postflop: 'off',
+        phase13Joint: 'off',
+      }
+    );
+    expect(capturedUtilityDecision.tournamentUtility?.evidence).toBeDefined();
+  }
+  return structuredClone(capturedUtilityDecision);
+}
+
+describe('Phase 7B joint population receipt admission', () => {
+  // This deliberately exercises the structured-clone admission boundary.
+  // Physical joint acquisition and action economics have separate connected tests.
+  function jointReceipt(): HorseDecision {
+    const decision = utilityReceipt(),
+      ledger = decision.tournamentUtility!;
+    const sampler: HorseTournamentJointSamplerProvenance = {
+      version: 'horse-joint-sampler-provenance-v1',
+      samplerVersion: 'joint-public-range-round1-v1',
+      stateKey: `phase5-v1:${'a'.repeat(64)}`,
+      layout: 'independent',
+      sharedPrefixLength: 0,
+      boardCount: 2,
+      requestedSamples: 16,
+      completedSamples: 16,
+      sampleBudgetExhausted: false,
+      uniformEscapes: 1,
+      physicalCardsPerSample: 14,
+      unknownDealtCardsPerSample: 2,
+      rangeModel: {
+        version: 'joint-public-range-round1-v1',
+        source: 'explicit_public_line_heuristic',
+        confidence: 'heuristic_uncalibrated',
+      },
+    };
+    ledger.evidence = { ...ledger.evidence!, sampler };
+    ledger.equitySampleSize = 16;
+    ledger.utilityOutcomeSamples = 16;
+    ledger.effectiveOutcomeSamples = Math.min(ledger.effectiveOutcomeSamples, 16);
+    for (const candidate of ledger.candidates) {
+      candidate.outcomeCount = 16;
+      candidate.resultingStackVectors = Math.min(candidate.resultingStackVectors, 16);
+    }
+    return decision;
+  }
+
+  it('admits a bounded independent-board receipt without requiring provenance from legacy callers', () => {
+    const value = jointReceipt();
+    expect(horseTournamentUtilityReceiptIsValid(value.tournamentUtility, value)).toBe(true);
+    expect(
+      horseTournamentUtilityReceiptIsValid(utilityReceipt().tournamentUtility, utilityReceipt())
+    ).toBe(true);
+  });
+
+  it.each(['equity_population', 'utility_population'] as const)(
+    'rejects a sampler that describes a different %s than the selected utility',
+    (fault) => {
+      const value = jointReceipt(),
+        ledger = value.tournamentUtility!;
+      if (fault === 'equity_population') ledger.equitySampleSize = 320;
+      else {
+        ledger.utilityOutcomeSamples = 15;
+        ledger.effectiveOutcomeSamples = Math.min(ledger.effectiveOutcomeSamples, 15);
+        for (const candidate of ledger.candidates) {
+          candidate.outcomeCount = 15;
+          candidate.resultingStackVectors = Math.min(candidate.resultingStackVectors, 15);
+        }
+      }
+      expect(horseTournamentUtilityReceiptIsValid(ledger, value)).toBe(false);
+    }
+  );
+
+  it('refuses marginal/shared-runout relabeling and incomplete populations before witness construction', () => {
+    for (const fault of [
+      { layout: 'marginal_zipped' },
+      { sharedPrefixLength: 3 },
+      { requestedSamples: 160 },
+      { completedSamples: 7, sampleBudgetExhausted: true },
+      { stateKey: `phase5-v1:${'z'.repeat(64)}` },
+    ]) {
+      const value = jointReceipt(),
+        ledger = value.tournamentUtility!;
+      ledger.evidence = {
+        ...ledger.evidence!,
+        sampler: { ...ledger.evidence!.sampler!, ...fault } as any,
+      };
+      expect(horseTournamentUtilityReceiptIsValid(ledger, value)).toBe(false);
+    }
+  });
+});
+
 describe('bounded Horse response receipt validation', () => {
+  it('accepts the real single-board tournament utility and its private read-frame binding', () => {
+    const d = utilityReceipt();
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    d.tournamentUtility!.readFrameSha256 = 'a'.repeat(64);
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    d.tournamentUtility!.readFrameSha256 = null;
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+  });
+  it('preserves historical utility without fabricating input or observation provenance', () => {
+    const d = utilityReceipt();
+    delete d.tournamentUtility!.evidence;
+    expect(horseDecisionReceiptIsValid(d)).toBe(true);
+    expect(d.tournamentUtility).not.toHaveProperty('evidence');
+  });
+  it('reconciles a call through its actual investment while candidate amount remains null', () => {
+    const ledger = utilityReceipt().tournamentUtility!;
+    const candidate = ledger.candidates[0];
+    candidate.id = 'call';
+    candidate.action = 'call';
+    candidate.amount = null;
+    candidate.investment = 7;
+    ledger.candidates = [candidate];
+    ledger.selectedAction = 'call';
+    ledger.selectedAmount = 7;
+    expect(horseTournamentUtilityReceiptIsValid(ledger, { action: 'call', amount: 7 })).toBe(true);
+    candidate.investment = 8;
+    expect(horseTournamentUtilityReceiptIsValid(ledger, { action: 'call', amount: 7 })).toBe(false);
+  });
+  it.each([
+    'evidence',
+    'calibration',
+    'window',
+    'model',
+    'unit',
+    'action',
+    'selected_size',
+    'read_frame',
+    'candidate_probability',
+    'candidate_component',
+    'candidate_private',
+    'candidate_duplicate',
+    'candidate_overflow',
+    'candidate_nan',
+    'candidate_amount',
+    'field',
+    'players_behind',
+    'ranges',
+    'execution',
+  ] as const)('rejects malformed or overstated utility %s before witness construction', (fault) => {
+    const d = utilityReceipt(),
+      ledger = d.tournamentUtility! as any;
+    if (fault === 'evidence') ledger.evidence = null;
+    if (fault === 'calibration') ledger.evidence.responseModel.calibration = 'calibrated';
+    if (fault === 'window') ledger.evidence.observations.window.to = 123;
+    if (fault === 'model') ledger.model = 'unrecognized';
+    if (fault === 'unit') ledger.utilityUnit = 'dollars';
+    if (fault === 'action') ledger.selectedAction = 'discard';
+    if (fault === 'selected_size') ledger.selectedAmount = 9_999;
+    if (fault === 'read_frame') ledger.readFrameSha256 = 'not-a-sha256';
+    if (fault === 'candidate_probability') ledger.candidates[0].winProbability = 2;
+    if (fault === 'candidate_component') ledger.candidates[0].combinedUtility += 1;
+    if (fault === 'candidate_private') ledger.candidates[0].cards = ['As'];
+    if (fault === 'candidate_duplicate')
+      ledger.candidates.push(structuredClone(ledger.candidates[0]));
+    if (fault === 'candidate_overflow')
+      ledger.candidates = Array.from({ length: 17 }, () => ledger.candidates[0]);
+    if (fault === 'candidate_nan') ledger.candidates[0].optionEv = NaN;
+    if (fault === 'candidate_amount') {
+      ledger.candidates[0].action = 'call';
+      ledger.candidates[0].amount = 1;
+    }
+    if (fault === 'field') ledger.fieldPlayersModeled++;
+    if (fault === 'players_behind') ledger.playersBehind.push('unrelated-actor');
+    if (fault === 'ranges') ledger.conditionedOpponentRanges = 9;
+    if (fault === 'execution') ledger.executedAction = 'check';
+    expect(horseDecisionReceiptIsValid(d)).toBe(false);
+  });
+  it('rejects a brain-exception fallback carrying a stale utility receipt', () => {
+    const d = utilityReceipt();
+    expect(
+      horseDecisionReceiptIsValid({
+        action: 'fold',
+        thinkTime: 0,
+        policyFallback: 'brain_exception',
+        tournamentUtility: d.tournamentUtility,
+      })
+    ).toBe(false);
+  });
   it('accepts a structured clone of an executable graph without mutating it', () => {
     const d = structuredClone(receipt());
     const before = JSON.stringify(d);
@@ -147,5 +344,92 @@ describe('bounded Horse response receipt validation', () => {
       expect(d.policyGraph?.transitions).toHaveLength(8);
       expect(horseDecisionReceiptIsValid(d), `${variant}:${street}`).toBe(true);
     }
+  });
+});
+
+describe('Phase 7 evidence is bound to the request at admission', () => {
+  // Real HorseLogic receipts. The structural validator cannot see the request;
+  // these named refusals recompute each binding from the request itself.
+  function decided(boards: 1 | 2) {
+    const { hero, state } = jointPolicyFixture('nlh', boards, 'tournament', 'river');
+    // Freeze only the local acquisition clock; budgets have their own tests.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      seedFastRandom(1500922);
+      const decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          mind: false,
+          telemetry: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+      return { request: structuredClone({ player: hero, gameState: state }), decision };
+    } finally {
+      clock.mockRestore();
+    }
+  }
+
+  it('admits real single-board and physical two-board receipts for their own request', () => {
+    const single = decided(1);
+    expect(single.decision.tournamentUtility?.evidence).toBeDefined();
+    expect(single.decision.tournamentUtility!.evidence!.sampler).toBeUndefined();
+    expect(horsePhase7EvidenceMismatch(single.decision, single.request)).toBeNull();
+    const joint = decided(2);
+    expect(joint.decision.tournamentUtility?.evidence?.sampler).toMatchObject({ boardCount: 2 });
+    expect(horseDecisionReceiptIsValid(structuredClone(joint.decision))).toBe(true);
+    expect(horsePhase7EvidenceMismatch(joint.decision, joint.request)).toBeNull();
+  });
+
+  it('refuses a structurally valid sampler for another state, board layout or a single board', () => {
+    const joint = decided(2);
+    const changed = structuredClone(joint.request);
+    changed.gameState.players[1].stack += 1;
+    expect(horsePhase7EvidenceMismatch(joint.decision, changed)).toBe('phase7_sampler_state');
+    const triple = structuredClone(joint.request);
+    triple.gameState.boardCount = 3;
+    expect(horsePhase7EvidenceMismatch(joint.decision, triple)).toBe('phase7_sampler_board_count');
+    const single = decided(1);
+    const grafted = structuredClone(single.decision);
+    grafted.tournamentUtility!.evidence = {
+      ...grafted.tournamentUtility!.evidence!,
+      sampler: joint.decision.tournamentUtility!.evidence!.sampler!,
+    };
+    expect(horsePhase7EvidenceMismatch(grafted, single.request)).toBe(
+      'phase7_sampler_single_board'
+    );
+  });
+
+  it('refuses a multi-board receipt with no physical acquisition (marginal draws)', () => {
+    const joint = decided(2);
+    const stripped = structuredClone(joint.decision);
+    const evidence = stripped.tournamentUtility!.evidence!;
+    stripped.tournamentUtility!.evidence = Object.fromEntries(
+      Object.entries(evidence).filter(([key]) => key !== 'sampler')
+    ) as typeof evidence;
+    // Shape alone was admissible before the request binding existed.
+    expect(horseTournamentUtilityReceiptIsValid(stripped.tournamentUtility, stripped)).toBe(true);
+    expect(horsePhase7EvidenceMismatch(stripped, joint.request)).toBe(
+      'phase7_marginal_multi_board'
+    );
+    // A legacy receipt carries no evidence and gains no authority to refuse.
+    const legacy = structuredClone(joint.decision);
+    delete legacy.tournamentUtility!.evidence;
+    expect(horsePhase7EvidenceMismatch(legacy, joint.request)).toBeNull();
+  });
+
+  it('refuses evidence naming an opponent who is not in the request', () => {
+    const single = decided(1);
+    const foreign = structuredClone(single.request);
+    const opponent = foreign.gameState.players.find(
+      (player) => player.user_id !== foreign.player.user_id && !player.is_folded
+    )!;
+    opponent.user_id = 'another-table-player';
+    expect(horsePhase7EvidenceMismatch(single.decision, foreign)).toBe('phase7_foreign_opponent');
   });
 });

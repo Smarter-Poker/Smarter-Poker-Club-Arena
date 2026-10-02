@@ -42,6 +42,7 @@
  * the same escape hatch tests/unit/noFixedSizeSourceWindows.test.ts uses.
  */
 import { describe, it, expect } from 'vitest';
+import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -176,6 +177,8 @@ describe('a revoke that means to shut anon out names PUBLIC', () => {
       if (!file.endsWith('.sql')) continue;
       const version = file.slice(0, file.indexOf('_'));
       if (version <= THIS_VERSION) continue;
+      // Installed byte-exact SQL is judged from its verified live ACL, not rewritten history.
+      if (classifyMigration(`supabase/migrations/${file}`).manifestMatched === true) continue;
       for (const r of functionRevokes(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'))) {
         if (r.exempt) continue;
         if (!namesRole(r.grantees, 'anon')) continue;

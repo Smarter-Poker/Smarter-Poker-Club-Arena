@@ -11,15 +11,21 @@
     "CREATE TRIGGER tournaments_mystery_creation_contract BEFORE INSERT OR UPDATE OF is_mystery_bounty, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_mystery_creation_contract()",
     "CREATE TRIGGER tournaments_new_mtt_blind_contract BEFORE INSERT OR UPDATE OF blind_structure, starting_chips, tournament_type, variant, max_players ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_new_mtt_blind_contract()",
     "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()",
-    "CREATE TRIGGER zzzzzzz_tournaments_record_format BEFORE INSERT OR UPDATE OF format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_target_id, satellite_target, club_id, union_id ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_tournament_format()"
+    "CREATE TRIGGER zzzzzzz_tournaments_record_format BEFORE INSERT OR UPDATE OF format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_target_id, satellite_target, club_id, union_id ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_tournament_format()",
+    "CREATE TRIGGER trg_tournaments_bagged_status_door BEFORE INSERT OR UPDATE OF status ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_bagged_status_door()",
+    "CREATE TRIGGER trg_tournaments_record_acceptance AFTER INSERT ON public.tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournament_record_acceptance()"
   ],
   "tournaments_triggers_named_and_not_installed": [
     "trg_clear_seats_on_game_end (fires only on UPDATE OF status to a terminal value)",
     "trg_release_seats_on_tournament_finish (fires only on UPDATE OF status to a terminal value)",
-    "union_pnl_original_inventory_no_truncate (same function and events as union_pnl_original_inventory)"
+    "union_pnl_original_inventory_no_truncate (same function and events as union_pnl_original_inventory)",
+    "trg_tournaments_record_conclusion (fires only on UPDATE OF status to COMPLETED or CANCELLED - the UPDATE half of the chain, which this capture does not stand up)"
   ],
   "tournaments_triggers_dropped_from_the_base": [
-    "a0_tournament_manager_write_scope (names trg_tournament_manager_write_scope; production has no such function and no trigger using it, read 2026-09-20)"
+    "a0_tournament_manager_write_scope (names trg_tournament_manager_write_scope; production has no such function and no trigger using it, read 2026-09-20)",
+    "a0_tournament_manager_write_scope ON public.tables (names trg_tournament_manager_write_scope; production has no such function and no trigger using it, read 2026-09-29)",
+    "a0_tournament_manager_write_scope ON public.table_seats (names trg_tournament_manager_write_scope; production has no such function and no trigger using it, read 2026-09-29)",
+    "a0_tournament_manager_write_scope ON public.tournament_players (names trg_tournament_manager_write_scope; production has no such function and no trigger using it, read 2026-09-29)"
   ],
   "doors": [
     {
@@ -32,11 +38,11 @@
     },
     {
       "identity": "fn_ca_guard_new_satellite_target()",
-      "md5": "69247df72bfb68c7148c1a7f9ea4cfd7",
-      "len": 3426,
+      "md5": "8e0149116be545a6b4ccc0bfe690c372",
+      "len": 4576,
       "owner": "postgres",
-      "grants": "owner only",
-      "bytes_from": "tests/fixtures/sep8-spin-custody/tournament-catalog.json"
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     },
     {
       "identity": "fn_ca_guard_tournament_format()",
@@ -197,6 +203,159 @@
       "owner": "postgres",
       "grants": "owner only",
       "bytes_from": "scripts/ci/fixtures/mtt-format-activation/funding-frame-dependencies-20260918.json"
+    },
+    {
+      "identity": "fn_ca_prize_ladder(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)",
+      "md5": "55d6a74569415d5d51ffac0d5704361f",
+      "len": 2618,
+      "owner": "postgres",
+      "grants": "owner only",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_prize_ladder_v2(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer)",
+      "md5": "6a5ce2617cee7606b2151aea29d865c0",
+      "len": 2911,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_prize_ladder_versioned(p_pool_cents bigint, p_entries jsonb, p_unit_cents integer, p_version integer)",
+      "md5": "cb73955cbc90b47b36fd818631691303",
+      "len": 668,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_payout_structure(p_entrants integer, p_percent integer)",
+      "md5": "320527cd5203efab28b465d2b56ca567",
+      "len": 1594,
+      "owner": "postgres",
+      "grants": "authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-21 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_diamond_satellite_target_accepts_new_feeder(p_target_id uuid)",
+      "md5": "29c40f922b42b732f292fc8611efe114",
+      "len": 907,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_create_spin(p_config jsonb, p_arena uuid)",
+      "md5": "0e3becd7819a0f58b99cfd6cc2750b5a",
+      "len": 8786,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_spin_contract(p_buy_in bigint, p_starting_chips integer, p_tiers jsonb, p_blinds jsonb)",
+      "md5": "35a90ec487ba000e87ceec971998ceca",
+      "len": 9065,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournaments_bagged_status_door()",
+      "md5": "0b794e7f3f5c35c762bbea29eab8afbc",
+      "len": 1656,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_record_acceptance()",
+      "md5": "e2b1faebf4b5d58e1b84c99cb8820681",
+      "len": 1053,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_ca_tournament_recorded_seat_first(p_tournament_id uuid, p_terminal_cleanup boolean)",
+      "md5": "00e225cc67cf595af35831e981106d93",
+      "len": 897,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_platform_frozen()",
+      "md5": "ec683805e052fceeae74789e82dce4cc",
+      "len": 1166,
+      "owner": "postgres",
+      "grants": "anon,authenticated,service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_tournament_management_readiness_for_row(p_row jsonb)",
+      "md5": "f8a6070eb5847c8922e09f28566bfa9e",
+      "len": 8623,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_managed_game_contract_document(p_kind text, p_row jsonb)",
+      "md5": "ecbcdaa38256199da944b92ff071ed18",
+      "len": 5104,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_resolve_tournament_blinds(p_blind_structure text, p_current_level integer, p_variant text, p_tournament_type text, p_total_chips numeric)",
+      "md5": "0e61fee391a67a566d6eb07883d13792",
+      "len": 15292,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_sync_club_table_counts()",
+      "md5": "e6c241bd521e80221e86131959e0dc34",
+      "len": 2848,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_validate_tournament_table_origin()",
+      "md5": "23771af148d48a94a01e1df628f765aa",
+      "len": 2782,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "trg_auto_cashout_on_table_close()",
+      "md5": "a936bf2b604a14a6ae620e6b3db852f0",
+      "len": 479,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_cashout_seats_for_closing_table(p_table_id uuid, p_reason text)",
+      "md5": "d3de0cde88f515f903c7fc381dc8681c",
+      "len": 1059,
+      "owner": "postgres",
+      "grants": "service_role",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_spin_tournament_contract_is_draw()",
+      "md5": "c43cf8d367e0028c0764df3c33f4df41",
+      "len": 5484,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
     }
-  ]
+  ],
+  "refreshed_at": "2026-09-29T18:44Z: fn_ca_guard_new_satellite_target re-pinned; fifteen doors added for the satellite and Spin rows and the insert chain production runs today; two INSERT triggers installed; every pin re-checked against production"
 }

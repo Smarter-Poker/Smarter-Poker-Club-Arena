@@ -17,7 +17,9 @@ describe('Create Club production certification contract', () => {
     );
 
     expect(spec).toContain('`Crest Cert ${stamp}`');
-    expect(cleanup).toContain("startsWith('Crest Cert ')");
+    expect(cleanup).toContain("'Crest Cert '");
+    expect(cleanup).toContain("'Preset Crest Cert '");
+    expect(cleanup).toContain('CERTIFICATION_CLUB_NAME_PREFIXES.some');
     expect(retire).toContain("v_club.name NOT LIKE 'Crest Cert %'");
     expect(lifecycle).toContain("OLD.name LIKE 'Crest Cert %'");
     expect(spec).not.toContain('Club Create Cert ');
@@ -152,8 +154,26 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('createdClub?.id');
     expect(spec).toContain('escapeRegExp(createdClubRef)');
     expect(spec).not.toContain('/\\/clubs\\/[0-9a-f-]{36}');
-    expect(spec).toContain('getByLabel(/^100K Club Bank Chips$/)');
-    expect(spec).not.toContain('getByText(/100K/).first()');
+    expect(spec).toContain('getByLabel(/^99\\.7K Club Bank Chips$/)');
+    expect(spec).not.toContain('getByText(/99\\.7K/).first()');
+  });
+
+  it('certifies the first-club package, lifetime-second refusal and visible package rows', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(script).toContain("'fn_get_club_welcome_package'");
+    expect(script).toContain('welcomeCash.length !== 9');
+    expect(script).toContain('welcomeSchedules.length !== 1');
+    expect(script).toContain("welcome?.status !== 'provisioned'");
+    expect(script).toContain('Number(welcomeEconomics.bbj_seed) !== 100');
+    expect(script).toContain('Number(welcomeEconomics.spin_seed) !== 200');
+    expect(script).toContain("secondWelcome?.status !== 'not_eligible'");
+    expect(script).toContain(".from('club_welcome_package_funding')");
+    expect(spec).toContain("name: 'Opening Welcome Package'");
+    expect(spec).toContain("getByText('9 Preloaded', { exact: true })");
+    expect(spec).toContain("getByText('Owner Acceptance Required', { exact: true })");
+    expect(spec).toContain("getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })");
   });
 
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {

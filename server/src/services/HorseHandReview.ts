@@ -35,6 +35,7 @@ import {
   nlhNutStatus,
   scoreOmahaHiPartial,
   omahaDrawQuality,
+  scoreOmahaLow,
 } from '../engine/HorseEval.js';
 import { RANK_VALUES, RANKS, SUITS } from '../engine/PokerEngine.js';
 import type { Card } from '../types.js';
@@ -50,6 +51,13 @@ export interface HorseReviewInput {
   potSize?: number;
   /** Card objects OR the engine's board strings ("Khearts", "10spades"). */
   board?: unknown[] | null;
+  /**
+   * Every board the hand was dealt, board 1 included: double/triple-board
+   * bomb pots and run-it-twice runs. Absent or one entry = a single-board
+   * hand. The Omaha made-hand tags judge ONE board, so they stand down when
+   * this holds more than one (2026-09-30).
+   */
+  boards?: unknown[][] | null;
   /** Every seat dealt in: userId -> { seat, cards }. */
   holeCardsAll: Map<string, { seat: number; cards: unknown }>;
   /** userId -> totalInvested (blinds/antes included, net of uncalled refund). */
@@ -328,6 +336,42 @@ export function boardAsOf(board: Card[], street: CommitStreet | null): Card[] {
 }
 
 /**
+ * Omaha top pair: a hole card pairs the HIGHEST board rank. The caller has
+ * already established the hand is exactly one pair, so a hole card on the top
+ * rank means that pair is the top pair (an overpair, a middle pair or a
+ * bottom pair has no hole card there).
+ */
+export function isOmahaTopPair(hole: Card[], board: Card[]): boolean {
+  if (board.length === 0) return false;
+  const top = Math.max(...board.map((bc) => RANK_VALUES[bc.rank]));
+  return hole.some((hc) => RANK_VALUES[hc.rank] === top);
+}
+
+/**
+ * Hi-lo: does hero hold a qualifying low, or (with cards to come) a low draw?
+ * A low draw is two distinct hole ranks of eight or under plus at least two
+ * OTHER distinct board ranks of eight or under, so one more low card makes
+ * the five distinct low ranks Omaha 8-or-better needs.
+ */
+export function omahaLowLive(hole: Card[], board: Card[]): boolean {
+  if (board.length >= 3 && scoreOmahaLow(hole, board) !== Infinity) return true;
+  if (board.length >= 5) return false;
+  const low = (card: Card): number => {
+    const v = RANK_VALUES[card.rank];
+    return v === 14 ? 1 : v;
+  };
+  const holeLows = [...new Set(hole.map(low).filter((v) => v <= 8))];
+  const boardLows = [...new Set(board.map(low).filter((v) => v <= 8))];
+  for (let i = 0; i < holeLows.length; i++) {
+    for (let j = i + 1; j < holeLows.length; j++) {
+      const others = boardLows.filter((v) => v !== holeLows[i] && v !== holeLows[j]);
+      if (others.length >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * What the FINAL board makes available to somebody else. Omaha plays exactly
  * two hole cards and three board cards, which is what each test below counts:
  *
@@ -388,6 +432,8 @@ export function detectLeaks(row: {
   board: Card[] | null;
   heroActions: Array<{ action: string; stage: string; amount?: number; isFullRaise?: boolean }>;
   wentToShowdown: boolean;
+  /** More than one board was dealt (double-board bomb pot, run it twice). */
+  multiBoard?: boolean;
 }): string[] {
   const tags: string[] = [];
   const vi = variantInfo(row.variant);
@@ -509,7 +555,21 @@ export function detectLeaks(row: {
   // Omaha nut discipline: the horse lost a 20bb+ pot at showdown holding a
   // non-nut flush or a dominated straight on the final board — the exact
   // "small flush pays off the bigger one" hand.
-  if (vi.isOmaha && row.wentToShowdown && row.holeCards && row.board && row.board.length >= 3) {
+  // ── ONE BOARD OF SEVERAL IS NOT THE HAND (2026-09-30) ──
+  // A double-board bomb pot is split between two boards, and `row.board` is
+  // board 1 only. Judging hero's made hand there tagged top set on board 2
+  // (review 797943) and a set on board 2 (798911) as one-pair stack-offs.
+  // Double-board hands were 22% of plo_toppair_no_redraw_stackoff against
+  // 5.5% of PLO reviews. The Omaha made-hand blocks stand down when more
+  // than one board was dealt.
+  if (
+    vi.isOmaha &&
+    !row.multiBoard &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.board &&
+    row.board.length >= 3
+  ) {
     try {
       const st = omahaNutStatus(row.holeCards, row.board);
       if (st.category === 6 && st.higherFlushRanks >= 2) {
@@ -536,6 +596,19 @@ export function detectLeaks(row: {
         flag('straight_into_flush_stackoff');
       } else if (st.category === 5 && !st.straightIsNut) {
         flag('dominated_straight_stackoff');
+      } else if (
+        ((st.category === 6 && st.higherFlushRanks === 0) ||
+          (st.category === 5 && st.straightIsNut && !st.flushPossible)) &&
+        boardHasPair(row.board)
+      ) {
+        // ── A PAIRED BOARD DEMOTES THE NUTS (2026-09-28) ──
+        // V15 demotes a nut flush or nut straight on a paired board: every
+        // raise there is a full house. The detector never did, so a nut hand
+        // stacking off into a boat carried no tag at all. From the 2026-09-27
+        // sweep: 756309 (nut flush on 4d-Qd-Th-5d-5c, -489bb) and 755841
+        // (broadway on Kh-As-Qc-Ad-4s, -534bb). MEASUREMENT ONLY: not in
+        // PLO_STACKOFF_TAGS, so no dial reads it.
+        flag('plo_paired_board_nut_stackoff');
       }
     } catch {
       /* detector is best-effort */
@@ -663,6 +736,62 @@ export function detectLeaks(row: {
     }
   }
 
+  // ═══ NLH ONE PAIR AND BOARD-PAIRED TWO PAIR (2026-09-28) ═══════════════
+  //
+  // The 2026-09-27 audit counted 647 NLH losses worse than -100bb: 209
+  // carried only outcome tags and 247 carried none, against 15-25% untagged
+  // in PLO. The V24 block above only knows a RAG kicker (nine or worse) and
+  // board trips, so the day's biggest shapes had no name:
+  //   - one pair of hero's own going in on the river on a quiet board with a
+  //     GOOD kicker or an overpair (736266 KJ, 752381 AJ, 738151 KQ, 741432
+  //     KQ, 743300 KK, 753294 KK - each -480 to -610bb);
+  //   - two pair where one pair is the BOARD's, so every card that pairs
+  //     the board counterfeits or outkicks it (740479 AJ on T-5-2-A-T,
+  //     737195 AQ on 4-A-7-7-9, 745046 JT on 6-6-3-J-3, 746040 QJ on
+  //     J-2-Q-2-4).
+  // MEASUREMENT ONLY, like V24: neither tag is in NLH_STACKOFF_TAGS, so no
+  // dial or brain load reads it until a league matchup says it should.
+  if (
+    !vi.isOmaha &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.holeCards.length === 2 &&
+    row.board &&
+    row.board.length >= 5 &&
+    investedBB >= 2 * FLAG_BB
+  ) {
+    try {
+      const ns = nlhNutStatus(row.holeCards, row.board, vi.isShortDeck);
+      const rv = (card: Card): number => RANK_VALUES[card.rank];
+      const boardCount = new Map<number, number>();
+      for (const bc of row.board) boardCount.set(rv(bc), (boardCount.get(rv(bc)) ?? 0) + 1);
+      const boardPaired = [...boardCount.values()].some((n) => n >= 2);
+      const suitN = new Map<string, number>();
+      for (const bc of row.board) suitN.set(bc.suit, (suitN.get(bc.suit) ?? 0) + 1);
+      const threeSuited = [...suitN.values()].some((n) => n >= 3);
+      const [h1, h2] = row.holeCards;
+      const r1 = rv(h1);
+      const r2 = rv(h2);
+      const hits = [r1, r2].filter((r) => (boardCount.get(r) ?? 0) >= 1).length;
+      if (ns.cat === CAT_ONE_PAIR && !boardPaired && !threeSuited) {
+        const overpair = r1 === r2 && r1 > Math.max(...boardCount.keys());
+        const onePairHit = r1 !== r2 && hits === 1;
+        // Top pair with a kicker of nine or worse is V24's tag already.
+        const topBoard = Math.max(...boardCount.keys());
+        const kicker = r1 === topBoard ? r2 : r2 === topBoard ? r1 : 0;
+        const v24Owns = onePairHit && kicker > 0 && kicker <= 9;
+        const commit = commitStreet(row.heroActions, row.invested);
+        if ((overpair || onePairHit) && !v24Owns && commit === 'river') {
+          flag('one_pair_river_stackoff');
+        }
+      } else if (ns.cat === CAT_ONE_PAIR + 1 && boardPaired && r1 !== r2 && hits >= 1) {
+        flag('board_paired_two_pair_stackoff');
+      }
+    } catch {
+      /* detector is best-effort */
+    }
+  }
+
   // ═══ V38 PLO STACKOFF DISCIPLINE (Dan 2026-09-03) ═══════════════════════
   //
   // Dan flagged hand #5428599 (PLO6 1/2, Midway Union): the horse held
@@ -685,6 +814,7 @@ export function detectLeaks(row: {
   // rule. A detector is a measurement.
   if (
     vi.isOmaha &&
+    !row.multiBoard &&
     row.wentToShowdown &&
     row.holeCards &&
     row.board &&
@@ -736,18 +866,25 @@ export function detectLeaks(row: {
         if (!omahaBoatIsNut(row.holeCards, boardAt)) {
           flag('plo_underfull_stackoff');
         }
-      } else if (st.category <= CAT_ONE_PAIR) {
-        // At most one pair with a full stack in. On the river every redraw has
+      } else if (st.category === CAT_ONE_PAIR && isOmahaTopPair(row.holeCards, boardAt)) {
+        // TOP pair with a full stack in. On the river every redraw has
         // resolved, so a hand that still shows one pair is one that had no
         // wrap, no flush and no nut redraw arrive - the second shape the audit
         // panel proposed (plo_toppair_no_redraw_stackoff). On a flop or turn
         // commit the redraw is still live, so a flush draw or eight or more
         // straight outs is a different decision and is not this tag.
+        //
+        // 2026-09-30: the test was `category <= CAT_ONE_PAIR`, so overpairs,
+        // middle and bottom pairs and high card all carried a TOP-pair tag
+        // (reviews 796401, 802448, 804424, 814544). It now requires the
+        // name. And in a hi-lo game a made low, or a low draw on a flop or
+        // turn commit, is half the pot: that is a redraw too (812864).
         let redrawLive = false;
         if (boardAt.length < 5) {
           const draw = omahaDrawQuality(row.holeCards, boardAt, vi.isHiLo);
           redrawLive = draw.nutFlushDraw || draw.dominatedFlushDraw || draw.straightOuts >= 8;
         }
+        if (vi.isHiLo && omahaLowLive(row.holeCards, boardAt)) redrawLive = true;
         if (!redrawLive) flag('plo_toppair_no_redraw_stackoff');
       }
     } catch {
@@ -775,6 +912,14 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
   const bb = input.bigBlind > 0 ? input.bigBlind : 1;
   const dealtCount = input.holeCardsAll.size || input.roster.length;
   const format = input.tournamentId ? 'tournament' : dealtCount === 2 ? 'hu_cash' : 'cash';
+
+  // Distinct non-empty boards: board 1 is repeated inside some callers' lists.
+  const multiBoard =
+    new Set(
+      (input.boards ?? [])
+        .filter((b) => Array.isArray(b) && b.length > 0)
+        .map((b) => JSON.stringify(b))
+    ).size > 1;
 
   const rows: HorseReviewRow[] = [];
   for (const uid of horses) {
@@ -806,6 +951,7 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
       board,
       heroActions,
       wentToShowdown: !folded,
+      multiBoard,
     });
 
     rows.push({
@@ -893,11 +1039,25 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
     // allocator, same contributions, so bbj_bb agrees with the money pipeline
     // exactly as rake_bb does.
     const bbjShares = allocateWeightedShareCents(Number(input.bbjAmount ?? 0), contributions);
+    // A HAND IS EVERY HAND DEALT (2026-09-28). This used to skip a horse whose
+    // invested and returned were both zero ("dealt in but never posted"), so
+    // every hand a horse folded preflop without posting a blind vanished from
+    // `hands`. Measured 2026-09-27 on one horse against hand_history: 3,101
+    // cash hands dealt, horse_daily_play 3,101, horse_daily_nets 2,136 - and
+    // fleet-wide nets ran at ~0.6x play every day. net_bb was right (such a
+    // hand nets zero); the denominator was not, so every bb/100 built on it
+    // was inflated about 1.45x, the tuner's 1,500-hand gate read two thirds
+    // of the sample, and REGRESS_BB100 (-15) fired on horses near -10.
+    // Dealt-in now means what horse_daily_play means by it: holding cards,
+    // or - when the caller supplied no deal - having put chips in or taken
+    // chips out. A seated player who was not dealt still does not count.
+    const dealt = input.holeCardsAll;
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const invested = input.contributions.get(p.userId) ?? 0;
       const returned = returnedBy.get(p.userId) ?? 0;
-      if (invested === 0 && returned === 0) continue; // dealt in but never posted
+      const dealtIn = dealt.size > 0 ? dealt.has(p.userId) : invested !== 0 || returned !== 0;
+      if (!dealtIn) continue;
       const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
       const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0, bbjBB: 0 };
       acc.hands += 1;

@@ -62,6 +62,18 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
+    /* LIGHTNING PHASE 6: a Lightning Cluster's door is JOIN LIGHTNING; the
+       page routes it to the Lightning route, never to a table. */
+    if (entry.game?.lightning) {
+      return {
+        primaryLabel: 'Join Lightning',
+        primaryTone: 'blue',
+        onPrimary: () => ctx.onJoinTable?.(entry),
+        primaryDisabled: !ctx.onJoinTable,
+        secondaryLabel: 'View Game',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     return {
       primaryLabel: game ? 'Join Game' : 'Join Table',
       primaryTone: 'blue',

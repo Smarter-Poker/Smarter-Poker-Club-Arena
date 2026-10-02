@@ -22,8 +22,8 @@
  * If someone reverts one, this test names which.
  */
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -35,6 +35,7 @@ const LIVE_TABLE = readFileSync(
   'utf8'
 );
 const GLOBAL_SETUP = readFileSync(join(ROOT, 'tests/e2e/global-setup.ts'), 'utf8');
+const ENGINE_READER = readFileSync(join(ROOT, 'scripts/ci/read-engine-release.mjs'), 'utf8');
 const CHECKER = join(ROOT, 'scripts/ci/assert-e2e-actually-ran.mjs');
 
 /**
@@ -84,6 +85,76 @@ const spec = (file: string, statuses: (string | null)[]) => ({
       })),
     },
   ],
+});
+
+describe.each([
+  { lane: 'client', workflow: WORKFLOW },
+  { lane: 'live-table', workflow: TABLE_WORKFLOW },
+])('$lane release-window status under Actions bash -e', ({ workflow }) => {
+  it.each([0, 3, 1])('handles classifier exit %i without losing its verdict', (status) => {
+    const proof = step(workflow, 'Classify the release window this certificate covers');
+    const body = proof.split('\n        run: |\n')[1];
+    expect(body).toBeDefined();
+    const script = body.replace(/^ {10}/gm, '');
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-release-window-'));
+    const summary = join(dir, 'summary.md');
+    writeFileSync(summary, '');
+    try {
+      // Execute the maintained shell block, including its pipeline, with the
+      // runner's errexit setting. Only external I/O is controlled here; the
+      // provenance parser's lineage decisions have their own direct tests.
+      const result = spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-e',
+          '-o',
+          'pipefail',
+          '-c',
+          `curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+node() {
+  cat >/dev/null
+  [ "$1" = scripts/ci/production-e2e-provenance.mjs ] || return 99
+  [ "$2" = release-window ] || return 99
+  printf '%s\\n' "$CLASSIFIER_OUTPUT"
+  return "$CLASSIFIER_STATUS"
+}
+${script}`,
+        ],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            EXPECTED_LIVE_SHA: 'a'.repeat(40),
+            GITHUB_STEP_SUMMARY: summary,
+            CLASSIFIER_STATUS: String(status),
+            CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
+          },
+        }
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(status === 1 ? 1 : 0);
+      const report = readFileSync(summary, 'utf8');
+      if (status === 0) {
+        expect(report).toContain('Production stayed on');
+        expect(report).not.toContain('NON-VERDICT');
+      } else if (status === 3) {
+        expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
+        expect(report).toContain(`superseded ${'b'.repeat(40)}`);
+        expect(report).toContain('NON-VERDICT');
+        expect(report).not.toContain('Production stayed on');
+      } else {
+        expect(result.stdout).toContain('::error::production left');
+        expect(report).not.toContain('Production stayed on');
+        expect(report).not.toContain('NON-VERDICT');
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the checker refuses a run that verified nothing', () => {
@@ -186,27 +257,40 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(upload).toContain('failure() || cancelled()');
   });
 
-  it('cannot pass after production changes or loses exact provenance during the suite', () => {
+  // 2026-09-30: this used to require the closing read to be
+  // `production-e2e-provenance.mjs unchanged`, which made an ordinary forward
+  // publish mid-suite indistinguishable from a rollback. Twelve of twenty
+  // sampled runs died on it with nothing wrong on the live site. The closing
+  // read now CLASSIFIES the window; what must not come back is a run that
+  // certifies without asking, or one that retries until the answer suits it.
+  it('classifies the release window it covered, and never assumes one', () => {
     const cleanupAt = WORKFLOW.indexOf('- name: Hard-delete the isolated production E2E account');
-    const proofAt = WORKFLOW.indexOf(
-      '- name: Prove production stayed on one exact release during certification'
-    );
+    const proofAt = WORKFLOW.indexOf('- name: Classify the release window this certificate covers');
     const uploadAt = WORKFLOW.indexOf(
       '- name: Upload the report when something is wrong on production'
     );
-    const proof = step(
-      WORKFLOW,
-      'Prove production stayed on one exact release during certification'
-    );
+    const proof = step(WORKFLOW, 'Classify the release window this certificate covers');
 
     expect(cleanupAt).toBeGreaterThan(-1);
     expect(proofAt).toBeGreaterThan(cleanupAt);
     expect(uploadAt).toBeGreaterThan(proofAt);
     expect(proof).toContain("if: always() && steps.live.outputs.ready == 'true'");
     expect(proof).toContain('EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}');
-    expect(proof).toContain('production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA"');
+    expect(proof).toContain('production-e2e-provenance.mjs release-window "$EXPECTED_LIVE_SHA"');
+    // A rollback or an off-lineage SHA is still a hard red, and an unreadable
+    // or superseded window is still SAID OUT LOUD rather than passed silently.
+    expect(proof).toContain('::error::production left');
+    expect(proof).toContain('NON-VERDICT');
+    expect(proof).toContain('::warning::UNKNOWN');
     expect(proof).not.toContain('for i in');
     expect(proof).not.toContain('sleep ');
+  });
+
+  // The publisher's own post-swap proof keeps the strict comparison. Merging
+  // the two questions is how a forty-minute browser window would have argued
+  // its way into the one place a single exact SHA really is required.
+  it('leaves `unchanged` to the publisher and never reuses it for the browser window', () => {
+    expect(WORKFLOW).not.toContain('production-e2e-provenance.mjs unchanged');
   });
 
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
@@ -252,7 +336,14 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(sweep).toContain("LIVE_TABLE_REALTIME_CERTIFICATION: '1'");
     expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}');
     expect(honesty).toContain('e2e-report/live-table-realtime.json');
-    expect(engine).toContain('production-e2e-provenance.mjs engine-live');
+    // The engine is deliberately read through its own announced :55 restart
+    // (CLAUDE.md section 13). Run 36717851302 died at 12:55:36Z on a bare
+    // `curl: (22) ... 502` from an engine that was doing exactly what it was
+    // told. The reader waits; the parser it waits for is unchanged.
+    expect(engine).toContain('scripts/ci/read-engine-release.mjs');
+    expect(engine).not.toContain('curl -fsS --max-time 20');
+    expect(ENGINE_READER).toContain('readReadyEngineSha');
+    expect(ENGINE_READER).toContain('GAMEPLAY_WAIT_MS');
     expect(engine).not.toContain('git log "$MAIN_SHA"');
     expect(engine).toContain('ENGINE_SHA="$ENGINE_TRIGGER_SHA"');
     expect(engine).toContain('git cat-file -e "$ENGINE_SHA^{commit}"');

@@ -322,7 +322,15 @@ export const useWalletStore = create<WalletState>()(
 
         return coalesce(`diamonds:${userId}`, async () => {
           if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
-            set({ isLoadingDiamonds: true });
+            /* Phase 11 line 7: a figure this account does not own - another
+               account's on a shared device, or one an older build saved with
+               no owner - is never painted as this player's balance, not while
+               the read is in flight and not after it fails. */
+            set(
+              get()._diamondsUserId === userId
+                ? { isLoadingDiamonds: true }
+                : { isLoadingDiamonds: true, diamonds: 0, _diamondsUserId: null, _diamondsAt: 0 }
+            );
           }
           try {
             // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
@@ -539,11 +547,27 @@ export const useWalletStore = create<WalletState>()(
        * `transactions` stays UNPERSISTED on purpose: a ledger is genuinely
        * sensitive, it is large, and no surface needs it instantly on boot.
        */
+      /* STALE STORAGE (Diamond Phase 11, line 7). Until 2026-09-30 the Diamond
+         figure was saved WITHOUT its owner and time (the two fields below), so
+         after a sign-out the app never saw - another app on this origin, a
+         closed tab - the next account booted painting the last account's
+         Diamonds as its own, and kept them if its first read failed. A figure
+         an older build saved (version 0) is discarded, not shown; the chip
+         balances always carried their owner and are kept as they were. */
+      version: 1,
+      migrate: (persisted, version) => {
+        const saved = (persisted ?? {}) as Partial<WalletState>;
+        return (
+          version < 1 ? { ...saved, diamonds: 0, _diamondsUserId: null, _diamondsAt: 0 } : saved
+        ) as WalletState;
+      },
       partialize: (state) => ({
         balances: state.balances,
         diamonds: state.diamonds,
         _balancesUserId: state._balancesUserId,
         _balancesAt: state._balancesAt,
+        _diamondsUserId: state._diamondsUserId,
+        _diamondsAt: state._diamondsAt,
       }),
     }
   )

@@ -268,6 +268,8 @@ class EquityLoadGovernor {
   private throttledSince = 0;
   private lastLogAt = 0;
   private override: number | null = null;
+  /** The scale one Horse decision runs at, held for that decision (see withDecisionScale). */
+  private decisionScale: number | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** How late the last sampler tick ran. Loop saturation that cannot go blind. */
   private timerLateMs: number | null = null;
@@ -313,6 +315,9 @@ class EquityLoadGovernor {
    * already maintaining.
    */
   sample(now: number = Date.now()): number {
+    // Inside a decision the scale it started with is the only answer, even
+    // against the test override: the override stands in for a new reading.
+    if (this.decisionScale !== null) return this.decisionScale;
     if (this.override !== null) return this.override;
     if (!this.enabled || !this.histogram) return 1;
     // Not yet a window's worth of loop. Reading here would reset the histogram
@@ -392,6 +397,34 @@ class EquityLoadGovernor {
   /** Current scale; `sample` re-reads the loop delay at most once a second. */
   current(now: number = Date.now()): number {
     return this.sample(now);
+  }
+
+  /**
+   * ONE DECISION, ONE SCALE (Phase 6C, 2026-09-27).
+   *
+   * `current()` takes a new reading whenever a second has passed since the
+   * last one, and a Horse decision is synchronous: under load its own first
+   * Monte Carlo call can take the reading, or the call AFTER the decision can.
+   * The worker used to journal `governorScale` after `decide()` returned, so
+   * the journal carried a reading the decision never used. Measured on the
+   * serving release e6b9dc5d: 23 of 1934 replayed decisions (3 of them with a
+   * different accepted action) reproduce exactly at a neighbouring scale and
+   * not at the journaled one.
+   *
+   * The scale is now read once, before the decision, every Monte Carlo call
+   * inside `fn` uses it, and the caller journals exactly that value. A reading
+   * that falls due during the decision is taken by the next caller instead,
+   * at most one decision later. Nested decisions keep the outer scale.
+   */
+  withDecisionScale<T>(fn: () => T): { value: T; scale: number } {
+    const previous = this.decisionScale;
+    const scale = previous ?? this.current();
+    this.decisionScale = scale;
+    try {
+      return { value: fn(), scale };
+    } finally {
+      this.decisionScale = previous;
+    }
   }
 
   /**

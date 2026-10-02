@@ -17,7 +17,8 @@
  *   check-applied-migrations-are-recorded   "installed, and no file"
  *   check-migrations-are-live               "merged, and never installed"
  *
- * The 2026-09-27 reconciliation measured 52 such pairs. Backfilling the
+ * The 2026-09-27 reconciliation measured 52 such pairs (since recorded as byte-exact
+ * files by the mirror bands, #5501-#5508). Backfilling the
  * applied SQL as a second file would put the same change into a rebuild
  * twice, so they are recorded here instead, in
  * scripts/ci/applied-migration-aliases.json, and both gates read it.

@@ -1,0 +1,3 @@
+# tests/a-tournament-start-does-not-block-foreign-keys.law.test.ts
+
+A tournament start's bank lock (fn_guard_tournament_start_readiness and fn_ca_fund_overlay_on_lock on public.clubs / public.union_wallets) is FOR NO KEY UPDATE, never FOR UPDATE: it still serialises starts against each other and against every treasury write, but it no longer conflicts with the FOR KEY SHARE a foreign-key check takes, which made every start drain every open writer that referenced the club and queue every finish behind it (2026-09-29, migration 20260929071925, native proof scripts/dev/probe-start-readiness-lock.py).

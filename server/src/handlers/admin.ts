@@ -44,6 +44,24 @@ export interface AdminDeps {
 }
 
 /**
+ * Platform staff, exactly as the database answers it: fn_is_platform_admin()
+ * is profiles.role in ('admin', 'superadmin', 'god'). The engine reads the
+ * caller's role with the service client, so it states the same list here.
+ */
+const PLATFORM_STAFF_ROLES = ['admin', 'superadmin', 'god'];
+
+/**
+ * A table in the Diamond Arena, by the arena its club row names. Anything that
+ * says Diamonds is treated as the arena: at such a table the club-role checks
+ * below must never be the authority, so an arena row that is not the platform
+ * shape is refused by the staff check rather than handed to a club role.
+ */
+function isDiamondArenaTable(tableRow: { arena?: unknown }): boolean {
+  const arena = tableRow.arena as { asset?: unknown } | null | undefined;
+  return !!arena && typeof arena === 'object' && arena.asset === 'diamonds';
+}
+
+/**
  * SECURITY (Audit 2026-08-04, finding S1): shared authorization gate for all
  * table-admin actions. Previously pause/resume only checked that the caller
  * held a valid JWT — ANY authenticated user could freeze/unfreeze dealing on
@@ -66,11 +84,36 @@ async function authorizeTableAdmin(
 
   const { data: tableRow, error: tErr } = await supabase
     .from('tables')
-    .select('club_id, union_id, tournament_id')
+    .select(
+      'club_id, union_id, tournament_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+    )
     .eq('id', tableId)
     .maybeSingle();
   if (tErr || !tableRow?.club_id) {
     return { ok: false, status: 404, error: 'Table or club not found' };
+  }
+
+  // DIAMOND PHASE 10 (2026-09-29): the Diamond Arena has no club operators.
+  // Its only club_members rows are automatic players, so the club-role checks
+  // below refused everyone at a Diamond table, staff included, and pause,
+  // resume and kick did nothing in the arena. Platform staff run the arena and
+  // nobody else does: at a Diamond table the caller's platform role is the
+  // whole answer, and a club role (which the arena cannot have) never is.
+  if (isDiamondArenaTable(tableRow)) {
+    const { data: profile, error: pErr } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', auth.userId)
+      .maybeSingle();
+    if (pErr || !profile || !PLATFORM_STAFF_ROLES.includes(String(profile.role))) {
+      return { ok: false, status: 403, error: 'Platform staff required' };
+    }
+    return {
+      ok: true,
+      userId: auth.userId,
+      clubId: tableRow.club_id,
+      tournamentId: tableRow.tournament_id ?? null,
+    };
   }
 
   // P2-4 (2026-08-20): union-owned tables carry the union's container club as

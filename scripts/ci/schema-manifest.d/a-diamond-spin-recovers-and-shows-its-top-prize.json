@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude-diamond-phase-9/fix/a-diamond-spin-recovers-and-shows-its-top-prize",
+  "_comment": "20260929181500 a_diamond_spin_recovers_and_shows_its_top_prize: the Diamond arm of the played-Spin launch recovery proof (owner-only, reached from fn_prove_played_spin_launch_recovery) and the lobby read of a Diamond Spin's own top multiplier (signed-in players).",
+  "tables": [],
+  "functions": [
+    "fn_poker_diamond_prove_played_spin_launch_recovery",
+    "fn_poker_diamond_spin_ceilings"
+  ],
+  "columns": {}
+}

@@ -30,6 +30,8 @@ import {
 } from '../HorseTournamentPreflop.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import type { HorseAuthorityAdmission } from '../HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -777,6 +779,77 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(receipt.reason).toBe('atlas_forwarded');
     expect(receipt.status).toBe('atlas_evaluated');
     expect(receipt.lookup!.policy.source).toBe('deterministic_baseline');
+  });
+
+  it('Phase 6B: refuses a complete dead-button coordinate and keeps its named fallback usable', async () => {
+    const request = phase6TournamentRequest(73);
+    const tournament = request.gameState.tournament!;
+    const players = [
+      ...request.gameState.players,
+      {
+        ...request.gameState.players[1],
+        seat: 4,
+        user_id: 'horse-4',
+        username: 'Horse Four',
+        stack: 500,
+        bet: 0,
+        totalInvested: 0,
+        is_folded: true,
+        is_sitting_out: true,
+      },
+    ];
+    const withContext = (complete: boolean) =>
+      rekey({
+        ...request,
+        gameState: {
+          ...request.gameState,
+          dealerSeat: 1,
+          players,
+          tournament: {
+            ...tournament,
+            seatsPerTable: 3,
+            playersAtTable: 3,
+            contextStatus: complete ? 'complete' : 'incomplete',
+            contextIssues: complete
+              ? []
+              : [TOURNAMENT_CONTEXT_INCOMPLETE, 'dead_button_atlas_unsupported'],
+            m: buildTournamentMState({
+              stackChips: request.player.stack,
+              smallBlind: tournament.currentSmallBlind!,
+              bigBlind: tournament.currentBigBlind!,
+              ante: tournament.currentAnte!,
+              anteType: tournament.anteType!,
+              playersAtTable: 3,
+              nextSmallBlind: tournament.nextSmallBlind,
+              nextBigBlind: tournament.nextBigBlind,
+              nextAnte: tournament.nextAnte,
+              minutesToNextLevel: tournament.nextBlindInMin,
+              opponentStacks: [{ userId: 'horse-3', stackChips: 96 }],
+            }),
+          },
+        },
+      });
+    const refused = harness();
+    refused.runtime.receive(withContext(true));
+    await refused.runtime.drain();
+    expect(refused.decisionsAtRng).toEqual([]);
+    expect(refused.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 complete tournament context has dead_button_atlas_unsupported',
+    });
+    const fallback = harness(true);
+    fallback.runtime.receive(withContext(false));
+    await fallback.runtime.drain();
+    const result = fallback.messages.at(-1);
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(result));
+    expect(result.decision.tournamentPreflopAttribution).toMatchObject({
+      reason: 'incomplete_context',
+      status: 'unavailable',
+      lookup: { policy: { source: 'labeled_fallback', fallbackReason: 'incomplete_context' } },
+    });
+    expect(
+      Object.values(result.decision.tournamentPreflopAttribution!.lookup!.policy.shifts)
+    ).toEqual([0, 0, 0, 0, 0]);
   });
 
   it('Phase 6B: a dealt sit-out counts in the census but never as a covering stack', async () => {
@@ -1560,34 +1633,57 @@ describe('HorseDecisionWorkerRuntime', () => {
     }
   });
 
-  it('refuses a corrupted private frame before changing the canonical RNG or invoking a second decision', async () => {
-    const h = harness(),
-      request = fastRequest(1);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
-    const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
-    expect(entry.frame.version).toBe('horse-decision-reads-v2');
-    expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-v2');
-    entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
-    const restores = h.restored.length;
-    h.runtime.receive({
-      ...request,
-      type: 'DECIDE_DEEP',
-      requestId: 2,
-      rngBefore: fast.rngBefore,
-      deepEquity: 2,
-    });
-    await h.runtime.drain();
-    expect(h.messages.at(-1)).toMatchObject({
-      type: 'ERROR',
-      recoverable: true,
-      message: 'Horse decision read frame is invalid',
-    });
-    expect(h.decisionsAtRng).toHaveLength(1);
-    expect(h.restored).toHaveLength(restores);
-  });
+  it.each([false, true])(
+    'refuses a corrupted private frame before changing the canonical RNG or invoking a second decision (windows=%s)',
+    async (windows) => {
+      HorseMind.reset();
+      if (windows)
+        HorseMind.importStats([
+          {
+            user_id: 'horse-3',
+            hands: 20,
+            sourceWindow: { version: 1, coverage: 'complete', fromMs: 100, toMs: 200 },
+          },
+        ]);
+      try {
+        const h = harness(),
+          request = fastRequest(1);
+        h.runtime.receive(request);
+        await h.runtime.drain();
+        const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+        if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+        const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+        expect(entry.frame.version).toBe(
+          windows ? 'horse-decision-reads-v3' : 'horse-decision-reads-v2'
+        );
+        if (windows)
+          expect(JSON.parse(entry.frame.json).statsWindows[0][1]).toMatchObject({
+            fromMs: 100,
+            toMs: 200,
+          });
+        expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-');
+        entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
+        const restores = h.restored.length;
+        h.runtime.receive({
+          ...request,
+          type: 'DECIDE_DEEP',
+          requestId: 2,
+          rngBefore: fast.rngBefore,
+          deepEquity: 2,
+        });
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ERROR',
+          recoverable: true,
+          message: 'Horse decision read frame is invalid',
+        });
+        expect(h.decisionsAtRng).toHaveLength(1);
+        expect(h.restored).toHaveLength(restores);
+      } finally {
+        HorseMind.reset();
+      }
+    }
+  );
 
   it('keeps the actual second-look opponent reads pinned after other table observations', async () => {
     const { hero, state } = jointPolicyFixture('nlh', 1, 'cash', 'flop');
@@ -2305,6 +2401,63 @@ describe('HorseDecisionWorkerRuntime', () => {
     );
   });
 
+  it('planted red: journals the governor scale the decision ran at, not a reading taken after it (Phase 6C)', async () => {
+    const h = harness();
+    // Each read of the live governor may take a new reading (one a second).
+    const readings = [0.6, 1, 0.35, 0.2];
+    let pinned: number | null = null;
+    const live = () => pinned ?? readings.shift() ?? 0.08;
+    const seenByDecision: number[] = [];
+    const journaled: number[] = [];
+    h.deps.governorScale = live;
+    h.deps.atGovernorScale = <T>(fn: () => T) => {
+      const scale = live();
+      pinned = scale;
+      try {
+        return { value: fn(), scale };
+      } finally {
+        pinned = null;
+      }
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      // Two Monte Carlo reads inside the one decision.
+      seenByDecision.push(live(), live());
+      return decide(...args);
+    };
+    h.deps.journalEnabled = () => true;
+    h.deps.journalDecision = (_request, payload) => {
+      journaled.push((payload as { governorScale: number }).governorScale);
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    expect(seenByDecision).toEqual([0.6, 0.6]);
+    expect(journaled).toEqual([0.6]);
+    expect(result).toMatchObject({ governorScale: 0.6 });
+  });
+
+  it('without a decision-scale hook, reads the governor once, before the decision', async () => {
+    const h = harness();
+    const reads: string[] = [];
+    let phase = 'before';
+    h.deps.governorScale = () => {
+      reads.push(phase);
+      return 0.35;
+    };
+    const decide = h.deps.decide;
+    h.deps.decide = (...args) => {
+      phase = 'during';
+      const out = decide(...args);
+      phase = 'after';
+      return out;
+    };
+    h.runtime.receive(fastRequest());
+    await h.runtime.drain();
+    expect(reads).toEqual(['before']);
+    expect(h.messages.find((m) => m.type === 'FAST_RESULT')).toMatchObject({ governorScale: 0.35 });
+  });
+
   it('captures actual fast/deep journal inputs privately and retains decisions when capture fails', async () => {
     const h = harness(),
       records: any[] = [];
@@ -2611,3 +2764,140 @@ it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
     }
   }
 );
+
+describe('Phase 8.3 worker-owned qualified authority', () => {
+  function authorityHarness(admission?: HorseAuthorityAdmission) {
+    const h = harness();
+    let safety: string | null = null;
+    const ledgers: Array<Record<string, unknown>> = [];
+    let tripOnDecision = false;
+    h.deps.admitPhase8Authority = admission ? () => admission : undefined;
+    h.deps.phase8SafetyDisabledReason = () => safety;
+    const decide = h.deps.decide;
+    h.deps.decide = (player, gameState, style, mods, opts) => {
+      const decision = decide(player, gameState, style, mods, opts);
+      // A minimal Phase 8 receipt as HorseLogic attaches it.
+      const ledger = { mode: opts?.phase8Postflop, authority: null };
+      ledgers.push(ledger);
+      if (tripOnDecision) safety = 'critical_commitment_increase';
+      return { ...decision, tournamentPostflop: ledger } as unknown as typeof decision;
+    };
+    return {
+      ...h,
+      ledgers,
+      tripSafety: (reason: string) => {
+        safety = reason;
+      },
+      tripOnNextDecision: () => {
+        tripOnDecision = true;
+      },
+      results: () =>
+        h.messages.filter(
+          (m): m is Extract<HorseDecisionWorkerResponse, { type: 'FAST_RESULT' | 'DEEP_RESULT' }> =>
+            m.type === 'FAST_RESULT' || m.type === 'DEEP_RESULT'
+        ),
+    };
+  }
+
+  it('without a committed selection every live decision is shadow and the caller may only turn it off', async () => {
+    const h = authorityHarness();
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive(rekey({ ...fastRequest(2), opts: { phase8Postflop: 'off' } }));
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase8Postflop)).toEqual(['shadow', 'off']);
+    expect(h.results().map((r) => r.phase8Authority?.state)).toEqual(['unselected', 'unselected']);
+    expect(h.ledgers[0].authority).toMatchObject({
+      state: 'unselected',
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      mainGeneration: null,
+    });
+  });
+
+  it('derives candidate mode from admitted authority and binds its generation to the ledger', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    expect(h.decisionOpts[0].phase8Postflop).toBe('candidate');
+    const result = h.results()[0];
+    expect(result.phase8Authority).toMatchObject({
+      state: 'usable',
+      generation: 1,
+      approvalGeneration: 1,
+    });
+    expect(h.ledgers[0].authority).toEqual(result.phase8Authority);
+  });
+
+  it('a caller still cannot supply candidate control when authority is usable', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.runtime.receive({
+      ...fastRequest(1),
+      opts: { phase8Postflop: 'candidate' },
+    } as unknown as FastHorseDecisionRequest);
+    await h.runtime.drain();
+    expect(h.decisionOpts).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'offline candidate controls are forbidden in live decision requests',
+    });
+  });
+
+  it('work queued before a withdrawal runs in shadow, and the deciding receipt is stale', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    h.tripOnNextDecision();
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive(fastRequest(2));
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase8Postflop)).toEqual(['candidate', 'shadow']);
+    const [first, second] = h.results();
+    // The first decision was admitted at generation 1; its own result already
+    // reports the withdrawal it caused, so the main scheduler sees it stale.
+    expect(h.ledgers[0].authority).toMatchObject({ state: 'usable', generation: 1 });
+    expect(first.phase8Authority).toMatchObject({
+      state: 'withdrawn',
+      generation: 2,
+      reason: 'safety_critical_commitment_increase',
+    });
+    expect(second.phase8Authority).toMatchObject({ state: 'withdrawn', generation: 2 });
+    expect(h.ledgers[1].authority).toMatchObject({ state: 'withdrawn' });
+  });
+
+  it('deep think-time work admits afresh and turns to shadow after a withdrawal', async () => {
+    const h = authorityHarness(qualifiedTestAdmission(1));
+    const request = fastRequest(1);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.results()[0];
+    if (fast.type !== 'FAST_RESULT') throw Error('expected FAST_RESULT');
+    expect(h.decisionOpts[0].phase8Postflop).toBe('candidate');
+    h.tripSafety('eligible_but_silent');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    const deep = h.results()[1];
+    expect(deep.type).toBe('DEEP_RESULT');
+    expect(h.decisionOpts[1].phase8Postflop).toBe('shadow');
+    expect(deep.phase8Authority).toMatchObject({
+      state: 'withdrawn',
+      reason: 'safety_eligible_but_silent',
+    });
+  });
+
+  it('a refused or transiently unreadable selection never yields candidate mode', async () => {
+    for (const admission of [
+      { status: 'refused', reason: 'hash_mismatch', transient: false },
+      { status: 'refused', reason: 'unreadable_evidence', transient: true },
+      { status: 'withdrawn', approvalGeneration: 1, reason: 'release_owner' },
+    ] as const) {
+      const h = authorityHarness(admission);
+      h.runtime.receive(fastRequest(1));
+      await h.runtime.drain();
+      expect(h.decisionOpts[0].phase8Postflop).toBe('shadow');
+      expect(h.results()[0].phase8Authority?.state).not.toBe('usable');
+    }
+  });
+});

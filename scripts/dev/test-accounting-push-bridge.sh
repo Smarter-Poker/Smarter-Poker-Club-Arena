@@ -31,4 +31,7 @@ sed -n '/^INSERT INTO public.push_outbox(recipient_user_id,title,body,url,event,
  -f "$work/historical-fixture.sql" \
  -f "$root/supabase/migrations/20260914141405_accounting_notifications_require_durable_push_receipts.sql" \
  -f "$fixture/repeat-backfill.sql" \
- -f "$work/regression.sql"
+ -f "$work/regression.sql" \
+ -f "$work/bridge-installed-cashier-generation.sql" \
+ -f "$root/supabase/migrations/20260927143752_owner_accounting_notifications_routed_to_production_alerts.sql" \
+ -f "$work/owner-routing-regression.sql"

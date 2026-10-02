@@ -287,7 +287,10 @@
 
 .ag-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(74px, 1fr));
+  /* Each column is at least as wide as its label. Four equal columns let
+     "PRESETS (25)" run into "VIP (72)" on a 393px phone (labels are nowrap);
+     a screen too narrow for all four scrolls the bar instead (overflow-x). */
+  grid-template-columns: repeat(4, minmax(max-content, 1fr));
   flex: 0 0 auto;
   overflow-x: auto;
   scrollbar-width: none;

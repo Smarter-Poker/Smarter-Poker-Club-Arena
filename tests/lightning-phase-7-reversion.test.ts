@@ -1,0 +1,384 @@
+/**
+ * LIGHTNING PHASE 7 (SPECIFICATION PHASE 10): THE POOL REVERTS TO MUST-MOVE,
+ * AND THE CLUSTER TICK DRIVES BOTH CONVERSIONS.
+ *
+ * A static reading of ONE migration, 20261001222856. The harness
+ * scripts/dev/test-lightning-phase7-reversion.sh proves every claim against a
+ * running catalogue and estate; this file proves what a catalogue cannot see:
+ * the transaction shape, the contract the engine and client are built
+ * against, that every change to an existing body is an asserted substitution,
+ * that the reversion moves no chip, and that horses are never singled out.
+ *
+ * LIGHTNING_P7_MIGRATION overrides the file under test, for mutation testing.
+ */
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { declaredProofs } from '../scripts/ci/check-migrations-are-live.mjs';
+
+const ROOT = path.resolve(__dirname, '..');
+const FILE = '20261001222856_lightning_phase_7_the_pool_reverts_to_must_move_and_the_tick.sql';
+const MIGRATION =
+  process.env.LIGHTNING_P7_MIGRATION ?? path.join(ROOT, 'supabase', 'migrations', FILE);
+const SQL = fs.readFileSync(MIGRATION, 'utf8');
+const read = (...p: string[]) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
+const HARNESS = read('scripts', 'dev', 'test-lightning-phase7-reversion.sh');
+const CHANGELOG = read('docs', 'changelog', '2026-10-02-lightning-phase-7-reversion.md');
+const CI = read('.github', 'workflows', 'ci.yml');
+const FRAGMENT = JSON.parse(
+  read('scripts', 'ci', 'schema-manifest.d', 'lightning-phase7-reversion.json')
+);
+
+/** The SQL with line comments removed. */
+const CODE = SQL.split('\n')
+  .map((l) => l.replace(/--.*$/, ''))
+  .join('\n');
+const count = (s: string, re: RegExp) => s.match(re)?.length ?? 0;
+
+/** The text of one CREATE OR REPLACE FUNCTION, header to its closing tag. */
+function fn(name: string): string {
+  const start = SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  expect(start, name).toBeGreaterThan(0);
+  const end = SQL.indexOf('$function$;', start);
+  return SQL.slice(start, end);
+}
+/** The same function body with its comments removed. */
+const fnCode = (name: string) =>
+  fn(name)
+    .split('\n')
+    .map((l) => l.replace(/--.*$/, ''))
+    .join('\n');
+
+/** One DO block of an asserted substitution, by its dollar tag. */
+function sub(tag: string): string {
+  const start = SQL.indexOf(`DO $${tag}$`);
+  expect(start, tag).toBeGreaterThan(0);
+  return SQL.slice(start, SQL.indexOf(`$${tag}$;`, start + tag.length + 4));
+}
+
+const NEW = [
+  'fn_cash_cluster_begin_pending_off',
+  'fn_cash_cluster_abort_pending_off',
+  'fn_cash_cluster_commit_must_move',
+  'fn_cash_cluster_lightning_drive',
+];
+
+describe('the transaction', () => {
+  it('is one BEGIN and one COMMIT, with a lock wait set first', () => {
+    expect(count(CODE, /^BEGIN;$/gm)).toBe(1);
+    expect(count(CODE, /^COMMIT;$/gm)).toBe(1);
+    expect(CODE.trim().endsWith('COMMIT;')).toBe(true);
+    expect(CODE).toMatch(/^BEGIN;\s+SET LOCAL lock_timeout = '2s';/m);
+  });
+  it('creates and alters no table, adds no trigger, and locks neither tables nor table_seats', () => {
+    expect(CODE).not.toMatch(/\b(CREATE|ALTER|DROP) TABLE\b/);
+    expect(CODE).not.toMatch(/CREATE (CONSTRAINT )?TRIGGER/);
+    expect(CODE).not.toMatch(/\bLOCK TABLE\b/);
+    expect(CODE).not.toMatch(/DROP FUNCTION/);
+  });
+});
+
+describe('the contract the engine and the client are built against', () => {
+  it.each([
+    [
+      'fn_cash_cluster_begin_pending_off',
+      /\(p_game_id uuid,\s+p_request_id uuid DEFAULT gen_random_uuid\(\),\s+p_reason text DEFAULT NULL\)\nRETURNS jsonb/,
+    ],
+    [
+      'fn_cash_cluster_abort_pending_off',
+      /\(p_game_id uuid, p_request_id uuid,\s+p_reason text DEFAULT 'population_rose_above_off_threshold'\)\nRETURNS jsonb/,
+    ],
+    ['fn_cash_cluster_commit_must_move', /\(p_game_id uuid, p_request_id uuid\)\nRETURNS jsonb/],
+    ['fn_cash_cluster_lightning_drive', /\(p_game_id uuid\)\nRETURNS jsonb/],
+  ])('%s keeps its signature, so (game, request) is enough to call it', (name, sig) => {
+    expect(fn(name)).toMatch(sig);
+  });
+  it.each(NEW)(
+    '%s is SECURITY DEFINER with a pinned search_path and is executable by service_role alone',
+    (name) => {
+      expect(fn(name)).toMatch(/SECURITY DEFINER\nSET search_path TO 'public', 'pg_temp'/);
+      expect(CODE).toMatch(
+        new RegExp(
+          `REVOKE ALL ON FUNCTION public\\.${name}\\([^)]*\\) FROM PUBLIC, anon, authenticated;`
+        )
+      );
+      expect(CODE).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${name}\\([^)]*\\) TO service_role;`)
+      );
+      expect(CODE).not.toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${name}\\([^)]*\\) TO (anon|authenticated)`)
+      );
+    }
+  );
+  it('begin_pending_off moves only from lightning, records the conversion with both thresholds and emits lightning_pending_off', () => {
+    const b = fnCode('fn_cash_cluster_begin_pending_off');
+    expect(b).toMatch(/IF g\.cluster_mode IS DISTINCT FROM 'lightning' THEN/);
+    expect(b).toMatch(/'wrong_state'/);
+    expect(b).toMatch(/SET cluster_mode = 'pending_off'/);
+    expect(b).toMatch(/'lightning_disabled'/);
+    expect(b).toMatch(/would_turn_off/);
+    expect(b).toMatch(
+      /from_mode, to_mode, trigger_population,\s+on_threshold, off_threshold, epoch_before, chips_at_begin/
+    );
+    expect(b).toMatch(/'lightning', 'must_move'/);
+    expect(b).toMatch(/'lightning_pending_off'/);
+    expect(b).toMatch(/FOR UPDATE/);
+  });
+  it('begin_pending_off is idempotent on its request id, before and under the Cluster lock', () => {
+    const b = fnCode('fn_cash_cluster_begin_pending_off');
+    expect(count(b, /WHERE conversion_request_id = p_request_id AND cluster_id = p_game_id/g)).toBe(
+      2
+    );
+    expect(b).toMatch(/'already_known'/);
+    expect(b).toMatch(/'already_committed'/);
+    expect(b).toMatch(/'request_id_belongs_to_another_conversion'/);
+  });
+  it('the drain voids only formations not yet dealt, through the existing abandon door, and keeps a dealing hand', () => {
+    const b = fnCode('fn_cash_cluster_begin_pending_off');
+    expect(b).toMatch(/li\.state IN \('forming', 'reserved'\)/);
+    expect(b).toMatch(/fn_lightning_instance_abandon\(i\.id/);
+    expect(b).toMatch(/li\.state IN \('dealing', 'settling'\)/);
+  });
+  it('abort_pending_off returns to lightning only while enabled and enters whoever sat down during the drain', () => {
+    const a = fnCode('fn_cash_cluster_abort_pending_off');
+    expect(a).toMatch(/IF g\.cluster_mode IS DISTINCT FROM 'pending_off' THEN/);
+    expect(a).toMatch(
+      /coalesce\(g\.lightning_enabled, false\) = false OR g\.enabled IS DISTINCT FROM true/
+    );
+    expect(a).toMatch(/SET cluster_mode = 'lightning'/);
+    expect(a).toMatch(/fn_lightning_pool_enter\(s\.id/);
+    expect(a).toMatch(/SET status = 'aborted'/);
+    expect(a).toMatch(/'lightning_pending_off_aborted'/);
+  });
+});
+
+describe('the commit moves no chip', () => {
+  const c = () => fnCode('fn_cash_cluster_commit_must_move');
+  it('answers a structured not-ready while any instance is live, and cancels itself above OFF while enabled', () => {
+    expect(c()).toMatch(/li\.state IN \('forming', 'reserved', 'dealing', 'settling'\)/);
+    expect(c()).toMatch(/'ready', false,\s+'reason', 'instances_in_flight'/);
+    expect(c()).toMatch(/v_live > v_off THEN\s+RETURN public\.fn_cash_cluster_abort_pending_off/);
+    expect(c()).toMatch(/IF g\.cluster_mode IS DISTINCT FROM 'pending_off' THEN/);
+    expect(c()).toMatch(/'already_committed'/);
+  });
+  it('takes the same md5 of every seat, cash session and blind ledger row before and after, and refuses on any difference', () => {
+    const body = c();
+    expect(count(body, /'ts:' \|\| to_jsonb\(ts\)::text/g)).toBe(2);
+    expect(count(body, /'cps:' \|\| to_jsonb\(s\)::text/g)).toBe(2);
+    expect(count(body, /'bl:' \|\| to_jsonb\(bl\)::text/g)).toBe(2);
+    expect(body).toMatch(
+      /IF v_after IS DISTINCT FROM v_before THEN\s+RAISE EXCEPTION 'LIGHTNING_REVERSION_MOVED_MONEY/
+    );
+  });
+  it('writes no seat, cash session, blind ledger, wallet or roster row', () => {
+    for (const t of [
+      'table_seats',
+      'cash_player_session',
+      'lightning_blind_ledger',
+      'club_members',
+      'cash_game_roster',
+      'chip_ledger',
+    ])
+      expect(c(), t).not.toMatch(new RegExp(`(UPDATE|INSERT INTO|DELETE FROM) public\\.${t}\\b`));
+  });
+  it('exits every pool session with lightning_off, closes slots, expires reservations and logs one pool_player_left each', () => {
+    const body = c();
+    expect(body).toMatch(/exit_reason = 'lightning_off'/);
+    expect(body).toMatch(/WHERE ps\.cluster_id = g\.id AND ps\.exited_at IS NULL/);
+    expect(body).toMatch(/UPDATE public\.lightning_pool_slot sl\s+SET closed_at/);
+    expect(body).toMatch(/SET state = 'expired'/);
+    expect(body).toMatch(/'pool_player_left'/);
+    expect(body).toMatch(/LIGHTNING_REVERSION_LOST_AN_EVENT/);
+    expect(body).toMatch(/LIGHTNING_REVERSION_LEFT_A_POOL_SESSION_OPEN/);
+  });
+  it('opens the next epoch in must_move and lifts only the halt Lightning placed, with its acknowledgement', () => {
+    const body = c();
+    expect(body).toMatch(/set_config\('ca\.epoch_reason', 'lightning_off', true\)/);
+    expect(body).toMatch(/SET cluster_mode = 'must_move', cluster_epoch = v_epoch/);
+    expect(body).toMatch(
+      /SET dealing_halted_at = NULL, dealing_halted_reason = NULL, dealing_halt_observed_at = NULL\s+WHERE tb\.cluster_id = g\.id AND tb\.dealing_halted_reason IN \('lightning', 'lightning_pending_on'\)/
+    );
+    expect(body).toMatch(/chips_at_commit = v_chips/);
+    expect(body).toMatch(/'lightning_off'/);
+  });
+  it('is gated on the platform freeze, while beginning the drain never is', () => {
+    expect(c()).toMatch(/IF public\.fn_platform_frozen\(\) THEN/);
+    expect(fnCode('fn_cash_cluster_begin_pending_off')).not.toMatch(/fn_platform_frozen/);
+  });
+});
+
+describe('the drive and the tick', () => {
+  const d = () => fnCode('fn_cash_cluster_lightning_drive');
+  it('runs both directions from the one population reader with hysteresis', () => {
+    const body = d();
+    expect(body).toMatch(/fn_cash_cluster_lightning_state\(g\.id\)/);
+    expect(body).toMatch(/would_turn_on/);
+    expect(body).toMatch(/would_turn_off/);
+    for (const call of [
+      'fn_cash_cluster_begin_pending_on',
+      'fn_cash_cluster_abort_pending_on',
+      'fn_cash_cluster_commit_lightning',
+      'fn_cash_cluster_begin_pending_off',
+      'fn_cash_cluster_abort_pending_off',
+      'fn_cash_cluster_commit_must_move',
+    ])
+      expect(body, call).toContain(`public.${call}(`);
+    expect(body).toMatch(/v_live_ok AND v_live > v_off/);
+  });
+  it('derives request ids from the Cluster, its epoch, the direction and its conversion count', () => {
+    expect(d()).toMatch(
+      /md5\(format\('lightning-drive:%s:%s:lightning:%s', g\.id, g\.cluster_epoch, v_n\)\)::uuid/
+    );
+    expect(d()).toMatch(
+      /md5\(format\('lightning-drive:%s:%s:must_move:%s', g\.id, g\.cluster_epoch, v_n\)\)::uuid/
+    );
+  });
+  it("isolates one Cluster's failure in its own sub-block and records it", () => {
+    expect(d()).toMatch(/EXCEPTION WHEN OTHERS THEN/);
+    expect(d()).toMatch(/'lightning_drive_error'/);
+  });
+  it('the tick pass drives Clusters with Lightning enabled or in a Lightning mode, after the reaps and before the slot sync', () => {
+    const s = sub('sub_tick');
+    expect(s).toMatch(
+      /WHERE \(coalesce\(cg\.lightning_enabled, false\) AND coalesce\(cg\.must_move, false\)\)\s+OR cg\.cluster_mode IN \('pending_on', 'lightning', 'pending_off'\)/
+    );
+    expect(s).toMatch(/public\.fn_cash_cluster_lightning_drive\(lc\.id\)/);
+    expect(s).toMatch(/'lightning_driven', v_lightning_driven/);
+    expect(s).toMatch(
+      /position\('fn_lightning_reap_formations' in v_src\) > position\('fn_cash_cluster_lightning_drive' in v_src\)/
+    );
+  });
+  it('the reaper commits a stuck PENDING_OFF through the same commit after voiding its hands, per item', () => {
+    const s = sub('sub_reap');
+    expect(s).toMatch(/IF c\.to_mode = 'must_move' AND c\.cluster_mode = 'pending_off' THEN/);
+    expect(s).toMatch(/fn_lightning_instance_abandon\(v_inst\.id/);
+    expect(s).toMatch(
+      /public\.fn_cash_cluster_commit_must_move\(c\.cluster_id, c\.conversion_request_id\)/
+    );
+    expect(s).toMatch(/'lightning_pending_off_reaped'/);
+    expect(s).toMatch(/'lightning_pending_off_reap_failed'/);
+  });
+});
+
+describe('my session names the seat', () => {
+  it('a caller with no pool session but a live seat gets pool_session_id null, cluster_mode, seat_table_id and seat_number', () => {
+    const s = sub('sub_session');
+    expect(s).toMatch(
+      /RETURN jsonb_build_object\('pool_session_id', NULL, 'cluster_mode', v_seat\.cluster_mode,\s+'seat_table_id', v_seat\.table_id, 'seat_number', v_seat\.seat_number\);/
+    );
+    expect(s).toMatch(/ts\.user_id = v_uid AND ts\.left_at IS NULL/);
+  });
+  it('a pooled caller keeps every key and gains seat_table_id, the anchor table', () => {
+    expect(sub('sub_session')).toContain(
+      "'anchor_table_id', s.anchor_table_id, 'seat_table_id', s.anchor_table_id, 'seat_number', s.seat_number,"
+    );
+  });
+});
+
+describe('every substitution is asserted', () => {
+  it.each(['sub_reap', 'sub_tick', 'sub_session'])(
+    '%s reads production, counts each anchor, refuses a blind replace and reads back',
+    (tag) => {
+      const s = sub(tag);
+      expect(s).toMatch(/v_src := pg_get_functiondef\(v_sig::regprocedure\);/);
+      expect(s).toMatch(
+        /IF v_n IS DISTINCT FROM c\[k\] THEN\s+RAISE EXCEPTION '% carries anchor % % time\(s\) rather than %; refusing to substitute blind'/
+      );
+      expect(s).toMatch(/EXECUTE v_new;/);
+      expect(count(s, /v_src := pg_get_functiondef/g)).toBe(2);
+      expect(s).toMatch(/IF position\('/);
+    }
+  );
+});
+
+describe('law 10.5 and the live proofs', () => {
+  it('no new body reads is_horse or horse_id', () => {
+    for (const name of NEW) expect(fnCode(name), name).not.toMatch(/is_horse|horse_id/);
+    expect(CODE).not.toMatch(/is_horse|horse_id/);
+  });
+  it('declares six balanced live proofs, every one filtering functions by prokind or naming them exactly', () => {
+    const proofs: string[] = declaredProofs(SQL);
+    expect(proofs.length).toBe(6);
+    for (const p of proofs) expect(count(p, /\(/g), p).toBe(count(p, /\)/g));
+    expect(proofs.some((p) => p.includes("p.prokind = 'f'"))).toBe(true);
+  });
+});
+
+describe('the proof around it', () => {
+  it('the harness applies the real chain through this file twice on its own port and proves horses beside humans', () => {
+    expect(HARNESS).toContain('port=${LIGHTNING_P7_PORT:-55554}');
+    expect(HARNESS).toContain(FILE);
+    expect(HARNESS).toContain('LIGHTNING_P7_MIGRATION');
+    expect(count(HARNESS, /-f "\$mine"/g)).toBe(2);
+    for (const n of [
+      '00',
+      '01',
+      '02',
+      '03',
+      '04',
+      '05',
+      '05b',
+      '06',
+      '07',
+      '08',
+      '09',
+      '10',
+      '11',
+      '12',
+      '13',
+      '14',
+      '15',
+      '16',
+    ])
+      expect(HARNESS, n).toMatch(new RegExp(`\\\\echo '  ok  ${n} `));
+    expect(HARNESS).toMatch(/fn_lightning_hand_view_access/);
+    expect(HARNESS).toMatch(/horse/);
+  });
+  it('CI runs it on shard 1 right after the Phase 6 settlement harness', () => {
+    const p6 = CI.indexOf('run: bash scripts/dev/test-lightning-phase6-settlement.sh');
+    const p7 = CI.indexOf('run: bash scripts/dev/test-lightning-phase7-reversion.sh');
+    expect(p6).toBeGreaterThan(0);
+    expect(p7).toBeGreaterThan(p6);
+    expect(CI.slice(p6, p7)).toMatch(
+      /if: matrix\.shard == 1\n\s+env:\n\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\n\s+$/
+    );
+  });
+  it('the schema manifest fragment promises exactly the four new functions', () => {
+    expect([...FRAGMENT.functions].sort()).toEqual([...NEW].sort());
+    expect(FRAGMENT.tables).toEqual([]);
+  });
+  it('the changelog names every new door, uses title case headings and no em dash', () => {
+    for (const p of [
+      ...NEW,
+      'fn_lightning_my_session',
+      'fn_cash_cluster_reap_stuck_conversions',
+      FILE,
+    ])
+      expect(CHANGELOG, p).toContain(p);
+    expect(CHANGELOG).not.toContain('—');
+    for (const h of CHANGELOG.match(/^#{1,3} .+$/gm) ?? []) {
+      for (const w of h.replace(/^#+ /, '').split(/\s+/)) {
+        if (
+          /^[a-z]/.test(w) &&
+          ![
+            'a',
+            'an',
+            'and',
+            'the',
+            'of',
+            'to',
+            'in',
+            'on',
+            'or',
+            'by',
+            'at',
+            'for',
+            'is',
+            'its',
+          ].includes(w)
+        )
+          throw new Error(`heading word not in title case: ${w} in ${h}`);
+      }
+    }
+  });
+});

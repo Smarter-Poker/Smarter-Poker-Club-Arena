@@ -185,17 +185,25 @@ function ask(sql) {
   const url = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || '';
   if (!url) die('no SUPABASE_DB_URL / DATABASE_URL in the environment.');
   try {
-    const out = execFileSync(process.env.PSQL_BIN || 'psql', [url, '-Atc', sql], {
-      encoding: 'utf8',
-      timeout: 60_000,
-      maxBuffer: 32 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // VERBOSITY=verbose makes psql prefix the SQLSTATE on an ERROR line, which
+    // is the only thing that separates "production does not have that object"
+    // from "what you sent me is not SQL". It changes nothing about a query
+    // that succeeds.
+    const out = execFileSync(
+      process.env.PSQL_BIN || 'psql',
+      [url, '-v', 'VERBOSITY=verbose', '-Atc', sql],
+      {
+        encoding: 'utf8',
+        timeout: 60_000,
+        maxBuffer: 32 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
     return { out };
   } catch (err) {
     const refused = String(err.stderr || '')
       .split('\n')
-      .find((l) => l.startsWith('ERROR:'));
+      .find((l) => l.trim().startsWith('ERROR:'));
     if (err.status === 1 && refused) return { error: refused.trim() };
     die(String(err.message).split(url).join('<database url>'));
     return { error: '' };
@@ -285,6 +293,119 @@ export function declaredObjects(sql) {
  */
 export function declaredProofs(sql) {
   return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim());
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A PROOF THIS CHECK CANNOT RUN IS NOT A PROOF THAT CAME BACK FALSE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * (2026-09-30.) Step 3 runs each declared proof and treats anything that is
+ * not `true` - including a rejection - as evidence the migration is not live.
+ * For a rejection that reads "function ... does not exist" that is exactly
+ * right, and it is why the rule was written that way: a proof about an
+ * unapplied migration names what is not there yet.
+ *
+ * It is wrong for a rejection that means "what you sent me is not SQL".
+ *
+ * `declaredProofs` reads ONE LINE, because the marker is line-anchored and
+ * every Lightning harness greps for it that way. Three migrations on main
+ * declare a proof that does not survive that:
+ *
+ *   20260929130144  "(SELECT count(*) FROM pg_index i"      truncated -> 42601
+ *   20260928200404  "(SELECT count(*) FROM pg_class c ..."  truncated -> 42601
+ *   20260928001128  two proofs that are English prose, not SQL at all
+ *
+ * The first was reported on 2026-09-30 as
+ *
+ *   proof false: (SELECT count(*) FROM pg_index i  ->  rejected: ERROR: syntax error
+ *
+ * and counted toward MERGED BUT NOT LIVE. The verdict happened to be right -
+ * that migration really is unapplied, decided at step 2 from its missing
+ * indexes - but the proof line was this check reading back its own truncation
+ * and presenting it as an answer from production. Had the objects been there,
+ * a correct migration would have been accused on nothing at all, and this
+ * file's own header says why that matters: "a check that accuses at a 70%
+ * false rate gets switched off, which is how this estate already lost Applied
+ * Migrations Are Recorded."
+ *
+ * So an unrunnable proof is a THIRD outcome. It is never run, never counted
+ * false, always named in the report, and on its own it makes the run exit 2 -
+ * COULD NOT TELL - which is neither 0 nor 1 (CLAUDE.md 10.86 rules 1 and 2).
+ * A migration that also fails on real evidence still exits 1: FAIL beats
+ * COULD-NOT-TELL beats PASS, because there we do know.
+ *
+ * Two layers catch it, because neither alone is enough:
+ *
+ *   BEFORE ASKING  `proofIsRunnable` refuses text that cannot be an
+ *                  expression - unbalanced parentheses, an unterminated
+ *                  literal. That covers every truncation, and it keeps a
+ *                  malformed proof out of the shared UNION ALL batch, which is
+ *                  the collapse this file already feared.
+ *   AFTER ASKING   a rejection carrying SQLSTATE 42601 (syntax_error) is about
+ *                  the text we sent and can never be about what production
+ *                  holds. A missing object raises 42883 / 42P01 / 42703 and
+ *                  stays a failure, exactly as before. Prose that parses as
+ *                  SQL but names nothing real is caught here, not above.
+ */
+export function proofIsRunnable(expr) {
+  const s = String(expr ?? '');
+  if (!s.trim()) return false;
+  let depth = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (c === '$') {
+      const tag = /^\$[A-Za-z_]*\$/.exec(s.slice(i));
+      if (tag) {
+        const close = s.indexOf(tag[0], i + tag[0].length);
+        if (close < 0) return false; // an unterminated dollar quote
+        i = close + tag[0].length - 1;
+      }
+      continue;
+    }
+    if (c === "'") {
+      let from = i + 1;
+      for (;;) {
+        const q = s.indexOf("'", from);
+        if (q < 0) return false; // an unterminated string literal
+        if (s[q + 1] === "'") {
+          from = q + 2;
+          continue;
+        }
+        i = q;
+        break;
+      }
+      continue;
+    }
+    if (c === '"') {
+      const q = s.indexOf('"', i + 1);
+      if (q < 0) return false; // an unterminated quoted identifier
+      i = q;
+      continue;
+    }
+    if (c === '(') depth += 1;
+    else if (c === ')') {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
+/** Postgres raises this, and only this, when the TEXT we sent is not SQL. */
+const SYNTAX_ERROR = '42601';
+
+/**
+ * The SQLSTATE of a psql `ERROR:` line, when psql was asked to print one.
+ * `VERBOSITY=verbose` prefixes the code: `ERROR:  42601: syntax error ...`.
+ *
+ * Null when the line carries no code, and null is deliberately judged the OLD
+ * way - as a failure. A surprise in psql's output format must not quietly turn
+ * a real miss into a shrug.
+ */
+export function errorSqlState(line) {
+  const m = /^ERROR:\s+([0-9A-Z]{5}):/.exec(String(line || '').trim());
+  return m ? m[1] : null;
 }
 
 const sqlLiteral = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -399,7 +520,30 @@ function main() {
 
   // ── 3. declared proofs ─────────────────────────────────────────────────────
   const falseProofs = new Map();
-  const proofChecks = unmatched.flatMap((m) => m.proofs.map((p) => ({ m, p })));
+  /** Proofs this check could not put a question to. Never a false proof. */
+  const unrunnable = new Map();
+  const cannotRun = ({ m, p }, why) => {
+    if (!unrunnable.has(m.file)) unrunnable.set(m.file, []);
+    unrunnable.get(m.file).push(`${p}  ->  ${why}`);
+  };
+
+  // Refused BEFORE the database is asked, so a fragment can neither be
+  // mistaken for an answer nor collapse the shared UNION ALL below.
+  for (const m of unmatched) {
+    m.runnableProofs = [];
+    for (const p of m.proofs) {
+      if (proofIsRunnable(p)) m.runnableProofs.push(p);
+      else
+        cannotRun(
+          { m, p },
+          'not a runnable expression (unbalanced parentheses or an unterminated ' +
+            'literal - a "-- @live-proof:" is ONE line, so a proof written across ' +
+            'several comment lines arrives here truncated)'
+        );
+    }
+  }
+
+  const proofChecks = unmatched.flatMap((m) => m.runnableProofs.map((p) => ({ m, p })));
   if (proofChecks.length > 0) {
     const record = ({ m, p }, answer) => {
       if (!falseProofs.has(m.file)) falseProofs.set(m.file, []);
@@ -425,7 +569,7 @@ function main() {
     if (all.out !== undefined) {
       judge(proofChecks, all.out);
     } else {
-      for (const m of unmatched.filter((u) => u.proofs.length > 0)) {
+      for (const m of unmatched.filter((u) => u.runnableProofs.length > 0)) {
         const mine = proofChecks.filter((c) => c.m === m);
         const file = ask(union(mine));
         if (file.out !== undefined) {
@@ -434,8 +578,18 @@ function main() {
         }
         for (const check of mine) {
           const one = ask(union([check]));
-          if (one.out !== undefined) judge([check], one.out);
-          else record(check, `rejected: ${one.error}`);
+          if (one.out !== undefined) {
+            judge([check], one.out);
+            continue;
+          }
+          // A rejection naming a missing object IS evidence this migration is
+          // not live, and stays a failure. A syntax error is about the text we
+          // sent and can never be about what production holds.
+          if (errorSqlState(one.error) === SYNTAX_ERROR) {
+            cannotRun(check, `the database refused it as malformed: ${one.error}`);
+          } else {
+            record(check, `rejected: ${one.error}`);
+          }
         }
       }
     }
@@ -470,6 +624,19 @@ function main() {
     for (const m of unverifiable) console.log(`    ${m.file}`);
   }
 
+  if (unrunnable.size > 0) {
+    console.error(
+      `\n[migrations-are-live] ${unrunnable.size} migration(s) declare a proof this check\n` +
+        '  COULD NOT RUN. These are NOT reported as false: a proof the database never\n' +
+        '  answered says nothing whatever about production. Rewrite each one as a\n' +
+        '  single-line boolean expression after "-- @live-proof: ":\n'
+    );
+    for (const [file, why] of unrunnable) {
+      console.error(`    ${file}`);
+      for (const w of why) console.error(`        ${w}`);
+    }
+  }
+
   for (const m of inFlight) {
     console.log(
       `[migrations-are-live] in flight (younger than ${MIN_AGE_HOURS}h, not failed yet): ${m.file}`
@@ -495,6 +662,17 @@ function main() {
   if (REQUIRE_PROOF && unverifiable.length > 0) {
     console.error('[migrations-are-live] --require-proof: every migration must be checkable.');
     process.exit(1);
+  }
+
+  // FAIL beats COULD-NOT-TELL beats PASS. Nothing above is failing, so an
+  // unrunnable proof is now the only thing between this run and a clean bill -
+  // and a clean bill is not something it is entitled to give.
+  if (unrunnable.size > 0) {
+    console.error(
+      `[migrations-are-live] COULD NOT TELL: ${unrunnable.size} migration(s) above could not be\n` +
+        '   proved either way. This is not a pass.'
+    );
+    process.exit(2);
   }
 
   console.log('[migrations-are-live] OK - every migration in the window is live in production.');

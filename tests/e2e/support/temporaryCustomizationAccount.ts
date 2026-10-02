@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import {
+  awaitPlatformThaw,
+  describeThaw,
+  freezeBudgetMs,
+  PLATFORM_FREEZE_WORST_CASE_MS,
+} from '../../../scripts/ci/platform-freeze-window.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-';
 const SHARED_POST_DEPLOY_PREFIX = 'ca-customization-cert-postdeploy-';
@@ -25,13 +31,39 @@ export type StorefrontSku = {
 
 type JsonObject = Record<string, unknown>;
 
+type PlatformThawResult = {
+  outcome: 'thawed' | 'exhausted' | 'unreadable';
+  waitedMs: number;
+  budgetMs: number;
+  polls: number;
+  failedReads: number;
+  lastError: string | null;
+};
+
 const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
 const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
 const SERVICE_REQUEST_BASE_DELAY_MS = 500;
 const STALE_FIXTURE_MINIMUM_AGE_MS = 5 * 60_000;
 const STALE_FIXTURE_CLEANUP_LIMIT = 100;
-const PLATFORM_FREEZE_CLEANUP_ATTEMPTS = 37;
-const PLATFORM_FREEZE_CLEANUP_RETRY_MS = 10_000;
+/**
+ * How many separate freezes one cleanup may sit through. Section 13 schedules
+ * one break an hour and the September 17 owner update allows a corrected
+ * release one extra certified recovery window, so two is every freeze a single
+ * fixture teardown can legitimately meet.
+ */
+const PLATFORM_FREEZE_MAX_WAITS = 2;
+
+/**
+ * What a spec that owns a production fixture must add to its own timeout so the
+ * teardown can wait out one hourly freeze instead of dying inside it.
+ *
+ * 600s: the 300s window the break row schedules plus the 300s measured tail the
+ * engine takes past it (435 breaks, 2026-09-16 to 2026-09-30: min 395s, mean
+ * 448s, p95 532s, longest ordinary 578s). It is spent only when a freeze is
+ * really there; the level above is the 50 minute post-deploy job, which
+ * normally spends 20-24 and can only meet one break an hour.
+ */
+export const CLEANUP_FREEZE_ALLOWANCE_MS = PLATFORM_FREEZE_WORST_CASE_MS;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -232,11 +264,52 @@ export async function callServiceRpc<T>(
   );
 }
 
+/**
+ * Wait for the hourly freeze to END, on the break's own end condition.
+ *
+ * This used to tick 37 times at ten seconds and give up at 370s. Every one of
+ * the 435 breaks measured between 2026-09-16 and 2026-09-30 lasted longer than
+ * that (min 395s, mean 448s, p95 532s, longest ordinary 578s), so a teardown
+ * that opened inside a freeze could never finish. The whole measurement and the
+ * derivation of this budget live in `scripts/ci/platform-freeze-window.mjs`.
+ */
+async function waitOutPlatformFreeze(
+  environment: CustomizationCertificationEnvironment
+): Promise<PlatformThawResult> {
+  let breakRow: { break_ends_at?: string | null } | null = null;
+  try {
+    const rows = await readServiceRows<{ break_ends_at: string | null }>(
+      environment,
+      'engine_maintenance_break',
+      new URLSearchParams({
+        select: 'phase,break_started_at,break_ends_at,enforce_freeze',
+        limit: '1',
+      })
+    );
+    breakRow = rows[0] ?? null;
+  } catch (error) {
+    // 10.86 rule 2: unreadable is not empty. Say so, and size the wait from the
+    // worst case instead of pretending the freeze has already lifted.
+    console.log(
+      '[customization-certification] the maintenance break row could not be read ' +
+        `(${(error as Error).message}); sizing the wait from the worst case.`
+    );
+  }
+  const budgetMs = Math.min(PLATFORM_FREEZE_WORST_CASE_MS, freezeBudgetMs(breakRow, Date.now()));
+  const result = (await awaitPlatformThaw({
+    isFrozen: async () =>
+      (await callServiceRpc<boolean>(environment, 'fn_platform_frozen', {}, true)) === true,
+    budgetMs,
+  })) as PlatformThawResult;
+  console.log(`[customization-certification] ${describeThaw(result)}`);
+  return result;
+}
+
 async function callGuardedCertificationCleanup(
   environment: CustomizationCertificationEnvironment,
   userId: string
 ): Promise<void> {
-  for (let attempt = 0; attempt < PLATFORM_FREEZE_CLEANUP_ATTEMPTS; attempt += 1) {
+  for (let freezesWaited = 0; ; ) {
     const result = await callServiceRpc<JsonObject>(
       environment,
       'cleanup_reserved_certification_account',
@@ -246,10 +319,22 @@ async function callGuardedCertificationCleanup(
     if (result?.success === true) return;
 
     const reason = String(result?.reason || 'unknown');
-    if (reason !== 'platform_is_frozen' || attempt + 1 === PLATFORM_FREEZE_CLEANUP_ATTEMPTS) {
+    if (reason !== 'platform_is_frozen') {
       throw new Error(`Guarded certification cleanup refused ${userId}: ${reason}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, PLATFORM_FREEZE_CLEANUP_RETRY_MS));
+    if (freezesWaited >= PLATFORM_FREEZE_MAX_WAITS) {
+      throw new Error(
+        `Guarded certification cleanup refused ${userId}: platform_is_frozen across ` +
+          `${freezesWaited} complete freezes, which is more than section 13 schedules.`
+      );
+    }
+    freezesWaited += 1;
+    const thaw = await waitOutPlatformFreeze(environment);
+    if (thaw.outcome !== 'thawed') {
+      throw new Error(
+        `Guarded certification cleanup refused ${userId}: platform_is_frozen; ` + describeThaw(thaw)
+      );
+    }
   }
 }
 

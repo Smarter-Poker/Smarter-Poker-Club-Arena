@@ -43,8 +43,8 @@ const lost = (detail) => {
   error.transportDetail = detail.slice(0, 512);
   return error;
 };
-const remaining = (deadline, maximum, operation = 'unnamed') => {
-  const left = Math.min(maximum, deadline - Date.now());
+const remaining = (deadline, maximum, operation = 'unnamed', observedAt = Date.now()) => {
+  const left = Math.min(maximum, deadline - observedAt);
   if (left <= 0)
     throw lost(
       `op=${operation},cause=budget_exhausted,allowanceMs=0,overrunMs=${Date.now() - deadline}`
@@ -310,20 +310,28 @@ function connectInspector(endpoint, deadline, createWebSocket) {
       return new Promise((resolve, reject) => {
         // Computed inside the executor, exactly as before, so a budget that is
         // already spent still arrives as a rejection and never as a throw.
-        const allowanceMs = remaining(requestDeadline, 20000, operation);
         const startedAt = Date.now();
-        const timer = setTimeout(
-          () => {
-            pending.delete(id);
-            reject(
-              lost(
-                `op=${operation},cause=request_timeout,method=${method},` +
-                  `allowanceMs=${allowanceMs},waitedMs=${Date.now() - startedAt}`
-              )
-            );
-          },
-          allowanceMs
-        );
+        const allowanceMs = remaining(requestDeadline, 20000, operation, startedAt);
+        const requestExpiresAt = startedAt + allowanceMs;
+        let timer;
+        const expireRequest = () => {
+          // Timers are wakeups, not proof that their wall-clock deadline
+          // elapsed. Keep the original absolute slice; never resend the call
+          // or extend its work/cleanup budget after an early wakeup.
+          const left = requestExpiresAt - Date.now();
+          if (left > 0) {
+            timer = setTimeout(expireRequest, left);
+            return;
+          }
+          pending.delete(id);
+          reject(
+            lost(
+              `op=${operation},cause=request_timeout,method=${method},` +
+                `allowanceMs=${allowanceMs},waitedMs=${Date.now() - startedAt}`
+            )
+          );
+        };
+        timer = setTimeout(expireRequest, allowanceMs);
         pending.set(id, {
           resolve(value) {
             clearTimeout(timer);

@@ -125,7 +125,7 @@ describe('only the real clubs exist', () => {
 
 describe('the certification cleans up after itself', () => {
   it('retires each fixture through the sanctioned door instead of a bare delete', () => {
-    expect(CERT).toContain("admin.rpc('fn_ca_retire_certification_club'");
+    expect(CERT).toContain("admin.rpc('fn_ca_retire_welcome_certification_club'");
     expect(CERT).not.toMatch(/admin\.from\('clubs'\)\.delete\(\)/);
   });
 

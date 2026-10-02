@@ -85,6 +85,11 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
       data: [{ id: seat, user_id: user, seat_number: 1, stack: 100, occupancy_id: occupancy }],
       error: null,
     }),
+    // The source's registrations, which the break door also counts.
+    in: async () => ({
+      data: [{ user_id: user, status: 'playing', chips: 100, seat_number: 1 }],
+      error: null,
+    }),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(query);
   vi.stubGlobal(
@@ -236,8 +241,8 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
       return ok(clone());
     }
     if (name === 'fn_f06_ack_cleanup') {
-      expect(server.tableEngines.size).toBe(0);
-      expect(manager.tableEngines.size).toBe(0);
+      expect(server.tableEngines.has(source)).toBe(false);
+      expect(manager.tableEngines.has(source)).toBe(false);
       durable.state = 'acknowledged';
       return ok(clone());
     }
@@ -286,6 +291,126 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
     },
   };
 }
+it('a failed original is retired by its own recovery event without waiting for 38 other tables', async () => {
+  const f = await fixture('', 'absent');
+  const healthy = Array.from({ length: 38 }, (_, n) => {
+    const table = id(100 + n);
+    return [table, new ServerTableEngine(table)] as const;
+  });
+  f.manager.tableEngines = new Map([...healthy, [source, f.engine]]);
+  for (const [table, engine] of healthy) f.server.tableEngines.set(table, engine);
+  const replace = vi.spyOn(f.server, 'replaceTableEngine');
+  const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine');
+  f.manager.wireEliminationWake(f.engine);
+  f.engine.signalRestartRequired('dealing_loop_10_consecutive_errors');
+  await Promise.resolve();
+  expect(recovery).toHaveBeenCalledTimes(1);
+  await recovery.mock.results[0].value;
+  expect(f.state()?.state).toBe('acknowledged');
+  expect(f.manager.originalAdmissionCursor).toBe(0);
+  expect(f.server.tableEngines.size).toBe(38);
+  expect(f.manager.tableEngines.size).toBe(38);
+  expect(replace).not.toHaveBeenCalled();
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+});
+
+it('the balance owner and the restart event share the same in-flight original disposition', async () => {
+  const f = await fixture('', 'absent');
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const park = f.manager.requestTournamentBreakPark.bind(f.manager);
+  f.manager.requestTournamentBreakPark = vi.fn(async (...args: any[]) => {
+    entered();
+    await gate;
+    return park(...args);
+  });
+  const sweep = f.manager.recoverF06OriginalAdmissions();
+  await reached;
+  const recovery = f.manager.recoverManagedTableEngine(
+    source,
+    f.engine,
+    f.manager.captureLifecycleToken(),
+    'dealing_loop_10_consecutive_errors',
+    false
+  );
+  release();
+  await Promise.all([sweep, recovery]);
+  expect(f.state()?.state).toBe('acknowledged');
+  expect(f.manager.requestTournamentBreakPark).toHaveBeenCalledTimes(1);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  expect(f.calls.filter((c) => c.name === 'fn_move_tournament_player')).toHaveLength(1);
+});
+
+it('an event-owned disposition with an unknown receipt leaves the original quarantined', async () => {
+  const f = await fixture('fn_f06_finish_original_no_start', 'absent');
+  f.manager.scheduleManagedTableEngineRecovery = vi.fn();
+  const replace = vi.spyOn(f.server, 'replaceTableEngine');
+  await expect(
+    f.manager.recoverManagedTableEngine(
+      source,
+      f.engine,
+      f.manager.captureLifecycleToken(),
+      'dealing_loop_10_consecutive_errors',
+      false
+    )
+  ).rejects.toThrow();
+  expect(f.engine.getF06RetainedPermit()?.binding.permit_id).toBe(id(8));
+  expect(f.manager.tableEngines.get(source)).toBe(f.engine);
+  expect(f.server.tableEngines.get(source)).toBe(f.engine);
+  expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
+  expect(replace).not.toHaveBeenCalled();
+  expect(f.calls.filter((c) => c.name === 'fn_move_tournament_player')).toHaveLength(0);
+});
+
+it('the failed original cannot retire after its manager loses ownership during the park', async () => {
+  const f = await fixture('', 'absent');
+  const park = f.manager.requestTournamentBreakPark.bind(f.manager);
+  f.manager.requestTournamentBreakPark = async (...args: any[]) => {
+    const result = await park(...args);
+    f.invalidate();
+    return result;
+  };
+  const replace = vi.spyOn(f.server, 'replaceTableEngine');
+  await expect(
+    f.manager.recoverManagedTableEngine(
+      source,
+      f.engine,
+      f.manager.captureLifecycleToken(),
+      'dealing_loop_10_consecutive_errors',
+      false
+    )
+  ).rejects.toThrow('owner changed');
+  expect(f.manager.tableEngines.get(source)).toBe(f.engine);
+  expect(f.server.tableEngines.get(source)).toBe(f.engine);
+  expect(replace).not.toHaveBeenCalled();
+  expect(f.calls.filter((c) => c.name === 'fn_f06_claim_custody')).toHaveLength(0);
+});
+
+it('an attempted hand keeps its original despite the restart event', async () => {
+  const f = await fixture();
+  (f.permit as any).phase = 'attempted';
+  f.manager.scheduleManagedTableEngineRecovery = vi.fn();
+  const replace = vi.spyOn(f.server, 'replaceTableEngine');
+  await f.manager.recoverManagedTableEngine(
+    source,
+    f.engine,
+    f.manager.captureLifecycleToken(),
+    'dealing_loop_10_consecutive_errors',
+    false
+  );
+  expect(f.state()).toBeNull();
+  expect(f.engine.getF06RetainedPermit()?.phase).toBe('attempted');
+  expect(replace).not.toHaveBeenCalled();
+  expect(f.manager.tableEngines.get(source)).toBe(f.engine);
+});
+
 it('actual scheduled Manager path retires the original unknown BEGIN under one reservation', async () => {
   const f = await fixture();
   // End the scheduler after its new original-admission decision; all decisions
@@ -981,30 +1106,41 @@ async function lastTableFixture() {
   };
 }
 
-it('last table original positive no-start uses one receipt and real registry CAS into fresh admission', async () => {
-  const f = await lastTableFixture();
-  await f.manager.recoverF06OriginalAdmissions();
-  await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
-  expect(f.receipt()?.state).toBe('continued_never_started');
-  expect(f.originalState().state).toBe('never_started');
-  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
-  expect(f.manager.tableEngines.get(source)).toBe(f.fresh);
-  expect(f.fresh.start).toHaveBeenCalledTimes(1);
-  expect(f.engine.running).toBe(false);
-  expect(f.manager.pendingNoStartContinuations.size).toBe(0);
-  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
-  expect(
-    f.calls.some((c) =>
-      [
-        'fn_f06_begin_break',
-        'fn_move_tournament_player',
-        'fn_f06_close_break',
-        'fn_f06_ack_cleanup',
-      ].includes(c.name)
-    )
-  ).toBe(false);
-  f.fresh.running = false;
-});
+it.each(['balance', 'restart'])(
+  'last table original positive no-start uses one receipt and real registry CAS into fresh admission from %s',
+  async (trigger) => {
+    const f = await lastTableFixture();
+    if (trigger === 'balance') await f.manager.recoverF06OriginalAdmissions();
+    else
+      await f.manager.recoverManagedTableEngine(
+        source,
+        f.engine,
+        f.manager.captureLifecycleToken(),
+        'dealing_loop_10_consecutive_errors',
+        false
+      );
+    await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+    expect(f.receipt()?.state).toBe('continued_never_started');
+    expect(f.originalState().state).toBe('never_started');
+    expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+    expect(f.manager.tableEngines.get(source)).toBe(f.fresh);
+    expect(f.fresh.start).toHaveBeenCalledTimes(1);
+    expect(f.engine.running).toBe(false);
+    expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+    expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+    expect(
+      f.calls.some((c) =>
+        [
+          'fn_f06_begin_break',
+          'fn_move_tournament_player',
+          'fn_f06_close_break',
+          'fn_f06_ack_cleanup',
+        ].includes(c.name)
+      )
+    ).toBe(false);
+    f.fresh.running = false;
+  }
+);
 
 it('last table lost committed continuation replays exact identity before fresh registry admission', async () => {
   const f = await lastTableFixture();

@@ -15,24 +15,42 @@
 import { useEffect, useState } from 'react';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { analyticsConsentNeeded, setAnalyticsConsent } from '../../lib/consent';
+import { usePromptTurn } from '../../lib/promptLane';
 import './ConsentPrompt.css';
+
+/** A beat after the lane clears: never on the first frame, never the instant
+    the previous question closes. */
+const SETTLE_MS = 2500;
 
 export default function ConsentPrompt() {
   const { user } = useAuthUser();
-  const [open, setOpen] = useState(false);
+  const userId = user?.id ?? null;
+  /** The beat has passed and the question is still unanswered. */
+  const [due, setDue] = useState(false);
+  const turn = usePromptTurn('analytics-consent', Boolean(userId) && due);
+  const laneClear = turn.clear;
+
+  /* ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). This used to open
+     2.5 seconds after sign-in whatever else was on screen - underneath the
+     age gate on the first device run, stacked with the notifications sheet
+     once the gate closed, and still up on the sign-in form after an under-18
+     refusal signed the account out. Now: signed in, the lane clear, a beat,
+     and only then; a sign-out or a different account starts over. */
+  useEffect(() => {
+    setDue(false);
+  }, [userId]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    // A beat after the lobby paints, never on top of the first frame.
-    const t = window.setTimeout(() => setOpen(analyticsConsentNeeded()), 2500);
+    if (!userId || due || !laneClear || !analyticsConsentNeeded()) return undefined;
+    const t = window.setTimeout(() => setDue(analyticsConsentNeeded()), SETTLE_MS);
     return () => window.clearTimeout(t);
-  }, [user?.id]);
+  }, [userId, due, laneClear]);
 
-  if (!open) return null;
+  if (!turn.onScreen) return null;
 
   const answer = (v: 'granted' | 'denied') => {
     setAnalyticsConsent(v);
-    setOpen(false);
+    setDue(false);
   };
 
   return (

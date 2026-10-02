@@ -187,8 +187,10 @@ describe('phase 3 migration: EV coverage', () => {
 
 describe('phase 3 page: live from any tab, by asking', () => {
   it('polls the pulse only as the owner and feeds the shared debouncer', () => {
+    /* The call gained `scope: statsScope` on 2026-09-29: the pulse watches the
+       asset the page reads (Diamonds when opened from the Diamond Arena). */
     expect(PAGE).toMatch(
-      /useStatsPulse\(\{\s+userId: targetUserId,\s+enabled: Boolean\(targetUserId && isOwnProfile\),\s+onChange: scheduleRefresh,\s+\}\);/
+      /useStatsPulse\(\{\s+userId: targetUserId,\s+enabled: Boolean\(targetUserId && isOwnProfile\),\s+onChange: scheduleRefresh,\s+scope: statsScope,\s+\}\);/
     );
     expect(PAGE).not.toMatch(/postgres_changes/);
     expect(PAGE).not.toMatch(/stats-live-/);
@@ -209,7 +211,10 @@ describe('phase 3 page: live from any tab, by asking', () => {
     expect(HOOK).toMatch(
       /supabase\.rpc\(\s*'ca_player_stats_pulse',[\s\S]*?p_user: userId,?\s*\}\)/
     );
-    expect(HOOK).toContain('statsScopeArgs(CHIP_STATS)');
+    /* ...and on 2026-09-29 the scope became the caller's (chips unless the
+       page is reading Diamonds), so the hook sends the asset it was handed. */
+    expect(HOOK).toContain('statsScopeArgs(scope)');
+    expect(HOOK).toContain('scope = CHIP_STATS,');
     expect(HOOK).toMatch(/document\.visibilityState !== 'visible'\) return;/);
     expect(HOOK).toMatch(/if \(last === null\) \{\s+last = pulse;/);
     expect(HOOK).toMatch(

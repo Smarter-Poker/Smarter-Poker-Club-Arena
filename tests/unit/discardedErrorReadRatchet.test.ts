@@ -102,7 +102,9 @@ const BASELINE = new Map<string, number>([
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
   // report a reason instead of an ignored error.
   ['src/services/DisputeService.ts', 1],
-  ['src/services/DiamondService.ts', 1],
+  // 1 -> 0 on 2026-10-01: the balance read goes through the owner door
+  // (ruling 25) and reports its error.
+  ['src/services/DiamondService.ts', 0],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.
   ['src/services/CommissionService.ts', 1],
@@ -120,7 +122,15 @@ const BASELINE = new Map<string, number>([
      accident. Kept at 0 rather than deleted so a reintroduction is a diff on
      this line. */
   ['src/pages/tournament/TournamentLobbyPage.tsx', 0],
-  ['src/pages/VIPPage.tsx', 2],
+  /* ZERO SINCE 2026-09-30 (was 2). Both were on the diamond wallet's own page
+     and both were the shape this ratchet exists for: the `profiles.diamonds`
+     read and the `vip_points` read discarded their errors, so a failed read
+     became `profData?.diamonds || 0` and a player was shown a balance of 0 for
+     money that was still in their wallet. Both now bind the error, report it,
+     and carry a separate 'error' state that prints "Unavailable" - a real zero
+     and an unreadable figure are no longer the same pixels. Kept at 0 rather
+     than deleted so a reintroduction is a diff on this line. */
+  ['src/pages/VIPPage.tsx', 0],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],
@@ -156,7 +166,8 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CreditAdminPanel.tsx', 0],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],
   ['src/components/tournament/TournamentStartingTicker.tsx', 0],
-  ['src/components/social/OnlineFriendsPill.tsx', 2],
+  // 2 -> 1 on 2026-10-01: the profiles read binds its error (ruling 25 moved it).
+  ['src/components/social/OnlineFriendsPill.tsx', 1],
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
@@ -202,7 +213,8 @@ const BASELINE = new Map<string, number>([
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],
   ['src/components/tournament/MysteryBountyCelebration.tsx', 1],
-  ['src/components/social/PresenceIndicator.tsx', 1],
+  // 1 -> 0 on 2026-10-01: presence comes from the presence door, which throws.
+  ['src/components/social/PresenceIndicator.tsx', 0],
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],

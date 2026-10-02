@@ -105,6 +105,9 @@ function isLateRegOpen(t: TournamentEntryWindowRow): boolean {
 // Default fallback for unauthed (shouldn't happen in real app)
 const GUEST_USER = { id: 'guest', username: 'Guest' };
 
+/** How often a visible club tournament list re-reads itself. */
+const CLUB_TOURNAMENT_LIST_REFRESH_MS = 30_000;
+
 export default function TournamentPage() {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
@@ -489,8 +492,30 @@ export default function TournamentPage() {
       500
     );
 
+    /* THE LIST IS RE-READ, NOT ONLY HEARD (2026-10-01). `tournaments` left the
+       realtime publication on 2026-09-19, so the listener above never fires
+       and every card's status, entrants and pool froze at the first read
+       until the tab was hidden and shown again. A quiet re-read while the
+       page is visible keeps the list true; applyTournaments drops an
+       unchanged answer without a render. */
+    const listPoll = setInterval(() => {
+      if (document.hidden) return;
+      void (async () => {
+        try {
+          const data = await tournamentService.getTournaments(clubId);
+          if (!isMounted) return;
+          applyTournaments(data);
+          const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
+          if (updated) setSelectedTournament(updated);
+        } catch (e) {
+          reportError(e, 'TournamentPage.list_poll_failed');
+        }
+      })();
+    }, CLUB_TOURNAMENT_LIST_REFRESH_MS);
+
     return () => {
       isMounted = false;
+      clearInterval(listPoll);
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
       unsubChipsDistributed();
@@ -694,13 +719,25 @@ export default function TournamentPage() {
         return;
       }
       if (selectedTournament.status === 'RUNNING') {
-        const [rebuyCheck, addOnCheck] = await Promise.all([
+        /* canAddOn answers for the EVENT only. process_tournament_rebuy sells
+           an add-on solely to a live 'playing' entry, so without the viewer's
+           own entry every spectator, busted player and non-entrant was shown
+           an Add-On button that could only end in a refusal (2026-10-01). */
+        const [rebuyCheck, addOnCheck, mine] = await Promise.all([
           tournamentService.canRebuy(selectedTournament.id, currentUser.id),
           tournamentService.canAddOn(selectedTournament.id),
+          supabase
+            .from('tournament_players')
+            .select('status')
+            .eq('tournament_id', selectedTournament.id)
+            .eq('user_id', currentUser.id)
+            .maybeSingle(),
         ]);
         if (!isMounted) return;
         setCanRebuyNow(rebuyCheck.allowed);
-        setCanAddOnNow(addOnCheck.allowed);
+        setCanAddOnNow(
+          addOnCheck.allowed && !mine.error && String(mine.data?.status ?? '') === 'playing'
+        );
       } else {
         if (isMounted) {
           setCanRebuyNow(false);
@@ -1565,7 +1602,11 @@ export default function TournamentPage() {
                     ? 'Processing...'
                     : /* Quote the price actually charged (base + fee),
                          as whole chips, not the raw buy-in column. */
-                      `Rebuy (${money(
+                      `${
+                        selectedTournament.is_reentry && !selectedTournament.is_rebuy
+                          ? 'Re-Enter'
+                          : 'Rebuy'
+                      } (${money(
                         tournamentService.quoteFromTournament(selectedTournament, 'rebuy').totalCost
                       )})`}
                 </button>

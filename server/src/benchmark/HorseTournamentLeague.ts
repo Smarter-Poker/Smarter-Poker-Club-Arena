@@ -6,7 +6,7 @@ import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../engine/Hor
 import { calculateContestablePot, RANKS, SUITS } from '../engine/PokerEngine.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
 import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
-import { attributeKnockout } from '../tournament/knockoutAttribution.js';
+import { attributeKnockout, type KnockoutClaimant } from '../tournament/knockoutAttribution.js';
 import {
   deepOnePairCommitment,
   PHASE8_POLICY,
@@ -44,6 +44,43 @@ export function realizedTournamentReturn(
   return objective === 'satellite'
     ? prizePct / 50 // The declared league satellite funds two equal seats.
     : ((prizePct / 100) * prizePool + paidBounty) / (prizePool + bountyPool);
+}
+
+export interface KnockoutBountyShare {
+  userId: string;
+  amount: number;
+}
+
+/**
+ * One knockout pays ONE bounty. A tied pot shares it between the claimants by
+ * claim weight, and the shares sum to the bounty exactly. This is the engine's
+ * own rule: `fn_mystery_bounty_reserve` splits the chest as
+ * `amount * weight / total_weight` and `fn_collect_bounty` splits a PKO head
+ * the same way before halving each share onto its winner's head. Paying the
+ * full bounty to every tied winner paid a chopped knockout twice and drained
+ * the funded pool below zero before the champion was reached.
+ *
+ * An empty result means no claimant can be paid and is a conservation error.
+ */
+export function knockoutBountyShares(
+  bounty: number,
+  claimants: readonly KnockoutClaimant[]
+): KnockoutBountyShare[] {
+  const weights = new Map<string, number>();
+  for (const claimant of claimants) {
+    const weight = Number(claimant.weight);
+    if (!claimant.userId || !Number.isFinite(weight) || weight <= 0) continue;
+    weights.set(claimant.userId, (weights.get(claimant.userId) ?? 0) + weight);
+  }
+  const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  if (!(total > 0) || !Number.isFinite(bounty) || bounty < 0) return [];
+  const entries = [...weights.entries()];
+  let allocated = 0;
+  return entries.map(([userId, weight], index) => {
+    const amount = index === entries.length - 1 ? bounty - allocated : (bounty * weight) / total;
+    allocated += amount;
+    return { userId, amount };
+  });
 }
 
 export interface TournamentLeagueRequest {
@@ -508,17 +545,17 @@ async function playTournament(
           { pots: end.pots, winners: awards.length ? awards : winners },
           p.user_id
         );
-        if (!attribution.claimants.length) {
+        const bounty = objective === 'pko' ? (heads.get(p.user_id) ?? 0) : 1000;
+        const shares = knockoutBountyShares(bounty, attribution.claimants);
+        if (!shares.length) {
           receipt.conservation++;
           return receipt;
         }
-        const bounty = objective === 'pko' ? (heads.get(p.user_id) ?? 0) : 1000;
-        for (const claimant of attribution.claimants) {
-          const paid = bounty * claimant.weight * (objective === 'pko' ? 0.5 : 1);
+        for (const share of shares) {
+          const paid = share.amount * (objective === 'pko' ? 0.5 : 1);
           paidBounties += paid;
-          if (claimant.userId === heroId) receipt.bounty += paid;
-          if (objective === 'pko')
-            heads.set(claimant.userId, (heads.get(claimant.userId) ?? 0) + paid);
+          if (share.userId === heroId) receipt.bounty += paid;
+          if (objective === 'pko') heads.set(share.userId, (heads.get(share.userId) ?? 0) + paid);
         }
         heads.delete(p.user_id);
       }

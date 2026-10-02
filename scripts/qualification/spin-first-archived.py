@@ -3,7 +3,9 @@
 Owns no process lifecycle and accepts no database target. Successful diagnostic
 execution is not financial, historical-completion or production qualification.
 """
+from pathlib import Path
 import copy
+from datetime import datetime
 import sys
 import importlib.util
 import re
@@ -12,6 +14,18 @@ import json
 from decimal import Decimal
 
 IMAGE = 'first-archived-spin'
+BANK_IMAGE = 'first-archived-spin-bank-mvcc'
+COMPLETION_IMAGE='first-archived-spin-completion'
+COMPLETION_BANK_IMAGE='first-archived-spin-completion-bank'
+COMPLETION_CASES='scripts/qualification/spin-first-archived-completion-cases.py'
+COMPLETION='scripts/qualification/spin-first-archived-completion.py'
+COMPLETION_TEST='scripts/qualification/test_first_archived_completion.py'
+COMPLETION_SQL='scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql'
+COMPLETION_READBACK='scripts/qualification/fixtures/archived-spin/first-postcompletion-readback.sql'
+IMAGES=(IMAGE,BANK_IMAGE,COMPLETION_IMAGE,COMPLETION_BANK_IMAGE)
+BANK_OBSERVER='scripts/qualification/spin-first-archived-bank-observer.py'
+BANK_RACES='scripts/qualification/spin-first-archived-bank-races.py'
+BANK_TEST='scripts/qualification/test_first_archived_bank_observer.py'
 MODULE = 'scripts/qualification/spin-first-archived.py'
 MANIFEST = 'scripts/qualification/spin-first-archived.manifest.json'
 BASE = 'scripts/qualification/fixtures/archived-spin/'
@@ -20,7 +34,7 @@ EVENT = '2aa4cba1-506f-426b-a1ba-d8e22e018533'
 SEED = ('full-columns.sql', 'first-captured-seed.sql', 'first-temporal-seed.sql')
 PROVIDER = ('full-functions.sql', 'fee-resolution-provider.sql', 'full-constraints.sql',
             'full-triggers.sql', 'full-access.sql', 'full-sequences.sql',
-            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql', 'first-manager-release-provider.sql')
+            'full-indexes.sql', 'full-readback.sql', 'seating-receipts.sql', 'schema-authority.sql', 'first-manager-release-provider.sql', 'first-fee-owner-current-provider.sql', 'first-fee-owner-current-readback.sql')
 LOCKS = 'scripts/qualification/spin-first-archived-locks.py'
 LOCKS_TEST = 'scripts/qualification/test_first_archived_locks.py'
 PRODUCTION_PROBE = 'scripts/qualification/spin-first-archived-production-probe.py'
@@ -30,12 +44,15 @@ CONCURRENCY = 'scripts/qualification/spin-first-archived-concurrency.py'
 CONCURRENCY_TEST = 'scripts/qualification/test_first_archived_concurrency.py'
 MIGRATION = 'supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql'
 COMPONENTS = tuple('supabase/components/spin-archived-first-'+n+'.sql' for n in ('witness','admission','bridge'))
-INPUTS = (MODULE, MANIFEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
+POSTABORT='scripts/qualification/spin-first-archived-postabort.py'
+POSTABORT_TEST='scripts/qualification/test_first_archived_postabort.py'
+POSTABORT_SQL=BASE+'first-postabort-bank-readback.sql'
+INPUTS = (MODULE, MANIFEST, COMPLETION, COMPLETION_CASES, COMPLETION_TEST, COMPLETION_SQL, COMPLETION_READBACK, POSTABORT, POSTABORT_TEST, POSTABORT_SQL, BANK_OBSERVER, BANK_RACES, BANK_TEST, CONCURRENCY, CONCURRENCY_TEST, LOCKS, LOCKS_TEST, PRODUCTION_PROBE, PRODUCTION_PROBE_TEST, PRODUCTION_PROBE_SQL, 'scripts/qualification/test_first_archived_oracle.py', CORE+'columns.sql', CORE+'catalog.json', MIGRATION, *COMPONENTS,
           *(BASE+n for n in (*SEED, *PROVIDER, 'first-captured-state.json',
-            'full-provider-catalog.json', 'full-authority-catalog.json',
+            'full-provider-catalog.json', 'full-authority-catalog.json', 'first-fee-owner-current-capture.json', 'first-fee-owner-operation-absence.json',
             'index-sequence-catalog.json', 'fee-resolution-provider.json',
             'seating-receipts.json', 'schema-authority.json', 'original-launch-refusal.sql',
-            'first-connected-probe.sql', 'first-temporal-state.json', 'first-temporal-refusal.sql',
+            'first-connected-probe.sql', 'first-temporal-state.json', 'first-recognition-capture.json', 'first-temporal-refusal.sql',
             'first-manager-state.json', 'first-manager-proof.sql', 'first-funding-observation.sql', 'first-negative-cases.sql', 'first-atomic-failures.sql', 'first-preimage-drift.sql')))
 
 def require(value, message):
@@ -54,6 +71,30 @@ def decode(raw):
     return json.loads(raw,object_pairs_hook=unique,parse_constant=nonfinite,parse_float=Decimal)
 
 
+def validate_recognition_capture(files):
+    period=decode(files[BASE+'first-temporal-state.json'])['recognition_period']
+    path=BASE+'first-recognition-capture.json'
+    require(period['capture_path']==path, 'recognition capture path differs')
+    raw=files[path]
+    require(digest(raw)==period['capture_sha256'], 'recognition capture hash differs')
+    require(digest(period['query'].encode())==period['query_sha256']==
+            '67f65046f981cdf2f377b5243349a21c900a1bde31b1c425c34ee73102e62301', 'recognition query differs')
+    rows=decode(raw)['rows']
+    require(isinstance(rows,list) and len(rows)==1 and set(rows[0])=={'evidence'}, 'recognition rows differ')
+    e=rows[0]['evidence']
+    require(e==period['evidence'], 'recognition original evidence differs')
+    def stamp(v):
+        require(isinstance(v,str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?\+00:00',v), 'recognition timestamp invalid')
+        return datetime.fromisoformat(v)
+    start,observed,end=(stamp(e[k]) for k in ('week_start','observed_at','week_end'))
+    require(start<=observed<end, 'recognition observation outside bounds')
+    require(type(e['runs_blocking_now']) is int and e['runs_blocking_now']==0 and e['runs_overlapping_week']==[], 'recognition overlaps settlement')
+    require(e['scopes']==[{'club_id':'fade0000-0000-0000-0000-000000000001','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'}], 'recognition scope differs')
+    for p in (BASE+'first-temporal-refusal.sql',BASE+'first-connected-probe.sql',BASE+'first-atomic-failures.sql',PRODUCTION_PROBE_SQL,COMPLETION_SQL,LOCKS,CONCURRENCY):
+        text=files[p].decode()
+        require(start.strftime('%Y-%m-%dT%H:%M:%SZ') in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') in text, 'recognition source bounds differ: '+p)
+
+
 def validate_sources(files):
     require(set(INPUTS) <= set(files), 'first archived source inventory incomplete')
     manifest = decode(files[MANIFEST])
@@ -65,6 +106,10 @@ def validate_sources(files):
     for path in set(INPUTS)-{MANIFEST}:
         require(manifest['files'][path] == {'bytes':len(files[path]),'sha256':digest(files[path])},
                 'first archived source changed: '+path)
+    owner_raw=files[BASE+'first-fee-owner-current-capture.json']; operation_raw=files[BASE+'first-fee-owner-operation-absence.json']
+    require(digest(owner_raw)=='aa3806e3c56afbff8f4e59815faaa3900a2a1e44b2f363e2d85d128a801b5e23' and digest(operation_raw)=='9e5a47eff25c60003949643ec1c5fffab3ef5a83ee74c659ffbcf2f582059800','current fee owner capture differs')
+    require(decode(owner_raw)['rows'][0]['evidence']['basis_rows']==[] and decode(operation_raw)['rows'][0]['evidence']['owner_operations']==[],'original fee owner basis or operation was not absent')
+    validate_recognition_capture(files)
     migration=files[MIGRATION].decode()
     require(len(re.findall(r'^BEGIN;$',migration,re.M))==1 and len(re.findall(r'^COMMIT;$',migration,re.M))==1,
             'first migration is not one transaction')
@@ -94,7 +139,8 @@ def seed_plan(PG, source, execution, ordinary, tournament):
                 variables=(('archive_state_json',(source/BASE/'first-captured-state.json').read_text()),))),
             ('archive_temporal_seed',sql_argv(PG,source,execution,BASE+'first-temporal-seed.sql'))]
 
-def body_plan(PG, source, execution, ordinary, tournament):
+def body_plan(PG, source, execution, ordinary, tournament, image=IMAGE):
+    require(image in IMAGES,'unknown archive variant')
     # Invoke after real suffix, captured baseline access/policies, notification
     # supplement and tested roles. Do not run paid/synthetic entry supplements or
     # baseline empty/current catalog checks: this event deliberately has history
@@ -110,15 +156,29 @@ def body_plan(PG, source, execution, ordinary, tournament):
     plan.append(('archive_preimage_drift',sql_argv(PG,source,execution,BASE+'first-preimage-drift.sql')))
     plan.append(('archive_atomic_failures',sql_argv(PG,source,execution,BASE+'first-atomic-failures.sql')))
     plan.append(('archive_connected_rollback',sql_argv(PG,source,execution,BASE+'first-connected-probe.sql')))
-    plan.append(('archive_production_probe',[sys.executable,'-B',str(source/PRODUCTION_PROBE),'--psql',str(PG/'psql'),'--execution',execution]))
+    probe_args=[sys.executable,'-B',str(source/PRODUCTION_PROBE),'--psql',str(PG/'psql'),'--execution',execution]
+    if image==COMPLETION_BANK_IMAGE:
+        plan.append(('archive_production_probe',probe_args+['--completion','--completion-case','bank_intervals']))
+        return plan
+    if image==COMPLETION_IMAGE:
+        plan.append(('archive_production_probe',probe_args+['--completion']))
+        return plan
+    if image==BANK_IMAGE:
+        plan.append(('archive_production_probe',probe_args+['--bank-races']))
+        return plan
+    plan.append(('archive_production_probe',probe_args))
     plan.append(('archive_admission_locks',[sys.executable,'-B',str(source/LOCKS),'--psql',str(PG/'psql'),'--execution',execution]))
     plan.append(('archive_concurrency_commit',[sys.executable,'-B',str(source/CONCURRENCY),'--psql',str(PG/'psql'),'--execution',execution]))
     return plan
 
-def validate_account_delta(before, after):
+def validate_account_delta(before, after, *, bank_observations=None):
     relations={'public.club_members','public.clubs','public.unions','public.union_wallets','public.spin_bonus_pools'}
     require(isinstance(before,dict) and isinstance(after,dict) and set(before)==relations and set(after)==relations,
             'first account store inventory differs')
+    if bank_observations is not None:
+        spec=importlib.util.spec_from_file_location('account_bank_observer',Path(__file__).with_name('spin-first-archived-bank-observer.py'))
+        bank=importlib.util.module_from_spec(spec);spec.loader.exec_module(bank)
+        bank.validate_history(bank_observations,bank_observations[0]['transaction_id'],before[bank.RELATION],after[bank.RELATION])
     found=0
     for name in sorted(relations):
         require(isinstance(before[name],list) and isinstance(after[name],list), 'first account rows malformed')
@@ -135,6 +195,7 @@ def validate_account_delta(before, after):
                 if row.get('user_id')=='aef849b8-2906-4dc0-b108-251710e76d3c' and row.get('club_id')=='a41434bb-8d0c-400a-8f0d-e8b3d65afed4':
                     require(type(row.get('chip_balance')) in (int,Decimal), 'first wallet amount malformed')
                     row['chip_balance']+=200; found+=1
+        if name=='public.union_wallets' and bank_observations is not None:continue
         require(actual==expected,'first unexpected account mutation: '+name)
     require(found==1,'first original winner funding account absent')
 
@@ -188,7 +249,7 @@ def validate_journal_and_chairs(state):
             and table.get('status')=='closed' and table.get('lifecycle')=='closed'
             and table.get('terminal_closed_at')==completed and type(table.get('current_players')) is int and table['current_players']==0,'first table did not close')
 
-def validate_outputs(source,work,execution,tournament):
+def validate_outputs(source,work,execution,tournament,image=IMAGE):
     funding=[decode(line) for line in (work/'archive_funding_observation.stdout').read_bytes().splitlines() if line.startswith(b'{')]
     require(len(funding)==1 and funding[0]['stage']=='first_original_funding_observation'
             and funding[0]['execution']==execution and funding[0]['event']==EVENT
@@ -277,37 +338,43 @@ def validate_outputs(source,work,execution,tournament):
 
     require(all(x['financial_qualified'] is False and x['production_qualified'] is False for x in values),
             'diagnostic scope inflated')
-    concurrent=[decode(line) for line in (work/'archive_concurrency_commit.stdout').read_bytes().splitlines() if line.startswith(b'{')]
-    require(len(concurrent)==1,'first committed concurrency receipt absent')
-    require(not (work/'archive_concurrency_commit.stderr').read_text().strip(),'first concurrency unexpected diagnostic')
-    spec=importlib.util.spec_from_file_location('first_archived_concurrency_oracle',source/CONCURRENCY)
-    verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(verifier)
-    # Pass this module's validators without weakening the independently retained
-    # rollback evidence or recoding business rules in the session runner.
     class Oracle:
         validate_fee_notice=staticmethod(validate_fee_notice)
         validate_account_delta=staticmethod(validate_account_delta)
         validate_journal_and_chairs=staticmethod(validate_journal_and_chairs)
-    result=verifier.validate_evidence(concurrent[0],execution,Oracle)
-    locks=[decode(line) for line in (work/'archive_admission_locks.stdout').read_bytes().splitlines() if line.startswith(b'{')]
-    require(len(locks)==1 and not (work/'archive_admission_locks.stderr').read_text().strip(),'first lock artifact absent or unexpected diagnostic')
-    spec=importlib.util.spec_from_file_location('first_archived_lock_oracle',source/LOCKS)
-    lock_verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(lock_verifier)
-    lock_result=lock_verifier.validate_evidence(locks[0],execution,Oracle)
+    if image==IMAGE:
+        concurrent=[decode(line) for line in (work/'archive_concurrency_commit.stdout').read_bytes().splitlines() if line.startswith(b'{')]
+        require(len(concurrent)==1,'first committed concurrency receipt absent')
+        require(not (work/'archive_concurrency_commit.stderr').read_text().strip(),'first concurrency unexpected diagnostic')
+        spec=importlib.util.spec_from_file_location('first_archived_concurrency_oracle',source/CONCURRENCY)
+        verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(verifier)
+        # Pass this module's validators without weakening the independently retained
+        # rollback evidence or recoding business rules in the session runner.
+        result=verifier.validate_evidence(concurrent[0],execution,Oracle)
+        locks=[decode(line) for line in (work/'archive_admission_locks.stdout').read_bytes().splitlines() if line.startswith(b'{')]
+        require(len(locks)==1 and not (work/'archive_admission_locks.stderr').read_text().strip(),'first lock artifact absent or unexpected diagnostic')
+        spec=importlib.util.spec_from_file_location('first_archived_lock_oracle',source/LOCKS)
+        lock_verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(lock_verifier)
+        lock_result=lock_verifier.validate_evidence(locks[0],execution,Oracle)
 
+    else:
+        require(image in (BANK_IMAGE,COMPLETION_IMAGE,COMPLETION_BANK_IMAGE),'unknown archive variant')
+        skip_field='skipped_in_synthetic_variant' if image==BANK_IMAGE else 'skipped_in_completion_variant'
+        result={'committed_terminal_qualified':False,'concurrency_qualified':False,skip_field:True}
+        lock_result={skip_field:True}
     probe_values=[decode(line) for line in (work/'archive_production_probe.stdout').read_bytes().splitlines() if line.startswith(b'{')]
     require(len(probe_values)==1 and not (work/'archive_production_probe.stderr').read_text().strip(),'first production probe artifact absent or diagnostics unexpected')
     spec=importlib.util.spec_from_file_location('first_archived_production_probe_oracle',source/PRODUCTION_PROBE)
     probe_verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(probe_verifier)
-    probe_result=probe_verifier.validate_evidence(probe_values[0],execution,Oracle)
+    probe_result=probe_verifier.validate_evidence(probe_values[0],execution,Oracle,bank_races=image==BANK_IMAGE,completion=image in (COMPLETION_IMAGE,COMPLETION_BANK_IMAGE),completion_case='bank_intervals' if image==COMPLETION_BANK_IMAGE else 'original')
 
     return {'diagnostic_passed':True,'stdout_sha256':digest(raw),'production_probe_rehearsal':probe_result,
             'committed_concurrency':result,'admission_locks':lock_result,
             'financial_qualified':False,'production_qualified':False,
             'committed_terminal_qualified':result['committed_terminal_qualified'],'concurrency_qualified':result['concurrency_qualified']}
 
-def validate_stages(receipt,PG,source,execution,ordinary,tournament):
-    required=seed_plan(PG,source,execution,ordinary,tournament)+body_plan(PG,source,execution,ordinary,tournament)
+def validate_stages(receipt,PG,source,execution,ordinary,tournament,image=IMAGE):
+    required=seed_plan(PG,source,execution,ordinary,tournament)+body_plan(PG,source,execution,ordinary,tournament,image)
     names=[r['stage'] for r in receipt['stages']]
     require(len(names)==len(set(names)), 'first archived duplicate stage')
     selected=[name for name in names if name in {n for n,_ in required}]
@@ -321,4 +388,4 @@ def validate_stages(receipt,PG,source,execution,ordinary,tournament):
         for stream in ('stdout','stderr'):
             require(digest((source.parent/'work'/(name+'.'+stream)).read_bytes())==row[stream+'_sha256'],
                     'first archived stream changed: '+name)
-    return validate_outputs(source,source.parent/'work',execution,tournament)
+    return validate_outputs(source,source.parent/'work',execution,tournament,image)

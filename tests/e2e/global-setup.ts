@@ -24,14 +24,18 @@
  * the account's one-time profile onboarding. Never point it at an owner/admin
  * login or a real player's identity.
  */
-import { chromium, type FullConfig, type Page } from '@playwright/test';
+import { chromium, type FullConfig, type Page, type Response } from '@playwright/test';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ensureClubMembership } from './support/ensureClubMembership';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
-import { registerDiamondInvitationDismissal } from './support/cashLobbyOverlays';
+import {
+  declineDiamondInvitationIfShown,
+  diamondInvitation,
+  registerDiamondInvitationDismissal,
+} from './support/cashLobbyOverlays';
 import { observeSetupFailure } from './support/setupFailureObservation';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
@@ -111,22 +115,46 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
     .catch(() => false);
   if (!appeared) return false;
 
-  // New zero-chip accounts can receive the existing Diamond invitation above
-  // this greeting. Take its real Not Now door before persisting the message.
-  await registerDiamondInvitationDismissal(page);
+  // New zero-chip accounts also receive the Diamond invitation, and the two
+  // doors stack in whichever order their reads answered. When the invitation
+  // is on top its handler takes Not Now before this click; when the greeting
+  // is on top the handler yields and this click goes first. A failed decline
+  // is collected rather than thrown from the handler: a handler rejection in
+  // global setup is an unhandled rejection that kills Node and hides the
+  // error of the click that was actually running (run 36364137556).
+  const invitationFailures: unknown[] = [];
+  const invitationHandler = await registerDiamondInvitationDismissal(page, {
+    onFailure: (error) => invitationFailures.push(error),
+  });
+  const invitationFailure = () =>
+    invitationFailures.length
+      ? `; the Diamond Spins invitation could not be declined: ${
+          (invitationFailures[0] as Error)?.message?.split('\n')[0] ?? String(invitationFailures[0])
+        }`
+      : '';
 
   // Observe both promises immediately. If the click fails, the finally block
   // closes the browser and rejects the response waiter too; an unobserved
   // rejection there terminates the reporter and hides the actual click error.
-  const [response] = await Promise.all([
-    page.waitForResponse(
-      (candidate) =>
-        candidate.request().method() === 'POST' &&
-        candidate.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
-      { timeout: 15_000 }
-    ),
-    dismiss.click({ timeout: 10_000 }),
-  ]);
+  let response: Response;
+  try {
+    [response] = await Promise.all([
+      page.waitForResponse(
+        (candidate) =>
+          candidate.request().method() === 'POST' &&
+          candidate.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
+        { timeout: 15_000 }
+      ),
+      dismiss.click({ timeout: 10_000 }),
+    ]);
+  } catch (error) {
+    // A decline still in flight when this click timed out is part of the
+    // verdict: let it finish (its own budget is bounded) before choosing
+    // which error to report.
+    await invitationHandler.idle();
+    if (!invitationFailures.length) throw error;
+    throw new Error(`Club entry message dismissal failed${invitationFailure()}`, { cause: error });
+  }
   const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
   if (!response.ok() || result?.ok !== true) {
     throw new Error(
@@ -134,6 +162,15 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
     );
   }
   await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  // An invitation that opened beneath the greeting is the top layer now.
+  // Retire the handler first so it cannot race this explicit decline.
+  await page.removeLocatorHandler(diamondInvitation(page));
+  if (invitationFailures.length) {
+    throw new Error(`Club entry message persisted${invitationFailure()}`, {
+      cause: invitationFailures[0],
+    });
+  }
+  await declineDiamondInvitationIfShown(page);
   console.log('[global-setup] fixture club message dismissed and persisted.');
   return true;
 }

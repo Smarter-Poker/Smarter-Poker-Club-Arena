@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
 import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
@@ -120,12 +122,14 @@ import {
   completeHandSnapshot,
   getActiveHandSnapshotFull,
   resumeRetainedHandSubmission,
+  RetainedHandSubmissionRefusedError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
   type ParkedTimeBank,
   type StoppedCustodyParkOutcome,
+  type UnstartedPermitAttestation,
   supabase,
   atomicCashout,
   processLeavePending,
@@ -284,6 +288,16 @@ export abstract class ServerTableEngineBase {
   getStartupPolicyRefusal(): Readonly<CashTablePolicyRefusal> | null {
     return this.startupPolicyRefusal;
   }
+  /**
+   * The retained-hand door refused this cash table's start from durable
+   * state (RETAINED_HAND_STANDING_REFUSALS). Published before ready=false so
+   * the owner holds the table instead of rebuilding it into the same answer.
+   */
+  private startupRetainedHandRefusal: Readonly<{ code: string; tableId: string }> | null = null;
+
+  getStartupRetainedHandRefusal(): Readonly<{ code: string; tableId: string }> | null {
+    return this.startupRetainedHandRefusal;
+  }
   /** Passive first fence only; never used to authorize or schedule work. */
   private firstTerminalObservation: ReturnType<typeof leavePendingTerminalReason> | null = null;
   /**
@@ -294,6 +308,14 @@ export abstract class ServerTableEngineBase {
   private teardownPromise: Promise<void> | null = null;
   /** Successful physical teardown, never inferred from the terminal fence alone. */
   private terminalTeardownComplete = false;
+  /**
+   * performStop reached its end: every owned writer it captured was joined
+   * (resolved or rejected), the bank capture ran and process resources were
+   * released. Unlike terminalTeardownComplete it does not claim that nothing
+   * failed, so a transient read or snapshot write that rejected during the
+   * stop does not make the stopped custody untransferable (2026-10-01).
+   */
+  private terminalTeardownDrained = false;
   /** True only after this object has owned the process-global table resources. */
   private claimedProcessOwnership: boolean = false;
   /** One causal hand-off from an asynchronously failed dealer to its owner. */
@@ -1878,9 +1900,10 @@ export abstract class ServerTableEngineBase {
     timestamp: number;
     delivered: boolean;
   }> = [];
-  // Post-hand scheduling callback. Settlement invokes it synchronously for a
-  // zero final stack even if a persistence mirror failed; consumers must stay
-  // fire-and-forget and independently verify durable authority.
+  // Post-hand scheduling callback. Settlement invokes it synchronously for
+  // every accepted hand (including a zero final stack whose persistence
+  // mirror failed); consumers must stay fire-and-forget, gate their own work
+  // on the stacks they are handed, and independently verify durable authority.
   protected handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
     | null = null;
@@ -2113,6 +2136,7 @@ export abstract class ServerTableEngineBase {
       throw new Error('f06_hand_number_precision');
     const permit = await this.f06PermitFactory(String(handNumber));
     if (!this.running) throw new Error('f06_dealer_fenced');
+    this.f06ParkReleasedPermit = null;
     this.f06CurrentPermit = permit;
     try {
       await permit.reserve();
@@ -2180,6 +2204,15 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * The binding of the never-started permit this engine's stopped-custody park
+   * released (2026-10-01). The database closed that permit in the park's own
+   * transaction, so the permit object is gone, but a break that already holds
+   * this table as its stopped original still needs to know which permit the
+   * original held. Set only when the park names the permit back; never a
+   * source of hand authority.
+   */
+  private f06ParkReleasedPermit: Readonly<F06HandPermit['binding']> | null = null;
   private f06StoppedMovementProof: string | null = null;
   private f06StoppedMovementGuards = new Map<string, () => void>();
   /** Admit only this positively drained original object under a live, exact
@@ -2218,26 +2251,66 @@ export abstract class ServerTableEngineBase {
     assertSource();
     if (this.f06StoppedMovementProof !== proof) {
       if (this.f06StoppedMovementProof) throw new Error('f06_stopped_original_binding_changed');
+      /*
+       * THE PARK THAT RELEASED THE PERMIT ALREADY PROVED THE NO-START
+       * (2026-10-01).
+       *
+       * Table a2d8a54e ($100 Freeroll 6:00 AM): a lost fn_f06_begin_hand left
+       * its permit `unknown`, the zombie watchdog stopped the engine at
+       * 11:49:22Z, and the Manager parked the table as this break's stopped
+       * original (c0b625dd). The first custody claim missed, and before the
+       * retry the :53 maintenance announcement ran the stopped-custody park,
+       * which released that never-started permit `never_started` in its own
+       * transaction and dropped the permit object. Every later retirement of
+       * the break then refused here with `f06_stopped_original_permit_mismatch`
+       * because the permit it asked for no longer existed - 426 refusals and a
+       * table of nine players that dealt nothing for over an hour.
+       *
+       * The park's release is the same fact `finishF06OriginalNoStart` writes:
+       * the original's hand never started and never can. So a permit the park
+       * named back stands in for the live one; the exact park claim is still
+       * read and checked before movement is admitted.
+       */
       const permit = this.f06CurrentPermit;
+      const identity = permit ? permit.binding : this.f06ParkReleasedPermit;
       if (
-        !permit ||
-        permit.binding.table_id !== b.tableId ||
-        permit.binding.lifecycle !== b.tableIncarnation ||
-        permit.binding.tournament_id !== b.tournamentId ||
-        permit.binding.lease_generation !== b.leaseGeneration
+        !identity ||
+        identity.table_id !== b.tableId ||
+        identity.lifecycle !== b.tableIncarnation ||
+        identity.tournament_id !== b.tournamentId ||
+        identity.lease_generation !== b.leaseGeneration
       )
         throw new Error('f06_stopped_original_permit_mismatch');
-      await this.drainF06NeverStarted();
-      assertSource();
-      await this.finishF06OriginalNoStart(
-        { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
-        async () => {
-          assertSource();
-          const row = await readExactParkClaim();
-          assertSource();
-          return row;
-        }
-      );
+      if (permit) {
+        await this.drainF06NeverStarted();
+        assertSource();
+        await this.finishF06OriginalNoStart(
+          { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
+          async () => {
+            assertSource();
+            const row = await readExactParkClaim();
+            assertSource();
+            return row;
+          }
+        );
+      } else {
+        const row = (await readExactParkClaim()) as Record<string, unknown> | null;
+        assertSource();
+        if (
+          this.f06CurrentPermit !== null ||
+          !row ||
+          row.ok !== true ||
+          row.state !== 'park_requested' ||
+          row.break_id !== b.breakId ||
+          row.custody_id !== b.custodyId ||
+          row.revision !== b.durableRevision ||
+          row.custody_generation !== identity.lease_generation ||
+          row.tournament_id !== identity.tournament_id ||
+          row.source_table_id !== identity.table_id ||
+          row.lifecycle !== identity.lifecycle
+        )
+          throw new Error('f06_original_custody_unproven');
+      }
       // Retain exact positive evidence even if the post-await map assertion
       // fails. A different binding cannot turn it into new movement authority.
       this.f06StoppedMovementProof = proof;
@@ -2560,8 +2633,23 @@ export abstract class ServerTableEngineBase {
   private parkedBankSaveComplete = false;
   private maintenanceCheckpointGeneration = 0;
   private readonly timeBankAccountingPending = new Set<Promise<void>>();
-  // An unacknowledged non-idempotent debit must not be retried or certified.
+  /* AN UNKNOWN TIME-BANK DEBIT IS ASKED AGAIN, BY ITS OWN ID (2026-09-28).
+     Every debit now carries a request id to fn_consume_time_bank, which
+     (20260928144831) records a receipt in the same transaction as the debit
+     and answers a repeated id from that receipt. So an
+     answer lost to a timeout is no longer a permanent mystery: asking again
+     with the same id returns the receipt if the debit committed and applies it
+     exactly once if it did not. This flag is true exactly while such a debit
+     is still unanswered, and it clears when every one of them has an answer.
+     Before this it could never clear, and on 2026-09-28 one timeout at
+     12:17:06Z froze a 335-player freeroll (its manager could not finish its
+     stop) and held the restart gate shut for 55 tables. */
   private timeBankAccountingUnconfirmed = false;
+  private readonly unresolvedTimeBankDebits = new Map<
+    string,
+    { userId: string; seconds: number }
+  >();
+  private timeBankDebitResolution: Promise<void> | null = null;
   /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
   protected parkWriteRetryMs = 5_000;
   /**
@@ -3822,6 +3910,20 @@ export abstract class ServerTableEngineBase {
         this.fenceTerminalEngine('startup_policy_closed', false);
         throw err;
       }
+      if (
+        err instanceof RetainedHandSubmissionRefusedError &&
+        err.tableId === this.tableId &&
+        this.engineLeaseScope === 'cash'
+      ) {
+        // A STANDING REFUSAL IS NOT A CRASH (2026-09-29). The door answered
+        // from rows a rebuilt engine would read again; a watchdog kill here
+        // was a rebuild every five seconds into the same answer. Fence this
+        // generation without a watchdog record and let the owner hold the
+        // table and say so once (GameServer.holdRetainedHandRefusal).
+        this.startupRetainedHandRefusal = Object.freeze({ code: err.code, tableId: err.tableId });
+        this.fenceTerminalEngine('startup_retained_hand_refused', false);
+        throw err;
+      }
       this.settleReady(false);
       reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start`);
       // 2026-08-22: was a bare `running = false`, which could leak an armed
@@ -4104,6 +4206,7 @@ export abstract class ServerTableEngineBase {
     console.log(
       `[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handsDealtThisSession} hands.`
     );
+    this.terminalTeardownDrained = true;
     if (failures.length > 0) {
       throw new AggregateError(
         failures,
@@ -5589,7 +5692,18 @@ export abstract class ServerTableEngineBase {
       msg.includes('F06_RETRY_CANONICAL_LANE') ||
       /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
       msg.includes('could not serialize access') ||
-      msg.includes('deadlock detected')
+      msg.includes('deadlock detected') ||
+      /* A LOCK TIMEOUT IS A ROLLBACK, NOT A DECISION (2026-10-01).
+         55P03 aborts the statement before it commits anything, exactly as
+         a deadlock does: Postgres gave up waiting for a lock, it did not
+         refuse the work. The list above carried the deadlock and left out
+         its twin, so a post-hand step whose budget exists for "the
+         database blinked" (leave_pending, 2 retries) threw on the first
+         lock timeout as if the database had meant it - 8 of the 14
+         leave_pending_failed criticals on the board between 09-28 and
+         09-30 were this, every one a read that had written nothing. */
+      /^55P03$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('canceling statement due to lock timeout')
     );
   }
 
@@ -6810,6 +6924,9 @@ export abstract class ServerTableEngineBase {
        `unwritten` is a real bank at stake, `unreadable` is "I could not tell",
        and the durable case returns no reason at all because there is nothing
        left to report. */
+    // The census asks about unknown debits again (by id, exactly once each);
+    // the answer lands before the next census reads this table.
+    if (this.unresolvedTimeBankDebits.size > 0) void this.resolveUnconfirmedTimeBankDebits();
     if (this.hasUnretiredStoppedTimeBankCustody()) {
       // Accounting still in flight is the one case we cannot even ASK about:
       // a debit whose outcome is unknown must not be frozen into a snapshot.
@@ -6895,9 +7012,27 @@ export abstract class ServerTableEngineBase {
   adoptStoppedTimeBankCustody(original: ServerTableEngineBase): boolean {
     const custody = original.stoppedTimeBankCustody;
     if (!custody) return !original.hasUnretiredStoppedTimeBankCustody();
+    /*
+     * A TEARDOWN THAT REPORTED A FAILURE STILL HANDS ITS BANKS ON (2026-10-01).
+     *
+     * GameServer.replaceTableEngine accepts a stop that rejected once the
+     * original has released process ownership - "retaining the terminal
+     * object would turn a diagnostic into a permanent outage" - and then asks
+     * this method to carry the banks across. Requiring terminalTeardownComplete
+     * here refused exactly that case: a stop can only reject with failures, and
+     * a stop with failures never sets it. At 12:27Z a ten-second connect
+     * timeout to the database failed one post-commit stack read and one
+     * terminal snapshot flush on fifteen tournament tables at once; every
+     * replacement was refused here and each table stalled until the next
+     * process restart. What custody transfer needs is that the stop has
+     * drained (no writer of the original can still run) and that the banks
+     * were captured, which the guards below already prove; an unproven hand
+     * outcome stays fenced by the F06 permit rows and the unresolved-
+     * preparation check, not by this flag.
+     */
     if (
       original.stoppedTimeBankCustodyTransferred ||
-      !original.terminalTeardownComplete ||
+      !original.terminalTeardownDrained ||
       !original.hasReleasedProcessOwnership() ||
       original.timeBankAccountingUnconfirmed ||
       original.timeBankAccountingPending.size > 0 ||
@@ -7044,6 +7179,8 @@ export abstract class ServerTableEngineBase {
     if (!custody) return false;
     const tournamentId = this.engineLeaseTournamentId ?? this.tableInfo?.tournament_id ?? null;
     if (!tournamentId) return false;
+    const permit = this.f06CurrentPermit;
+    const unstartedPermit = this.unstartedPermitAttestation(custody.handNumber);
     const outcome = await parkStoppedTimeBankCustody({
       tableId: this.tableId,
       tournamentId,
@@ -7053,8 +7190,24 @@ export abstract class ServerTableEngineBase {
       disconnectStates: structuredClone(custody.disconnectStates),
       timeBanks: structuredClone(custody.banks) as Record<string, ParkedTimeBank>,
       engineInstance: `${INSTANCE_ID}:stopped_custody`,
+      unstartedPermit,
     });
     this.stoppedCustodyParkOutcome = outcome;
+    // The database closed the never-started permit in the park's own
+    // transaction; this engine's preparation is resolved exactly as it is
+    // after cancelF06PreparedHand, and no longer holds the restart gate.
+    if (
+      outcome.status === 'parked' &&
+      unstartedPermit !== null &&
+      outcome.unstartedPermitReleased === unstartedPermit.permitId &&
+      permit !== null &&
+      this.f06CurrentPermit === permit
+    ) {
+      // A break holding this table as its stopped original reads which
+      // permit was released (admitF06StoppedOriginalMovement).
+      this.f06ParkReleasedPermit = Object.freeze({ ...permit.binding });
+      this.f06CurrentPermit = null;
+    }
     if (generation !== this.maintenanceCheckpointGeneration) return true;
     if (this.stoppedTimeBankCustody !== custody) return true;
     if (outcome.status !== 'parked') return true;
@@ -7067,6 +7220,37 @@ export abstract class ServerTableEngineBase {
 
   /** The last answer a stopped-custody write got; diagnostics and tests only. */
   private stoppedCustodyParkOutcome: StoppedCustodyParkOutcome | null = null;
+
+  /**
+   * The one F06 permit this engine reserved above its custody and never
+   * started, attested by id and hand number for the park to release. A
+   * permit whose `start` ran (`attempted`) is never attested: that hand may
+   * have been dealt, and the park must keep refusing over it. A permit that
+   * never reached the database (`new`, `number_refused`) has no row to
+   * release. Everything is checked against this engine's own lease identity
+   * so a permit of another table or generation is never named.
+   */
+  private unstartedPermitAttestation(custodyHandNumber: number): UnstartedPermitAttestation | null {
+    const permit = this.f06CurrentPermit;
+    if (!permit) return null;
+    const phase = permit.recoveryState();
+    if (phase !== 'reserved' && phase !== 'unknown' && phase !== 'terminated') return null;
+    const { binding } = permit;
+    if (binding.table_id !== this.tableId) return null;
+    if (
+      this.engineLeaseGeneration === null ||
+      binding.lease_generation.toLowerCase() !== this.engineLeaseGeneration.toLowerCase()
+    )
+      return null;
+    if (
+      this.engineLeaseTournamentId === null ||
+      binding.tournament_id.toLowerCase() !== this.engineLeaseTournamentId.toLowerCase()
+    )
+      return null;
+    const handNumber = Number(binding.hand_number);
+    if (!Number.isSafeInteger(handNumber) || handNumber <= custodyHandNumber) return null;
+    return { permitId: binding.permit_id, handNumber };
+  }
 
   /**
    * A MANAGER'S STOP WRITES THE BANK DOWN BEFORE IT ASKS WHETHER IT IS
@@ -7087,6 +7271,10 @@ export abstract class ServerTableEngineBase {
    * acknowledgement only when the database confirms the custody is on disk.
    */
   async persistStoppedTimeBankCustody(): Promise<void> {
+    // A debit whose answer was lost is asked again first, by its own id, so
+    // the custody below is written once every debit it depends on is known.
+    // Without this a single timeout kept this stop refused for ever.
+    if (this.unresolvedTimeBankDebits.size > 0) await this.resolveUnconfirmedTimeBankDebits();
     if (!this.shouldPersistStoppedCustody()) return;
     this.presenceSavePending++;
     const generation = this.maintenanceCheckpointGeneration;
@@ -7143,6 +7331,19 @@ export abstract class ServerTableEngineBase {
           await Promise.all(this.timeBankAccountingPending);
         }
         if (generation !== this.maintenanceCheckpointGeneration) return;
+        /* ASK A LOST DEBIT AGAIN BEFORE REFUSING THE PARK (2026-10-02).
+           At 07:53Z a debit's answer was lost in a database lock storm, this
+           write threw, the census re-asked the debit by its id 400 ms later
+           ("it had committed") - and nothing ever wrote the park again, so
+           the table held the 07:55 restart certificate shut until the pause
+           safety timeout. The stopped-custody writer already re-asks first
+           (persistStoppedTimeBankCustody); the parked writer does the same.
+           The same id answers from its receipt, so this never charges twice;
+           a debit that is still unknown keeps the refusal below. */
+        if (this.timeBankAccountingUnconfirmed && this.unresolvedTimeBankDebits.size > 0) {
+          await this.resolveUnconfirmedTimeBankDebits();
+          if (generation !== this.maintenanceCheckpointGeneration) return;
+        }
         if (this.timeBankAccountingUnconfirmed) {
           throw new Error('Time bank accounting outcome is unconfirmed');
         }
@@ -7401,9 +7602,58 @@ export abstract class ServerTableEngineBase {
     resolve();
   }
 
+  /**
+   * True while an `untilResumed` pause is still unreleased by the authority
+   * that armed it.
+   *
+   * `pauseRequiresExplicitResume` is raised by `pauseAfterHand(..., {
+   * untilResumed: true })` and by nothing else, and every caller of that shape
+   * is a tournament manager arming its own break or day-end hold. So this is
+   * exactly the question "does that manager still owe this table a release?" -
+   * raised by the arm, lowered by `resumeDealing()`, and readable by the
+   * manager at the table's own park edge.
+   */
+  requiresExplicitPauseResume(): boolean {
+    return this.handForHandPaused && this.pauseRequiresExplicitResume;
+  }
+
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
+    /**
+     * THE CLAIM DIES WITH THE RELEASE (2026-09-28).
+     *
+     * `untilResumed` is not a pause, it is a CLAIM: "only the authority that
+     * armed this may lift it", and awaitPauseGate's safety timeout honours it
+     * by refusing to self-resume - ONCE, after which it nulls its own timer
+     * and nothing re-arms it. The claim is load-bearing for the rest of the
+     * engine's life, and it had exactly one writer able to lower it:
+     * `releasePauseGate()` below, which the deferral underneath skips.
+     *
+     * So a break that released while ANY other authority co-held the table
+     * dropped its own flag and walked away leaving the claim raised. Nothing
+     * could lower it afterwards: `resumeFromBreak()` had already written
+     * `onBreak = false` and early-returns on every later call, for the rest of
+     * that event's life. The engine was left asserting that a manager would
+     * come back for it when no manager ever would, with its last-resort
+     * self-resume disabled on the strength of that assertion.
+     *
+     * Measured in production 2026-09-28: satellites b165b22f, 0e1d340e and
+     * e8cc6c78 came off an expired break onto brand-new dealers (engine
+     * restart 15:59:24Z, a fresh process), each table co-held by the qualifier
+     * boundary `admitManagedTableEngine` arms for a cohort satellite.
+     * `resumeDealing()` took this deferral on every one of them and the events
+     * sat on "Parked between hands - waiting for the pause to lift..." for 14
+     * to 18 hours with 2-4 dealable seats and `status = 'running'`.
+     *
+     * The claim is surrendered here, on the deferral path as well as on the
+     * release path. What still holds the table is the co-authority's OWN flag,
+     * checked immediately below, published by `isNextHandPaused()`, and
+     * released by that authority through `releasePauseGate()` exactly as
+     * before. The break gives back what the break took; it no longer speaks
+     * for whoever is left holding the table.
+     */
+    this.pauseRequiresExplicitResume = false;
     // THE MAINTENANCE BREAK OUTRANKS HAND-FOR-HAND HERE. Hand-for-hand's
     // 500ms sync loop calls this the moment every table is waiting, which
     // during a break is immediately — and without this line it would deal a
@@ -7848,24 +8098,7 @@ export abstract class ServerTableEngineBase {
       meta.dbConsumedSeconds += owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
-      const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
-      )
-        .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
-            );
-          }
-        })
-        .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        })
-        .finally(() => this.timeBankAccountingPending.delete(pending));
-      this.timeBankAccountingPending.add(pending);
+      this.submitTimeBankDebit(event.playerId, owed);
     } catch (err) {
       this.timeBankAccountingUnconfirmed = true;
       console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
@@ -7874,29 +8107,104 @@ export abstract class ServerTableEngineBase {
 
   /** Best-effort ledger/audit write. Gameplay never waits for this call. */
   private consumeTimeBankSeconds(userId: string, seconds: number): void {
+    this.submitTimeBankDebit(userId, seconds);
+  }
+
+  /**
+   * The function ran to its end and answered: applied (success true, or a
+   * receipt replayed) or refused (success false: an unknown user or a
+   * non-positive amount, which moves nothing and never will). A transport
+   * error or an unreadable body is not an answer.
+   */
+  private static timeBankDebitAnswered(data: unknown): boolean {
+    if (!data || typeof data !== 'object') return false;
+    return typeof (data as { success?: unknown }).success === 'boolean';
+  }
+
+  /**
+   * Send one debit under its own id. A lost or failed answer leaves the debit
+   * in `unresolvedTimeBankDebits` with that id, so the question can be asked
+   * again (resolveUnconfirmedTimeBankDebits) without any risk of charging the
+   * player twice: fn_consume_time_bank writes the request id's receipt in the
+   * debit's own transaction and answers a repeat from it.
+   */
+  private submitTimeBankDebit(
+    userId: string,
+    seconds: number,
+    debitId: string = randomUUID()
+  ): void {
+    const unanswered = (reason: string) => {
+      this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
+      this.timeBankAccountingUnconfirmed = true;
+      console.warn(
+        '[TimeBank] consume unconfirmed:',
+        reason,
+        `(debit ${debitId}, table ${this.tableId})`
+      );
+    };
     try {
       const pending = Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
+        supabase.rpc('fn_consume_time_bank', {
+          p_user_id: userId,
+          p_seconds: seconds,
+          p_request_id: debitId,
+        })
       )
         .then(({ data, error }) => {
-          if (error || data?.success !== true) {
-            this.timeBankAccountingUnconfirmed = true;
-            console.warn(
-              '[TimeBank] consume unconfirmed:',
-              error?.message ?? data?.error ?? 'missing receipt'
+          if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) {
+            unanswered(
+              String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt')
             );
           }
         })
-        .catch((err: unknown) => {
-          this.timeBankAccountingUnconfirmed = true;
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        })
+        .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))
         .finally(() => this.timeBankAccountingPending.delete(pending));
       this.timeBankAccountingPending.add(pending);
     } catch (err) {
-      this.timeBankAccountingUnconfirmed = true;
-      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
+      unanswered('could not start: ' + String((err as Error)?.message ?? err));
     }
+  }
+
+  /**
+   * Ask the database again, by id, about every debit whose answer was lost.
+   * The same id returns the committed receipt or applies the debit exactly
+   * once, so this is the debit completing, not a second charge. Callers are
+   * the two places the answer matters: the restart gate's census
+   * (maintenanceDurabilityReason) and the owning manager's stop
+   * (persistStoppedTimeBankCustody). One resolution runs at a time.
+   */
+  resolveUnconfirmedTimeBankDebits(): Promise<void> {
+    if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
+    if (this.unresolvedTimeBankDebits.size === 0) return Promise.resolve();
+    const run = (async () => {
+      for (const [debitId, debit] of [...this.unresolvedTimeBankDebits]) {
+        try {
+          const { data, error } = await supabase.rpc('fn_consume_time_bank', {
+            p_user_id: debit.userId,
+            p_seconds: debit.seconds,
+            p_request_id: debitId,
+          });
+          if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) continue;
+          this.unresolvedTimeBankDebits.delete(debitId);
+          const reply = data as { success?: unknown; idempotent_replay?: unknown; error?: unknown };
+          console.warn(
+            `[TimeBank] debit ${debitId} (table ${this.tableId}) answered on re-ask: ` +
+              (reply.success === true
+                ? reply.idempotent_replay === true
+                  ? 'it had committed'
+                  : 'applied now, once'
+                : `refused (${String(reply.error ?? 'no reason')}), never applied`)
+          );
+        } catch {
+          /* still unknown: the id stays, and the next ask uses it again */
+        }
+      }
+      if (this.unresolvedTimeBankDebits.size === 0) this.timeBankAccountingUnconfirmed = false;
+    })().finally(() => {
+      this.timeBankDebitResolution = null;
+    });
+    this.timeBankDebitResolution = run;
+    return run;
   }
 
   /**
@@ -8132,51 +8440,9 @@ export abstract class ServerTableEngineBase {
    * Uses Appendix B position naming convention.
    */
   protected getPositionLabels(dealerSeat: number, players: SeatPlayer[]): Map<number, string> {
-    const labels = new Map<number, string>();
-    const seats = players.map((p) => p.seat).sort((a, b) => a - b);
-    const n = seats.length;
-    if (n === 0) return labels;
-
-    // Find dealer seat index in sorted seats
-    let dealerIdx = seats.indexOf(dealerSeat);
-    if (dealerIdx === -1) {
-      // Dealer seat not found in active players — use first seat
-      dealerIdx = 0;
-    }
-
-    if (n === 2) {
-      // FIX 177: Bible V8 §4.2 + Appendix B: Heads-up → dealer=BTN (is also SB), other=BB
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'BB');
-    } else if (n === 3) {
-      // AUDIT FIX 2026-07-19: 3-handed is BTN, SB, BB — the button is NOT the SB
-      // (that's heads-up only). postBlinds posts SB at dealer+1 and BB at
-      // dealer+2, so the previous BTN/BB/UTG labels mislabeled the SB as BB and
-      // the BB as UTG on every 3-handed hand.
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-    } else {
-      // 4+ players — BTN, SB, BB, then positional names
-      labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
-
-      // Bible V8 Appendix B position names
-      const positionNames: Record<number, string[]> = {
-        4: ['UTG'],
-        5: ['UTG', 'CO'],
-        6: ['UTG', 'MP', 'CO'],
-        7: ['UTG', 'UTG+1', 'MP', 'CO'],
-        8: ['UTG', 'UTG+1', 'MP', 'MP+1', 'CO'],
-        9: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'HJ', 'CO'],
-      };
-      const names = positionNames[n] || positionNames[9] || [];
-      for (let i = 0; i < n - 3 && i < names.length; i++) {
-        labels.set(seats[(dealerIdx + 3 + i) % n], names[i]);
-      }
-    }
-    return labels;
+    // Part of the shared presentation (Lightning Phase 6, 2026-09-27): one
+    // implementation for every dealer. See src/engine/presentation/projectHandState.ts.
+    return positionLabelsFor(dealerSeat, players);
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

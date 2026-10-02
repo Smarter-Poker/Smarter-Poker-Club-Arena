@@ -5,6 +5,7 @@ import {
   gameplayHasResumed,
   GAMEPLAY_WAIT_MS,
 } from '../scripts/ci/await-engine-gameplay.mjs';
+import { HUD_RESERVE_MS, MTT_HUD_LEVEL_CAP_MS } from './e2e/support/tournamentHudWitness';
 
 const SHA = 'a'.repeat(40);
 const health = (maintenance: object, releaseSha = SHA) =>
@@ -163,12 +164,31 @@ describe('the existing certification waits only for its engine maintenance bound
     const formats = suite.match(/const TOURNAMENT_FORMATS = \[([^\]]+)\]/)?.[1];
     const tournamentCount = formats?.match(/'[^']+'/g)?.length ?? 0;
     expect(tournamentCount).toBeGreaterThan(0);
-    // The three tournament cases extend their existing 300s timeout by 90s.
-    // The cash case retains 300s. Keep five further minutes for setup/cleanup,
-    // independent of the prerequisite; a matching job timeout cannot pass.
+    expect(formats).toContain("'mtt'");
+    // Every tournament case starts at 300s + 90s. Spin and SNG never grow
+    // past it. The MTT alone may grow further, AFTER recovery, to whatever
+    // its own real clock needs (mttCaseTimeoutMs) - never a fixed guess, and
+    // never past the certifiable level cap plus the unchanged 60s reserve.
     expect(suite).toContain('testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS)');
+    expect(caseMs + handMs).toBe(390_000);
+    expect(suite).toContain('mttCaseTimeoutMs(');
+    expect(suite).toContain('testInfo.setTimeout(mttTimeoutMs)');
+    // Worst case the MTT case ever reaches: everything already spent on the
+    // shared 390s case budget, plus a level right at the certifiable cap,
+    // plus its unchanged 60s reserve. mttCaseTimeoutMs can only grow a case's
+    // timeout, never shrink it below that shared 390s floor.
+    const mttWorstCaseMs = caseMs + handMs + MTT_HUD_LEVEL_CAP_MS + HUD_RESERVE_MS;
+    // The cash case now starts at the same 300s + 90s as every tournament case
+    // (cash hands are long: p90 87s, p99 149s over 20,488 hands, 2026-09-29).
+    expect(suite).toMatch(
+      /test\('an already-running table stays live[\s\S]*?testInfo\.setTimeout\(testInfo\.timeout \+ CAUSAL_HAND_TIMEOUT_MS\)/
+    );
     expect(
-      jobMs - GAMEPLAY_WAIT_MS - tournamentCount * (caseMs + handMs) - caseMs
+      jobMs -
+        GAMEPLAY_WAIT_MS -
+        (tournamentCount - 1) * (caseMs + handMs) -
+        mttWorstCaseMs -
+        (caseMs + handMs)
     ).toBeGreaterThanOrEqual(5 * 60_000);
   });
 

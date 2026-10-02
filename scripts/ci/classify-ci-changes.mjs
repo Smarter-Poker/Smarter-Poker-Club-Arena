@@ -29,7 +29,7 @@ const fixture =
 // These maintained SQL components and fixture inputs feed the existing required
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
-  /^(supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+  /^(supabase\/accounting\/|scripts\/ops\/build-cashier-totals-index-concurrently\.sql$|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|cashier-statements|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|earlybird-fee-custody|held-fee-owner-basis|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention|spin-mixed-basis-(?:receipt-lane|current-receipt-lane|current-terminal))(?:\.rollback)?\.sql$|supabase\/components\/spin-mixed-basis-evidence\.sql$|scripts\/qualification\/(?:spin-mixed-basis-(?:shape\.sql|evidence\.preimage\.sql|pure\.(?:sql|hosted\.manifest\.json))$|spin-finalized-horse-admission\.(?:py|manifest\.json)$|spin-horse-admission-race\.py$|spin-horse-platform-paid-entry\.sql$|spin-paid-terminal\.(?:py|md|hosted\.manifest\.json)$|spin-positive-fee-entry(?:-oracle)?\.py$|spin-positive-fee-entry\.(?:md|hosted\.manifest\.json)$|spin-mixed-positive-fee-entry\.sql$|spin-mixed-current(?:-(?:races|assertions))?\.py$|spin-mixed-current\.(?:md|hosted\.manifest\.json)$|spin-receipt-lane(?:-compactor)?\.(?:sql|py|md|hosted\.manifest\.json)$|spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/(?:finalized-horse-admission|archived-spin-core-provider|spin-history-retention|spin-receipt-lane|spin-mixed-current|spin-mixed-positive-fee|spin-paid-terminal)\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
@@ -37,7 +37,7 @@ const spinExpiry =
 // The first archived recovery uses the same required PostgreSQL job. Include
 // input-only edits and removals, rather than relying on a simultaneous driver edit.
 const firstArchivedSpin =
-  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe)\.py$|fixtures\/archived-spin\/))/;
+  /^(supabase\/components\/spin-archived-first-[a-z0-9-]+\.sql$|scripts\/qualification\/(?:spin-first-archived(?:-[a-z0-9-]+)?\.(?:py|manifest\.json)$|test_first_archived_(?:oracle|concurrency|locks|production_probe|completion|postabort|bank_observer)\.py$|fixtures\/archived-spin\/))/;
 
 // Production Alert SQL inputs select the existing accounting checks.
 const productionAlertsSql =
@@ -58,12 +58,20 @@ const cashEvidence =
 // The discovery privacy fixture must execute even when only its inputs change.
 const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
+const playerSearchPrivacy =
+  /^(scripts\/ci\/(?:test-player-search-privacy-postgres\.py$|fixtures\/player-search-privacy\/)|tests\/playerSearchPrivacyRegression\.test\.ts$)/;
+const backedPayoutScan =
+  /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const bbjContributionCover =
   /^(scripts\/ci\/(?:test-bbj-contribution-cover-postgres\.py$|fixtures\/bbj-contribution-cover\/)|scripts\/ops\/build-bbj-contribution-cover-concurrently\.sql$|tests\/bbjContributionCoverRegression\.test\.ts$)/;
 const scopedAuditReads =
   /^(scripts\/ci\/(?:test-scoped-audit-reads\.py$|fixtures\/scoped-audit-reads\/)|tests\/scopedAuditReadRegression\.test\.ts$)/;
 const settlementAttribution =
   /^(scripts\/ci\/(?:test-settlement-attribution-postgres\.py$|fixtures\/settlement-attribution\/)|tests\/settlementAttributionRegression\.test\.ts$)/;
+const strandedPlayerRead =
+  /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
+const contractIndexRecovery =
+  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -158,6 +166,9 @@ export function classifyChangedPaths(paths) {
   const bbjFixture = matches(
     /^(scripts\/ci\/(?:test-bbj-(?:bank-replay|audit-reads|cumulative-reads)\.py$|migration-concurrent-preamble\.mjs$|probes\/bbj-bank-replay\/|fixtures\/bbj-audit-reads\/)|scripts\/ops\/build-bbj-(?:audit-indexes|cumulative-bank-indexes)-concurrently\.sql$|tests\/bbj-(?:audit-reads|cumulative-reads)\.test\.ts$)/
   );
+  const chipStoreCoverage = matches(
+    /^(scripts\/ci\/(?:test-chip-store-coverage\.py$|fixtures\/chip-store-coverage\/)|tests\/chip-store-coverage\.test\.ts$)/
+  );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   //
@@ -189,8 +200,10 @@ export function classifyChangedPaths(paths) {
   // narrowing of that prefix cannot quietly take them out of the job that runs
   // them. The manifests are claimed only here. Nothing is derived from the
   // other lane, so the two cannot disagree - a path matched by either is in.
+  // The diamond-concurrency-* capture, manifest, tables and seed (2026-09-30)
+  // are what run-diamond-concurrency.py loads, named here for the same reason.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
@@ -234,6 +247,7 @@ export function classifyChangedPaths(paths) {
     server:
       broad ||
       bbjFixture ||
+      chipStoreCoverage ||
       diamondGames ||
       diamondSqlAcceptance ||
       phase4Changed ||
@@ -260,9 +274,13 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
+      matches(playerSearchPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
+      matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
@@ -270,6 +288,7 @@ export function classifyChangedPaths(paths) {
       matches(certificationPlayerIndex),
     tests:
       bbjFixture ||
+      chipStoreCoverage ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
@@ -301,9 +320,13 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
+      matches(playerSearchPrivacy) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
+      matches(backedPayoutScan) ||
       matches(settlementAttribution) ||
+      matches(strandedPlayerRead) ||
+      matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||

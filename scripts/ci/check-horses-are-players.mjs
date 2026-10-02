@@ -112,6 +112,11 @@ const REGISTER = {
     kind: 'EQUAL OUTCOME',
     why: 'Refuses a chaos DRILL on any table with a real person at it. Drills are deliberate damage; declining to inflict it on humans is not a benefit withheld from horses.',
   },
+  'server/src/lightning/LightningHandHost.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: 'Sets has_human on the Lightning hand_history row exactly as services/supabase/handHistory.ts does for a physical hand, so sp_prune_hand_history applies the same retention rule. Storage policy only: the horse is matched, dealt, timed and settled identically.',
+  },
   'server/src/services/supabase/handHistory.ts': {
     allowed: 1,
     kind: 'IDENTIFICATION',

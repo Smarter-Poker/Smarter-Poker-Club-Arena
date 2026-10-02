@@ -1,33 +1,17 @@
 import type { HorseDecision, SeatPlayer, HorseTournamentUtilityLedger } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
-import { maxSeatsForVariant } from '../../config/tableSeating.js';
-import { horseVariantRulesFor, isKnownVariant, maxSeatsFor } from '../VariantRules.js';
-import { bettingStructureFor } from '../BettingStructure.js';
-import { equityGovernor } from '../EquityLoadGovernor.js';
-import { REMAINING_VARIANT_DOMAIN } from '../remainingVariants/RemainingVariantPolicyPack.js';
-import { validateDealtSeatCensus } from './DealtSeatCensus.js';
-import { sampleJointRanges, type JointRangeSamples } from './JointRangeSampler.js';
+import { horseVariantRulesFor } from '../VariantRules.js';
+import type { JointRangeSamples } from './JointRangeSampler.js';
+import {
+  acquireJointSamples,
+  jointSampleAcquisitionMatches,
+  JOINT_LIVE_DOMAIN,
+  type JointSampleAcquisition,
+} from './JointSampleAcquisition.js';
 import { evaluateJointActions } from './JointActionModel.js';
 import { prepareJointPots, jointPotDistribution } from './JointPotDistribution.js';
 
-export const JOINT_LIVE_DOMAIN = Object.freeze({
-  version: 'joint-multiway-round1-v3',
-  defaultMode: 'shadow',
-  calibratedConfidence: null,
-  maxStackBB: 250,
-  // Match the Phase 12 fixed-limit domain. Fixed wager bounds control each
-  // candidate's exposure even when the table permits a 1000 BB starting stack.
-  fixedLimitMaxStackBB: REMAINING_VARIANT_DOMAIN.fixedLimitMaxStackBB,
-  maxActions: 256,
-  defaultSamples: 16,
-  fullSampleMaxDealtPlayers: 4,
-  largeTableSamples: 8,
-  minSamples: 8,
-  liveBudgetMs: 4,
-  // Larger Omaha boards spend more of the shared 4 ms budget in scoring;
-  // keep 1.5 ms reserved for candidate pots, responses and final accounting.
-  samplingDeadlineMs: 2.5,
-});
+export { JOINT_LIVE_DOMAIN } from './JointSampleAcquisition.js';
 export type JointPolicyMode = 'off' | 'shadow' | 'candidate';
 type ActionModel = NonNullable<ReturnType<typeof evaluateJointActions>>;
 export interface JointPolicyReceipt {
@@ -78,9 +62,15 @@ export function evaluateJointLivePolicy(
   s: HorseGameStateV2,
   baseline: HorseDecision,
   mode: JointPolicyMode = 'shadow',
-  now = () => performance.now()
+  now = () => performance.now(),
+  acquisition?: JointSampleAcquisition
 ) {
   const start = now();
+  // Reuse excludes unrelated Phase 7 wall time, but not the sampling work this
+  // policy would otherwise perform. Fresh acquisitions are already timed by
+  // this wrapper and must not be charged twice.
+  let reusedSamplingMs = 0;
+  const elapsed = () => Math.max(0, now() - start) + reusedSamplingMs;
   let proposal = baseline;
   let jointEvidence: JointRangeSamples | null = null;
   const receipt: JointPolicyReceipt = {
@@ -117,7 +107,7 @@ export function evaluateJointLivePolicy(
     executedAmount: null,
   };
   const finish = (reason: string) => {
-    receipt.latencyMs = Math.max(0, now() - start);
+    receipt.latencyMs = elapsed();
     if (receipt.latencyMs > JOINT_LIVE_DOMAIN.liveBudgetMs) {
       reason = 'work_budget';
       receipt.fired = false;
@@ -143,125 +133,28 @@ export function evaluateJointLivePolicy(
   };
   if (mode === 'off') return finish('off');
   if (!['shadow', 'candidate'].includes(mode)) return finish('invalid_mode');
-  if (!isKnownVariant(s.gameVariant)) return finish('unknown_variant');
-  if (s.stage === 'pineapple_discard') return finish('discard_owned_by_worker');
-  if (!['preflop', 'flop', 'turn', 'river'].includes(s.stage))
-    return finish('outside_betting_street');
-  if (s.gameVariant === 'pineapple' && s.gameMode === 'tournament')
-    return finish('pineapple_tournament_unavailable');
-  if (
-    s.gameMode === 'tournament' &&
-    s.format === 'spin' &&
-    !['nlh', 'plo4', 'plo5', 'plo6'].includes(s.gameVariant)
-  )
-    return finish('variant_spin_unavailable');
-  if (
-    s.stateSchemaVersion !== 1 ||
-    !s.legalActions?.includes(baseline.action) ||
-    s.bettingStructure !== bettingStructureFor(s.gameVariant) ||
-    !['cash', 'tournament'].includes(s.gameMode ?? '') ||
-    hero.is_folded ||
-    hero.is_all_in ||
-    hero.is_sitting_out
-  )
-    return finish('canonical_state_unavailable');
-  let ids: number[];
-  try {
-    ids = validateDealtSeatCensus(s.players, hero.seat, s.dealtSeatIds);
-  } catch {
-    return finish('dealt_census_unavailable');
+  if (!s.legalActions?.includes(baseline.action)) return finish('canonical_state_unavailable');
+  if (acquisition !== undefined) {
+    if (!jointSampleAcquisitionMatches(hero, s, acquisition))
+      return finish('joint_acquisition_state_mismatch');
+    reusedSamplingMs = acquisition.samplingMs;
   }
-  receipt.dealtPlayers = ids.length;
-  const contenders = s.players.filter((p) => !p.is_folded && ids.includes(p.seat));
-  receipt.liveOpponents = contenders.filter((p) => p.user_id !== hero.user_id).length;
-  if (receipt.liveOpponents < 1) return finish('no_opponent');
-  if (!s.bombPot && receipt.boardCount === 1 && receipt.liveOpponents === 1)
-    return finish('heads_up_owned_by_variant_policy');
-  const cap =
-    s.gameMode === 'cash'
-      ? maxSeatsForVariant(s.gameVariant)
-      : Math.min(10, maxSeatsFor(s.gameVariant));
-  if (ids.length > cap) return finish('seats_outside_launch_domain');
-  if (s.stage === 'preflop' && (s.bombPot || receipt.boardCount > 1))
-    return finish('bomb_hand_has_no_preflop_decision');
-  if (s.bbjConfig === undefined) return finish('deductions_unavailable');
-  if (
-    s.chipUnit !== (s.asset === 'diamonds' || s.gameMode === 'tournament' ? 1 : 0.01) ||
-    !['chips', 'diamonds'].includes(s.asset ?? '')
-  )
-    return finish('chip_rules_unavailable');
-  if (s.asset === 'diamonds' && s.gameVariant !== 'nlh')
-    return finish('diamond_variant_unavailable');
-  if (s.asset === 'diamonds' && s.gameMode !== 'cash')
-    return finish('diamond_tournament_unavailable');
-  if (s.asset === 'diamonds' && s.rakeConfig?.cap !== 0)
-    return finish('diamond_deductions_unavailable');
-  if (!Number.isInteger(s.dealerSeat) || s.dealerSeat! < 1 || s.dealerSeat! > 10)
-    return finish('button_unavailable');
-  const unit = s.chipUnit!;
-  const valid = (n: unknown) =>
-    typeof n === 'number' &&
-    Number.isFinite(n) &&
-    n >= 0 &&
-    Math.abs(n / unit - Math.round(n / unit)) < 1e-6;
-  if (
-    !valid(s.bigBlind) ||
-    s.bigBlind <= 0 ||
-    hero.stack <= 0 ||
-    !valid(s.currentBet) ||
-    !valid(s.pot) ||
-    !valid(s.toCall) ||
-    Math.abs(s.toCall! - Math.max(0, s.currentBet - hero.bet)) > unit / 1e4 ||
-    Math.abs(s.players.reduce((n, p) => n + p.totalInvested, 0) - s.pot) > unit / 1e4 ||
-    s.players.some(
-      (p) =>
-        ![
-          p.stack,
-          p.bet,
-          p.totalInvested,
-          p.deadInvested ?? 0,
-          p.individualAnteInvested ?? 0,
-        ].every(valid)
-    )
-  )
-    return finish('invalid_chip_geometry');
-  if (
-    Math.min(
-      hero.stack + hero.bet,
-      Math.max(...contenders.filter((p) => p.user_id !== hero.user_id).map((p) => p.stack + p.bet))
-    ) /
-      s.bigBlind >
-    (s.bettingStructure === 'fixed_limit'
-      ? JOINT_LIVE_DOMAIN.fixedLimitMaxStackBB
-      : JOINT_LIVE_DOMAIN.maxStackBB)
-  )
-    return finish('depth_outside_domain');
-  if ((s.actionHistory?.length ?? 0) > JOINT_LIVE_DOMAIN.maxActions)
-    return finish('history_budget');
-  if (s.players.some((p) => !Array.isArray(p.cards) || p.cards.length || p.knownDeadCards?.length))
-    return finish('private_state_rejected');
-  const requested = Math.max(
-    JOINT_LIVE_DOMAIN.minSamples,
-    Math.floor(
-      (ids.length > JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers
-        ? JOINT_LIVE_DOMAIN.largeTableSamples
-        : JOINT_LIVE_DOMAIN.defaultSamples) * Math.max(0, Math.min(1, equityGovernor.current()))
-    )
-  );
-  receipt.eligible = true;
-  receipt.requestedSamples = requested;
-  try {
-    jointEvidence = sampleJointRanges(hero, s, {
-      samples: requested,
-      withinBudget: () => now() - start < JOINT_LIVE_DOMAIN.samplingDeadlineMs,
-    });
-    if (!jointEvidence) return finish('joint_samples_unavailable');
+  const acquired = acquisition ?? acquireJointSamples(hero, s, { now });
+  receipt.dealtPlayers = acquired.dealtPlayers;
+  receipt.liveOpponents = acquired.liveOpponents;
+  receipt.eligible = acquired.eligible;
+  receipt.requestedSamples = acquired.requestedSamples;
+  jointEvidence = acquired.evidence;
+  if (jointEvidence) {
     receipt.stateKey = jointEvidence.stateKey;
     receipt.ranges = jointEvidence.ranges;
     receipt.completedSamples = jointEvidence.samples.length;
     receipt.sampleBudgetExhausted = jointEvidence.sampleBudgetExhausted;
-    if (jointEvidence.samples.length < JOINT_LIVE_DOMAIN.minSamples)
-      return finish('insufficient_joint_samples');
+  }
+  if (acquired.status !== 'acquired') return finish(acquired.reason);
+  jointEvidence = acquired.evidence;
+  const unit = s.chipUnit!;
+  try {
     const call = Math.min(hero.stack, Math.max(0, s.currentBet - hero.bet));
     const called = s.players.map((p) =>
       p.user_id === hero.user_id
@@ -281,7 +174,7 @@ export function evaluateJointLivePolicy(
       s,
       baseline,
       jointEvidence,
-      () => now() - start < JOINT_LIVE_DOMAIN.liveBudgetMs
+      () => elapsed() < JOINT_LIVE_DOMAIN.liveBudgetMs
     );
     if (!receipt.actionModel) return finish('work_budget');
     const ranked = receipt.actionModel.candidates

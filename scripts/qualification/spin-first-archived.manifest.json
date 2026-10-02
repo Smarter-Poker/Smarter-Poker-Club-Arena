@@ -4,173 +4,81 @@
   "financial_qualified": false,
   "production_qualified": false,
   "files": {
-    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.json": {
-      "bytes": 31214,
-      "sha256": "28e8029822e5671cc3d0eb9c01266c83c3b2265e9ad9331847efdf425a37aac5"
+    "scripts/qualification/spin-first-archived.py": {
+      "bytes": 31150,
+      "sha256": "678a1bd1fc18c7abfb83165d2f531150d10a079ecb382c9585f9a5158c2e4003"
     },
-    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.sql": {
-      "bytes": 29850,
-      "sha256": "7a4e43f6ec5f5d1ad6305390ab5d47dd740989fc2b1c0193185b55685dd8ce54"
+    "scripts/qualification/spin-first-archived-postabort.py": {
+      "bytes": 9037,
+      "sha256": "785c24b1f306a30b7e2369855e8224caeddfd5b5d573009994e2fac60749ad29"
     },
-    "scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql": {
-      "bytes": 6955,
-      "sha256": "dc225a794f80ff8694aad9039fa22e6b649a190246047f9b2350fd327eb9feac"
+    "scripts/qualification/test_first_archived_postabort.py": {
+      "bytes": 9038,
+      "sha256": "0993c7f0bf9144112808abfe08250007748df5492f3dd74f29e5dd30f484fc04"
     },
-    "scripts/qualification/fixtures/archived-spin/first-captured-seed.sql": {
-      "bytes": 7576,
-      "sha256": "48ebaadc12d387905ecbbde91d3f659fb69a32c07fe34ce5230ef0b83df7ddd5"
+    "scripts/qualification/fixtures/archived-spin/first-postabort-bank-readback.sql": {
+      "bytes": 13979,
+      "sha256": "4791de1152451eec22324a962d3c3dae9bc7d45809a8008249dde246749d606d"
     },
-    "scripts/qualification/fixtures/archived-spin/first-captured-state.json": {
-      "bytes": 72551,
-      "sha256": "e69f3da41ac8ee4c5b268b50f386fa63fd991af8c0b614ff17e255dc1967aee1"
+    "scripts/qualification/spin-first-archived-bank-observer.py": {
+      "bytes": 4672,
+      "sha256": "a620e6c8e3c6db5a5d1d37ed2a2d84e5f3caab55aa52c92bdca87c9ec7bcfdd7"
     },
-    "scripts/qualification/fixtures/archived-spin/first-connected-probe.sql": {
-      "bytes": 7544,
-      "sha256": "7f85c9f217b8b56db97425eb25de700a7768f1b25e61212e8202b45206399f29"
+    "scripts/qualification/spin-first-archived-bank-races.py": {
+      "bytes": 18193,
+      "sha256": "9c6bf8851eccc47772d482bc448af5aac4df13ee353fe8567e8ab367b5b4d4f8"
     },
-    "scripts/qualification/fixtures/archived-spin/first-funding-observation.sql": {
-      "bytes": 1229,
-      "sha256": "4babe982d7e3818c13044da06c0b44b704474b899d5fd6621a65bdfdb1ddee1a"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-manager-proof.sql": {
-      "bytes": 850,
-      "sha256": "d4d3b9623e49cd830096f47917df9c8e37519a5b0b51a6c375b3c521b29bfa9d"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-manager-release-provider.sql": {
-      "bytes": 3920,
-      "sha256": "69182ba194f973ab1389be15ed1658e6466ab1118d0ac241dc6d8048473e267b"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-manager-state.json": {
-      "bytes": 1202,
-      "sha256": "d6e8322d12baec8579c19e332a8d971446559ee43275b20cff22ec31f440b1c8"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-negative-cases.sql": {
-      "bytes": 11690,
-      "sha256": "d0f36ab10dc7c8db1ab2119da936130197c8d8bcc0e2473bb579801df9f35730"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-preimage-drift.sql": {
-      "bytes": 4631,
-      "sha256": "d0f03472c93b739dee9c84023bd3d09d8c48127de183d757d461af47f520f6bb"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql": {
-      "bytes": 18690,
-      "sha256": "920c57efc0484aa78c6815f01b16a7098ebdfe79f54c6c78b31956169c19bf6d"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-temporal-refusal.sql": {
-      "bytes": 4313,
-      "sha256": "3b8d39a94ce5a4340bc35d761ee2b7f268267ce3cfca08121ebf695b82e01809"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-temporal-seed.sql": {
-      "bytes": 862,
-      "sha256": "5eb8258251cd1fe03aa93fb5b4052688c94965c43226bc63e1b2ab713af92784"
-    },
-    "scripts/qualification/fixtures/archived-spin/first-temporal-state.json": {
-      "bytes": 5963,
-      "sha256": "29dea53b23a1a0f88f5d422861bd973a75f6273ad737344c3fc57649096954b8"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-access.sql": {
-      "bytes": 483562,
-      "sha256": "73475a4ae041396d5b9493f80311fc3eb35bb043615540860f0ca0f663750449"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-authority-catalog.json": {
-      "bytes": 216504,
-      "sha256": "860a0c9bf9778f59b64f2aedd7d6b480365f59aa4c2e33eb107dded1ff241cd1"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-columns.sql": {
-      "bytes": 829208,
-      "sha256": "3eb843ab987fea764a6bd78875a029a082e752430e3462001ad6127d193df04c"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-constraints.sql": {
-      "bytes": 473250,
-      "sha256": "24d61127ed80d5d9f377c51a22e347ce7954ac5ad58fe92835465acd6391e9a2"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-functions.sql": {
-      "bytes": 1486311,
-      "sha256": "ecffe1e8f95edf4c6f8dbc7cb53ca9989bab4500c31831b4c3212cff2c6e6435"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-indexes.sql": {
-      "bytes": 291018,
-      "sha256": "aee4284284f46fc569213702688a3ce9b882620243a5688378e4cf19400cf6b6"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-provider-catalog.json": {
-      "bytes": 2259629,
-      "sha256": "527cd99e8758f43e2b4d20d984fbabf198ad4e31a4d59d618925abc39c5435fd"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-readback.sql": {
-      "bytes": 1051459,
-      "sha256": "b436b2a1c1a63fdae1f4c1a49dc4f6c21f52d04157821283ac580eea67d03ab7"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-sequences.sql": {
-      "bytes": 25203,
-      "sha256": "e2b44bdd3894e010b85487d17e46ff2cb5a92520114fd876d79a401b806de067"
-    },
-    "scripts/qualification/fixtures/archived-spin/full-triggers.sql": {
-      "bytes": 153784,
-      "sha256": "201b52c81db752b5f72b3f643174fcad73d17d454479e152e953e0304388baa4"
-    },
-    "scripts/qualification/fixtures/archived-spin/index-sequence-catalog.json": {
-      "bytes": 196023,
-      "sha256": "fc4bf9e20253e616e69a029eb1efd9a66d643a3444fcc843dae5af4604cd2e62"
-    },
-    "scripts/qualification/fixtures/archived-spin/original-launch-refusal.sql": {
-      "bytes": 491,
-      "sha256": "977e43e68739614f59964073a381ca04660eec64bf8ce451951b3b6caf56bce8"
-    },
-    "scripts/qualification/fixtures/archived-spin/schema-authority.json": {
-      "bytes": 2304,
-      "sha256": "e7b302efcaf3843ed9854740e63791fa2c84ad18d076d84ccbb02f18f0433d6a"
-    },
-    "scripts/qualification/fixtures/archived-spin/schema-authority.sql": {
-      "bytes": 8617,
-      "sha256": "dd5cf25eaf7523c94fc86b716246cf87c30ecec12d5e8c7486fac2121d2312ac"
-    },
-    "scripts/qualification/fixtures/archived-spin/seating-receipts.json": {
-      "bytes": 51940,
-      "sha256": "c078f075694de07b4f6b3a973f8b048c701b80902e650cbd85e92d675172c939"
-    },
-    "scripts/qualification/fixtures/archived-spin/seating-receipts.sql": {
-      "bytes": 64396,
-      "sha256": "77802c93826c58ce5465504648edf2f695376e63cde1423ede8c69b80bc80b5d"
-    },
-    "scripts/qualification/fixtures/archived-spin/seed-core/catalog.json": {
-      "bytes": 336560,
-      "sha256": "a1918bfb2032a34996cc67607d9fcb4d988d183f13f7b7e921ed8975c3b18905"
-    },
-    "scripts/qualification/fixtures/archived-spin/seed-core/columns.sql": {
-      "bytes": 118777,
-      "sha256": "066dbb5d936fc3aebb43a54bd0c05cf28c750bdcf63830def5f0424e312ed944"
+    "scripts/qualification/test_first_archived_bank_observer.py": {
+      "bytes": 6193,
+      "sha256": "4e02649fc509cb5eaff89c805b055a523bb41158ff82c4b9a383ccb8d97ec3c1"
     },
     "scripts/qualification/spin-first-archived-concurrency.py": {
       "bytes": 18715,
-      "sha256": "64c21fde5fd5f2d54dcf6c87e8834d6b4a7d1d7becda0bbd42183ba0d58db4aa"
-    },
-    "scripts/qualification/spin-first-archived-locks.py": {
-      "bytes": 20050,
-      "sha256": "68d6b67148658468f15545a383f298c224ec42182af8f4df7564507315ed4e6e"
-    },
-    "scripts/qualification/spin-first-archived-production-probe.py": {
-      "bytes": 10972,
-      "sha256": "5c78ca1e7f913d5c86abfd21ff2fe035c425bf83daaa990bd105a9a8601d2e8b"
-    },
-    "scripts/qualification/spin-first-archived.py": {
-      "bytes": 25589,
-      "sha256": "ae0a061bcaa0f9dca15d55a13d0ac187ca5ce64b384148978411f71f20751402"
+      "sha256": "097c2750c954d4659a8abf408ff17632b318315186f7c5707c3c724579c2ac22"
     },
     "scripts/qualification/test_first_archived_concurrency.py": {
       "bytes": 6790,
       "sha256": "3a11d27c337ac6021198216c642aaa10710a37d3cc1724ade0b0612371160bcb"
     },
+    "scripts/qualification/spin-first-archived-locks.py": {
+      "bytes": 20050,
+      "sha256": "a63068ad7d7f2599a9b05c6305c398305063e2abdcdf6c77cb818d67098fdcc4"
+    },
     "scripts/qualification/test_first_archived_locks.py": {
       "bytes": 4822,
       "sha256": "6bf4ba2df4af9916898497892ef126f27c0db84927a255c48f2ae546ea68be31"
+    },
+    "scripts/qualification/spin-first-archived-production-probe.py": {
+      "bytes": 35343,
+      "sha256": "12c7c23c9eb3fb3139733a2868fc21fbb2bdbc0c40fb8b3b4f1ae5bd9482a9f7"
+    },
+    "scripts/qualification/test_first_archived_production_probe.py": {
+      "bytes": 16512,
+      "sha256": "1d27b521331a07053211c5f0935faaa61101f3f9d93ea2d6631b084f912a84a3"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql": {
+      "bytes": 28712,
+      "sha256": "2e7d959ebe6470aa27948cfc8ddec0dd8cc1709acee3bba7b42d8c2e2fe002c1"
     },
     "scripts/qualification/test_first_archived_oracle.py": {
       "bytes": 13214,
       "sha256": "e1ed1c62d6cf485326bcc6344d2275f4da814b8f311375d7aa3fedf6e878ae5f"
     },
-    "scripts/qualification/test_first_archived_production_probe.py": {
-      "bytes": 3670,
-      "sha256": "20db7a689d1aaa6c74c03b4167d6b4c2184f0316009bfbc12dcc365e54d58a17"
+    "scripts/qualification/fixtures/archived-spin/seed-core/columns.sql": {
+      "bytes": 118777,
+      "sha256": "066dbb5d936fc3aebb43a54bd0c05cf28c750bdcf63830def5f0424e312ed944"
+    },
+    "scripts/qualification/fixtures/archived-spin/seed-core/catalog.json": {
+      "bytes": 336560,
+      "sha256": "a1918bfb2032a34996cc67607d9fcb4d988d183f13f7b7e921ed8975c3b18905"
+    },
+    "supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql": {
+      "bytes": 143809,
+      "sha256": "2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c"
+    },
+    "supabase/components/spin-archived-first-witness.sql": {
+      "bytes": 43621,
+      "sha256": "69a987d4e7a3808f37bb307d4c5c3aa9a1b1f5a3ad4fa04f8310ec4c64395c7d"
     },
     "supabase/components/spin-archived-first-admission.sql": {
       "bytes": 17780,
@@ -180,13 +88,169 @@
       "bytes": 80662,
       "sha256": "f601b4b6374097add147f003881a997a673e59cdcee7734a1383aecfb223671c"
     },
-    "supabase/components/spin-archived-first-witness.sql": {
-      "bytes": 43621,
-      "sha256": "69a987d4e7a3808f37bb307d4c5c3aa9a1b1f5a3ad4fa04f8310ec4c64395c7d"
+    "scripts/qualification/fixtures/archived-spin/full-columns.sql": {
+      "bytes": 829208,
+      "sha256": "3eb843ab987fea764a6bd78875a029a082e752430e3462001ad6127d193df04c"
     },
-    "supabase/migrations/20260927005812_first_archived_spin_canonical_terminal.sql": {
-      "bytes": 143809,
-      "sha256": "2f474595a7d4f88cd70a52ba95d4616fb8f91cc53681146ec09f1738bc51878c"
+    "scripts/qualification/fixtures/archived-spin/first-captured-seed.sql": {
+      "bytes": 7576,
+      "sha256": "48ebaadc12d387905ecbbde91d3f659fb69a32c07fe34ce5230ef0b83df7ddd5"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-seed.sql": {
+      "bytes": 862,
+      "sha256": "5eb8258251cd1fe03aa93fb5b4052688c94965c43226bc63e1b2ab713af92784"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-functions.sql": {
+      "bytes": 1486311,
+      "sha256": "ecffe1e8f95edf4c6f8dbc7cb53ca9989bab4500c31831b4c3212cff2c6e6435"
+    },
+    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.sql": {
+      "bytes": 29850,
+      "sha256": "7a4e43f6ec5f5d1ad6305390ab5d47dd740989fc2b1c0193185b55685dd8ce54"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-constraints.sql": {
+      "bytes": 473250,
+      "sha256": "24d61127ed80d5d9f377c51a22e347ce7954ac5ad58fe92835465acd6391e9a2"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-triggers.sql": {
+      "bytes": 153784,
+      "sha256": "201b52c81db752b5f72b3f643174fcad73d17d454479e152e953e0304388baa4"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-access.sql": {
+      "bytes": 483562,
+      "sha256": "73475a4ae041396d5b9493f80311fc3eb35bb043615540860f0ca0f663750449"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-sequences.sql": {
+      "bytes": 25203,
+      "sha256": "e2b44bdd3894e010b85487d17e46ff2cb5a92520114fd876d79a401b806de067"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-indexes.sql": {
+      "bytes": 291018,
+      "sha256": "aee4284284f46fc569213702688a3ce9b882620243a5688378e4cf19400cf6b6"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-readback.sql": {
+      "bytes": 1051459,
+      "sha256": "b436b2a1c1a63fdae1f4c1a49dc4f6c21f52d04157821283ac580eea67d03ab7"
+    },
+    "scripts/qualification/fixtures/archived-spin/seating-receipts.sql": {
+      "bytes": 64396,
+      "sha256": "77802c93826c58ce5465504648edf2f695376e63cde1423ede8c69b80bc80b5d"
+    },
+    "scripts/qualification/fixtures/archived-spin/schema-authority.sql": {
+      "bytes": 8617,
+      "sha256": "dd5cf25eaf7523c94fc86b716246cf87c30ecec12d5e8c7486fac2121d2312ac"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-manager-release-provider.sql": {
+      "bytes": 3920,
+      "sha256": "69182ba194f973ab1389be15ed1658e6466ab1118d0ac241dc6d8048473e267b"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-captured-state.json": {
+      "bytes": 72551,
+      "sha256": "e69f3da41ac8ee4c5b268b50f386fa63fd991af8c0b614ff17e255dc1967aee1"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-provider-catalog.json": {
+      "bytes": 2259629,
+      "sha256": "527cd99e8758f43e2b4d20d984fbabf198ad4e31a4d59d618925abc39c5435fd"
+    },
+    "scripts/qualification/fixtures/archived-spin/full-authority-catalog.json": {
+      "bytes": 216504,
+      "sha256": "860a0c9bf9778f59b64f2aedd7d6b480365f59aa4c2e33eb107dded1ff241cd1"
+    },
+    "scripts/qualification/fixtures/archived-spin/index-sequence-catalog.json": {
+      "bytes": 196023,
+      "sha256": "fc4bf9e20253e616e69a029eb1efd9a66d643a3444fcc843dae5af4604cd2e62"
+    },
+    "scripts/qualification/fixtures/archived-spin/fee-resolution-provider.json": {
+      "bytes": 31214,
+      "sha256": "28e8029822e5671cc3d0eb9c01266c83c3b2265e9ad9331847efdf425a37aac5"
+    },
+    "scripts/qualification/fixtures/archived-spin/seating-receipts.json": {
+      "bytes": 51940,
+      "sha256": "c078f075694de07b4f6b3a973f8b048c701b80902e650cbd85e92d675172c939"
+    },
+    "scripts/qualification/fixtures/archived-spin/schema-authority.json": {
+      "bytes": 2304,
+      "sha256": "e7b302efcaf3843ed9854740e63791fa2c84ad18d076d84ccbb02f18f0433d6a"
+    },
+    "scripts/qualification/fixtures/archived-spin/original-launch-refusal.sql": {
+      "bytes": 491,
+      "sha256": "977e43e68739614f59964073a381ca04660eec64bf8ce451951b3b6caf56bce8"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-connected-probe.sql": {
+      "bytes": 7544,
+      "sha256": "49dd3b28803059e02bb519d305a4a044f71b4232edbed8ed5f09258434557431"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-state.json": {
+      "bytes": 9043,
+      "sha256": "9071ae6a9306652c77728fc770f4853d33a4d036e37b7c68fe6b466e5b290503"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-temporal-refusal.sql": {
+      "bytes": 4313,
+      "sha256": "e56fce2d638873a2f4bdb78052bc8505541b871e37b1adcd0b6778b12fa1c7bf"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-manager-state.json": {
+      "bytes": 1202,
+      "sha256": "d6e8322d12baec8579c19e332a8d971446559ee43275b20cff22ec31f440b1c8"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-manager-proof.sql": {
+      "bytes": 850,
+      "sha256": "d4d3b9623e49cd830096f47917df9c8e37519a5b0b51a6c375b3c521b29bfa9d"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-funding-observation.sql": {
+      "bytes": 1229,
+      "sha256": "4babe982d7e3818c13044da06c0b44b704474b899d5fd6621a65bdfdb1ddee1a"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-negative-cases.sql": {
+      "bytes": 11690,
+      "sha256": "d0f36ab10dc7c8db1ab2119da936130197c8d8bcc0e2473bb579801df9f35730"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-atomic-failures.sql": {
+      "bytes": 6955,
+      "sha256": "9fe771bee9bf0d6fc129c8ac79b6044af718c0589e1fd17abbb1b55a84bfe6aa"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-preimage-drift.sql": {
+      "bytes": 4631,
+      "sha256": "d0f03472c93b739dee9c84023bd3d09d8c48127de183d757d461af47f520f6bb"
+    },
+    "scripts/qualification/spin-first-archived-completion.py": {
+      "bytes": 10440,
+      "sha256": "716ac33815b21e880b708cb8909c95b1af3001be2797dd8c700ac5649882200b"
+    },
+    "scripts/qualification/spin-first-archived-completion-cases.py": {
+      "bytes": 18507,
+      "sha256": "6b0bc4a1bffca69529c1b54da44d0ae24b06fe27d82b7a5de33d9429fd137a10"
+    },
+    "scripts/qualification/test_first_archived_completion.py": {
+      "bytes": 9318,
+      "sha256": "97c3a8552de1a323f3952752a0d7ac31fb89c8c6ba11db3dfad4d5c3f3cae16e"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql": {
+      "bytes": 28753,
+      "sha256": "89402dfd140fd6b006e0bcd6737b6ce62a484a82c238bb1dc179175c880327a6"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-postcompletion-readback.sql": {
+      "bytes": 23706,
+      "sha256": "a1f868c99011cd2ff15d0a706d72877aee3fa113dd6f5a388503d92630c91901"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-recognition-capture.json": {
+      "bytes": 735,
+      "sha256": "d59a01865d3e0d6e8827f04095834d0c1101ab4f6f73f0a43dbdf8e4e7ffa35c"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json": {
+      "bytes": 37459,
+      "sha256": "aa3806e3c56afbff8f4e59815faaa3900a2a1e44b2f363e2d85d128a801b5e23"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-fee-owner-current-provider.sql": {
+      "bytes": 30422,
+      "sha256": "a88e0c7caa6f049c9d7cd6be20a2fc5811401ddce104982ac25c771258c2d733"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-fee-owner-current-readback.sql": {
+      "bytes": 34875,
+      "sha256": "8bd7c762b4c54ea948d7a0c30e015cf339e6e1bde00e49f043fa73a078ab6361"
+    },
+    "scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json": {
+      "bytes": 405,
+      "sha256": "9e5a47eff25c60003949643ec1c5fffab3ef5a83ee74c659ffbcf2f582059800"
     }
   }
 }

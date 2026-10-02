@@ -56,7 +56,13 @@ import path from 'node:path';
 // The law parses a migration with the CHECK's own functions, never a lookalike
 // regex of its own: a guard that disagrees with the thing it guards is worse
 // than no guard.
-import { declaredObjects, declaredProofs, code } from '../scripts/ci/check-migrations-are-live.mjs';
+import {
+  code,
+  declaredObjects,
+  declaredProofs,
+  errorSqlState,
+  proofIsRunnable,
+} from '../scripts/ci/check-migrations-are-live.mjs';
 import { classifyMigration } from '../scripts/ci/recording-only.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -269,6 +275,86 @@ describe('a merged migration must be live', () => {
     // And the error that is printed does not carry the connection string,
     // which execFileSync puts in its message because it is psql's argv[1].
     expect(SRC.match(/split\(url\)\.join\('<database url>'\)/g)?.length ?? 0).toBe(2);
+  });
+
+  /**
+   * A PROOF THIS CHECK COULD NOT RUN IS NOT A PROOF THAT CAME BACK FALSE
+   * (2026-09-30).
+   *
+   * Step 3 counted any non-`true` answer - a rejection included - as evidence
+   * the migration is not live. That is right for "function ... does not
+   * exist", which is the whole reason the rule reads that way. It is wrong for
+   * "what you sent me is not SQL", and the check was manufacturing exactly
+   * that: `declaredProofs` reads ONE line, three migrations on main declare a
+   * proof spanning several comment lines, and the fragment that reaches the
+   * database cannot parse. The 2026-09-30 run reported
+   *
+   *     proof false: (SELECT count(*) FROM pg_index i  ->  rejected: ERROR: syntax error
+   *
+   * for 20260929130144 and counted it toward MERGED BUT NOT LIVE. That verdict
+   * was independently right - its two indexes really are absent from
+   * production - but the proof line was this check reading back its own
+   * truncation and calling it an answer. On a migration whose objects WERE
+   * live, the same line would have accused a correct branch of nothing at all,
+   * and this check's own header explains the cost: "a check that accuses at a
+   * 70% false rate gets switched off, which is how this estate already lost
+   * Applied Migrations Are Recorded."
+   */
+  it('refuses a proof it cannot run before it ever asks production', () => {
+    // Every truncation on main as at 2026-09-30, verbatim.
+    expect(proofIsRunnable('(SELECT count(*) FROM pg_index i')).toBe(false);
+    expect(
+      proofIsRunnable('(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnam')
+    ).toBe(false);
+    // Prose with an apostrophe opens a literal that never closes.
+    expect(
+      proofIsRunnable(
+        'select public.fn_park_stopped_time_bank_custody(...) for 7e681bb6 with the ' +
+          "engine's attested permit -> ok, unstarted_permit_released"
+      )
+    ).toBe(false);
+    expect(proofIsRunnable('')).toBe(false);
+    expect(proofIsRunnable('(SELECT 1)) = 1')).toBe(false);
+  });
+
+  it('still runs a well-formed proof, including the shapes already on main', () => {
+    expect(proofIsRunnable('(SELECT 1) = 1')).toBe(true);
+    // Dollar quoting, which the marker test above already relies on.
+    expect(proofIsRunnable('EXISTS (SELECT 1 FROM pg_policy WHERE polname = $$p$$)')).toBe(true);
+    // A quoted identifier and a doubled quote inside a literal.
+    expect(proofIsRunnable(`(SELECT count(*) FROM "pg_class") > 0`)).toBe(true);
+    expect(proofIsRunnable("(SELECT 'it''s fine') = 'it''s fine'")).toBe(true);
+    // Non-vacuity: the real proofs in the window are overwhelmingly runnable,
+    // so this gate cannot be passing by refusing everything.
+    const declared = migrations().flatMap((f) =>
+      declaredProofs(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+    );
+    expect(declared.length).toBeGreaterThanOrEqual(150);
+    const refused = declared.filter((p) => !proofIsRunnable(p));
+    expect(refused.length / declared.length).toBeLessThan(0.02);
+  });
+
+  it('a syntax error is about the text we sent, never about what production holds', () => {
+    // VERBOSITY=verbose is what makes the two distinguishable at all.
+    expect(SRC).toContain("'-v', 'VERBOSITY=verbose'");
+    expect(errorSqlState('ERROR:  42601: syntax error at or near "as"')).toBe('42601');
+    // A missing object is a different SQLSTATE and stays a failure.
+    expect(errorSqlState('ERROR:  42883: function public.fn_x() does not exist')).toBe('42883');
+    // An unrecognisable line is judged the OLD way, so a format surprise in
+    // psql cannot turn a real miss into a shrug.
+    expect(errorSqlState('ERROR:  syntax error at or near "as"')).toBeNull();
+    expect(SRC).toContain("const SYNTAX_ERROR = '42601'");
+    expect(SRC).toContain('errorSqlState(one.error) === SYNTAX_ERROR');
+  });
+
+  it('an unrunnable proof exits 2, which is neither the pass nor the accusation', () => {
+    // FAIL beats COULD-NOT-TELL beats PASS. Nothing else failing plus a proof
+    // that never ran is not a clean bill of health.
+    expect(SRC).toMatch(/if \(unrunnable\.size > 0\) \{[\s\S]*?process\.exit\(2\)/);
+    expect(SRC).toContain('COULD NOT TELL');
+    // And it is never folded into the false-proof list that drives exit 1.
+    expect(SRC).toContain('Never a false proof.');
+    expect(SRC).not.toMatch(/falseProofs[\s\S]{0,80}unrunnable/);
   });
 
   it('the negative control: neither existing check asks this question', () => {

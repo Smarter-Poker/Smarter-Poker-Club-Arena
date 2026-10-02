@@ -1,11 +1,341 @@
--- APPLIED, SQL NOT PRESERVED (2026-09-27 migration backfill).
+-- RECONSTRUCTION, NOT A RECORDING, AND INERT ON PURPOSE.
 --
--- This migration WAS applied to production as 20260923173830 ("an_abandoned_crash_round_settles_itself"), but its SQL was
--- never committed and supabase_migrations.schema_migrations.statements is
--- NULL for it, so the exact SQL cannot be recovered from anywhere. Its effect
--- is whatever production holds; this file exists so the repository records
--- that the version ran instead of reporting a phantom gap for ever.
+-- Production applied 20260923173830 ("an_abandoned_crash_round_settles_itself")
+-- with NULL supabase_migrations.schema_migrations.statements, so no byte-exact
+-- copy exists and no md5 can tie a file to it: scripts/ci/recording-only.mjs
+-- therefore cannot classify any executable text here as a recording, and the
+-- legacy BACKFILLED marker is frozen below 20260915. Executable text would be
+-- judged as NEW work that re-schedules a live cron job, which is not what this is.
 --
--- Do NOT invent SQL here and do NOT re-run anything.
--- @live-proof: EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '20260923173830')
-SELECT 'applied 20260923173830: an_abandoned_crash_round_settles_itself (statements not preserved)' AS unrecoverable_backfill_note;
+-- So every line of the author's file is kept below as a comment. Source: the
+-- untracked file in worktree .agent-trees/club-arena/cowork-crash-sweep (last
+-- modified 2026-09-23 17:43Z, five minutes after the apply stamp). Checked read-only
+-- against production on 2026-09-28: fn_crash_sweep_abandoned(integer) is
+-- byte-identical to the live prosrc, no later migration touches it, and cron job
+-- ca-crash-settle-abandoned-minute exists. Production is the authority for this
+-- version; do NOT uncomment or re-apply anything here.
+-- @live-proof: EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'fn_crash_sweep_abandoned' AND pronamespace = 'public'::regnamespace) AND EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ca-crash-settle-abandoned-minute')
+--
+--|-- 20260923173830_an_abandoned_crash_round_settles_itself
+--|--
+--|-- An abandoned Crash round settles itself, on the server's own clock.
+--|--
+--|-- THE FINDING (Diamond Crash fairness audit, 2026-09-23, confirmed on
+--|-- production). fn_crash_settle_decided IS the server's own time settlement: it
+--|-- takes every open round whose curve has already reached its sealed cap and
+--|-- hands it to fn_crash_decide, the one settlement writer. Read from pg_proc on
+--|-- 2026-09-23, exactly two functions reach it - fn_diamond_game_state and
+--|-- fn_diamond_game_admit - and no cron job mentions crash at all. Both of those
+--|-- are pages. So a round the server decided ninety seconds after it started
+--|-- stays 'open', and its reserved_chips stay reserved on diamond_game_pools
+--|-- (headroom no other player on that host can use), until somebody opens Crash
+--|-- on that host again. A player who closes the tab is not paid the minimum the
+--|-- round already owes them until they, or a stranger, come back. Nothing was
+--|-- lost - fn_diamond_game_state settles it whenever anyone does return - but
+--|-- the payment waited on a page, and a guaranteed prize that waits on a page is
+--|-- not guaranteed.
+--|--
+--|-- THE SAME QUESTION, ASKED OF THE OTHER FOUR. Only Crash has this defect, and
+--|-- the difference is always the same one: whether the SERVER has already
+--|-- decided, or whether what is left is the PLAYER'S to decide.
+--|--
+--|--   Donkey Cross and Mines (diamond_choice_rounds). NOT decided, and this
+--|--     migration must not touch them. fn_choice_act is the only settlement path
+--|--     and nothing but a player's pick reaches it: no caller in pg_proc, no
+--|--     cron job, no clock anywhere in the table. The board is sealed but WHERE
+--|--     THE PLAYER STOPS IS THE PLAYER'S, and it is unmade until they make it.
+--|--     Settling an abandoned board could only mean cashing it at a step the
+--|--     player never took, or calling it lost and keeping a floor they are owed.
+--|--     Both are the server deciding a round for them, which is the one thing
+--|--     this change exists never to do. An open board keeps its reservation and
+--|--     fn_choice_state hands it back on the next visit, which is correct and is
+--|--     already law (docs/laws.d/a-saved-round-settles-itself.md).
+--|--
+--|--   A bonus award started and never finished (wheel_bonus_awards). Nothing
+--|--     separate to settle. fn_wheel_bonus_unfinished calls an award unfinished
+--|--     while it is 'pending' or 'starting' - neither of which has a round, a
+--|--     payout or a reservation of its own - or while it is 'redeemed' over a
+--|--     round still open. For a Crash award that last case IS the round this
+--|--     sweep settles, so the award finishes as a consequence, through the same
+--|--     door, with no second writer. For a crossing or mines award it is the
+--|--     undecided board above, and it waits for its player.
+--|--
+--|--   A pending three-card game (wheel_card_awards, new on 2026-09-23 with
+--|--     #5136). NOT IN THIS SWEEP, AND IT NEEDS NO SWEEP OF ITS OWN. It is the
+--|--     loudest of the four - fn_wheel_spin_v2 answers the player's next spin at
+--|--     that club with 'Pick Your Diamond Card Before Another Spin', and
+--|--     fn_wheel_state_v2 holds the host's diamonds against it - so it is the
+--|--     one most tempting to automate. It is also the one where automating is
+--|--     indefensible. fn_wheel_diamond_cards_pick is the only writer and it pays
+--|--     v_values[p_card]: the half, the double and the triple are sealed, but
+--|--     WHICH of the three the player takes is not, and the server has decided
+--|--     nothing. A sweep could only pick a card for them - paying a value the
+--|--     player did not take, the exact thing this change forbids - or void the
+--|--     game and keep diamonds they are owed. Neither is settlement. And the
+--|--     player loses nothing by waiting: all three cards are positive, the block
+--|--     is one club's next spin rather than the platform, fn_wheel_state_v2
+--|--     returns the award under 'pending_cards' on the very next read, and
+--|--     fn_wheel_diamond_cards_pick replays a pick it already paid. The correct
+--|--     answer for a pending card game is the one it already has: keep it, hold
+--|--     its diamonds, and hand it back to its owner. It is in this header rather
+--|--     than in the function so that the next agent who finds it open does not
+--|--     mistake silence for an oversight.
+--|--
+--|-- WHAT THIS ADDS. One function, one guard-inventory row and one schedule. No
+--|-- existing function, trigger, table, column, index, grant or policy is altered.
+--|--
+--|-- fn_crash_sweep_abandoned CONTAINS NO DECISION. It does not know what a crash
+--|-- point is. It finds the hosts that have an open Crash round at all and calls
+--|-- fn_crash_settle_decided on each, so the rule for "already decided" stays
+--|-- written in exactly one place and the sweep can never drift from the page.
+--|-- Everything it settles, it settles through fn_crash_decide(r, false, 'time'):
+--|-- p_cashout false, so the only 'cashed' outcomes reachable are the round's own
+--|-- sealed auto target and its own sealed cap - never a multiplier the player
+--|-- did not take - and a crashed round pays r.minimum_payout_chips, which
+--|-- fn_crash_start sealed from fn_diamond_bonus_floor when the round began
+--|-- (contract 4, payout_version 4). It cannot settle a round that is still live,
+--|-- because fn_crash_settle_decided's predicate admits a round only once the
+--|-- clock has passed the time its curve reaches its cap.
+--|--
+--|-- AND IT CANNOT TAKE A CASH-OUT OFF A PLAYER. By the time a round is admitted,
+--|-- v_now_cents has reached cap_cents, so fn_crash_decide's first three branches
+--|-- have already answered: the auto target if it is at or under the crash point,
+--|-- else the cap if the crash point is at or above it, else crashed. The
+--|-- p_cashout branch is unreachable from there, which means the player's own
+--|-- request on the same round returns the same answer as this sweep. That is not
+--|-- an argument in a comment: the rehearsal below settled the same two real
+--|-- rounds three ways - by this sweep, by fn_crash_settle_decided as
+--|-- fn_diamond_game_state reaches it, and by fn_crash_decide(r, TRUE, 'player')
+--|-- as fn_crash_cashout reaches it - and all three produced the identical status,
+--|-- cashout_cents and payout_chips.
+--|--
+--|-- THE THREE FENCES, none of them new.
+--|--   The freeze. It moves money every minute, so it checks fn_platform_frozen()
+--|--     and returns ran=false. Frozen is WAIT, not settle, and not an exception
+--|--     either: raising once a minute through every maintenance break would make
+--|--     cron health permanently red. A break is bounded (fn_platform_frozen
+--|--     admits a counting_down phase only while break_ends_at is inside fifteen
+--|--     minutes of the announcement), the decision is sealed and waiting cannot
+--|--     change it, so nothing a player can lose is burned and fn_thaw_platform
+--|--     owes this sweep no catch-up entry.
+--|--   The host lock. Both existing callers hold diamond_game_configs
+--|--     (host_id, 'crash') FOR UPDATE before they call fn_crash_settle_decided,
+--|--     because that row is what serialises settlement against fn_crash_start on
+--|--     the same pool - the race the exposure-cap check inside fn_crash_decide
+--|--     would otherwise fail. This sweep takes the same lock in the same order,
+--|--     so it is not the one settlement path that skips it. NOWAIT: a host
+--|--     somebody is actively playing is a host already being settled by their
+--|--     own page, so it is counted busy and left for the next minute rather than
+--|--     waited on.
+--|--   The append-only trigger shipped on 2026-09-22 (20260922173914:
+--|--     trg_crash_rounds_append_only and trg_diamond_game_commits_sealed, both
+--|--     running fn_diamond_game_append_only) is untouched and remains the
+--|--     backstop. If a player's settle and this sweep ever did reach the same
+--|--     round, the loser's UPDATE meets OLD.status <> 'open' and is refused, so
+--|--     a double payment is impossible rather than unlikely. In practice the FOR
+--|--     UPDATE inside fn_crash_settle_decided re-reads the row and skips it
+--|--     before the trigger is needed.
+--|--
+--|-- A HOST THAT REFUSES CANNOT STOP THE OTHERS. Each host settles in its own
+--|-- subtransaction. fn_crash_decide raises by design when a pool's exposure no
+--|-- longer covers what it promised; without this, one such host would abort the
+--|-- whole run and no player on any other host would ever be paid by the sweep
+--|-- again. A refusal rolls that host back exactly as a page would today, files
+--|-- CRASH:abandoned_round_unsettled, and the run continues. Contention (55P03,
+--|-- 40001, 40P01) is counted separately from refusal, because "somebody else has
+--|-- it" and "this round will not settle" are different answers and must not
+--|-- share a representation.
+--|--
+--|-- HOW A FAILURE IS SEEN. The schedule is registered in ca_guard_inventory as
+--|-- kind='cron', which is what fn_ca_cron_failure_watch (ca-cron-health-30m)
+--|-- reads to decide severity: five failed runs in two hours with no success
+--|-- raises a CRITICAL drift incident for a registered guard rather than a
+--|-- warning. Individual host refusals arrive separately as
+--|-- CRASH:abandoned_round_unsettled in ca_diamond_incidents, where the Diamond
+--|-- escalation tick already handles them.
+--|--
+--|-- THE CADENCE IS NOT A TIME WINDOW, AND THAT IS DELIBERATE. The estate's other
+--|-- Diamond schedule, diamond-spin-daily-settlement, gates itself to one Chicago
+--|-- minute because a day closes at a time of day. Abandonment has no hour: a tab
+--|-- closes whenever a tab closes, and the money is owed from the moment the
+--|-- curve passes the cap. A round decides within 115 seconds of its start at the
+--|-- slowest curve the config trigger allows (growth_k <= 0.04, cap <= 100x:
+--|-- ln(100)/0.04), so a minute is the cadence at which "already decided" and
+--|-- "settled" are the same sentence. This sweep's gates are the freeze and its
+--|-- own advisory lock, not the clock.
+--|--
+--|-- PROVED BEFORE IT WAS APPLIED. On production, in one self-aborting call, the
+--|-- byte-identical body below was built in pg_temp over temporary copies of real
+--|-- crash_rounds, diamond_game_configs and diamond_game_pools rows, with
+--|-- fn_crash_decide and fn_crash_settle_decided rebuilt from production's own
+--|-- pg_get_functiondef bytes (only the wallet leg, the freeze and the incident
+--|-- writer stood in). Terminal:
+--|--
+--|--   PROBE PASS (rolled back): frozen waits and settles nothing; after the thaw
+--|--   6 hosts visited, 4 rounds settled, 1 host refused; the live round is
+--|--   untouched and the refusal rolled its host back without stopping the next;
+--|--   one CRASH:abandoned_round_unsettled filed with its sqlstate; the contract-4
+--|--   round paid exactly fn_diamond_bonus_floor = 12.5000000000000000 chips; four
+--|--   crash-prize legs, one per settled round, through fn_diamond_game_prize_leg
+--|--   only; a second run settles and pays nothing more; a host whose lock is held
+--|--   counts busy, files nothing and settles nothing; on two real rounds the
+--|--   sweep, the page and the player's own cash-out agree exactly (crashed pays
+--|--   5.00, cap pays 100.00 at 50.00x); production unchanged (crash_rounds 16
+--|--   rows md5 09f29e90dd8dc915b5d1a44f0aa79ef1, diamond_game_pools md5
+--|--   b16605edd72dc91bc1eac6df54c72b18, ca_diamond_incidents 59400 rows, public
+--|--   functions 3838)
+--|--
+--|-- tests/sql/diamond-crash-abandoned-round-sweep.sql proves the same on the real
+--|-- function, over the real crash start/cash-out/settle path and the real
+--|-- append-only trigger, inside the accounting fixture - including the two-
+--|-- connection NOWAIT refusal that a single session cannot stage - and
+--|-- tests/an-abandoned-crash-round-settles-itself.law.test.ts pins the rule.
+--|--
+--|-- The preimage guard below aborts if any function this reasoning was read from
+--|-- has moved since it was read. Every md5 here was verified identical in
+--|-- production and in the accounting fixture on 2026-09-23.
+--|BEGIN;
+--|SET LOCAL lock_timeout = '2s';
+--|SET LOCAL statement_timeout = '20s';
+--|DO $preimages$
+--|DECLARE want text; have text;
+--|BEGIN
+--|  FOR want, have IN SELECT * FROM (VALUES
+--|    ('fn_crash_settle_decided(uuid)',                          '67d298efb55632524e248b99153b98b6'),
+--|    ('fn_crash_decide(crash_rounds,boolean,text,integer)',     '29391daf7e742c89e5b47ac0d3451e09'),
+--|    ('fn_crash_decide(crash_rounds,boolean,text)',             '88742d0eba53b9bfb48fac254386ad8d'),
+--|    ('fn_crash_multiplier_cents(numeric,bigint,integer)',      'ed985b50c060d51d5398b67695256c10'),
+--|    ('fn_crash_start(uuid,uuid,text,integer,integer)',         '520a695115c3dbab2a105802392adf42'),
+--|    ('fn_diamond_bonus_floor(numeric,integer,integer,integer)','f57ba5bc5983e4f45b2e8a6f489786d5'),
+--|    ('fn_diamond_game_prize_leg(text,uuid,text,uuid,uuid,numeric,text,text,jsonb)', 'f703b13aa896d70f527435874aefe37e'),
+--|    ('fn_diamond_game_append_only()',                          'cd67cdd0d8f37d225ce6ddb61ccd8ed4'),
+--|    ('fn_platform_frozen()',                                   'ec683805e052fceeae74789e82dce4cc'),
+--|    ('fn_diamond_game_state(uuid,text)',                       '6e1ac8d0e4f1956d5c33479a7790c94c'),
+--|    ('fn_diamond_game_admit(text,uuid,uuid,text,integer)',     '9cf6885f399417e9e14952295d5809fb'),
+--|    ('fn_choice_act(uuid,text,integer,integer)',               'b1d7b0632f13bbb76e9dfa3e55156059'),
+--|    ('fn_wheel_bonus_unfinished(wheel_bonus_awards)',          '00d1743f6e57137235421af205238ec3'),
+--|    ('fn_ca_diamond_incident(text,text,uuid,numeric,text,jsonb)', '184127186e82dcfecd7d0dac92310fab')) v(s, m) LOOP
+--|    IF md5(pg_get_functiondef(('public.' || want)::regprocedure)) IS DISTINCT FROM have THEN
+--|      RAISE EXCEPTION 'Crash Sweep Preimage Changed: %', want;
+--|    END IF;
+--|  END LOOP;
+--|  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--|              WHERE n.nspname = 'public' AND p.proname = 'fn_crash_sweep_abandoned') THEN
+--|    RAISE EXCEPTION 'Crash Sweep Preimage Changed: fn_crash_sweep_abandoned already exists';
+--|  END IF;
+--|  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ca-crash-settle-abandoned-minute')
+--|     OR EXISTS (SELECT 1 FROM public.ca_guard_inventory WHERE kind = 'cron' AND object_a = 'ca-crash-settle-abandoned-minute') THEN
+--|    RAISE EXCEPTION 'Crash Sweep Preimage Changed: the schedule already exists';
+--|  END IF;
+--|  -- '* * * * *' is read on the cron clock, so it must be the UTC one.
+--|  IF COALESCE(current_setting('cron.timezone', true), '') NOT IN ('GMT', 'UTC', 'Etc/UTC') THEN
+--|    RAISE EXCEPTION 'Crash Sweep Requires The Verified UTC Cron Clock';
+--|  END IF;
+--|  -- The append-only trigger that fences a double settlement is where it was.
+--|  IF NOT EXISTS (SELECT 1 FROM pg_trigger t
+--|                  WHERE t.tgrelid = 'public.crash_rounds'::regclass
+--|                    AND t.tgname = 'trg_crash_rounds_append_only'
+--|                    AND t.tgfoid = 'public.fn_diamond_game_append_only()'::regprocedure
+--|                    AND t.tgtype = 27)
+--|     OR NOT EXISTS (SELECT 1 FROM pg_trigger t
+--|                     WHERE t.tgrelid = 'public.diamond_game_commits'::regclass
+--|                       AND t.tgname = 'trg_diamond_game_commits_sealed'
+--|                       AND t.tgfoid = 'public.fn_diamond_game_append_only()'::regprocedure
+--|                       AND t.tgtype = 27) THEN
+--|    RAISE EXCEPTION 'Crash Sweep Preimage Changed: the append-only fence';
+--|  END IF;
+--|END $preimages$;
+--|
+--|CREATE FUNCTION public.fn_crash_sweep_abandoned(p_limit integer DEFAULT 200)
+--| RETURNS TABLE(hosts_visited integer, rounds_settled integer, hosts_busy integer, hosts_failed integer, ran boolean)
+--| LANGUAGE plpgsql
+--| SET search_path TO 'public', 'pg_temp'
+--|AS $function$
+--|DECLARE
+--|  r record;
+--|  v_visited integer := 0; v_settled integer := 0; v_busy integer := 0; v_failed integer := 0;
+--|  v_n integer; v_msg text; v_state text;
+--|BEGIN
+--|  IF COALESCE(auth.role(), '') <> 'service_role' AND current_user NOT IN ('postgres', 'supabase_admin') THEN
+--|    RAISE EXCEPTION 'fn_crash_sweep_abandoned: service_role required';
+--|  END IF;
+--|
+--|  -- Frozen is WAIT, not settle. The round is decided either way and the same
+--|  -- decision is there after the thaw, so nothing a player can lose is burned
+--|  -- and fn_thaw_platform owes this sweep no catch-up entry.
+--|  IF public.fn_platform_frozen() THEN
+--|    RETURN QUERY SELECT 0, 0, 0, 0, false;
+--|    RETURN;
+--|  END IF;
+--|
+--|  -- xact-scoped: released at commit or rollback, with no unlock path to miss.
+--|  IF NOT pg_try_advisory_xact_lock(hashtext('fn_crash_sweep_abandoned')) THEN
+--|    RETURN QUERY SELECT 0, 0, 0, 0, false;
+--|    RETURN;
+--|  END IF;
+--|
+--|  -- Hosts, not rounds, and no predicate of its own: whether a round is already
+--|  -- decided is fn_crash_settle_decided's sentence to pass, and it is written
+--|  -- once. crash_rounds_open_idx is partial on status = 'open', so this reads
+--|  -- only the open rounds. A host whose crash config is gone is skipped, exactly
+--|  -- as fn_diamond_game_state skips it today.
+--|  FOR r IN
+--|    SELECT c.host_id, min(c.started_at) AS oldest_open_at
+--|      FROM public.crash_rounds c
+--|      JOIN public.diamond_game_configs g ON g.host_id = c.host_id AND g.game = 'crash'
+--|     WHERE c.status = 'open'
+--|     GROUP BY c.host_id
+--|     ORDER BY min(c.started_at), c.host_id
+--|     LIMIT GREATEST(COALESCE(p_limit, 200), 1)
+--|  LOOP
+--|    v_visited := v_visited + 1;
+--|    BEGIN
+--|      -- The same row, in the same order, that every other settlement path locks.
+--|      PERFORM 1 FROM public.diamond_game_configs
+--|        WHERE host_id = r.host_id AND game = 'crash' FOR UPDATE NOWAIT;
+--|      v_n := public.fn_crash_settle_decided(r.host_id);
+--|      v_settled := v_settled + v_n;
+--|    EXCEPTION
+--|      WHEN lock_not_available OR serialization_failure OR deadlock_detected THEN
+--|        -- Somebody else holds this host: their own page is settling it. Next minute.
+--|        v_busy := v_busy + 1;
+--|      WHEN OTHERS THEN
+--|        GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT, v_state = RETURNED_SQLSTATE;
+--|        v_failed := v_failed + 1;
+--|        BEGIN
+--|          PERFORM public.fn_ca_diamond_incident(
+--|            'CRASH:abandoned_round_unsettled', 'warning', NULL, NULL, 'fn_crash_sweep_abandoned',
+--|            jsonb_build_object('host_id', r.host_id, 'oldest_open_at', r.oldest_open_at,
+--|                               'sqlstate', v_state, 'sqlerrm', v_msg));
+--|        EXCEPTION WHEN OTHERS THEN NULL;
+--|        END;
+--|    END;
+--|  END LOOP;
+--|
+--|  RETURN QUERY SELECT v_visited, v_settled, v_busy, v_failed, true;
+--|END $function$;
+--|
+--|COMMENT ON FUNCTION public.fn_crash_sweep_abandoned(integer) IS
+--|  'Settles Crash rounds the server has already decided, without a page. Holds no rule of its own: it locks each host''s crash config row, exactly as fn_diamond_game_state and fn_diamond_game_admit do, and calls fn_crash_settle_decided. Waits out fn_platform_frozen(). Added 20260923173830.';
+--|
+--|-- Supabase's default privileges grant EXECUTE on a new public function to anon
+--|-- and authenticated, and REVOKE ... FROM PUBLIC does not take those back: the
+--|-- grant was read as {postgres,anon,authenticated,service_role} straight after
+--|-- the CREATE and revoked in the same session. Every sibling sweep
+--|-- (fn_spin_sweep_unbooked, fn_ca_escrow_ttl_sweep, fn_tournament_payout_sweep)
+--|-- reads {postgres=X/postgres,service_role=X/postgres}, and so does this one now.
+--|REVOKE ALL ON FUNCTION public.fn_crash_sweep_abandoned(integer) FROM PUBLIC, anon, authenticated;
+--|GRANT EXECUTE ON FUNCTION public.fn_crash_sweep_abandoned(integer) TO service_role;
+--|
+--|-- Registered so fn_ca_cron_failure_watch treats a sweep that stops running as
+--|-- a critical guard failure rather than a warning.
+--|INSERT INTO public.ca_guard_inventory (kind, object_a, note)
+--|VALUES ('cron', 'ca-crash-settle-abandoned-minute',
+--|        'settles Crash rounds the server already decided, so a closed tab is paid without a page (20260923173830)');
+--|
+--|-- The sweep is its own overlap guard (pg_try_advisory_xact_lock above), so the
+--|-- command adds no session-scoped lock to leak. lock_timeout turns a host held
+--|-- by a live page into 55P03, which the sweep counts busy rather than failed.
+--|SELECT cron.schedule('ca-crash-settle-abandoned-minute', '* * * * *',
+--|  $job$SET statement_timeout = '45s'; SET lock_timeout = '5s'; SELECT public.fn_crash_sweep_abandoned(200);$job$);
+--|COMMIT;

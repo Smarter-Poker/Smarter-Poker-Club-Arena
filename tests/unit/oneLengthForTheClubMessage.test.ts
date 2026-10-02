@@ -128,12 +128,27 @@ describe('only a message someone actually wrote earns the screen', () => {
     return sql.slice(i, sql.indexOf(');', i));
   };
 
-  it('requires evidence a human wrote the message, not merely that one exists', () => {
+  /**
+   * SUPERSEDED 2026-09-05, AND THE REPOSITORY NOW SAYS SO. The pin that used to
+   * sit here required the reader to check `v_updated IS NOT NULL`. Production
+   * stopped doing that at 20260905000730 (the_club_message_has_one_rule_and_one_door,
+   * Dan: "THE CLUB MESSAGE DOESN'T POP UP AT ALL NOW"): every club's message had
+   * a NULL lobby_message_updated_at, so the guard silenced every club. The rule
+   * moved into the ROW: trg_clubs_lobby_message_keeps_its_own_books stamps the
+   * timestamp and bumps the revision on every write, whichever door it came
+   * through, and the reader asks only whether there is a message this person
+   * has not retired. That migration was live for three weeks with no file here,
+   * so this test was pinning a rule production no longer had; recording it
+   * (2026-09-27) is what made the difference visible.
+   */
+  it('the row keeps its own books, so the reader does not ask which door the text came through', () => {
+    const sql = governingReader();
+    expect(sql).toMatch(/CREATE TRIGGER trg_clubs_lobby_message_keeps_its_own_books/);
     expect(
-      /v_updated\s+IS\s+NOT\s+NULL/i.test(shouldShowExpr(governingReader())),
-      'should_show does not check lobby_message_updated_at, so a message seeded by a ' +
-        'migration interrupts every entry forever with text nobody typed.'
-    ).toBe(true);
+      /v_updated\s+IS\s+NOT\s+NULL/i.test(shouldShowExpr(sql)),
+      'should_show depends on lobby_message_updated_at again, which silenced every club ' +
+        'on 2026-09-04; the row trigger is where that rule lives now.'
+    ).toBe(false);
   });
 
   it('still refuses an empty or whitespace-only message', () => {

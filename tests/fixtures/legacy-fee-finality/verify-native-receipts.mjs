@@ -24,7 +24,22 @@ for (const [source, destination] of [
   }
   fs.writeFileSync(path.join(compiled, destination), result.outputText.replace('../lib/uuidShape.js', './uuidShape.mjs'));
 }
-const { verifyTournamentCompletionReceipt } = await import(pathToFileURL(path.join(compiled, 'completionSettlementReceipt.mjs')));
+const { verifyTournamentCompletionReceipt, parseLegacyFeeCustodyOrigin } = await import(pathToFileURL(path.join(compiled, 'completionSettlementReceipt.mjs')));
+// Since 20261002034540 the decoder verifies a version 3 receipt against the
+// custody origin the database answers (fn_ca_legacy_fee_custody_origin), not a
+// compiled event list. Here the origin is PostgreSQL's own custody answer in the
+// same native receipt: fn_ca_tournament_fee_custody_receipt raises unless that
+// answer equals fn_ca_legacy_fee_custody_cohort for the event.
+const nativeOrigin = (raw) => {
+  const custody = raw?.rake?.accounting ?? {};
+  return parseLegacyFeeCustodyOrigin({
+    tournament_id: custody.tournament_id,
+    amount: custody.held_amount,
+    source_fingerprint: custody.source_fingerprint,
+    source_count: custody.source_count,
+    recognized_source_count: custody.resolution?.recognized_source_count ?? 0,
+  }, raw.tournament_id);
+};
 let verified = 0;
 const sep8 = mode === '--sep8-spin-custody';
 const runs = sep8 ? [
@@ -42,7 +57,7 @@ for (const [file, marker, state] of mode === '--original-five-custody-only' ? ru
   const expected = mode || state === 'recognized' ? 5 : 8;
   if (receipts.length !== expected) throw new Error('Exact native receipt cohort required');
   for (const raw of receipts) {
-    const result = verifyTournamentCompletionReceipt(raw, raw.tournament_id, 'places', raw.winner_id);
+    const result = verifyTournamentCompletionReceipt(raw, raw.tournament_id, 'places', raw.winner_id, nativeOrigin(raw));
     if (!result || result.rake.accountingState !== state) {
       fs.writeFileSync(path.join(output, 'decoder-rejected-receipt.json'), JSON.stringify(raw, null, 2));
       throw new Error(`Actual native receipt rejected: ${raw.tournament_id}, ${state}`);

@@ -101,14 +101,54 @@ private-cluster runner is forbidden from naming the shared socket or port, and
 the two lists must partition the directory. A runner therefore cannot escape a
 check or be relabelled into a weaker one.
 
+## The concurrency, duplicate-delivery and crash-recovery runner
+
+`run-diamond-concurrency.py` (Diamond Phase 11, line 2) builds its own cluster,
+like the tournament runners. It loads the base, both tournament captures and
+three files of its own:
+
+- `diamond-concurrency-doors.sql`: the installed money doors, everything they
+  call and the trigger functions production fires on their rows, each
+  md5-pinned in `diamond-concurrency-doors.manifest.json`;
+- `diamond-concurrency-schema.sql`: the tables those doors write, in
+  production's exact shape, grants included;
+- `diamond-concurrency-seed.sql`: synthetic accounts made through the real
+  signup path, and Diamond tables, Diamond MTTs and one chip freeroll opened
+  through the staff and chip doors.
+
+It then drives real concurrent `psql` sessions:
+
+- races for one balance, forced with lock order, advisory-lock barriers and
+  pause gates;
+- the same request delivered twice, concurrently and in sequence, to nine money
+  doors;
+- `pg_terminate_backend` at every write inside each door;
+- an immediate shutdown and restart through WAL crash recovery.
+
+Every function a case executes must match the md5 pinned for it in the manifest
+(`executed_pins`), read from production. The runner owns its cluster, so the
+restart runs in CI too. Evidence:
+`docs/evidence/diamond-phase-11/concurrency-and-recovery.md`.
+
 ## What these runners never do
 
-They never connect to production, never require a credential, and never open
-`cash_games_enabled` or `tournaments_enabled`. A fixture that opened an arena
-switch to make a case pass would be a fixture certifying something nobody
-shipped; two of the runners assert both switches are still closed when they
+They never connect to production and never require a credential. Most never
+open `cash_games_enabled` or `tournaments_enabled`: a fixture that opened an
+arena switch to make a case pass would be a fixture certifying something nobody
+shipped. Two of the runners assert both switches are still closed when they
 finish, and `tests/the-diamond-tournament-lifecycle-runs-the-installed-doors.law.test.ts`
-refuses a fixture file that writes either one true.
+refuses a lifecycle fixture file that writes either one true.
+
+Three fixtures do open a switch, inside their own isolated cluster only:
+
+- `poker-diamond-cash-admission-setup.sql` and `run-diamond-controlled-play.py`
+  open the cash switch;
+- `diamond-concurrency-seed.sql` opens both switches.
+
+The door under test refuses a closed arena before it does anything, and a door
+that refuses at the switch cannot be raced. These fixtures certify the door's
+behaviour once Dan opens the arena, not that the arena is open. Production's
+switches are Dan's alone.
 
 The base and doors for the tournament fixture have their own longer notes in
 [`diamond-tournament-doors.README.md`](./diamond-tournament-doors.README.md).

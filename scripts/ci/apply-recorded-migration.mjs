@@ -32,7 +32,7 @@
  * THE THREE OUTCOMES (CLAUDE.md 10.86 rule 1):
  *   0  APPLIED or ALREADY-APPLIED (stated separately in the log)
  *   1  REFUSED - a guard or the database said no, with the reason
- *   3  UNKNOWN - could not determine the state; NOTHING was sent
+ *   3  UNKNOWN - inspect durable state; an operation may have been sent
  *
  * NO RETRY LOOP (CLAUDE.md section 2 rule 2). One attempt per dispatch.
  *
@@ -48,7 +48,22 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { splitConcurrentPreamble, minutesBeforeBreakWindow } from './migration-concurrent-preamble.mjs';
+import {
+  splitConcurrentPreamble,
+  minutesBeforeBreakWindow,
+} from './migration-concurrent-preamble.mjs';
+
+import {
+  recoveryRequest,
+  cleanupStatement,
+  RECOVERY_TRANSIENT_CATALOG,
+  validateRecoveryPair,
+  recoveryStatement,
+  RECOVERY_CATALOG,
+  RECOVERY_SNAPSHOTS,
+  validateRecoveryCatalog,
+  validateRecoverySnapshots,
+} from './contract-index-recovery.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
@@ -64,7 +79,7 @@ const EXIT_UNKNOWN = 3;
 
 function unknown(msg) {
   console.error(`[apply] UNKNOWN: ${msg}`);
-  console.error('[apply] Nothing was sent to the database.');
+  console.error('[apply] Inspect the retained operation and durable state before another attempt.');
   process.exit(EXIT_UNKNOWN);
 }
 function refused(msg) {
@@ -84,6 +99,19 @@ const path = join(DIR, file);
 if (!existsSync(path)) refused(`${path} does not exist in this checkout`);
 const sql = readFileSync(path, 'utf8');
 if (!sql.trim()) refused(`${path} is empty`);
+let recovery;
+try {
+  recovery = recoveryRequest(
+    file,
+    sql,
+    argValue('--recover-index'),
+    argValue('--recover-oid'),
+    argValue('--recover-before'),
+    argValue('--recover-transient-oid')
+  );
+} catch (e) {
+  refused(e.message);
+}
 
 // The production DDL policy (CLAUDE.md section 2 rule 1) requires one
 // migration to be one transaction. Refuse a file that does not carry its own,
@@ -91,7 +119,9 @@ if (!sql.trim()) refused(`${path} is empty`);
 // file would autocommit statement by statement - up to one ~28s PostgREST
 // schema reload each, and a partial schema if one of them fails.
 if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
-  refused(`${file} does not open with BEGIN; and close with COMMIT; - refusing to apply it outside one transaction`);
+  refused(
+    `${file} does not open with BEGIN; and close with COMMIT; - refusing to apply it outside one transaction`
+  );
 }
 // The one sanctioned exception (migration-concurrent-preamble.mjs): CREATE
 // INDEX CONCURRENTLY statements before BEGIN;, which cannot run inside any
@@ -112,14 +142,19 @@ const PREAMBLE_MINUTES_NEEDED = 12;
 // an aborted transaction there.
 const minute = new Date().getUTCMinutes();
 if (minute >= 50 || minute <= 3) {
-  refused(`it is :${String(minute).padStart(2, '0')} UTC and the break window is :50-:03. Dispatch again after :03. Do not loop.`);
+  refused(
+    `it is :${String(minute).padStart(2, '0')} UTC and the break window is :50-:03. Dispatch again after :03. Do not loop.`
+  );
 }
 
 const CONN = process.env.DATABASE_URL;
 if (!CONN) unknown('DATABASE_URL is not set');
 
 const { default: pg } = await import('pg');
-const client = new pg.Client({ connectionString: CONN, application_name: 'apply-recorded-migration' });
+const client = new pg.Client({
+  connectionString: CONN,
+  application_name: 'apply-recorded-migration',
+});
 
 try {
   await client.connect();
@@ -144,6 +179,12 @@ try {
 }
 
 if (already.length > 0) {
+  if (recovery) {
+    await client.end().catch(() => {});
+    refused(
+      'Migration history already present; recovery not sent and index recovery not certified.'
+    );
+  }
   console.log(`[apply] ALREADY-APPLIED: ${file}`);
   for (const r of already) console.log(`[apply]   recorded as version=${r.version} name=${r.name}`);
   console.log('[apply] Nothing sent. This run changed nothing.');
@@ -154,10 +195,14 @@ if (already.length > 0) {
 console.log(`[apply] ${file}`);
 console.log(`[apply]   version ${version}, slug ${slug}, ${Buffer.byteLength(sql)} bytes`);
 if (preamble.length > 0) {
-  console.log(`[apply]   ${preamble.length} CREATE INDEX CONCURRENTLY statement(s) first, each on its own:`);
-  for (const ix of preamble) console.log(`[apply]     ${ix.name} ON public.${ix.table}`);
+  console.log(
+    `[apply]   ${preamble.length} CREATE INDEX CONCURRENTLY statement(s) first, each on its own:`
+  );
+  for (const ix of preamble) console.log(`[apply]     ${ix.name} ON ${ix.schema}.${ix.table}`);
 }
-console.log('[apply]   not present in schema_migrations; applying the migration as ONE transaction');
+console.log(
+  '[apply]   not present in schema_migrations; applying the migration as ONE transaction'
+);
 
 // The dynamic half of the break window: an announced engine maintenance window
 // or its thaw refuses DDL outside the fixed :50-:03 minutes too
@@ -165,7 +210,9 @@ console.log('[apply]   not present in schema_migrations; applying the migration 
 // a refusal is a sentence here and not an aborted build there.
 async function refusalNow() {
   try {
-    const { rows } = await client.query('SELECT public.fn_ca_break_window_refuses_migrations(clock_timestamp()) AS refusal');
+    const { rows } = await client.query(
+      'SELECT public.fn_ca_break_window_refuses_migrations(clock_timestamp()) AS refusal'
+    );
     return rows[0].refusal;
   } catch (e) {
     await client.end().catch(() => {});
@@ -181,20 +228,96 @@ async function refusalNow() {
 }
 if (preamble.length > 0 && minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED) {
   await client.end().catch(() => {});
-  refused(`${PREAMBLE_MINUTES_NEEDED} minutes are needed before :50 UTC to build the concurrent indexes; dispatch again after :03. Nothing was sent.`);
+  refused(
+    `${PREAMBLE_MINUTES_NEEDED} minutes are needed before :50 UTC to build the concurrent indexes; dispatch again after :03. Nothing was sent.`
+  );
 }
 
-if (DRY_RUN) {
+if (DRY_RUN && !recovery) {
   console.log('[apply] DRY RUN: nothing sent.');
   await client.end().catch(() => {});
   process.exit(EXIT_OK);
+}
+
+// Explicit source-bound recovery is a single operation within this existing installer.
+// Unknown acknowledgment never triggers another attempt or proceeds to the body.
+if (recovery) {
+  let recoverySent = false;
+  try {
+    const deadline = performance.now() + 600000;
+    async function freshAdmission(withTransient) {
+      await client.query("SET statement_timeout = '3s'");
+      const original = (await client.query(RECOVERY_CATALOG)).rows;
+      if (withTransient)
+        validateRecoveryPair(
+          original,
+          (await client.query(RECOVERY_TRANSIENT_CATALOG)).rows,
+          recovery
+        );
+      else validateRecoveryCatalog(original, recovery);
+      const refusal = await refusalNow();
+      if (refusal || minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED)
+        throw new Error('recovery lacks full maintenance runway or database refuses DDL');
+      const snapshots = (await client.query(RECOVERY_SNAPSHOTS)).rows;
+      validateRecoverySnapshots(snapshots);
+      console.log(
+        `[apply] current snapshot admission ${snapshots[0].observed_at}; historical operation ${recovery.before}`
+      );
+    }
+    async function sendOnce(statement) {
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) throw new Error('shared 600s recovery budget exhausted');
+      await client.query("SELECT set_config('statement_timeout',$1,false)", [remaining + 'ms']);
+      recoverySent = true;
+      await client.query(statement);
+    }
+    await freshAdmission(Boolean(recovery.transientOid));
+    if (DRY_RUN) {
+      console.log(
+        '[apply] DRY RUN: exact recovery pair/catalog and fresh snapshot preconditions passed; no DDL sent.'
+      );
+      await client.end();
+      process.exit(EXIT_OK);
+    }
+    if (recovery.transientOid) {
+      await sendOnce(cleanupStatement(recovery));
+      await client.query("SET statement_timeout = '3s'");
+      if ((await client.query(RECOVERY_TRANSIENT_CATALOG)).rows.length !== 0)
+        throw new Error('transient cleanup not proven');
+      validateRecoveryCatalog((await client.query(RECOVERY_CATALOG)).rows, recovery);
+      console.log(
+        `[apply] exact interrupted transient OID ${recovery.transientOid} removed; original OID ${recovery.oid} unchanged`
+      );
+      await freshAdmission(false);
+    }
+    await sendOnce(recoveryStatement(recovery));
+    await client.query("SET statement_timeout = '3s'");
+    const replacement = validateRecoveryCatalog(
+      (await client.query(RECOVERY_CATALOG)).rows,
+      recovery,
+      true
+    );
+    console.log(`[apply] recovered exact index OID ${recovery.oid} -> ${replacement.oid}`);
+    await client.query('RESET statement_timeout');
+  } catch (e) {
+    await client.end().catch(() => {});
+    console.error(
+      `[apply] recovery ${recoverySent ? 'SENT; inspect durable outcome before any further action' : 'NOT SENT'}: ${e.code || ''} ${e.message}`
+    );
+    console.error(
+      '[apply] Migration transaction/history NOT sent. No automatic retry, unbound cleanup or cancellation.'
+    );
+    process.exit(recoverySent ? EXIT_UNKNOWN : EXIT_REFUSED);
+  }
 }
 
 for (const ix of preamble) {
   const refusal = await refusalNow();
   if (refusal || minutesBeforeBreakWindow(new Date()) < 5) {
     await client.end().catch(() => {});
-    refused(`stopped before ${ix.name}: ${refusal || 'fewer than 5 minutes before :50 UTC'}. Indexes already built stay (IF NOT EXISTS skips them); the transaction was NOT sent. Dispatch again after :03.`);
+    refused(
+      `stopped before ${ix.name}: ${refusal || 'fewer than 5 minutes before :50 UTC'}. Indexes already built stay (IF NOT EXISTS skips them); the transaction was NOT sent. Dispatch again after :03.`
+    );
   }
   const t0 = Date.now();
   try {
@@ -204,9 +327,15 @@ for (const ix of preamble) {
     await client.query('RESET statement_timeout');
   } catch (e) {
     await client.end().catch(() => {});
-    console.error(`[apply] ${ix.name} did not build after ${Date.now() - t0}ms: ${e.code || ''} ${e.message}`);
-    console.error('[apply] A failed CONCURRENTLY build can leave an INVALID index: DROP INDEX CONCURRENTLY IF EXISTS it before dispatching again.');
-    console.error('[apply] The transaction was NOT sent. Nothing else changed.');
+    console.error(
+      `[apply] ${ix.name} did not build after ${Date.now() - t0}ms: ${e.code || ''} ${e.message}`
+    );
+    console.error(
+      '[apply] A failed CONCURRENTLY build can leave an INVALID index. Inspect its exact catalog and owning operation; do not blindly redispatch or drop it.'
+    );
+    console.error(
+      '[apply] The migration transaction was NOT sent. Preserve any earlier index operation and inspect its durable outcome.'
+    );
     process.exit(EXIT_REFUSED);
   }
   let valid;
@@ -214,19 +343,25 @@ for (const ix of preamble) {
     const { rows } = await client.query(
       `SELECT i.indisvalid AND i.indisready AS valid FROM pg_index i
          JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relname = $1`,
-      [ix.name]
+        WHERE n.nspname = $1 AND c.relname = $2`,
+      [ix.schema, ix.name]
     );
     valid = rows.length === 1 && rows[0].valid === true;
   } catch (e) {
     await client.end().catch(() => {});
-    console.error(`[apply] UNKNOWN: ${ix.name} was sent but its validity could not be read (${e.message}).`);
-    console.error('[apply] The transaction was NOT sent. Read pg_index for it before dispatching again.');
+    console.error(
+      `[apply] UNKNOWN: ${ix.name} was sent but its validity could not be read (${e.message}).`
+    );
+    console.error(
+      '[apply] The transaction was NOT sent. Read pg_index for it before dispatching again.'
+    );
     process.exit(EXIT_UNKNOWN);
   }
   if (!valid) {
     await client.end().catch(() => {});
-    refused(`${ix.name} exists but is not VALID. DROP INDEX CONCURRENTLY IF EXISTS public.${ix.name}; then dispatch again. The transaction was NOT sent.`);
+    refused(
+      `${ix.name} exists but is not VALID. Inspect the original operation and supported exact-index recovery before another dispatch. The transaction was NOT sent.`
+    );
   }
   console.log(`[apply]   ${ix.name} valid (${Date.now() - t0}ms)`);
 }
@@ -242,7 +377,9 @@ try {
   if (e.detail) console.error(`[apply] DETAIL: ${e.detail}`);
   if (e.hint) console.error(`[apply] HINT: ${e.hint}`);
   if (e.where) console.error(`[apply] WHERE: ${e.where}`);
-  console.error('[apply] The transaction rolled back. Read the error; do not re-dispatch in a loop.');
+  console.error(
+    '[apply] The transaction rolled back. Read the error; do not re-dispatch in a loop.'
+  );
   process.exit(EXIT_REFUSED);
 }
 console.log(`[apply] committed in ${Date.now() - started}ms`);

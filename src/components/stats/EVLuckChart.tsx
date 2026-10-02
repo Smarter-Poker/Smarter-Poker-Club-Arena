@@ -33,7 +33,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import StatsFactsService, { type EVCurvePayload } from '../../services/StatsFactsService';
-import { CHIP_STATS } from '../../services/statsScope';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 import { chartReveal } from './statsMotion';
 import './EVLuckChart.css';
 
@@ -43,6 +43,8 @@ interface Props {
   still?: boolean;
   /** Range in days, or null for all time. Mirrors the page's RANGES. */
   days?: number | null;
+  /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
 }
 
 interface Row {
@@ -87,7 +89,12 @@ function toRow(p: EVCurvePayload['points'][number]): Row {
 const fmtBB = (n: number): string =>
   `${n >= 0 ? '+' : ''}${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
 
-export default function EVLuckChart({ userId, days = null, still = false }: Props) {
+export default function EVLuckChart({
+  userId,
+  days = null,
+  still = false,
+  scope = CHIP_STATS,
+}: Props) {
   // Recharts renders axis ticks with an INLINE fill, which no stylesheet can
   // override - so on a printed white page the near-white ticks disappear and
   // the chart loses both axes. `still` is only true while the dossier renders.
@@ -107,7 +114,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     }
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getEVCurve(userId, CHIP_STATS, days)
+    StatsFactsService.getEVCurve(userId, scope, days)
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
@@ -119,7 +126,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     return () => {
       cancelled = true;
     };
-  }, [userId, days, attempt]);
+  }, [userId, days, attempt, scope]);
 
   const rows: Row[] = useMemo(() => {
     if (!data?.points?.length) return [];

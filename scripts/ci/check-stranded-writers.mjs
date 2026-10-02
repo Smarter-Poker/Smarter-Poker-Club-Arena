@@ -69,6 +69,14 @@ const ALLOWLIST = new Set([
   // CA reads these from src/ but CA's server/ does not write them.
   'chip_ledger', // WH: Smarter-Poker-World-Hub/supabase/migrations/20260319_create_chip_ledger.sql
   'club_arena_audit_logs', // WH: 20260311000001_orb8_phase4_audit.sql
+  // Phase 9 hand clip render queue. WH-authoritative: created and written by
+  // Smarter-Poker-World-Hub/supabase/migrations/20261001010600_hand_clip_jobs.sql
+  // (SECURITY DEFINER fn_hand_clip_request, fn_hand_clip_claim, fn_hand_clip_finish,
+  // fn_p9_publish_hand_clip) and the WH cron pages/api/cron/render-hand-clips.js.
+  // CA reads the player's own row (RLS) from src/services/HandClipService.ts and
+  // requests through the RPC. Installed on production 2026-10-01 (ledger
+  // version 20261001010600).
+  'hand_clip_jobs',
   // Read-only REFERENCE data. Not stranded — there is deliberately no runtime
   // writer, because a fee schedule that application code can rewrite is a
   // schedule nobody can audit. `bbj_stakes_tiers` is the published stakes

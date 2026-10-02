@@ -8,6 +8,7 @@
 import { useState, useEffect, useId, useRef, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
@@ -55,6 +56,20 @@ import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 import { getAnalyticsConsent, setAnalyticsConsent } from '../lib/consent';
+
+/**
+ * The system share sheet (src/lib/native/share.ts). App build only, and a
+ * function of its own on purpose: Rollup keeps everything written inside a
+ * `try` block whatever a constant says (its default
+ * treeshake.tryCatchDeoptimization), so this import() written inside the share
+ * handler's try made the web build emit the share module and its Capacitor
+ * plugins for players who can never run them. Here IS_NATIVE_BUILD removes it.
+ */
+async function shareOnNative(blob: Blob, filename: string, title: string): Promise<void> {
+  if (!IS_NATIVE_BUILD) return;
+  const { nativeShareBlob } = await import('../lib/native/share');
+  await nativeShareBlob(blob, filename, title);
+}
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -478,8 +493,9 @@ export default function SettingsPage() {
 
       // Fetch user data from various tables
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
-        supabase
-          .from('profiles')
+        /* The player's own record, so it may carry their own private fields
+           (last_login): read through the owner door (ruling 25). */
+        ownProfile(user.id)
           /**
            * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).
            *
@@ -497,7 +513,6 @@ export default function SettingsPage() {
           .select(
             'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, last_login'
           )
-          .eq('id', user.id)
           .maybeSingle(),
         // A DATA EXPORT MUST NOT EXPORT A FROZEN NUMBER (fixed 2026-08-27).
         // This exported rows from the retired global wallet table, frozen
@@ -542,9 +557,8 @@ export default function SettingsPage() {
       const exportName = `club-arena-export-${new Date().toISOString().split('T')[0]}.json`;
       // THE APP (2026-09-08): a webview honours no <a download>; the share
       // sheet on the written file (src/lib/native/share.ts).
-      if (isNativePlatform()) {
-        const { nativeShareBlob } = await import('../lib/native/share');
-        await nativeShareBlob(blob, exportName, 'Club Arena Data Export');
+      if (IS_NATIVE_BUILD && isNativePlatform()) {
+        await shareOnNative(blob, exportName, 'Club Arena Data Export');
         toast.success('Data exported successfully!');
         return;
       }

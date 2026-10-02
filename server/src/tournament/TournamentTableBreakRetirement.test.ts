@@ -195,7 +195,10 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         if (relation === 'tables') rows = tables;
         else if (relation === 'table_seats') rows = seats;
         else if (relation === 'tournament_players') {
-          rows = [...seats.map((seat) => ({ ...seat, status: 'playing' })), ...reserved];
+          rows = [
+            ...seats.map((seat) => ({ ...seat, status: 'playing', chips: seat.stack })),
+            ...reserved,
+          ];
           rosterSnapshots.push(
             seats.map((seat) => `${seat.user_id}:${seat.table_id}:${seat.seat_number}`)
           );
@@ -342,7 +345,12 @@ describe('tournament table-break retirement is one durable ownership chain', () 
                 if (
                   !seats.some((seat) => seat.table_id === table.id && seat.seat_number === chair)
                 ) {
-                  reserved.push({ table_id: table.id, seat_number: chair, status: 'playing' });
+                  reserved.push({
+                    user_id: `55555555-0000-4000-8000-${String(reserved.length + 1).padStart(12, '0')}`,
+                    table_id: table.id,
+                    seat_number: chair,
+                    status: 'playing',
+                  });
                 }
               }
             }
@@ -448,15 +456,19 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         expect(closeAttempts).toHaveLength(0);
         expect(f.unregister).not.toHaveBeenCalled();
         expect(api.ackCleanup).not.toHaveBeenCalled();
-        const retained = [
-          ...manager.durableTournamentBreaks.values(),
-        ] as TournamentTableBreakState[];
+        // Both short tables were parked in the same pass (every short table
+        // breaks at once); the begun one keeps its exact unresolved member.
+        const retained = (
+          [...manager.durableTournamentBreaks.values()] as TournamentTableBreakState[]
+        ).filter((operation) => operation.members.length > 0);
         expect(retained).toHaveLength(1);
         expect(retained[0].members[0].active_request_id).toBe(lostMoveRequestId);
         expect(retained[0].members[0].winner_request_id).toBeNull();
         expect(manager.eliminationSweepCursor.nextStage).toBe(5);
         await manager.runEliminationSweep(new AbortController().signal);
-        expect(lostMoveDestination!.wakeWaitingForPlayers).toHaveBeenCalledOnce();
+        // The replayed move, and the other short table parked in the same
+        // pass, both arrive there now.
+        expect(lostMoveDestination!.wakeWaitingForPlayers).toHaveBeenCalledTimes(2);
         expect(
           moves.mock.calls.filter(([input]) => input.requestId === lostMoveRequestId)
         ).toHaveLength(1);
@@ -471,7 +483,8 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       expect(movedRosters.map((players) => [...players].sort())).toEqual(
         state === 'roster-blocked'
           ? [[playerIds[0]]]
-          : [[playerIds[0]], [playerIds[0], playerIds[1]]]
+          : // Both sources are planned in one pass, so nobody moves twice.
+            [[playerIds[0]], [playerIds[1]]]
       );
       expect(
         rosterSnapshots.some(
@@ -479,9 +492,9 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         )
       ).toBe(true);
       expect(legacyMove).not.toHaveBeenCalled();
-      expect(moves).toHaveBeenCalledTimes(state === 'roster-blocked' ? 1 : 3);
+      expect(moves).toHaveBeenCalledTimes(state === 'roster-blocked' ? 1 : 2);
       expect(f.globalEngines.get(tableIds[2])!.wakeWaitingForPlayers).toHaveBeenCalledTimes(
-        state === 'roster-blocked' ? 0 : 2
+        state === 'roster-blocked' ? 1 : 2
       );
       expect(new Set(seats.map((seat) => seat.table_id)).size).toBe(
         state === 'roster-blocked' ? 2 : 1
@@ -514,7 +527,7 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         await manager.runEliminationSweep(new AbortController().signal);
         expect(closeAttempts).toEqual([tableIds[0], tableIds[1]]);
         expect(movedRosters).toHaveLength(2);
-        expect(moves).toHaveBeenCalledTimes(3);
+        expect(moves).toHaveBeenCalledTimes(2);
         expect(api.ackCleanup).toHaveBeenCalledTimes(2);
         expect(f.globalEngines.size).toBe(1);
         expect(manager.durableTournamentBreaks.size).toBe(0);
@@ -737,7 +750,7 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       if (relation === 'tables') rows = tables;
       else if (relation === 'table_seats') rows = seats;
       else if (relation === 'tournament_players')
-        rows = seats.map((seat) => ({ ...seat, status: 'playing' }));
+        rows = seats.map((seat) => ({ ...seat, status: 'playing', chips: seat.stack }));
       else throw new Error(`Unexpected relation: ${relation}`);
       const query = {
         select: () => query,

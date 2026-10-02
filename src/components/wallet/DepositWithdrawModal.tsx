@@ -239,7 +239,7 @@ export default function DepositWithdrawModal({
       if (e.key !== 'Tab' || !modalRef.current) return;
 
       const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       );
       if (focusable.length === 0) return;
 
@@ -289,7 +289,7 @@ export default function DepositWithdrawModal({
     const t = setTimeout(() => {
       if (modalRef.current) {
         const first = modalRef.current.querySelector<HTMLElement>(
-          'button:not([disabled]), input:not([disabled])'
+          'button:not([disabled]), input:not([disabled]):not([tabindex="-1"])'
         );
         first?.focus();
       }

@@ -71,6 +71,11 @@ import {
   lookupChartPolicyAdvice,
   type ChartPolicyRow,
 } from '../gto/SolverPolicyArtifactLoader.js';
+import {
+  latestRevision,
+  solverStoreIdentity,
+  type SolverStoreIdentity,
+} from '../gto/SolverStoreIdentity.js';
 
 export type GtoChartRow = ChartPolicyRow;
 
@@ -85,6 +90,8 @@ export type GtoAdvice = {
 
 /** key: game|villain_action|position|depth */
 let charts = new Map<string, Record<string, Record<string, number | null>>>();
+/** Content identity of `charts`, computed when a set is swapped in (Phase 6C G4). */
+let chartsIdentity: SolverStoreIdentity = solverStoreIdentity(charts, null);
 
 /** The depths that exist in the data. Snapping must match reality, not hope. */
 const CHART_DEPTHS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25];
@@ -117,8 +124,15 @@ export function setGtoCharts(rows: GtoChartRow[]): number {
   // Build and validate the canonical artifact first. Neither store changes if
   // one row is malformed, so a bad hourly refresh keeps the last good policy.
   hydrateChartPolicyArtifact(rows);
+  const identity = solverStoreIdentity(next, latestRevision(rows.map((r) => r.created_at)));
   charts = next;
+  chartsIdentity = identity;
   return next.size;
+}
+
+/** The exact chart set the brain reads: entry count, content digest and source revision. */
+export function gtoChartStoreIdentity(): SolverStoreIdentity {
+  return chartsIdentity;
 }
 
 /** Test/ops hook — and the loader's "did anything hydrate" check. */
@@ -128,7 +142,8 @@ export function gtoChartCount(): number {
 
 /** Test seam. */
 export function _clearGtoCharts(): void {
-  charts.clear();
+  charts = new Map();
+  chartsIdentity = solverStoreIdentity(charts, null);
   _clearChartPolicyArtifactsForTests();
 }
 

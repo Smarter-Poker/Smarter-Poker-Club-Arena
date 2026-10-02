@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 import { reportError } from '../../utils/errorReporter';
+import { askToSignInAgain, isDeadSessionRefusal } from '../../lib/deadSessionRefusal';
 
 type Request = { recipient: string; name: string; amount: number; key: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -160,7 +161,16 @@ export default function DiamondWalletTransfer({
     } catch (error) {
       if (!alive.current) return;
       reportError(error, 'DiamondWalletTransfer.Send');
-      setMessage('Transfer Not Yet Confirmed. Retry This Transfer To Retrieve Its Receipt.');
+      if (isDeadSessionRefusal(error)) {
+        // Phase 11 line 7: the saved request stays; after signing in, Retry
+        // sends the same key and retrieves the receipt of anything that ran.
+        setMessage(
+          'Your Session Has Ended. Sign In Again, Then Retry This Transfer To Retrieve Its Receipt.'
+        );
+        askToSignInAgain('money:diamond_transfer');
+      } else {
+        setMessage('Transfer Not Yet Confirmed. Retry This Transfer To Retrieve Its Receipt.');
+      }
     } finally {
       if (alive.current) setBusy(false);
     }

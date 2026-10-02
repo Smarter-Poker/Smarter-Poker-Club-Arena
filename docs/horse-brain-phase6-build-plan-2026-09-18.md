@@ -1,5 +1,7 @@
 # Phase 6: four ordered completion stages
 
+> Current qualification: [September 30 serving qualification](horse-brain-phase6-completion-2026-09-30.md). The older dated statuses below are retained as history; use the current record for remaining gates and measured serving behavior.
+
 Owner assignment: September 18, 2026. Start with 6A, finish and report each stage before the next. Horse Brain only. This refines P6.1/P6.2 in [the remaining-work plan](horse-brain-phases6-15-completion-plan-2026-09-17.md) against [the first-five blueprint](horse-brain-first-five-gold-standard.md). The earlier Horse repair delivery is separately closed; its live evidence does not certify these new stages. The first five phases supply the engineering requirements, not a claim that every historical component was already perfect.
 
 Every stage requires its actual producer, consumer, invalid-input behavior, directly triggered regression checks, protected delivery and applicable live-use evidence. Source, checks, merge, publication and live acceptance remain separate. Do not create a new publisher, refresh loop, review store or strategy authority. Existing candidate controls and automated safeguards remain intact.

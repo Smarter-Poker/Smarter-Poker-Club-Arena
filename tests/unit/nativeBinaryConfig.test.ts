@@ -107,6 +107,18 @@ describe('one command per store build', () => {
     // Xcode missing is the common case on this Mac: say so, do not half-run
     expect(ios).toContain('Xcode is not installed');
 
+    // iOS push: @capacitor/push-notifications only learns the token through
+    // these two notifications, so without them register() never completes
+    // (2026-09-29). Firebase is used only when linked AND configured, so the
+    // app neither fails to compile nor traps at launch without it.
+    const appDelegate = read('ios/App/App/AppDelegate.swift');
+    expect(appDelegate).toContain('didRegisterForRemoteNotificationsWithDeviceToken');
+    expect(appDelegate).toContain('.capacitorDidRegisterForRemoteNotifications');
+    expect(appDelegate).toContain('didFailToRegisterForRemoteNotificationsWithError');
+    expect(appDelegate).toContain('.capacitorDidFailToRegisterForRemoteNotifications');
+    expect(appDelegate).toContain('#if canImport(FirebaseCore) && canImport(FirebaseMessaging)');
+    expect(appDelegate).toContain('forResource: "GoogleService-Info", ofType: "plist"');
+
     const android = read('scripts/native/android-bundle.sh');
     expect(android).toContain('npm run build:native');
     expect(android).toContain('bundleRelease');
@@ -116,5 +128,17 @@ describe('one command per store build', () => {
     // Java 25 is the Mac default and Gradle refuses it
     expect(android).toContain('17');
     expect(android).toContain('21');
+    // No Firebase config, no store bundle: without it the app CRASHES when a
+    // player taps Enable on the notifications sheet (2026-09-29, emulator).
+    expect(android).toMatch(
+      /if \[ ! -s android\/app\/google-services\.json \]; then[\s\S]*?exit 1\s*\nfi/
+    );
+    // ...and Gradle itself refuses ANY release task without it (Android
+    // Studio's signed-bundle wizard never runs the script): with notifications
+    // allowed, a Firebase-less release crashes at every launch.
+    const gradle = read('android/app/build.gradle');
+    expect(gradle).toContain('gradle.taskGraph.whenReady');
+    expect(gradle).toMatch(/releasing && !file\('google-services\.json'\)\.exists\(\)/);
+    expect(gradle).toContain('throw new GradleException');
   });
 });

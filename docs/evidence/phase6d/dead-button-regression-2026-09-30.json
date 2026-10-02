@@ -1,0 +1,59 @@
+{
+  "scope": "Horse public-state dead-button capture and adaptive accepted-hand consumption",
+  "runtimePaths": [
+    "server/src/engine/HorsePublicActionNode.ts",
+    "server/src/engine/HorseAdaptiveObservation.ts"
+  ],
+  "testPaths": [
+    "server/src/engine/HorsePublicActionNode.test.ts",
+    "server/src/engine/HorseAdaptiveObservation.test.ts"
+  ],
+  "command": "cd server && ./node_modules/.bin/vitest run src/engine/HorsePublicActionNode.test.ts src/engine/HorseAdaptiveObservation.test.ts --reporter=json",
+  "before": {
+    "fileSha256": "6b632946f425124bd6b3aeddcc26a6d8ed5cfdc3789b39a8b049b7b9f21b39a7",
+    "tests": 137,
+    "passed": 130,
+    "failed": 7,
+    "success": false
+  },
+  "after": {
+    "fileSha256": "0168d5dd6a7e6e09afaf2f9a0c544b43ccf56666c09278ae0b9a860d3ddd26a9",
+    "tests": 137,
+    "passed": 137,
+    "failed": 0,
+    "success": true
+  },
+  "runtimeFileDigests": {
+    "server/src/engine/HorsePublicActionNode.ts": "6174488227da03180bc62d9d34980a7c74872d6b978bd11ab329760c42f7dd25",
+    "server/src/engine/HorseAdaptiveObservation.ts": "e6ec9168c7b6c3098ce939b60bcba75a1048691a3fc16a81b413a9b95e9eeb69"
+  },
+  "limits": [
+    "Local connected controller/observation tests, not production deployment proof.",
+    "Does not change the tournament atlas strategy domain or authorize promotion of a learned candidate."
+  ],
+  "context": {
+    "testPaths": [
+      "server/src/engine/TournamentBlindSnapshot.test.ts",
+      "server/src/engine/horseDecision/workerRuntime.test.ts"
+    ],
+    "red": {
+      "failed": 2,
+      "passed": 5
+    },
+    "green": {
+      "passed": 187,
+      "failed": 0
+    },
+    "runtimePaths": [
+      "server/src/engine/ServerTableEngineTurns.ts",
+      "server/src/engine/horseDecision/workerRuntime.ts"
+    ]
+  },
+  "sourceContracts": {
+    "success": true,
+    "numTotalTests": 136,
+    "numPassedTests": 136,
+    "numFailedTests": 0,
+    "artifactSha256": "69087c9f88098e1b3f283561aa5e02eaa9fcc19efdcd93cfa23b812eed5b525d"
+  }
+}

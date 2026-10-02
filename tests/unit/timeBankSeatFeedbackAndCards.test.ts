@@ -44,7 +44,10 @@ const readCode = (p: string): string =>
 
 const TABLE_PAGE = readCode('src/pages/TablePage.tsx');
 const SEAT_SLOT = readCode('src/components/table/SeatSlot.tsx');
-const ENGINE = readCode('server/src/engine/ServerTableEngine.ts');
+// Lightning Phase 6 (2026-09-27): the snapshot scrub lives in the shared projection.
+const ENGINE =
+  readCode('server/src/engine/ServerTableEngine.ts') +
+  readCode('server/src/engine/presentation/projectHandState.ts');
 const TURNS = readCode('server/src/engine/ServerTableEngineTurns.ts');
 
 describe("a resync must not wipe the hero's hole cards", () => {

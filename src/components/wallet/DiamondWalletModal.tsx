@@ -36,7 +36,11 @@ interface DiamondTransaction {
   type: string;
   transaction_type?: string;
   amount: number;
-  description?: string;
+  /* NO `description`. Phase 6 moved this modal onto `tx.line || label`, and
+     the raw description stayed on the select and in this shape with nothing
+     reading it. Dropped 2026-09-30 with the column. */
+  /** The ledger's own player-facing line (`player_line`, phase 6). */
+  line?: string;
   balance_after?: number;
   created_at: string;
 }
@@ -246,7 +250,7 @@ export default function DiamondWalletModal({
            instead — and this component read only `transaction_type`. So a
            player's Welcome Bonus, the first diamond movement on every account
            ever created, rendered in their own wallet as a grey "Adjustment". */
-        .select('id, type, transaction_type, amount, description, balance_after, created_at')
+        .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(TX_LIMIT);
@@ -263,7 +267,7 @@ export default function DiamondWalletModal({
         type: t.transaction_type || t.type || '',
         transaction_type: t.transaction_type || t.type || '',
         amount: Number(t.amount) || 0,
-        description: t.description,
+        line: typeof t.player_line === 'string' ? t.player_line : undefined,
         balance_after: t.balance_after,
         created_at: t.created_at,
       }));
@@ -308,7 +312,7 @@ export default function DiamondWalletModal({
     const focusable = () =>
       Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         ) ?? []
       );
     const focusFrame = window.requestAnimationFrame(() => {
@@ -477,8 +481,11 @@ export default function DiamondWalletModal({
                   <div key={tx.id} className="dwc__tx">
                     <div className="dwc__tx-body">
                       <span className="dwc__tx-label sc-ink--silver">{label}</span>
+                      {/* Phase 6: the ledger's own player line, never the
+                          raw description - an operator's audit note, a
+                          challenge id or a test row is not the player's. */}
                       <span className="dwc__tx-desc sc-ink--muted">
-                        {formatPopupText(tx.description || label)}
+                        {formatPopupText(tx.line || label)}
                       </span>
                     </div>
                     <div className="dwc__tx-figures">

@@ -1,0 +1,37 @@
+{
+  "_owner": "agent/claude-lightning-p6/lightning/phase6-db - migration 20261001154813_lightning_phase_6_settlement_the_hand_settles_onto_its_ancho",
+  "_comment": "Lightning Phase 6, the database half of dealing. NOT YET APPLIED: every name below is a promise until the owner installs 20261001154813 after the matcher (20260926080332). fn_lightning_bind_hand_number(instance, number) binds the global hand number and the Cluster's front table to a dealing hand once. fn_lightning_fast_fold(hand, player, request, fold_type, committed) records a fold; fast and normal release only that player's reservation at once, fold_watch keeps it to the end. fn_lightning_settle_hand(...) (SECURITY DEFINER) settles a dealing hand through the unchanged physical door fn_ca_commit_hand_settlement at the front table under the bound number, applying stack_after - stack_before to each anchor seat under lightning_settlement_marker, a table no role holds a privilege on; conservation or the Cluster freezes (fn_lightning_settlement_freeze). fn_lightning_my_session(cluster) (SECURITY DEFINER, authenticated) answers the caller's own open pool session; fn_lightning_hand_view_access(pool_session, user) says who may watch a room. fn_lightning_pool_exposure and fn_lightning_player_live_hand hold a fast folder's committed chips out of the next hand and hold the anchor while any hand they are in is live; fn_lightning_settlement_seats tells the physical stack core and door (asserted substitutions of fn_ca_settle_hand_stacks_absolute and fn_ca_commit_hand_settlement) which table each marked anchor sits at.",
+  "tables": ["lightning_settlement_marker"],
+  "functions": [
+    "fn_lightning_bind_hand_number",
+    "fn_lightning_fast_fold",
+    "fn_lightning_settle_hand",
+    "fn_lightning_my_session",
+    "fn_lightning_hand_view_access",
+    "fn_lightning_pool_exposure",
+    "fn_lightning_player_live_hand",
+    "fn_lightning_settlement_seats",
+    "fn_lightning_settlement_freeze"
+  ],
+  "columns": {
+    "lightning_hand": [
+      "hand_number",
+      "host_table_id",
+      "settle_request_id",
+      "settle_request_hash",
+      "hand_history_id",
+      "settle_receipt"
+    ],
+    "lightning_hand_player": ["net_result", "folded_at", "committed_at_fold"],
+    "lightning_settlement_marker": [
+      "txid",
+      "seat_id",
+      "anchor_table_id",
+      "player_id",
+      "hand_id",
+      "host_table_id",
+      "hand_number",
+      "created_at"
+    ]
+  }
+}

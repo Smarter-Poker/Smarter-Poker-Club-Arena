@@ -10,6 +10,8 @@ export interface CashManifestParticipant {
   is_horse: boolean;
 }
 
+const CAPTURE_ATTEMPTS = 3;
+
 /** Called once at the real pre-deal boundary. Missing evidence never invents ownership. */
 export async function captureCashHandProvenance(
   tableId: string,
@@ -20,13 +22,29 @@ export async function captureCashHandProvenance(
 ): Promise<string> {
   // Freeze before yielding; callers cannot turn a response-loss retry into a different roster.
   const roster = participants.map((participant) => ({ ...participant }));
-  const { data, error } = await supabase.rpc('fn_cash_capture_hand_manifest', {
+  const request = {
     p_table_id: tableId,
     p_hand_number: handNumber,
     p_participants: roster,
     p_instance_id: instanceId,
     p_lease_generation: leaseGeneration,
-  });
+  };
+  // A lost response is not a lost manifest: the database may have committed
+  // it. fn_cash_capture_hand_manifest returns the same manifest for the same
+  // (table, hand, roster, lease), so the identical request is asked again
+  // before the hand is dealt without its link (2026-09-22..27: 6 manifests
+  // committed whose ids never reached the engine, their hands unlinked).
+  let data: any = null;
+  let error: { message: string } | null = null;
+  for (let attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt++) {
+    try {
+      ({ data, error } = await supabase.rpc('fn_cash_capture_hand_manifest', request));
+    } catch (thrown) {
+      data = null;
+      error = { message: thrown instanceof Error ? thrown.message : String(thrown) };
+    }
+    if (!error) break;
+  }
   if (error) throw new Error(`Cash provenance capture unavailable: ${error.message}`);
   if (
     data?.version !== 1 ||

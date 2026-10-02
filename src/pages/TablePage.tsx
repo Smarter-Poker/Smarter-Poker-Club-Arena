@@ -167,8 +167,10 @@ import {
   sameCashBuyInIntent,
   type CashBuyInAttempt,
 } from '../services/CashBuyInRecovery';
+import { askToSignInAgain, isDeadSessionRefusal } from '../lib/deadSessionRefusal';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
 import {
   playerDisplayName,
@@ -288,6 +290,42 @@ import {
   seatPodPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
+import LightningFoldBar from '../components/table/LightningFoldBar';
+import LightningNextHand from '../components/table/LightningNextHand';
+import LightningJoining from '../components/table/LightningJoining';
+import LightningEndedNotice from '../components/table/LightningEndedNotice';
+import { lightningReturnPath, useLightningReversion } from '../lightning/lightningReversion';
+import {
+  LIGHTNING_LEAVE_QUEUED_TEXT,
+  fetchLightningAnchorSeat,
+  fetchLightningClusterMeta,
+  fetchMyLightningSession,
+  findMyLightningRoom,
+  hasLightningRoom,
+  lightningAnchorSeat,
+  lightningClusterIdOfSnapshot,
+  registerLightningPoolSession,
+  useLightningPoolSession,
+  type LightningAnchorSeat,
+} from '../lightning/lightningSession';
+import {
+  lightningFastFoldFlag,
+  lightningFoldAvailability,
+  lightningHandOnFelt,
+  lightningHandId,
+  lightningHandKey,
+  lightningSnapshotPatch,
+  lightningTableSeed,
+  preActionBelongsToHand,
+  type LightningSnapshotFields,
+} from '../lightning/lightningHand';
+import {
+  detectLightningPlatform,
+  lightningCapabilities,
+  readLightningPlatformSignals,
+} from '../lightning/lightningCapabilities';
+import { sendLightningFold, type LightningFoldKind } from '../lightning/lightningActions';
+import { useLightningAnchorHandoff } from '../lightning/useLightningAnchorHandoff';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
@@ -1554,6 +1592,15 @@ function LiveTablePage({
   // Every table effect receives a database ID or no scope. A URL segment
   // such as "demo" must never start seat, jackpot or hole-card queries.
   const tableId = requestedTableId && isUUID(requestedTableId) ? requestedTableId : undefined;
+  /* LIGHTNING PHASE 6: is this room a Lightning pool session? Null for every
+     table, which is every room in production today, and then nothing below
+     that reads it changes anything. A pool session has no `tables` row: its
+     game description comes from its Cluster and from the engine snapshot, and
+     every read of a `tables` row on this page is skipped for it. */
+  const lightningRoom = useLightningPoolSession(tableId);
+  const lightningRoomRef = useRef(lightningRoom);
+  lightningRoomRef.current = lightningRoom;
+  const lightningClubId = lightningRoom?.meta?.clubId ?? null;
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -2227,6 +2274,10 @@ function LiveTablePage({
    * socket, exactly as it is on every other page.
    */
   const engineSnapshot = rawEngineSnapshot;
+  /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
+     (the pre-action arm names the hand it belongs to). */
+  const engineSnapshotRef = useRef(engineSnapshot);
+  engineSnapshotRef.current = engineSnapshot;
   const engineLastEvent = rawEngineLastEvent;
 
   useSeatMoveNavigation({
@@ -2386,7 +2437,7 @@ function LiveTablePage({
      whose socket connects normally must never be shown an error about a
      redundant prefetch. Silence toward the player, loud toward us. */
   useEffect(() => {
-    if (!tableId || engineSnapshot) return;
+    if (!tableId || engineSnapshot || lightningRoomRef.current) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -3483,7 +3534,13 @@ function LiveTablePage({
         const armCap = serverAction === 'auto_call' ? preActionCallAmountRef.current : undefined;
         void retryAsync(
           async () => {
-            const res = await serverSetPreAction(tableId, serverAction, armCap);
+            /* LIGHTNING PHASE 6: in a Lightning room the arm names its hand. */
+            const lightningArmHandId = lightningRoomRef.current
+              ? lightningHandId(engineSnapshotRef.current as LightningSnapshotFields)
+              : null;
+            const res = lightningArmHandId
+              ? await serverSetPreAction(tableId, serverAction, armCap, lightningArmHandId)
+              : await serverSetPreAction(tableId, serverAction, armCap);
             if (!res?.success) {
               throw new Error(`network/preaction-arm: ${res?.error || 'engine refused'}`);
             }
@@ -3559,7 +3616,13 @@ function LiveTablePage({
           reportError(err, 'TablePage.PreAction_clear_refused');
           hadPreActionRef.current = true;
           // Show what the engine is still holding, rather than nothing.
-          if (armed) setPreAction(armed);
+          /* Never in a Lightning room: by the time a clear has failed the
+             next hand may already be on the felt, and an arm restored here
+             would belong to it. The engine drops the old one at the hand's
+             end on its own. */
+          if (lightningRoomRef.current) {
+            // Lightning: left disarmed (see above).
+          } else if (armed) setPreAction(armed);
           toast?.error?.('Could Not Cancel Your Pre-Action, It May Still Run This Hand.');
         });
       }
@@ -3788,6 +3851,17 @@ function LiveTablePage({
   // after an await, without putting tableId in the effect's dependencies.
   const notFoundTableIdRef = useRef(tableId);
   notFoundTableIdRef.current = tableId;
+  /* LIGHTNING PHASE 7: LIGHTNING -> MUST_MOVE closes this room once every
+     Lightning hand has settled. Each 4404 on a Lightning room asks the
+     database (fn_lightning_my_session); the answer that names the player's
+     live seat turns the room into the MUST MOVE notice below, with one button
+     to that table. Never an automatic move (CLAUDE.md 10.6). */
+  const lightningReversion = useLightningReversion({
+    clusterId: lightningRoom?.clusterId ?? null,
+    roomClosed: lightningRoom && engineLastError?.code === 4404 ? engineLastError : null,
+  });
+  const lightningReturnRef = useRef<string | null>(null);
+  lightningReturnRef.current = lightningReversion.seatTableId;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3835,7 +3909,7 @@ function LiveTablePage({
              is still announced. A read that fails, or a row that is gone,
              closed, deleted or a tournament's, is today's behaviour exactly. */
           const askedFor = notFoundTableIdRef.current;
-          if (askedFor) {
+          if (askedFor && !lightningRoomRef.current) {
             const { data: tableRow, error: tableRowError } = await supabase
               .from('tables')
               .select('id, tournament_id, status, game_type, is_deleted')
@@ -3855,6 +3929,14 @@ function LiveTablePage({
               reconnectEngineNow();
               return;
             }
+          }
+          if (lightningRoomRef.current) {
+            /* The MUST MOVE notice already says Lightning has ended, and where
+               the seat is: a second message would only repeat it. */
+            if (!lightningReturnRef.current) {
+              heartbeatToastRef.current?.info?.('Your Lightning Session Has Ended');
+            }
+            return;
           }
           heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
         })();
@@ -7259,7 +7341,7 @@ function LiveTablePage({
   const [killPotRules, setKillPotRules] = useState<KillTableRule | null>(null);
   const killRulesApply = !tableState.isTournament && isKillVariant(tableState.gameType);
   useEffect(() => {
-    if (!tableId || !isUUID(tableId) || !killRulesApply) {
+    if (!tableId || !isUUID(tableId) || !killRulesApply || lightningRoomRef.current) {
       setKillPotRules(null);
       return;
     }
@@ -7764,7 +7846,27 @@ function LiveTablePage({
       // so every top-up charged the player twice for a single stack increase.
       // The engine is now the sole authoritative debit; UI/session trackers update
       // only after it acks.
-      const res = await GameServerAPI.addChips(tableId, amount, opId);
+      /* LIGHTNING PHASE 6: a pool-session room holds no seat; the chips sit
+         on the player's anchor seat, so the add-on is addressed there (the
+         room id answered "Player not seated"). Read fresh, never cached. */
+      let addOnTableId: string = tableId;
+      const addOnRoom = lightningRoomRef.current;
+      if (addOnRoom) {
+        let anchor: LightningAnchorSeat | null = null;
+        try {
+          anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId);
+        } catch (anchorErr) {
+          reportError(anchorErr, 'TablePage.lightning_addon_anchor_read_failed', {
+            clusterId: addOnRoom.clusterId,
+          });
+        }
+        if (!anchor) {
+          toast.error(`Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
+          return false;
+        }
+        addOnTableId = anchor.anchorTableId;
+      }
+      const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
       if (!res.success) {
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
@@ -7929,13 +8031,17 @@ function LiveTablePage({
     let watchedPoolId: string | null = null;
 
     const start = async () => {
-      const { data: tableData, error: bbjTableErr } = await supabase
-        .from('tables')
-        .select('club_id')
-        .eq('id', tableId)
-        .maybeSingle();
-      if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
-      const actualClubId = tableData?.club_id;
+      /* A Lightning room's club is its Cluster's; it has no `tables` row. */
+      let actualClubId: string | null | undefined = lightningClubId;
+      if (!lightningRoomRef.current) {
+        const { data: tableData, error: bbjTableErr } = await supabase
+          .from('tables')
+          .select('club_id')
+          .eq('id', tableId)
+          .maybeSingle();
+        if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+        actualClubId = tableData?.club_id;
+      }
       if (!actualClubId || cancelled) return;
 
       stopPool = watchBbjPool(actualClubId, (snap) => {
@@ -7961,7 +8067,7 @@ function LiveTablePage({
       if (stopMini) stopMini();
       if (stopHits) stopHits();
     };
-  }, [tableId]);
+  }, [tableId, lightningClubId]);
 
   // ── RABBIT HUNT (Dan 2026-08-25) ────────────────────────────────────────
   // The client no longer holds the cards, because it never should have. The
@@ -8222,6 +8328,16 @@ function LiveTablePage({
   // The services behind them work fine; nothing ever called them. Each panel
   // now loads lazily when it is opened, so a closed panel costs nothing.
 
+  // THE DIAMOND ARENA'S BOARD (Phase 10, line 1; migration 20260930043000).
+  // player_stats never holds a Diamond hand, so a Diamond table asks its own
+  // board, from the one arena source this page already has, and says whether
+  // it is still asking or could not tell. At a chip table this is false and
+  // the board is asked and drawn exactly as before.
+  const leaderboardIsDiamond = tableState.arenaAsset === 'diamonds';
+  const [diamondLeaderboardState, setDiamondLeaderboardState] = useState<
+    'loading' | 'ready' | 'failed'
+  >('loading');
+
   // Leaderboard. Real data only became possible today: player_stats.vpip/pfr
   // and tournaments_played/won had no writer, so this board would have been
   // all zeros even if it had been wired.
@@ -8229,7 +8345,7 @@ function LiveTablePage({
     if (!showLeaderboard) return;
     let cancelled = false;
     const clubId = actualClubIdRef.current;
-    if (!clubId) {
+    if (!clubId && !leaderboardIsDiamond) {
       setLeaderboardPlayers([]);
       return;
     }
@@ -8240,14 +8356,20 @@ function LiveTablePage({
       month: 'monthly',
       allTime: 'all_time',
     };
+    if (leaderboardIsDiamond) setDiamondLeaderboardState('loading');
     (async () => {
       try {
-        const rows = await LeaderboardService.getClubLeaderboard(
-          clubId,
-          'profit',
-          periodMap[leaderboardPeriod] || 'weekly',
-          25
-        );
+        const rows = leaderboardIsDiamond
+          ? await LeaderboardService.getDiamondArenaLeaderboard(
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            )
+          : await LeaderboardService.getClubLeaderboard(
+              clubId as string,
+              'profit',
+              periodMap[leaderboardPeriod] || 'weekly',
+              25
+            );
         if (cancelled) return;
         setLeaderboardPlayers(
           (rows || []).map((r) => ({
@@ -8260,14 +8382,20 @@ function LiveTablePage({
             isCurrentUser: r.userId === userId,
           }))
         );
+        if (leaderboardIsDiamond) setDiamondLeaderboardState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadLeaderboard');
+        if (cancelled) return;
+        reportError(e, 'TablePage.loadLeaderboard');
+        if (leaderboardIsDiamond) {
+          setLeaderboardPlayers([]);
+          setDiamondLeaderboardState('failed');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showLeaderboard, leaderboardPeriod, userId]);
+  }, [showLeaderboard, leaderboardPeriod, userId, leaderboardIsDiamond]);
 
   // Sound & vibration preferences — extracted to useTableSound hook
   const {
@@ -9774,14 +9902,59 @@ function LiveTablePage({
     showLobbyNow();
   };
 
+  /**
+   * LIGHTNING PHASE 6: where a leave from this room is addressed.
+   *   - `undefined`: not a Lightning room; the table's own seat, as always.
+   *   - a seat: the caller's anchor seat, read fresh from fn_lightning_my_session.
+   *   - `null`: a Lightning room with no open pool session: nothing to cash out.
+   *   - 'unreadable': the read failed; the seat may hold chips, so it stays.
+   */
+  const resolveLightningLeave = async (): Promise<
+    LightningAnchorSeat | null | undefined | 'unreadable'
+  > => {
+    const room = lightningRoomRef.current;
+    if (!room || !userId || userId === 'guest') return undefined;
+    try {
+      const session = await fetchMyLightningSession(room.clusterId);
+      if (!hasLightningRoom(session)) return null;
+      const anchor = lightningAnchorSeat(session);
+      if (anchor) return anchor;
+      /* An open session whose anchor the answer did not name: the chips are
+         somewhere real, so this is never treated as "nothing to cash out". */
+      reportError(
+        new Error('fn_lightning_my_session named no anchor seat'),
+        'TablePage.lightning_leave_anchor_missing',
+        { clusterId: room.clusterId }
+      );
+      return 'unreadable';
+    } catch (err) {
+      reportError(err, 'TablePage.lightning_leave_anchor_read_failed', {
+        clusterId: room.clusterId,
+      });
+      return 'unreadable';
+    }
+  };
   const handleLeaveTable = async () => {
     setLeaveNotice(null);
     leaveNavigatedRef.current = false;
 
+    /* LIGHTNING PHASE 6: a pool-session room holds no seat of its own. The
+       chips sit on the player's anchor seat, so the leave and the cash out
+       are addressed to that seat (the room id answered 503). Between hands
+       the felt shows no seat at all, so the anchor is what says whether
+       there is anything to cash out. */
+    const lightningLeave = await resolveLightningLeave();
+    if (lightningLeave === 'unreadable') {
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+      return;
+    }
+
     // Nothing to cash out: a spectator, a guest, or a session that has not
     // hydrated yet. The door opens (Dan 2026-09-04, above).
-    const liveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
-    if (!tableId || !userId || liveSeat <= 0) {
+    const liveSeat = lightningLeave
+      ? lightningLeave.seatNumber
+      : Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || liveSeat <= 0 || lightningLeave === null) {
       leaveWithoutCashout(liveSeat);
       return;
     }
@@ -9862,8 +10035,19 @@ function LiveTablePage({
     showLobbyNow();
 
     try {
-      const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      const leaveTableId = lightningLeave ? lightningLeave.anchorTableId : tableId;
+      const result = lightningLeave
+        ? await tableService.leaveTable(leaveTableId, lightningLeave.seatNumber, userId, {
+            seatNumber: lightningLeave.seatNumber,
+            occupancyId: lightningLeave.occupancyId,
+          })
+        : await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
+        /* A leave during a live Lightning hand is queued: the hand finishes,
+           then the anchor seat cashes out. Say so, once, over the lobby. */
+        if (lightningLeave && result.deferred) {
+          heartbeatToastRef.current?.info?.(LIGHTNING_LEAVE_QUEUED_TEXT);
+        }
         // FIX 132: Clear heroSeatRef so player can re-seat at another table
         heroSeatRef.current = 0;
         // Dan 2026-08-19: the REF was cleared but tableState.heroSeat was not,
@@ -9946,7 +10130,12 @@ function LiveTablePage({
           // about to navigate away and unmount, so the host must be able to
           // find the row on its own.
           pendingCashout: result.deferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: result.occupancyId }
+            ? {
+                tableId: leaveTableId,
+                userId,
+                sinceMs: Date.now(),
+                occupancyId: result.occupancyId,
+              }
             : undefined,
         });
 
@@ -10045,8 +10234,16 @@ function LiveTablePage({
        only fail for a seat that did not exist, and the failure's text
        ("Authentication Required") was shown as the reason the tab could not
        be closed. */
-    const forceLiveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
-    if (!tableId || !userId || forceLiveSeat <= 0) {
+    /* LIGHTNING PHASE 6: the room's seat is the anchor seat (see handleLeaveTable). */
+    const forceLightning = await resolveLightningLeave();
+    if (forceLightning === 'unreadable') {
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+      return;
+    }
+    const forceLiveSeat = forceLightning
+      ? forceLightning.seatNumber
+      : Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || forceLiveSeat <= 0 || forceLightning === null) {
       heroSeatRef.current = 0;
       pendingSeatStackRef.current = 0;
       if (userId) playerStatusService.clearPlayingAt(userId);
@@ -10103,7 +10300,16 @@ function LiveTablePage({
       // lobby believing they had cashed out while their seat stayed active and
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
-      const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      const forceTableId = forceLightning ? forceLightning.anchorTableId : tableId;
+      const forced = forceLightning
+        ? await tableService.leaveTable(forceTableId, forceLightning.seatNumber, userId, {
+            seatNumber: forceLightning.seatNumber,
+            occupancyId: forceLightning.occupancyId,
+          })
+        : await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      if (forceLightning && forced?.success && forced.deferred) {
+        heartbeatToastRef.current?.info?.(LIGHTNING_LEAVE_QUEUED_TEXT);
+      }
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
         // CHIP CONTINUITY: a stay-clock refusal ("Leave Available In M:SS")
@@ -10175,7 +10381,12 @@ function LiveTablePage({
           sessionEnd: Date.now(),
           plPending: forceDeferred,
           pendingCashout: forceDeferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: forced.occupancyId }
+            ? {
+                tableId: forceTableId,
+                userId,
+                sinceMs: Date.now(),
+                occupancyId: forced.occupancyId,
+              }
             : undefined,
         });
       }
@@ -10534,7 +10745,7 @@ function LiveTablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId || userId === 'guest') return;
+    if (!tableId || !userId || userId === 'guest' || lightningRoomRef.current) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -12003,6 +12214,11 @@ function LiveTablePage({
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
+  /* SHARE AS VIDEO (Phase 9.1): the hand_history id behind sharedHandData
+     when the share came from a stored record. The live snapshot taken as a
+     hand ends has no row id yet, so it clears this and the sheet shows no
+     video panel for it. */
+  const [sharedHandId, setSharedHandId] = useState<string | null>(null);
 
   // Real Name vs Alias
   const [useRealName, setUseRealName] = useState(() => {
@@ -12121,10 +12337,16 @@ function LiveTablePage({
   useEffect(() => {
     let isMounted = true;
     let durableCompletionRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let bountyMapPollTimer: ReturnType<typeof setInterval> | null = null;
     let durableCompletionRetryCycle = 0;
     let durableCompletionFailureReported = false;
     async function loadTableInfo() {
       if (!tableId) return;
+      /* LIGHTNING PHASE 6: a pool session has no `tables` row to read. Its
+         felt is described from its Cluster (seeded below) and then by the
+         engine snapshot, so there is nothing to bootstrap and nothing to
+         report as missing. */
+      if (lightningRoomRef.current) return;
 
       /* BOOTSTRAP RETRY (2026-08-24). This is the ONE query everything on the
          felt is scaffolded from — blinds, seat count, club, settings. It used
@@ -12232,6 +12454,25 @@ function LiveTablePage({
          `tableState.tournamentId`, which is only ever set from the row that
          just failed to load. Say what happened and offer the way out. */
       if (!table && isMounted) {
+        /* LIGHTNING PHASE 6: A ROOM IS NOT A MISSING TABLE. A pool-session
+           room has no `tables` row, and a new tab, a shared link or a bookmark
+           arrives without this tab's registry. Before saying the table does
+           not exist, ask whether this id is the caller's own Lightning room;
+           if it is, it is registered and the felt is described from its
+           Cluster like any other Lightning room. */
+        if (!error && tableId) {
+          try {
+            const room = await findMyLightningRoom(tableId);
+            if (!isMounted) return;
+            if (room) {
+              setTableLoadFailure(null);
+              return;
+            }
+          } catch (lookupErr) {
+            reportError(lookupErr, 'TablePage.lightning_room_lookup_failed', { tableId });
+          }
+          if (!isMounted || lightningRoomRef.current) return;
+        }
         if (error) reportError(error, 'TablePage.loadTableInfo_exhausted_retries');
         setTableLoadFailure(error ? 'unreachable' : 'missing');
         return;
@@ -13040,6 +13281,41 @@ function LiveTablePage({
                 }
               });
             bountyChannelRef.current = bountyChannel;
+
+            /* ═══ THE BOUNTY BADGES ARE RE-READ, NOT ONLY HEARD (2026-10-01) ═══
+               `tournament_players` is not in the realtime publication (removed
+               by measurement on 2026-09-19 - the most written table on the
+               platform), so the UPDATE listener above never fires. The engine's
+               `bounty_collected` broadcast moves the heads of a knockout on this
+               table, but a head that changes anywhere else - a re-entry buying a
+               fresh head, a player balanced in from another table after this
+               page mounted - stayed as the mount read left it, so a PKO table
+               showed a missing or wrong bounty on exactly the player a call is
+               being priced against. One bounded read on a slow cadence keeps
+               every badge true; a failed read keeps the map the table has. */
+            const refreshBountyMap = async () => {
+              if (!isMounted || document.hidden) return;
+              const { data: rows, error: readErr } = await supabase
+                .from('tournament_players')
+                .select('user_id, current_bounty')
+                .eq('tournament_id', table.tournament_id)
+                .gt('current_bounty', 0);
+              if (!isMounted || readErr || !rows) return;
+              const next: Record<string, number> = {};
+              rows.forEach((p: { user_id: string; current_bounty: number }) => {
+                next[p.user_id] = p.current_bounty;
+              });
+              setTableState((prev) => {
+                const before = prev.bountyMap || {};
+                const keys = Object.keys(next);
+                const same =
+                  keys.length === Object.keys(before).length &&
+                  keys.every((k) => before[k] === next[k]);
+                return same ? prev : { ...prev, bountyMap: next };
+              });
+            };
+            if (bountyMapPollTimer) clearInterval(bountyMapPollTimer);
+            bountyMapPollTimer = setInterval(() => void refreshBountyMap(), 30_000);
           } else if (tournData?.spin_multiplier) {
             setTableState((prev) => ({
               ...prev,
@@ -14571,6 +14847,10 @@ function LiveTablePage({
         clearTimeout(durableCompletionRetryTimer);
         durableCompletionRetryTimer = null;
       }
+      if (bountyMapPollTimer) {
+        clearInterval(bountyMapPollTimer);
+        bountyMapPollTimer = null;
+      }
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
@@ -14728,8 +15008,16 @@ function LiveTablePage({
     const s = payload?.settings || payload;
     if (!s) return;
     // Apply sound preference if changed
-    if (typeof s.soundEnabled === 'boolean') {
-      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
+    // MUTE ONLY (2026-09-27). This payload is the Settings page's cached copy,
+    // re-sent on every tab return and theme change, and it goes stale the
+    // moment the player mutes at the table or in the menu (those write the
+    // sound keys, not this cache). So it may only ever turn sound OFF: a stale
+    // `true` here must never un-mute a player. Sound ON from the Settings page
+    // already arrives through useTableSettings (applyGateChanges -> setEnabled).
+    // Off goes through the engine, which also returns the Safari audio session
+    // to "ambient", so a player's music is not left paused.
+    if (s.soundEnabled === false) {
+      soundService.setEnabled(false);
     }
     // 2026-08-18: a `deckStyle` branch used to live here writing
     // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read
@@ -16934,6 +17222,7 @@ function LiveTablePage({
               .slice(1)
               .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
               .filter((b) => b.length > 0);
+            setSharedHandId(null);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
               tableName: st.tableName || 'Club Arena',
@@ -20384,8 +20673,100 @@ function LiveTablePage({
 
     let cancelled = false;
     let reloadTimer = 0;
+    /* Whether the last roster read had the hero in a chair - the only proof
+       this page has that a cancellation took THEIR buy-in back. */
+    let heroHeldSeat = false;
+    let cancelNoticeShown = false;
+
+    /**
+     * ═══ THE TOURNAMENT ROW IS POLLED, NOT ONLY HEARD (2026-10-01) ═══
+     *
+     * `tournaments` left the realtime publication by measurement on
+     * 2026-09-19 (scripts/ci/check-realtime-publication.mjs, KNOWN_UNPUBLISHED),
+     * so the UPDATE listener below joins, reports SUBSCRIBED and never fires.
+     * Every transition it carried was therefore invisible to a seat-first
+     * table: a Spin that the unfilled sweep (fn_spin_expire_unfilled) cancelled
+     * and refunded left the player at an empty felt that went on selling
+     * seats in a CANCELLED game with no word about their money, and the
+     * level-1 clock never started. One row read rides the roster poll and
+     * feeds the same handler the channel does.
+     */
+    const applyTournamentRow = (
+      row: {
+        status?: string;
+        current_level?: number;
+        level_started_at?: string;
+      } | null
+    ) => {
+      const status = String(row?.status ?? '').toUpperCase();
+      /* The game ENDED under us: no round is running, so the countdown
+         comes off rather than sitting at 0:00 forever (2026-08-28). This
+         is the live twin of the mount-time `gameIsOver` guard. */
+      if (['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)) {
+        /* A seat-first game that is CANCELLED before it dealt refunded every
+           seat (atomic_cancel_tournament). Tell the player who paid, once. */
+        if (status === 'CANCELLED' && heroHeldSeat && !cancelNoticeShown) {
+          cancelNoticeShown = true;
+          const label = seatFirstBuyIn?.label ?? 'Game';
+          heartbeatToastRef.current?.info?.(
+            `This ${label} Did Not Fill And Was Cancelled. Your Buy-In Was Refunded.`
+          );
+        }
+        setPlayHasBegun(true);
+        setLevelClock(null);
+        return;
+      }
+      if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
+        // The game left the selling state under us. Take the sheet down
+        // now — the D8 effect clears seatFirstBuyIn off this latch.
+        setPlayHasBegun(true);
+        /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
+           effect no longer fabricates a countdown for a REGISTERING
+           table (that was the phantom "LEVEL 1 · 2:57" every spectator
+           watched restart on every reload), and the engine's level_up
+           broadcast only fires from level 2. This transition IS level
+           1 starting, and the row carries its own stamp. */
+        const struct = blindStructRef.current;
+        const lvlIdx = Number(row?.current_level ?? 0);
+        const entry =
+          struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
+          struct.find((bl) => bl.level === lvlIdx + 1);
+        const durSec = entry
+          ? Number(entry.duration) ||
+            (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
+          : 0;
+        if (durSec > 0) {
+          const startedAtMs = row?.level_started_at ? Date.parse(row.level_started_at) : Date.now();
+          setLevelClock({
+            startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+            durationSec: durSec,
+          });
+        }
+      }
+    };
+
+    const reloadTournamentRow = async (): Promise<boolean> => {
+      if (!tournId) return false;
+      const { data: row, error } = await supabase
+        .from('tournaments')
+        .select('status, current_level, level_started_at')
+        .eq('id', tournId)
+        .maybeSingle();
+      if (cancelled) return true;
+      if (error) {
+        // An unanswered read is not a transition; the next poll asks again.
+        reportError(error, 'TablePage.seat_first_tournament_reload', { tableId, tournId });
+        return false;
+      }
+      if (!row) return false;
+      const status = String(row.status ?? '').toUpperCase();
+      applyTournamentRow(row as Parameters<typeof applyTournamentRow>[0]);
+      return status !== 'REGISTERING' && status !== 'ANNOUNCED';
+    };
 
     const reloadRoster = async () => {
+      if (await reloadTournamentRow()) return;
+      if (cancelled) return;
       const { data: seats, error } = await supabase
         .from('table_seats')
         .select('seat_number, user_id, stack, is_sitting_out, horse_id')
@@ -20398,6 +20779,7 @@ function LiveTablePage({
         return;
       }
       const seatRows = seats || [];
+      heroHeldSeat = !!userId && seatRows.some((s) => s.user_id === userId);
       const userIds = seatRows.map((s) => s.user_id).filter(Boolean);
       let profileMap = new Map<string, Record<string, unknown>>();
       if (userIds.length > 0) {
@@ -20499,51 +20881,14 @@ function LiveTablePage({
       channel.on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournId}` },
-        (payload) => {
-          const row = payload.new as {
-            status?: string;
-            current_level?: number;
-            level_started_at?: string;
-          } | null;
-          const status = String(row?.status ?? '').toUpperCase();
-          /* The game ENDED under us: no round is running, so the countdown
-             comes off rather than sitting at 0:00 forever (2026-08-28). This
-             is the live twin of the mount-time `gameIsOver` guard. */
-          if (['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)) {
-            setPlayHasBegun(true);
-            setLevelClock(null);
-            return;
-          }
-          if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
-            // The game left the selling state under us. Take the sheet down
-            // now — the D8 effect clears seatFirstBuyIn off this latch.
-            setPlayHasBegun(true);
-            /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
-               effect no longer fabricates a countdown for a REGISTERING
-               table (that was the phantom "LEVEL 1 · 2:57" every spectator
-               watched restart on every reload), and the engine's level_up
-               broadcast only fires from level 2. This transition IS level
-               1 starting, and the row on the wire carries its own stamp. */
-            const struct = blindStructRef.current;
-            const lvlIdx = Number(row?.current_level ?? 0);
-            const entry =
-              struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
-              struct.find((bl) => bl.level === lvlIdx + 1);
-            const durSec = entry
-              ? Number(entry.duration) ||
-                (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
-              : 0;
-            if (durSec > 0) {
-              const startedAtMs = row?.level_started_at
-                ? Date.parse(row.level_started_at)
-                : Date.now();
-              setLevelClock({
-                startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-                durationSec: durSec,
-              });
-            }
-          }
-        }
+        (payload) =>
+          applyTournamentRow(
+            payload.new as {
+              status?: string;
+              current_level?: number;
+              level_started_at?: string;
+            } | null
+          )
       );
     }
     channel.subscribe();
@@ -21655,10 +22000,8 @@ function LiveTablePage({
   useEffect(() => {
     if (!userId || userId === 'guest' || !showTimeBankStore || timeBankUnlimited) return;
     let alive = true;
-    void supabase
-      .from('profiles')
+    void ownProfile(userId)
       .select('diamonds')
-      .eq('id', userId)
       .maybeSingle()
       .then(({ data }) => {
         const d = Number((data as { diamonds?: number } | null)?.diamonds);
@@ -22423,6 +22766,176 @@ function LiveTablePage({
     setPreAction(null);
   }, [tableState.boardStage, tableState.isHandInProgress, heroLastAction]);
 
+  /* ═══ LIGHTNING PHASE 6: ONE ROOM, MANY HANDS ══════════════════════════════
+     Everything in this block runs only in a Lightning room (a pool session)
+     and is inert at every table. The room keeps its id for the whole session;
+     the hand inside it changes every few seconds. */
+
+  /* What the felt prints before the first snapshot, from the Cluster. The
+     seat arrays are only sized while they are still empty, so a snapshot that
+     has already painted the roster is never overwritten. */
+  const lightningMeta = lightningRoom?.meta ?? null;
+  useEffect(() => {
+    if (!lightningMeta) return;
+    const seed = lightningTableSeed(lightningMeta);
+    setTableState((prev) => {
+      const empty = prev.players.every((p) => !p);
+      const resize = empty && prev.players.length !== seed.maxPlayers;
+      return {
+        ...prev,
+        tableName: seed.tableName,
+        gameType: seed.gameType as TableState['gameType'],
+        blinds: seed.blinds,
+        minBuyIn: seed.minBuyIn,
+        maxBuyIn: seed.maxBuyIn,
+        isTournament: false,
+        ...(resize
+          ? {
+              maxPlayers: seed.maxPlayers,
+              players: createEmptySeats(seed.maxPlayers),
+              positions: Array(seed.maxPlayers).fill(null),
+              lastActions: Array(seed.maxPlayers).fill(null),
+              lastBetAmounts: Array(seed.maxPlayers).fill(0),
+            }
+          : {}),
+      };
+    });
+  }, [lightningMeta]);
+
+  /* The Cluster row asked for once if the room was registered without it. */
+  useEffect(() => {
+    if (!lightningRoom || lightningRoom.meta) return;
+    let live = true;
+    fetchLightningClusterMeta(lightningRoom.clusterId)
+      .then((meta) => {
+        if (live && meta) registerLightningPoolSession({ ...lightningRoom, meta });
+      })
+      .catch((err) =>
+        reportError(err, 'TablePage.lightning_meta_read_failed', {
+          clusterId: lightningRoom.clusterId,
+        })
+      );
+    return () => {
+      live = false;
+    };
+  }, [lightningRoom]);
+
+  /* A room opened from a new tab or a shared link that the database lookup
+     could not place: the engine names its Cluster in the snapshot, and the
+     room is a Lightning room from that moment. Never a "Table Not Found". */
+  const snapshotLightningClusterId = lightningRoom
+    ? null
+    : lightningClusterIdOfSnapshot(engineSnapshot);
+  useEffect(() => {
+    if (!tableId || !snapshotLightningClusterId) return;
+    registerLightningPoolSession({
+      poolSessionId: tableId,
+      clusterId: snapshotLightningClusterId,
+      meta: null,
+    });
+    setTableLoadFailure(null);
+  }, [tableId, snapshotLightningClusterId]);
+
+  /* And what the engine says about the game wins the moment it says it. */
+  useEffect(() => {
+    if (!lightningRoom || !engineSnapshot) return;
+    const patch = lightningSnapshotPatch(engineSnapshot as LightningSnapshotFields);
+    if (Object.keys(patch).length === 0) return;
+    setTableState((prev) =>
+      (patch.tableName === undefined || patch.tableName === prev.tableName) &&
+      (patch.gameType === undefined || patch.gameType === prev.gameType) &&
+      (patch.blinds === undefined || patch.blinds === prev.blinds)
+        ? prev
+        : ({ ...prev, ...patch } as TableState)
+    );
+  }, [lightningRoom, engineSnapshot]);
+
+  /* PRE-ACTION SAFETY. One room deals hand after hand, and two consecutive
+     preflops can look identical to the street-and-hand-in-progress rule
+     above, so an arm is bound to the hand it was made in and dropped the
+     moment the hand on the felt is a different one (or none). It can never
+     execute against a new hand. */
+  const lightningHandKeyNow = lightningRoom
+    ? lightningHandKey(engineSnapshot as LightningSnapshotFields)
+    : null;
+  const lightningArmRef = useRef<{ key: string | null } | null>(null);
+  useEffect(() => {
+    if (!lightningRoom) return;
+    if (preAction === null) {
+      lightningArmRef.current = null;
+      return;
+    }
+    if (lightningArmRef.current === null) {
+      lightningArmRef.current = { key: lightningHandKeyNow };
+      if (lightningHandKeyNow !== null) return;
+    }
+    if (!preActionBelongsToHand(lightningArmRef.current.key, lightningHandKeyNow)) {
+      lightningArmRef.current = null;
+      setPreAction(null);
+    }
+  }, [lightningRoom, preAction, lightningHandKeyNow]);
+
+  /* The platform's row of the Lightning capability map, read once. */
+  const lightningCaps = useMemo(
+    () => lightningCapabilities(detectLightningPlatform(readLightningPlatformSignals())),
+    []
+  );
+  const lightningHero =
+    tableState.heroSeat > 0 ? (tableState.players[tableState.heroSeat - 1] ?? null) : null;
+  /* THE IDLE SNAPSHOT AFTER A FOLD. The engine answers a fold with stage
+     'waiting', no players and LIGHTNING FOLD off, published to the folder's
+     room. Nothing of the folded hand is the player's any more: no fold is
+     offered, and the quiet is timed for "Next Hand..." from that moment. */
+  const lightningHandLive = lightningRoom
+    ? lightningHandOnFelt(engineSnapshot as LightningSnapshotFields)
+    : false;
+  const lightningFold = lightningFoldAvailability(
+    {
+      heroSeated: tableState.heroSeat > 0,
+      handInProgress: tableState.isHandInProgress,
+      handSettling,
+      heroStatus: lightningHero?.status,
+      engineFastFoldAvailable: lightningRoom
+        ? lightningFastFoldFlag(engineSnapshot as LightningSnapshotFields)
+        : null,
+      handOnFelt: lightningHandLive,
+    },
+    lightningCaps
+  );
+  const [lightningFoldBusy, setLightningFoldBusy] = useState(false);
+  const handleLightningFold = useCallback(
+    async (kind: LightningFoldKind) => {
+      if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
+      // The fold supersedes any armed pre-action for this hand.
+      setPreAction(null);
+      setLightningFoldBusy(true);
+      try {
+        const result = await sendLightningFold(tableId, userId, kind);
+        if (!result.success) {
+          toast.warning(result.error || 'That Action Could Not Be Confirmed');
+        }
+      } finally {
+        setLightningFoldBusy(false);
+      }
+    },
+    [tableId, userId, toast]
+  );
+
+  /* JOIN LIGHTNING: the buy-in landed at the anchor table the player joined
+     through, so this tab follows their chair into the pool-session room. */
+  const lightningHandoff = useLightningAnchorHandoff({
+    tableId,
+    isPoolSession: lightningRoom !== null,
+    heroBoughtIn: tableState.heroSeat > 0 && (lightningHero?.stack ?? 0) > 0,
+    follow: (poolSessionId) => {
+      if (embeddedTableId) {
+        onTableInfoUpdate?.({ movedToTableId: poolSessionId });
+        return;
+      }
+      navigate(`/table/${poolSessionId}`, { replace: true });
+    },
+  });
+
   // Timer warning sound — tick when hero's time is running low.
   //
   // PERF 2026-08-25: the two effects that ran this have MOVED, verbatim, into
@@ -22861,7 +23374,7 @@ function LiveTablePage({
           not touch is one merge away from being an unstyled paragraph at the
           top of a fixed-position page. The class names are kept so that
           stylesheet can take it over later without touching this file. */}
-      {tableLoadFailure && (
+      {tableLoadFailure && !lightningRoom && (
         <TableLoadFailureOverlay
           tableLoadFailure={tableLoadFailure}
           exitDestination={exitDestination}
@@ -25706,6 +26219,47 @@ function LiveTablePage({
                 2026-08-25; the twin of it was removed from the ActionPanel on
                 2026-08-15 for exactly the same reason. There is one button. */}
 
+            {/* LIGHTNING PHASE 6: always mounted in a Lightning room while the
+                hero is in the pool, so the strip never enters or leaves
+                between hands; only its words light up when folding is
+                available (on the hero's turn and before it). */}
+            {lightningRoom && userId && userId !== 'guest' ? (
+              <LightningFoldBar
+                availability={lightningFold}
+                offerFoldWatch={lightningCaps.fold_and_watch}
+                busy={lightningFoldBusy}
+                onFold={(kind) => void handleLightningFold(kind)}
+              />
+            ) : null}
+            {lightningRoom ? (
+              <LightningNextHand
+                handInProgress={lightningHandLive && tableState.isHandInProgress}
+              />
+            ) : null}
+            {/* JOIN LIGHTNING completing: the anchor table never deals this
+                player a hand, so it says one neutral line until the tab
+                moves on, rather than showing a dead felt. */}
+            {lightningHandoff.joining && !lightningRoom ? (
+              <LightningJoining onCancel={lightningHandoff.cancel} />
+            ) : null}
+            {/* LIGHTNING PHASE 7: Lightning ended (the Cluster is MUST MOVE)
+                and this room will deal no more. Never a dead felt: the notice
+                and the player's own way back to their seat. The player moves
+                themselves, by the button (CLAUDE.md 10.6). */}
+            {lightningRoom && lightningReversion.seatTableId ? (
+              <LightningEndedNotice
+                onViewGame={() => {
+                  const seatTable = lightningReversion.seatTableId;
+                  if (!seatTable) return;
+                  if (embeddedTableId) {
+                    onTableInfoUpdate?.({ movedToTableId: seatTable });
+                    return;
+                  }
+                  navigate(lightningReturnPath(seatTable), { replace: true });
+                }}
+              />
+            ) : null}
+
             {/* ─── ACTION PANEL — Premium 3-button layout ─── */}
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
                 Chat and Stats have their own dedicated locations */}
@@ -26340,6 +26894,8 @@ function LiveTablePage({
         onShare={(hand) => {
           try {
             setSharedHandData(panelHandToShareable(hand, tableState.tableName || 'Club Arena'));
+            /* A stored record: its id is the hand_history row (Share As Video). */
+            setSharedHandId(hand.id || null);
             setShowHandDetail(false);
             setShowShareHand(true);
           } catch (e) {
@@ -26634,7 +27190,15 @@ function LiveTablePage({
             if (!stillCurrent()) return false;
             if (outcome.kind === 'unknown') {
               reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
-              toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              if (isDeadSessionRefusal(outcome.error)) {
+                /* Phase 11 line 7: a revoked session is refused again on every
+                   retry. The saved request stays, so signing in and retrying
+                   reuses its key; see lib/deadSessionRefusal. */
+                toast.error('Your Session Has Ended. Sign In Again To Finish This Buy-In.');
+                askToSignInAgain('money:cash_buyin');
+              } else {
+                toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              }
               return false;
             }
             cashBuyInPendingRef.current = null;
@@ -26733,6 +27297,7 @@ function LiveTablePage({
         showLeaderboard={showLeaderboard}
         leaderboardPlayers={leaderboardPlayers}
         leaderboardPeriod={leaderboardPeriod}
+        leaderboardDiamondState={leaderboardIsDiamond ? diamondLeaderboardState : undefined}
         onCloseLeaderboard={() => setShowLeaderboard(false)}
         onLeaderboardPeriodChange={setLeaderboardPeriod}
         // Leave Confirm
@@ -26856,6 +27421,7 @@ function LiveTablePage({
         // Share Hand
         showShareHand={showShareHand}
         sharedHandData={sharedHandData}
+        sharedHandId={sharedHandId}
         onCloseShareHand={() => setShowShareHand(false)}
         // Add-On
         addOnPeriod={addOnPeriod}

@@ -9,3 +9,5 @@ derived from `BASE_URL` in both entry points rather than written as a literal
 is reached only through `src/lib/nativeShell.ts` behind a dynamic import. So
 the web bundle is byte-for-byte what it was before the app existed, and the
 publisher can never ship the native bundle by mistake.
+
+Since 2026-09-29 the rule is also checked at every call site: any `import()` of `src/lib/native/*` (or a Capacitor, Capgo or RevenueCat package) outside the native shell must sit behind `IS_NATIVE_BUILD`, not only the runtime bridge check, because Rollup cannot drop a branch it can only answer at runtime - which is how ten chunks of app-only code had reached the website.

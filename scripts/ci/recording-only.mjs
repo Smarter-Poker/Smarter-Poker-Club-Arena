@@ -226,6 +226,8 @@ export function classifyMigration(file, { repo, manifest } = {}) {
   }
   return {
     state: 'recorded',
+    // New consumers require actual manifest bytes, never the frozen legacy marker.
+    manifestMatched: true,
     reason:
       `byte-identical (md5 ${actual}) to the SQL production applied as ${version}; ` +
       `live evidence is recorded in ${MANIFEST_PATH}`,

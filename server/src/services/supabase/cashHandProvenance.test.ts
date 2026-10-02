@@ -62,6 +62,44 @@ describe('original cash funding manifest transport', () => {
       )
     ).rejects.toThrow();
   });
+  it('asks again with the identical request when a response is lost, and takes the same manifest', async () => {
+    rpc
+      .mockRejectedValueOnce(new Error('socket hang up'))
+      .mockResolvedValueOnce({ error: { message: 'upstream timeout' } })
+      .mockResolvedValueOnce({ data: { version: 1, manifest_id: manifest }, error: null });
+    const roster = [participant(1), participant(2, true)];
+    await expect(
+      captureCashHandProvenance('table', 1000001, roster, 'engine', 'generation')
+    ).resolves.toBe(manifest);
+    expect(rpc).toHaveBeenCalledTimes(3);
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+    expect(rpc.mock.calls[2]).toEqual(rpc.mock.calls[0]);
+  });
+  it('gives up after three unavailable answers and never retries a malformed receipt', async () => {
+    rpc.mockResolvedValue({ error: { message: 'unavailable' } });
+    await expect(
+      captureCashHandProvenance(
+        'table',
+        1000001,
+        [participant(1), participant(2)],
+        'engine',
+        'generation'
+      )
+    ).rejects.toThrow('unavailable');
+    expect(rpc).toHaveBeenCalledTimes(3);
+    rpc.mockReset();
+    rpc.mockResolvedValue({ data: { version: 1, manifest_id: 'fake' }, error: null });
+    await expect(
+      captureCashHandProvenance(
+        'table',
+        1000001,
+        [participant(1), participant(2)],
+        'engine',
+        'generation'
+      )
+    ).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
   it('keeps the frozen manifest identity through the existing settlement map copy', () => {
     const roster = [participant(1), participant(2, true)];
     const result = new Map(

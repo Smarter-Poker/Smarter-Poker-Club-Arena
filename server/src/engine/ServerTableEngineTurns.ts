@@ -54,11 +54,14 @@ import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { noteFire } from './BrainTelemetry.js';
 import {
   createHorseExecutionWitness,
+  recordHorsePhase8Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
+  withdrawHorsePhase8Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
+import { liveHorsePhase8Authority } from './HorseQualifiedAuthority.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -2504,11 +2507,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       localIssues.push('live_blinds_invalid');
     }
     if (dealtPlayers.length < 2) localIssues.push('live_seat_state_incomplete');
+    const dealerOccupied = dealtPlayers.some((candidate) => candidate.seat === dealerSeat);
     if (
       !Number.isSafeInteger(dealerSeat) ||
-      !dealtPlayers.some((candidate) => candidate.seat === dealerSeat)
+      (dealerSeat as number) < 1 ||
+      (dealerSeat as number) > 10 ||
+      (dealtPlayers.length <= 2 && !dealerOccupied)
     ) {
       localIssues.push('dealer_seat_missing');
+    } else if (!dealerOccupied) {
+      // A multiway tournament may have a valid empty physical button. The
+      // current atlas assumes an occupied BTN; do not label the last live
+      // seat BTN or turn an unsupported coordinate into missing live facts.
+      localIssues.push('dead_button_atlas_unsupported');
     }
     if (
       tctx &&
@@ -3498,6 +3509,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             return;
           }
 
+          // Phase 8.3: a selected candidate is accepted only under authority
+          // that is usable NOW, in the same synchronous turn as performAction.
+          // A FAST answer that waited out think time, or a DEEP answer that
+          // replaced it, is checked here; missing, stale, withdrawn, refused,
+          // mismatched, expired or restarted authority executes the reference
+          // decision the shadow path would have executed.
+          if (postflopLedger?.applied) {
+            const verdict = liveHorsePhase8Authority.check(postflopLedger.authority);
+            postflopLedger.authorityVerdict = verdict;
+            noteFire(`phase8_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase8Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase8Selection(decision.executionWitness, decisionSnapshot, verdict);
+              postflopLedger.applied = false;
+              postflopLedger.selection = 'withdrawn_before_acceptance';
+              decision = {
+                ...decision,
+                action: postflopLedger.baselineAction,
+                amount: postflopLedger.baselineAmount ?? undefined,
+              };
+              noteFire('phase8_selection_withdrawn_before_acceptance');
+            }
+          }
+
           let action = decision.action as string;
           let amount = decision.amount;
 
@@ -3847,6 +3883,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     ? 'intended'
                     : 'coerced';
               noteFire(`phase8_execution_${postflopLedger.executionStatus}`);
+              if (postflopLedger.selection === 'selected') {
+                if (postflopLedger.executionStatus === 'intended') {
+                  postflopLedger.selection = 'controller_accepted';
+                  noteFire('phase8_selection_controller_accepted');
+                } else if (
+                  postflopLedger.executionStatus === 'fallback' ||
+                  postflopLedger.executionStatus === 'coerced'
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable, local to this process.
+                  liveHorsePhase8Authority.withdraw(
+                    `controller_${postflopLedger.executionStatus}_candidate`
+                  );
+                  noteFire('phase8_authority_controller_withdrawn');
+                }
+              }
             }
           });
           // Unconditional markProgress() here reset watchdogTrips even when all

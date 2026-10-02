@@ -1,0 +1,124 @@
+{
+  "stage": "6D",
+  "subject": "the 68 incomplete chains of docs/evidence/phase6d/population-2026-09-27.json (release 6b6eabb1, decisions 16:17:36Z to 16:21:07Z)",
+  "readAt": "2026-09-27T22:00Z to 22:15Z",
+  "method": [
+    "engine host, read-only (sqlite mode=ro, query_only): each admitted chain's hand located by its archive rowid, every record of that hand re-read from the catalog, the legacy store and archive_pending; per-producer sequence continuity over the stratum rowids 4139805 to 4157394",
+    "Supabase kuklfnapbkmacvwxktbh, read-only: the chains' tables and hand numbers (taken from each decision's own turn fence) joined to hand_history and hand_atomic_commits; per-minute phase15_journal_* counters from horse_brain_flush_receipts",
+    "only aggregates are recorded here; no hand key, table, player or card leaves the read"
+  ],
+  "chains": {
+    "admitted": 148,
+    "complete": 80,
+    "incomplete": 68,
+    "byMissingLinks": {
+      "acceptedAction present, completedHand missing:accepted_hand": 32,
+      "missing:execution_witness and missing:accepted_hand": 21,
+      "missing:execution_witness, completedHand missing:hand_binding:no_witness": 14,
+      "missing:accepted_action:second_look_unchanged and missing:accepted_hand": 1
+    },
+    "distinctHandsByCategory": {
+      "witness present, completed hand absent": 19,
+      "witness and completed hand absent": 20,
+      "completed hand present, witness absent": 13,
+      "deep second look, completed hand absent": 1,
+      "complete": 49
+    },
+    "stillAbsentAtReread": {
+      "executionWitnessMissing": { "chains": 35, "foundOnReread": 0 },
+      "acceptedHandMissing": { "chains": 54, "foundOnReread": 0 },
+      "note": "re-read about five and a half hours after the decisions: nothing was late; the records were never archived"
+    }
+  },
+  "database": {
+    "handCategoryRowsJoined": 102,
+    "byCategory": {
+      "witness present, completed hand absent": {
+        "hands": 19,
+        "hand_history": 19,
+        "hand_atomic_commits": 19,
+        "post_commit_completed": 19,
+        "committed": "16:18:40Z to 16:21:09Z"
+      },
+      "witness and completed hand absent": {
+        "hands": 20,
+        "hand_history": 20,
+        "hand_atomic_commits": 20,
+        "post_commit_completed": 20,
+        "committed": "16:19:23Z to 16:21:19Z"
+      },
+      "completed hand present, witness absent": {
+        "hands": 13,
+        "hand_history": 13,
+        "hand_atomic_commits": 13,
+        "post_commit_completed": 13,
+        "committed": "16:18:57Z to 16:21:27Z"
+      },
+      "deep second look, completed hand absent": {
+        "hands": 1,
+        "hand_history": 1,
+        "hand_atomic_commits": 1,
+        "post_commit_completed": 1,
+        "committed": "16:19:40Z"
+      },
+      "complete": {
+        "hands": 49,
+        "hand_history": 49,
+        "hand_atomic_commits": 49,
+        "post_commit_completed": 49,
+        "committed": "16:14:58Z to 16:21:07Z"
+      }
+    },
+    "conclusion": "every hand behind an incomplete chain was committed, with its post-commit step completed, within seconds of the decision; no submission was left retained and unsettled"
+  },
+  "journalContinuity": {
+    "stratumRowids": [4139805, 4157394],
+    "producers": 1,
+    "sequenceRange": [1, 153668],
+    "archived": 17589,
+    "notArchived": 136079,
+    "holes": 973,
+    "firstHoleAfter": "2026-09-27T16:18:28.656Z",
+    "holesBeforeThat": 0,
+    "incompleteChainsWhoseMissingRecordWasDueBeforeTheFirstHole": 0,
+    "missingWitnessDecisionsFrom": "2026-09-27T16:18:36.268Z",
+    "missingHandChainsLastArchivedHandRecordFrom": "2026-09-27T16:18:40.047Z",
+    "completeChainsWithDecisionAfterFirstHole": 13
+  },
+  "telemetry6b6eabb1": {
+    "source": "horse_brain_flush_receipts, phase15_journal_* per minute",
+    "otherShard": "16:15Z: retry_exhausted 1 and unavailable 1 on one worker; that shard's publisher failed and every later record from its tables counted capture_unavailable, so those tables are absent from the archive (no chain from them could be admitted)",
+    "survivingShardQueueCapacityPerMinute": {
+      "16:19": 320,
+      "16:20": 905,
+      "16:21": 1357,
+      "16:22": 2048,
+      "16:23": 2883,
+      "16:24": 2951,
+      "16:25": 4441
+    },
+    "survivingShardRecordedPerMinute": {
+      "16:16": 445,
+      "16:17": 579,
+      "16:18": 642,
+      "16:19": 656,
+      "16:20": 800,
+      "16:21": 784,
+      "16:22": 672,
+      "16:23": 400,
+      "16:24": 480,
+      "16:25": 464
+    },
+    "survivingShardRetryScheduledAfter1615": 0,
+    "per10MinutesFrom1620To1750": "recorded 2644 to 5680, queue_capacity 16226 to 55471"
+  },
+  "comparisonLaterReleases": {
+    "a3806102 18:30Z to 18:50Z, one shard capturing": "recorded 38230 to 40099 per 10 minutes, queue_capacity 682 to 2226",
+    "e6b9dc5d 21:30Z to 22:00Z, one shard capturing": "recorded 11787 to 39745 per 10 minutes, queue_capacity 0 to 80",
+    "e6b9dc5d 21:10Z to 21:20Z, two shards restarting writers": "queue_capacity 33698, retry_scheduled 150; 21:22:51Z termination_unverified stopped one shard"
+  },
+  "rootCause": "Horse Brain decision journal (phase 15) capture loss. The publisher (server/src/services/HorseDecisionJournal.ts, record()) spends a sequence number and then sheds the record when its queue holds 64 records or 4 MiB (queue_capacity). On 6b6eabb1 one shard's publisher had failed at 16:15Z, and from 16:18:28Z the surviving shard's writer acknowledged about 9 records a second against several times that demand, so it shed witnesses and completed-hand records of hands that the engine committed normally.",
+  "notTheCause": "tournament custody: the retained-submission and F06 custody defects (PR #5477, #5478 and the frozen MTTs) did not touch these hands; all 53 hand/category rows are committed with post-commit completed",
+  "notEstablished": "why the 6b6eabb1 writer was that slow: the container is gone and no per-batch writer latency is recorded. The one known difference is that 6b6eabb1 predates #5415 and ran its ring at the 500,000-segment ceiling, retiring on appends; releases with #5415 (2,000,000 segments) sustained roughly 65 to 75 records a second on one shard without shedding.",
+  "owner": "Horse Brain, phase 15 decision journal. The e6b9dc5d restart storm (21:08Z to 21:22:51Z) is being fixed in the p6b-serving lane's working tree (lock retry in place instead of writer replacement, per-shard /health); it is not merged or deployed at this read."
+}

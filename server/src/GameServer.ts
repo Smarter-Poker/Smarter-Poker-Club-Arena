@@ -8,6 +8,7 @@ import { channelHub } from './hub/ChannelHub.js';
 import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 import {
   TournamentRetirementCustody,
+  type AbandonedRetirement,
   type RetirementBinding,
   type RetirementCustody,
 } from './services/TournamentRetirementCustody.js';
@@ -78,11 +79,18 @@ import {
   supabase,
   startHandProjectionWorker,
   stopHandProjectionWorker,
+  RetainedHandSubmissionRefusedError,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
 import type { PresenceTableReport } from './lightning/LightningPresence.js';
+import { LightningHosting, LightningRegistry } from './lightning/LightningRegistry.js';
+import { createSupabaseLightningHandBackend } from './lightning/LightningHandBackend.js';
+import { lightningAnchorSeat } from './services/supabase/lightningAnchor.js';
+import type { LightningLease } from './lightning/LightningHandHost.js';
+import type { ActionEngine } from './handlers/action.js';
+import type { LightningSeatProxy } from './lightning/LightningSeatProxy.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   HorseTopUpPass,
@@ -151,6 +159,7 @@ import { processMemoryHealth } from './observability/processMemory.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
+  reopenSweepIdChunks,
   freshHumanWindowMs,
   type LiveTournamentRow,
   type TournamentTableRow,
@@ -209,6 +218,8 @@ import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import {
   DECIDED_RECOVERY_STAGGER_MS,
+  decidedOwnerAction,
+  type DecidedOwnerAction,
   decidedRunningVerdicts,
   readPlayingCounts,
   verdictFor,
@@ -237,6 +248,7 @@ import {
 } from './observability/engineInstruments.js';
 import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { decisionPipelineDistress } from './decisionPipelinePressure.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
@@ -367,8 +379,19 @@ type DirectTableAdmission =
   | 'ready'
   | 'not_wakeable'
   | 'policy_closed'
+  | 'retained_hand_refused'
   | 'owned_elsewhere'
   | 'retryable_failure';
+
+/**
+ * How long a cash table whose retained hand the door refused from durable
+ * state is held before it is asked again. The answer changes only when a row
+ * changes (a chair leaves, a migration lands, an operator disposes the hand),
+ * and nothing announces that, so the table is asked again on this clock -
+ * once per ten minutes instead of once per five seconds - and every hourly
+ * engine restart asks afresh. 2026-09-29.
+ */
+const RETAINED_HAND_REFUSAL_RECHECK_MS = 10 * 60_000;
 /**
  * `stage_resume` (multi-day, 2026-09-24): a BAGGED event whose next stage is
  * due. The manager claims the stage resume receipt, seats every entitlement,
@@ -510,6 +533,12 @@ export class GameServer {
   /** One causal retry timer per table after a classified transient failure. */
   private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /**
+   * Cash tables held because the retained-hand door refused their start from
+   * durable state: the refusal code and when the table may be asked again.
+   * Optional so a bare test server needs no setup; created on first hold.
+   */
+  private retainedHandHolds?: Map<string, { code: string; until: number }>;
   /** One caller-selected protocol-2 generation reused by one causal admission retry. */
   private directTableAdmissionLeaseGenerations = new Map<string, string>();
   /** Exact acquired generations whose local proof expired before admission. */
@@ -1568,6 +1597,15 @@ export class GameServer {
    */
   private tournamentResumeBudget: number = ENGINE_START_BUDGET_MAX;
   /**
+   * Live horse-decision expiries as of the previous re-adoption pass, so only
+   * NEW ones count as distress (decisionPipelinePressure.ts). A recovery that
+   * expires in-flight decisions is not a recovery, and before 2026-09-27 the
+   * budget above could not see that happening: every resume on 2026-09-22
+   * 13:24 SUCCEEDED while the pipeline went to 1,320 expiries and 9,274 ms of
+   * queue age, so the pass was never distressed and the budget climbed.
+   */
+  private decisionPipelineExpiredBaseline: number = 0;
+  /**
    * Distress since the last tournament pass, read and cleared once per pass:
    * a discovery resume that threw or had to schedule a retry, and each manager
    * the lease renewal pass found had lost its lease - once per manager, and
@@ -1599,6 +1637,10 @@ export class GameServer {
    * read healthy. See tournament/quarantinedTournamentManagers.ts.
    */
   private tournamentManagerQuarantine?: QuarantinedTournamentManagers;
+  /** Decided events a quarantined manager holds: the key last reported per event. */
+  private decidedEventsHeldReported?: Map<string, string>;
+  /** How many decided events the last sweep pass found held by a quarantined manager. */
+  private decidedEventsHeldByQuarantine?: number;
   /** Bookkeeping that could not be recorded; never a reason to change a stop. */
   private tournamentQuarantineBookkeepingFailures?: number;
   /**
@@ -1624,6 +1666,48 @@ export class GameServer {
     this.directTableRecoveryTimers.delete(tableId);
     this.directTableRecoveryAttempts.delete(tableId);
     this.directTableAdmissionLeaseGenerations.delete(tableId);
+  }
+
+  /**
+   * A STANDING REFUSAL IS SAID ONCE AND HELD, NOT REBUILT EVERY FIVE SECONDS
+   * (2026-09-29). The retained-hand door refused this cash table's start from
+   * durable state. Record the hold, and report only when the refusal is new
+   * or its code changed; an unchanged answer on recheck extends the hold in
+   * silence.
+   */
+  private holdRetainedHandRefusal(tableId: string, code: string): void {
+    const holds = (this.retainedHandHolds ??= new Map());
+    const previous = holds.get(tableId);
+    holds.set(tableId, { code, until: Date.now() + RETAINED_HAND_REFUSAL_RECHECK_MS });
+    if (previous?.code === code) return;
+    reportError(
+      new Error(
+        `Retained hand refused this cash table's start: ${code}. The table is held, ` +
+          `not rebuilt, and asked again every ${RETAINED_HAND_REFUSAL_RECHECK_MS / 60_000} minutes.`
+      ),
+      'GameServer.retained_hand_refusal_holds_table',
+      { tableId, code, previousCode: previous?.code ?? null }
+    );
+  }
+
+  /** The table started: its hold ends, and if it had been reported, so does that. */
+  private releaseRetainedHandHold(tableId: string): void {
+    const previous = this.retainedHandHolds?.get(tableId);
+    if (!previous) return;
+    this.retainedHandHolds!.delete(tableId);
+    console.log(
+      `[GameServer] Cash table ${tableId} started; its retained-hand hold (${previous.code}) is released.`
+    );
+  }
+
+  private retainedHandHeld(tableId: string): boolean {
+    const hold = this.retainedHandHolds?.get(tableId);
+    return hold !== undefined && Date.now() < hold.until;
+  }
+
+  /** Read-only view for /health and tests. */
+  getRetainedHandHolds(): ReadonlyMap<string, { code: string; until: number }> {
+    return this.retainedHandHolds ?? new Map();
   }
 
   /**
@@ -1689,7 +1773,28 @@ export class GameServer {
     engine: ServerTableEngine
   ): Promise<DirectTableAdmission> {
     const outcome = engine.ready.then<DirectTableAdmission>(async (ready) => {
-      if (ready) return 'ready';
+      if (ready) {
+        this.releaseRetainedHandHold(tableId);
+        return 'ready';
+      }
+      if (engine.getStartupRetainedHandRefusal()) {
+        try {
+          // Exact teardown and lease release first, exactly as for a closed
+          // policy; the hold was recorded when start() rejected.
+          await this.recoverDirectTableEngine(
+            tableId,
+            engine,
+            'startup_retained_hand_refused',
+            true
+          );
+          return 'retained_hand_refused';
+        } catch (cleanupError) {
+          reportError(cleanupError, 'GameServer.retained_hand_refused_cleanup_unconfirmed', {
+            tableId,
+          });
+          return 'retryable_failure';
+        }
+      }
       if (!engine.getStartupPolicyRefusal()) return 'retryable_failure';
       try {
         // Boolean readiness is already false. Keep the classified admission
@@ -1811,9 +1916,10 @@ export class GameServer {
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
-    if (engine.getStartupPolicyRefusal()) {
-      // Closure is not a crash. Cleanup and exact lease release above still
-      // apply; an unavailable cleanup result must never reach this branch.
+    if (engine.getStartupPolicyRefusal() || engine.getStartupRetainedHandRefusal()) {
+      // Closure is not a crash, and neither is a standing retained-hand
+      // refusal. Cleanup and exact lease release above still apply; an
+      // unavailable cleanup result must never reach this branch.
       this.clearDirectTableRecovery(tableId);
       return;
     }
@@ -2409,6 +2515,56 @@ export class GameServer {
     )();
   }
 
+  /**
+   * THE MIXED RECOVERY'S OWN FLEET CHECK READS AT THE PROCESS ROOT (2026-09-27).
+   *
+   * The mixed-custody admission's `current()` asked every table engine in the
+   * process for its lease authority, inline. That closure is re-checked by
+   * `reservation.assertCurrent` from inside `manager.recoverMixedF06Custody`,
+   * i.e. inside that manager's bound data authority, so the first engine of
+   * ANY other tournament threw "Tournament data authority cannot be rebound
+   * inside another manager context" - the class `tournamentEnginesOnFleet`
+   * closed for the physical-map check on 2026-09-26, left open here. On engine
+   * e6b9dc5d every one of the 70 stranded mixed events voided by
+   * 20260927145449 was retained on `GameServer.mixed_original_recovery_retained`
+   * with that throw and none resumed. Same predicate, read at the root.
+   */
+  noTournamentEngineOnFleet(tournamentId: string): boolean {
+    return this.tournamentEnginesOnFleet(tournamentId).length === 0;
+  }
+
+  /**
+   * THE ORIGINAL MANAGER'S OWN CHECK IS READ AT THE PROCESS ROOT (2026-09-28).
+   *
+   * #5478 moved the fleet scan in the mixed admission's `current()` to the
+   * process root and left the other cross-manager read in the same closure:
+   * `packet.current()`, the in-process drained packet's staleness check. That
+   * closure belongs to the ORIGINAL manager and calls its own methods, which
+   * are bound to the original lease generation. The admission's `current()`
+   * is re-checked by `reservation.assertCurrent` from inside
+   * `manager.recoverMixedF06Custody`, i.e. inside the SUCCESSOR's bound
+   * authority - same tournament, another generation - so the first bound call
+   * threw "Tournament data authority cannot be rebound inside another manager
+   * context" and the admission was retained on
+   * `GameServer.mixed_original_recovery_retained`.
+   *
+   * Measured on engine 763e4cec: tournament 4e2de62d lost generation 9e2be701
+   * at 13:49:49Z on 2026-09-28 with its four stopped engines still in this
+   * process, the successor 658aba20 prepared transfer 2b5b36ff at 13:50:32Z,
+   * and every re-admission after that (13:50:39Z, 14:04:58Z, 15:32Z, ...) threw
+   * here at its first `assertCurrent()`. The event dealt nothing again.
+   *
+   * Asking whether the original's drained custody is still exactly what it
+   * captured is custody bookkeeping, not the successor's data access, so it is
+   * read at the root: the original enters only its own authority, the caller's
+   * context is restored on return, and the predicate is unchanged. The durable
+   * path (no in-process packet) never reached this read and is unaffected.
+   */
+  drainedOriginalIsCurrent(packet: DrainedF06Custody | null | undefined): boolean {
+    if (!packet) return true;
+    return bindToProcessRoot(() => packet.current())();
+  }
+
   hasCompleteMixedF06PhysicalMap(
     tournamentId: string,
     manager: TournamentManager,
@@ -2445,6 +2601,38 @@ export class GameServer {
   }
 
   private terminalMixedF06Admissions = new Map<string, unknown>();
+
+  /**
+   * A TRANSFER READ FROM THE DATABASE IS RE-READ AFTER IT IS REFUSED (2026-09-28).
+   *
+   * `performTournamentManagerAdmission` keeps the transfer it discovered with
+   * `fn_f06_find_mixed_manager_custody` in `durableMixedF06Custody` and, while
+   * an entry exists, never asks the database again. Nothing removed that entry
+   * except this process completing the transfer itself. So when another door
+   * closed the transfer (20260928033651 closed 114e9349 and bc3628dd at
+   * 03:37:39 UTC), engine 41b91390 kept re-admitting the closed transfer every
+   * few minutes, refused `f06_mixed_successor_custody_unproven` each time, and
+   * events 160eb0c9 and 5ce1a271 could never be resumed by this process. The
+   * find door would have answered `receipt: null`.
+   *
+   * A discovered transfer is only a copy of an immutable row; the database is
+   * the owner of whether it is still open. After a refused admission, once its
+   * lease is confirmed released, the copy is dropped so the next attempt asks
+   * again. A transfer this process prepared itself (a drained packet is still
+   * held) is never dropped here: its original engine objects are the custody.
+   */
+  private forgetRefusedDiscoveredMixedF06Transfer(
+    tournamentId: string,
+    packet: unknown,
+    transfer: MixedF06Transfer | null
+  ): void {
+    if (packet || !transfer) return;
+    if (this.drainedF06TournamentCustody?.has(tournamentId)) return;
+    if (this.tournamentEngines.has(tournamentId)) return;
+    if (this.durableMixedF06Custody?.get(tournamentId) === transfer) {
+      this.durableMixedF06Custody.delete(tournamentId);
+    }
+  }
 
   private mixedF06PreparationBlockers(): readonly string[] {
     const represented = new Set([...this.enginesIncludingMixedF06Custody()].map(([id]) => id));
@@ -2798,6 +2986,7 @@ export class GameServer {
       } catch (error) {
         this.tournamentManagerPendingLeaseReleases.set(tournamentId, lease.leaseGeneration);
         await this.awaitTournamentManagerLeaseRelease(tournamentId);
+        this.forgetRefusedDiscoveredMixedF06Transfer(tournamentId, packet, durableMixed);
         throw error;
       }
     }
@@ -2830,11 +3019,8 @@ export class GameServer {
           manager.isF06RecoveryOwner() &&
           this.durableMixedF06Custody.get(tournamentId) === transfer &&
           (this.drainedF06TournamentCustody?.get(tournamentId) ?? null) === packet &&
-          (!packet || packet.current()) &&
-          [...this.tableEngines.values()].every((engine) => {
-            const authority = engine.getEngineLeaseAuthority();
-            return authority?.scope !== 'tournament' || authority.tournamentId !== tournamentId;
-          });
+          this.drainedOriginalIsCurrent(packet) &&
+          this.noTournamentEngineOnFleet(tournamentId);
         const reservation = this.tournamentRetirementCustody.reserveMixed(
           transfer.transferId,
           canonical.tables.map((table) => table.id),
@@ -3092,8 +3278,26 @@ export class GameServer {
    * 'off' - none today. A worker in 'form' mode refuses to run until a
    * dealing host exists. See src/lightning/LightningSupervisor.ts.
    */
+  /**
+   * Lightning Phase 6 (2026-09-27): the hands this process deals across
+   * anchor tables, by room (pool_session_id), and the hosting that builds a
+   * LightningHandHost for each hand a 'form' worker forms. Settlement fences
+   * on the host table's lease, which is only ever this process's own engine
+   * lease (lightningLeaseFor). Dark: no Cluster is Lightning-enabled and
+   * worker_mode defaults to 'off'.
+   */
+  readonly lightningRooms = new LightningRegistry();
+  private lightningHosting = new LightningHosting({
+    registry: this.lightningRooms,
+    backend: createSupabaseLightningHandBackend(),
+    hub: tableStateHub,
+    leaseFor: (hostTableId) => this.lightningLeaseFor(hostTableId),
+  });
   private lightningSupervisor = new LightningSupervisor({
     presenceSource: () => this.lightningPresenceReports(),
+    hosting: this.lightningHosting,
+    // Ended pool sessions: their rooms' sockets are closed (every 5 s).
+    sweepRooms: () => this.lightningRooms.sweepEndedRooms(),
   });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) - runs alongside the
@@ -4619,6 +4823,10 @@ export class GameServer {
          the only hint either existed was that activeTournaments (472) quietly
          exceeded the lease rows (465), and nothing compared those two. */
       tournamentManagersQuarantined: this.tournamentManagerQuarantine?.size ?? 0,
+      /* Decided events (one player or none left) the last decided sweep found
+         held by a quarantined manager: unpaid until that manager retires.
+         2026-09-28 (decidedRunningBoard.ts decidedOwnerAction). */
+      decidedEventsHeldByQuarantine: this.decidedEventsHeldByQuarantine ?? 0,
       tournamentManagerQuarantineOldestMs:
         this.tournamentManagerQuarantine?.oldestAgeMs(Date.now()) ?? 0,
       quarantinedTournamentManagers:
@@ -6691,6 +6899,9 @@ export class GameServer {
 
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
+          // Held on a standing retained-hand refusal: not a start, not a
+          // spent budget slot, not a log line (2026-09-29).
+          if (this.retainedHandHeld(row.table_id)) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
           startedThisSweep++;
@@ -7999,6 +8210,7 @@ export class GameServer {
         );
         let decidedUnread = 0;
         let decidedRecoveries = 0;
+        const decidedHeld = new Set<string>();
         for (const t of decidedBoard) {
           const verdict = verdictFor(decidedVerdicts, String(t.id));
           // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
@@ -8008,6 +8220,12 @@ export class GameServer {
           }
           if (verdict.kind === 'live') continue; // still a live contest
           const playingCount = verdict.playingCount;
+          const decidedAction = this.decidedOwnerActionFor(String(t.id));
+          if (decidedAction.kind === 'held') {
+            decidedHeld.add(String(t.id));
+            this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
+            continue;
+          }
           /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
@@ -8022,7 +8240,7 @@ export class GameServer {
           );
           const idleTm = this.tournamentEngines.get(String(t.id));
           if (idleTm) {
-            idleTm.requestEliminationSweep('stalled_decided_survivor');
+            idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
           } else {
             this.launchDiscoveryJob(
               this.ensureTournamentManagerAdmission(
@@ -8035,6 +8253,11 @@ export class GameServer {
               { tournamentId: String(t.id) }
             );
           }
+        }
+        this.decidedEventsHeldByQuarantine = decidedHeld.size;
+        const heldReported = (this.decidedEventsHeldReported ??= new Map());
+        for (const id of [...heldReported.keys()]) {
+          if (!decidedHeld.has(id)) heldReported.delete(id);
         }
         if (decidedUnread > 0) {
           console.warn(
@@ -8506,7 +8729,15 @@ export class GameServer {
       // the finally below on every path, as C20 does for the cash fleet.
       const resumeDistressSinceLastPass = this.tournamentResumeDistress;
       this.tournamentResumeDistress = 0;
-      let resumePassDistressed = resumeDistressSinceLastPass > 0;
+      // Horses are players: a table whose players cannot decide is not a
+      // recovered table. The pipeline's own health is a distress input to the
+      // same AIMD law, beside the resume outcomes (decisionPipelinePressure).
+      const decisionPressure = decisionPipelineDistress(
+        liveHorseDecisionWorkerStatus(),
+        this.decisionPipelineExpiredBaseline
+      );
+      this.decisionPipelineExpiredBaseline = decisionPressure.expiredBaseline;
+      let resumePassDistressed = resumeDistressSinceLastPass > 0 || decisionPressure.distressed;
       try {
         // The gateway silently caps a SELECT at 1,000 rows. On 2026-09-14
         // the exact RUNNING read returned 0-999/1283 and omitted an event whose
@@ -9750,36 +9981,46 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    const { data: liveRows, error: liveErr } = await supabase
-      .from('tournaments')
-      .select('id, status, start_time')
-      .in('status', ['REGISTERING', 'RUNNING'])
-      .limit(500);
-    if (liveErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-        'GameServer.reopen_sweep_tournament_read_failed'
-      );
-      return;
+    /* Every live tournament, a page at a time: one 500-row read left the
+       tail of a 594-tournament board out of the sweep entirely. */
+    const tournaments: LiveTournamentRow[] = [];
+    const PAGE = 500;
+    for (let from = 0; ; from += PAGE) {
+      const { data: liveRows, error: liveErr } = await supabase
+        .from('tournaments')
+        .select('id, status, start_time')
+        .in('status', ['REGISTERING', 'RUNNING'])
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (liveErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
+          'GameServer.reopen_sweep_tournament_read_failed'
+        );
+        return;
+      }
+      const page = (liveRows ?? []) as LiveTournamentRow[];
+      tournaments.push(...page);
+      if (page.length < PAGE) break;
     }
-    const tournaments = (liveRows ?? []) as LiveTournamentRow[];
     if (tournaments.length === 0) return;
 
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, tournament_id, status, is_deleted, created_at')
-      .in(
-        'tournament_id',
-        tournaments.map((t) => String(t.id))
-      );
-    if (tableErr) {
-      reportError(
-        new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-        'GameServer.reopen_sweep_table_read_failed'
-      );
-      return;
+    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    const tables: TournamentTableRow[] = [];
+    for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
+      const { data: tableRows, error: tableErr } = await supabase
+        .from('tables')
+        .select('id, tournament_id, status, is_deleted, created_at')
+        .in('tournament_id', chunk);
+      if (tableErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
+          'GameServer.reopen_sweep_table_read_failed'
+        );
+        return;
+      }
+      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
     }
-    const tables = (tableRows ?? []) as TournamentTableRow[];
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
        table being closed - that is exactly what stranded 411 of them on
@@ -9788,11 +10029,11 @@ export class GameServer {
       .filter((t) => t.is_deleted !== true && String(t.status ?? '').toLowerCase() === 'closed')
       .map((t) => String(t.id));
     const openSeatsByTable = new Map<string, number>();
-    if (closedIds.length > 0) {
+    for (const chunk of reopenSweepIdChunks(closedIds)) {
       const { data: seatRows, error: seatErr } = await supabase
         .from('table_seats')
         .select('table_id')
-        .in('table_id', closedIds)
+        .in('table_id', chunk)
         .is('left_at', null);
       if (seatErr) {
         reportError(
@@ -9864,6 +10105,43 @@ export class GameServer {
         `[GameServer] Reopened ${reopened} table(s) that were closed under a live tournament`
       );
     }
+  }
+
+  /** What a decided-event sweep may truthfully do with this tournament's owner. */
+  private decidedOwnerActionFor(tournamentId: string): DecidedOwnerAction {
+    const manager = this.tournamentEngines.get(tournamentId);
+    const quarantine = this.tournamentManagerQuarantine;
+    const record =
+      manager && quarantine && quarantine.heldBy(tournamentId) === manager
+        ? (quarantine.snapshot(Date.now()).find((row) => row.tournamentId === tournamentId) ?? {
+            reason: 'quarantined',
+            custodyRefusal: null,
+          })
+        : null;
+    return decidedOwnerAction({ managerRegistered: Boolean(manager), quarantine: record });
+  }
+
+  /**
+   * A decided event its quarantined manager holds is said ONCE per distinct
+   * reason, never "recovering the winner" on every pass (CLAUDE.md 10.86).
+   */
+  private noteDecidedEventHeld(
+    tournamentId: string,
+    name: string,
+    playingCount: number,
+    action: Extract<DecidedOwnerAction, { kind: 'held' }>
+  ): void {
+    const reported = (this.decidedEventsHeldReported ??= new Map());
+    if (reported.get(tournamentId) === action.key) return;
+    reported.set(tournamentId, action.key);
+    const message =
+      `[GameServer] RUNNING tournament ${name} (${tournamentId.slice(0, 8)}) is decided ` +
+      `(${playingCount} playing) but cannot finish: ${action.because}. ` +
+      `No finish runs until that manager retires.`;
+    console.warn(message);
+    reportError(new Error(message), 'GameServer.decided_event_held_by_quarantined_manager', {
+      tournamentId,
+    });
   }
 
   /**
@@ -9955,8 +10233,11 @@ export class GameServer {
         // bounded elimination transaction owns standings and the immutable
         // RUNNING -> COMPLETING claim.
         const claimedManager = this.tournamentEngines.get(id);
-        if (claimedManager) {
-          claimedManager.requestEliminationSweep('seat_first_terminal_stack');
+        const seatFirstAction = this.decidedOwnerActionFor(id);
+        if (seatFirstAction.kind === 'held') {
+          this.noteDecidedEventHeld(id, String(t.name), liveStacks, seatFirstAction);
+        } else if (claimedManager) {
+          claimedManager.requestDecidedEliminationSweep('seat_first_terminal_stack');
         } else {
           await this.ensureTournamentManagerAdmission(
             id,
@@ -10171,6 +10452,104 @@ export class GameServer {
     );
   }
 
+  /**
+   * A RETIREMENT RESERVATION OUTLIVES ITS GENERATION ONLY UNTIL THE NEXT ONE
+   * ASKS (2026-09-29).
+   *
+   * `withCustody` keeps a reservation it could not acknowledge so the SAME
+   * generation can replay it (a roster that does not fit yet, a lost close or
+   * ACK reply). A lost lease retires that generation; nothing can present its
+   * identity again, and `admissionAllowed` refused every successor's dealer on
+   * that table forever. Production 2026-09-29 01:14Z: cb8f2dd1 generation
+   * 83b3ec21 held break e487977d (table b6af1747, park_requested, custody
+   * claimed at revision 1), lost its lease, was stopped and released; every
+   * later admission (one every ~20-40 s) resumed, threw
+   * `f06_retirement_custody_held` and was released again, with 171 players
+   * seated and no hand dealt. 87a68e55, 6a18ddaa, 1f918c8c and 4ed38a9f were
+   * in the same loop.
+   *
+   * The live manager asks here before it builds any dealer. A reservation is
+   * yielded only when (a) the asking manager is the one registered for the
+   * event and holds a different generation, (b) nothing of the reservation's
+   * generation is left in this process: no registered, stopping or
+   * quarantined manager, no unconfirmed lease release, and no drained or
+   * mixed transfer (the explicit transfer contract owns those), (c) `confirm`
+   * read the durable break row under the live lease (the receipt: the read is
+   * lease-fenced and locks the row, so the dead generation can no longer
+   * change it) and it names the same break, table and lifecycle, and (d) the
+   * exact identity is still pending with no work running and no engine
+   * registered on the table. Every other case keeps refusing admission.
+   */
+  async yieldAbandonedRetirementCustody(
+    tournamentId: string,
+    manager: TournamentManager,
+    confirm: (reservation: AbandonedRetirement) => Promise<boolean>
+  ): Promise<AbandonedRetirement[]> {
+    const liveGeneration = manager.getTournamentLeaseGeneration();
+    if (!liveGeneration) return [];
+    const yielded: AbandonedRetirement[] = [];
+    for (const reservation of this.tournamentRetirementCustody.abandonedReservations(
+      tournamentId,
+      liveGeneration
+    )) {
+      if (!this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration))
+        continue;
+      let confirmed = false;
+      try {
+        confirmed = await confirm(reservation);
+      } catch (error) {
+        reportError(error, 'GameServer.abandoned_retirement_unconfirmed', {
+          tournamentId,
+          tableId: reservation.tableId,
+          breakId: reservation.breakId,
+          generation: reservation.leaseGeneration,
+        });
+        continue;
+      }
+      if (
+        !confirmed ||
+        manager.getTournamentLeaseGeneration() !== liveGeneration ||
+        !this.retirementGenerationIsGone(tournamentId, manager, reservation.leaseGeneration)
+      )
+        continue;
+      if (
+        this.tournamentRetirementCustody.yieldAbandoned(
+          reservation,
+          liveGeneration,
+          this.tableEngines
+        )
+      )
+        yielded.push(reservation);
+    }
+    return yielded;
+  }
+
+  /** Nothing of `generation` remains in this process for this tournament. */
+  private retirementGenerationIsGone(
+    tournamentId: string,
+    live: TournamentManager,
+    generation: string
+  ): boolean {
+    if (!generation || this.tournamentEngines.get(tournamentId) !== live) return false;
+    if (live.getTournamentLeaseGeneration() === generation) return false;
+    if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === generation) return false;
+    if (this.tournamentManagerLeaseReleaseOperations.has(tournamentId)) return false;
+    if (
+      this.drainedF06TournamentCustody?.has(tournamentId) ||
+      this.durableMixedF06Custody?.has(tournamentId) ||
+      this.mixedF06AdmissionContinuations?.has(tournamentId)
+    )
+      return false;
+    for (const retiring of this.tournamentDiagnosticRetirements?.get(tournamentId) ?? [])
+      if (retiring.getTournamentLeaseGeneration() === generation) return false;
+    const quarantined = this.tournamentManagerQuarantine?.heldBy(tournamentId) as
+      | TournamentManager
+      | null
+      | undefined;
+    if (quarantined && quarantined.getTournamentLeaseGeneration?.() === generation) return false;
+    return true;
+  }
+
   registerTableEngine(tableId: string, engine: ServerTableEngine): boolean {
     if (!this.tournamentRetirementCustody.admissionAllowed(tableId)) return false;
     // A manager callback already awaiting I/O when shutdown began must not
@@ -10360,6 +10739,22 @@ export class GameServer {
         reportError(err, 'GameServer.lightning_presence_report_failed');
       }
     }
+    // Players watching from their own Lightning room (pool_session_id).
+    yield* this.lightningRooms.presenceReports();
+  }
+
+  /**
+   * The verified cash lease this process holds on a Lightning host table (the
+   * Cluster's front table), or null. A hand is dealt and settled only under
+   * it: its loss abandons the hand before any chip moves.
+   */
+  private lightningLeaseFor(hostTableId: string): LightningLease | null {
+    const engine = this.tableEngines.get(hostTableId);
+    if (!engine || !engine.isRunning() || !engine.hasCurrentEngineLeaseAuthority()) return null;
+    const authority = engine.getEngineLeaseAuthority();
+    if (!authority || authority.scope !== 'cash' || !authority.verified || !authority.generation)
+      return null;
+    return { instance: INSTANCE_ID, generation: authority.generation };
   }
 
   /**
@@ -10477,6 +10872,9 @@ export class GameServer {
 
     await this.awaitDirectTableLeaseRelease(tableId);
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
+    // A table the retained-hand door refused is held, not rebuilt: no read,
+    // no lease, no engine and no log until its recheck is due.
+    if (this.retainedHandHeld(tableId)) return 'retained_hand_refused';
 
     let table: CashTablePlayRow | null;
     let error: { message: string } | null = null;
@@ -10633,7 +11031,13 @@ export class GameServer {
     void engine
       .start()
       .catch(async (startError) => {
-        if (
+        const retainedRefusal =
+          startError instanceof RetainedHandSubmissionRefusedError
+            ? engine.getStartupRetainedHandRefusal()
+            : null;
+        if (retainedRefusal) {
+          this.holdRetainedHandRefusal(tableId, retainedRefusal.code);
+        } else if (
           !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
         ) {
           this.engineStartFailures++;
@@ -10672,6 +11076,45 @@ export class GameServer {
    */
   getTableEngine(tableId: string): ServerTableEngine | undefined {
     return this.tableEngines.get(tableId);
+  }
+
+  /**
+   * POST /action's engine: the table engine, or - when the id is a Lightning
+   * pool_session_id - the seat proxy that routes to the hand being dealt in
+   * that room (Lightning Phase 6). getTableEngine keeps its ServerTableEngine
+   * type for its ~850 engine-only callers.
+   */
+  getActionEngine(tableId: string): ActionEngine | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /** POST /preaction's engine: the table engine, or a Lightning room's seat proxy. */
+  getPreActionEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
+  /**
+   * A Lightning room's anchor seat (Lightning Phase 6 remediation): leave and
+   * add chips from a pool_session_id act on the seat the chips sit in. Null
+   * for a real table id, for a room that is not the caller's, and when the
+   * read fails (the caller then answers as for an unknown table).
+   */
+  async lightningAnchorFor(
+    roomId: string,
+    userId: string
+  ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
+    if (this.tableEngines.has(roomId)) return null;
+    try {
+      return await lightningAnchorSeat(roomId, userId);
+    } catch (err) {
+      reportError(err, 'GameServer.lightning_anchor_lookup_failed');
+      return null;
+    }
+  }
+
+  /** Is this id a table engine here, or a Lightning room this process serves? */
+  hasTableOrLightningRoom(tableId: string): boolean {
+    return this.tableEngines.has(tableId) || this.lightningRooms.isRoom(tableId);
   }
 
   /**

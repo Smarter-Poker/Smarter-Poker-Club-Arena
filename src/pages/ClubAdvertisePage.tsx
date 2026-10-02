@@ -44,6 +44,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -237,10 +238,8 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
            as "you can afford this". `canAfford` treats null as "we do not
            know", which lets the buyer try; the debit itself is the
            authority and answers Not Enough Diamonds if it is short. */
-        const { data: prof, error: profErr } = await supabase
-          .from('profiles')
+        const { data: prof, error: profErr } = await ownProfile(user.id)
           .select('diamonds')
-          .eq('id', user.id)
           .maybeSingle();
         if (profErr) reportError(profErr, 'ClubAdvertisePage.balance');
         setBalance(profErr || prof?.diamonds == null ? null : Number(prof.diamonds));

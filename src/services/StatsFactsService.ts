@@ -245,7 +245,10 @@ async function callRpc<T>(
   fn: string,
   args: Record<string, unknown>,
   fallback: T,
-  scope: StatsScope
+  scope: StatsScope,
+  /* A read of ONE hand (its rake share) is already in that hand's asset: its
+     RPC takes no p_asset, and sending one would be a PGRST202. */
+  sendsScope = true
 ): Promise<ScopedRead<T>> {
   /* A SCOPE THE DATABASE CANNOT SEPARATE IS NOT ANSWERED (2026-09-20).
      Falling through to the unscoped RPC here would return a chips total
@@ -255,7 +258,10 @@ async function callRpc<T>(
     return { ...fallback, scope, error: STATS_SCOPE_UNREADABLE };
   }
   try {
-    const { data, error } = await supabase.rpc(fn, { ...args, ...statsScopeArgs(scope) });
+    const { data, error } = await supabase.rpc(
+      fn,
+      sendsScope ? { ...args, ...statsScopeArgs(scope) } : args
+    );
     if (error) {
       // 42501 is the identity gate refusing a cross-user read. That is the
       // system working, not a fault, so it is not reported as an error.
@@ -426,7 +432,8 @@ export const StatsFactsService = {
       'ca_player_hand_rake_share',
       { p_hand_id: handId },
       { found: false },
-      scope
+      scope,
+      false
     );
   },
 };

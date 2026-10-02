@@ -9,8 +9,13 @@
  * independentQualification.ts and imports none of them.
  */
 import type { HorseDecision } from '../../../types.js';
-import { gtoChartCount } from '../../GtoCharts.js';
-import { gtoPostflopCount } from '../../GtoPostflop.js';
+import { gtoChartCount, gtoChartStoreIdentity } from '../../GtoCharts.js';
+import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../../GtoPostflop.js';
+import {
+  sameSolverStoreIdentity,
+  type HorseSolverStoreIdentity,
+  type SolverStoreIdentity,
+} from '../../../gto/SolverStoreIdentity.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../../GtoPostflopV31.js';
 import { horsePolicyRegistration } from '../../HorsePolicyRegistry.js';
 import {
@@ -28,6 +33,25 @@ export interface ReplaySolverStores {
   postflop: number;
   postflopV31: number;
   postflopV31Dataset: { id: string; checksum: string } | null;
+  /** Content identity of the chart and open-node stores loaded into the replay. */
+  identity?: HorseSolverStoreIdentity;
+  /** Snapshots whose source is witnessed unchanged over a window (for count-only records). */
+  pins?: { charts?: SolverStorePin; postflop?: SolverStorePin };
+}
+
+/**
+ * A store snapshot pinned by identity for decisions whose record carries only
+ * a row count (made before the worker journaled the store identity). The pin
+ * says the source held exactly `identity` from `unchangedFromMs` through
+ * `unchangedToMs`, on the evidence named in `witness`; a decision is matched
+ * to it only if it was made inside that window by a release that cannot have
+ * loaded its store before the window opened.
+ */
+export interface SolverStorePin {
+  identity: SolverStoreIdentity;
+  unchangedFromMs: number;
+  unchangedToMs: number;
+  witness: string;
 }
 
 export function currentReplaySolverStores(): ReplaySolverStores {
@@ -36,6 +60,7 @@ export function currentReplaySolverStores(): ReplaySolverStores {
     postflop: gtoPostflopCount(),
     postflopV31: gtoPostflopV31Count(),
     postflopV31Dataset: gtoPostflopV31Dataset(),
+    identity: { charts: gtoChartStoreIdentity(), postflop: gtoPostflopStoreIdentity() },
   };
 }
 
@@ -47,6 +72,89 @@ export interface CitedReferenceInput {
   admissibleRoutes: readonly string[];
   postflopStoreConsultPossible: boolean;
   stores?: ReplaySolverStores;
+  /** When the original decision was made (journal atMs). */
+  atMs?: number | null;
+  /**
+   * The earliest instant a process running the recorded release can have
+   * started (its commit time); null when unknown. Only consulted for pins.
+   */
+  releaseNotBeforeMs?: number | null;
+}
+
+const short = (identity: SolverStoreIdentity | undefined | null): string =>
+  identity ? `${identity.rows}@${identity.digest.slice(0, 12)}` : 'unknown';
+const iso = (ms: number): string => new Date(ms).toISOString();
+
+/**
+ * One store reference, decided by identity and never by size alone:
+ *  - a record that journaled the store identity must meet a replay store with
+ *    the same digest over the same entries;
+ *  - a record that journaled a row count only is matched to a pinned snapshot
+ *    whose window covers the decision and the release's whole lifetime;
+ *  - an empty store is its own identity (0 recorded, 0 loaded).
+ */
+function storeReference(args: {
+  ref: string;
+  recordedCount: number;
+  recordedIdentity: SolverStoreIdentity | undefined;
+  replayCount: number;
+  replayIdentity: SolverStoreIdentity | undefined;
+  pin: SolverStorePin | undefined;
+  atMs: number | null;
+  releaseNotBeforeMs: number | null;
+  recordedLoadedAt: string | null;
+}): HorseReplayReference {
+  const { ref } = args;
+  if (args.recordedIdentity) {
+    if (args.replayIdentity && sameSolverStoreIdentity(args.recordedIdentity, args.replayIdentity))
+      return available(ref, `identity ${short(args.replayIdentity)}`);
+    return unavailable(
+      ref,
+      `original identity ${short(args.recordedIdentity)}, replay ${short(args.replayIdentity)}`
+    );
+  }
+  if (args.recordedCount === 0)
+    return args.replayCount === 0
+      ? available(ref, 'empty store, as recorded')
+      : unavailable(ref, `original decided with an empty store; replay has ${args.replayCount}`);
+  if (args.replayCount === 0)
+    return unavailable(ref, `original decided with ${args.recordedCount} loaded; replay has none`);
+  const pin = args.pin;
+  if (!pin)
+    return unavailable(
+      ref,
+      `original recorded a count only (${args.recordedCount}); no pinned snapshot`
+    );
+  if (!args.replayIdentity || !sameSolverStoreIdentity(pin.identity, args.replayIdentity))
+    return unavailable(
+      ref,
+      `loaded store ${short(args.replayIdentity)} is not the pinned snapshot ${short(pin.identity)}`
+    );
+  if (pin.identity.rows !== args.recordedCount)
+    return unavailable(
+      ref,
+      `original ${args.recordedCount} entries, pinned snapshot ${pin.identity.rows}`
+    );
+  if (args.atMs === null || args.atMs < pin.unchangedFromMs || args.atMs > pin.unchangedToMs)
+    return unavailable(
+      ref,
+      `decision outside the pinned window ${iso(pin.unchangedFromMs)}..${iso(pin.unchangedToMs)}`
+    );
+  if (args.releaseNotBeforeMs === null || args.releaseNotBeforeMs < pin.unchangedFromMs)
+    return unavailable(
+      ref,
+      'the recorded release may have loaded its store before the pinned window'
+    );
+  if (args.recordedLoadedAt !== null) {
+    const loadedMs = Date.parse(args.recordedLoadedAt);
+    if (
+      !Number.isFinite(loadedMs) ||
+      loadedMs < pin.unchangedFromMs ||
+      loadedMs > pin.unchangedToMs
+    )
+      return unavailable(ref, `recorded load ${args.recordedLoadedAt} outside the pinned window`);
+  }
+  return available(ref, `pinned ${short(pin.identity)} (${pin.witness})`);
 }
 
 const available = (ref: string, detail: string | null = null): HorseReplayReference => ({
@@ -146,35 +254,47 @@ export function checkCitedReferences(input: CitedReferenceInput): HorseReplayRef
   const chartConsult =
     chartRoute ||
     input.admissibleRoutes.some((r) => r === 'chart_open_jam' || r === 'chart_bb_defend');
+  const atMs = input.atMs ?? null;
+  const releaseNotBeforeMs = input.releaseNotBeforeMs ?? null;
+  const recordedIdentity = input.recorded.solverStoreIdentity;
   if (chartConsult) {
-    const recorded = input.recorded.solverStores.charts;
-    if (recorded > 0 && stores.charts === 0)
+    const external = input.recorded.solverPolicyArtifact.external?.count ?? 0;
+    if (external > 0)
+      // An external policy file outranks the chart table; the replay does not load one.
+      out.push(unavailable('chart_store', `original read ${external} external artifact policies`));
+    else {
+      const loadedAt = input.recorded.solverPolicyArtifact.charts?.loadedAt;
       out.push(
-        unavailable(
-          'chart_store',
-          `original decided with ${recorded} charts loaded; replay has none`
-        )
+        storeReference({
+          ref: 'chart_store',
+          recordedCount: input.recorded.solverStores.charts,
+          recordedIdentity: recordedIdentity?.charts,
+          replayCount: stores.charts,
+          replayIdentity: stores.identity?.charts,
+          pin: stores.pins?.charts,
+          atMs,
+          releaseNotBeforeMs,
+          recordedLoadedAt: typeof loadedAt === 'string' ? loadedAt : null,
+        })
       );
-    else if (recorded > 0 && stores.charts !== recorded)
-      out.push(unavailable('chart_store', `original ${recorded} charts, replay ${stores.charts}`));
-    else out.push(available('chart_store', `${stores.charts} charts`));
+    }
   }
 
   // Postflop stores: a hold'em heads-up open node may consult the warehouse.
   if (input.postflopStoreConsultPossible) {
-    const recorded = input.recorded.solverStores.postflop;
-    if (recorded > 0 && stores.postflop === 0)
-      out.push(
-        unavailable(
-          'solver_store:postflop',
-          `original decided with ${recorded} rows loaded; replay has none`
-        )
-      );
-    else if (recorded > 0 && stores.postflop !== recorded)
-      out.push(
-        unavailable('solver_store:postflop', `original ${recorded} rows, replay ${stores.postflop}`)
-      );
-    else out.push(available('solver_store:postflop', `${stores.postflop} rows`));
+    out.push(
+      storeReference({
+        ref: 'solver_store:postflop',
+        recordedCount: input.recorded.solverStores.postflop,
+        recordedIdentity: recordedIdentity?.postflop,
+        replayCount: stores.postflop,
+        replayIdentity: stores.identity?.postflop,
+        pin: stores.pins?.postflop,
+        atMs,
+        releaseNotBeforeMs,
+        recordedLoadedAt: null,
+      })
+    );
     const dataset = input.recorded.solverStores.postflopV31Dataset;
     if (dataset) {
       const current = stores.postflopV31Dataset;

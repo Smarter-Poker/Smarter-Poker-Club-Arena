@@ -18,6 +18,12 @@
  * gate (the host passes `suspended`), and never on /bonuses, which renders
  * the same sheet inline.
  *
+ * ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). It also waits while
+ * any gate holds the prompt lane (the terms, the app's age gate) and while
+ * another soft ask is on screen, and it is FIRST in the soft-ask order, so a
+ * player never sees it stacked on the analytics or notifications sheets.
+ * Waiting happens before the day is spent: a held host does not ask.
+ *
  * REPEATED VISITS (2026-09-09 audit). The first cut asked exactly once per
  * mount, which is not once per day: a PWA or a tab left open overnight came
  * back the next morning to a component that had already asked yesterday and
@@ -35,6 +41,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { usePromptTurn } from '../../lib/promptLane';
 import { dailyBonusService } from '../../services/DailyBonusService';
 import { reportDailyBonusStatusError } from '../../services/dailyBonusStatusError';
 import DailyBonusSheet from './DailyBonusSheet';
@@ -70,11 +77,14 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
   const rolloverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userId = user?.id ?? null;
   const pathname = location.pathname;
-  const suspendedRef = useRef(suspended);
+  const turn = usePromptTurn('daily-bonus', open && !!userId);
+  // The host's first-run gates, or anything else holding the prompt lane.
+  const held = suspended || !turn.clear;
+  const suspendedRef = useRef(held);
   const pathRef = useRef(pathname);
   const openRef = useRef(open);
   const userRef = useRef(userId);
-  suspendedRef.current = suspended;
+  suspendedRef.current = held;
   pathRef.current = pathname;
   openRef.current = open;
   userRef.current = userId;
@@ -181,7 +191,7 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
   // each ask; the guard inside makes the repeat free once today is answered.
   useEffect(() => {
     void ask();
-  }, [ask, suspended, pathname, open]);
+  }, [ask, held, pathname, open]);
 
   // A tab looked at again, focused, or back online: the day may have rolled
   // over, or the failed read on entry can be retried now.
@@ -208,7 +218,7 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
     if (open && isQuietPath(pathname)) setOpen(false);
   }, [open, pathname]);
 
-  if (!open || !userId) return null;
+  if (!open || !userId || !turn.onScreen) return null;
 
   return (
     <DailyBonusSheet

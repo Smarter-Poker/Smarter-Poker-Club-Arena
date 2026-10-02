@@ -138,36 +138,30 @@ describe('a Club Arena player can enrol this device for push', () => {
     expect(body.keys).toEqual({ p256dh: 'p256dh-value', auth: 'auth-value' });
   });
 
-  it('enrols on the ROOT service worker, not on Club Arena scope', async () => {
+  it('enrols on the SHARED /push/ worker the World Hub uses, never the root or Club Arena scope', async () => {
     // public/sw-bus.js has no 'push' listener. A subscription made against it
     // would be accepted by the browser, stored by the server, sent to
     // successfully, and displayed by nobody.
     //
-    // CORRECTED 2026-08-30. This comment used to go on to claim that
-    // registering /sw.js "keeps ONE subscription per device across both apps,
-    // because push_subscriptions upserts on (user_id, endpoint)". That
-    // reasoning is wrong, and believing it is what let a real bug live: THE
-    // ENDPOINT IS NOT STABLE. The browser mints a fresh one after a
-    // service-worker reinstall, cleared site data, a PWA re-add, or a
-    // failed-then-retried subscribe, so the upsert key does not identify a
-    // device -- it inserts a NEW row and leaves the old one is_active with
-    // nothing pointing at it. Dispatch fans out to every active row, and Dan
-    // got the same Seat Open banner twice.
-    //
-    // What actually keeps one live subscription per device is `deviceId`,
-    // which this app did not send until 2026-08-30. See
-    // tests/one-live-subscription-per-device.law.test.ts.
-    //
-    // Registering the ROOT worker is still correct and still required, for the
-    // reason in the first paragraph. It is just not what does the deduping.
+    // CORRECTED 2026-09-27. This test used to require the ROOT worker,
+    // '/sw.js'. The World Hub had moved its enrolment to the dedicated
+    // '/push/sw.js' at scope '/push/' on 2026-08-25, so the two apps enrolled
+    // one browser on TWO registrations with two endpoints under ONE shared
+    // deviceId, and each enrolment or hourly sync retired the other app's row
+    // as `superseded_same_device` (25 of 58 retired rows in production). Both
+    // apps must enrol on the same registration; the hub's is the dedicated one.
     const h = installBrowser();
     const { enablePush } = await import('../src/lib/pushClient');
 
     await enablePush();
 
-    expect(h.register).toHaveBeenCalledWith('/sw.js');
+    expect(h.register).toHaveBeenCalledWith('/push/sw.js', {
+      scope: '/push/',
+      updateViaCache: 'none',
+    });
     for (const call of h.register.mock.calls) {
       expect(String(call[0])).not.toContain('sw-bus');
+      expect(String(call[0])).not.toBe('/sw.js');
     }
   });
 
@@ -261,7 +255,9 @@ describe('the enrolment path is actually reachable', () => {
     expect(PROMPT).toContain('useLocation');
     // The route must be a dependency of the arming effect, or leaving the
     // table would never re-arm and a player who only plays is never asked.
-    expect(PROMPT).toMatch(/\[pending, state, suppressed\]/);
+    // (The prompt lane joined it on 2026-09-29 for the same reason; see
+    // tests/components/firstRunPrompts.oneAtATime.test.tsx.)
+    expect(PROMPT).toMatch(/\[pending, state, suppressed(?:, \w+)*\]/);
   });
 
   it('gives a subscribed device a way to prove push actually arrives', () => {

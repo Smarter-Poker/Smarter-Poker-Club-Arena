@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PLATFORM_FREEZE_POLL_MS } from '../../scripts/ci/platform-freeze-window.mjs';
 
 import {
   cleanupStaleTemporaryCustomizationAccounts,
@@ -112,9 +113,10 @@ describe('temporary customization account cleanup', () => {
     ).toBe(true);
   });
 
-  it('waits through the maintenance freeze and proves hard deletion afterward', async () => {
+  it('waits on the freeze to END, not on a tick count, then proves hard deletion', async () => {
     vi.useFakeTimers();
     let cleanupCalls = 0;
+    let freezeReads = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
@@ -122,6 +124,20 @@ describe('temporary customization account cleanup', () => {
         return Response.json(
           cleanupCalls === 1 ? { success: false, reason: 'platform_is_frozen' } : { success: true }
         );
+      }
+      if (url.includes('/rest/v1/engine_maintenance_break')) {
+        return Response.json([
+          {
+            phase: 'counting_down',
+            break_started_at: new Date(Date.now() - 60_000).toISOString(),
+            break_ends_at: new Date(Date.now() + 240_000).toISOString(),
+            enforce_freeze: true,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/rpc/fn_platform_frozen')) {
+        freezeReads += 1;
+        return Response.json(freezeReads === 1);
       }
       if (url.includes('/auth/v1/admin/users/') && (!init?.method || init.method === 'GET')) {
         return new Response(null, { status: 404 });
@@ -134,9 +150,17 @@ describe('temporary customization account cleanup', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const cleanup = cleanupTemporaryCustomizationAccount(environment, account());
-    await vi.advanceTimersByTimeAsync(10_000);
+    // One poll interval is all the freeze needs here. The old loop could only
+    // ever tick 37 times at ten seconds, and no measured break was that short.
+    await vi.advanceTimersByTimeAsync(PLATFORM_FREEZE_POLL_MS * 2);
     await expect(cleanup).resolves.toBeUndefined();
     expect(cleanupCalls).toBe(2);
+    expect(freezeReads).toBe(2);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/rest/v1/engine_maintenance_break')
+      )
+    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(([input]) => String(input).includes('/auth/v1/admin/users/'))
     ).toBe(true);

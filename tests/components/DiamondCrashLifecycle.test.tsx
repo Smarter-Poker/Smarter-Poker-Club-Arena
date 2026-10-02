@@ -405,6 +405,29 @@ describe('Crash settles one displayed round once', () => {
     expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe('3.33x');
     expect(screen.getByLabelText('Frozen Figure')).toHaveTextContent('333');
   });
+  it('speaks the start, each mark the climb passes and the ending, never every frame', async () => {
+    backend.crashSettle.mockResolvedValueOnce(open);
+    await mountOpen();
+    const voice = () =>
+      screen.getAllByRole('status').find((node) => node.classList.contains('sr-only'))!;
+    // Through a round the readout redraws every frame, so it is not spoken by itself.
+    expect(readout()).toHaveAttribute('aria-live', 'off');
+    expect(voice()).toHaveAttribute('aria-live', 'polite');
+    expect(voice()).toHaveTextContent('Round Resumed At 2.57x');
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 3.33x' }));
+    expect(voice()).toHaveTextContent(/^3x, Worth 3\.00 Chips$/);
+    // 4.44x passes no new mark: the line keeps what it last said.
+    fireEvent.click(screen.getByRole('button', { name: 'Tick 4.44x' }));
+    expect(voice()).toHaveTextContent(/^3x, Worth 3\.00 Chips$/);
+    backend.crashSettle.mockResolvedValueOnce(settled);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Flight' }));
+    await act(async () => {});
+    expect(voice().textContent).toMatch(/^Round Over\. (Crashed At|Cashed Out At) /);
+    expect(readout()).toHaveAttribute('aria-live', 'off');
+  });
   it('opens Book The Win only once the figure reaches the cash-out floor, by one state change', async () => {
     backend.getState.mockResolvedValueOnce({
       ...state,

@@ -18,6 +18,39 @@ import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js'
 import { wakeHandProjection } from './handProjection.js';
 import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
+/**
+ * A RETAINED HAND THE DOOR REFUSES FROM DURABLE STATE (2026-09-29).
+ *
+ * fn_ca_resume_hand_submission answers these from rows: the table, its
+ * chairs, the retained request and what the table has committed since. A
+ * rebuilt engine asks the same rows the same question and gets the same
+ * answer, so rebuilding it every five seconds - which is what a plain
+ * `start_failed` does - changed nothing for two cash tables on 2026-09-29
+ * except 223 watchdog kills, 223 recovery rows and a spent discovery start
+ * slot every fifteen minutes. Every other refusal (the freeze, the
+ * maintenance lock, the lease proof, a lock timeout, a replayable postcommit)
+ * is transient and keeps the ordinary retry.
+ */
+export const RETAINED_HAND_STANDING_REFUSALS: ReadonlySet<string> = new Set([
+  'HAND_SUBMISSION_TABLE_NOT_ADMITTED',
+  'HAND_SUBMISSION_HANDOFF_STATE_CHANGED',
+  'HAND_SUBMISSION_ACCEPTANCE_UNPROVEN',
+  'HAND_SUBMISSION_ORIGINAL_PERMIT_REQUIRED',
+  'HAND_SUBMISSION_TABLE_MISSING',
+]);
+
+/** The door's standing refusal, named, for the one table it was asked about. */
+export class RetainedHandSubmissionRefusedError extends Error {
+  constructor(
+    readonly tableId: string,
+    readonly code: string
+  ) {
+    // The same text every log line and dashboard has matched since 2026-09-18.
+    super(`retained_hand_submission_readback_failed: ${code}`);
+    this.name = 'RetainedHandSubmissionRefusedError';
+  }
+}
+
 /** Continue one retained original at admission; pending/unknown cannot admit a deal. */
 export async function resumeRetainedHandSubmission(
   tableId: string,
@@ -29,7 +62,12 @@ export async function resumeRetainedHandSubmission(
     p_instance_id: instanceId,
     p_lease_generation: leaseGeneration,
   });
-  if (error) throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
+  if (error) {
+    const code = String(error.message ?? '').trim();
+    if (RETAINED_HAND_STANDING_REFUSALS.has(code))
+      throw new RetainedHandSubmissionRefusedError(tableId, code);
+    throw new Error(`retained_hand_submission_readback_failed: ${error.message}`);
+  }
   if (!data || typeof data !== 'object' || typeof data.found !== 'boolean')
     throw new Error('retained_hand_submission_receipt_unproven');
   if (!data.found) return null;
@@ -679,6 +717,14 @@ export async function logHandHistory(params: {
       playedAt: endedAtIso,
       potSize: params.potSize,
       board: params.communityCards ?? null,
+      // 2026-09-30: every board, so a double-board bomb pot or a run-it-twice
+      // hand is not judged on board 1 alone.
+      boards: [
+        params.communityCards,
+        params.communityCards2,
+        params.communityCards3,
+        ...(params.ritBoards ?? []),
+      ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
       holeCardsAll: params.holeCardsAll,
       contributions: params.contributions,
       winners: params.winners,

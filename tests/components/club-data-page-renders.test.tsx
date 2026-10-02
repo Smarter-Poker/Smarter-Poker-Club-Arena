@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -783,6 +783,53 @@ describe('ClubDataPage', () => {
     // bound rather than an arbitrary transport-call ceiling.
     expect(snapshotRequest).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
+  });
+
+  it('a failed read with nothing held says so, and Try Again keeps saying so until it loads', async () => {
+    // CLAUDE.md 10.86 rule 1. The Try Again button asks to preserve held data;
+    // with nothing held, a second failure used to clear the message and leave
+    // an empty Games list with no message and no Try Again.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let mode: 'fail' | 'empty' = 'fail';
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return mode === 'fail'
+          ? { data: null, error: { code: '22P02', message: 'invalid input syntax' } }
+          : { data: { ...snapshot, rows: [], row_count: 0 }, error: null };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+    const gamesAlert = () =>
+      screen
+        .queryAllByRole('alert')
+        .find((el) => el.textContent?.includes('Could Not Load Club Data.'));
+
+    try {
+      render(<ClubDataPage />);
+      await waitFor(() => expect(gamesAlert()).toBeTruthy());
+      expect(screen.queryByText('No Games In This Period.')).not.toBeInTheDocument();
+
+      const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+      fireEvent.click(within(gamesAlert()!).getByRole('button', { name: 'Try Again' }));
+      await waitFor(() =>
+        expect(
+          rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length
+        ).toBeGreaterThan(before)
+      );
+      await waitFor(() => expect(gamesAlert()).toBeTruthy());
+      expect(within(gamesAlert()!).getByRole('button', { name: 'Try Again' })).toBeEnabled();
+      expect(screen.queryByText('No Games In This Period.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Live Refresh Delayed')).not.toBeInTheDocument();
+
+      // The genuinely empty ledger is a different thing, and it says so.
+      mode = 'empty';
+      fireEvent.click(within(gamesAlert()!).getByRole('button', { name: 'Try Again' }));
+      expect(await screen.findByText('No Games In This Period.')).toBeInTheDocument();
+      expect(gamesAlert()).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('aborts a protected request when its response deadline expires', async () => {

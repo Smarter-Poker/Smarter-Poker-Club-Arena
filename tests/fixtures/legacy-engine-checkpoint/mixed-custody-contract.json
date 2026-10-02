@@ -15,10 +15,10 @@
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "aeaabb44975b8d138ed447687b0aea22",
+      "body_md5": "70ec2492f10256458996947f4e7be51f",
       "signature": "public.fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb)",
       "volatility": "v",
-      "definition_md5": "3b047e7502c62bff570cd6253e85a741",
+      "definition_md5": "1468813b11c2d5f8560e3a4e29bc3a91",
       "security_definer": true
     },
     {
@@ -95,10 +95,10 @@
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
       "config": ["search_path=pg_catalog, public, smarter_private"],
-      "body_md5": "0cbea76808f835945a63f91f03e7d91c",
+      "body_md5": "a0e369a33e735ba728b72228a3134b01",
       "signature": "smarter_private.f06_assert_movement(uuid)",
       "volatility": "v",
-      "definition_md5": "611ab479ccb52d5211145e8ffc0ec912",
+      "definition_md5": "e3355bb05eecda8aed293f155f1ddfef",
       "security_definer": true
     },
     {

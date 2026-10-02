@@ -37,6 +37,10 @@ export interface LightningConfig {
    * still proves it is alive at least this often.
    */
   keepaliveIntervalMs: number;
+  /** p_max_hands for one forming pass (`admission_batch_hands`). */
+  maxHandsPerPass: number;
+  /** The deal window a host asks begin_dealing for (`deal_window_ms`). */
+  dealWindowMs: number;
 }
 
 /**
@@ -54,6 +58,14 @@ export const LIGHTNING_PASS_INTERVAL_MAX_MS = 60_000;
 export const LIGHTNING_KEEPALIVE_DEFAULT_MS = 30_000;
 export const LIGHTNING_KEEPALIVE_MIN_MS = 1_000;
 export const LIGHTNING_KEEPALIVE_MAX_MS = 600_000;
+
+export const LIGHTNING_MAX_HANDS_DEFAULT = 32;
+export const LIGHTNING_MAX_HANDS_MIN = 1;
+export const LIGHTNING_MAX_HANDS_MAX = 64;
+
+export const LIGHTNING_DEAL_WINDOW_DEFAULT_MS = 600_000;
+export const LIGHTNING_DEAL_WINDOW_MIN_MS = 30_000;
+export const LIGHTNING_DEAL_WINDOW_MAX_MS = 3_600_000;
 
 /**
  * How often the leader's supervisor looks for Clusters that should have a
@@ -79,6 +91,8 @@ export const LIGHTNING_CONFIG_DEFAULTS: Readonly<LightningConfig> = Object.freez
   workerMode: 'off',
   passIntervalMs: LIGHTNING_PASS_INTERVAL_DEFAULT_MS,
   keepaliveIntervalMs: LIGHTNING_KEEPALIVE_DEFAULT_MS,
+  maxHandsPerPass: LIGHTNING_MAX_HANDS_DEFAULT,
+  dealWindowMs: LIGHTNING_DEAL_WINDOW_DEFAULT_MS,
 });
 
 function readInteger(raw: unknown, fallback: number, min: number, max: number): number {
@@ -125,6 +139,18 @@ export function parseLightningConfig(raw: unknown): LightningConfig {
       LIGHTNING_KEEPALIVE_MIN_MS,
       LIGHTNING_KEEPALIVE_MAX_MS
     ),
+    maxHandsPerPass: readInteger(
+      row.admission_batch_hands,
+      LIGHTNING_MAX_HANDS_DEFAULT,
+      LIGHTNING_MAX_HANDS_MIN,
+      LIGHTNING_MAX_HANDS_MAX
+    ),
+    dealWindowMs: readInteger(
+      row.deal_window_ms,
+      LIGHTNING_DEAL_WINDOW_DEFAULT_MS,
+      LIGHTNING_DEAL_WINDOW_MIN_MS,
+      LIGHTNING_DEAL_WINDOW_MAX_MS
+    ),
   };
 }
 
@@ -134,6 +160,8 @@ export function sameLightningConfig(a: LightningConfig, b: LightningConfig): boo
     a.matcherVersion === b.matcherVersion &&
     a.workerMode === b.workerMode &&
     a.passIntervalMs === b.passIntervalMs &&
-    a.keepaliveIntervalMs === b.keepaliveIntervalMs
+    a.keepaliveIntervalMs === b.keepaliveIntervalMs &&
+    a.maxHandsPerPass === b.maxHandsPerPass &&
+    a.dealWindowMs === b.dealWindowMs
   );
 }

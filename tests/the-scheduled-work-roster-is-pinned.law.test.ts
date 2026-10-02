@@ -65,9 +65,23 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * inactive rows are untouched again, and
  * tests/a-retired-compensation-job-is-never-scheduled-again.law.test.ts keeps
  * all fourteen names from coming back.
+ *
+ * 121 -> 124 active and 2 -> 3 retained inactive on 2026-09-30, read live.
+ * No previously pinned job changed its schedule. Four jobs appeared:
+ * rakeback-settler-stranded-source-check-hourly (applied migration
+ * 20260927220353), horse-stackoff-audit-20m (20260927221321),
+ * horse-daily-audit-fallback (20260928000527, an applied migration with no
+ * file in either repo), and midway-close-once-20260929d, which no migration
+ * mentions at all: it carries union-weekly-rakeback-close's command as a
+ * one-shot for 2026-09-29 13:04 UTC, ran once on that minute, and is now a
+ * spent schedule whose next fire is 2027. One job left the ACTIVE set without
+ * vanishing: union-weekly-rakeback-close is still row jobid 272 of cron.job
+ * with active = false, stood down while 20260928164258 reworked the weekly
+ * close, which is why RETAINED_INACTIVE moves with ACTIVE_JOBS here. Each move
+ * is named in docs/attestation/cron-roster.tsv's header beside this one.
  */
-const ACTIVE_JOBS = 121;
-const RETAINED_INACTIVE = 2;
+const ACTIVE_JOBS = 124;
+const RETAINED_INACTIVE = 3;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
 const raw = readFileSync(ROSTER, 'utf8');
@@ -92,9 +106,12 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('123 total is 121 active plus the two rows 20260910073355 kept disabled', () => {
-    expect(TOTAL_JOBS).toBe(123);
+  it('127 total is 124 active plus the three rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(127);
+    // The two bust sweeps 20260910073355 restored disabled are still two of
+    // the three; the third is union-weekly-rakeback-close, named in the file.
     expect(raw).toContain('20260910073355');
+    expect(raw).toContain('union-weekly-rakeback-close');
   });
 
   it('every row is one job name and one schedule, and no name repeats', () => {

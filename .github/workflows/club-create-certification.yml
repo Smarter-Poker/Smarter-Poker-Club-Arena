@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -27,9 +28,34 @@ jobs:
     # families, UI proof and both cleanup paths.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # The publisher resolves the current protected-main tip after its push
+      # event starts, so workflow_run.head_sha can be older than the bundle it
+      # actually published. Read the publisher's unique same-run dist artifact
+      # with the shared provenance verifier; never certify the trigger SHA or
+      # whichever unrelated revision happens to be live later.
+      - name: Checkout Trusted Certification Resolver
+        uses: actions/checkout@v4
+      - name: Resolve The Exact Revision Published By This Run
+        id: published
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SELECTED_SHA=$(timeout 30s gh api \
+            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+            | node scripts/ci/production-e2e-provenance.mjs \
+              publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID")
+          echo "sha=$SELECTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "Publisher run $SOURCE_RUN_ID selected Create Club revision \`$SELECTED_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+      - name: Checkout The Exact Published Revision
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.repository.default_branch }}
+          ref: ${{ github.event_name == 'workflow_run' && steps.published.outputs.sha || github.event.repository.default_branch }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

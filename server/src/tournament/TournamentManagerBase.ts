@@ -2556,6 +2556,15 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * Whether this manager has declared its field decided. The elimination
+   * sweep reads it to carry a decided field from its last bust straight into
+   * its finish in one admission (aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust).
+   */
+  protected fieldIsDecided(): boolean {
+    return this.fieldDecidedDeclared === true;
+  }
+
   /** A recovery that has read the field as decided wakes it through the decided lane. */
   requestDecidedEliminationSweep(reason: string): boolean {
     this.declareFieldDecided();
@@ -3024,7 +3033,7 @@ export abstract class TournamentManagerBase {
      * why a break runs a little over five minutes end to end.
      */
     try {
-      await supabase
+      const persisted = await supabase
         .from('tournaments')
         .update({
           on_break: true,
@@ -3032,6 +3041,14 @@ export abstract class TournamentManagerBase {
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
+      // Supabase returns a failed write rather than throwing it; report it
+      // through the same channel as a thrown one. Only a write that returned
+      // without an error proves the row now says the level clock is paused,
+      // and the Horse tournament context must not keep reporting a running
+      // clock for the rest of its refresh interval.
+      if (persisted.error)
+        reportError(persisted.error, 'TournamentManagerBase.pauseForBreak_persist');
+      else refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
     } catch (err) {
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }
@@ -5522,10 +5539,24 @@ export abstract class TournamentManagerBase {
          hand" though it dealt within seconds of launch. A window still open
          keeps its pre-seat hold; one already closed lets the database stamp
          the launch transaction's own instant. */
+      /* A FULL SPIN OR HEADS-UP DEALS NOW, NOT AT THE WINDOW CLOSE
+         (2026-10-02, later). A Spin or Heads-Up launches only when its last
+         seat is paid, and fn_take_seat_and_buy_in tells that player
+         starts_now. Holding the deal to the close of the human window then
+         holds nothing for anyone: measured on production, a human took the
+         third seat of Spin f92b0b22 at 18:40:43Z, the reveal ended at
+         18:41:09Z, and the first hand waited for the window close at
+         18:43:40Z - 170 s of a full table with no cards, which the table
+         watchdog then reported as "stalled 166s with no current seat". Only
+         the seat-first satellite keeps the old rule; its start is advertised. */
+      const startsWhenFull =
+        isPersistedSeatFirst(tournament) &&
+        readPersistedTournamentFormatContract(tournament) !== 'seat-first-satellite-v1';
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
       const scheduledStartIsAdvertised =
         Number.isFinite(scheduledStartMs) &&
+        !startsWhenFull &&
         (!isPersistedSeatFirst(tournament) || scheduledStartMs > Date.now());
       const requestedStartedAtIso = Number.isFinite(existingStartMs)
         ? new Date(existingStartMs).toISOString()
@@ -9074,6 +9105,8 @@ export abstract class TournamentManagerBase {
   } | null = null;
   private blindTransitionInFlight = false;
   private blindClockNeedsThawResync = false;
+  /** The structure the armed level wake will hand to advanceBlindLevel. */
+  private blindWakeStructure: any[] | null = null;
   private blindClockTerminalCommitted = false;
 
   /** Stop level work once a verified terminal receipt exists, even while
@@ -9090,6 +9123,7 @@ export abstract class TournamentManagerBase {
   private scheduleBlindLevelWake(blindStructure: any[], delayMs: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindWakeStructure = blindStructure;
     this.blindTimer = this.setLifecycleTimeout(() => {
       this.blindTimer = null;
       return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
@@ -9349,6 +9383,10 @@ export abstract class TournamentManagerBase {
           const remaining = Math.min(duration, duration - (Date.now() - anchor));
           this.blindTimerStartedAt = anchor;
           if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
+          // The thaw moved the durable anchor this process now runs on. The
+          // Horse tournament context must not keep the pre-thaw anchor, whose
+          // elapsed time still counts the frozen minutes.
+          refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
           if (remaining > 1000) {
             deferredWakeMs = remaining;
             return;
@@ -10631,6 +10669,102 @@ export abstract class TournamentManagerBase {
   public async resyncAddOnPeriodAfterMaintenanceThaw(): Promise<void> {
     if (!this.running || !this.addOnPeriodTriggered) return;
     await this.drivePersistedAddOnDeadline(true);
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A LEVEL THAT SPANS THE FREEZE ENDS WHERE THE THAW SAYS (2026-10-02)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * fn_thaw_platform moves `level_started_at` forward by the frozen duration
+   * for every RUNNING event that is not on the synchronized break: Spins,
+   * Sit-n-Gos, Heads-Up and every event that opts out of the :55 break. The
+   * live level wake of such an event is a setTimeout armed from the pre-freeze
+   * anchor, and nothing paused it across the freeze.
+   *
+   * A level that came due INSIDE the freeze was already handled: the wake is
+   * held and `blindClockNeedsThawResync` makes it read the shifted anchor.
+   * A level that did NOT come due inside the freeze was not. Its wake kept the
+   * pre-freeze deadline and fired once the platform was back, the full length
+   * of the freeze early, and advanceBlindLevel published the next level then.
+   * With a 7-minute freeze (:53 to :00), a level with 9 minutes left at :53
+   * went up at :02 against a durable clock that said :09. The publication
+   * RPC does not check due time, so nothing downstream caught it.
+   *
+   * The thaw hook in GameServer calls this after fn_thaw_platform has
+   * committed and before any table resumes. It reads the durable row and
+   * re-arms the wake from the shifted anchor. The flag is raised before the
+   * read, so a wake that fires before the read lands rereads the anchor
+   * itself instead of publishing from pre-freeze time. Any read that does not
+   * match this clock leaves that flag set; the wake then rereads the row and
+   * holds the level on any mismatch, exactly as it does after a held level.
+   *
+   * The Horse tournament context caches this row for up to 20 s. The thaw has
+   * just committed new clock facts to it (the level anchor, an add-on
+   * deadline), so the context is told to reread now rather than describe the
+   * pre-thaw clock until its TTL runs out.
+   */
+  public async resyncLevelClockAfterMaintenanceThaw(): Promise<void> {
+    if (!this.running) return;
+    refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
+    // A break suspended this clock and resumeFromBreak re-arms it; the thaw
+    // did not shift that row. A transition in flight or a pending
+    // publication already rereads the durable clock on its next wake.
+    const armed = this.blindTimer;
+    if (
+      !armed ||
+      this.onBreak ||
+      this.blindClockTerminalCommitted ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition
+    )
+      return;
+    const lifecycle = this.lifecycleEpoch.current();
+    const level = this.currentLevel;
+    this.blindClockNeedsThawResync = true;
+    const { data: clock, error } = await supabase
+      .from('tournaments')
+      .select('id,status,current_level,on_break,level_started_at')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.blindClockTerminalCommitted ||
+      this.onBreak ||
+      this.blindTimer !== armed ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition ||
+      this.currentLevel !== level
+    )
+      return;
+    const anchor =
+      typeof clock?.level_started_at === 'string' ? Date.parse(clock.level_started_at) : NaN;
+    if (
+      error ||
+      clock?.id !== this.tournamentId ||
+      clock.status !== 'RUNNING' ||
+      clock.on_break === true ||
+      clock.current_level !== level ||
+      !Number.isFinite(anchor)
+    )
+      return;
+    // Re-arm with the structure the armed wake would have used, never one
+    // read from elsewhere. Without it, without the row this manager runs on
+    // (levelDurationMs reads its acceleration), or without a real duration,
+    // nothing here is changed: the flag stays set and the armed wake rereads
+    // the anchor itself. setTimeout(NaN) would fire at once.
+    const blindStructure = this.blindWakeStructure;
+    if (!this.tournamentCache || !Array.isArray(blindStructure) || blindStructure.length === 0)
+      return;
+    const current = this.resolveBlindLevel(blindStructure, level) || blindStructure[0];
+    const duration = this.levelDurationMs(current);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const remaining = Math.min(duration, duration - (Date.now() - anchor));
+    if (!Number.isFinite(remaining)) return;
+    this.blindClockNeedsThawResync = false;
+    this.blindTimerStartedAt = anchor;
+    this.tournamentCache.level_started_at = clock.level_started_at;
+    this.scheduleBlindLevelWake(blindStructure, Math.max(1000, remaining));
   }
 
   /**

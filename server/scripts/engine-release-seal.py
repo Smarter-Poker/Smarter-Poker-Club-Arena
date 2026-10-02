@@ -707,27 +707,38 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
             print(value["announcedAt"])
             return
 
-        def ancestor(older: str, newer: str) -> bool:
+        # ONE ANCESTRY READ, NOT TWO PER RECEIPT (2026-10-02). A failed
+        # release qualifies only when its commit is an ancestor of the target
+        # and not of the sealed high-water - exactly the commits in
+        # highWater..target, which one rev-list names. The old scan asked git
+        # twice per failed receipt; with 277 receipts on the engine host it took
+        # 12-19s under load, past the caller's 15s bound, and every timeout was
+        # reported as "recovery announcement reservation could not be
+        # established" and failed the release (runs 37009478601, 37025137053,
+        # 37025705796). A failed commit git does not know is not in the range,
+        # so it no longer kills the reservation either.
+        def unshipped_commits() -> set[str]:
             result = subprocess.run(
-                ["git", "-C", args.repo, "merge-base", "--is-ancestor", older, newer],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                ["git", "-C", args.repo, "rev-list", f'{state["highWaterSha"]}..{target}'],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, text=True,
                 env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"}, timeout=10,
             )
-            if result.returncode not in (0, 1):
+            if result.returncode != 0:
                 die("recovery failure ancestry is unreadable")
-            return result.returncode == 0
+            return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
         cause = "observed-missed-certificate" if args.missed_window else (args.cause or "")
         if not cause:
-            for receipt in sorted(RESULT_DIR.glob("*.json"), reverse=True):
+            unshipped = unshipped_commits()
+            receipts = sorted(RESULT_DIR.glob("*.json"), reverse=True) if unshipped else []
+            for receipt in receipts:
                 if not RUN_ID_RE.fullmatch(receipt.stem):
                     continue
                 raw = json.loads(receipt.read_text(encoding="utf-8"))
                 if raw.get("result") != "failed":
                     continue
                 failure = load_failure(receipt.stem)
-                failed_sha = failure["sha"]
-                if ancestor(failed_sha, target) and not ancestor(failed_sha, state["highWaterSha"]):
+                if failure["sha"] in unshipped:
                     cause = f"failed-release:{receipt.stem}"
                     break
         if not cause:

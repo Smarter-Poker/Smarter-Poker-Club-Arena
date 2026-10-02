@@ -221,9 +221,13 @@ describe('the sweep asks independent questions together', () => {
 
   it('reads the playing count once and lets it answer both the guard and the ladder', async () => {
     const sent = oneBustOfTwo();
-    const { manager } = bustStageManager();
+    const { manager, eliminated } = bustStageManager();
     await sweep(manager);
-    expect(sent.filter(isPlayingCount)).toHaveLength(1);
+    // The bust stage asks once. The bust it records leaves one player
+    // standing, so the same admission goes on to the finish stage, which asks
+    // its own post-elimination question (aDecidedGameIsPaidInTheAdmissionThatRecordsItsLastBust).
+    expect(eliminated).toHaveLength(1);
+    expect(sent.filter((r) => isPlayingCount(r) && r.sentAt < eliminated[0].at)).toHaveLength(1);
   });
 
   it('sends the taken-places list and the unplaced count in the same round trip', async () => {

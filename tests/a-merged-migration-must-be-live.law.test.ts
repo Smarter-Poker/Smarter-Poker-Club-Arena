@@ -160,10 +160,14 @@ describe('a merged migration must be live', () => {
   it('step 3 is what catches a migration that creates nothing', () => {
     // The anon revoke creates nothing at all: it changes grants. Nothing in
     // any catalogue is named by the file, which is exactly the class that sat
-    // merged and unapplied - and the class the proof convention is for.
+    // merged and unapplied - and the class the proof convention is for. Its
+    // historical file now carries the same production-readable proof required
+    // of every newer no-object migration.
     const sql = fs.readFileSync(path.join(MIGRATIONS, CREATED_NOTHING), 'utf8');
     expect(declaredObjects(sql)).toEqual([]);
-    expect(declaredProofs(sql)).toEqual([]);
+    expect(declaredProofs(sql)).toHaveLength(1);
+    expect(declaredProofs(sql)[0]).toContain("has_function_privilege('anon'");
+    expect(proofIsRunnable(declaredProofs(sql)[0])).toBe(true);
   });
 
   it('a declared proof is read whole, and several may be declared', () => {

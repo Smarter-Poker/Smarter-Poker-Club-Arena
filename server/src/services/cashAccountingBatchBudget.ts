@@ -89,7 +89,41 @@ export const MIN_BATCH = 1;
 export const MAX_BATCH = 250;
 
 /**
- * The largest batch that fits inside `clientTimeoutMs` at `perItemMs`.
+ * A CASH BATCH HANDS THE CLUB'S COMMISSION KEY BACK BEFORE A FINISH NOTICES
+ * (2026-10-02).
+ *
+ * fn_credit_agent_commissions_batch is one transaction. It takes the
+ * 'agent-commission:<club>' key of every club its items earn in and keeps
+ * each key, and every row it touched, until the whole batch commits. A
+ * tournament finish takes the same key for the host club's commission, and it
+ * does so while it already holds its bank scope's finish lane
+ * (fn_ca_lock_settlement_lane_for_finish: one finish at a time per union or
+ * club bank). So every Spin and Sit & Go of that union waited for the cash
+ * batch, one finish after another.
+ *
+ * Read on production 19:25-19:35 UTC on 2026-10-02 (engine ac2024b8): in 5 of
+ * 6 lock snapshots the finish holding a union's lane was waiting on a club
+ * commission key held by fn_credit_agent_commissions_batch (mean 5.3 s
+ * per call, 31 items, sized only against the client's 15 s). Each of the two
+ * busy unions finished one event every 8-10 s against about 5 decided a
+ * minute, so the lane ran near full, the hourly maintenance freeze left a
+ * backlog it could not drain, and fn_ca_tournament_finished_but_not_completed
+ * raised a critical for every winner left unpaid past 15 minutes (7,113 in two
+ * days). docs/evidence/chip-deadlocks-2026-10-01.md had already measured 1,170
+ * finish waits over 1 s at the commission step and named the cure: a shorter
+ * cash batch transaction.
+ *
+ * So the client's patience is not the only budget a batch must fit. It must
+ * also fit how long a finish may wait behind it for a commission key. A batch
+ * of COMMISSION_KEY_HOLD_MS / PER_ITEM_MS items is 5 at 290 ms, and at 4,800
+ * cash raked hands an hour (1.3 a second) the settler still clears more than
+ * three items a second.
+ */
+export const COMMISSION_KEY_HOLD_MS = 1_500;
+
+/**
+ * The largest batch that fits inside `clientTimeoutMs` at `perItemMs`, and
+ * whose commission keys are held no longer than `keyHoldMs`.
  *
  * A non-finite or non-positive budget is NOT treated as generous - "I could not
  * tell" is its own outcome (CLAUDE.md 10.86 rule 1), and the safe reading of an
@@ -97,11 +131,15 @@ export const MAX_BATCH = 250;
  */
 export function cashAccountingBatchSize(
   clientTimeoutMs: number,
-  perItemMs: number = PER_ITEM_MS
+  perItemMs: number = PER_ITEM_MS,
+  keyHoldMs: number = COMMISSION_KEY_HOLD_MS
 ): number {
   if (!Number.isFinite(clientTimeoutMs) || clientTimeoutMs <= 0) return MIN_BATCH;
   if (!Number.isFinite(perItemMs) || perItemMs <= 0) return MIN_BATCH;
-  const budgetMs = clientTimeoutMs * BATCH_BUDGET_FRACTION;
+  if (!Number.isFinite(keyHoldMs) || keyHoldMs <= 0) return MIN_BATCH;
+  // The tighter of the two budgets binds: the client's patience, or how long
+  // a tournament finish may wait behind this transaction for a commission key.
+  const budgetMs = Math.min(clientTimeoutMs * BATCH_BUDGET_FRACTION, keyHoldMs);
   const fits = Math.floor(budgetMs / perItemMs);
   return Math.max(MIN_BATCH, Math.min(MAX_BATCH, fits));
 }

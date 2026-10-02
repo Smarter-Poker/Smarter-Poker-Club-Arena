@@ -23,6 +23,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   setMaintenanceFrozen(false);
+  brainContext.refreshAfterClockCommit.mockReset();
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-10T12:10:00.000Z'));
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -263,6 +264,45 @@ describe('durable atomic blind-level transition', () => {
     expect(state.blindTimer.delay).toBe(600000);
   });
 
+  it('asks the Horse tournament context to read the thawed anchor once the resync adopts it', async () => {
+    const { row, state, rpc, read } = fixture();
+    const seen: Array<{ anchor: number; cached: unknown }> = [];
+    brainContext.refreshAfterClockCommit.mockImplementation(() => {
+      seen.push({
+        anchor: state.blindTimerStartedAt,
+        cached: state.tournamentCache.level_started_at,
+      });
+    });
+    setMaintenanceFrozen(true);
+    await state.advanceBlindLevel(structure);
+    await state.blindTimer.callback();
+    // A clock held inside the freeze replaces nothing yet.
+    expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
+
+    // The database thaw moved the anchor by the seven frozen minutes. The
+    // level still has five minutes to run, so the resync returns early
+    // without publishing anything.
+    row.level_started_at = '2026-09-10T12:07:00.000Z';
+    vi.setSystemTime(new Date('2026-09-10T12:12:00.000Z'));
+    setMaintenanceFrozen(false);
+    await state.blindTimer.callback();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(state.blindTimer.delay).toBe(300000);
+    // The cache would otherwise keep the pre-thaw anchor for up to one
+    // refresh interval, and its elapsed time would include the frozen minutes.
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledOnce();
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledWith('level-restart');
+    expect(read.mock.invocationCallOrder[0]).toBeLessThan(
+      brainContext.refreshAfterClockCommit.mock.invocationCallOrder[0]!
+    );
+    expect(seen).toEqual([
+      {
+        anchor: Date.parse('2026-09-10T12:07:00.000Z'),
+        cached: '2026-09-10T12:07:00.000Z',
+      },
+    ]);
+  });
+
   it('replays a lost publication after thaw using the same level and shifted receipt', async () => {
     const { row, state, rpc, publish, writes } = fixture();
     rpc.mockImplementationOnce(async (_name, args) => {
@@ -326,6 +366,8 @@ describe('durable atomic blind-level transition', () => {
       await state.blindTimer.callback();
       expect(rpc).not.toHaveBeenCalled();
       expect(state.currentLevel).toBe(0);
+      // No durable anchor was adopted, so there is no new clock to read.
+      expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
       if (fault === 'replacement') expect(state.blindTimer).toBeNull();
       else expect(state.blindTimer.delay).toBe(1000);
     }

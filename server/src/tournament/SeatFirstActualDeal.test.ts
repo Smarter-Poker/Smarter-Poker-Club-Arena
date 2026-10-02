@@ -570,17 +570,33 @@ describe('actual manager launch reaches the first hand and action timer after th
     expect(f.blindStarts).toEqual([NOW + delay]);
   });
 
-  it('preserves the advertised pre-seat lead for a non-Spin game', async () => {
+  /* A FULL SPIN OR HEADS-UP DEALS NOW (2026-10-02, later). Its start_time
+     is the close of the human window. When the last seat is paid before that
+     close, the table is full and the buyer was told starts_now, so the launch
+     is stamped at its own instant instead of holding the deal to the close
+     (production Spin f92b0b22 held a full table 170 s). The pre-seat lead
+     stays for advertised starts: see the timed MTT test below. */
+  it.each([
+    ['Spin', { spin: true }],
+    ['Heads-Up', { spin: false }],
+  ] as const)(
+    'stamps a full %s at its launch instant while its human window is still open',
+    async (_name, options) => {
+      const f = fixture({ ...options, preseatLead: 170_000 });
+      await f.started;
+      await settle();
+      const begin = rpc.mock.calls.find(([name]) => name === 'fn_begin_tournament_launch_atomic');
+      expect(begin?.[1]?.p_started_at).toBeNull();
+      expect(f.row.started_at).toBe(new Date(NOW).toISOString());
+    }
+  );
+
+  it('deals a full Heads-Up without waiting for its human window to close', async () => {
     const f = fixture({ spin: false, preseatLead: 60_000 });
     await f.started;
     await settle();
-    expectNoHand(f);
-    expect(f.blindStarts).toEqual([]);
-    await vi.advanceTimersByTimeAsync(59_999);
-    expectNoHand(f);
-    await vi.advanceTimersByTimeAsync(1);
-    await expectFirstHand(f, NOW + 60_000);
-    expect(f.blindStarts).toEqual([NOW + 60_000]);
+    await expectFirstHand(f, NOW);
+    expect(f.blindStarts).toEqual([NOW]);
   });
 
   /* A SEAT-FIRST GAME STARTS WHEN IT STARTS (2026-10-02). Its start_time is

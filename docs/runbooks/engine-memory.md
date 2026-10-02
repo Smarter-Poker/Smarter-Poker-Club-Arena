@@ -18,9 +18,11 @@ Retired local/custom pipelines remain unavailable under the shared owner policy.
 - `EngineBuildHeadroomLost`: host MemAvailable below 1152 MiB for thirty minutes,
   warning. It reports sustained pressure relative to the current on-host build
   gate; conditions can change before the next authorized attempt.
-- `EngineProcessMemoryHigh`: engine RSS above 1717986918 bytes (approximately
-  1.6 GiB) for fifteen minutes, warning. This retained historical threshold is
-  not a process cap, a precise current build-fit calculation or proof of a leak.
+- `EngineProcessMemoryHigh`: engine RSS above 4294967296 bytes (4 GiB) for
+  fifteen minutes, warning. Re-measured 2026-10-02 on the 16 GiB host: hourly
+  RSS maxima over 48 h were 1.73-2.94 GiB with the main V8 heap flat at
+  0.47-0.93 GiB, so the historical 1.6 GiB line fired continuously without any
+  growth. It is not a process cap, a build-fit calculation or proof of a leak.
 
 The September 13/14 incident recorded a roughly 3819 MiB host, approximately
 1060 MiB of other residents, rising engine RSS and repeated refused builds.

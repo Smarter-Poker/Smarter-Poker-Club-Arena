@@ -1658,6 +1658,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-ledger-invariant.sh
+      - name: The xid restorer reads xmax (a leg committed under an older open transaction is counted once)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-xid-restorer-reads-xmax.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
         if: matrix.shard == 1
         env:

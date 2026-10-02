@@ -49,6 +49,16 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain("workflows: ['Publish Club Arena']");
     expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(workflow).not.toMatch(/^\s{2}push:/m);
+    expect(workflow).toContain('actions: read');
+    expect(workflow).toContain('Resolve The Exact Revision Published By This Run');
+    expect(workflow).toContain('actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100');
+    expect(workflow).toContain(
+      'publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"'
+    );
+    expect(workflow).toContain('steps.published.outputs.sha');
+    expect(workflow).not.toContain(
+      "ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha"
+    );
     expect(workflow).toContain('expected="$(git rev-parse HEAD)"');
     expect(workflow).toContain('https://ca-static.smarter.poker/build-info.json');
     expect(workflow).toContain('https://smarter.poker/hub/club-arena/build-info.json');
@@ -196,6 +206,11 @@ describe('Create Club production certification contract', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
 
     expect(script).toContain("'fn_get_club_welcome_package'");
+    expect(script).toContain('const retryRead = (label, operation) =>');
+    expect(script).toContain('welcome package read for certification club');
+    expect(script).toContain('welcome package refusal read for certification club');
+    expect(script.match(/retryRead\(/g)?.length).toBeGreaterThan(15);
+    expect(script).toContain("player.rpc(\n    'fn_remove_first_club_welcome_games'");
     expect(script).toContain('welcomeCash.length !== 9');
     expect(script).toContain('welcomeSchedules.length !== 1');
     expect(script).toContain("welcome?.status !== 'provisioned'");

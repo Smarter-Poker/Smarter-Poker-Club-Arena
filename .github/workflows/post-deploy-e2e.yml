@@ -171,7 +171,13 @@ jobs:
       # a PR artifact or whichever newer SHA happens to be live now. If a later
       # publisher has superseded it, the exact live comparison still refuses.
       - name: Resolve the exact client artifact selected by this publisher
-        if: github.event_name == 'workflow_run'
+        # A STOOD-DOWN PUBLISHER HAS NO ARTIFACT (2026-10-02). When the origin
+        # verdict above stands down for a superseded publisher it never writes
+        # should_run, so every downstream job skips - but this step still ran,
+        # asked the cancelled run for its client artifact, found 0 and turned
+        # the stand-down red (37021105028, 37021996055, 37027174306,
+        # 37043492278, 37045423284). It only resolves a publisher that ran.
+        if: github.event_name == 'workflow_run' && steps.origin.outputs.should_run == 'true'
         id: client-target
         env:
           GH_TOKEN: ${{ github.token }}

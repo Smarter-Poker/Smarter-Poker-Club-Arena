@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  A HAND COMMIT HOLDS THE CASH LEASE AGAINST ITS OWN HEARTBEAT
 -- ═══════════════════════════════════════════════════════════════════════════
+-- @live-proof: (SELECT count(*)=2 AND bool_and(pg_get_functiondef(p.oid) ~ 'engine_table_leases\s+l\s+WHERE\s+l\.table_id\s*=\s*p_table_id\s+FOR\s+KEY\s+SHARE;' AND pg_get_functiondef(p.oid) !~ 'engine_table_leases\s+l\s+WHERE\s+l\.table_id\s*=\s*p_table_id\s+FOR\s+SHARE;') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_ca_commit_hand_settlement_exact_before_obligations','fn_ca_resolve_unbound_pending_addons') AND p.prokind='f') AND (SELECT count(*)=1 AND bool_and(pg_get_functiondef(p.oid) ~ 'FOR\s+UPDATE') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='claim_table_lease_v2' AND p.prokind='f')
 --
 -- The cash path was left half-way through a fix that was completed for
 -- tournaments on 2026-09-10. This finishes it.

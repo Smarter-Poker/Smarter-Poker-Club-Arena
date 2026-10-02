@@ -1078,8 +1078,14 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   esac
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
     "${reserve_args[@]}")"; then
+    # NOT FATAL (2026-10-02). A refused or slow reservation asks for nothing:
+    # no announcement was sent, so this release simply waits for the
+    # scheduled break, exactly as a rate-limited one does. Dying here failed
+    # three releases on 2026-10-02 whose only fault was a slow seal read.
     release_engine_lock
-    die 'recovery announcement reservation could not be established'
+    RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
+    echo "[engine-release-transaction] recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break"
+    return 0
   fi
   if [ "$stamp" = rate-limited ]; then
     release_engine_lock

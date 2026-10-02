@@ -106,8 +106,14 @@ by the mirror bands (#5501 to #5508), so the alias table now holds no rows;
 its loader, its `superseded` section and both gates' support for it remain.
 Re-measured against all 5,234 rows of `schema_migrations`: 15 migrations
 installed between 2026-09-27 and 2026-10-01, more than 24 hours old, still had
-no file on `main`. They are recorded here headerless and byte-equal to
+no file on `main`. Thirteen are recorded here headerless and byte-equal to
 `fn_ca_migration_text`, each with a manifest row. Their authored copies sit on
 pull requests idle since 2026-09-27/28 (#5450, #5460, #5467, #5479, #5481,
 #5482, #5484, #5521, #5532), which can drop them on their next merge of
-`main`.
+`main`. Two are held back for their owners because a byte-exact record would
+break a law the owner must settle: `20260927154806` (open-week recompute
+lock, #5450) replaces the definition that
+`a-page-waits-for-its-witness-before-it-holds-anything` and
+`a-page-cannot-certify-an-unfinished-week` read, and `20260927221321`
+(horse stack-off audit schedule, #5484) schedules periodic work without the
+`-- periodic-work:` line `no-band-aids` requires.

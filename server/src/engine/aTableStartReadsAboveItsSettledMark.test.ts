@@ -17,24 +17,37 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SQL = readFileSync(
   resolve(
     HERE,
+    '../../../supabase/migrations/20261002092628_a_table_start_reads_its_unsettled_hands_inside_a_three_secon.sql'
+  ),
+  'utf8'
+);
+const GUARD_SQL = readFileSync(
+  resolve(
+    HERE,
     '../../../supabase/migrations/20261002083400_a_table_start_reads_only_the_hands_after_its_settled_mark_an.sql'
   ),
   'utf8'
 );
+const betweenIn = (sql: string, from: string, to: string) =>
+  sql.slice(sql.indexOf(from), sql.indexOf(to, sql.indexOf(from)));
 const between = (from: string, to: string) =>
   SQL.slice(SQL.indexOf(from), SQL.indexOf(to, SQL.indexOf(from)));
 
 describe('a table start reads only the hands after its settled mark', () => {
   const resume = between(
     'CREATE OR REPLACE FUNCTION public.fn_ca_resume_hand_submission',
-    'CREATE OR REPLACE FUNCTION public.fn_guard_tournament_start_readiness'
+    'DO $post$'
   );
 
   it('never asks the whole history: every submission read is bounded above the mark', () => {
     const reads = resume.match(/FROM smarter_private\.hand_submissions j[\s\S]*?LIMIT \d+/g) ?? [];
     expect(reads.length).toBe(3);
     for (const read of reads) expect(read).toMatch(/j\.hand_number>lo/);
-    expect(resume).toContain('ORDER BY j.hand_number LIMIT 2500) w;');
+    expect(resume).toContain('ORDER BY j.hand_number LIMIT 500) w;');
+    // A call stops, saves its mark and answers pending inside a 3 s budget.
+    expect(resume).toContain(
+      "IF clock_timestamp()-statement_timestamp()>interval '3 seconds' THEN"
+    );
     expect(resume).toContain("'reason','resume_scan_continues'");
   });
 
@@ -46,7 +59,8 @@ describe('a table start reads only the hands after its settled mark', () => {
 });
 
 describe('a start without a guarantee locks no bank', () => {
-  const guard = between(
+  const guard = betweenIn(
+    GUARD_SQL,
     'CREATE OR REPLACE FUNCTION public.fn_guard_tournament_start_readiness',
     'DO $post$'
   );

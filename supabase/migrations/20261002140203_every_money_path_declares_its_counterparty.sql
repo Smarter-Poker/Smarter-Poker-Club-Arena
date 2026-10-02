@@ -1639,7 +1639,7 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'spin_reserve_wallet', v_res);
 END; $function$;
 
--- Re-assert the closed grants production already holds on the four
+-- Re-assert the closed grants production already holds on the five
 -- engine/trigger-only doors above (CREATE OR REPLACE keeps them; a reader of
 -- this file should not have to know that).
 REVOKE ALL ON FUNCTION public.fn_seed_horses_to_floor(uuid, numeric) FROM PUBLIC, anon, authenticated;

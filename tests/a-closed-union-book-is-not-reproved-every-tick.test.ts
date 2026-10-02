@@ -20,7 +20,7 @@ describe('the weekly scheduler and a closed union book', () => {
 
   it('skips the evidence recomputation only for a run the close marked complete', () => {
     expect(SQL).toContain("AND q.status='complete')");
-    expect(SQL).toContain("ELSE public.fn_union_pnl_close_quality(v_union.id,v_from,v_end)->>'status'='ready' END THEN");
+    expect(SQL).toContain("ELSE public.fn_union_pnl_close_quality(v_union.id,v_from,v_end)->>'status'='ready' END) THEN");
   });
 
   it('records cron job 272 as production runs it', () => {

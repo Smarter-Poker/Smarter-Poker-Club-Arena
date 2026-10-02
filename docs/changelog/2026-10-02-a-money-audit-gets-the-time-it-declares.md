@@ -14,6 +14,6 @@ In the 12 hours to 16:00 UTC, the hourly money audits were cancelled by statemen
 
 - Nine audit commands open with `SET statement_timeout = '300s';` (600 s for the daily union self-test).
 - rake-attribution-drift reads 2 hours per hourly run (every hour checked twice); results-without-a-hand reads 1 day per 6-hourly run (every event checked four times).
-- Partial indexes `idx_chip_ledger_treasury_in` / `_out` on the treasury legs, built concurrently before the transaction.
+- Partial index `idx_chip_ledger_treasury_in` on the treasury credit legs, built concurrently before the transaction. The matching debit index could not be built concurrently under write load; its invalid build `idx_chip_ledger_treasury_out` is unused by any plan and is left for a quiet window to drop and rebuild.
 
 No function body changes; no audit is weakened.

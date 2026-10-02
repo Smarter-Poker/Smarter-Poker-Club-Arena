@@ -6,7 +6,7 @@
  * timer of the statement already running. Nine money audits now open their
  * cron command with a separate SET statement_timeout, two re-read windows are
  * narrowed to what one run needs while still covering every row, and the
- * treasury legs fn_ca_treasury_positions aggregates are indexed.
+ * treasury credit legs fn_ca_treasury_positions aggregates are indexed.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -21,17 +21,14 @@ const FILE = resolve(
 const sql = readFileSync(FILE, 'utf8');
 
 describe('a money audit gets the time it declares', () => {
-  it('builds the treasury leg indexes concurrently before one transaction', () => {
+  it('builds the treasury credit-leg index concurrently before one transaction', () => {
     const begin = sql.search(/^BEGIN;$/m);
     expect(begin).toBeGreaterThan(-1);
     expect(sql.trim().endsWith('COMMIT;')).toBe(true);
-    for (const ix of ['idx_chip_ledger_treasury_in', 'idx_chip_ledger_treasury_out']) {
-      const at = sql.indexOf(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${ix}`);
-      expect(at).toBeGreaterThan(-1);
-      expect(at).toBeLessThan(begin);
-    }
+    const at = sql.indexOf('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chip_ledger_treasury_in');
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(begin);
     expect(sql).toMatch(/WHERE to_type = 'club_treasury' AND to_entity_id IS NOT NULL;/);
-    expect(sql).toMatch(/WHERE from_type = 'club_treasury' AND from_entity_id IS NOT NULL;/);
     expect(sql).not.toMatch(/^\s*DROP\b/im);
   });
 

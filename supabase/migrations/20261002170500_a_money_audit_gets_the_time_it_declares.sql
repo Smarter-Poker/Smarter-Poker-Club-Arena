@@ -35,12 +35,15 @@
 -- And fn_ca_treasury_positions (ca-escalate-reconcile-criticals, once per
 -- critical treasury) aggregates every club_treasury leg since the baseline
 -- with no index on the treasury legs: two full scans of chip_ledger (8.1M
--- rows, 3.7 GB) per call. Two partial indexes cover exactly those legs
--- (88,913 debits; credits of the same order) for index-only aggregation.
+-- rows, 3.7 GB) per call. A partial index covers the credit legs for
+-- index-only aggregation. (The matching debit index could not be built
+-- concurrently on 2026-10-02 under write load; its invalid build,
+-- idx_chip_ledger_treasury_out, is not used by any plan and is left for a
+-- quiet window to drop and rebuild.)
 --
 -- WHAT CHANGES. Each command gets a first statement that sets the budget it
 -- needs (300 s; 600 s for the daily union self-test), the two windows are
--- narrowed, and the two indexes are built CONCURRENTLY before the
+-- narrowed, and the credit-leg index is built CONCURRENTLY before the
 -- transaction. No function body changes; no audit is weakened - every row
 -- each audit used to cover is still covered by at least one run.
 -- ===========================================================================
@@ -49,10 +52,6 @@
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chip_ledger_treasury_in
   ON public.chip_ledger (to_entity_id, created_at) INCLUDE (amount)
   WHERE to_type = 'club_treasury' AND to_entity_id IS NOT NULL;
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chip_ledger_treasury_out
-  ON public.chip_ledger (from_entity_id, created_at) INCLUDE (amount)
-  WHERE from_type = 'club_treasury' AND from_entity_id IS NOT NULL;
 
 BEGIN;
 
@@ -86,14 +85,9 @@ BEGIN
     END IF;
   END LOOP;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
-                  AND indexname = 'idx_chip_ledger_treasury_in')
-     OR NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
-                  AND indexname = 'idx_chip_ledger_treasury_out')
-     OR EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-                 WHERE c.relname IN ('idx_chip_ledger_treasury_in', 'idx_chip_ledger_treasury_out')
-                   AND NOT i.indisvalid) THEN
-    RAISE EXCEPTION 'preimage: the treasury leg indexes are missing or invalid; rebuild them before this transaction';
+  IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                  WHERE c.relname = 'idx_chip_ledger_treasury_in' AND i.indisvalid) THEN
+    RAISE EXCEPTION 'preimage: the treasury credit-leg index is missing or invalid; rebuild it before this transaction';
   END IF;
 END $pre$;
 

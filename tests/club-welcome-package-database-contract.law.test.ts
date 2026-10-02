@@ -58,6 +58,13 @@ const scheduleSpawnCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const unmaterializedSpawnCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002073521_welcome_certification_retires_unmaterialized_schedule_claims.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -440,5 +447,31 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(fixturePreparation).toBeLessThan(retirement);
     expect(scheduleSpawnCleanupSql).toContain("'schedule_tournaments_removed'");
     expect(scheduleSpawnCleanupSql).toContain("'schedule_tables_removed'");
+  });
+
+  it('retires only interrupted reserved claims while fresh scheduler claims refuse atomically', () => {
+    expect(unmaterializedSpawnCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(unmaterializedSpawnCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(unmaterializedSpawnCleanupSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(unmaterializedSpawnCleanupSql).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(unmaterializedSpawnCleanupSql).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_fence_welcome_package_schedule_spawn()'
+    );
+    expect(unmaterializedSpawnCleanupSql).toContain(
+      'PERFORM 1 FROM public.tournament_schedule_spawns'
+    );
+    expect(unmaterializedSpawnCleanupSql).toContain('ORDER BY id FOR UPDATE');
+    expect(unmaterializedSpawnCleanupSql).toContain(
+      "s.tournament_id IS NULL\n                        AND s.created_at > transaction_timestamp() - interval '5 minutes'"
+    );
+    expect(unmaterializedSpawnCleanupSql).toContain(
+      's.tournament_id IS NOT NULL\n                        AND NOT(s.tournament_id=ANY(v_tournaments))'
+    );
+    expect(unmaterializedSpawnCleanupSql).toContain(
+      'DELETE FROM public.tournament_schedule_spawns WHERE schedule_id=ANY(v_schedules)'
+    );
+    expect(unmaterializedSpawnCleanupSql).toContain(
+      'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+    );
   });
 });

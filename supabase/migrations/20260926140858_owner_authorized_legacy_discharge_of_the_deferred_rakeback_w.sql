@@ -320,6 +320,12 @@ REVOKE ALL ON FUNCTION public.fn_ca_rakeback_payout_leg_is_documented() FROM PUB
 --    round 1/2 plan, restates or opens the week's periods, and records the
 --    operation as certified. It moves no chips. The caller states the exact
 --    figures it expects (proved read-only first); any difference refuses.
+-- Registered before they exist (fn_ca_money_rpc_registry_guard refuses a
+-- balance-writing function created before its registry row).
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
+ ('fn_accounting_legacy_pay_week','approved','Owner-authorized single-use discharge of a recorded deferred week (accounting_deferred_obligations) below the settlement floor, through the weekly stages'' leg shapes and document authority. One operation per week (accounting_owner_legacy_operations.period_start is unique); a paid operation replays nothing.'),
+ ('fn_accounting_legacy_certify_week','approved','Writes the legacy certificates and plan for fn_accounting_legacy_pay_week; moves no chips.');
+
 CREATE FUNCTION public.fn_accounting_legacy_certify_week(
  p_operation_id uuid, p_period_start timestamptz, p_mode text,
  p_authorized_by text, p_authorization_text text, p_expected jsonb)
@@ -981,9 +987,6 @@ REVOKE ALL ON FUNCTION public.fn_accounting_legacy_certify_week(uuid,timestamptz
 REVOKE ALL ON FUNCTION public.fn_accounting_legacy_pay_week(uuid) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_accounting_legacy_certify_week(uuid,timestamptz,text,text,text,jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_accounting_legacy_pay_week(uuid) TO service_role;
-INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
- ('fn_accounting_legacy_pay_week','approved','Owner-authorized single-use discharge of a recorded deferred week (accounting_deferred_obligations) below the settlement floor, through the weekly stages'' leg shapes and document authority. One operation per week (accounting_owner_legacy_operations.period_start is unique); a paid operation replays nothing.'),
- ('fn_accounting_legacy_certify_week','approved','Writes the legacy certificates and plan for fn_accounting_legacy_pay_week; moves no chips.');
 
 -- Read the change back inside the same transaction.
 DO $readback$

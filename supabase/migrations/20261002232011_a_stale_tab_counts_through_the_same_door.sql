@@ -38,6 +38,14 @@
 -- md5 of pg_get_functiondef before it runs and aborts if the live function
 -- moved. Nothing is backfilled and nothing is repaired (CLAUDE.md 10.12).
 --
+-- THE REEL BODIES ARE SHARED WITH 20261002225448. That migration (another
+-- agent's, merged at 23:26 and not yet applied) reached the same two routines
+-- with a role check of its own. Both files now carry one identical text for
+-- the reel routines - this file's once-a-day receipt and no browser decrement,
+-- plus that file's explicit signed-in-viewer and kept-counter checks - so
+-- whichever is applied last, the result is the same. The pins below are of the
+-- pre-image this file first replaced.
+--
 -- @live-proof: (SELECT has_function_privilege('authenticated', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND NOT has_function_privilege('anon', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND (SELECT prosrc LIKE '%fn_count_content_engagement%' FROM pg_proc WHERE oid = 'public.increment_post_count(uuid,text)'::regprocedure))
 
 BEGIN;
@@ -61,16 +69,30 @@ END
 $pins$;
 
 CREATE OR REPLACE FUNCTION public.increment_reel_count(p_reel_id uuid, p_field text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'extensions'
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','extensions'
 AS $function$
 DECLARE
   v_target uuid;
+  v_request_role text := NULLIF(btrim(COALESCE(auth.role(), '')), '');
 BEGIN
+  IF p_field IS NULL OR NOT (p_field = ANY(ARRAY['like_count','comment_count','share_count','view_count']::text[])) THEN
+    RAISE EXCEPTION 'increment_reel_count: invalid field %', p_field;
+  END IF;
   -- A browser reports its own view or share, once a day, and nothing else.
   IF COALESCE(auth.role(), 'service_role') <> 'service_role' THEN
+    IF v_request_role IN ('anon', 'authenticated') THEN
+      IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'increment_reel_count: a signed-in viewer is required'
+          USING ERRCODE = '42501';
+      END IF;
+    END IF;
+    IF p_field NOT IN ('share_count', 'view_count') THEN
+      RAISE EXCEPTION 'increment_reel_count: % is kept from social_likes/social_comments, not from a browser', p_field
+        USING ERRCODE = '42501';
+    END IF;
     IF p_field = 'view_count' THEN
       PERFORM public.fn_count_content_engagement(p_reel_id, 'view', 'reels');
     ELSIF p_field = 'share_count' THEN
@@ -79,9 +101,6 @@ BEGIN
       RAISE EXCEPTION 'increment_reel_count: % is not a browser''s to write', p_field USING ERRCODE = '42501';
     END IF;
     RETURN;
-  END IF;
-  IF p_field IS NULL OR NOT (p_field = ANY(ARRAY['like_count','comment_count','share_count','view_count']::text[])) THEN
-    RAISE EXCEPTION 'increment_reel_count: invalid field %', p_field;
   END IF;
   SELECT COALESCE(a.canonical_reel_id, p_reel_id) INTO v_target
   FROM (SELECT 1) seed
@@ -94,19 +113,32 @@ END
 $function$;
 
 CREATE OR REPLACE FUNCTION public.decrement_reel_count(p_reel_id uuid, p_field text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'extensions'
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','extensions'
 AS $function$
 DECLARE
   v_target uuid;
+  v_request_role text := NULLIF(btrim(COALESCE(auth.role(), '')), '');
 BEGIN
-  IF COALESCE(auth.role(), 'service_role') <> 'service_role' THEN
-    RAISE EXCEPTION 'decrement_reel_count: a count is not a browser''s to take down' USING ERRCODE = '42501';
-  END IF;
   IF p_field IS NULL OR NOT (p_field = ANY(ARRAY['like_count','comment_count','share_count','view_count']::text[])) THEN
     RAISE EXCEPTION 'decrement_reel_count: invalid field %', p_field;
+  END IF;
+  -- A browser never takes a count down: the view or share it reported is a
+  -- receipt, and like and comment counts are the triggers' to keep.
+  IF COALESCE(auth.role(), 'service_role') <> 'service_role' THEN
+    IF v_request_role IN ('anon', 'authenticated') THEN
+      IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'decrement_reel_count: a signed-in viewer is required'
+          USING ERRCODE = '42501';
+      END IF;
+    END IF;
+    IF p_field NOT IN ('share_count', 'view_count') THEN
+      RAISE EXCEPTION 'decrement_reel_count: % is kept from social_likes/social_comments, not from a browser', p_field
+        USING ERRCODE = '42501';
+    END IF;
+    RAISE EXCEPTION 'decrement_reel_count: a count is not a browser''s to take down' USING ERRCODE = '42501';
   END IF;
   SELECT COALESCE(a.canonical_reel_id, p_reel_id) INTO v_target
   FROM (SELECT 1) seed

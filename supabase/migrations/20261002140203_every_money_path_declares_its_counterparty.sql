@@ -206,7 +206,9 @@ ON CONFLICT (proname) DO NOTHING;
 --    nothing, and answers <name>_retired - the way fn_clawback_chips_atomic
 --    was retired - so a stray caller gets a name instead of a commit-time
 --    refusal. Nothing is dropped: a function another tree still names must
---    not vanish under it.
+--    not vanish under it. A retired door needs none of its owner's
+--    privileges, so it runs as its caller (SECURITY INVOKER); the closed
+--    grants production already holds are re-asserted below.
 --    "Nothing calls" means, measured 2026-10-02: no pg_proc caller other than
 --    a name list in a guard, no cron.job, 0 calls since the 2026-09-28
 --    pg_stat_statements reset, and no reachable caller in the engine, the
@@ -232,7 +234,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.credit_club_wallet_rake(p_club_id uuid, p_rake numeric, p_bbj numeric DEFAULT 0, p_hand_id uuid DEFAULT NULL::uuid, p_hand_number integer DEFAULT NULL::integer)
  RETURNS void
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
 BEGIN
@@ -303,7 +304,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_cashier_claim_back(p_club_id uuid, p_from_user_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
@@ -320,7 +320,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_cashier_send_chips(p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
@@ -336,7 +335,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_debit_chips(p_club_id uuid, p_user_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
 BEGIN
@@ -366,7 +364,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_reject_cashout(p_cashout_id uuid, p_agent_id uuid, p_reason text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
 BEGIN
@@ -381,7 +378,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_spin_reserve_seed_from_union(p_union_id uuid, p_club_id uuid, p_amount numeric, p_highest_stake numeric DEFAULT NULL::numeric, p_ceiling numeric DEFAULT NULL::numeric, p_wallet text DEFAULT 'spin_reserve_wallet'::text, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
@@ -413,7 +409,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_union_distribute_promo(p_union_id uuid, p_target_kind text, p_target_id uuid, p_amount numeric, p_agent_club_id uuid DEFAULT NULL::uuid, p_note text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
@@ -429,7 +424,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_union_fund_promo_from_bank(p_union_id uuid, p_amount numeric, p_note text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'extensions'
 AS $function$
 BEGIN
@@ -444,7 +438,6 @@ $function$;
 CREATE OR REPLACE FUNCTION public.fn_wallet_claim_back(p_club_id uuid, p_from_user_id uuid, p_amount numeric, p_target_wallet text, p_source_wallet text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
@@ -588,6 +581,17 @@ BEGIN
     'message', 'Cash out through atomic_table_cashout');
 END;
 $function$;
+
+REVOKE ALL ON FUNCTION public.atomic_tournament_register(uuid, uuid, text, numeric, numeric, numeric, boolean, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.credit_club_wallet_rake(uuid, numeric, numeric, uuid, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_cashier_claim_back(uuid, uuid, numeric, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_cashier_send_chips(uuid, uuid, numeric, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_debit_chips(uuid, uuid, numeric, text, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_reject_cashout(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_spin_reserve_seed_from_union(uuid, uuid, numeric, numeric, numeric, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_union_distribute_promo(uuid, text, uuid, numeric, uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_union_fund_promo_from_bank(uuid, numeric, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_wallet_claim_back(uuid, uuid, numeric, text, text, text, text) FROM PUBLIC, anon, authenticated;
 
 UPDATE public.ca_money_rpc_registry
    SET status = 'retired',
@@ -1789,6 +1793,11 @@ AS $function$
                       WHERE g.proname = f.proname AND g.status = 'system')
    ORDER BY 1, 2, 3
 $function$;
+
+-- Detector telemetry: the service role and the ratchet read it; no browser does.
+-- (Re-asserts the grants production already holds - CREATE OR REPLACE keeps them.)
+REVOKE ALL ON FUNCTION public.fn_ca_undeclared_money_paths() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_undeclared_money_paths() TO service_role;
 
 DO $post$
 DECLARE

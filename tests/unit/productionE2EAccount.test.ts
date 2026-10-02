@@ -815,7 +815,10 @@ describe('a certification fixture that leaked must not wedge the next certificat
     expect(run.wait).not.toHaveBeenCalled();
   });
 
-  it('prints only the reserved fixture graph when package-game classification refuses cleanup', async () => {
+  it.each([
+    'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
+    'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED',
+  ])('prints only the reserved fixture graph when %s refuses cleanup', async (message) => {
     const clubId = '11111111-1111-4111-8111-111111111111';
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-graph-diagnostic-'));
     const env = environment(directory);
@@ -825,7 +828,7 @@ describe('a certification fixture that leaked must not wedge the next certificat
     );
     const errorBody = {
       code: '55000',
-      message: 'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
+      message,
     };
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
@@ -838,7 +841,14 @@ describe('a certification fixture that leaked must not wedge the next certificat
         return Response.json(errorBody, { status: 500 });
       }
       if (url.includes('/club_welcome_package_items?')) {
-        return Response.json([{ slot_key: 'nlh6', entity_kind: 'cash_game', entity_id: 'cash-1' }]);
+        return Response.json([
+          { slot_key: 'nlh6', entity_kind: 'cash_game', entity_id: 'cash-1' },
+          {
+            slot_key: 'daily',
+            entity_kind: 'tournament_schedule',
+            entity_id: 'schedule-1',
+          },
+        ]);
       }
       if (url.includes('/cash_games?')) return Response.json([{ id: 'cash-1' }]);
       if (url.includes('/tournament_schedules?')) return Response.json([{ id: 'schedule-1' }]);
@@ -848,20 +858,31 @@ describe('a certification fixture that leaked must not wedge the next certificat
       if (url.includes('/tables?cluster_id=')) {
         return Response.json([{ id: 'table-foreign', club_id: 'foreign-club' }]);
       }
+      if (url.includes('/tournaments?club_id=')) {
+        return Response.json([{ id: 'tournament-club', schedule_id: null }]);
+      }
+      if (url.includes('/tournaments?schedule_id=')) {
+        return Response.json([{ id: 'tournament-schedule', schedule_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?')) {
+        return Response.json([{ id: 1, schedule_id: 'schedule-1', tournament_id: null }]);
+      }
       return new Response('unexpected request', { status: 500 });
     });
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await expect(
       retireProductionCreateClubFixtures({ environment: env, fetchImpl: fetchMock })
-    ).rejects.toThrow(/WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES/);
+    ).rejects.toThrow(new RegExp(message));
 
     expect(diagnostic).toHaveBeenCalledWith(
       expect.stringContaining('reserved fixture graph diagnostic')
     );
     expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"role":"unexpected"'));
     expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"table-foreign"'));
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"tournament-club"'));
+    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"tournament_id":null'));
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 
   it('treats a replayed retirement as success (the door answers already_gone)', async () => {

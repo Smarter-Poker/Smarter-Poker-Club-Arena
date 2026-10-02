@@ -492,7 +492,10 @@ export async function retireCertificationClubWithRetry({
   } catch (error) {
     if (
       error?.code === '55000' &&
-      error?.body?.message === 'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES'
+      [
+        'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
+        'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED',
+      ].includes(error?.body?.message)
     ) {
       try {
         const items = await serviceRequest(
@@ -510,7 +513,22 @@ export async function retireCertificationClubWithRetry({
               .filter(Boolean)
           : [];
         const clusterFilter = cashGameIds.map((id) => encodeURIComponent(id)).join(',');
-        const [cashGames, schedules, clubTables, clusterTables] = await Promise.all([
+        const scheduleIds = Array.isArray(items)
+          ? items
+              .filter((item) => item.entity_kind === 'tournament_schedule')
+              .map((item) => item.entity_id)
+              .filter(Boolean)
+          : [];
+        const scheduleFilter = scheduleIds.map((id) => encodeURIComponent(id)).join(',');
+        const [
+          cashGames,
+          schedules,
+          clubTables,
+          clusterTables,
+          clubTournaments,
+          scheduleTournaments,
+          scheduleSpawns,
+        ] = await Promise.all([
           serviceRequest(
             configuration,
             `/rest/v1/cash_games?club_id=eq.${encodeURIComponent(clubId)}` +
@@ -542,6 +560,33 @@ export async function retireCertificationClubWithRetry({
             {},
             fetchImpl
           ),
+          serviceRequest(
+            configuration,
+            `/rest/v1/tournaments?club_id=eq.${encodeURIComponent(clubId)}` +
+              '&select=id,club_id,union_id,schedule_id,status,started_at,created_at,updated_at' +
+              '&order=id&limit=500',
+            {},
+            fetchImpl
+          ),
+          scheduleIds.length
+            ? serviceRequest(
+                configuration,
+                `/rest/v1/tournaments?schedule_id=in.(${scheduleFilter})` +
+                  '&select=id,club_id,union_id,schedule_id,status,started_at,created_at,updated_at' +
+                  '&order=id&limit=500',
+                {},
+                fetchImpl
+              )
+            : Promise.resolve([]),
+          scheduleIds.length
+            ? serviceRequest(
+                configuration,
+                `/rest/v1/tournament_schedule_spawns?schedule_id=in.(${scheduleFilter})` +
+                  '&select=id,schedule_id,spawn_key,tournament_id,created_at&order=id&limit=500',
+                {},
+                fetchImpl
+              )
+            : Promise.resolve([]),
         ]);
         console.error(
           '[production-e2e-account] reserved fixture graph diagnostic: ' +
@@ -553,6 +598,9 @@ export async function retireCertificationClubWithRetry({
               schedules,
               clubTables,
               clusterTables,
+              clubTournaments,
+              scheduleTournaments,
+              scheduleSpawns,
             })
         );
       } catch (diagnosticError) {

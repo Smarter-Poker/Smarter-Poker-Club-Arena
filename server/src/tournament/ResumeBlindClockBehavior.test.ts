@@ -97,6 +97,9 @@ function harness(
     // 2026-09-27 (levelClockOutage.ts); the extracted block needs it in
     // scope like every other import it uses.
     'levelResumeRemainingMs',
+    // A released break and a persisted level start ask the Horse tournament
+    // context to read the committed clock (2026-10-02).
+    'refreshTournamentBrainContextAfterClockCommit',
     runtime
   )(
     supabase,
@@ -108,7 +111,8 @@ function harness(
     },
     reportError,
     maintenanceFrozen,
-    levelResumeRemainingMs
+    levelResumeRemainingMs,
+    vi.fn()
   );
   const state: any = {
     ...actual,

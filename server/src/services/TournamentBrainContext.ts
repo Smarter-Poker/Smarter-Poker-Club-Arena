@@ -83,6 +83,14 @@ export interface TournamentBrainContext {
   nextAnte: number | null;
   levelDurationMin: number | null;
   levelElapsedMin: number | null;
+  /**
+   * The playable level immediately before `currentLevel`, from the same blind
+   * structure. A hand keeps the stakes it was dealt with, so a hand dealt just
+   * before the current level was published is still played at these exact
+   * stakes; the table projection uses this to recognise that hand instead of
+   * mistaking it for a lagging cache.
+   */
+  previousLevel?: TournamentPreviousBlindLevel | null;
   /** Registration and re-entry state, never inferred as cash defaults. */
   registrationOpen: boolean;
   lateRegistrationOpen: boolean;
@@ -289,6 +297,16 @@ export interface TournamentBlindState {
   nextBlindMult: number;
   levelIndexValid: boolean;
   timingStatus: 'complete' | 'missing' | 'stale' | 'future' | 'paused';
+  previousLevel: TournamentPreviousBlindLevel | null;
+}
+
+/** The exact stakes and authored length of one earlier playable level. */
+export interface TournamentPreviousBlindLevel {
+  level: number;
+  smallBlind: number;
+  bigBlind: number;
+  ante: number;
+  durationMin: number | null;
 }
 
 /** V23 pure: minutes until the next level and its bb multiple. Exported for
@@ -389,6 +407,7 @@ export function deriveBlindState(
     nextBlindMult: 1,
     levelIndexValid: false,
     timingStatus: 'missing',
+    previousLevel: null,
   };
   try {
     const levels = parseBlindStructure(structure);
@@ -403,6 +422,23 @@ export function deriveBlindState(
     let nextIndex = lvl + 1;
     while (nextIndex < levels.length && levels[nextIndex]?.isBreak === true) nextIndex++;
     const next = resolveBlindLevel(levels, nextIndex, options);
+    let previousIndex = lvl - 1;
+    while (previousIndex >= 0 && levels[previousIndex]?.isBreak === true) previousIndex--;
+    const previous = previousIndex >= 0 ? resolveBlindLevel(levels, previousIndex, options) : null;
+    const previousAuthoredDuration = levelDurationMinutes(previous ?? undefined);
+    const previousLevel: TournamentPreviousBlindLevel | null =
+      previous && Number(previous.smallBlind) > 0 && Number(previous.bigBlind) > 0
+        ? {
+            level: previousIndex,
+            smallBlind: Number(previous.smallBlind),
+            bigBlind: Number(previous.bigBlind),
+            ante: Math.max(0, Number(previous.ante) || 0),
+            durationMin:
+              previousAuthoredDuration != null && options.accelerated
+                ? acceleratedLevelMs(previousAuthoredDuration * 60_000) / 60_000
+                : previousAuthoredDuration,
+          }
+        : null;
     const currentSmallBlind = Number(cur.smallBlind) || 0;
     const curBB = Number(cur.bigBlind) || 0;
     const currentAnte = Math.max(0, Number(cur.ante) || 0);
@@ -428,6 +464,7 @@ export function deriveBlindState(
       levelDurationMin: durMin,
       nextBlindMult: curBB > 0 && nextBB != null ? nextBB / curBB : 1,
       levelIndexValid: true,
+      previousLevel,
     };
     if (options.onBreak) return { ...base, timingStatus: 'paused' };
     const startedMs = levelStartedAt ? Date.parse(levelStartedAt) : NaN;
@@ -457,6 +494,7 @@ export function deriveBlindState(
       nextBlindMult: base.nextBlindMult,
       levelIndexValid: true,
       timingStatus: 'complete',
+      previousLevel,
     };
   } catch {
     return none;
@@ -1000,6 +1038,7 @@ export function deriveContext(
     nextAnte: blindState.nextAnte,
     levelDurationMin: blindState.levelDurationMin,
     levelElapsedMin: blindState.levelElapsedMin,
+    previousLevel: blindState.previousLevel,
     registrationOpen,
     lateRegistrationOpen,
     registrationRequiresAuthorization: row.authorized_to_register === true,
@@ -1157,6 +1196,29 @@ export function refreshTournamentBrainContext(tournamentId: string): TournamentB
     void refresh(tournamentId, e, e.generation, now);
   }
   return e.ctx;
+}
+
+/**
+ * Lifecycle-owned refresh for a tournament clock fact this process has just
+ * committed: a published blind level, a persisted level start, or a break
+ * released with its credited level clock. The TTL above paces background reads; it must not let
+ * the cache keep describing the clock this process has already replaced,
+ * which is what made every decision in the following seconds report
+ * `blind_level_cache_lag` or `level_timing_missing`. A new generation fences
+ * any read that started before the commit, so that read can never publish
+ * over this one. Still off the action clock: the caller is the tournament
+ * manager after its own write has returned.
+ */
+export function refreshTournamentBrainContextAfterClockCommit(tournamentId: string): void {
+  const e = cache.get(tournamentId);
+  // No table in this process has asked for this tournament's context, so
+  // there is no cached clock to correct; the first table to load reads it.
+  if (!e) return;
+  const now = Date.now();
+  e.inFlight = true;
+  e.lastAttemptAt = now;
+  e.generation += 1;
+  void refresh(tournamentId, e, e.generation, now);
 }
 
 /**

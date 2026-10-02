@@ -1,6 +1,14 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
+// The Horse tournament context reads the committed clock through its own
+// lifecycle; these tests pin the manager's clock writes, not that read.
+const brainContext = vi.hoisted(() => ({ refreshAfterClockCommit: vi.fn() }));
+vi.mock('../services/TournamentBrainContext.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/TournamentBrainContext.js')>()),
+  refreshTournamentBrainContextAfterClockCommit: brainContext.refreshAfterClockCommit,
+}));
+
 let TournamentManagerBase: (typeof import('./TournamentManagerBase.js'))['TournamentManagerBase'];
 let TournamentManagerEliminations: (typeof import('./TournamentManagerEliminations.js'))['TournamentManagerEliminations'];
 let supabase: (typeof import('../services/supabase.js'))['supabase'];
@@ -343,6 +351,9 @@ describe('durable atomic blind-level transition', () => {
     expect(state.currentLevel).toBe(1);
     expect(state.blindTimer.delay).toBe(600000);
     expect(tableStateHub.emitEvent).toHaveBeenCalledTimes(2);
+    // The Horse tournament context reads the committed level now, not one
+    // refresh interval later while new hands are already dealt at it.
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledWith('level-restart');
   });
 
   it.each(['write failure', 'lost response'])(

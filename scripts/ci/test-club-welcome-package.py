@@ -35,6 +35,11 @@ def run(name, sql, expected=None):
     results['cases'].append({'name':name,'passed':ok,'expected':expected,'observed':got})
     if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
     return got
+def run_refusal(name, sql, expected_error):
+    r=command(psql,sql); got=r.stdout.rstrip('\n'); ok=r.returncode!=0 and expected_error in r.stderr
+    (out/f'{name}.log').write_text('-- SQL\n'+sql+'\n-- OUT\n'+r.stdout+'\n-- ERR\n'+r.stderr)
+    results['cases'].append({'name':name,'passed':ok,'expected':expected_error,'observed':r.stderr.rstrip('\n')[-2000:]})
+    if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
 
 SETUP = r"""
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
@@ -201,7 +206,64 @@ try:
     run('install-ledger-category-repair',LEDGER_CATEGORY_REPAIR_MIGRATION.read_text())
     run('install-derived-table-cleanup',DERIVED_TABLE_CLEANUP_MIGRATION.read_text())
     run('install-authoritative-lease-repair',AUTHORITATIVE_LEASE_REPAIR_MIGRATION.read_text())
-    run('install-controller-provenance-repair',CONTROLLER_PROVENANCE_REPAIR_MIGRATION.read_text())
+    controller_old = 't.created_by IS NOT NULL'
+    controller_new = '(t.created_by IS NOT NULL AND t.created_by IS DISTINCT FROM v_club.owner_id)'
+    controller_unknown = '(t.created_by IS DISTINCT FROM v_club.owner_id)'
+    controller_signature = "'public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure"
+    downgrade_controller_provenance = f"""
+DO $downgrade$
+DECLARE v_source text;
+BEGIN
+  SELECT pg_get_functiondef({controller_signature}) INTO v_source;
+  IF position('{controller_new}' IN v_source)=0 THEN
+    RAISE EXCEPTION 'fixture expected the controller-owner guard';
+  END IF;
+  EXECUTE replace(v_source,'{controller_new}','{controller_old}');
+END
+$downgrade$;
+CREATE TEMP TABLE controller_provenance_before AS
+SELECT replace(pg_get_functiondef(p.oid),'{controller_old}','{controller_new}') AS expected_definition,
+       p.proowner,p.proacl,p.proconfig,p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+"""
+    verify_controller_provenance = f"""
+SELECT pg_get_functiondef(p.oid)=b.expected_definition,
+       (p.proowner,p.proacl,p.proconfig,p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows)
+         IS NOT DISTINCT FROM
+       (b.proowner,b.proacl,b.proconfig,b.prosecdef,b.provolatile,b.proparallel,b.procost,b.prorows),
+       position('{controller_new}' IN pg_get_functiondef(p.oid))>0
+  FROM pg_proc p CROSS JOIN controller_provenance_before b
+ WHERE p.oid={controller_signature};
+"""
+    run('install-controller-provenance-repair-from-old-definition',
+        downgrade_controller_provenance+CONTROLLER_PROVENANCE_REPAIR_MIGRATION.read_text()+verify_controller_provenance,
+        't|t|t')
+    controller_authority = run('controller-provenance-repair-authority-before-refusal',f"""
+SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
+       p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+""")
+    mismatch_controller_provenance = f"""
+BEGIN;
+DO $mismatch$
+DECLARE v_source text;
+BEGIN
+  SELECT pg_get_functiondef({controller_signature}) INTO v_source;
+  IF position('{controller_new}' IN v_source)=0 THEN
+    RAISE EXCEPTION 'fixture expected the repaired controller-owner guard';
+  END IF;
+  EXECUTE replace(v_source,'{controller_new}','{controller_unknown}');
+END
+$mismatch$;
+"""+CONTROLLER_PROVENANCE_REPAIR_MIGRATION.read_text()
+    run_refusal('controller-provenance-repair-refuses-unknown-definition',
+                mismatch_controller_provenance,
+                'WELCOME_CERTIFICATION_CONTROLLER_PROVENANCE_GUARD_NOT_FOUND')
+    run('controller-provenance-repair-refusal-rolls-back-definition-and-authority',f"""
+SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::text,
+       p.prosecdef,p.provolatile,p.proparallel,p.procost,p.prorows
+  FROM pg_proc p WHERE p.oid={controller_signature};
+""",controller_authority)
     run('welcome-ledger-counterparty-is-declared-clearing-store',"SELECT position('welcome_package' in prosrc),position('opening_setup' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('welcome-ledger-category-is-declared-opening-allocation',"SELECT position('club_welcome_allocation' in prosrc),position('club_opening_allocation' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')

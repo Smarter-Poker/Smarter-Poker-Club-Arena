@@ -4,6 +4,8 @@
 -- certification club owner. Keep refusing every other creator.
 -- @live-proof: (SELECT p.prosrc LIKE '%t.created_by IS DISTINCT FROM v_club.owner_id%' FROM pg_proc p WHERE p.oid='public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure)
 BEGIN;
+SET LOCAL lock_timeout = '15s';
+SET LOCAL statement_timeout = '120s';
 
 DO $migration$
 DECLARE

@@ -279,6 +279,8 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(controllerProvenanceRepairSql).toContain(
       't.created_by IS DISTINCT FROM v_club.owner_id'
     );
+    expect(controllerProvenanceRepairSql).toContain("SET LOCAL lock_timeout = '15s'");
+    expect(controllerProvenanceRepairSql).toContain("SET LOCAL statement_timeout = '120s'");
     expect(derivedTableCleanupSql).not.toContain('t.engine_lease_owner IS NOT NULL');
     expect(derivedTableCleanupSql).not.toContain('t.engine_lease_expires_at IS NOT NULL');
     expect(derivedTableCleanupSql).toContain('public.engine_table_leases');

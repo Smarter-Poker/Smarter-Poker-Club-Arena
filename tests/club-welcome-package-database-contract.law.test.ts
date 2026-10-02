@@ -273,6 +273,12 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(derivedTableCleanupSql).toContain('public.engine_table_leases');
     expect(authoritativeLeaseRepairSql).toContain('FROM public.engine_table_leases l');
     expect(authoritativeLeaseRepairSql).toContain(
+      "'public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure"
+    );
+    expect(authoritativeLeaseRepairSql).not.toContain(
+      'fn_ca_prepare_unused_welcome_certification_fixture(uuid,text)'
+    );
+    expect(authoritativeLeaseRepairSql).toContain(
       'WELCOME_CERTIFICATION_AUTHORITATIVE_LEASE_GUARD_NOT_INSTALLED'
     );
     expect(derivedTableCleanupSql).toContain('public.cash_game_roster');

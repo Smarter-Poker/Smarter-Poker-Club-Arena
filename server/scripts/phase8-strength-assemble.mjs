@@ -23,6 +23,9 @@
  *   --qualification=<file>  default <out>/../phase8-qualification-YYYY-MM-DD.json
  *   --repo-root=<dir>       root that evidencePath is relative to (default: this checkout)
  *   --fixture               assemble fixture-mode runs (tests only); never qualifies
+ *   --no-format             write run copies verbatim (committedSha256 = sourceSha256) and
+ *                           strength.json as JSON.stringify; without it Prettier is resolved
+ *                           from the root of this checkout and its absence is a refusal
  *   --defective=<file>      {"<objective>-<seed>": {status, reason, logTail}} for runs that
  *                           ended without a result. They are recorded, never replaced; the
  *                           contract then reports the matrix incomplete. A run that has a
@@ -47,7 +50,8 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Offline only (the phase8-useful-completion pattern): the league contract's
 // imports construct a Supabase client at load time, so they get an address
@@ -66,7 +70,6 @@ const sourceRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
 const league = await import('../src/benchmark/HorseTournamentLeague.ts');
 const { PHASE8_POLICY } = await import('../src/engine/HorseTournamentPostflop.ts');
 const authority = await import('../src/engine/HorseQualifiedAuthority.ts');
-const prettier = await import('prettier');
 
 export const STRENGTH_SCHEMA = 'horse-phase8-strength-v1';
 export const QUALIFICATION_SCHEMA = 'horse-phase8-qualification-v1';
@@ -102,9 +105,24 @@ const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 export const RECEIPT_FORMATTING =
   'Each run file is the host bytes reformatted by the repository Prettier configuration; formatting is the only difference (the parsed JSON is identical, checked at assembly). sourceSha256 hashes the host bytes, committedSha256 the committed file.';
 
-/** The host file in the repository's Prettier shape, with both hashes. */
-async function prettierCopy(from, to, label) {
+/** Prettier is a root devDependency; the server package does not install it.
+ * Resolve it from the root of this checkout, never from under server/. */
+export async function loadRepositoryPrettier(root = sourceRepo) {
+  try {
+    const entry = createRequire(path.join(root, 'package.json')).resolve('prettier/package.json');
+    return await import(pathToFileURL(path.join(path.dirname(entry), 'index.mjs')).href);
+  } catch {
+    return null;
+  }
+}
+
+/** The host file in the repository's Prettier shape (or verbatim), with both hashes. */
+async function prettierCopy(prettier, from, to, label) {
   const source = readFileSync(from);
+  if (!prettier) {
+    const hash = sha256(source);
+    return { label, to, text: source, sourceSha256: hash, committedSha256: hash };
+  }
   const config = (await prettier.resolveConfig(to)) ?? {};
   const text = await prettier.format(source.toString('utf8'), {
     ...config,
@@ -123,7 +141,8 @@ const hashes = (copies) =>
     ])
   );
 
-async function formatted(file, value) {
+async function formatted(prettier, file, value) {
+  if (!prettier) return JSON.stringify(value, null, 2) + '\n';
   const config = (await prettier.resolveConfig(file)) ?? {};
   return prettier.format(JSON.stringify(value), { ...config, parser: 'json', filepath: file });
 }
@@ -377,6 +396,8 @@ export async function assemble(options) {
     .join('/');
   if (!evidencePath.startsWith(authority.HORSE_PHASE8_EVIDENCE_DIRECTORY))
     inspected.reasons.push(`evidence_outside_${authority.HORSE_PHASE8_EVIDENCE_DIRECTORY}`);
+  const prettier = options['no-format'] ? null : await loadRepositoryPrettier();
+  if (!options['no-format'] && !prettier) inspected.reasons.push('prettier_unavailable');
   if (inspected.reasons.length) return { refused: true, reasons: inspected.reasons };
 
   const { runs, defectiveRuns, head } = inspected;
@@ -388,6 +409,7 @@ export async function assemble(options) {
   for (const r of runs) {
     const list = [
       await prettierCopy(
+        prettier,
         path.join(r.dir, `${r.key}.json`),
         path.join(runsOut, `${r.key}.json`),
         `${r.key}.json`
@@ -395,7 +417,12 @@ export async function assemble(options) {
     ];
     for (const f of RECEIPTS)
       list.push(
-        await prettierCopy(path.join(r.dir, f), path.join(runsOut, r.key, f), `${r.key}/${f}`)
+        await prettierCopy(
+          prettier,
+          path.join(r.dir, f),
+          path.join(runsOut, r.key, f),
+          `${r.key}/${f}`
+        )
       );
     copies.set(r.key, list);
   }
@@ -403,7 +430,12 @@ export async function assemble(options) {
     const list = [];
     for (const f of d.receipts)
       list.push(
-        await prettierCopy(path.join(d.dir, f), path.join(runsOut, d.key, f), `${d.key}/${f}`)
+        await prettierCopy(
+          prettier,
+          path.join(d.dir, f),
+          path.join(runsOut, d.key, f),
+          `${d.key}/${f}`
+        )
       );
     copies.set(d.key, list);
   }
@@ -441,7 +473,7 @@ export async function assemble(options) {
     hosts: hosts.hosts,
     hostAssignment: hosts.assignment ?? null,
     matrixComplete: defectiveRuns.length === 0,
-    receiptFormatting: RECEIPT_FORMATTING,
+    receiptFormatting: prettier ? RECEIPT_FORMATTING : 'none',
     runs: runs.map((r) => runRecord(r, hosts, copies.get(r.key))),
     defectiveRuns: defectiveRuns.map((d) => ({
       run: d.key,
@@ -468,7 +500,7 @@ export async function assemble(options) {
     productionContext: context,
     superseded,
   };
-  const strengthText = await formatted(path.join(out, 'strength.json'), strength);
+  const strengthText = await formatted(prettier, path.join(out, 'strength.json'), strength);
   const qualified = !fixture && verdict.promoted === true;
   const qualification = {
     schema: QUALIFICATION_SCHEMA,
@@ -484,7 +516,7 @@ export async function assemble(options) {
     evidenceSha256: sha256(strengthText),
     reasons: fixture ? ['fixture_mode_never_qualifies', ...verdict.reasons] : verdict.reasons,
   };
-  const qualificationText = await formatted(qualificationFile, qualification);
+  const qualificationText = await formatted(prettier, qualificationFile, qualification);
 
   for (const list of copies.values())
     for (const c of list) {

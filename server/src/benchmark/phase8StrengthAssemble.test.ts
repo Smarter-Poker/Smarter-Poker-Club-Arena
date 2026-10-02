@@ -149,7 +149,12 @@ let hostsFile: string;
 let repo: string;
 const outDir = (date = '2026-10-02') => path.join(repo, 'docs/evidence/phase8', `strength-${date}`);
 
-async function assemble(...extra: string[]) {
+/** Prettier is a root devDependency; the server CI shard does not install it. */
+const PRETTIER_AVAILABLE = existsSync(path.resolve('..', 'node_modules', 'prettier', 'index.mjs'));
+const assemble = (...extra: string[]) => assembleRun(['--no-format', ...extra]);
+const assembleFormatted = (...extra: string[]) => assembleRun(extra);
+
+async function assembleRun(extra: string[]) {
   try {
     const { stdout } = await exec(
       process.execPath,
@@ -192,7 +197,58 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+const runFiles = (run: string) => [
+  `${run}.json`,
+  `${run}/manifest.json`,
+  `${run}/summary.json`,
+  `${run}/baseline-verification.json`,
+];
+const hostFile = (file: string) =>
+  file.includes('/') ? path.join(runsDir, file) : path.join(runsDir, file.slice(0, -5), file);
+
 describe('phase8-strength-assemble', () => {
+  it.skipIf(!PRETTIER_AVAILABLE)(
+    'writes run files in the repository Prettier shape with host and committed hashes',
+    async () => {
+      const outcome = await assembleFormatted(`--out=${outDir()}`, '--fixture');
+      expect(outcome.reasons).toEqual([]);
+      const strength = readJson(path.join(outDir(), 'strength.json'));
+      expect(strength.receiptFormatting).toMatch(/formatting is the only difference/);
+      for (const r of strength.runs) {
+        for (const file of runFiles(r.run)) {
+          const source = readFileSync(hostFile(file));
+          const committed = readFileSync(path.join(outDir(), 'runs', file));
+          // Prettier shape, same content, both hashes recorded.
+          expect(JSON.parse(committed.toString('utf8'))).toEqual(
+            JSON.parse(source.toString('utf8'))
+          );
+          expect(r.files[file]).toEqual({
+            sourceSha256: sha256(source),
+            committedSha256: sha256(committed),
+          });
+        }
+        expect(r.files[`${r.run}.json`].committedSha256).not.toBe(
+          r.files[`${r.run}.json`].sourceSha256
+        );
+        expect(r.host).toBe('fixture-host');
+      }
+      const prettierCheck = execFileSync(
+        process.execPath,
+        [
+          path.resolve('../node_modules/prettier/bin/prettier.cjs'),
+          '--check',
+          '--config',
+          path.resolve('../.prettierrc'),
+          path.join(outDir(), 'runs'),
+          path.join(outDir(), 'strength.json'),
+        ],
+        { encoding: 'utf8' }
+      );
+      expect(prettierCheck).toMatch(/All matched files use Prettier code style/);
+    },
+    RUN_TIMEOUT_MS
+  );
+
   it(
     'assembles a complete fixture matrix deterministically and it can never qualify',
     async () => {
@@ -229,46 +285,19 @@ describe('phase8-strength-assemble', () => {
       // The real contract decided: fixture runs are never promotable.
       expect(strength.verdict.promoted).toBe(false);
       expect(strength.verdict.reasons).toContain('mtt:8101101:not_promotable');
-      expect(strength.receiptFormatting).toMatch(/formatting is the only difference/);
+      // --no-format: every run file is the host's bytes, so the two hashes agree.
+      expect(strength.receiptFormatting).toBe('none');
       for (const r of strength.runs) {
-        for (const file of [
-          `${r.run}.json`,
-          `${r.run}/manifest.json`,
-          `${r.run}/summary.json`,
-          `${r.run}/baseline-verification.json`,
-        ]) {
-          const hostFile = file.includes('/')
-            ? path.join(runsDir, file)
-            : path.join(runsDir, r.run, file);
-          const source = readFileSync(hostFile);
-          const committed = readFileSync(path.join(outDir(), 'runs', file));
-          // Prettier shape, same content, both hashes recorded.
-          expect(JSON.parse(committed.toString('utf8'))).toEqual(
-            JSON.parse(source.toString('utf8'))
-          );
+        for (const file of runFiles(r.run)) {
+          const source = readFileSync(hostFile(file));
+          expect(readFileSync(path.join(outDir(), 'runs', file)).equals(source)).toBe(true);
           expect(r.files[file]).toEqual({
             sourceSha256: sha256(source),
-            committedSha256: sha256(committed),
+            committedSha256: sha256(source),
           });
         }
-        expect(r.files[`${r.run}.json`].committedSha256).not.toBe(
-          r.files[`${r.run}.json`].sourceSha256
-        );
         expect(r.host).toBe('fixture-host');
       }
-      const prettierCheck = execFileSync(
-        process.execPath,
-        [
-          path.resolve('../node_modules/prettier/bin/prettier.cjs'),
-          '--check',
-          '--config',
-          path.resolve('../.prettierrc'),
-          path.join(outDir(), 'runs'),
-          path.join(outDir(), 'strength.json'),
-        ],
-        { encoding: 'utf8' }
-      );
-      expect(prettierCheck).toMatch(/All matched files use Prettier code style/);
 
       const qualificationFile = path.join(
         repo,

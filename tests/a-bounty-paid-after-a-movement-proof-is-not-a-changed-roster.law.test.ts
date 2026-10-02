@@ -27,8 +27,10 @@ const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
 // 20261001151056 builds on this post-image (its pre-image guard names it) and
 // the release contract pins now carry its post-image.
 const NEVER_DEALT = '20261001151056_a_table_that_never_dealt_is_moved_from_its_seated_entries.sql';
-const SUCCESSOR_MD5 = 'df656e0490a6a8f570f409916fc2f643';
-const SUCCESSOR_DEF_MD5 = '6fd0cf3d598211408d165117fd8c32fe';
+// 20261002055945 (an add-on bought after the proof) builds on that one in turn.
+const ADD_ON = '20261002055945_an_add_on_bought_after_a_movement_proof_is_not_a_changed_ros.sql';
+const SUCCESSOR_MD5 = 'a0e369a33e735ba728b72228a3134b01';
+const SUCCESSOR_DEF_MD5 = 'e3355bb05eecda8aed293f155f1ddfef';
 const ORIGIN = readFileSync(
   join(
     MIGRATIONS,
@@ -145,7 +147,7 @@ describe('a bounty paid after a movement proof is not a changed roster', () => {
           'FUNCTION smarter_private.f06_assert_movement('
         )
       );
-    expect(later).toEqual([NEVER_DEALT]);
+    expect(later).toEqual([NEVER_DEALT, ADD_ON]);
     expect(readFileSync(join(MIGRATIONS, NEVER_DEALT), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`
     );

@@ -192,6 +192,16 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-original-dispatch-install','BEGIN;\n'+dispatch+'\nCOMMIT;')
             run('historical-original-dispatch-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb)');",
                 'fn_f06_admit_mixed_manager_custody(uuid,uuid,uuid,jsonb) 70ec2492f10256458996947f4e7be51f 1468813b11c2d5f8560e3a4e29bc3a91')
+            # Production then applies 20261002055945, whose f06_assert_movement
+            # roster and winner comparisons also admit the event's add-on bought
+            # after the proof (add_on false -> true, exactly addon_chips more on
+            # the seat and the registration). Its pre-image refuses unless the
+            # installed body is exactly df656e04..., which this clone holds.
+            addon=(root/'supabase/migrations/20261002055945_an_add_on_bought_after_a_movement_proof_is_not_a_changed_ros.sql').read_text()
+            addon=addon[addon.index('DO $addon_assert_preimage$'):addon.index('$addon_assert_postimage$;',addon.index('DO $addon_assert_postimage$')+30)+len('$addon_assert_postimage$;')]
+            run('historical-addon-install','BEGIN;\n'+addon+'\nCOMMIT;')
+            run('historical-addon-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_assert_movement(uuid)');",
+                'smarter_private.f06_assert_movement(uuid) a0e369a33e735ba728b72228a3134b01 e3355bb05eecda8aed293f155f1ddfef')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -293,8 +303,9 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     # 20260924225647, the registration bust migration 20260925130323, the
     # added-column movement proof migration 20260926043127, the bounty
     # columns movement proof migration 20260928170557, the never-dealt
-    # movement proof migration 20261001151056 and the disposed-original
-    # dispatch admission migration 20261002023035.
+    # movement proof migration 20261001151056, the disposed-original
+    # dispatch admission migration 20261002023035 and the add-on movement
+    # proof migration 20261002055945.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

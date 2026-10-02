@@ -43,6 +43,11 @@ const PRIOR_POST = '493026caf75bb03a336db56bac008009';
 const ASSERT_PRE = 'bbab37373518b7dcc520ae2bf3e5d1b5';
 const ASSERT_POST = 'df656e0490a6a8f570f409916fc2f643';
 const ASSERT_POST_DEF = '6fd0cf3d598211408d165117fd8c32fe';
+// 20261002055945 (an add-on bought after the proof) builds on this post-image;
+// the release contract pins carry its post-image.
+const ADD_ON = '20261002055945_an_add_on_bought_after_a_movement_proof_is_not_a_changed_ros.sql';
+const SUCCESSOR_POST = 'a0e369a33e735ba728b72228a3134b01';
+const SUCCESSOR_POST_DEF = 'e3355bb05eecda8aed293f155f1ddfef';
 const HELPER_POST = 'c0da72045d9c661631484a4d7c9dc922';
 
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
@@ -185,8 +190,8 @@ describe('a table that never dealt is moved from its seated entries', () => {
       join(ROOT, 'server/scripts/engine-release-database-proof.py'),
       'utf8'
     );
-    expect(publisher).toContain(`'body_md5': '${ASSERT_POST}'`);
-    expect(publisher).toContain(`'definition_md5': '${ASSERT_POST_DEF}'`);
+    expect(publisher).toContain(`'body_md5': '${SUCCESSOR_POST}'`);
+    expect(publisher).toContain(`'definition_md5': '${SUCCESSOR_POST_DEF}'`);
     expect(publisher).not.toContain(ASSERT_PRE);
     const fixture = JSON.parse(
       readFileSync(
@@ -197,8 +202,8 @@ describe('a table that never dealt is moved from its seated entries', () => {
     const pinned = fixture.functions.find(
       (f) => f.signature === 'smarter_private.f06_assert_movement(uuid)'
     );
-    expect(pinned?.body_md5).toBe(ASSERT_POST);
-    expect(pinned?.definition_md5).toBe(ASSERT_POST_DEF);
+    expect(pinned?.body_md5).toBe(SUCCESSOR_POST);
+    expect(pinned?.definition_md5).toBe(SUCCESSOR_POST_DEF);
     const lane = readFileSync(
       join(ROOT, 'scripts/ci/probes/f06-shared-hand-lane/historical_bank_qualification.py'),
       'utf8'
@@ -238,6 +243,9 @@ describe('a table that never dealt is moved from its seated entries', () => {
           text.includes('FUNCTION smarter_private.f06_movement_never_dealt_prior(')
         );
       });
-    expect(later).toEqual([]);
+    expect(later).toEqual([ADD_ON]);
+    expect(readFileSync(join(MIGRATIONS, ADD_ON), 'utf8')).toContain(
+      `md5(p.prosrc) = '${ASSERT_POST}'`
+    );
   });
 });

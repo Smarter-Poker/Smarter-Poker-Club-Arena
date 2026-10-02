@@ -2245,6 +2245,9 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (current.state === 'park_requested') {
       const begun = await this.prepareParkedTournamentBreak(current);
       if (!begun) {
+        // A roster the field cannot seat is not a reason to stop its table:
+        // the park is withdrawn and the table deals until there is room.
+        if (await this.withdrawUnplaceablePark(current)) return;
         // No destination could be proven. On the last open table that is not a
         // transient capacity shortage that a later sweep will clear - it is the
         // terminal case, and the no-start continuation is its only exit.
@@ -2317,6 +2320,111 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!continued) return false;
     if (!current()) throw new Error('F06 abandoned continuation owner changed');
     await this.readmitContinuedNoStartTable(state.source_table_id, engine);
+    return true;
+  }
+
+  /**
+   * A PARK WHOSE ROSTER CANNOT BE SEATED IS WITHDRAWN (2026-10-02).
+   *
+   * Production 13:28Z-14:30Z, event 4d2afa41 (Morning Free Buy): seven full
+   * tables were parked for breaks whose players the rest of the field had no
+   * seats for (`destinations_full:7_of_9_placed_across_25_tables`; 286
+   * players needed all 32 nine-max tables). A park waits until it can begin,
+   * so 62 players were dealt nothing for over an hour while the tables
+   * around them played. Industry standard is that a table is broken only
+   * when its players can be seated at once; otherwise it keeps playing.
+   *
+   * So a park that has not begun, and whose roster has found no seats for
+   * UNPLACEABLE_PARK_GRACE_MS (long enough for a bust being recorded to free
+   * its chair), is withdrawn through fn_f06_withdraw_unplaceable_park. The
+   * database proves the park never began and that the other tables really
+   * have fewer free seats than the roster, writes the receipt, and moves
+   * nothing. The dealer is then stopped and readmitted exactly as after a
+   * last-table continuation, and the balancer parks the table again only
+   * when the field has room for it (shouldBreakTable / breakTable).
+   */
+  static UNPLACEABLE_PARK_GRACE_MS = 30_000;
+
+  private readonly unplaceableParkSince = new Map<string, number>();
+
+  protected async withdrawUnplaceablePark(state: TournamentTableBreakState): Promise<boolean> {
+    const refusal = this.lastBreakPreparationRefusal(state.break_id);
+    if (
+      !state.ok ||
+      state.state !== 'park_requested' ||
+      state.terminal_handoff_required ||
+      state.members.length ||
+      !state.custody_id ||
+      !refusal?.startsWith('destinations_full:')
+    ) {
+      this.unplaceableParkSince.delete(state.break_id);
+      return false;
+    }
+    const now = Date.now();
+    const since = this.unplaceableParkSince.get(state.break_id);
+    if (since === undefined) this.unplaceableParkSince.set(state.break_id, now);
+    if (since === undefined || now - since < TournamentManager.UNPLACEABLE_PARK_GRACE_MS) {
+      this.requestUrgentEliminationSweepAfter(TournamentManager.UNPLACEABLE_PARK_GRACE_MS);
+      return false;
+    }
+    // A break that has begun elsewhere may be about to take or free seats the
+    // database counts differently from this board; decide after it settles.
+    for (const other of this.durableTournamentBreaks.values())
+      if (other.break_id !== state.break_id && other.state !== 'park_requested') return false;
+    const tableId = state.source_table_id;
+    const engine = this.tableEngines.get(tableId);
+    if (!engine || !this.gameServer.ownsTournamentTableEngine(tableId, engine)) return false;
+    const lifecycle = this.captureLifecycleToken();
+    const leaseGeneration = this.getTournamentLeaseGeneration();
+    if (!lifecycle || !leaseGeneration) return false;
+    const current = (): boolean =>
+      this.lifecycleIsCurrent(lifecycle) &&
+      this.eliminationMutationAllowed() &&
+      this.getTournamentLeaseGeneration() === leaseGeneration &&
+      this.tableEngines.get(tableId) === engine &&
+      this.gameServer.ownsTournamentTableEngine(tableId, engine);
+    if (
+      !current() ||
+      engine.getF06RetainedPermit() ||
+      !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId)
+    )
+      return false;
+    const rpc = this.tableBreakRpc();
+    let withdrawn = false;
+    try {
+      withdrawn = await this.gameServer.tournamentRetirementCustody.withAdmission(
+        tableId,
+        current,
+        async (assertCurrent) => {
+          // The database decides first, while the dealer is still parked on
+          // this break: a refusal writes nothing and leaves the park exactly
+          // as it was. Only a withdrawn park's dealer is stopped.
+          if (!(await rpc.withdrawUnplaceablePark(state))) return false;
+          assertCurrent();
+          try {
+            await engine.stop();
+          } catch (error) {
+            if (!engine.hasReleasedProcessOwnership()) throw error;
+          }
+          assertCurrent();
+          if (!engine.hasReleasedProcessOwnership() || engine.getF06RetainedPermit())
+            throw new Error('F06 withdrawn park dealer not drained');
+          return true;
+        }
+      );
+    } catch (error) {
+      if (error instanceof TournamentNoStartContinuationRefusedError) return false;
+      throw error;
+    }
+    if (!withdrawn) return false;
+    if (!current()) throw new Error('F06 withdrawn park owner changed');
+    this.unplaceableParkSince.delete(state.break_id);
+    this.breakPreparationRefusals.delete(state.break_id);
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${state.break_id.slice(0, 8)} withdrawn: its roster has no free seats (${refusal}); table ${tableId.slice(0, 8)} deals again`
+    );
+    this.forgetContinuedNoStartPark(state, engine);
+    await this.readmitContinuedNoStartTable(tableId, engine);
     return true;
   }
 

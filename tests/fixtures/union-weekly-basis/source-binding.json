@@ -90,7 +90,7 @@
     "supabase/migrations/20260930232349_a_page_recompute_reads_only_changed_evidence_rederived.sql": "0b51f4b340a78c0fe87b337f1632ca62c667742dbb8ea97896a51552b9fecb6a",
     "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "97c8e07642ccbfaf15b8b92eb86f908518eab0592b2e99d1bb23c43934a62c0f",
     "tests/fixtures/union-weekly-basis/page-evidence-regression.sql": "6c6cd0be50d0d2c7d76588c10815ebec418c5f7bf3faba7e155399ec5bc32885",
-    "supabase/migrations/20260926140858_owner_authorized_legacy_discharge_of_the_deferred_rakeback_w.sql": "fbfe7333d60dc2d44cefb3d56356834268eca0b3008a22474da50da0730ee00f",
+    "supabase/migrations/20260926140858_owner_authorized_legacy_discharge_of_the_deferred_rakeback_w.sql": "034b3ca5d166781f4fb6fedb18aa52ed414e47f34d043d1a6cfc22502304984c",
     "tests/fixtures/owner-legacy-discharge/regression.sql": "19aacf1a33c87ad16b13669ef0df0d890366b615a7b6df44f21beefb40915503"
   }
 }

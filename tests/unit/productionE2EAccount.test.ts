@@ -11,6 +11,7 @@ import {
   prepareProductionE2EStaffMembership,
   prepareProductionE2ETemplateMembership,
   DEFAULT_E2E_TEMPLATE_CLUB_ID,
+  retireCertificationClubWithRetry,
   retireProductionCreateClubFixtures,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
@@ -621,6 +622,125 @@ describe('post-deploy production account', () => {
     );
     expect(CLEANUP_MIGRATION).toContain(
       'GRANT EXECUTE ON FUNCTION public.cleanup_reserved_certification_account(uuid) TO service_role'
+    );
+  });
+});
+
+describe('certification-club retirement transport contract', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const configuration = {
+    supabaseUrl: 'https://certification.supabase.invalid',
+    serviceRoleKey: 'sb_secret_certification',
+  };
+  const clubId = '11111111-1111-4111-8111-111111111111';
+  const reason = 'ui-cert-cleanup';
+
+  it('uses one direct transaction with separate local settings before the retirement SELECT', async () => {
+    const result = { success: true, chips_retired: 100000 };
+    const query = vi.fn(async (sql: string) =>
+      sql.startsWith('SELECT') ? { rows: [{ result }] } : { rows: [] }
+    );
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    const databaseClientFactory = vi.fn().mockResolvedValue(client);
+    const fetchMock = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+    expect(databaseClientFactory).toHaveBeenCalledWith(
+      'postgresql://certification.invalid/club_arena'
+    );
+    expect(client.connect).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls).toEqual([
+      ['BEGIN'],
+      ["SET LOCAL statement_timeout = '120s'"],
+      ["SET LOCAL lock_timeout = '15s'"],
+      ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      [
+        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+        [clubId, reason],
+      ],
+      ['COMMIT'],
+    ]);
+    expect(client.end).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rolls back and closes the direct client when the retirement SELECT fails', async () => {
+    const failure = Object.assign(new Error('retirement guard refused'), { code: '55000' });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT')) throw failure;
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: vi.fn(),
+      })
+    ).rejects.toBe(failure);
+
+    expect(query.mock.calls).toEqual([
+      ['BEGIN'],
+      ["SET LOCAL statement_timeout = '120s'"],
+      ["SET LOCAL lock_timeout = '15s'"],
+      ["SET LOCAL request.jwt.claim.role = 'service_role'"],
+      [
+        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+        [clubId, reason],
+      ],
+      ['ROLLBACK'],
+    ]);
+    expect(client.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the PostgREST retirement path when DATABASE_URL is absent', async () => {
+    const result = { success: true, already_gone: true };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(result));
+    const databaseClientFactory = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: {},
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://certification.supabase.invalid/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ p_club_id: clubId, p_reason: reason }),
+      })
     );
   });
 });

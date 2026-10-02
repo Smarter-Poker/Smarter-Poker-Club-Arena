@@ -59,6 +59,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VITE_SUPABASE_ANON_KEY: sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx
           CLUB_CREATE_CERT_ASSET_URL: https://smarter.poker/hub/club-arena/club-logos/preset-19.webp
         run: node scripts/ci/certify-club-create.mjs
@@ -66,6 +67,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/ci/production-e2e-account.mjs create
       - name: Create A Club Through The Published User Interface
         env:
@@ -83,6 +85,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: node scripts/ci/production-e2e-account.mjs retire-create-clubs
       - name: Delete The Reserved Player
         if: always()

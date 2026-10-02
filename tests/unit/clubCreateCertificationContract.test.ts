@@ -60,6 +60,24 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('--workers=1 --retries=0');
   });
 
+  it('supplies the direct database credential to every step that can retire a fixture club', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const step = (name: string) => {
+      const start = workflow.indexOf(`      - name: ${name}`);
+      expect(start, `workflow step ${name} must exist`).toBeGreaterThan(-1);
+      const next = workflow.indexOf('\n      - name:', start + 1);
+      return workflow.slice(start, next === -1 ? workflow.length : next);
+    };
+
+    for (const name of [
+      'Certify Authenticated Club Creation And Cleanup',
+      'Provision A Brand-New Player',
+      'Retire The Created Club',
+    ]) {
+      expect(step(name)).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    }
+  });
+
   it('hard-deletes the direct RPC fixture through the guarded reserved-account door', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
     const account = read('scripts/ci/production-e2e-account.mjs');

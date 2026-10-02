@@ -1154,7 +1154,11 @@ export class MaintenanceBreak {
     // Freeze the engine's own sweeps from the announcement, not the countdown:
     // a horse standing up at :54 under a "Last Hand" banner is the same tell
     // as one standing up at :56, and nothing these sweeps do cannot wait.
-    setMaintenanceFrozen(true);
+    // The one exception is the winner of an event already down to its last
+    // player: its terminal settlement is admitted until shortly before :55
+    // (TERMINAL_SETTLEMENT_LEAD_MS in freezeState.ts), so it is paid before
+    // the break instead of after it.
+    setMaintenanceFrozen(true, announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS);
 
     const tables = this.parkEveryEngine();
     console.log(
@@ -1225,6 +1229,9 @@ export class MaintenanceBreak {
     // Close the deploy gate before changing any of its semantic fields.
     this.durableConfirmed = false;
     this.phase = 'counting_down';
+    // The break has begun (on time, late, or by an early manual call): close
+    // the last-hand settlement window now rather than at its scheduled cutoff.
+    setMaintenanceFrozen(true);
     this.unparkedAtCountdown = 0;
     this.peakUnparked = 0;
     /* beginCountdown is also the explicit/manual entry point. An intentional

@@ -3499,13 +3499,25 @@ export class GameServer {
          down that same absolute instant, so both must adopt the committed row
          before any table resumes. Managers without an active window return
          without I/O; failures are isolated per event and their live timer
-         keeps re-reading the durable deadline. */
+         keeps re-reading the durable deadline.
+
+         It has also moved level_started_at for every running event that was
+         not on the synchronized break, whose level wake was armed from the
+         pre-freeze anchor and would otherwise fire the frozen minutes early.
+         The same pass tells the Horse tournament context to reread the
+         committed clock. A manager on the break, or with no armed level
+         clock, makes no level-clock read. */
       await Promise.all(
         [...this.tournamentEngines.values()].map(async (manager) => {
           try {
             await manager.resyncAddOnPeriodAfterMaintenanceThaw();
           } catch (error) {
             reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+          }
+          try {
+            await manager.resyncLevelClockAfterMaintenanceThaw();
+          } catch (error) {
+            reportError(error, 'GameServer.level_clock_thaw_resync_failed');
           }
         })
       );

@@ -10635,6 +10635,93 @@ export abstract class TournamentManagerBase {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════
+   *  A LEVEL THAT SPANS THE FREEZE ENDS WHERE THE THAW SAYS (2026-10-02)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * fn_thaw_platform moves `level_started_at` forward by the frozen duration
+   * for every RUNNING event that is not on the synchronized break: Spins,
+   * Sit-n-Gos, Heads-Up and every event that opts out of the :55 break. The
+   * live level wake of such an event is a setTimeout armed from the pre-freeze
+   * anchor, and nothing paused it across the freeze.
+   *
+   * A level that came due INSIDE the freeze was already handled: the wake is
+   * held and `blindClockNeedsThawResync` makes it read the shifted anchor.
+   * A level that did NOT come due inside the freeze was not. Its wake kept the
+   * pre-freeze deadline and fired once the platform was back, the full length
+   * of the freeze early, and advanceBlindLevel published the next level then.
+   * With a 7-minute freeze (:53 to :00), a level with 9 minutes left at :53
+   * went up at :02 against a durable clock that said :09. The publication
+   * RPC does not check due time, so nothing downstream caught it.
+   *
+   * The thaw hook in GameServer calls this after fn_thaw_platform has
+   * committed and before any table resumes. It reads the durable row and
+   * re-arms the wake from the shifted anchor. The flag is raised before the
+   * read, so a wake that fires before the read lands rereads the anchor
+   * itself instead of publishing from pre-freeze time. Any read that does not
+   * match this clock leaves that flag set; the wake then rereads the row and
+   * holds the level on any mismatch, exactly as it does after a held level.
+   *
+   * The Horse tournament context caches this row for up to 20 s. The thaw has
+   * just committed new clock facts to it (the level anchor, an add-on
+   * deadline), so the context is told to reread now rather than describe the
+   * pre-thaw clock until its TTL runs out.
+   */
+  public async resyncLevelClockAfterMaintenanceThaw(): Promise<void> {
+    if (!this.running) return;
+    refreshTournamentBrainContextAfterClockCommit(this.tournamentId);
+    // A break suspended this clock and resumeFromBreak re-arms it; the thaw
+    // did not shift that row. A transition in flight or a pending
+    // publication already rereads the durable clock on its next wake.
+    const armed = this.blindTimer;
+    if (
+      !armed ||
+      this.onBreak ||
+      this.blindClockTerminalCommitted ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition
+    )
+      return;
+    const lifecycle = this.lifecycleEpoch.current();
+    const level = this.currentLevel;
+    this.blindClockNeedsThawResync = true;
+    const { data: clock, error } = await supabase
+      .from('tournaments')
+      .select('id,status,current_level,on_break,level_started_at')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.blindClockTerminalCommitted ||
+      this.onBreak ||
+      this.blindTimer !== armed ||
+      this.blindTransitionInFlight ||
+      this.pendingBlindTransition ||
+      this.currentLevel !== level
+    )
+      return;
+    const anchor =
+      typeof clock?.level_started_at === 'string' ? Date.parse(clock.level_started_at) : NaN;
+    if (
+      error ||
+      clock?.id !== this.tournamentId ||
+      clock.status !== 'RUNNING' ||
+      clock.on_break === true ||
+      clock.current_level !== level ||
+      !Number.isFinite(anchor)
+    )
+      return;
+    this.blindClockNeedsThawResync = false;
+    this.blindTimerStartedAt = anchor;
+    if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
+    const blindStructure = this.tournamentCache?.blind_structure || [];
+    const current = this.resolveBlindLevel(blindStructure, level) || blindStructure[0];
+    const duration = this.levelDurationMs(current);
+    const remaining = Math.min(duration, duration - (Date.now() - anchor));
+    this.scheduleBlindLevelWake(blindStructure, Math.max(1000, remaining));
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
    *  A GUARANTEE IS FUNDED, NOT DECLARED (2026-08-27, P0)
    * ═══════════════════════════════════════════════════════════════════════════
    *

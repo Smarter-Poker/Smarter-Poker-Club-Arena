@@ -1288,6 +1288,67 @@ describe('the resume arrives in installments (2026-09-05)', () => {
     expect(list.every((e) => e.resumeCount === 1)).toBe(true);
   });
 
+  it('still holds each table until its own wave fires, and lets go once the last one has', async () => {
+    /**
+     * 2026-10-02 16:03Z. The break released at 16:02:59 and the waves reached
+     * the last tables at 16:03:10. GameServer's zombie sweep at 16:03:09 read
+     * the tables still waiting for their wave as "paused too long" (ten
+     * minutes since the :53 announcement) and rebuilt 80 of them. The sweep
+     * now asks the break whether it is still the authority holding a table.
+     */
+    const f = buildFleet(318, 402);
+    await f.mb.announceLastHand();
+    const ids = [...f.engines.keys()];
+    expect(
+      ids.every((id) => f.mb.isHoldingTable(id)),
+      'the whole break holds every table'
+    ).toBe(true);
+
+    const countdown = f.timers.shift()!;
+    f.tick(countdown.ms);
+    countdown.fn();
+    await Promise.resolve();
+    await Promise.resolve();
+    const endTimer = f.timers.shift()!;
+    f.tick(endTimer.ms);
+    const before = f.timers.length;
+    await f.mb.end();
+    const waveTimers = f.timers.slice(before);
+    expect(f.mb.isActive()).toBe(false);
+
+    const resumed = (id: string) => f.engines.get(id)!.resumeCount > 0;
+    const firstWave = ids.filter(resumed);
+    const waiting = ids.filter((id) => !resumed(id));
+    expect(firstWave.length).toBeGreaterThan(0);
+    expect(waiting.length).toBeGreaterThan(0);
+    // Resumed: no longer the break's. Still waiting for a wave: still held.
+    expect(firstWave.some((id) => f.mb.isHoldingTable(id))).toBe(false);
+    expect(waiting.every((id) => f.mb.isHoldingTable(id))).toBe(true);
+
+    for (const t of waveTimers) {
+      f.tick(MaintenanceBreak.RESUME_WAVE_GAP_MS);
+      t.fn();
+    }
+    expect(
+      ids.some((id) => f.mb.isHoldingTable(id)),
+      'nothing is held once the waves are done'
+    ).toBe(false);
+  });
+
+  it('stops vouching for a table whose resume threw once the last wave has fired', async () => {
+    // A table that refuses its resume stays in the pending set (presentation
+    // keeps it), but the break is no longer holding it ON PURPOSE: the hold
+    // ends with the waves, so the sweep's ordinary bound applies again.
+    const f = buildFleet(1, 1);
+    const [badId, bad] = [...f.engines.entries()][0];
+    bad.resumeFromMaintenance = () => {
+      throw new Error('refused');
+    };
+    await runBreak(f);
+    expect(f.mb.isActive()).toBe(false);
+    expect(f.mb.isHoldingTable(badId)).toBe(false);
+  });
+
   it('drops a scheduled wave from a superseded break', async () => {
     const f = buildFleet(25, 25);
     const waveTimers = await runBreak(f);
@@ -2021,6 +2082,40 @@ describe('the real engine treats a maintenance pause as paused', () => {
       const e = new ServerTableEngine(TBL) as any;
       e.pauseAfterHand(120_000);
       expect(e.isPausedByDesign()).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
+
+  it(
+    'judges a table another authority still holds from the moment the break lets go',
+    async () => {
+      // 2026-10-02: the break's hold (from the :53 announcement) used to be
+      // charged to the tournament break that keeps the table parked after it,
+      // so GameServer's ten-minute "paused too long" bound was already spent
+      // the instant maintenance released the table.
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      e.pauseAfterHand(600_000);
+      vi.advanceTimersByTime(9 * 60_000);
+      expect(e.msPaused()).toBeGreaterThanOrEqual(9 * 60_000);
+      e.resumeFromMaintenance();
+      expect(e.isPausedByDesign(), 'the tournament still holds it').toBe(true);
+      expect(e.msPaused()).toBeLessThan(1_000);
+      vi.advanceTimersByTime(60_000);
+      expect(e.msPaused()).toBeGreaterThanOrEqual(60_000);
+      expect(e.msPaused()).toBeLessThan(61_000);
+    },
+    SLOW_RUNNER_MS
+  );
+
+  it(
+    'a table nobody else holds is not given a paused clock by the restamp',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      vi.advanceTimersByTime(9 * 60_000);
+      e.resumeFromMaintenance();
+      expect(e.msPaused()).toBe(0);
     },
     SLOW_RUNNER_MS
   );

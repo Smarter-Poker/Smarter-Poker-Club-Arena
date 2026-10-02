@@ -234,6 +234,9 @@ BEGIN
   RETURN v_hits;
 END $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_negative_balance_watch() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_negative_balance_watch() TO service_role;
+
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_negative_balance_watch', 'migration 20261002165500_the_house_does_not_dun_itself');
 
 -- ---------------------------------------------------------------------------

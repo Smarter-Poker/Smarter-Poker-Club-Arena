@@ -9,6 +9,7 @@ CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261001212300_welcome_certifica
 HOT_TRIGGER_MIGRATION = ROOT / 'supabase/migrations/20261001224720_welcome_schedule_spawn_trigger_runs_after_core.sql'
 CLUB_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261001232445_welcome_club_owner_history_runs_after_core.sql'
 REQUEST_ACTIVATION_MIGRATION = ROOT / 'supabase/migrations/20261001232452_welcome_request_activation_runs_last.sql'
+LEDGER_COUNTERPARTY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002002030_welcome_allocations_use_the_declared_opening_clearing_store.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -43,6 +44,10 @@ CREATE TABLE ca_declared_money_triggers(
  PRIMARY KEY(table_name,trigger_name));
 CREATE TABLE ca_money_rpc_registry(
  proname text PRIMARY KEY,status text NOT NULL,notes text NOT NULL);
+CREATE TABLE ca_chip_store_coverage(
+ store text PRIMARY KEY,treatment text NOT NULL,counted_by text,notes text,added_at timestamptz DEFAULT now());
+INSERT INTO ca_chip_store_coverage(store,treatment,counted_by,notes)
+VALUES('opening_setup','counted','leaderboard_liability','fixture mirrors production clearing coverage');
 CREATE FUNCTION fn_fixture_money_registry_guard() RETURNS event_trigger LANGUAGE plpgsql AS $guard$
 DECLARE command record;
 BEGIN
@@ -166,6 +171,8 @@ try:
     run('owner-transfer-trigger-and-club-fk-installed-once',"SELECT (SELECT count(*) FROM pg_trigger WHERE tgname='trg_remember_club_owner_transfer' AND NOT tgisinternal),(SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_club_fkey' AND convalidated);",'1|1')
     run('offer-stays-detached-after-club-history',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'0')
     run('install-request-activation',REQUEST_ACTIVATION_MIGRATION.read_text())
+    run('install-ledger-counterparty-repair',LEDGER_COUNTERPARTY_REPAIR_MIGRATION.read_text())
+    run('welcome-ledger-counterparty-is-declared-clearing-store',"SELECT position('welcome_package' in prosrc),position('opening_setup' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')
     run('request-fk-installed-once',"SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_owner_request_fkey' AND convalidated;",'1')
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')

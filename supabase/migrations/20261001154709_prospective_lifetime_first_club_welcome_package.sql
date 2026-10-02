@@ -254,7 +254,10 @@ BEGIN
     RAISE EXCEPTION 'WELCOME_BBJ_POOL_ALREADY_EXISTS' USING ERRCODE='55000';
   END IF;
   PERFORM set_config('app.ledger_category','club_welcome_allocation',true);
-  PERFORM set_config('app.ledger_counterparty','welcome_package',true);
+  -- Journal both allocations through the already-declared opening clearing
+  -- store: treasury -> opening_setup -> BBJ / Spin reserve. The clearing
+  -- store nets to zero inside this transaction.
+  PERFORM set_config('app.ledger_counterparty','opening_setup',true);
   PERFORM set_config('app.ledger_counterparty_entity',p_club_id::text,true);
   PERFORM set_config('app.ledger_idempotency_key','club-welcome:'||p_operation_id::text||':bbj',true);
   UPDATE public.clubs SET chip_treasury=chip_treasury-v_bbj,bbj_enabled=true,

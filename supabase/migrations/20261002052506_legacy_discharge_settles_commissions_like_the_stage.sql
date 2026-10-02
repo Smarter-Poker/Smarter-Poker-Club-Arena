@@ -1,4 +1,4 @@
--- 20261002052506_the_legacy_discharge_settles_commissions_as_the_weekly_stage_does.sql
+-- 20261002052506_legacy_discharge_settles_commissions_like_the_stage.sql
 --
 -- THE LEGACY DISCHARGE SETTLES RECORDED COMMISSIONS THE WAY THE WEEKLY STAGE DOES
 --
@@ -126,13 +126,13 @@ BEGIN
   SELECT k.club_id,k.user_id,CASE WHEN k.club_id=ANY(v_standalone) THEN NULL ELSE op.union_id END,op.period_start,op.period_end,
    COALESCE((SELECT sum(l.own_amount) FROM public.accounting_legacy_settlement_legs l WHERE l.operation_id=op.operation_id AND l.round_no=2
      AND l.club_id=k.club_id AND l.payee_id=k.user_id),0),
-   COALESCE((SELECT r.n FROM _lp_rec r WHERE r.club_id=k.club_id AND r.user_id=k.user_id),0),now(),'owner_legacy:'||op.operation_id::text
+   COALESCE((SELECT lr.n FROM _lp_rec lr WHERE lr.club_id=k.club_id AND lr.user_id=k.user_id),0),now(),'owner_legacy:'||op.operation_id::text
   FROM (SELECT club_id,user_id FROM _lp_rec UNION SELECT club_id,payee_id FROM public.accounting_legacy_settlement_legs
          WHERE operation_id=op.operation_id AND round_no=2) k;
   PERFORM public.fn_agent_commission_rollup_recompute((SELECT jsonb_agg(jsonb_build_object('club_id',club_id,'user_id',user_id))
    FROM public.agent_commission_settlements WHERE settlement_ref='owner_legacy:'||op.operation_id::text));
-  IF EXISTS(SELECT 1 FROM _lp_rec r WHERE NOT EXISTS(SELECT 1 FROM public.agent_commission_settlements cs WHERE cs.settlement_ref='owner_legacy:'||op.operation_id::text
-    AND cs.club_id=r.club_id AND cs.user_id=r.user_id)) THEN
+  IF EXISTS(SELECT 1 FROM _lp_rec lr WHERE NOT EXISTS(SELECT 1 FROM public.agent_commission_settlements cs WHERE cs.settlement_ref='owner_legacy:'||op.operation_id::text
+    AND cs.club_id=lr.club_id AND cs.user_id=lr.user_id)) THEN
    RAISE EXCEPTION 'legacy_discharge_recorded_commissions_moved' USING ERRCODE='55000'; END IF;
  END IF;
 

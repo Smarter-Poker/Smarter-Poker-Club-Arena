@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-undeclared/fix/undeclared-money-paths. Declared by migration 20261002140203_every_money_path_declares_its_counterparty, applied after merge through apply-merged-migration.yml: the ledger declaration save/restore helpers the declaring money doors use.",
+  "tables": [],
+  "functions": ["fn_ca_ledger_declaration_save", "fn_ca_ledger_declaration_restore"]
+}

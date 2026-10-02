@@ -1,6 +1,8 @@
 -- The authoritative engine lease lives in engine_table_leases. The tables
 -- relation no longer carries the retired denormalized lease columns.
 -- @live-proof: (SELECT p.prosrc NOT LIKE '%t.engine_lease_owner%' AND p.prosrc NOT LIKE '%t.engine_lease_expires_at%' AND p.prosrc LIKE '%FROM public.engine_table_leases l%' FROM pg_proc p WHERE p.oid='public.fn_ca_prepare_unused_welcome_certification_fixture(uuid)'::regprocedure)
+BEGIN;
+
 DO $migration$
 DECLARE
   v_source text;
@@ -28,3 +30,5 @@ BEGIN
   END IF;
 END
 $migration$;
+
+COMMIT;

@@ -198,3 +198,30 @@ The lesson for the next agent is narrow and worth the sentence: on this repo a
 red workflow is a shared symptom, and between rebasing and merging, three other
 agents merged. **Re-read `origin/main` for the defect you are fixing immediately
 before you merge, not only before you branch.**
+
+## Second correction, 23:55Z: the reel-counter migration was applied, reconciled
+
+The deletion above was right about `20261002225231` and wrong about
+`20261002225448`. While #5885 was in review the install had already applied the
+reel-counter migration, as `schema_migrations` version **20261002232859** at
+23:28:59Z, and it did not take either fix whole: it **reconciled** them. A
+browser caller is admitted the way this file admits it (a signed-in viewer,
+share or view only) and is then routed through #5876's
+`fn_count_content_engagement` receipt instead of writing the column itself, and
+a browser decrement is refused outright. Both protections are live; neither was
+lost.
+
+So the file comes back, at its own version, holding the text that actually ran:
+4546 bytes, `md5(array_to_string(statements, E';\n')) =
+bffd1d417d4472e9bccebd84ebab8e7f`, byte-identical below the header, with the
+reconciliation explained in it. That is the same convention #5881 used for
+#5876's own file an hour earlier. Deleting it would have left an applied
+migration with no file in the repository, which
+`scripts/ci/check-applied-migrations-are-recorded.mjs` exists to catch and a
+Midway Union rebuild would have silently missed.
+`tests/unit/aBrowserMovesOnlyTheReelCountersItIsTheEvidenceFor.test.ts` now pins
+the bytes and both halves of the reconciliation.
+
+`20261002225231` stays deleted: it was never applied, and #5875's
+`20261002223819` already took the same operation id as
+`(array_agg(reset_operation_id ORDER BY reset_operation_id))[1]`.

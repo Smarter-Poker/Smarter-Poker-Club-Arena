@@ -12,6 +12,7 @@ REQUEST_ACTIVATION_MIGRATION = ROOT / 'supabase/migrations/20261001232452_welcom
 LEDGER_COUNTERPARTY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002002030_welcome_allocations_use_the_declared_opening_clearing_store.sql'
 LEDGER_CATEGORY_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002010726_welcome_allocations_use_the_declared_opening_category.sql'
 DERIVED_TABLE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
+AUTHORITATIVE_LEASE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/club-welcome-package-postgres')
 args = parser.parse_args()
@@ -23,7 +24,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -198,6 +199,7 @@ try:
     run('install-ledger-counterparty-repair',LEDGER_COUNTERPARTY_REPAIR_MIGRATION.read_text())
     run('install-ledger-category-repair',LEDGER_CATEGORY_REPAIR_MIGRATION.read_text())
     run('install-derived-table-cleanup',DERIVED_TABLE_CLEANUP_MIGRATION.read_text())
+    run('install-authoritative-lease-repair',AUTHORITATIVE_LEASE_REPAIR_MIGRATION.read_text())
     run('welcome-ledger-counterparty-is-declared-clearing-store',"SELECT position('welcome_package' in prosrc),position('opening_setup' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('welcome-ledger-category-is-declared-opening-allocation',"SELECT position('club_welcome_allocation' in prosrc),position('club_opening_allocation' in prosrc)>0 FROM pg_proc WHERE oid='fn_apply_club_welcome_economics(uuid,uuid,uuid,jsonb)'::regprocedure;",'0|t')
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')

@@ -13,9 +13,13 @@
  *
  *   cd server && npx tsx scripts/phase8-strength-assemble.mjs \
  *     --runs=<directory holding the 18 <objective>-<seed> run directories> \
- *     --hosts=<hosts.json> [--context=<context.json>] \
+ *     --hosts=<hosts.json> [--context=<context.json>] [--superseded=<superseded.json>] \
  *     --out=../docs/evidence/phase8/strength-YYYY-MM-DD
  *
+ *   --hosts                 {hosts: {<name>: {...}}, runs: {"<objective>-<seed>": <name> or
+ *                           {host, exitCode}}}: the fixed run assignment, keyed by run
+ *   --superseded=<file>     an earlier matrix this one replaces (where it is kept and why),
+ *                           copied into strength.json as `superseded`
  *   --qualification=<file>  default <out>/../phase8-qualification-YYYY-MM-DD.json
  *   --repo-root=<dir>       root that evidencePath is relative to (default: this checkout)
  *   --fixture               assemble fixture-mode runs (tests only); never qualifies
@@ -103,6 +107,21 @@ const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 async function formatted(file, value) {
   const config = (await prettier.resolveConfig(file)) ?? {};
   return prettier.format(JSON.stringify(value), { ...config, parser: 'json', filepath: file });
+}
+
+/** The host record is keyed by run: `runs["<objective>-<seed>"]` names a host in
+ * `hosts`, either as the bare name or as `{ host, exitCode }`. */
+export function normalizeHosts(raw) {
+  const runs = {};
+  const exits = { ...(raw.exits ?? {}) };
+  for (const [key, value] of Object.entries(raw.runs ?? {})) {
+    if (typeof value === 'string') runs[key] = value;
+    else if (value && typeof value === 'object') {
+      runs[key] = value.host;
+      if (value.exitCode !== undefined) exits[key] = value.exitCode;
+    }
+  }
+  return { ...raw, runs, exits };
 }
 
 /** Read, check and summarize every run. Returns { reasons } or the assembly. */
@@ -318,8 +337,9 @@ function runRecord(r, hosts) {
 
 export async function assemble(options) {
   const fixture = Boolean(options.fixture);
-  const hosts = readJson(options.hosts);
+  const hosts = normalizeHosts(readJson(options.hosts));
   const context = options.context ? readJson(options.context) : null;
+  const superseded = options.superseded ? readJson(options.superseded) : null;
   const defective = options.defective ? readJson(options.defective) : {};
   const inspected = inspectRuns({ runsDir: options.runs, hosts, fixture, defective });
   const out = path.resolve(options.out);
@@ -401,6 +421,7 @@ export async function assemble(options) {
       buckets: verdict.buckets,
     },
     productionContext: context,
+    superseded,
   };
   const strengthText = await formatted(path.join(out, 'strength.json'), strength);
   const qualified = !fixture && verdict.promoted === true;

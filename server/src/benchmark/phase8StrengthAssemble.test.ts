@@ -196,12 +196,30 @@ describe('phase8-strength-assemble', () => {
   it(
     'assembles a complete fixture matrix deterministically and it can never qualify',
     async () => {
-      const first = await assemble(`--out=${outDir()}`, '--fixture');
+      const supersededFile = path.join(root, 'superseded.json');
+      write(supersededFile, { path: 'docs/evidence/phase8/earlier/', reason: 'fixture' });
+      const hosts = readJson(hostsFile);
+      hosts.runs['mtt-8101101'] = { host: 'fixture-host', exitCode: 1 };
+      write(hostsFile, hosts);
+      const first = await assemble(
+        `--out=${outDir()}`,
+        '--fixture',
+        `--superseded=${supersededFile}`
+      );
       expect(first.reasons).toEqual([]);
       expect(first.code).toBe(0);
       const strengthBytes = readFileSync(path.join(outDir(), 'strength.json'));
       const strength = JSON.parse(strengthBytes.toString('utf8'));
       expect(strength.mode).toBe('fixture');
+      expect(strength.superseded).toEqual({
+        path: 'docs/evidence/phase8/earlier/',
+        reason: 'fixture',
+      });
+      expect(strength.runs[0]).toMatchObject({
+        run: 'mtt-8101101',
+        host: 'fixture-host',
+        exitCode: 1,
+      });
       expect(strength.runs).toHaveLength(18);
       expect(strength.runs.map((r: { run: string }) => r.run)).toEqual(
         TOURNAMENT_PROMOTION_SEEDS.flatMap((s) =>
@@ -250,7 +268,11 @@ describe('phase8-strength-assemble', () => {
       expect(admission).toMatchObject({ status: 'refused', reason: 'evidence_mismatch' });
 
       // Same inputs, byte-identical record.
-      const second = await assemble(`--out=${outDir('2026-10-03')}`, '--fixture');
+      const second = await assemble(
+        `--out=${outDir('2026-10-03')}`,
+        '--fixture',
+        `--superseded=${supersededFile}`
+      );
       expect(second.code).toBe(0);
       expect(
         readFileSync(path.join(outDir('2026-10-03'), 'strength.json')).equals(strengthBytes)

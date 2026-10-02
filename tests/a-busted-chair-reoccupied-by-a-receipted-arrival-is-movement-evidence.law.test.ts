@@ -24,6 +24,8 @@ import { describe, expect, it } from 'vitest';
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const FILE = '20260928165716_a_busted_chair_reoccupied_by_a_receipted_arrival_is_movement.sql';
 const SQL = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+const LATE_ENTRY =
+  '20261002134551_a_late_entry_seated_after_the_proven_hand_is_movement_eviden.sql';
 const NEVER_DEALT = '20261001151056_a_table_that_never_dealt_is_moved_from_its_seated_entries.sql';
 const ORIGIN = readFileSync(
   join(MIGRATIONS, '20260926091645_a_receipted_chip_is_movement_evidence.sql'),
@@ -139,7 +141,7 @@ describe('a busted chair reoccupied by a receipted arrival is movement evidence'
       );
     // 20261001151056 (a table that never dealt) is the one successor, and it
     // refuses to run unless the installed body is exactly this post-image.
-    expect(later).toEqual([NEVER_DEALT]);
+    expect(later).toEqual([NEVER_DEALT, LATE_ENTRY]);
     expect(readFileSync(join(MIGRATIONS, NEVER_DEALT), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`
     );

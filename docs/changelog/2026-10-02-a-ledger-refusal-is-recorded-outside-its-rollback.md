@@ -104,3 +104,36 @@ financial_alert per table and hand). The successor's
 refusal, and is rebuilt about every 5 s, because `REFUSED:` is not one of
 `RETAINED_HAND_STANDING_REFUSALS`. The rollback leaves the database at the
 pre-hand stacks. That is a stall, and it is fixed in a separate engine change.
+
+## Live (2026-10-02)
+
+- **PRs.** #5826 was squash-merged as `fc6b2aabe2`. The engine half, #5830, was
+  squash-merged as `1c155771ab` and is described in
+  `2026-10-02-a-ledger-refused-hand-is-held-not-replayed.md`.
+- **Migration applied.** `apply-merged-migration.yml` run 37024427477 committed
+  `20261002135708` in 1478 ms at 15:07:10 UTC. Two earlier dispatches sent
+  nothing: one was refused by an announced engine recovery window
+  (14:37, 14:40), and one by the announcement owner's DDL boundary (15:04).
+- **State read back after the apply.**
+  - The judgement and the cron watch are both wired.
+  - The functions are owned by postgres.
+  - `ca_ledger_refusal_recorder` is a login with CONNECTION LIMIT 4 and is not a
+    superuser.
+  - The Vault secret is present. Its value was never read.
+  - All 16 stores still refuse.
+  - The census read 0 / 0 / 0 / 0.
+- **The rolled-back probe.** One `execute_sql` call with one DO block that ended
+  in `RAISE EXCEPTION`, at 15:08:13 UTC. It added +0.01 to a dormant member
+  wallet (club fade0000…0001, untouched since 2026-03-23) with the journal
+  stood down.
+  - The refusal came back as `23514 REFUSED: balance_moved_without_its_ledger_row
+account=player_wallet:…:fade0000-… balance_delta=0.01 ledger_net=0.00`.
+  - The census went from counted 0 to counted 1 / recorded 1.
+  - After the rollback, `ca_ledger_invariant_refusals` id 1 (counter 1) exists,
+    linked to critical incident `606448d5` with source `ledger_invariant.refused`.
+  - The wallet still reads 50000.00.
+  - The record arrived 397 ms after the refusal (first connection) and the
+    incident 72 ms later. A warm loopback connect measures 66 ms.
+  - Incident `606448d5` was then resolved as an operator closure
+    (`no-change-needed: deliberate live proof`). The refusal row stays as the
+    durable record of the probe.

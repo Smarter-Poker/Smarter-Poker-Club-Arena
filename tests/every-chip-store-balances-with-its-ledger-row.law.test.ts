@@ -342,6 +342,44 @@ describe('every chip store balances with its ledger row', () => {
     }
   });
 
+  it('THE FLIP (2026-10-02): every chip store refuses, the flip is the last write to the store modes, and the one minting writer is retired', () => {
+    const flipName = migrations.find((f) => f.endsWith('_every_chip_store_refuses.sql'));
+    expect(flipName, 'migration *_every_chip_store_refuses.sql').toBe(
+      '20261002042417_every_chip_store_refuses.sql'
+    );
+    expect(flipName! > storesName!).toBe(true);
+    const flip = stripComments(read(flipName!));
+    expect(flip.trim().startsWith('BEGIN;')).toBe(true);
+    expect(flip.trim().endsWith('COMMIT;')).toBe(true);
+    // the preimage: still the nine in observe, and nothing found since the install
+    expect(flip).toMatch(/IF v_observe <> 9 THEN/);
+    expect(flip).toMatch(/found_at >= timestamptz '2026-10-02 04:14:45\+00'/);
+    expect(flip).toMatch(/UPDATE public\.ca_ledger_invariant_store_mode\s+SET mode = 'refuse'/);
+    expect(flip).toMatch(/WHERE mode <> 'refuse'\) THEN\s+RAISE EXCEPTION/);
+    // the last migration to write the store modes writes refuse
+    const writes = migrations.filter((f) =>
+      /(UPDATE|INSERT\s+INTO)\s+(public\.)?ca_ledger_invariant_store_mode\b/i.test(
+        stripComments(read(f))
+      )
+    );
+    expect(writes[writes.length - 1]).toBe(flipName);
+    expect(
+      readFileSync(
+        join(ROOT, 'docs', 'laws.d', 'every-chip-store-balances-with-its-ledger-row.md'),
+        'utf8'
+      )
+    ).toContain('installed mode: refuse');
+    // fn_clawback_chips_atomic credited an agent wallet out of a mirror column with
+    // no leg; retired, pinned to the body it replaces, and it moves nothing
+    expect(flip).toContain("IF v_live IS DISTINCT FROM '8f766700e80f50630983cb1fccbff194' THEN");
+    const body = flip.slice(
+      flip.indexOf('CREATE OR REPLACE FUNCTION public.fn_clawback_chips_atomic')
+    );
+    const fn = body.slice(0, body.indexOf('$function$;'));
+    expect(fn).toContain("'clawback_retired'");
+    expect(fn).not.toMatch(/\b(UPDATE|INSERT|DELETE)\b/i);
+  });
+
   it('the executable proof applies the real migration after the six-store proof and plants every store', () => {
     const script = readFileSync(join(ROOT, 'scripts', 'dev', 'test-ledger-invariant.sh'), 'utf8');
     expect(script).toContain(`*${STORES_SUFFIX}`);

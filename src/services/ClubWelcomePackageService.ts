@@ -53,12 +53,16 @@ export interface ClubWelcomePackageResetImpact {
     runningTournaments: number;
     executingCommands: number;
     handHistory: number;
+    resourceActivity: number;
+    economicsPristine: boolean;
   };
   removable: {
     cashGames: number;
     tournaments: number;
     tables: number;
     schedules: number;
+    bbjSeed: number;
+    spinSeed: number;
   };
 }
 
@@ -72,7 +76,8 @@ export interface ClubWelcomePackageResetReceipt {
     tableIds: string[];
     scheduleIds: string[];
   };
-  ownerAcceptanceRequired: boolean;
+  returnedToTreasury: { bbj: number; spin: number };
+  ownerAcceptanceReceiptsPreserved: boolean;
   completedAt: string;
 }
 
@@ -203,7 +208,7 @@ function parseResetImpact(value: unknown, clubId: string): ClubWelcomePackageRes
   const tournamentIds = uuidList(row.tournament_ids);
   const rawBlocking = row.blocking as JsonObject;
   const rawRemovable = row.removable as JsonObject;
-  const blockingKeys = [
+  const legacyBlockingKeys = [
     'active_seats',
     'open_sessions',
     'waiting_players',
@@ -214,14 +219,18 @@ function parseResetImpact(value: unknown, clubId: string): ClubWelcomePackageRes
     'hand_history',
   ] as const;
   const removableKeys = ['cash_games', 'tournaments', 'tables', 'schedules'] as const;
+  const modernBlocking =
+    countValue(rawBlocking.resource_activity) &&
+    typeof rawBlocking.economics_pristine === 'boolean';
+  const legacyBlocking = legacyBlockingKeys.every((key) => countValue(rawBlocking[key]));
   if (
     !cashGameIds ||
     !tournamentIds ||
-    !blockingKeys.every((key) => countValue(rawBlocking[key])) ||
+    (!modernBlocking && !legacyBlocking) ||
     !removableKeys.every((key) => countValue(rawRemovable[key]))
   )
     return null;
-  const blocking = rawBlocking as Record<(typeof blockingKeys)[number], number>;
+  const blocking = rawBlocking as Record<(typeof legacyBlockingKeys)[number], number>;
   const removable = rawRemovable as Record<(typeof removableKeys)[number], number>;
   return {
     clubId,
@@ -230,20 +239,24 @@ function parseResetImpact(value: unknown, clubId: string): ClubWelcomePackageRes
     cashGameIds,
     tournamentIds,
     blocking: {
-      activeSeats: blocking.active_seats,
-      openSessions: blocking.open_sessions,
-      waitingPlayers: blocking.waiting_players,
-      pendingMoves: blocking.pending_moves,
-      registeredPlayers: blocking.registered_players,
-      runningTournaments: blocking.running_tournaments,
-      executingCommands: blocking.executing_commands,
-      handHistory: blocking.hand_history,
+      activeSeats: blocking.active_seats ?? 0,
+      openSessions: blocking.open_sessions ?? 0,
+      waitingPlayers: blocking.waiting_players ?? 0,
+      pendingMoves: blocking.pending_moves ?? 0,
+      registeredPlayers: blocking.registered_players ?? 0,
+      runningTournaments: blocking.running_tournaments ?? 0,
+      executingCommands: blocking.executing_commands ?? 0,
+      handHistory: blocking.hand_history ?? 0,
+      resourceActivity: modernBlocking ? (rawBlocking.resource_activity as number) : 0,
+      economicsPristine: modernBlocking ? (rawBlocking.economics_pristine as boolean) : true,
     },
     removable: {
       cashGames: removable.cash_games,
       tournaments: removable.tournaments,
       tables: removable.tables,
       schedules: removable.schedules,
+      bbjSeed: finiteNumber(rawRemovable.bbj_seed) ? rawRemovable.bbj_seed : 0,
+      spinSeed: finiteNumber(rawRemovable.spin_seed) ? rawRemovable.spin_seed : 0,
     },
   };
 }
@@ -253,7 +266,8 @@ function parseResetReceipt(
   clubId: string,
   operationId: string
 ): ClubWelcomePackageResetReceipt | null {
-  const row = packageEnvelope(value);
+  const candidate = Array.isArray(value) && value.length === 1 ? value[0] : value;
+  const row = objectValue(candidate) ? candidate : null;
   if (
     !row ||
     row.ok !== true ||
@@ -262,7 +276,6 @@ function parseResetReceipt(
     row.operation_id !== operationId ||
     !uuidValue(row.club_id) ||
     !uuidValue(row.operation_id) ||
-    row.owner_acceptance_required !== true ||
     !timestampValue(row.completed_at) ||
     !objectValue(row.removed)
   ) {
@@ -273,12 +286,23 @@ function parseResetReceipt(
   const parsed = lists.map((key) => uuidList(removed[key]));
   if (parsed.some((value) => value === null)) return null;
   const [cashGameIds, tournamentIds, tableIds, scheduleIds] = parsed as string[][];
+  const returned = row.returned_to_treasury;
+  const modernReceipt =
+    objectValue(returned) &&
+    finiteNumber(returned.bbj) &&
+    finiteNumber(returned.spin) &&
+    row.owner_acceptance_receipts_preserved === true;
+  const legacyReceipt = row.owner_acceptance_required === true;
+  if (!modernReceipt && !legacyReceipt) return null;
   return {
     replayed: row.replayed,
     clubId,
     operationId,
     removed: { cashGameIds, tournamentIds, tableIds, scheduleIds },
-    ownerAcceptanceRequired: true,
+    returnedToTreasury: modernReceipt
+      ? { bbj: returned.bbj as number, spin: returned.spin as number }
+      : { bbj: 0, spin: 0 },
+    ownerAcceptanceReceiptsPreserved: modernReceipt,
     completedAt: row.completed_at,
   };
 }
@@ -287,7 +311,18 @@ export function welcomePackageImpactHasNoBlockers(impact: ClubWelcomePackageRese
   return (
     impact.authorized &&
     impact.canReset &&
-    Object.values(impact.blocking).every((count) => count === 0) &&
+    impact.blocking.resourceActivity === 0 &&
+    impact.blocking.economicsPristine &&
+    [
+      impact.blocking.activeSeats,
+      impact.blocking.openSessions,
+      impact.blocking.waitingPlayers,
+      impact.blocking.pendingMoves,
+      impact.blocking.registeredPlayers,
+      impact.blocking.runningTournaments,
+      impact.blocking.executingCommands,
+      impact.blocking.handHistory,
+    ].every((count) => count === 0) &&
     impact.cashGameIds.length === impact.removable.cashGames &&
     impact.tournamentIds.length === impact.removable.tournaments
   );

@@ -117,6 +117,81 @@ test.describe('Production Create A Club Certificate', () => {
       welcome.getByText('Daily $25 Freezeout · 7 PM UTC', { exact: true })
     ).toBeVisible();
     await expect(welcome.getByText('Preloaded', { exact: true })).toBeVisible();
+    await expect(
+      welcome.getByText('Acceptance Is Never Automatic', { exact: false })
+    ).toBeVisible();
+    await expect(
+      welcome.getByRole('checkbox', {
+        name: /I Have Read And Agree To These Wallet Obligations/i,
+      })
+    ).toBeVisible();
+
+    // Package-backed work is already done even if the general lobby queries
+    // arrive later. The receipt, not a timing race, resolves these rows.
+    for (const label of [
+      'Open Your First NLH Table',
+      'Open Your First PLO Table',
+      'Open Your First Limit Table',
+      'Schedule Your First MTT',
+      'Launch Your First Spin',
+      'Launch Your First Heads Up Game',
+    ]) {
+      const task = page.getByText(label, { exact: true }).locator('xpath=ancestor::article');
+      await expect(task.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+    }
+
+    await page.getByRole('button', { name: 'Start Setup', exact: true }).click();
+    const wizard = page.getByRole('dialog', {
+      name: new RegExp(`Open ${escapeRegExp(clubName)}`, 'i'),
+    });
+    await expect(wizard).toBeVisible();
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await wizard.getByLabel('Club Tag Line', { exact: true }).fill('Production Certificate Club');
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
+    await expect(wizard.getByText(/Already Enabled And Funded BBJ/i)).toBeVisible();
+    await expect(wizard.getByRole('button', { name: 'Not Now', exact: true })).toBeDisabled();
+    await wizard.getByRole('button', { name: 'Close Opening Wizard', exact: true }).click();
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
+
+    // Prove the owner-facing lifecycle all the way through the published UI.
+    // A pristine welcome club deliberately owns preloaded games and 100K of
+    // opening capital, so the impact RPC must identify the guarded welcome
+    // unwind instead of disabling the Retire control as if this were a used
+    // club. The server repeats every proof under locks before changing state.
+    await page.goto(`./clubs/${createdClubRef}/settings`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    const openRetirement = page.getByRole('button', { name: 'Retire Club', exact: true });
+    await expect(openRetirement).toBeVisible({ timeout: 60_000 });
+    await openRetirement.click();
+
+    const retirement = page.getByRole('dialog', { name: 'Retire Club', exact: true });
+    await expect(retirement).toBeVisible({ timeout: 30_000 });
+    await expect(retirement.getByText('100,000', { exact: false })).toBeVisible({
+      timeout: 30_000,
+    });
+    await retirement.getByLabel('Type The Club Name To Confirm:', { exact: true }).fill(clubName);
+    const confirmRetirement = retirement.getByRole('button', {
+      name: 'Retire Club',
+      exact: true,
+    });
+    await expect(confirmRetirement).toBeEnabled({ timeout: 30_000 });
+    await page.screenshot({
+      path: 'test-results/create-club-retire-ready-mobile.png',
+      fullPage: true,
+    });
+
+    const retireResponse = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === 'POST' &&
+        new URL(candidate.url()).pathname.endsWith('/rest/v1/rpc/fn_retire_settled_club'),
+      { timeout: 60_000 }
+    );
+    await confirmRetirement.click();
+    const retired = await retireResponse;
+    expect(retired.ok(), `retire RPC returned ${retired.status()}`).toBe(true);
+    await expect(page).toHaveURL(/\/clubs(?:[/?#]|$)/, { timeout: 60_000 });
   });
 });

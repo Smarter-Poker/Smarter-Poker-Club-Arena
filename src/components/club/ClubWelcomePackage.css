@@ -106,6 +106,22 @@
   text-shadow: 0 0 0.8cqw rgb(240 40 73 / 62%) !important;
 }
 
+.club-welcome__diamond-terms {
+  display: grid;
+  gap: 2cqw;
+  padding-block: 2.4cqw;
+  border-bottom: 1px solid #000;
+}
+
+.club-welcome__diamond-terms > p {
+  margin: 0;
+}
+
+.club-welcome__diamond-terms .sc {
+  width: 100%;
+  margin: 0;
+}
+
 .club-welcome-reset__overlay {
   position: fixed;
   inset: 0;

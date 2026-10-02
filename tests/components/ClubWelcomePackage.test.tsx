@@ -20,6 +20,10 @@ vi.mock('../../src/services/ClubWelcomePackageService', async (importOriginal) =
   return { ...actual, clubWelcomePackageService: backend };
 });
 
+vi.mock('../../src/components/games/DiamondSpinsOwnerTerms', () => ({
+  default: () => <div>Diamond Agreement Control</div>,
+}));
+
 const CLUB_ID = '11111111-1111-4111-8111-111111111111';
 const GAME_ID = '22222222-2222-4222-8222-222222222222';
 const TABLE_ID = '33333333-3333-4333-8333-333333333333';
@@ -81,8 +85,17 @@ const safeImpact = (
     runningTournaments: 0,
     executingCommands: 0,
     handHistory: 0,
+    resourceActivity: 0,
+    economicsPristine: true,
   },
-  removable: { cashGames: 1, tournaments: 1, tables: 1, schedules: 1 },
+  removable: {
+    cashGames: 1,
+    tournaments: 1,
+    tables: 1,
+    schedules: 1,
+    bbjSeed: 100,
+    spinSeed: 200,
+  },
   ...overrides,
 });
 
@@ -120,10 +133,8 @@ describe('ClubWelcomePackage', () => {
 
   it('is mounted for owners independently of the completed checklist', () => {
     const page = readFileSync('src/pages/ClubHomePage.tsx', 'utf8');
-    expect(page).toContain(
-      '{isOwner && <ClubWelcomePackage clubId={club.id} clubName={club.name} />}'
-    );
-    expect(page.indexOf('{isOwner && <ClubWelcomePackage')).toBeLessThan(
+    expect(page).toContain('onStateChange={setWelcomePackageState}');
+    expect(page.indexOf('<ClubWelcomePackage')).toBeLessThan(
       page.indexOf('{showLaunchChecklist && (')
     );
   });
@@ -142,6 +153,13 @@ describe('ClubWelcomePackage', () => {
     );
 
     expect(await screen.findByText('1 Active Seats')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Exactly 100 Unused BBJ Chips And 200 Unused Spin Chips Return/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/No Chips Are Created Or Destroyed/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Any Play, Registration, Hand, Contribution, Payout/i)
+    ).toBeInTheDocument();
     await user.type(screen.getByLabelText(/Type Shark Club To Confirm/i), 'Shark Club');
     expect(screen.getByRole('button', { name: 'Start From Zero' })).toBeDisabled();
     expect(backend.remove).not.toHaveBeenCalled();
@@ -159,7 +177,8 @@ describe('ClubWelcomePackage', () => {
         tableIds: [TABLE_ID],
         scheduleIds: [SCHEDULE_ID],
       },
-      ownerAcceptanceRequired: true,
+      returnedToTreasury: { bbj: 100, spin: 200 },
+      ownerAcceptanceReceiptsPreserved: true,
       completedAt: '2026-10-01T12:00:00Z',
     });
 

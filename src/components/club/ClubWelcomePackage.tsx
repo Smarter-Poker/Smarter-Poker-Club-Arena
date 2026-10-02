@@ -13,11 +13,13 @@ import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { uuid } from '../../utils/uuid';
 import { SpadeConsole } from '../console/SpadeConsole';
+import DiamondSpinsOwnerTerms from '../games/DiamondSpinsOwnerTerms';
 import './ClubWelcomePackage.css';
 
 interface Props {
   clubId: string;
   clubName: string;
+  onStateChange?: (state: ClubWelcomePackageState) => void;
 }
 
 const DAILY_TOURNAMENT_SLOT = 'daily_25_freezeout_1900';
@@ -27,6 +29,12 @@ function plural(count: number, singular: string, pluralWord = `${singular}s`): s
 }
 
 function blockerText(impact: ClubWelcomePackageResetImpact): string {
+  if (impact.blocking.resourceActivity > 0) {
+    return `${compactChips(impact.blocking.resourceActivity)} Play, Registration, Or Game Activity Records Block Reset`;
+  }
+  if (!impact.blocking.economicsPristine) {
+    return 'Opening BBJ Or Spin Funds Have Changed. Reset Is Locked';
+  }
   const blockers = [
     [impact.blocking.activeSeats, 'Active Seats'],
     [impact.blocking.openSessions, 'Open Sessions'],
@@ -186,7 +194,14 @@ function WelcomePackageResetDialog({
               </p>
             )}
             <p className="club-welcome-reset__protection">
-              Club Bank, Player Chips, And Memberships Will Not Change
+              Exactly {compactChips(impact?.removable.bbjSeed ?? 0)} Unused BBJ Chips And{' '}
+              {compactChips(impact?.removable.spinSeed ?? 0)} Unused Spin Chips Return To The Club
+              Bank. No Chips Are Created Or Destroyed, And Financial And Consent History Is
+              Preserved
+            </p>
+            <p className="club-welcome-reset__protection">
+              Any Play, Registration, Hand, Contribution, Payout, Or Changed Opening Balance Blocks
+              Reset
             </p>
             <label htmlFor="welcome-package-confirmation">
               Type <strong>{confirmationName}</strong> To Confirm
@@ -207,17 +222,19 @@ function WelcomePackageResetDialog({
   );
 }
 
-export default function ClubWelcomePackage({ clubId, clubName }: Props) {
+export default function ClubWelcomePackage({ clubId, clubName, onStateChange }: Props) {
   const [state, setState] = useState<ClubWelcomePackageState | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [removedAt, setRemovedAt] = useState<string | null>(null);
+  const [diamondAccepted, setDiamondAccepted] = useState(false);
   /* This belongs to the club action, not the dialog mount. Closing and
      reopening after an unknown outcome must reuse the same server key. */
   const resetOperationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     resetOperationIdRef.current = null;
+    setDiamondAccepted(false);
   }, [clubId]);
 
   const read = useCallback(async () => {
@@ -225,19 +242,23 @@ export default function ClubWelcomePackage({ clubId, clubName }: Props) {
     try {
       const next = await clubWelcomePackageService.get(clubId);
       setState(next);
+      onStateChange?.(next);
     } catch (caught) {
       reportError(caught, 'ClubWelcomePackage.read_failed');
       setState(null);
       setReadFailed(true);
     }
-  }, [clubId]);
+  }, [clubId, onStateChange]);
 
   useEffect(() => {
     let current = true;
     void clubWelcomePackageService
       .get(clubId)
       .then((next) => {
-        if (current) setState(next);
+        if (current) {
+          setState(next);
+          onStateChange?.(next);
+        }
       })
       .catch((caught) => {
         if (!current) return;
@@ -247,7 +268,7 @@ export default function ClubWelcomePackage({ clubId, clubName }: Props) {
     return () => {
       current = false;
     };
-  }, [clubId]);
+  }, [clubId, onStateChange]);
 
   const activeItems = useMemo(
     () => state?.items.filter((item) => item.retiredAt === null) ?? [],
@@ -308,9 +329,11 @@ export default function ClubWelcomePackage({ clubId, clubName }: Props) {
             <div>
               <span>Diamond Spins</span>
               <strong className="is-acceptance">
-                {state?.economics?.diamondSpinsStatus === 'owner_acceptance_required'
-                  ? 'Owner Acceptance Required'
-                  : 'Not Enabled'}
+                {diamondAccepted
+                  ? 'Accepted'
+                  : state?.economics?.diamondSpinsStatus === 'owner_acceptance_required'
+                    ? 'Owner Acceptance Required'
+                    : 'Not Enabled'}
               </strong>
             </div>
             <div>
@@ -323,6 +346,13 @@ export default function ClubWelcomePackage({ clubId, clubName }: Props) {
               <span>Daily $25 Freezeout · 7 PM UTC</span>
               <strong>{tournamentCount > 0 ? 'Preloaded' : 'Not Preloaded'}</strong>
             </div>
+          </div>
+          <div className="club-welcome__diamond-terms">
+            <p className="sc-copy">
+              Diamond Spins Can Open Only After The Club Owner Accepts The Wallet Agreement And
+              Profit-Burn Notice. Acceptance Is Never Automatic.
+            </p>
+            <DiamondSpinsOwnerTerms clubId={clubId} onStatusChange={setDiamondAccepted} />
           </div>
           {mayRemove && (
             <button

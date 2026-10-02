@@ -254,6 +254,220 @@ try {
     throw fundingError || new Error('Welcome BBJ And Spin Funding Receipts Were Not Exact.');
   }
 
+  const { data: canonicalWallet, error: canonicalWalletError } = await admin
+    .from('club_wallets')
+    .select('club_id,chip_balance')
+    .eq('club_id', club.id)
+    .single();
+  if (
+    canonicalWalletError ||
+    canonicalWallet?.club_id !== club.id ||
+    Number(canonicalWallet?.chip_balance) !== 0
+  ) {
+    throw canonicalWalletError || new Error('Canonical Club Wallet Was Not Created.');
+  }
+
+  const cashIds = welcomeCash.map((item) => item.entity_id);
+  const initialTableIds = welcomeCash.map((item) => item.initial_table_id);
+  const { data: cashRows, error: cashRowsError } = await admin
+    .from('cash_games')
+    .select('id,template_name,variant,sb,bb,enabled,state')
+    .in('id', cashIds);
+  const { data: initialTables, error: initialTablesError } = await admin
+    .from('tables')
+    .select('id,cluster_id,status,lifecycle')
+    .in('id', initialTableIds);
+  if (
+    cashRowsError ||
+    initialTablesError ||
+    cashRows?.length !== 9 ||
+    initialTables?.length !== 9 ||
+    cashRows.some(
+      (row) =>
+        row.template_name !== 'classic' ||
+        Number(row.sb) !== 0.5 ||
+        Number(row.bb) !== 1 ||
+        row.enabled !== true ||
+        row.state !== 'live'
+    ) ||
+    initialTables.some(
+      (row) =>
+        !initialTableIds.includes(row.id) ||
+        !cashIds.includes(row.cluster_id) ||
+        ['closed', 'cancelled', 'completed'].includes(String(row.status || '').toLowerCase()) ||
+        row.lifecycle === 'closed'
+    )
+  ) {
+    throw (
+      cashRowsError ||
+      initialTablesError ||
+      new Error('Welcome Cash Tables Were Not Durable And Engine-Ready.')
+    );
+  }
+
+  const { data: schedule, error: scheduleError } = await admin
+    .from('tournament_schedules')
+    .select('id,name,active,days_of_week,start_times_utc,interval_minutes,config')
+    .eq('id', welcomeSchedules[0].entity_id)
+    .single();
+  if (
+    scheduleError ||
+    schedule?.name !== 'Daily $25 Freezeout' ||
+    schedule?.active !== true ||
+    schedule?.interval_minutes !== null ||
+    JSON.stringify(schedule?.days_of_week) !== JSON.stringify([0, 1, 2, 3, 4, 5, 6]) ||
+    JSON.stringify(schedule?.start_times_utc) !== JSON.stringify(['19:00']) ||
+    Number(schedule?.config?.buyIn) !== 25 ||
+    Number(schedule?.config?.startingStack) !== 10000 ||
+    schedule?.config?.recurrenceCadence !== 'daily'
+  ) {
+    throw (
+      scheduleError || new Error('Daily 7 PM $25 Welcome Tournament Was Not Configured Exactly.')
+    );
+  }
+
+  const { data: spinRecurrence, error: spinRecurrenceError } = await admin
+    .from('spin_bonus_pools')
+    .select('club_id,is_active,balance,seeded_amount,offered_max_stake')
+    .eq('club_id', club.id)
+    .single();
+  if (
+    spinRecurrenceError ||
+    spinRecurrence?.is_active !== true ||
+    Number(spinRecurrence?.balance) !== 200 ||
+    Number(spinRecurrence?.seeded_amount) !== 200 ||
+    Number(spinRecurrence?.offered_max_stake) !== 1
+  ) {
+    throw (
+      spinRecurrenceError || new Error('Authoritative Spin And Sit-N-Go Recurrence Was Not Active.')
+    );
+  }
+
+  const { data: diamondConfigs, error: diamondConfigsError } = await admin
+    .from('diamond_game_configs')
+    .select('game,enabled,min_bet_diamonds,max_bet_diamonds,purchased_only')
+    .eq('host_id', club.id);
+  const { data: wheelConfig, error: wheelConfigError } = await admin
+    .from('wheel_configs')
+    .select('enabled,purchased_only')
+    .eq('host_id', club.id)
+    .single();
+  const { data: diamondConsent, error: diamondConsentError } = await admin
+    .from('diamond_spins_owner_consents')
+    .select('host_id')
+    .eq('host_id', club.id);
+  if (
+    diamondConfigsError ||
+    wheelConfigError ||
+    diamondConsentError ||
+    diamondConfigs?.length !== 4 ||
+    new Set(diamondConfigs.map((row) => row.game)).size !== 4 ||
+    diamondConfigs.some(
+      (row) =>
+        row.enabled !== true ||
+        Number(row.min_bet_diamonds) !== 25 ||
+        Number(row.max_bet_diamonds) !== 5000 ||
+        row.purchased_only !== false
+    ) ||
+    wheelConfig?.enabled !== true ||
+    wheelConfig?.purchased_only !== false ||
+    diamondConsent?.length !== 0
+  ) {
+    throw (
+      diamondConfigsError ||
+      wheelConfigError ||
+      diamondConsentError ||
+      new Error('Diamond Games Were Not Enabled-By-Default Behind The Unaccepted Consent Gate.')
+    );
+  }
+
+  const { data: resetImpact, error: resetImpactError } = await player.rpc(
+    'fn_get_club_welcome_package_reset_impact',
+    { p_club_id: club.id }
+  );
+  if (resetImpactError || resetImpact?.can_reset !== true) {
+    throw resetImpactError || new Error('Pristine Welcome Package Was Not Resettable.');
+  }
+  const resetOperationId = crypto.randomUUID();
+  const { data: reset, error: resetError } = await player.rpc(
+    'fn_remove_first_club_welcome_games',
+    { p_club_id: club.id, p_operation_id: resetOperationId }
+  );
+  if (
+    resetError ||
+    reset?.ok !== true ||
+    Number(reset?.returned_to_treasury?.bbj) !== 100 ||
+    Number(reset?.returned_to_treasury?.spin) !== 200 ||
+    reset?.owner_acceptance_receipts_preserved !== true
+  ) {
+    throw resetError || new Error('Welcome Package Did Not Reset To A Conserved Zero State.');
+  }
+  const [
+    resetClubRead,
+    resetSpinRead,
+    resetBbjRead,
+    resetCashRead,
+    resetScheduleRead,
+    resetDiamondRead,
+    resetWheelRead,
+    resetConsentRead,
+  ] = await Promise.all([
+    admin
+      .from('clubs')
+      .select('chip_treasury,bbj_enabled,bbj_rake_enabled,spins_enabled,spins_preseed_amount')
+      .eq('id', club.id)
+      .single(),
+    admin
+      .from('spin_bonus_pools')
+      .select('balance,seeded_amount,is_active')
+      .eq('club_id', club.id)
+      .single(),
+    admin
+      .from('bbj_pools')
+      .select('main_balance,backup_balance,promo_balance,status')
+      .eq('club_id', club.id)
+      .single(),
+    admin.from('cash_games').select('id,enabled,state').in('id', cashIds),
+    admin.from('tournament_schedules').select('id,active').eq('id', schedule.id).single(),
+    admin.from('diamond_game_configs').select('game,enabled').eq('host_id', club.id),
+    admin.from('wheel_configs').select('enabled').eq('host_id', club.id).single(),
+    admin.from('diamond_spins_owner_consents').select('host_id').eq('host_id', club.id),
+  ]);
+  const resetReadError = [
+    resetClubRead,
+    resetSpinRead,
+    resetBbjRead,
+    resetCashRead,
+    resetScheduleRead,
+    resetDiamondRead,
+    resetWheelRead,
+    resetConsentRead,
+  ]
+    .map((read) => read.error)
+    .find(Boolean);
+  if (
+    resetReadError ||
+    Number(resetClubRead.data?.chip_treasury) !== 100000 ||
+    resetClubRead.data?.bbj_enabled !== false ||
+    resetClubRead.data?.bbj_rake_enabled !== false ||
+    resetClubRead.data?.spins_enabled !== false ||
+    Number(resetClubRead.data?.spins_preseed_amount) !== 0 ||
+    Number(resetSpinRead.data?.balance) !== 0 ||
+    Number(resetSpinRead.data?.seeded_amount) !== 0 ||
+    resetSpinRead.data?.is_active !== false ||
+    Number(resetBbjRead.data?.main_balance) !== 0 ||
+    Number(resetBbjRead.data?.backup_balance) !== 0 ||
+    Number(resetBbjRead.data?.promo_balance) !== 0 ||
+    resetBbjRead.data?.status !== 'retired' ||
+    resetCashRead.data?.some((row) => row.enabled || row.state !== 'dormant') ||
+    resetScheduleRead.data?.active !== false ||
+    resetDiamondRead.data?.some((row) => row.enabled) ||
+    resetWheelRead.data?.enabled !== false ||
+    resetConsentRead.data?.length !== 0
+  ) {
+    throw resetReadError || new Error('Welcome Reset Readback Was Not A True Zero State.');
+  }
+
   const presetRequestId = crypto.randomUUID();
   const { data: presetClub, error: presetError } = await player.rpc('fn_create_club_atomic', {
     p_request_id: presetRequestId,

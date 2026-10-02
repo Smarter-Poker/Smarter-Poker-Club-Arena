@@ -12,9 +12,30 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
 
 import ClubOpeningWizard from '../../src/components/club/ClubOpeningWizard';
+import type { ClubWelcomePackageState } from '../../src/services/ClubWelcomePackageService';
 
 const onClose = vi.fn();
 const onComplete = vi.fn();
+const welcomePackage: ClubWelcomePackageState = {
+  clubId: 'club-1',
+  eligible: true,
+  status: 'provisioned',
+  ownerAcceptanceRequired: true,
+  displayTimeZone: 'UTC',
+  displayTimeLabel: '7:00 PM UTC',
+  items: [],
+  economics: {
+    bbjEnabled: true,
+    bbjSeed: 100,
+    spinsEnabled: true,
+    spinMaxStake: 1,
+    spinSeed: 200,
+    leaderboardMode: 'display_only',
+    leaderboardSeed: 0,
+    promoEnabled: false,
+    diamondSpinsStatus: 'owner_acceptance_required',
+  },
+};
 
 function mount(props: Partial<React.ComponentProps<typeof ClubOpeningWizard>> = {}) {
   return render(
@@ -88,6 +109,45 @@ beforeEach(() => {
 });
 
 describe('no silent chip movement', () => {
+  it('reuses package-funded BBJ and Spins without a second debit or invalid Not Now path', async () => {
+    mocks.rpc.mockImplementation((_name: string, args: { p_operation_id: string }) =>
+      Promise.resolve(okReceipt(args.p_operation_id, { club_bank_after: 99700 }))
+    );
+    mount({ clubBank: 99700, welcomePackage });
+    next();
+    fireEvent.change(screen.getByLabelText(/Club Tag Line/), { target: { value: 'A Real Line' } });
+    next();
+    next();
+
+    expect(screen.getByText(/Already Enabled And Funded BBJ/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Enable BBJ/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Not Now/ })).toBeDisabled();
+    expect(screen.queryByText(/BBJ Funding Confirmation/)).not.toBeInTheDocument();
+    next();
+
+    expect(screen.getByText(/Already Opened The Spin And Heads-Up Boards/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Enable Spins/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Not Now/ })).toBeDisabled();
+    expect(screen.queryByText(/Spin Funding Confirmation/)).not.toBeInTheDocument();
+    next();
+    choose(/^Not Now/);
+    next();
+    next();
+
+    expect(screen.getByText('0 Chips')).toBeInTheDocument();
+    expect(screen.getByText('99.7K Chips')).toBeInTheDocument();
+    expect(screen.getAllByText(/Already Funded/)).toHaveLength(2);
+    await act(async () => next());
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({
+      p_bbj_enabled: true,
+      p_bbj_seed: 100,
+      p_spins_enabled: true,
+      p_spin_seed: 200,
+      p_spin_max_stake: 1,
+    });
+  });
+
   it('starts with BBJ and Promotion unanswered and blocks Continue until the owner answers', () => {
     mount();
     next();

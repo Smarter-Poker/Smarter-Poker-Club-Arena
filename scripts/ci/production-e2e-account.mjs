@@ -529,7 +529,7 @@ export async function retireCertificationClubWithRetry({
           serviceRequest(
             configuration,
             `/rest/v1/tables?club_id=eq.${encodeURIComponent(clubId)}` +
-              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,current_hand_id,hand_number,hands_dealt,created_at,updated_at' +
+              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,created_at,updated_at' +
               '&order=id&limit=500',
             {},
             fetchImpl
@@ -537,7 +537,7 @@ export async function retireCertificationClubWithRetry({
           serviceRequest(
             configuration,
             `/rest/v1/tables?cluster_id=in.(${clusterFilter})` +
-              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,current_hand_id,hand_number,hands_dealt,created_at,updated_at' +
+              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,created_at,updated_at' +
               '&order=id&limit=500',
             {},
             fetchImpl

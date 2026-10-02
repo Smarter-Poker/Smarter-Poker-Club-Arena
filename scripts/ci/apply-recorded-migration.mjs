@@ -63,6 +63,7 @@ import {
   RECOVERY_SNAPSHOTS,
   validateRecoveryCatalog,
   validateRecoverySnapshots,
+  MAX_SNAPSHOT_AGE_SECONDS,
 } from './contract-index-recovery.mjs';
 
 const DIR = 'supabase/migrations';
@@ -261,7 +262,7 @@ if (recovery) {
       const snapshots = (await client.query(RECOVERY_SNAPSHOTS)).rows;
       validateRecoverySnapshots(snapshots);
       console.log(
-        `[apply] current snapshot admission ${snapshots[0].observed_at}; historical operation ${recovery.before}`
+        `[apply] current snapshot admission ${snapshots[0].observed_at}: ${snapshots[0].holders} holder(s), oldest ${snapshots[0].oldest_age_seconds ?? 0}s <= ${MAX_SNAPSHOT_AGE_SECONDS}s; historical operation ${recovery.before}`
       );
     }
     async function sendOnce(statement) {

@@ -10,6 +10,7 @@ import {
   recoveryStatement,
   validateRecoveryCatalog,
   validateRecoverySnapshots,
+  MAX_SNAPSHOT_AGE_SECONDS,
   RECOVERY_FILE,
   RECOVERY_INDEX,
   EXPECTED_DEFINITION,
@@ -99,13 +100,54 @@ test('exact invalid ready live observed index only; replacement must change OID'
     '83342072'
   );
 });
-test('old or unknown snapshots, prepared transactions and unknown observer refuse', () => {
-  const clear = { observer_authorized: true, clear: true, no_prepared: true };
-  validateRecoverySnapshots([clear]);
-  for (const key of Object.keys(clear))
-    for (const value of [false, null, undefined])
-      assert.throws(() => validateRecoverySnapshots([{ ...clear, [key]: value }]));
-  for (const rows of [[], [clear, clear], null])
+test('short live snapshots are admitted; old, unknown-age or prepared work refuses', () => {
+  assert.equal(MAX_SNAPSHOT_AGE_SECONDS, 60);
+  const idle = {
+    observed_at: '2026-10-02 17:24:00.000+00',
+    observer_authorized: true,
+    holders: 0,
+    unknown_age: 0,
+    oldest_age_seconds: null,
+    no_prepared: true,
+  };
+  // Production as sampled for dry run 37040440084: PostgREST, pg_cron and
+  // autovacuum backends always hold short snapshots, the oldest about 34 s.
+  const postgrest = { ...idle, holders: 20, oldest_age_seconds: 34.2 };
+  for (const rows of [
+    [idle],
+    [postgrest],
+    [{ ...postgrest, holders: 3, oldest_age_seconds: 0.004 }],
+    [{ ...postgrest, holders: 1, oldest_age_seconds: 60 }],
+  ])
+    assert.equal(validateRecoverySnapshots(rows), rows[0]);
+  const refusals = {
+    'old snapshot': { ...postgrest, oldest_age_seconds: 60.001 },
+    'weekly-close reader': { ...postgrest, holders: 2, oldest_age_seconds: 1800 },
+    'unknown age beside short holders': { ...postgrest, unknown_age: 1 },
+    'unknown age alone': { ...idle, holders: 1, unknown_age: 1, oldest_age_seconds: null },
+    'holder without an age': { ...postgrest, oldest_age_seconds: null },
+    'age not a number': { ...postgrest, oldest_age_seconds: '12.5' },
+    'negative age': { ...postgrest, oldest_age_seconds: -1 },
+    'infinite age': { ...postgrest, oldest_age_seconds: Infinity },
+    'NaN age': { ...postgrest, oldest_age_seconds: NaN },
+    'age without holders': { ...idle, oldest_age_seconds: 1 },
+    'missing holder count': { ...postgrest, holders: undefined },
+    'string holder count': { ...postgrest, holders: '20' },
+    'negative holder count': { ...postgrest, holders: -1 },
+    'missing unknown count': { ...postgrest, unknown_age: undefined },
+    'prepared transaction': { ...idle, no_prepared: false },
+    'prepared transaction beside short holders': { ...postgrest, no_prepared: false },
+    'unknown prepared state': { ...postgrest, no_prepared: null },
+    'unauthorized observer': { ...postgrest, observer_authorized: false },
+    'unknown observer': { ...postgrest, observer_authorized: undefined },
+  };
+  for (const [label, r] of Object.entries(refusals))
+    assert.throws(
+      () => validateRecoverySnapshots([r]),
+      /older\/unknown snapshot or prepared transaction prevents recovery/,
+      label
+    );
+  for (const rows of [[], [idle, idle], null, undefined, [null]])
     assert.throws(() => validateRecoverySnapshots(rows));
 });
 test('owning applier keeps bounded single recovery before unchanged migration body', () => {
@@ -212,9 +254,20 @@ test('exact interrupted pair alone permits cleanup; original and other indexes n
   );
 });
 test('current admission cannot filter readers using the historical failed-operation cutoff', () => {
-  assert.ok(RECOVERY_SNAPSHOTS.includes('xact_start <= statement_timestamp()'));
-  assert.ok(RECOVERY_SNAPSHOTS.includes('xact_start IS NULL'));
+  // Ages are measured from fresh server time, never from the historical cutoff,
+  // and cover snapshot, xid and open-transaction holders other than ourselves.
   assert.ok(!RECOVERY_SNAPSHOTS.includes('$1'));
+  assert.ok(!RECOVERY_SNAPSHOTS.includes('statement_timestamp'));
+  assert.ok(RECOVERY_SNAPSHOTS.includes('clock_timestamp()-coalesce(xact_start,backend_start)'));
+  for (const term of [
+    'backend_xmin IS NOT NULL',
+    'backend_xid IS NOT NULL',
+    'xact_start IS NOT NULL',
+    'pid<>pg_backend_pid()',
+    'datname=current_database()',
+    'pg_prepared_xacts WHERE database=current_database()',
+  ])
+    assert.ok(RECOVERY_SNAPSHOTS.includes(term), term);
   const source = readFileSync(new URL('./apply-recorded-migration.mjs', import.meta.url), 'utf8');
   assert.ok(source.includes('const deadline = performance.now() + 600000'));
   assert.ok(source.includes('deadline - performance.now()'));

@@ -54,9 +54,39 @@ export const RECOVERY_CATALOG = `SELECT
  JOIN pg_index i ON i.indexrelid=c.oid JOIN pg_class t ON t.oid=i.indrelid
  JOIN pg_namespace tn ON tn.oid=t.relnamespace
  WHERE c.oid=to_regclass('public.managed_game_contract_versions_game_id_id_idx')`;
-export const RECOVERY_SNAPSHOTS = `SELECT statement_timestamp()::text AS observed_at, current_user='postgres' AS observer_authorized,
- NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND pid<>pg_backend_pid() AND backend_xmin IS NOT NULL AND (xact_start IS NULL OR xact_start <= statement_timestamp())) AS clear,
- NOT EXISTS(SELECT 1 FROM pg_prepared_xacts WHERE database=current_database()) AS no_prepared`;
+// SNAPSHOT ADMISSION BY AGE (2026-10-02). The first rule refused while ANY
+// other backend held a snapshot. Production always has some: dry run
+// 37040440084 refused, and six samples found 20, 2, 3, 11, 3 and 3 PostgREST,
+// pg_cron and autovacuum backends holding snapshots, the oldest about 34 s.
+// DROP/REINDEX INDEX CONCURRENTLY wait for older snapshots; they do not fail
+// on them. Only a LONG holder (the weekly-close readers behind both 600 s
+// timeouts) can exhaust the budget, so admission now refuses only:
+//   - any prepared transaction in this database (unchanged);
+//   - any other backend here holding a snapshot (backend_xmin), an xid or an
+//     open transaction whose age exceeds MAX_SNAPSHOT_AGE_SECONDS;
+//   - any such backend whose age cannot be determined (unknown = refuse).
+// Age is measured against fresh server time, clock_timestamp(), from
+// xact_start, or from backend_start when no transaction start is reported
+// (connection age can only overstate how long a snapshot has been held).
+export const RECOVERY_SNAPSHOTS = `SELECT clock_timestamp()::text AS observed_at, current_user='postgres' AS observer_authorized,
+ count(*)::int AS holders,
+ count(*) FILTER (WHERE h.age_seconds IS NULL)::int AS unknown_age,
+ max(h.age_seconds)::float8 AS oldest_age_seconds,
+ NOT EXISTS(SELECT 1 FROM pg_prepared_xacts WHERE database=current_database()) AS no_prepared
+ FROM (SELECT extract(epoch FROM clock_timestamp()-coalesce(xact_start,backend_start))::float8 AS age_seconds
+  FROM pg_stat_activity WHERE datid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND pid<>pg_backend_pid()
+  AND (backend_xmin IS NOT NULL OR backend_xid IS NOT NULL OR xact_start IS NOT NULL)) h`;
+// 60 s, from this tool's own budget: every DDL statement shares one 600 s
+// statement_timeout, and admission demands a 12-minute (720 s) runway before
+// the :50 break window, so even an exhausted budget ends before the window.
+// A holder already older than 60 s is evidence of a long reader (refuse). The
+// bound sits ~1.8x above the oldest normal holder seen (~34 s) and is 10% of
+// the 600 s budget, so admitted normal traffic leaves at least 540 s of the
+// budget for the build itself. A holder that is young now but runs long is
+// the same after-admission race the old rule could not prevent either: the
+// shared budget ends the wait, the run exits UNKNOWN and nothing retries.
+// The check still runs fresh before EACH DDL statement.
+export const MAX_SNAPSHOT_AGE_SECONDS = 60;
 export function validateRecoveryCatalog(rows, request, recovered = false) {
   if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown recovery catalog');
   const r = rows[0];
@@ -91,14 +121,24 @@ export function validateRecoveryCatalog(rows, request, recovered = false) {
   return r;
 }
 export function validateRecoverySnapshots(rows) {
+  const r = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  const oldest = r ? r.oldest_age_seconds : undefined;
   if (
-    !Array.isArray(rows) ||
-    rows.length !== 1 ||
-    rows[0].observer_authorized !== true ||
-    rows[0].clear !== true ||
-    rows[0].no_prepared !== true
+    !r ||
+    r.observer_authorized !== true ||
+    r.no_prepared !== true ||
+    !Number.isSafeInteger(r.holders) ||
+    r.holders < 0 ||
+    r.unknown_age !== 0 ||
+    (r.holders === 0
+      ? oldest !== null
+      : typeof oldest !== 'number' ||
+        !Number.isFinite(oldest) ||
+        oldest < 0 ||
+        oldest > MAX_SNAPSHOT_AGE_SECONDS)
   )
     throw new Error('older/unknown snapshot or prepared transaction prevents recovery');
+  return r;
 }
 
 export function recoveryStatement(request) {

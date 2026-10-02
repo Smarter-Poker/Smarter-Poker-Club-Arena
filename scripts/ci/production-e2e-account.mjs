@@ -477,16 +477,92 @@ export async function retireCertificationClubWithRetry({
   fetchImpl = fetch,
   wait,
 }) {
-  const result = await retryTransient(
-    () =>
-      serviceRequest(
-        configuration,
-        '/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
-        { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
-        fetchImpl
-      ),
-    { wait, label: `retirement of certification club ${clubId}` }
-  );
+  let result;
+  try {
+    result = await retryTransient(
+      () =>
+        serviceRequest(
+          configuration,
+          '/rest/v1/rpc/fn_ca_retire_welcome_certification_club',
+          { method: 'POST', body: JSON.stringify({ p_club_id: clubId, p_reason: reason }) },
+          fetchImpl
+        ),
+      { wait, label: `retirement of certification club ${clubId}` }
+    );
+  } catch (error) {
+    if (
+      error?.code === '55000' &&
+      error?.body?.message === 'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES'
+    ) {
+      try {
+        const items = await serviceRequest(
+          configuration,
+          `/rest/v1/club_welcome_package_items?club_id=eq.${encodeURIComponent(clubId)}` +
+            '&retired_at=is.null&select=slot_key,entity_kind,entity_id,initial_table_id,retired_at' +
+            '&order=slot_key&limit=500',
+          {},
+          fetchImpl
+        );
+        const cashGameIds = Array.isArray(items)
+          ? items
+              .filter((item) => item.entity_kind === 'cash_game')
+              .map((item) => item.entity_id)
+              .filter(Boolean)
+          : [];
+        const clusterFilter = cashGameIds.map((id) => encodeURIComponent(id)).join(',');
+        const [cashGames, schedules, clubTables, clusterTables] = await Promise.all([
+          serviceRequest(
+            configuration,
+            `/rest/v1/cash_games?club_id=eq.${encodeURIComponent(clubId)}` +
+              '&select=id,club_id,created_by,cluster_mode,enabled,state,created_at,updated_at' +
+              '&order=id&limit=500',
+            {},
+            fetchImpl
+          ),
+          serviceRequest(
+            configuration,
+            `/rest/v1/tournament_schedules?club_id=eq.${encodeURIComponent(clubId)}` +
+              '&select=id,club_id,active,created_at,updated_at&order=id&limit=500',
+            {},
+            fetchImpl
+          ),
+          serviceRequest(
+            configuration,
+            `/rest/v1/tables?club_id=eq.${encodeURIComponent(clubId)}` +
+              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,current_hand_id,hand_number,hands_dealt,created_at,updated_at' +
+              '&order=id&limit=500',
+            {},
+            fetchImpl
+          ),
+          serviceRequest(
+            configuration,
+            `/rest/v1/tables?cluster_id=in.(${clusterFilter})` +
+              '&select=id,cluster_id,club_id,union_id,tournament_id,game_type,created_by,role,main_index,lifecycle,status,current_players,is_deleted,current_hand_id,hand_number,hands_dealt,created_at,updated_at' +
+              '&order=id&limit=500',
+            {},
+            fetchImpl
+          ),
+        ]);
+        console.error(
+          '[production-e2e-account] reserved fixture graph diagnostic: ' +
+            JSON.stringify({
+              observedAfterRefusalAt: new Date().toISOString(),
+              clubId,
+              items,
+              cashGames,
+              schedules,
+              clubTables,
+              clusterTables,
+            })
+        );
+      } catch (diagnosticError) {
+        console.error(
+          `[production-e2e-account] reserved fixture graph diagnostic unavailable: ${diagnosticError.message}`
+        );
+      }
+    }
+    throw error;
+  }
   if (result?.success === false) {
     throw new Error(`Certification club ${clubId} retirement was refused: ${result.error}`);
   }

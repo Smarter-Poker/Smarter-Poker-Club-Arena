@@ -1,0 +1,5 @@
+{
+  "_owner": "claude/legacy-custody-receipt-from-db",
+  "_comment": "Migration 20261002034540: the engine verifies a version 3 (legacy fee custody) terminal receipt against the custody origin the database holds, not a compiled list of event ids.",
+  "functions": ["fn_ca_legacy_fee_custody_origin"]
+}

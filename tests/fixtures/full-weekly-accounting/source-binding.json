@@ -411,7 +411,7 @@
     "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
     "tests/fixtures/legacy-fee-finality/README.md": "14a2c2c5c54825bcff66334f51620f8ca0de5733c80de81e6bef4da57be37bb8",
     "tests/fixtures/legacy-fee-finality/pko-original-cohort.json": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
-    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+    "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
     "tests/fixtures/legacy-fee-finality/after.sql": "0ab6450fb4d8829211681f91df45025c2cc6b50d0764168fdc31c499524c4c55",
     "tests/fixtures/legacy-fee-finality/fn_settle_tournament_rake.sql": "c24c8dedae18ea4d59f8a61ca70c11ea68c2d271ab58350b2932fdb8c1276589",
     "tests/fixtures/legacy-fee-finality/pko-original-fees.json": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "fd92fe081f832d37be31c463511919306c1c15ee97ec452fde52e777080b67c6",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -439,10 +439,10 @@
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
     "tests/unit/fixtureNativeCi.test.ts": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
-    "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+    "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "a84f74c0f48d7b272b5e79471b000fd754ced01cb16435f2b3c7c0a31a00cdf6",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2578,6 +2578,34 @@
       "to": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
       "on": "2026-10-02",
       "why": "Cascade of the 2026-10-02 restamp of 20260926140858 (registry row moved above the CREATE FUNCTION); every other pinned byte is unchanged."
+    },
+    {
+      "file": "server/src/tournament/completionSettlementReceipt.ts",
+      "from": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
+      "to": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The compiled list of 13 legacy fee custody events is removed: verifyTournamentCompletionReceipt takes the custody origin the database holds (fn_ca_legacy_fee_custody_origin, over the obligation row fn_ca_legacy_fee_custody_cohort reads) as a fifth argument, and parseLegacyFeeCustodyOrigin parses it for exactly one event. Every custody and resolution comparison is unchanged; only the source of the expected amount, fingerprint, source count and recognized count moved from the engine to the database. The list had called 26 committed September 8 receipts outcome unknown."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs",
+      "from": "616bab391d2893dbffc8d65237155009b7a83530a299910aee8b4dda5c700871",
+      "to": "9556746822f0045ecadc35704929f53810676fe0ab07e49146b14495667870c8",
+      "on": "2026-10-02",
+      "why": "Restamped 2026-10-02 by migration 20261002034540 (PR #5779). The decoder now requires the database custody origin; the harness passes PostgreSQL's own custody answer from the same native receipt (fn_ca_tournament_fee_custody_receipt raises unless it equals fn_ca_legacy_fee_custody_cohort). Receipt sources, modes, expected counts and states are unchanged."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "fd92fe081f832d37be31c463511919306c1c15ee97ec452fde52e777080b67c6",
+      "to": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "a84f74c0f48d7b272b5e79471b000fd754ced01cb16435f2b3c7c0a31a00cdf6",
+      "to": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {

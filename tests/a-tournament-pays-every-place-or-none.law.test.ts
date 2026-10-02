@@ -878,7 +878,7 @@ describe('a tournament pays every place or none', () => {
       expect(path).not.toMatch(/settleTournamentObligation\(/);
     }
     expect(REQUEST_TERMINAL).toContain("terminalAuthority.rpc('fn_complete_tournament_terminal'");
-    expect(REQUEST_TERMINAL).toContain('verifyTournamentCompletionReceipt(');
+    expect(REQUEST_TERMINAL).toContain('await verifyTerminalReceipt(');
     expect(REQUEST_TERMINAL).toContain(
       "terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome'"
     );

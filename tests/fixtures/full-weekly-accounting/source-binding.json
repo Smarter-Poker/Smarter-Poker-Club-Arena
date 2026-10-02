@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "2819d36f59c8c1458cf767cd019340f119c1d5eb24d870d9762ac3b458ea53b2",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -2568,9 +2568,16 @@
     {
       "file": "tests/fixtures/union-weekly-basis/source-binding.json",
       "from": "a6419fa2f5fa35f875e817a4a636061a5948361a8241b7027f11e7467f1cb757",
-      "to": "2819d36f59c8c1458cf767cd019340f119c1d5eb24d870d9762ac3b458ea53b2",
+      "to": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
       "on": "2026-10-02",
       "why": "Cascade of the 2026-10-02 restamp for 20260926140858: the nested binding re-pins scripts/dev/test-union-weekly-basis.py and adds pins for the new migration and its regression. Every other pinned byte is unchanged."
+    },
+    {
+      "file": "tests/fixtures/union-weekly-basis/source-binding.json",
+      "from": "2819d36f59c8c1458cf767cd019340f119c1d5eb24d870d9762ac3b458ea53b2",
+      "to": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b",
+      "on": "2026-10-02",
+      "why": "Cascade of the 2026-10-02 restamp of 20260926140858 (registry row moved above the CREATE FUNCTION); every other pinned byte is unchanged."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -3088,7 +3095,7 @@
       {
         "path": "tests/fixtures/union-weekly-basis/source-binding.json",
         "previous_sha256": "496c8c0abd58f76a1e8418dbcd5922ea6b11fef4876118031ad54a0c9f38044b",
-        "sha256": "2819d36f59c8c1458cf767cd019340f119c1d5eb24d870d9762ac3b458ea53b2"
+        "sha256": "2d2838a525722b871e96311b275993afa8f96d806758b30dbd7b5e5eb598052b"
       }
     ],
     "reason": "20260927160709 merged (PR #5475) and was never applied: its preimage assertion names md5(prosrc) 80f40737 (the 20260926042810 body), and production runs adea6633, which is that body with the ONE certificate-loop expression 20260927155651 step 3c rewrote (the tournament-fee agreement instant, now fn_accounting_tournament_source_terms_at). Proved byte for byte: 042810's body with that replacement hashes to the live prosrc. 20260930232349 is 160709 with the preimage set to adea6633, that expression carried into the installed calculator so applying it cannot revert 155651, the page-path and table comments naming the new version, and the postimage set to cb7f9eab. The union weekly basis cluster now takes 155651's step 3c (its two terms-at functions verbatim, then its replacement) after installing 042810, and applies 20260930232349 in place of 160709.",

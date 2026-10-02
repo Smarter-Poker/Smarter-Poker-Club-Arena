@@ -434,6 +434,36 @@ describe('tournament levels belong to the hand that was created with them', () =
     });
   });
 
+  // The dealt hand is 10/20 with a 2 ante. A previous level that shares only
+  // its big blind is a different level, not this hand's.
+  it.each([
+    ['small blind', { smallBlind: 5, bigBlind: 20, ante: 2 }],
+    ['ante', { smallBlind: 10, bigBlind: 20, ante: 3 }],
+  ] as const)(
+    'keeps blind_level_cache_lag when the previous level matches the big blind but its %s differs',
+    async (_differs, previous) => {
+      const cached = cachedTournamentContext('tournament-level-boundary', '', {
+        structure: [{ level: 1, ...previous, durationMinutes: 10 }, ...levelStructure.slice(1)],
+        currentLevel: 1,
+      });
+      expect(cached.context).toMatchObject({
+        currentLevel: 1,
+        currentBigBlind: 40,
+        previousLevel: { level: 0, ...previous, durationMin: 10 },
+      });
+      const request = await captureWithCache(cached);
+      expect(request.gameState.tournament).toMatchObject({
+        contextStatus: 'incomplete',
+        contextIssues: ['TOURNAMENT_CONTEXT_INCOMPLETE', 'blind_level_cache_lag'],
+        currentLevel: 1,
+        nextSmallBlind: null,
+        nextBigBlind: null,
+        nextBlindInMin: null,
+        nextBlindMult: 1,
+      });
+    }
+  );
+
   it.each([
     { dealer: 1, count: 3, issue: null },
     { dealer: 4, count: 3, issue: 'dead_button_atlas_unsupported' },

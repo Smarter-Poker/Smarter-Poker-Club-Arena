@@ -1,8 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../services/supabase.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import type { GameServer } from '../GameServer.js';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
+
+// The Horse tournament context reads the committed clock through its own
+// lifecycle; these tests pin when the manager asks for that read.
+const brainContext = vi.hoisted(() => ({ refreshAfterClockCommit: vi.fn() }));
+vi.mock('../services/TournamentBrainContext.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/TournamentBrainContext.js')>()),
+  refreshTournamentBrainContextAfterClockCommit: brainContext.refreshAfterClockCommit,
+}));
 
 const TOURNAMENT_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 
@@ -227,6 +235,56 @@ describe('tournament break lifecycle fence', () => {
 
     expect(manager.broadcastCall).not.toHaveBeenCalled();
   });
+});
+
+describe('a break start refreshes the Horse tournament context after its write', () => {
+  beforeEach(() => {
+    brainContext.refreshAfterClockCommit.mockReset();
+  });
+
+  it('asks for the paused clock only once the on_break write has returned', async () => {
+    const persistence = deferred<unknown>();
+    const manager = new BreakHarness();
+    manager.activate();
+    const persist = stubBreakPersistence(persistence.promise);
+    manager.addTableEngine({ pauseAfterHand: vi.fn() });
+
+    const pausing = manager.pauseForBreak(300_000);
+    await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
+    expect(persist.update).toHaveBeenCalledWith(
+      expect.objectContaining({ on_break: true, break_ends_at: null })
+    );
+    // The write is still in flight: the row has not paused the clock yet.
+    expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
+
+    persistence.resolve({ error: null });
+    await pausing;
+    // Without this the cache keeps describing a running clock for up to one
+    // refresh interval after :55.
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledOnce();
+    expect(brainContext.refreshAfterClockCommit).toHaveBeenCalledWith(TOURNAMENT_ID);
+    expect(manager.breakIsActive()).toBe(true);
+  });
+
+  it.each(['returned error', 'thrown write'])(
+    'does not ask for a new clock when the break start write has a %s',
+    async (fault) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const manager = new BreakHarness();
+      manager.activate();
+      const persist = stubBreakPersistence();
+      if (fault === 'returned error') {
+        persist.eq.mockResolvedValueOnce({ error: { message: 'temporary database failure' } });
+      } else {
+        persist.eq.mockRejectedValueOnce(new Error('database unavailable'));
+      }
+      manager.addTableEngine({ pauseAfterHand: vi.fn() });
+
+      await manager.pauseForBreak(300_000);
+      expect(persist.eq).toHaveBeenCalledOnce();
+      expect(brainContext.refreshAfterClockCommit).not.toHaveBeenCalled();
+    }
+  );
 });
 
 /*

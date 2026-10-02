@@ -101,7 +101,7 @@ export const MAX_BATCH = 250;
  * club bank). So every Spin and Sit & Go of that union waited for the cash
  * batch, one finish after another.
  *
- * Read on production 19:40-19:50 UTC on 2026-10-02 (engine ac2024b8): in 5 of
+ * Read on production 19:25-19:35 UTC on 2026-10-02 (engine ac2024b8): in 5 of
  * 6 lock snapshots the finish holding a union's lane was waiting on a club
  * commission key held by fn_credit_agent_commissions_batch (mean 5.3 s
  * per call, 31 items, sized only against the client's 15 s). Each of the two

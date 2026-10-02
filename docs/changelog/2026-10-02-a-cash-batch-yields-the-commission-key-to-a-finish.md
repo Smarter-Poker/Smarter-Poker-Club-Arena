@@ -18,7 +18,7 @@ at the 18:53 freeze while the platform was live.
   event every 8-10 s (18:40-18:52) against about 5 decided a minute, so each lane
   ran near full; the freeze left a backlog the lane could not drain before the
   next hour.
-- In 5 of 6 lock snapshots (19:40-19:50, engine ac2024b8) the finish holding a
+- In 5 of 6 lock snapshots (19:25-19:35, engine ac2024b8) the finish holding a
   union's lane was waiting on `agent-commission:<club>`, held by
   `fn_credit_agent_commissions_batch` (the cash rakeback settler: 31 items per
   call, mean 5.3 s, one transaction that keeps every key to commit). The settler

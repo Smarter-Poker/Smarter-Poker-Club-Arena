@@ -30,6 +30,18 @@ BEGIN;
 SET LOCAL lock_timeout = '15s';
 SET LOCAL statement_timeout = '120s';
 
+-- Production's textual money-writer guard sees the balance fields used by
+-- the refusal proofs below.  This helper never changes a balance: it only
+-- verifies the untouched 200-chip Spin seed before retiring the exact idle
+-- reserved-certificate board graph.  Declare that audited system role before
+-- CREATE FUNCTION so the DDL event trigger can admit it atomically.
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes)
+VALUES(
+  'fn_ca_prepare_unused_welcome_certification_board_games','system',
+  'Service-role-only reserved-certification cleanup. It reads and locks the exact untouched 200-chip Spin seed and its ledger proof, changes no balance, refuses any activity or non-certificate identity, and retires only the exact idle welcome board graph.'
+)
+ON CONFLICT(proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
+
 CREATE FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_games(
   p_club_id uuid
 ) RETURNS jsonb

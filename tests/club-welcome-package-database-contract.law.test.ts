@@ -255,6 +255,18 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(ledgerCategoryRepairSql).not.toContain('DROP CONSTRAINT chip_ledger_category_check');
   });
 
+  it('declares the balance-reading board cleanup as audited system code before creation', () => {
+    const registry = boardGameCleanupSql.indexOf(
+      "'fn_ca_prepare_unused_welcome_certification_board_games','system'"
+    );
+    const creation = boardGameCleanupSql.indexOf(
+      'CREATE FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_games'
+    );
+    expect(registry).toBeGreaterThan(0);
+    expect(registry).toBeLessThan(creation);
+    expect(boardGameCleanupSql).toContain('changes no balance');
+  });
+
   it('does not mutate tagline, membership, wallets or historical ledgers', () => {
     expect(sql).not.toMatch(/UPDATE public\.clubs SET[^;]*tagline/is);
     expect(sql).not.toMatch(

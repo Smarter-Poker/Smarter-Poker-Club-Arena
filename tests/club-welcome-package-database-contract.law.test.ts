@@ -16,6 +16,13 @@ const cleanupSql = readFileSync(
   ),
   'utf8'
 );
+const ledgerCounterpartyRepairSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002002030_welcome_allocations_use_the_declared_opening_clearing_store.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -187,6 +194,11 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(registry).toBeLessThan(creation);
     expect(sql).toContain('club_welcome_allocation ledger context');
     expect(sql).toContain('Diamond Spins remain owner-acceptance-required');
+    expect(sql).toContain("set_config('app.ledger_counterparty','opening_setup',true)");
+    expect(sql).not.toContain("set_config('app.ledger_counterparty','welcome_package',true)");
+    expect(ledgerCounterpartyRepairSql).toContain('replace(v_def,v_anchor,v_replacement)');
+    expect(ledgerCounterpartyRepairSql).toContain("store='opening_setup' AND treatment='counted'");
+    expect(ledgerCounterpartyRepairSql).not.toContain('INSERT INTO public.ca_chip_store_coverage');
   });
 
   it('does not mutate tagline, membership, wallets or historical ledgers', () => {

@@ -74,6 +74,12 @@ BEGIN
           WHERE proname='fn_apply_club_welcome_economics' AND status='approved'
        ) THEN
       RAISE EXCEPTION 'fixture refused unregistered welcome money writer';
+    ELSIF command.object_identity LIKE 'public.fn_ca_prepare_unused_welcome_certification_board_games(%'
+       AND NOT EXISTS(
+         SELECT 1 FROM ca_money_rpc_registry
+          WHERE proname='fn_ca_prepare_unused_welcome_certification_board_games' AND status='system'
+       ) THEN
+      RAISE EXCEPTION 'fixture refused undeclared audited certification cleanup';
     END IF;
   END LOOP;
 END $guard$;
@@ -295,6 +301,7 @@ SELECT md5(pg_get_functiondef(p.oid)),p.proowner,p.proacl::text,p.proconfig::tex
     run('offer-trigger-installed-once',"SELECT count(*) FROM pg_trigger WHERE tgname='trg_offer_lifetime_first_club_welcome' AND NOT tgisinternal;",'1')
     run('request-fk-installed-once',"SELECT count(*) FROM pg_constraint WHERE conname='club_welcome_entitlements_owner_request_fkey' AND convalidated;",'1')
     run('money-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_apply_club_welcome_economics';",'approved|t')
+    run('board-cleanup-registry-before-create',"SELECT status,length(notes)>80 FROM ca_money_rpc_registry WHERE proname='fn_ca_prepare_unused_welcome_certification_board_games';",'system|t')
     owner1='00000000-0000-4000-8000-000000000001'; owner2='00000000-0000-4000-8000-000000000002'
     c1='00000000-0000-4000-9000-000000000001'; c2='00000000-0000-4000-9000-000000000002'; c3='00000000-0000-4000-9000-000000000003'
     owner3='00000000-0000-4000-8000-000000000003'; c4='00000000-0000-4000-9000-000000000004'

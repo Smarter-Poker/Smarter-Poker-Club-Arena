@@ -229,14 +229,46 @@ describe('phase8-strength-assemble', () => {
       // The real contract decided: fixture runs are never promotable.
       expect(strength.verdict.promoted).toBe(false);
       expect(strength.verdict.reasons).toContain('mtt:8101101:not_promotable');
+      expect(strength.receiptFormatting).toMatch(/formatting is the only difference/);
       for (const r of strength.runs) {
-        const source = readFileSync(path.join(runsDir, r.run, `${r.run}.json`));
-        expect(readFileSync(path.join(outDir(), 'runs', `${r.run}.json`)).equals(source)).toBe(
-          true
+        for (const file of [
+          `${r.run}.json`,
+          `${r.run}/manifest.json`,
+          `${r.run}/summary.json`,
+          `${r.run}/baseline-verification.json`,
+        ]) {
+          const hostFile = file.includes('/')
+            ? path.join(runsDir, file)
+            : path.join(runsDir, r.run, file);
+          const source = readFileSync(hostFile);
+          const committed = readFileSync(path.join(outDir(), 'runs', file));
+          // Prettier shape, same content, both hashes recorded.
+          expect(JSON.parse(committed.toString('utf8'))).toEqual(
+            JSON.parse(source.toString('utf8'))
+          );
+          expect(r.files[file]).toEqual({
+            sourceSha256: sha256(source),
+            committedSha256: sha256(committed),
+          });
+        }
+        expect(r.files[`${r.run}.json`].committedSha256).not.toBe(
+          r.files[`${r.run}.json`].sourceSha256
         );
-        expect(r.resultSha256).toBe(sha256(source));
         expect(r.host).toBe('fixture-host');
       }
+      const prettierCheck = execFileSync(
+        process.execPath,
+        [
+          path.resolve('../node_modules/prettier/bin/prettier.cjs'),
+          '--check',
+          '--config',
+          path.resolve('../.prettierrc'),
+          path.join(outDir(), 'runs'),
+          path.join(outDir(), 'strength.json'),
+        ],
+        { encoding: 'utf8' }
+      );
+      expect(prettierCheck).toMatch(/All matched files use Prettier code style/);
 
       const qualificationFile = path.join(
         repo,

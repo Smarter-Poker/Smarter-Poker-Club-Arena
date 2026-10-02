@@ -5653,26 +5653,15 @@
   "primaryMetric": "funded_pool_return",
   "meanDifference": 0.012244897959183673,
   "standardError": 0.009111833806918298,
-  "confidence99": [
-    -1,
-    1
-  ],
+  "confidence99": [-1, 1],
   "candidateReturn": 0.2938775510204082,
   "baselineReturn": 0.2816326530612245,
   "chipDifference": 73.46938775510205,
   "bountyDifference": 0,
   "candidateBustRate": 0.7061224489795919,
   "baselineBustRate": 0.7183673469387755,
-  "candidateFinish": [
-    72,
-    98,
-    75
-  ],
-  "baselineFinish": [
-    69,
-    95,
-    81
-  ],
+  "candidateFinish": [72, 98, 75],
+  "baselineFinish": [69, 95, 81],
   "decisions": 68318,
   "eligible": 5185,
   "fired": 2200,

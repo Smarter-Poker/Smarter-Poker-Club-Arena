@@ -37,20 +37,15 @@
  * policy digest is computed here, so it must be the runs' policy).
  *
  * Output is deterministic: the same inputs give byte-identical strength.json.
- * Run results and their receipts are copied verbatim and their sha256 is
- * recorded, so they are excluded from Prettier (see .prettierignore).
+ * Run results and their receipts are copied in the repository's Prettier
+ * shape (the evidence directory is formatted like every other file). The
+ * parsed JSON of each copy must equal the host's bytes, and strength.json
+ * records both hashes: `sourceSha256` of the bytes as they were on the host
+ * and `committedSha256` of the committed file.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -103,6 +98,30 @@ function args(argv) {
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
+
+export const RECEIPT_FORMATTING =
+  'Each run file is the host bytes reformatted by the repository Prettier configuration; formatting is the only difference (the parsed JSON is identical, checked at assembly). sourceSha256 hashes the host bytes, committedSha256 the committed file.';
+
+/** The host file in the repository's Prettier shape, with both hashes. */
+async function prettierCopy(from, to, label) {
+  const source = readFileSync(from);
+  const config = (await prettier.resolveConfig(to)) ?? {};
+  const text = await prettier.format(source.toString('utf8'), {
+    ...config,
+    parser: 'json',
+    filepath: to,
+  });
+  if (!same(JSON.parse(text), JSON.parse(source.toString('utf8'))))
+    throw new Error(`formatting changed the content of ${from}`);
+  return { label, to, text, sourceSha256: sha256(source), committedSha256: sha256(text) };
+}
+const hashes = (copies) =>
+  Object.fromEntries(
+    copies.map((c) => [
+      c.label,
+      { sourceSha256: c.sourceSha256, committedSha256: c.committedSha256 },
+    ])
+  );
 
 async function formatted(file, value) {
   const config = (await prettier.resolveConfig(file)) ?? {};
@@ -292,7 +311,7 @@ export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
   return { reasons, runs, defectiveRuns, head };
 }
 
-function runRecord(r, hosts) {
+function runRecord(r, hosts, copies) {
   const x = r.result;
   return {
     run: r.key,
@@ -302,7 +321,7 @@ function runRecord(r, hosts) {
     hostLabel: hosts.hosts[r.host]?.label ?? null,
     startedAt: r.manifest.createdAt,
     durationMs: x.durationMs,
-    resultSha256: sha256(r.resultBytes),
+    files: hashes(copies),
     solverStores: r.manifest.solverStores,
     requestedPairs: x.requestedPairs,
     pairs: x.pairs,
@@ -364,6 +383,30 @@ export async function assemble(options) {
   const verdict = league.summarizeTournamentPromotion(runs.map((r) => r.result));
   const policyDigest = authority.horsePhase8PolicyDigest();
   const first = runs[0].manifest;
+  const runsOut = path.join(out, 'runs');
+  const copies = new Map();
+  for (const r of runs) {
+    const list = [
+      await prettierCopy(
+        path.join(r.dir, `${r.key}.json`),
+        path.join(runsOut, `${r.key}.json`),
+        `${r.key}.json`
+      ),
+    ];
+    for (const f of RECEIPTS)
+      list.push(
+        await prettierCopy(path.join(r.dir, f), path.join(runsOut, r.key, f), `${r.key}/${f}`)
+      );
+    copies.set(r.key, list);
+  }
+  for (const d of defectiveRuns) {
+    const list = [];
+    for (const f of d.receipts)
+      list.push(
+        await prettierCopy(path.join(d.dir, f), path.join(runsOut, d.key, f), `${d.key}/${f}`)
+      );
+    copies.set(d.key, list);
+  }
   const strength = {
     schema: STRENGTH_SCHEMA,
     phase: 'P8.2',
@@ -398,7 +441,8 @@ export async function assemble(options) {
     hosts: hosts.hosts,
     hostAssignment: hosts.assignment ?? null,
     matrixComplete: defectiveRuns.length === 0,
-    runs: runs.map((r) => runRecord(r, hosts)),
+    receiptFormatting: RECEIPT_FORMATTING,
+    runs: runs.map((r) => runRecord(r, hosts, copies.get(r.key))),
     defectiveRuns: defectiveRuns.map((d) => ({
       run: d.key,
       objective: d.objective,
@@ -412,6 +456,7 @@ export async function assemble(options) {
       exitCode: hosts.exits?.[d.key] ?? null,
       logTail: d.declared.logTail ?? null,
       receipts: d.receipts,
+      files: hashes(copies.get(d.key)),
     })),
     verdict: {
       promoted: verdict.promoted,
@@ -441,17 +486,11 @@ export async function assemble(options) {
   };
   const qualificationText = await formatted(qualificationFile, qualification);
 
-  mkdirSync(path.join(out, 'runs'), { recursive: true });
-  for (const r of runs) {
-    copyFileSync(path.join(r.dir, `${r.key}.json`), path.join(out, 'runs', `${r.key}.json`));
-    mkdirSync(path.join(out, 'runs', r.key));
-    for (const f of RECEIPTS) copyFileSync(path.join(r.dir, f), path.join(out, 'runs', r.key, f));
-  }
-  for (const d of defectiveRuns) {
-    if (!d.receipts.length) continue;
-    mkdirSync(path.join(out, 'runs', d.key));
-    for (const f of d.receipts) copyFileSync(path.join(d.dir, f), path.join(out, 'runs', d.key, f));
-  }
+  for (const list of copies.values())
+    for (const c of list) {
+      mkdirSync(path.dirname(c.to), { recursive: true });
+      writeFileSync(c.to, c.text);
+    }
   writeFileSync(path.join(out, 'strength.json'), strengthText);
   mkdirSync(path.dirname(qualificationFile), { recursive: true });
   writeFileSync(qualificationFile, qualificationText);

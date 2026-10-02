@@ -252,8 +252,3 @@ scripts/qualification/spin-first-archived.manifest.json
 # Preserve original current-owner catalog response bytes.
 scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json
 scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json
-
-# Horse Brain Phase 8.2 league receipts, copied byte for byte from the league
-# hosts by server/scripts/phase8-strength-assemble.mjs. strength.json records
-# each file's sha256, so reformatting them would break the evidence chain.
-docs/evidence/phase8/strength-*/runs/

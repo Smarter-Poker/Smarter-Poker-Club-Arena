@@ -588,6 +588,22 @@ export async function retireCertificationClubWithRetry({
               )
             : Promise.resolve([]),
         ]);
+        const spawnTournamentIds = Array.isArray(scheduleSpawns)
+          ? scheduleSpawns.map((spawn) => spawn.tournament_id).filter(Boolean)
+          : [];
+        const spawnTournamentFilter = spawnTournamentIds
+          .map((id) => encodeURIComponent(id))
+          .join(',');
+        const spawnTournaments = spawnTournamentIds.length
+          ? await serviceRequest(
+              configuration,
+              `/rest/v1/tournaments?id=in.(${spawnTournamentFilter})` +
+                '&select=id,club_id,union_id,schedule_id,status,started_at,created_at,updated_at' +
+                '&order=id&limit=500',
+              {},
+              fetchImpl
+            )
+          : [];
         console.error(
           '[production-e2e-account] reserved fixture graph diagnostic: ' +
             JSON.stringify({
@@ -601,6 +617,7 @@ export async function retireCertificationClubWithRetry({
               clubTournaments,
               scheduleTournaments,
               scheduleSpawns,
+              spawnTournaments,
             })
         );
       } catch (diagnosticError) {

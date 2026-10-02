@@ -865,7 +865,18 @@ describe('a certification fixture that leaked must not wedge the next certificat
         return Response.json([{ id: 'tournament-schedule', schedule_id: 'schedule-1' }]);
       }
       if (url.includes('/tournament_schedule_spawns?')) {
-        return Response.json([{ id: 1, schedule_id: 'schedule-1', tournament_id: null }]);
+        return Response.json([
+          { id: 1, schedule_id: 'schedule-1', tournament_id: 'tournament-foreign' },
+        ]);
+      }
+      if (url.includes('/tournaments?id=')) {
+        return Response.json([
+          {
+            id: 'tournament-foreign',
+            club_id: 'foreign-club',
+            schedule_id: 'foreign-schedule',
+          },
+        ]);
       }
       return new Response('unexpected request', { status: 500 });
     });
@@ -881,8 +892,10 @@ describe('a certification fixture that leaked must not wedge the next certificat
     expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"role":"unexpected"'));
     expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"table-foreign"'));
     expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"id":"tournament-club"'));
-    expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('"tournament_id":null'));
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('"id":"tournament-foreign","club_id":"foreign-club"')
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(11);
   });
 
   it('treats a replayed retirement as success (the door answers already_gone)', async () => {

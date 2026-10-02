@@ -64,6 +64,22 @@ describe('the jackpot epoch counts each pool from its own opening', () => {
     );
   });
 
+  it('a pool the meter has not opened yet is inside the lifetime identity from its creation', () => {
+    const f = readdirSync(MIG).find((n) =>
+      /^\d{14}_the_jackpot_lifetime_counts_an_unopened_pool\.sql$/.test(n)
+    );
+    expect(f, 'follow-up migration').toBeTruthy();
+    const s = readFileSync(resolve(MIG, f!), 'utf8');
+    expect(s).toMatch(/IF v_md5 IS DISTINCT FROM 'b1fb89dc98aaad152bd5b2085b88bbfa' THEN/);
+    expect(s).toMatch(/WHERE COALESCE\(b\.opened_at, p\.created_at\) > v_epoch_at\) o/);
+    // only a pool WITH a baseline gives legs back to the epoch residue
+    expect(s).toMatch(/CASE WHEN o\.opened_at IS NOT NULL AND l\.created_at <= o\.opened_at/);
+    expect(s).toMatch(/lifetime_healthy'\)::boolean, false\) IS NOT TRUE/);
+    expect(s).not.toMatch(
+      /SET\s+(epoch_residue|lifetime_residue|baseline_gap|opening_seeds|pre_ledger_payouts)\s*=/
+    );
+  });
+
   it('the numbers are asserted at apply time, and nothing is rebaselined or moved', () => {
     expect(sql).toMatch(
       /AND l\.category = 'club_opening_allocation' AND l\.created_at = o\.opened_at;/

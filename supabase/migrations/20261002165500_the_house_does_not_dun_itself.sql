@@ -234,6 +234,8 @@ BEGIN
   RETURN v_hits;
 END $function$;
 
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_negative_balance_watch', 'migration 20261002165500_the_house_does_not_dun_itself');
+
 -- ---------------------------------------------------------------------------
 -- 3. Postimage
 -- ---------------------------------------------------------------------------

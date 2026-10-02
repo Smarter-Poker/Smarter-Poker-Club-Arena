@@ -291,6 +291,9 @@ END;
 $function$;
 REVOKE ALL ON FUNCTION public.fn_ca_balance_has_its_ledger_row() FROM PUBLIC, anon, authenticated;
 
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_tally_ledger_leg', 'migration 20261002065836_no_balance_moves_against_settlement_suspense');
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_balance_has_its_ledger_row', 'migration 20261002065836_no_balance_moves_against_settlement_suspense');
+
 -- ---------------------------------------------------------------------------
 -- 5. Read back
 -- ---------------------------------------------------------------------------

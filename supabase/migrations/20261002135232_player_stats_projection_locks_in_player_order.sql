@@ -30,6 +30,8 @@
 -- Supersedes the unmerged draft #5542, whose base predates later changes to
 -- this function (promo playthrough, Projection 4b) and would revert them.
 --
+-- @live-proof: md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_project_hand_side_effects_after_post_commit_20260908(uuid)'::regprocedure)) = 'f92b3aa91e27ba3bbe2ed0db5407ec7b'
+--
 -- Wrap ALL DDL for one change in ONE transaction (club-arena CLAUDE.md,
 -- production DDL policy).
 

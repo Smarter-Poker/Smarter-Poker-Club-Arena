@@ -222,7 +222,9 @@ describe('the dedicated session changes the transport and nothing else', () => {
     expect(shared).not.toHaveBeenCalled();
     expect(pgFake.state.clients).toHaveLength(1);
     const [client] = pgFake.state.clients;
-    expect(client.config.ssl).toEqual({ rejectUnauthorized: true });
+    // Verified TLS; the Supabase root is trusted beside the system roots (2026-10-02).
+    expect(client.config.ssl).toMatchObject({ rejectUnauthorized: true });
+    expect((client.config.ssl as { ca: string[] }).ca.at(-1)).toContain('BEGIN CERTIFICATE');
     expect(String(client.config.application_name)).toMatch(
       /^club-arena-engine-lease-heartbeat-tournament:/
     );

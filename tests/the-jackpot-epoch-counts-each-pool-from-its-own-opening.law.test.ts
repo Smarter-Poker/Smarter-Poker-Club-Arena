@@ -66,7 +66,7 @@ describe('the jackpot epoch counts each pool from its own opening', () => {
 
   it('a pool the meter has not opened yet is inside the lifetime identity from its creation', () => {
     const f = readdirSync(MIG).find((n) =>
-      /^\d{14}_the_jackpot_lifetime_counts_a_pool_the_meter_has_not_opened_yet\.sql$/.test(n)
+      /^\d{14}_the_jackpot_lifetime_counts_an_unopened_pool\.sql$/.test(n)
     );
     expect(f, 'follow-up migration').toBeTruthy();
     const s = readFileSync(resolve(MIG, f!), 'utf8');

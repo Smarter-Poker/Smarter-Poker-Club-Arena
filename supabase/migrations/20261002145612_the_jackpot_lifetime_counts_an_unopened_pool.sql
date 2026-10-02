@@ -1,4 +1,4 @@
--- 20261002145612_the_jackpot_lifetime_counts_a_pool_the_meter_has_not_opened_yet
+-- 20261002145612_the_jackpot_lifetime_counts_an_unopened_pool
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-02 14:56:12 UTC.
 --

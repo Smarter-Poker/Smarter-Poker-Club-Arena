@@ -96,18 +96,27 @@ describe('a counter is not a public write', () => {
   });
 
   it('closes the claim, schedule and legacy-table writes', () => {
-    expect(CODE).toContain('DROP POLICY venue_claims_read ON public.venue_claims;');
+    expect(CODE).toContain(
+      'ALTER POLICY venue_claims_read ON public.venue_claims TO service_role;'
+    );
     expect(CODE).toContain(
       'REVOKE ALL ON TABLE public.venue_claims FROM PUBLIC, anon, authenticated;'
     );
     expect(CODE).toMatch(
-      /CREATE POLICY page_claims_select_own ON public\.page_claims\s+FOR SELECT TO authenticated\s+USING \(user_id = \(SELECT auth\.uid\(\)\)\);/
+      /ALTER POLICY page_claims_select ON public\.page_claims\s+TO authenticated\s+USING \(user_id = \(SELECT auth\.uid\(\)\)\);/
     );
-    expect(CODE).toContain('DROP POLICY vgs_insert_policy ON public.venue_game_schedules;');
-    expect(CODE).toContain('DROP POLICY vgs_update_policy ON public.venue_game_schedules;');
     expect(CODE).toContain(
-      'DROP POLICY "Authenticated users can create tables" ON public.poker_tables;'
+      'ALTER POLICY vgs_insert_policy ON public.venue_game_schedules TO service_role;'
     );
+    expect(CODE).toContain(
+      'ALTER POLICY vgs_update_policy ON public.venue_game_schedules TO service_role;'
+    );
+    expect(CODE).toContain(
+      'ALTER POLICY "Authenticated users can create tables" ON public.poker_tables TO service_role;'
+    );
+    // Narrowed, never dropped: an unattended apply cannot answer the MCP's
+    // confirmation prompt for a DROP, and it never reached the database.
+    expect(CODE).not.toMatch(/\bDROP\b/);
   });
 
   it('refuses a browser change to the verification and standing columns', () => {

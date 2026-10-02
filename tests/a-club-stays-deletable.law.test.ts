@@ -97,6 +97,37 @@ describe('a club stays deletable', () => {
     expect(statements).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP)\b/);
   });
 
+  it('keeps the legacy accounting club foreign keys fully indexed behind pre- and post-image guards', () => {
+    const sql = read('legacy_accounting_club_foreign_keys_are_indexed');
+    const statements = sql.replace(/--[^\n]*/g, '').trim();
+    expect(statements).toMatch(/^BEGIN;[\s\S]*COMMIT;$/);
+    expect(statements).toContain("SET LOCAL lock_timeout = '1s';");
+    expect(statements).toContain("SET LOCAL statement_timeout = '8s';");
+    expect(statements.match(/CREATE INDEX[^;]*;/g)).toEqual([
+      expect.stringMatching(
+        /^CREATE INDEX IF NOT EXISTS idx_accounting_legacy_rakeback_certificates_club_id_fk\s+ON public\.accounting_legacy_rakeback_certificates \(club_id\);$/
+      ),
+      expect.stringMatching(
+        /^CREATE INDEX IF NOT EXISTS idx_accounting_legacy_settlement_legs_club_id_fk\s+ON public\.accounting_legacy_settlement_legs \(club_id\);$/
+      ),
+    ]);
+    // The pre-image guard runs before either build and pins both keys to clubs(id).
+    const pre = statements.indexOf('pre-image refused');
+    expect(pre).toBeGreaterThan(-1);
+    expect(pre).toBeLessThan(statements.indexOf('CREATE INDEX'));
+    expect(statements).toContain("c.confrelid = 'public.clubs'::regclass");
+    expect(statements).toContain("ca.attname = 'club_id'");
+    expect(statements).toContain("pa.attname = 'id'");
+    // The post-image guard asks the same three conditions the gate asks.
+    const post = statements.indexOf('post-image refused');
+    expect(post).toBeGreaterThan(statements.lastIndexOf('CREATE INDEX'));
+    expect(statements).toContain('i.indisvalid');
+    expect(statements).toContain('i.indpred IS NULL');
+    expect(statements).toContain('a.attnum = i.indkey[0]');
+    expect(statements).toContain("public.fn_ca_fk_index_gaps('public.clubs')");
+    expect(statements).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER)\b/);
+  });
+
   it('closes every foreign key gap that made the delete slow', () => {
     for (const [name, table] of CLOSED) {
       expect(INDEXES, `${name} is missing`).toContain(name);

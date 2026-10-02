@@ -13,6 +13,17 @@ const certificate = readFileSync(
   resolve(__dirname, '../scripts/ci/certify-club-create.mjs'),
   'utf8'
 );
+const indexedHandChecks = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20261002165000_welcome_reset_indexed_hand_checks.sql'),
+  'utf8'
+);
+const optionalBbjPromoHistory = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002172627_welcome_reset_optional_bbj_promo_history.sql'
+  ),
+  'utf8'
+);
 
 describe('new club opening package and zero-state database law', () => {
   it('creates a canonical wallet prospectively without historical backfill', () => {
@@ -85,6 +96,45 @@ describe('new club opening package and zero-state database law', () => {
     expect(certificate).toContain('Number(resetClubRead.data?.chip_treasury) !== 100000');
     expect(certificate).not.toMatch(
       /retryTransient\([\s\S]{0,300}fn_remove_first_club_welcome_games/
+    );
+  });
+
+  it('keeps both pristine-history gates on the existing hand-history indexes', () => {
+    expect(indexedHandChecks).toContain(
+      "to_regprocedure('public.fn_get_club_welcome_package_reset_impact(uuid)')"
+    );
+    expect(indexedHandChecks).toContain(
+      "to_regprocedure('public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)')"
+    );
+    expect(indexedHandChecks).toContain('h.tournament_id=ANY(v_tournaments)');
+    expect(indexedHandChecks).toContain('h.table_id=ANY(v_tables)');
+    expect(indexedHandChecks).toContain('h.tournament_id<>ALL(v_tournaments)');
+    expect(indexedHandChecks).toContain('IF v_after = v_before THEN');
+    expect(indexedHandChecks.match(/v_after := replace\(v_before,v_old,v_new\);/g)).toHaveLength(2);
+    expect(indexedHandChecks.match(/EXECUTE v_after;/g)).toHaveLength(3);
+  });
+
+  it('reviews retained club retirement as the cross-resource global-lane authority it is', () => {
+    expect(indexedHandChecks).toContain("'fn_retire_settled_club'");
+    expect(indexedHandChecks).toContain('v_answer:=public.fn_ca_settlement_lane_doctrine()');
+    expect(indexedHandChecks).toContain(
+      'CLUB_RETIREMENT_LANE_DOCTRINE_REVERSE_SUBSTITUTION_FAILED'
+    );
+    expect(indexedHandChecks).toContain('CLUB_RETIREMENT_SETTLEMENT_LANE_DOCTRINE_FAILED');
+  });
+
+  it('uses the current pool-scoped BBJ promo identity without binding the absent legacy table', () => {
+    expect(optionalBbjPromoHistory).not.toContain('CREATE TABLE');
+    expect(optionalBbjPromoHistory).toContain('public.wallet_credit_idempotency i');
+    expect(optionalBbjPromoHistory).toContain("i.key LIKE 'bbjpromo:'||v_bbj.id::text||':%'");
+    expect(optionalBbjPromoHistory).toContain("i.key LIKE 'bbjpromo:'||b.id::text||':%'");
+    expect(optionalBbjPromoHistory.match(/public\.bbj_promo_events/g)).toHaveLength(3);
+    expect(optionalBbjPromoHistory.match(/EXECUTE v_after;/g)).toHaveLength(2);
+    expect(optionalBbjPromoHistory).toContain(
+      'WELCOME_UNWIND_BBJ_PROMO_HISTORY_REVERSE_SUBSTITUTION_FAILED'
+    );
+    expect(optionalBbjPromoHistory).toContain(
+      'WELCOME_RESET_IMPACT_BBJ_PROMO_HISTORY_REVERSE_SUBSTITUTION_FAILED'
     );
   });
 });

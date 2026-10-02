@@ -49,6 +49,16 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain("workflows: ['Publish Club Arena']");
     expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(workflow).not.toMatch(/^\s{2}push:/m);
+    expect(workflow).toContain('actions: read');
+    expect(workflow).toContain('Resolve The Exact Revision Published By This Run');
+    expect(workflow).toContain('actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100');
+    expect(workflow).toContain(
+      'publisher-artifact "$SOURCE_RUN_ID" "$SOURCE_TRIGGER_SHA" "$REPOSITORY_ID"'
+    );
+    expect(workflow).toContain('steps.published.outputs.sha');
+    expect(workflow).not.toContain(
+      "ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha"
+    );
     expect(workflow).toContain('expected="$(git rev-parse HEAD)"');
     expect(workflow).toContain('https://ca-static.smarter.poker/build-info.json');
     expect(workflow).toContain('https://smarter.poker/hub/club-arena/build-info.json');

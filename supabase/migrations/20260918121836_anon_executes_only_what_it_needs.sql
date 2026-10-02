@@ -1,4 +1,5 @@
 -- ANON EXECUTES ONLY WHAT IT NEEDS (2026-09-18)
+-- @live-proof: (SELECT count(*)=13 AND count(*) FILTER (WHERE has_function_privilege('anon',p.oid,'EXECUTE'))=0 AND count(*) FILTER (WHERE NOT has_function_privilege('authenticated',p.oid,'EXECUTE'))=0 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('trgfn_award_daily_trivia','trgfn_award_first_training_session','trgfn_award_follow','trgfn_award_reaction_interaction','trgfn_award_reaction_like','trgfn_award_share_content','trgfn_award_social_post','trgfn_award_strategy_comment','is_admin','fn_my_club_ids','fn_notification_has_personal_destination','fn_club_chat_is_silenced','fn_table_chat_is_silenced'))
 --
 -- 2,571 SECURITY DEFINER functions live in public. 35 of them are executable
 -- by `anon` - a logged-out stranger - and 772 by `authenticated`. The search

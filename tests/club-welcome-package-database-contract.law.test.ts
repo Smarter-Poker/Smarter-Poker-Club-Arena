@@ -86,6 +86,13 @@ const boardOriginCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const boardDeletePermitSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002115605_welcome_certification_deletes_only_its_unused_board_tables.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -209,6 +216,84 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(sql).toContain('public.fn_cash_game_create_impl_20260905');
     expect(sql).toContain('public.fn_upsert_tournament_schedule');
     expect(sql).not.toContain("'spin'::text,'tournament_schedule'");
+  });
+
+  it('keeps tournament tables durable except for exact one-shot certification cleanup permits', () => {
+    expect(boardDeletePermitSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(boardDeletePermitSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(boardDeletePermitSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(boardDeletePermitSql).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(boardDeletePermitSql).toContain(
+      'CREATE TABLE smarter_private.ca_welcome_certification_table_delete_permits('
+    );
+    for (const column of [
+      'transaction_id xid8 NOT NULL',
+      'table_id uuid NOT NULL',
+      'tournament_id uuid NOT NULL',
+      'club_id uuid NOT NULL',
+      'PRIMARY KEY(transaction_id,table_id)',
+    ])
+      expect(boardDeletePermitSql).toContain(column);
+    expect(boardDeletePermitSql).not.toMatch(
+      /ca_welcome_certification_table_delete_permits[\s\S]{0,500}REFERENCES public\.(tables|tournaments)/
+    );
+    expect(boardDeletePermitSql).toContain(
+      'ALTER TABLE smarter_private.ca_welcome_certification_table_delete_permits\n  ENABLE ROW LEVEL SECURITY'
+    );
+    expect(boardDeletePermitSql).toContain('FROM PUBLIC,anon,authenticated,service_role');
+    expect(boardDeletePermitSql).toContain(
+      'DELETE FROM smarter_private.ca_welcome_certification_table_delete_permits p'
+    );
+    for (const exactScope of [
+      'p.transaction_id=pg_current_xact_id()',
+      'p.table_id=OLD.id',
+      'p.tournament_id=OLD.tournament_id',
+      'p.club_id=OLD.club_id',
+      'RETURNING true INTO v_permit_consumed',
+      "RAISE EXCEPTION 'tournament table % is durable and cannot be deleted',OLD.id",
+    ])
+      expect(boardDeletePermitSql).toContain(exactScope);
+    expect(boardDeletePermitSql).not.toContain('current_setting(');
+    expect(boardDeletePermitSql).not.toContain('DISABLE TRIGGER');
+    expect(boardDeletePermitSql).not.toContain('DROP TRIGGER');
+
+    const boardStart = boardDeletePermitSql.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_games'
+    );
+    const boardEnd = boardDeletePermitSql.indexOf(
+      'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_games',
+      boardStart
+    );
+    const boardSql = boardDeletePermitSql.slice(boardStart, boardEnd);
+    const boardActivity = boardSql.indexOf('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
+    const boardPermit = boardSql.indexOf(
+      'INSERT INTO smarter_private.ca_welcome_certification_table_delete_permits'
+    );
+    const boardDelete = boardSql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_board_tables)');
+    expect(boardActivity).toBeGreaterThan(0);
+    expect(boardActivity).toBeLessThan(boardPermit);
+    expect(boardPermit).toBeLessThan(boardDelete);
+    expect(boardSql).toContain('WELCOME_CERTIFICATION_BOARD_DELETE_PERMIT_NOT_CONSUMED');
+
+    const scheduleStart = boardDeletePermitSql.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_prepare_unused_welcome_certification_schedule_spawns'
+    );
+    const scheduleEnd = boardDeletePermitSql.indexOf(
+      'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_schedule_spawns',
+      scheduleStart
+    );
+    const scheduleSql = boardDeletePermitSql.slice(scheduleStart, scheduleEnd);
+    const scheduleActivity = scheduleSql.indexOf(
+      'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+    );
+    const schedulePermit = scheduleSql.indexOf(
+      'INSERT INTO smarter_private.ca_welcome_certification_table_delete_permits'
+    );
+    const scheduleDelete = scheduleSql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_tables)');
+    expect(scheduleActivity).toBeGreaterThan(0);
+    expect(scheduleActivity).toBeLessThan(schedulePermit);
+    expect(schedulePermit).toBeLessThan(scheduleDelete);
+    expect(scheduleSql).toContain('WELCOME_CERTIFICATION_SCHEDULE_DELETE_PERMIT_NOT_CONSUMED');
   });
 
   it('has owner-only idempotent receipts and package-resource-only soft reset', () => {

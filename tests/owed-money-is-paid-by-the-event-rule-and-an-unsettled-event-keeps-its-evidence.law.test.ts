@@ -84,3 +84,21 @@ describe('the pruner keeps a tournament hand until its event is settled', () => 
     expect(PRUNE).toContain('the pruner deletes rake_attributions again');
   });
 });
+
+describe('the week of 2026-09-14 owed alert closes only over a paid week', () => {
+  const CLOSE = migrationNamed('the_week_of_2026_09_14_owed_alert_closes_once_it_is_paid');
+
+  it('refuses unless operation 19aa02d6 is paid and both obligations are discharged by it', () => {
+    expect(CLOSE).toContain("IF v_state IS DISTINCT FROM 'paid' OR v_paid_at IS NULL THEN");
+    expect(CLOSE).toContain('IF v_n <> 2 OR v_sum <> 138301.89 OR v_pending <> 138303.43 THEN');
+    expect(CLOSE).toContain('an obligation of the week is still undischarged');
+  });
+
+  it('moves no chip and records the rounding residual as unattributable', () => {
+    expect(sqlOnly(CLOSE)).not.toMatch(
+      /UPDATE public\.(club_members|clubs|union_wallets|accounting_deferred_obligations)\b/
+    );
+    expect(sqlOnly(CLOSE)).not.toMatch(/fn_credit_and_log/);
+    expect(CLOSE).toContain("'house_retained_unattributable', round(v_pending - v_sum, 2)");
+  });
+});

@@ -1,0 +1,13 @@
+{
+  "_owner": "fix/owner-legacy-discharge-deferred-weeks. NOT YET APPLIED when pushed (2026-10-02): migration 20260926140858_owner_authorized_legacy_discharge_of_the_deferred_rakeback_w is installed after merge through the apply door (Apply Merged Migration), then the three operation migrations 20260926145855, 20260926145917 and 20261002025516 run once each. Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": [
+    "accounting_owner_legacy_operations",
+    "accounting_legacy_rakeback_certificates",
+    "accounting_legacy_settlement_legs"
+  ],
+  "functions": [
+    "fn_accounting_owner_legacy_operation_transition",
+    "fn_accounting_legacy_certify_week",
+    "fn_accounting_legacy_pay_week"
+  ]
+}

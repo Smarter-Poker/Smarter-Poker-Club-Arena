@@ -64,6 +64,8 @@ def one(pattern):
 
 FIRST = one('*_a_counter_is_not_a_public_write.sql')
 SHIPPED = one('*_a_stale_tab_counts_through_the_same_door.sql')
+# Another agent's migration over the same two reel routines; both files carry one text.
+THEIRS = one('*_a_browser_moves_only_the_reel_counters_it_is_the_evidence_fo.sql')
 
 ALICE = '00000000-0000-0000-0000-00000000a11c'
 BOB = '00000000-0000-0000-0000-000000000b0b'
@@ -389,6 +391,11 @@ try:
                    f"SELECT public.decrement_post_count('{POST}', 'comment_count');") +
         f"SELECT (SELECT like_count FROM public.social_reels WHERE id='{REEL2}')||'/'||"
         f"(SELECT comment_count FROM public.social_posts WHERE id='{POST}');", '\n' * 5 + '1/0')
+    reel_md5 = ("SELECT string_agg(md5(pg_get_functiondef(p.oid)), ',' ORDER BY p.proname) FROM pg_proc p"
+                " WHERE p.pronamespace = 'public'::regnamespace"
+                " AND p.proname IN ('increment_reel_count','decrement_reel_count');")
+    before = run('reel-text-after-this-migration', reel_md5)
+    run('the-other-reel-migration-changes-nothing', THEIRS + reel_md5, before)
     run('a-session-with-no-request-is-the-server',
         f"SELECT public.increment_reel_count('{ALIAS}', 'share_count');" + views(REEL2) + views(REEL),
         '\n2/1\n0/1')

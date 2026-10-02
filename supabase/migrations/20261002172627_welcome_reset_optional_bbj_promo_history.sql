@@ -11,6 +11,7 @@
 -- predicates with that current event identity. Exact installed source shapes,
 -- one replacement per function, and reverse substitution are all proved before
 -- commit; no compatibility table or synthetic history is created.
+-- @live-proof: position('wallet_credit_idempotency' in pg_get_functiondef('public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure)) > 0 AND position('bbjpromo:' in pg_get_functiondef('public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure)) > 0 AND position('wallet_credit_idempotency' in pg_get_functiondef('public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure)) > 0 AND position('bbjpromo:' in pg_get_functiondef('public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure)) > 0
 
 BEGIN;
 

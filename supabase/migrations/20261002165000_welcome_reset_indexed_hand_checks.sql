@@ -4,6 +4,7 @@
 -- volume that shape repeatedly timed out before a brand-new club could reset.
 -- Both identity columns already have purpose-built indexes. Keep the same
 -- refusal semantics while asking the two indexed questions independently.
+-- @live-proof: position('h.tournament_id=ANY(v_tournaments)' in pg_get_functiondef('public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure)) > 0 AND position('h.table_id=ANY(v_tables)' in pg_get_functiondef('public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure)) > 0 AND position('h.tournament_id=ANY(v_tournaments)' in pg_get_functiondef('public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure)) > 0 AND position('h.table_id=ANY(v_tables)' in pg_get_functiondef('public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure)) > 0 AND position('fn_retire_settled_club' in pg_get_functiondef('public.fn_ca_settlement_lane_doctrine()'::regprocedure)) > 0
 
 BEGIN;
 

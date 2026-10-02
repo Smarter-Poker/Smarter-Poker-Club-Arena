@@ -202,6 +202,11 @@ class LeaseHeartbeatSession {
     return this.state !== 'disabled';
   }
 
+  /** Built before any connection string existed; replaced once one does. */
+  get unconfigured(): boolean {
+    return this.state === 'disabled' && !this.connectionString;
+  }
+
   async call(args: LeaseHeartbeatArgs): Promise<LeaseHeartbeatRpcResult> {
     this.ensureConnecting();
     // A connect already in flight is bounded by CONNECT_TIMEOUT_MS. A session
@@ -408,12 +413,108 @@ type SessionOptions = {
 let options: SessionOptions = {};
 const sessions = new Map<LeaseHeartbeatScope, LeaseHeartbeatSession>();
 
+/* ─── THE SESSION HAS A CREDENTIAL NOW (2026-10-02) ─────────────────────────
+ *
+ * Everything above was inert in production for eight days: the engine host
+ * never had ENGINE_PG_LISTEN_URL, because it holds no database password, so
+ * every heartbeat kept queueing for a PostgREST pool slot. About fifteen
+ * times in 24 hours (2026-10-01/02) a pool stall of ~20 s (PGRST003) outlived
+ * the 20 s proof and the whole fleet fenced itself at once, ~340 tables and
+ * ~160 voided-hand alerts per storm, with only one engine instance alive.
+ *
+ * Migration 20261002223745 gives the heartbeat a login of its own
+ * (engine_lease_heartbeat: EXECUTE on the two heartbeat functions, nothing
+ * else) and keeps its Supavisor session-mode URL in Vault. The engine reads it
+ * here, through fn_engine_lease_session_url() on the service-role client it
+ * already holds, when the host sets no variable. The URL is never logged.
+ *
+ * A failed read is retried in the background every 30 s until it answers;
+ * a definitive "no secret" stops. Until then the shared client serves, exactly
+ * as before. Nothing about proof, generations or fencing changes: this only
+ * decides which socket the same statement travels on.
+ */
+export const LEASE_SESSION_URL_RPC = 'fn_engine_lease_session_url';
+const VAULT_READ_BOUND_MS = 5_000;
+export const LEASE_SESSION_URL_RETRY_MS = 30_000;
+
+let vaultConnectionString = '';
+let vaultRead: Promise<boolean> | null = null;
+let vaultRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let vaultStopped = false;
+let vaultAbsent = false;
+
+function configuredConnectionString(): string {
+  return options.connectionString ?? (enginePgConnectionString() || vaultConnectionString);
+}
+
+/**
+ * Read the dedicated session's URL from Vault unless the host configured one.
+ * Never throws and never blocks a heartbeat: callers do not await it.
+ */
+export function resolveLeaseHeartbeatSessionUrl(): Promise<boolean> {
+  if (options.connectionString !== undefined) return Promise.resolve(!!options.connectionString);
+  if (configuredConnectionString()) return Promise.resolve(true);
+  if (vaultStopped || vaultAbsent) return Promise.resolve(false);
+  if (vaultRead) return vaultRead;
+  vaultRead = (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const bound = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`no answer within ${VAULT_READ_BOUND_MS} ms`)),
+          VAULT_READ_BOUND_MS
+        );
+        timer.unref?.();
+      });
+      const { data, error } = (await Promise.race([
+        supabase.rpc(LEASE_SESSION_URL_RPC),
+        bound,
+      ])) as LeaseHeartbeatRpcResult;
+      if (error) throw new Error(error.code ? `${error.code}: ${error.message}` : error.message);
+      if (typeof data !== 'string' || !/^postgres(ql)?:\/\//.test(data)) {
+        // The database answered and holds no usable secret: asking again
+        // every 30 s would only repeat that answer.
+        vaultAbsent = true;
+        console.error(
+          '[lease-session] Vault holds no engine_lease_heartbeat_url; heartbeats use the shared client'
+        );
+        return false;
+      }
+      vaultConnectionString = data;
+      console.log(
+        '[lease-session] dedicated session credential read from Vault (engine_lease_heartbeat)'
+      );
+      return true;
+    } catch (err) {
+      if (!vaultStopped) {
+        console.warn(
+          `[lease-session] could not read the dedicated session credential (${errorMessage(err)}); ` +
+            `heartbeats use the shared client; asking again in ${LEASE_SESSION_URL_RETRY_MS} ms`
+        );
+        vaultRetryTimer = setTimeout(() => {
+          vaultRetryTimer = null;
+          void resolveLeaseHeartbeatSessionUrl();
+        }, LEASE_SESSION_URL_RETRY_MS);
+        vaultRetryTimer.unref?.();
+      }
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+      vaultRead = null;
+    }
+  })();
+  return vaultRead;
+}
+
 function sessionFor(scope: LeaseHeartbeatScope): LeaseHeartbeatSession {
   let session = sessions.get(scope);
-  if (!session) {
+  const connectionString = configuredConnectionString();
+  // A session built before the credential arrived holds no client and no
+  // statement; replacing it is the whole upgrade.
+  if (!session || (session.unconfigured && connectionString)) {
     session = new LeaseHeartbeatSession(
       scope,
-      options.connectionString ?? enginePgConnectionString(),
+      connectionString,
       options.openSession ?? defaultOpenSession,
       options.random ?? Math.random
     );
@@ -435,6 +536,9 @@ export function leaseHeartbeatRpc(
 
 /** Close both sessions. Called on shutdown after the leases are released. */
 export async function stopLeaseHeartbeatSessions(): Promise<void> {
+  vaultStopped = true;
+  if (vaultRetryTimer) clearTimeout(vaultRetryTimer);
+  vaultRetryTimer = null;
   await Promise.all([...sessions.values()].map((session) => session.stop()));
 }
 
@@ -472,4 +576,8 @@ export async function _resetLeaseHeartbeatSessionsForTests(
   await stopLeaseHeartbeatSessions();
   sessions.clear();
   options = next;
+  vaultConnectionString = '';
+  vaultRead = null;
+  vaultStopped = false;
+  vaultAbsent = false;
 }

@@ -63,6 +63,14 @@ case "\${1:-}" in
   api)
     endpoint="\${2:-}"
     case "$endpoint" in
+      # A SWITCHED-OFF WORKFLOW IS NOT A LIVE ONE (2026-10-02). Section 3 now
+      # reads the workflow state before judging a run. Every repo here is
+      # enabled, so this fixture keeps testing only the ruleset reads.
+      */actions/workflows)
+        WF_JSON='{"total_count":1,"workflows":[{"id":2,"name":"Agent Autopilot","path":".github/workflows/agent-autopilot.yml","state":"active"}]}'
+        shift 2
+        if [ "\${1:-}" = --jq ]; then printf '%s' "$WF_JSON" | jq -r "\${2:-.}"; else printf '%s\\n' "$WF_JSON"; fi
+        ;;
       repos/Smarter-Poker/*/rulesets)
         printf '[{"id":101,"target":"branch"},{"id":102,"target":"branch"}]\\n'
         ;;

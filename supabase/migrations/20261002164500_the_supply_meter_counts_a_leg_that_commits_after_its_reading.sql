@@ -337,6 +337,7 @@ END
 $function$;
 
 REVOKE ALL ON FUNCTION public.fn_ca_supply_snapshot() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_supply_snapshot() TO service_role;
 
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_supply_snapshot', 'migration 20261002164500_the_supply_meter_counts_a_leg_that_commits_after_its_reading');
 
@@ -427,6 +428,9 @@ AS $function$
       -- four hops made a longer corridor read as a missing door.
       OR NOT public.fn_money_path_reaches_club_scope(x.fn, 6);
 $function$;
+
+REVOKE ALL ON FUNCTION public.fn_union_money_path_check() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_money_path_check() TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Postimage

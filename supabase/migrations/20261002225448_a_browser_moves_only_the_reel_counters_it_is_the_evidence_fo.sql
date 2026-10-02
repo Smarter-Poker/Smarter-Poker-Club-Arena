@@ -63,18 +63,6 @@
 -- these routines there, keep the caller check: without it Club Arena's
 -- Telemetry Exposure goes red again, which is how this hole was found.
 --
--- RECONCILED WITH PHASE 3, 2026-10-02 (before this file was ever applied).
--- 20261002223109_a_counter_is_not_a_public_write and
--- 20261002232011_a_stale_tab_counts_through_the_same_door reached the same
--- two routines from the other side and were applied first. Applied as merged,
--- this file would have let a signed-in browser add a view in a loop (no
--- once-a-day key) and take a view or share DOWN. The bodies below keep every
--- check this file introduced, word for word, and add the two that close
--- those: a browser's view or share goes through fn_count_content_engagement
--- (one per player per content per day, auth.uid() the subject), and a browser
--- never decrements. This is the text that ran; it is identical to the reel
--- bodies in 20261002232011, so the two can be applied in either order.
---
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
@@ -82,7 +70,6 @@
 -- @live-proof: (SELECT count(*) = 2 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('increment_reel_count','decrement_reel_count') AND p.prosrc LIKE '%auth.uid()%' AND p.prosrc LIKE '%auth.role()%' AND NOT has_function_privilege('anon', p.oid, 'EXECUTE'))
 
 BEGIN;
-SET LOCAL lock_timeout = '2s';
 
 CREATE OR REPLACE FUNCTION public.increment_reel_count(p_reel_id uuid, p_field text)
 RETURNS void
@@ -97,26 +84,18 @@ BEGIN
   IF p_field IS NULL OR NOT (p_field = ANY(ARRAY['like_count','comment_count','share_count','view_count']::text[])) THEN
     RAISE EXCEPTION 'increment_reel_count: invalid field %', p_field;
   END IF;
-  -- A browser reports its own view or share, once a day, and nothing else.
-  IF COALESCE(auth.role(), 'service_role') <> 'service_role' THEN
-    IF v_request_role IN ('anon', 'authenticated') THEN
-      IF auth.uid() IS NULL THEN
-        RAISE EXCEPTION 'increment_reel_count: a signed-in viewer is required'
-          USING ERRCODE = '42501';
-      END IF;
+  -- A PostgREST request carries its role in the JWT. anon/authenticated is a
+  -- browser; service_role is the World Hub's own reconciling route; NULL is a
+  -- database session (pg_cron, psql, a migration) and is not a browser either.
+  IF v_request_role IN ('anon', 'authenticated') THEN
+    IF auth.uid() IS NULL THEN
+      RAISE EXCEPTION 'increment_reel_count: a signed-in viewer is required'
+        USING ERRCODE = '42501';
     END IF;
     IF p_field NOT IN ('share_count', 'view_count') THEN
       RAISE EXCEPTION 'increment_reel_count: % is kept from social_likes/social_comments, not from a browser', p_field
         USING ERRCODE = '42501';
     END IF;
-    IF p_field = 'view_count' THEN
-      PERFORM public.fn_count_content_engagement(p_reel_id, 'view', 'reels');
-    ELSIF p_field = 'share_count' THEN
-      PERFORM public.fn_count_content_engagement(p_reel_id, 'share', 'reels');
-    ELSE
-      RAISE EXCEPTION 'increment_reel_count: % is not a browser''s to write', p_field USING ERRCODE = '42501';
-    END IF;
-    RETURN;
   END IF;
   SELECT COALESCE(a.canonical_reel_id, p_reel_id) INTO v_target
   FROM (SELECT 1) seed
@@ -141,20 +120,15 @@ BEGIN
   IF p_field IS NULL OR NOT (p_field = ANY(ARRAY['like_count','comment_count','share_count','view_count']::text[])) THEN
     RAISE EXCEPTION 'decrement_reel_count: invalid field %', p_field;
   END IF;
-  -- A browser never takes a count down: the view or share it reported is a
-  -- receipt, and like and comment counts are the triggers' to keep.
-  IF COALESCE(auth.role(), 'service_role') <> 'service_role' THEN
-    IF v_request_role IN ('anon', 'authenticated') THEN
-      IF auth.uid() IS NULL THEN
-        RAISE EXCEPTION 'decrement_reel_count: a signed-in viewer is required'
-          USING ERRCODE = '42501';
-      END IF;
+  IF v_request_role IN ('anon', 'authenticated') THEN
+    IF auth.uid() IS NULL THEN
+      RAISE EXCEPTION 'decrement_reel_count: a signed-in viewer is required'
+        USING ERRCODE = '42501';
     END IF;
     IF p_field NOT IN ('share_count', 'view_count') THEN
       RAISE EXCEPTION 'decrement_reel_count: % is kept from social_likes/social_comments, not from a browser', p_field
         USING ERRCODE = '42501';
     END IF;
-    RAISE EXCEPTION 'decrement_reel_count: a count is not a browser''s to take down' USING ERRCODE = '42501';
   END IF;
   SELECT COALESCE(a.canonical_reel_id, p_reel_id) INTO v_target
   FROM (SELECT 1) seed
@@ -174,8 +148,8 @@ GRANT EXECUTE ON FUNCTION public.increment_reel_count(uuid, text) TO authenticat
 GRANT EXECUTE ON FUNCTION public.decrement_reel_count(uuid, text) TO authenticated, service_role;
 
 COMMENT ON FUNCTION public.increment_reel_count(uuid, text) IS
-  'Atomic reel engagement counter. A browser caller must be a signed-in viewer and may add only its own view or share, at most once a day per reel, through fn_count_content_engagement; like_count and comment_count are kept by the triggers on social_likes and social_comments and are service-side only. See 20261002225448 and 20261002232011.';
+  'Atomic reel engagement counter. A browser caller must be a signed-in viewer and may move only share_count or view_count; like_count and comment_count are kept by the triggers on social_likes and social_comments and are service-side only. See 20261002225448.';
 COMMENT ON FUNCTION public.decrement_reel_count(uuid, text) IS
-  'Atomic reel engagement counter. Service-side only: a browser caller never takes a count down. See 20261002225448 and 20261002232011.';
+  'Atomic reel engagement counter. A browser caller must be a signed-in viewer and may move only share_count or view_count; like_count and comment_count are kept by the triggers on social_likes and social_comments and are service-side only. See 20261002225448.';
 
 COMMIT;

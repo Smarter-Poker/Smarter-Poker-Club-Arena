@@ -579,6 +579,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
       "refusedBy": [],
       "liveVerdict": "Reconciliation of 2026-10-02 (PR #5437). Installed more than 24 hours earlier with no file on main. md5 read live the same day from public.fn_ca_migration_text('20261001161127') equals the file md5."
+    },
+    {
+      "version": "20260927154806",
+      "name": "open_week_pages_lock_the_recompute_request_after_calculation",
+      "file": "supabase/migrations/20260927154806_open_week_pages_lock_the_recompute_request_after_calculation.sql",
+      "md5": "9084e25e2ff1315f8ff6bd58977a2852",
+      "appliedToProductionAt": "2026-09-27T15:48:06Z",
+      "recoveredOn": "2026-10-02",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte (the fn_ca_migration_text body); byte-identical to the file on PR #5450",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/issues/5008",
+      "refusedBy": [],
+      "liveVerdict": "Reconciliation of 2026-10-02. md5 read live the same day from public.fn_ca_migration_text(20260927154806) equals the file md5."
     }
   ]
 }

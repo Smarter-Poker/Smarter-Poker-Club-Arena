@@ -106,14 +106,15 @@ describe('a page cannot certify an unfinished week', () => {
   });
 
   it('pins its own performance evidence in the migration header', () => {
-    // The door's evidence lives in the migration that introduced it; the
-    // definition in force must still assert its own pre- and postimage.
+    // Historical timing and replacement witnesses belong to the introducing
+    // migration. Behavioral assertions and planted regressions above/below
+    // continue to inspect the newest definition, including later replacements.
     const origin = latestNamed(
       '_a_page_recompute_of_an_unfinished_week_answers_from_one_unaccrued_hand'
     );
     expect(origin.sql).toMatch(/209,364 ms/);
-    expect(sql).toMatch(/RECOMPUTE_PREIMAGE_CHANGED/);
-    expect(sql).toMatch(/RECOMPUTE_POSTIMAGE/);
+    expect(origin.sql).toMatch(/RECOMPUTE_PREIMAGE_CHANGED/);
+    expect(origin.sql).toMatch(/RECOMPUTE_POSTIMAGE/);
   });
 
   // Planted regressions: each one is a way the door could be broken, and the

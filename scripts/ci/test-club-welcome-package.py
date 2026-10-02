@@ -22,6 +22,7 @@ BOARD_ORIGIN_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002111120_welc
 BOARD_DELETE_PERMIT_MIGRATION = ROOT / 'supabase/migrations/20261002115605_welcome_certification_deletes_only_its_unused_board_tables.sql'
 FRESH_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002205511_welcome_certification_accepts_fresh_exact_board.sql'
 POST_RESET_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002210559_post_reset_welcome_certification_cleanup.sql'
+POST_RESET_UUID_ORDER_MIGRATION = ROOT / 'supabase/migrations/20261002223819_post_reset_cleanup_orders_uuid_values.sql'
 TERMINAL_TABLE_GUARD_MIGRATION = ROOT / 'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 _terminal_guard_source = TERMINAL_TABLE_GUARD_MIGRATION.read_text()
 TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
@@ -39,7 +40,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -58,9 +59,6 @@ def run_refusal(name, sql, expected_error):
 SETUP = r"""
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
 CREATE SCHEMA auth; CREATE SCHEMA extensions; CREATE SCHEMA smarter_private;
-CREATE FUNCTION fixture_uuid_min(uuid,uuid) RETURNS uuid LANGUAGE sql IMMUTABLE STRICT
- AS $$SELECT least($1,$2)$$;
-CREATE AGGREGATE min(uuid)(SFUNC=fixture_uuid_min,STYPE=uuid,SORTOP=operator(<));
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.role',true),'')$$;
 CREATE TABLE auth.users(id uuid PRIMARY KEY,email text NOT NULL);
@@ -327,6 +325,64 @@ SELECT pg_get_triggerdef(t.oid,true),t.tgenabled
     run('install-board-delete-permit',BOARD_DELETE_PERMIT_MIGRATION.read_text())
     run('install-fresh-board-cleanup',FRESH_BOARD_CLEANUP_MIGRATION.read_text())
     run('install-post-reset-cleanup',POST_RESET_CLEANUP_MIGRATION.read_text())
+    run('install-post-reset-uuid-order',POST_RESET_UUID_ORDER_MIGRATION.read_text())
+    run('reinstall-post-reset-uuid-order',POST_RESET_UUID_ORDER_MIGRATION.read_text())
+    run('post-reset-uuid-order-catalog-contract',r"""
+SELECT md5(p.prosrc),p.prosecdef,r.rolname,
+       p.prolang=(SELECT l.oid FROM pg_language l WHERE l.lanname='plpgsql'),
+       p.prorettype='jsonb'::regtype,
+       NOT p.proretset,p.provolatile,p.prokind,
+       p.proconfig=ARRAY['search_path=public, pg_temp']::text[],
+       NOT EXISTS(
+         SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+          WHERE a.privilege_type='EXECUTE' AND a.grantee<>p.proowner
+       ),
+       NOT EXISTS(
+         SELECT 1 FROM pg_proc a
+          WHERE a.prokind='a' AND a.proname='min'
+            AND pg_get_function_identity_arguments(a.oid)='uuid'
+       )
+  FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+ WHERE p.oid='fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure;
+""",'f3e2ae948cbf344220873311a7cc10aa|t|postgres|t|t|t|v|f|t|t|t')
+    run('tamper-post-reset-uuid-order-source',r"""
+DO $tamper$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  IF strpos(v_definition,E'BEGIN\n  IF COALESCE')=0 THEN
+    RAISE EXCEPTION 'fixture source preimage missing';
+  END IF;
+  EXECUTE replace(v_definition,E'BEGIN\n  IF COALESCE',
+                  E'BEGIN\n  -- digest drift\n  IF COALESCE');
+END
+$tamper$;
+""")
+    run_refusal('refuse-tampered-post-reset-uuid-order-source',
+                POST_RESET_UUID_ORDER_MIGRATION.read_text(),
+                'POST_RESET_UUID_ORDER_SOURCE_DIGEST_REFUSED')
+    run('restore-post-reset-uuid-order-source',r"""
+DO $restore$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  EXECUTE replace(v_definition,E'BEGIN\n  -- digest drift\n  IF COALESCE',
+                  E'BEGIN\n  IF COALESCE');
+END
+$restore$;
+""")
+    run('tamper-post-reset-uuid-order-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public;")
+    run_refusal('refuse-tampered-post-reset-uuid-order-config',
+                POST_RESET_UUID_ORDER_MIGRATION.read_text(),
+                'POST_RESET_UUID_ORDER_POSTIMAGE_REFUSED')
+    run('restore-post-reset-uuid-order-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
+    run('verify-restored-post-reset-uuid-order',POST_RESET_UUID_ORDER_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
 CREATE FUNCTION test_shape_post_reset_welcome_fixture(p_club uuid,p_owner uuid) RETURNS void
 LANGUAGE plpgsql AS $fixture$

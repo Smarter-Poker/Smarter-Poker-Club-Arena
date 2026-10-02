@@ -66,3 +66,20 @@ That is a deliberate, separate migration with real-money consequences (moving mi
 chips between ledgers, rewriting ~20 functions and the engine rake path, and redefining the
 settlement basis). It requires explicit sign-off and a written rollback. It is NOT a
 "cleanup" and must not be done implicitly. Default: keep the three-ledger model above.
+
+## Standalone rake reaches the treasury weekly (2026-10-02)
+
+Since `20260917181100` a standalone or private game's rake is retired at the hand
+(`table_stack -> chip_retirement`, cash, with an `accounting_cash_bank_receipts` row;
+`prize_liability -> chip_retirement`, tournament fees). It is NOT credited to
+`chip_treasury` per hand any more, because a per-hand `clubs` row write is the lock
+`20260929040413` removed after measured HandProjection timeouts.
+
+The treasury still owns that rake. `fn_bank_standalone_week_rake(club, week)` sums
+exactly the legs the hands retired for that club in that week and credits that sum to
+`chip_treasury` through `fn_ca_fund_club` (key `standalone-rake-bank:<club>:<week>`,
+register row with the reason). The standalone branch of
+`fn_process_weekly_accounting_scope` calls it inside the money block, before round 2
+pays commission, so a standalone treasury receives its week's rake before it pays
+anything that rake earned. Union clubs are unchanged: their rake goes to
+`union_wallets.rake_wallet` and comes back in the union close.

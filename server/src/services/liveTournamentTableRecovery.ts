@@ -168,3 +168,21 @@ export function freshHumanWindowMs(): number {
   const span = FRESH_HUMAN_WINDOW_MAX_S - FRESH_HUMAN_WINDOW_MIN_S;
   return (FRESH_HUMAN_WINDOW_MIN_S + Math.floor(Math.random() * (span + 1))) * 1000;
 }
+
+/**
+ * THE SWEEP'S ID LISTS GO OUT IN BOUNDED CHUNKS (2026-10-02).
+ *
+ * The reopen sweep sent every live tournament id in ONE `in.(...)` filter: 500
+ * UUIDs is ~19 KB of URL, past what the Supabase gateway accepts, and the
+ * socket was reset (`TypeError: fetch failed`, ECONNRESET) on every sweep - 56
+ * GameServer.reopen_sweep_table_read_failed reports in 60 minutes, so the
+ * sweep had silently done nothing while 594 tournaments were live. A hundred
+ * ids is ~3.7 KB, the size every other chunked read in GameServer uses.
+ */
+export const REOPEN_SWEEP_ID_CHUNK = 100;
+
+export function reopenSweepIdChunks(ids: string[], size = REOPEN_SWEEP_ID_CHUNK): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}

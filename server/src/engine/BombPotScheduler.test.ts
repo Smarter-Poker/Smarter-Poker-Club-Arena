@@ -536,3 +536,16 @@ describe('nobody tanks for the bomb (Dan 2026-09-05): the last three minutes bec
     expect(fresh.nextBombDueAt(s)).toBeNull();
   });
 });
+
+describe('a tournament table never deals a bomb pot (Phase 9.2, 2026-10-02)', () => {
+  it('reads the switch as off on a tournament row, whichever column says tournament', () => {
+    const row = { bomb_pot_enabled: true, bomb_pot_frequency: 3 };
+    expect(bombPotSettingsFromTable({ id: 'cash-table', ...row }).enabled).toBe(true);
+    expect(
+      bombPotSettingsFromTable({ id: 'mtt-table', tournament_id: 't-1', ...row }).enabled
+    ).toBe(false);
+    expect(
+      bombPotSettingsFromTable({ id: 'sng-table', game_type: 'tournament', ...row }).enabled
+    ).toBe(false);
+  });
+});

@@ -30,6 +30,13 @@ const ledgerCategoryRepairSql = readFileSync(
   ),
   'utf8'
 );
+const derivedTableCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -243,6 +250,35 @@ describe('prospective lifetime-first club welcome package database contract', ()
     );
     expect(cleanupSql.indexOf('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY')).toBeLessThan(
       cleanupSql.indexOf('DELETE FROM public.tables WHERE id=ANY(v_tables)')
+    );
+  });
+
+  it('retires every idle package-derived cash table and all 100,000 opening chips', () => {
+    expect(derivedTableCleanupSql).toContain('v_initial_tables <@ v_tables');
+    expect(derivedTableCleanupSql).toContain('t.cluster_id=ANY(v_cash)');
+    expect(derivedTableCleanupSql).toContain("t.role NOT IN('main','feeder')");
+    expect(derivedTableCleanupSql).toContain(
+      "t.lifecycle NOT IN('opening','live','breaking','closed')"
+    );
+    expect(derivedTableCleanupSql).toContain('t.created_by IS NOT NULL');
+    expect(derivedTableCleanupSql).toContain('t.engine_lease_owner IS NOT NULL');
+    expect(derivedTableCleanupSql).toContain('public.engine_table_leases');
+    expect(derivedTableCleanupSql).toContain('public.cash_game_roster');
+    expect(derivedTableCleanupSql).toContain('public.table_pending_addons');
+    expect(derivedTableCleanupSql).toContain('DELETE FROM public.cash_cluster_events');
+    expect(derivedTableCleanupSql).toContain("'cert-retire-bbj:'||p_club_id::text");
+    expect(derivedTableCleanupSql).toContain("'cert-retire-spin:'||p_club_id::text");
+    expect(derivedTableCleanupSql).toContain("l.kind='seed'");
+    expect(derivedTableCleanupSql).toContain("l.kind='activation'");
+    expect(derivedTableCleanupSql).toContain("VALUES(p_club_id,'adjustment',-v_spin_seed,0");
+    expect(derivedTableCleanupSql).toContain('WELCOME_CERTIFICATION_PHYSICAL_GRAPH_REFUSED');
+    expect(derivedTableCleanupSql).toContain('WELCOME_CERTIFICATION_RETIREMENT_REFUSED');
+    expect(derivedTableCleanupSql).toContain("'child_chips_retired',v_child_retired");
+    expect(derivedTableCleanupSql).toContain(
+      "round(COALESCE((v_retired->>'chips_retired')::numeric,0)+v_child,2)"
+    );
+    expect(derivedTableCleanupSql.indexOf('FROM public.cash_games')).toBeLessThan(
+      derivedTableCleanupSql.indexOf('FROM public.clubs WHERE id=p_club_id FOR UPDATE')
     );
   });
 });

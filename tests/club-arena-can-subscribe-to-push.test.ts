@@ -255,7 +255,9 @@ describe('the enrolment path is actually reachable', () => {
     expect(PROMPT).toContain('useLocation');
     // The route must be a dependency of the arming effect, or leaving the
     // table would never re-arm and a player who only plays is never asked.
-    expect(PROMPT).toMatch(/\[pending, state, suppressed\]/);
+    // (The prompt lane joined it on 2026-09-29 for the same reason; see
+    // tests/components/firstRunPrompts.oneAtATime.test.tsx.)
+    expect(PROMPT).toMatch(/\[pending, state, suppressed(?:, \w+)*\]/);
   });
 
   it('gives a subscribed device a way to prove push actually arrives', () => {

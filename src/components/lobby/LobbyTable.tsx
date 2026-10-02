@@ -940,9 +940,11 @@ const COL_ACTIONS: ColumnDef = {
                   : 'Return To Table'
                 : headsUp
                   ? 'Sit Down'
-                  : game
-                    ? 'Join Game'
-                    : 'Join Table'}
+                  : e.game?.lightning
+                    ? 'Join Lightning'
+                    : game
+                      ? 'Join Game'
+                      : 'Join Table'}
             </button>
           )}
         </span>

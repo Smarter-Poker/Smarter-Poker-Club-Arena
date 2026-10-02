@@ -27,6 +27,17 @@
  *
  * NOTHING HERE READS THE DATABASE. The model is built from the payload, which
  * is what makes the link work for a recipient who is not signed in.
+ *
+ * PHASE 9.1 2026-09-30 - CLIP MODE. The hand clip renderer (World Hub,
+ * `/api/cron/render-hand-clips`) opens this same route as
+ * `/replay?clip=1` in a headless browser with the hand injected as
+ * `window.__SP_CLIP__` before any script runs (contract C1). When both are
+ * present, and only then, the page anonymises the row (every seat that is
+ * not the hero becomes "Seat N", no villain cards the showdown did not
+ * show), builds the one model from it and renders `HandReplay` in clip
+ * mode: a 1280x720 stage, no footer, no `h=` needed, still no database
+ * read. A `clip=1` link WITHOUT the injected payload is an ordinary link
+ * and still needs `h=`.
  */
 
 import { useMemo } from 'react';
@@ -34,6 +45,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { decodeHandFromUrl, type ShareableHand } from '../../components/table/ShareHand';
 import HandReplay, { type ReplaySource } from '../../components/replay/HandReplay';
 import { replayFromShareable, shareUserId } from '../../lib/shareHandModel';
+import { buildClipSource, readClipPayload, type ClipPayload } from '../../lib/clipMode';
 import { reportError } from '../../utils/errorReporter';
 import './SharedHandReplayPage.css';
 
@@ -66,15 +78,51 @@ function sourceFrom(hand: ShareableHand): ReplaySource | null {
   }
 }
 
+/** The clip source, or null when the payload cannot be built into a hand. */
+function clipSourceFrom(payload: ClipPayload): ReplaySource | null {
+  try {
+    const source = buildClipSource(payload);
+    return source.model.players.length ? source : null;
+  } catch (e) {
+    reportError(e, 'SharedHandReplayPage.Failed_to_build_clip');
+    return null;
+  }
+}
+
 export default function SharedHandReplayPage() {
   const [params] = useSearchParams();
   const encoded = params.get('h');
+  const clipRequested = params.get('clip') === '1';
+
+  /* Read once per mount: the renderer injects the payload before any script
+     runs, so it is either there on the first render or never. */
+  const clipPayload = useMemo(
+    () => (clipRequested && typeof window !== 'undefined' ? readClipPayload(window) : null),
+    [clipRequested]
+  );
+  const clipSource = useMemo(
+    () => (clipPayload ? clipSourceFrom(clipPayload) : null),
+    [clipPayload]
+  );
+  /* Memoised like `source`: HandReplay rewinds whenever either changes. */
+  const clipWindow = useMemo(
+    () => (clipPayload ? { minMs: clipPayload.minMs, maxMs: clipPayload.maxMs } : null),
+    [clipPayload]
+  );
 
   const hand: ShareableHand | null = useMemo(
-    () => (encoded ? decodeHandFromUrl(encoded) : null),
-    [encoded]
+    () => (encoded && !clipPayload ? decodeHandFromUrl(encoded) : null),
+    [encoded, clipPayload]
   );
   const source = useMemo(() => (hand ? sourceFrom(hand) : null), [hand]);
+
+  if (clipPayload && clipSource && clipWindow) {
+    return (
+      <div className="shared-replay shared-replay--clip">
+        <HandReplay source={clipSource} clip={clipWindow} />
+      </div>
+    );
+  }
 
   if (!hand || !source) {
     return (

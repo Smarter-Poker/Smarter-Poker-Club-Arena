@@ -1,0 +1,53 @@
+name: Stale lease yields only to an open transfer's successor
+
+# claim_tournament_lease_v2 (migration 20260928032017). Runs the native
+# PostgreSQL 17 gate against a throwaway cluster, never production: every
+# claim scenario against main's body, production's live body and the new one.
+# No timer (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/20260928032017_a_stale_lease_yields_only_to_an_open_transfers_successor.sql
+      - supabase/migrations/20260918053310_interrupted_sng_hands_keep_stacks_and_fence_their_original_writers.sql
+      - scripts/dev/probe-a-stale-lease-yields-only-to-an-open-transfers-successor-pg17.sh
+      - scripts/dev/fixtures/a-stale-lease-yields-only-to-an-open-transfers-successor/**
+      - .github/workflows/stale-lease-successor-probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stale-lease-successor-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-gate:
+    name: Claim scenarios on main, live and new bodies (throwaway PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Run the gate
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-a-stale-lease-yields-only-to-an-open-transfers-successor-pg17.sh

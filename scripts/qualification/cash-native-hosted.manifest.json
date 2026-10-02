@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 171471,
-      "sha256": "0b0f9de940aa5f2f1922fc553976d08c5abe84f9c883d2cec973de6f0f08bcc7"
+      "bytes": 184660,
+      "sha256": "2daf8050fe978108d0fe65b916c622a9b86264c25a0a9f4ccb9400cb75c6a4d1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 27619,
-      "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+      "bytes": 29170,
+      "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 94734,
-      "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+      "bytes": 100823,
+      "sha256": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
     }
   },
   "nativePgCron": {
@@ -918,19 +918,488 @@
     ],
     "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
   },
-  "pushEnrollmentBrowserGate20260927": {
-    "reason": "Add the client-only push enrollment opt-in browser gate (npm run test:e2e:push-enrollment, a local harness with no login and no production data) after the existing financial-decisions browser step in ci.yml. No accounting runner, fixture, assertion or routing changes.",
-    "previous": {
+  "playerSearchPrivacyRouting20260927": {
+    "reason": "Register the isolated PostgreSQL 17 player-search privacy and live-table harness in accounting shard 4 and classify every maintained input after integrating protected main's qualified lookup-index routes. Both additions are preserved; cash SQL, captured financial inputs and existing assertions remain byte-identical.",
+    "changes": {
       ".github/workflows/ci.yml": {
-        "bytes": 171068,
-        "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
-      }
-    },
-    "updated": {
-      ".github/workflows/ci.yml": {
-        "bytes": 171471,
-        "sha256": "0b0f9de940aa5f2f1922fc553976d08c5abe84f9c883d2cec973de6f0f08bcc7"
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171764,
+          "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 28573,
+          "sha256": "995905d0aa4e739094dc47eed2c5c3e05463e4dfdcea3dbac4e5fecbc222a29f"
+        }
       }
     }
+  },
+  "backed_payout_current_main_integration_20260927_1620": {
+    "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "chipStoreCoverageQualification20260927": {
+    "reason": "Add required native qualification for exact one-pass coverage aggregation. Preserve every existing source/assertion and routing rule; these bindings retain actual reviewed CI/classifier bytes and nested binding history.",
+    "updates": {
+      ".github/workflows/ci.yml": {
+        "before": {
+          "bytes": 171068,
+          "sha256": "50de8f8bfcadede49e518cb7d1917ad352cc33147af0714b1c1e44beb9c66b6c"
+        },
+        "after": {
+          "bytes": 171232,
+          "sha256": "ffd5be66cf573d7de68c455b508156aa32dd9034bcd5e398c2b91fbf3dee6e1d"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27841,
+          "sha256": "044bbef730fcb4d46a258a4beb37114e1e93932e1f874079aaffef99e5d67665"
+        }
+      }
+    }
+  },
+  "strandedPlayerReadQualification20260927": {
+    "status": "source_changed_native_pass_hosted_pending",
+    "reason": "Add the real PostgreSQL stranded-player read fixture to required shard 4 and classify each isolated fixture/driver/regression input for server and client qualification. No existing check, source assertion, financial image or schedule is removed.",
+    "updates": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 25920,
+          "sha256": "c5e4b57bdaf2799292ecc74fbe4a29ea2c6125f317fd18b88127de84547c3bc8"
+        },
+        "after": {
+          "bytes": 26166,
+          "sha256": "df499c8eb60f6db6e4eeda68ac52d144ef9bc2add65d0b98e9788922b892f0c4"
+        }
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 170130,
+          "sha256": "09c86c4be8d6cac4e833b62af4c6882f0d606c3bfb32655297da6cfb10f5ed91"
+        },
+        "after": {
+          "bytes": 170305,
+          "sha256": "fa23bffe179b315d15ad3fe4223b53637bd4163249b32abcd544e88d213a31aa"
+        }
+      }
+    ]
+  },
+  "stranded_player_current_main_integration_20260927": {
+    "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "stranded_player_current_main_integration_20260927_1610": {
+    "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "coverageProtectedMainIntegration20260927": {
+    "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
+    "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
+    "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
+    "updatedPins": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
+  },
+  "backedPayoutScanIntegration": {
+    "on": "2026-09-27",
+    "why": "Qualify the existing backed-payout detector with an independent real PostgreSQL scalar-versus-batch native acceptance step. Add only its exact input selector and shard-4 invocation; preserve every prior route, assertion and historical binding.",
+    "updatedPins": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "from": {
+          "bytes": 24631,
+          "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        },
+        "to": {
+          "bytes": 24865,
+          "sha256": "a40fdbd3c7a121671bbe36058fad334cd0d813272aff1535ca36aac39c277785"
+        }
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "from": {
+          "bytes": 169529,
+          "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
+        },
+        "to": {
+          "bytes": 169700,
+          "sha256": "ff347050882fefa18e7011baa1bfbbbb806d412b32759cb46ea44547c13ab410"
+        }
+      }
+    ],
+    "status": "Exact source binding; hosted financial qualification remains required."
+  },
+  "backed_payout_settlement_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_bbj_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected BBJ indexes eb6e949396",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_archived_spin_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected archived Spin 593f355b75",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs",
+      "tests/unit/fixtureNativeCi.test.ts"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_backend_disposal_integration_20260927": {
+    "integration": "2026-09-27 backed payout discovery with protected native backend disposal a5b2b5f8",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "backed_payout_current_main_integration_20260927_1732": {
+    "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
+    "changed_files": [
+      ".github/workflows/ci.yml",
+      "scripts/ci/classify-ci-changes.mjs"
+    ],
+    "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
+  },
+  "coverageProtectedMainSecondIntegration20260927": {
+    "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
+    "protectedMain": "87206e76fc375d17a1feb4049cbd3d34481c7ec8",
+    "scope": "Preserve both source maps and integration histories; rebind only actual integrated CI/classifier and dependent binding bytes. Coverage SQL/native/fixture assertions unchanged."
+  },
+  "ownerAccountingPushIntegration20260927": {
+    "protectedMain": "52c99680fd555bfb056cc670b45b0cad77140fb2",
+    "previousCiPin": {
+      "bytes": 171764,
+      "sha256": "b08288d4d888e721bdb28214e0d324264a38cc4eea0196c3f39aa81f8b33431d"
+    },
+    "newCiPin": {
+      "bytes": 172000,
+      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
+    },
+    "scope": "Adds one CI step (shard 1) running scripts/dev/test-accounting-push-bridge.sh, the accounting push receipt harness, so the owner-accounting Production Alerts routing (migration 20260927143752) is enforced. No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
+  },
+  "rakebackSettlerReadHorizonIntegration20260927": {
+    "protectedMain": "a572ef3d061bc6a0f22a5820fd643b4989ba567f",
+    "previousCiPin": {
+      "bytes": 172000,
+      "sha256": "2e3a7ab6d63686685c5ee6f4af17a6ecd810fe1c33b1ce3ab2b15f0f26fabea2"
+    },
+    "newCiPin": {
+      "bytes": 172246,
+      "sha256": "7513401792ce6846705d46c6cb37f013cf82d39aa6222e296ea11eb09f811209"
+    },
+    "scope": "Adds one CI step (accounting_postgres shard 4) running scripts/ci/test-rakeback-settler-read-horizon-postgres.py, the native harness for the rakeback settler committed read horizon (migration 20260927144455, applied as 20260927220353). No cash input, native pg_cron route or financial assertion changed; only the ci.yml pin moves."
+  },
+  "heldFeeOwnerBasisIntegration20260927": {
+    "integration": "2026-09-27 held tournament fee owner-basis native phases",
+    "why": "Route tests/fixtures/held-fee-owner-basis/ to the existing required accounting job so the new native phases run for their own input edits; no captured fixture, assertion or route removed.",
+    "files": [
+      {
+        "binding": "scripts/qualification/cash-native-hosted.manifest.json",
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 27619,
+          "sha256": "7453fda84e0817b94f4d86ef66cf938e76dcb16c70ade9a41091503d5dfbfc68"
+        },
+        "after": {
+          "bytes": 27640,
+          "sha256": "f83b535bd9b1725de7524d1ae807d6de395380f724da777eec8a8c707df424dc"
+        }
+      }
+    ]
+  },
+  "diamondConcurrencyRunnerRoute20260930": {
+    "integration": "2026-09-30 Diamond Phase 11 line 2 concurrency runner (agent/claude-diamond-phase-11/test/one-diamond-cannot-be-spent-twice)",
+    "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened.",
+    "files": [
+      {
+        "binding": "scripts/qualification/cash-native-hosted.manifest.json",
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 28594,
+          "sha256": "be8365c447c1cba23c6b5e5a71793130cb3d21e159802bc760cd0e387cbd5366"
+        },
+        "after": {
+          "bytes": 28836,
+          "sha256": "9eb6dc05fdcbb6845c372de58aca46bed41ab76310c05934be5706b106b2d5a6"
+        }
+      }
+    ]
+  },
+  "horseObservationWindowIntegration20260930": {
+    "why": "Adds the Horse original observation-window isolated PostgreSQL qualification to existing accounting shard4; no existing cash route, assertion or source changed.",
+    "before": {
+      "bytes": 176139,
+      "sha256": "f24fb6e224f50b84265a9c8aebeda86c46078c25491e32ae64be68faae4d7e67"
+    },
+    "after": {
+      "bytes": 176367,
+      "sha256": "44252d531366eebaf79e555575be84d61d2e2328bea17db8ee08887cdb690467"
+    }
+  },
+  "archivedCompletionRouting20260927": {
+    "reason": "Add archived completion control routing and exact near-match regression assertions. No cash SQL, fixture or existing assertion changed. Preserve every previous source and audit entry.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 25600,
+          "sha256": "e00e863c398365ba0b2374d4dc0c3fc46af84b2bd7d7e7ac18a8768113948c55"
+        },
+        "current": {
+          "bytes": 25611,
+          "sha256": "10d1ef82e00605d76859603c6491618e372f1ddc35d858db2cce3a243ab59cd6"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 94734,
+          "sha256": "813b7eee737020bc0e903d7fb3e239bc5b7cbb6b3e8808bbe5161af2d8082628"
+        },
+        "current": {
+          "bytes": 94929,
+          "sha256": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        }
+      }
+    ]
+  },
+  "productionAlertsCompletionIntegration20261001": {
+    "scope": "Preserve both merge parents and completion qualification; rebind actual merged source bytes. No native or production qualification implied.",
+    "ownParent": "65c059cb994c526a232b16e8a72e731910709211",
+    "protectedMain": "ec06319fe7197ea260173671dd590fcf26ca21eb",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 27630,
+          "sha256": "c15c245be6c0d840f84634ef3711b49472d246230ad3c4ed8e67bac1f49df92d"
+        },
+        "current": {
+          "bytes": 28847,
+          "sha256": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+        }
+      }
+    ]
+  },
+  "productionAlertsArchivedReaderRouting20261001": {
+    "reason": "Exact additive routing and path regression guards only; all historical audits retained.",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 28847,
+          "sha256": "65bfd2f4c5006afe483b172478cd5a6d4942bc3c8325b6df45681c37b8b85192"
+        },
+        "current": {
+          "bytes": 28871,
+          "sha256": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 94929,
+          "sha256": "f39a2555e8e382832e8381d53eea64c6d897c1f7c4bae6c36eb4a2678ed61c83"
+        },
+        "current": {
+          "bytes": 95620,
+          "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+        }
+      }
+    ]
+  },
+  "ledgerInvariantIntegration20261001": {
+    "why": "Adds the ledger-invariant isolated PostgreSQL proof (scripts/dev/test-ledger-invariant.sh: a balance never moves without its ledger row) to the existing accounting shard beside test-accounting-delivery.sh; no existing cash route, assertion or source changed. Re-pinned after merging main (#5713, #5718) into the branch.",
+    "before": {
+      "bytes": 176672,
+      "sha256": "ab6ca99999f01277d65da4d22193638c9d72bfc772315932b643cc0edd5881b3"
+    },
+    "after": {
+      "bytes": 176951,
+      "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+    }
+  },
+  "cssBeatGateSplit20261001": {
+    "why": "Splits the CSS Beat browser gate in two (2026-10-01): the Diamond playfield moves from css-beats-e2e into its own diamond-playfield-e2e job beside it, and the required 'CSS Beat E2E (multi-table + animations)' name moves to css-beats-gate, which passes only when both halves pass. fixtureNativeCi.test.ts reads the playfield command from the new job. No cash route, assertion, probe or accounting source changed.",
+    ".github/workflows/ci.yml": {
+      "before": {
+        "bytes": 176951,
+        "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+      },
+      "after": {
+        "bytes": 182405,
+        "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+      }
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "before": {
+        "bytes": 95620,
+        "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+      },
+      "after": {
+        "bytes": 95983,
+        "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
+      }
+    }
+  },
+  "productionAlertsShardRuntimeDependencies20261001": {
+    "reason": "Remove unused compiler/header downloads from accounting shards 1/2; preserve complete runtime readiness, shards 3/4 native builds and all prior qualification and audit history.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 176951,
+          "sha256": "3be684806d6e13b1e033eeca54ab774bc72dd6415a55336aaeaa72df9eb920c6"
+        },
+        "current": {
+          "bytes": 177645,
+          "sha256": "cf38e19deb450e6a7d2e8817e8749a2faebaaa5c549760d48be3b152709bb160"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 95620,
+          "sha256": "57dc89fb9286949602e0fad00eb6792ebc3db63cc3ae675d828a7edcc1f0bfdd"
+        },
+        "current": {
+          "bytes": 98837,
+          "sha256": "d68fda2b94a5fef5171e73ab30a3607aedcd29c16c8b1b173acefd8a0fb0be25"
+        }
+      }
+    ]
+  },
+  "productionAlertsMergedCssBeatRuntime20261001": {
+    "reason": "Preserve both parents complete audit histories and CSS beat/diamond work; bind actual merged source and nested metadata. No financial fixture assertions changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 182405,
+          "sha256": "820918e42756f9ca45ea30cf4df9d011e38f73b7018b72f602b99a937b2e6ba4"
+        },
+        "current": {
+          "bytes": 183099,
+          "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
+        }
+      },
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 95983,
+          "sha256": "a602b38129d0994ce5a22be90f19a7354b3538f88979d3df1ca40dcbf5418e11"
+        },
+        "current": {
+          "bytes": 99200,
+          "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+        }
+      }
+    ]
+  },
+  "productionAlertsContractIndexRecovery20261001": {
+    "reason": "Route the exact interrupted contract-index recovery source and native guard proof through existing CI; preserve every financial source and historical audit record.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 183099,
+          "sha256": "d40d1951300fabf01f72ff53133f673f3126858f56a1a070c585a5e07e31447e"
+        },
+        "current": {
+          "bytes": 183976,
+          "sha256": "cb93e14552a4c17ffabed60d48d781fe35d5f812556aeb3c9fe7b8f883b71adf"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 28871,
+          "sha256": "0893f2e69113c32c71444429bc89829afbe09e4c1e2e1caf167ccf7d9cee9f02"
+        },
+        "current": {
+          "bytes": 29170,
+          "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
+        }
+      }
+    ]
+  },
+  "productionAlertsWeeklyFixtureIsolation20261001": {
+    "reason": "Reviewed appended fixture isolation and diagnostic regression only; original test prefix unchanged. Preserve cash source and historical audits. Native executable inputs unchanged.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 99200,
+          "sha256": "afcbf67d81d767aa3be38dfea7d160ccee6fd96613c4cefbadc13218ba8e3bc5"
+        },
+        "current": {
+          "bytes": 100823,
+          "sha256": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
+        }
+      }
+    ]
+  },
+  "pushEnrollmentBrowserGate20261002": {
+    "reason": "Append the client-only push enrollment opt-in browser step (npm run test:e2e:push-enrollment, local harness, no login, no production data) after the financial-decisions browser step. No accounting runner, fixture, assertion or routing change. Native executable inputs unchanged.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 184257,
+          "sha256": "ae66811fe630b4fc38a5d6e48abf9d160024e460ea2920db77289486af161bd9"
+        },
+        "current": {
+          "bytes": 184660,
+          "sha256": "2daf8050fe978108d0fe65b916c622a9b86264c25a0a9f4ccb9400cb75c6a4d1"
+        }
+      }
+    ]
   }
 }

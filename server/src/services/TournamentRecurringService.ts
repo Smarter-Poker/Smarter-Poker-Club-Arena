@@ -5,6 +5,7 @@ import {
   readPersistedTournamentFormatContract,
 } from '../tournament/tournamentEntryCapacity.js';
 import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
+import { isGuaranteeBankRefusal } from '../domain/guaranteeBankRefusal.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -435,7 +436,7 @@ const DB_GAME_TYPE: Record<string, string> = {
  * the caller breaks out of its retry loop on a true return.
  */
 function isGuaranteeRefusal(error: { message?: string } | null | undefined): boolean {
-  return /cannot guarantee/i.test(String(error?.message ?? ''));
+  return isGuaranteeBankRefusal(error?.message);
 }
 
 async function notifyGuaranteeShort(clubId: string | null | undefined, where: string) {
@@ -2595,6 +2596,36 @@ export function boardBudgetShares(ownerCount: number, burst: number = BURST): nu
 }
 
 /**
+ * A board is opened only for an owner whose club row still exists and is
+ * active (2026-10-02 launch blocker). spin_bonus_pools.club_id has no foreign
+ * key, so a pool outlives the club it was seeded for: the reserved Create Club
+ * certificate deletes or deactivates its fixture club, and its pool stayed
+ * is_active with its seed. Every Spin and SNG tick then tried to open a board
+ * for a club that did not exist (~11 refusals a minute on
+ * tournaments_club_id_fkey) or opened live games under a retired fixture club.
+ * A union owner's id is its club row too (Midway Union), so one rule covers
+ * both kinds. An owner whose creation was refused on that foreign key is also
+ * held out until its back-off expires, so a race with a deletion costs one
+ * refusal, not one per tick.
+ */
+export const BOARD_OWNER_GONE_BACKOFF_MS = 60 * 60_000;
+export function liveBoardOwners<T extends { clubId: string }>(
+  owners: T[],
+  activeClubIds: ReadonlySet<string>,
+  goneUntil: ReadonlyMap<string, number> = new Map(),
+  now: number = Date.now()
+): T[] {
+  return owners.filter(
+    (o) => activeClubIds.has(o.clubId) && !((goneUntil.get(o.clubId) ?? 0) > now)
+  );
+}
+
+/** True for the refusal a board gets when its club row no longer exists. */
+export function isBoardOwnerGoneRefusal(message: string | null | undefined): boolean {
+  return /tournaments_club_id_fkey/.test(String(message ?? ''));
+}
+
+/**
  * Whose board is being filled. A Spin is visible to players ENTIRELY through
  * the club_id / union_id on its row -- ClubHomePage scopes its lobby query by
  * one or the other and never consults membership -- so these two fields decide
@@ -2690,6 +2721,8 @@ export class TournamentRecurringService {
    * so the board self-heals as the extra copies play out. It is still wrong.)
    */
   private boardTickInFlight: Record<'spin' | 'sng', boolean> = { spin: false, sng: false };
+  /** Owner club id -> epoch ms until which its board is not opened (club row gone). */
+  private boardOwnerGoneUntil = new Map<string, number>();
   private xmttInterval: ReturnType<typeof setInterval> | null = null;
   private freeBuyInterval: ReturnType<typeof setInterval> | null = null;
   /** One Free Buy pass at a time. setInterval does not wait for the previous
@@ -3543,20 +3576,41 @@ export class TournamentRecurringService {
         return [];
       }
 
-      return (
-        (data ?? [])
-          .map((r: any) => ({
-            clubId: String(r.club_id),
-            unionId: r.owner_kind === 'union' ? String(r.club_id) : null,
-            maxStake: Number(r.offered_max_stake) || 0,
-            kind: (r.owner_kind === 'union' ? 'union' : 'club') as 'union' | 'club',
-          }))
-          // The house runs from houseOwner above; listing it twice would have one
-          // pass fill the board and the next see it already full, alternating.
-          .filter((o) => o.clubId !== this.houseOwner.clubId)
-          // An owner who never chose a stake has nothing we can price a board at.
-          .filter((o) => o.maxStake > 0)
-      );
+      const owners = (data ?? [])
+        .map((r: any) => ({
+          clubId: String(r.club_id),
+          unionId: r.owner_kind === 'union' ? String(r.club_id) : null,
+          maxStake: Number(r.offered_max_stake) || 0,
+          kind: (r.owner_kind === 'union' ? 'union' : 'club') as 'union' | 'club',
+        }))
+        // The house runs from houseOwner above; listing it twice would have one
+        // pass fill the board and the next see it already full, alternating.
+        .filter((o) => o.clubId !== this.houseOwner.clubId)
+        // An owner who never chose a stake has nothing we can price a board at.
+        .filter((o) => o.maxStake > 0);
+      if (owners.length === 0) return [];
+
+      // Only an owner whose club row exists and is active gets a board: see
+      // liveBoardOwners. Fail closed on an unreadable answer, as above.
+      const clubs = await supabase
+        .from('clubs')
+        .select('id')
+        .in(
+          'id',
+          owners.map((o) => o.clubId)
+        )
+        .eq('status', 'active');
+      if (clubs.error) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] activated owner clubs read failed: ${clubs.error.message}`
+          ),
+          'TournamentRecurring.spin_owners_read_failed'
+        );
+        return [];
+      }
+      const active = new Set((clubs.data ?? []).map((c: any) => String(c.id)));
+      return liveBoardOwners(owners, active, this.boardOwnerGoneUntil);
     } catch {
       return [];
     }
@@ -3583,6 +3637,14 @@ export class TournamentRecurringService {
       table_id?: string;
     } | null;
     if (error || result?.ok !== true || !result.tournament || !result.table_id) {
+      const ownerClubId = typeof row.club_id === 'string' ? row.club_id : null;
+      if (ownerClubId && isBoardOwnerGoneRefusal(error?.message)) {
+        // The owner's club row is gone: hold its board out for the back-off
+        // and say so once, instead of refusing on every tick.
+        const alreadyHeld = (this.boardOwnerGoneUntil.get(ownerClubId) ?? 0) > Date.now();
+        this.boardOwnerGoneUntil.set(ownerClubId, Date.now() + BOARD_OWNER_GONE_BACKOFF_MS);
+        if (alreadyHeld) return null;
+      }
       reportError(
         new Error(
           `[TournamentRecurring] ${context} atomic creation failed: ${error?.message ?? result?.reason ?? 'invalid response'}`

@@ -40,6 +40,11 @@
  * marking it done forever would mean the real permission prompt never runs
  * either.
  *
+ * ONE ASK AT A TIME (2026-09-29, src/lib/promptLane.ts). This sheet is LAST in
+ * the soft-ask order: its delay counts only while the lane is clear, it shows
+ * only while it holds the turn, and a sign-out or a different account starts
+ * it over.
+ *
  * Copy is Title Case with no em dashes, per CLAUDE.md section 5.7.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -65,6 +70,7 @@ import {
   type NudgeMoment,
 } from '../../lib/pushNudgePolicy';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { usePromptTurn } from '../../lib/promptLane';
 import './FirstRunPushPrompt.css';
 
 /**
@@ -156,6 +162,8 @@ export default function FirstRunPushPrompt() {
   const [pending, setPending] = useState<PendingAsk>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const turn = usePromptTurn('push', Boolean(userId) && state !== null);
+  const laneClear = turn.clear;
   const mounted = useRef(true);
   const userIdRef = useRef(userId);
   useEffect(() => {
@@ -231,6 +239,14 @@ export default function FirstRunPushPrompt() {
     [userId, markDone]
   );
 
+  /* A different account, or none, starts over: nothing decided for the last
+     one carries across a sign-out. */
+  useEffect(() => {
+    setPending(null);
+    setState(null);
+    setError(null);
+  }, [userId]);
+
   /* ── The first-visit ask. Decided once per account, never on the route. ── */
   useEffect(() => {
     if (!userId || decidedFor.current === userId) return;
@@ -257,7 +273,9 @@ export default function FirstRunPushPrompt() {
   useEffect(() => {
     // `suppressed` is a dependency, so leaving the felt re-runs this and starts
     // a fresh delay. Nothing is consumed while the player is on a bad screen.
-    if (!pending || state || suppressed) return undefined;
+    // `laneClear` joins it: nothing is spent while a gate or another sheet is
+    // up, and the delay starts over once they are gone.
+    if (!pending || state || suppressed || !laneClear) return undefined;
     const delay = pending.moment === 'first_run' ? SHOW_DELAY_MS : MOMENT_DELAY_MS;
     const t = setTimeout(() => {
       const uid = userIdRef.current;
@@ -272,7 +290,7 @@ export default function FirstRunPushPrompt() {
       setState(pending.variant);
     }, delay);
     return () => clearTimeout(t);
-  }, [pending, state, suppressed]);
+  }, [pending, state, suppressed, laneClear]);
 
   const close = () => {
     setPending(null);
@@ -338,7 +356,7 @@ export default function FirstRunPushPrompt() {
     close();
   };
 
-  if (!state) return null;
+  if (!state || !userId || !turn.onScreen) return null;
 
   const copy = COPY[moment] ?? COPY.first_run;
   const modal = moment === 'first_run' || state === 'blocked';

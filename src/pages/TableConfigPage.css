@@ -47,24 +47,6 @@
   color-scheme: dark;
 }
 
-/* HEADER */
-.config-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.config-title {
-  flex: 1;
-  text-align: center;
-  color: white;
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0;
-}
-
 /* MODE TABS - a lit word on a rule; the console block at the foot of this
    sheet gives them their dress */
 .mode-tabs {

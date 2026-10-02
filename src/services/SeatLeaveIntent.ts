@@ -44,9 +44,18 @@ function validIntent(
   );
 }
 
-/** An unknown response retains the original target across retries and reloads. */
-export function leaveSeatWithIntent(tableId: string, userId: string): Promise<SeatLeaveResult> {
-  return requestSeatWithIntent(tableId, userId, { kind: 'leave' });
+/**
+ * An unknown response retains the original target across retries and reloads.
+ * `target` names the seat when the caller already knows it from an authority
+ * other than this table's own seat row (a Lightning room's anchor seat, read
+ * from fn_lightning_my_session); without it the seat row is read, as always.
+ */
+export function leaveSeatWithIntent(
+  tableId: string,
+  userId: string,
+  target?: SeatOccupancyTarget
+): Promise<SeatLeaveResult> {
+  return requestSeatWithIntent(tableId, userId, { kind: 'leave' }, target);
 }
 export function kickSeatWithIntent(
   tableId: string,
@@ -66,7 +75,7 @@ async function requestSeatWithIntent(
     (action.kind === 'kick' ? 'ca:seat-kick:v1:' : 'ca:seat-leave:v1:') + userId + ':' + tableId;
   const active = running.get(key);
   if (active)
-    return target
+    return target && action.kind === 'kick'
       ? {
           success: false,
           chipsReturned: 0,

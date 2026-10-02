@@ -17,6 +17,68 @@ const TX =
   'BEGIN;\nCREATE OR REPLACE FUNCTION public.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\nCOMMIT;\n';
 
 describe('the apply door accepts concurrent index builds before the transaction and nothing else', () => {
+  it('installs the merged mint supply indexes with settings in one bounded transaction', () => {
+    const sql = readFileSync(
+      'supabase/migrations/20260929130144_the_supply_check_reads_an_index_not_the_whole_ledger.sql',
+      'utf8'
+    );
+    const shape = splitConcurrentPreamble(sql);
+    expect(shape.ok).toBe(true);
+    if (!shape.ok) return;
+    expect(shape.indexes.map((i: { name: string }) => i.name)).toEqual([
+      'ca_mint_ledger_asset_created_net_idx',
+      'ca_mint_ledger_baseline_correction_idx',
+    ]);
+    expect(
+      shape.indexes.every((i: { statement: string }) =>
+        i.statement.includes('INCLUDE (action, amount)')
+      )
+    ).toBe(true);
+    expect(shape.body).toContain("SET LOCAL statement_timeout = '5s';");
+    expect(shape.body).toContain("SET LOCAL lock_timeout = '1s';");
+    expect(shape.body).toContain('ALTER TABLE public.ca_mint_ledger SET');
+    expect(shape.body.trim().endsWith('COMMIT;')).toBe(true);
+  });
+
+  it('retains the exact allowed schema on each concurrent build', () => {
+    const shape = splitConcurrentPreamble(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS a ON smarter_private.f06_hand_permits (tournament_id);\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a ON public.accounting_tournament_fee_batches (tournament_id);\n' +
+        TX
+    );
+    expect(shape.ok).toBe(true);
+    if (shape.ok)
+      expect(
+        shape.indexes.map((i: { schema: string; table: string }) => [i.schema, i.table])
+      ).toEqual([
+        ['smarter_private', 'f06_hand_permits'],
+        ['public', 'accounting_tournament_fee_batches'],
+      ]);
+  });
+  it.each(['private', 'pg_catalog', 'smarter_private_extra', 'public_extra'])(
+    'rejects unapproved schema %s',
+    (schema) => {
+      expect(
+        splitConcurrentPreamble(
+          `CREATE INDEX CONCURRENTLY IF NOT EXISTS a ON ${schema}.t (x);\n` + TX
+        ).ok
+      ).toBe(false);
+    }
+  );
+  it('does not admit a private-schema write after an allowed index', () => {
+    expect(
+      splitConcurrentPreamble(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS a ON smarter_private.t (x);\nDELETE FROM smarter_private.t;\n' +
+          TX
+      ).ok
+    ).toBe(false);
+  });
+  it('reads index validity using the parsed schema and name', () => {
+    const door = readFileSync('scripts/ci/apply-recorded-migration.mjs', 'utf8');
+    expect(door).toContain('WHERE n.nspname = $1 AND c.relname = $2');
+    expect(door).toContain('[ix.schema, ix.name]');
+    expect(door).toContain('i.indisvalid AND i.indisready');
+  });
+
   it('splits eight concurrent builds from the transaction, in file order', () => {
     const file = readFileSync(
       join(
@@ -89,7 +151,10 @@ describe('the apply door accepts concurrent index builds before the transaction 
       'CREATE FUNCTION public.g() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n',
     ],
     ['a DROP', 'DROP INDEX CONCURRENTLY IF EXISTS public.a_b;\n'],
-    ['an index outside public', 'CREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON private.t (x);\n'],
+    [
+      'an index outside the two allowed schemas',
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON private.t (x);\n',
+    ],
     ['an unterminated statement', 'CREATE INDEX CONCURRENTLY IF NOT EXISTS a_b ON public.t (x)\n'],
   ])('refuses %s before BEGIN;', (_label, preamble) => {
     expect(splitConcurrentPreamble(preamble + TX).ok).toBe(false);

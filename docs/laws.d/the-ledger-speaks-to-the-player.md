@@ -1,0 +1,3 @@
+# tests/the-ledger-speaks-to-the-player.law.test.ts
+
+A wallet surface prints the diamond ledger's own player line (`player_line`, a PostgREST computed column over `fn_diamond_ledger_line`) or the kind's row label, never the raw `description` an operator wrote: the one place strips every em and en dash, the diamond glyph and other emoji, glued units ("10diamonds") and uuids, and hands an audit note, a machine tail ("Challenge reward: sd_10"), a bare kind or a test row its Title Case label instead - Dan, 2026-08-20: every line a player reads is Title Case with no em dash, and the journal is append-only, so the record stays and the reader learns to speak.

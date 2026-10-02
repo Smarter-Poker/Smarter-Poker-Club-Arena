@@ -18,6 +18,7 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['connection', 'one cleanup-only connection after a real failed initial handshake'],
     ['exception', 'static error reporting without target exception or private result fields'],
     ['timeout', 'unknown nonretryable outcome for a never-settling guarded call'],
+    ['early_timeout', 'an early native timer cannot report an unspent request slice as exhausted'],
     ['disconnect', 'unknown outcome and cleanup-only reconnect after in-flight disconnect'],
     ['zero', 'zero instances refuse checkpoint invocation'],
     ['two', 'multiple instances refuse checkpoint invocation'],

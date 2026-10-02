@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
+import { retryTransient } from './transient-retry.mjs';
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -147,6 +148,58 @@ try {
   }
   clubIds.push(club.id);
 
+  const { data: welcome, error: welcomeError } = await player.rpc('fn_get_club_welcome_package', {
+    p_club_id: club.id,
+  });
+  const welcomeItems = Array.isArray(welcome?.items) ? welcome.items : [];
+  const welcomeCash = welcomeItems.filter((item) => item?.entity_kind === 'cash_game');
+  const welcomeSchedules = welcomeItems.filter(
+    (item) => item?.entity_kind === 'tournament_schedule'
+  );
+  const welcomeEconomics = welcome?.economics || {};
+  if (
+    welcomeError ||
+    welcome?.ok !== true ||
+    welcome?.eligible !== true ||
+    welcome?.status !== 'provisioned' ||
+    welcome?.package_version !== 'welcome-v1' ||
+    welcomeCash.length !== 9 ||
+    welcomeSchedules.length !== 1 ||
+    welcomeSchedules[0]?.slot_key !== 'daily_25_freezeout_1900' ||
+    welcomeEconomics.bbj_enabled !== true ||
+    Number(welcomeEconomics.bbj_seed) !== 100 ||
+    welcomeEconomics.spins_enabled !== true ||
+    Number(welcomeEconomics.spin_max_stake) !== 1 ||
+    Number(welcomeEconomics.spin_seed) !== 200 ||
+    welcomeEconomics.diamond_spins_status !== 'owner_acceptance_required'
+  ) {
+    throw welcomeError || new Error('First Club Welcome Package Was Not Provisioned Exactly.');
+  }
+
+  const expectedWelcomeSlots = new Set([
+    'classic_nlh_050_100',
+    'classic_flh_050_100',
+    'classic_plo4_050_100',
+    'classic_plo5_050_100',
+    'classic_plo6_050_100',
+    'classic_plo8_050_100',
+    'classic_flo8_050_100',
+    'classic_short_deck_050_100',
+    'classic_pineapple_050_100',
+  ]);
+  if (
+    welcomeCash.some(
+      (item) =>
+        !expectedWelcomeSlots.delete(String(item?.slot_key || '')) ||
+        typeof item?.entity_id !== 'string' ||
+        typeof item?.initial_table_id !== 'string' ||
+        item?.retired_at !== null
+    ) ||
+    expectedWelcomeSlots.size !== 0
+  ) {
+    throw new Error('First Club Welcome Cash-Game Matrix Did Not Match Welcome-v1.');
+  }
+
   const { data: membership, error: membershipError } = await admin
     .from('club_members')
     .select('role,status,chip_balance')
@@ -164,16 +217,41 @@ try {
 
   const { data: storedClub, error: storedClubError } = await admin
     .from('clubs')
-    .select('logo_url,avatar_url,chip_treasury')
+    .select('logo_url,avatar_url,chip_treasury,bbj_enabled,spins_enabled')
     .eq('id', club.id)
     .single();
   if (
     storedClubError ||
     storedClub?.logo_url !== publicLogo.publicUrl ||
     storedClub?.avatar_url !== publicLogo.publicUrl ||
-    Number(storedClub?.chip_treasury) !== 100000
+    Number(storedClub?.chip_treasury) !==
+      100000 - Number(welcomeEconomics.bbj_seed) - Number(welcomeEconomics.spin_seed) ||
+    storedClub?.bbj_enabled !== true ||
+    storedClub?.spins_enabled !== true
   ) {
-    throw storedClubError || new Error('The Selected Logo Was Not Stored On Both Identity Fields.');
+    throw (
+      storedClubError ||
+      new Error('The First Club Identity, Welcome Switches, Or Seeded Treasury Was Incorrect.')
+    );
+  }
+
+  const { data: funding, error: fundingError } = await admin
+    .from('club_welcome_package_funding')
+    .select('destination,amount,balance_after')
+    .eq('club_id', club.id)
+    .order('destination');
+  if (
+    fundingError ||
+    !Array.isArray(funding) ||
+    funding.length !== 2 ||
+    funding[0]?.destination !== 'bbj_main' ||
+    Number(funding[0]?.amount) !== Number(welcomeEconomics.bbj_seed) ||
+    Number(funding[0]?.balance_after) !== Number(welcomeEconomics.bbj_seed) ||
+    funding[1]?.destination !== 'spin_reserve' ||
+    Number(funding[1]?.amount) !== Number(welcomeEconomics.spin_seed) ||
+    Number(funding[1]?.balance_after) !== Number(welcomeEconomics.spin_seed)
+  ) {
+    throw fundingError || new Error('Welcome BBJ And Spin Funding Receipts Were Not Exact.');
   }
 
   const presetRequestId = crypto.randomUUID();
@@ -193,6 +271,24 @@ try {
   }
   clubIds.push(presetClub.id);
 
+  const { data: secondWelcome, error: secondWelcomeError } = await player.rpc(
+    'fn_get_club_welcome_package',
+    { p_club_id: presetClub.id }
+  );
+  if (
+    secondWelcomeError ||
+    secondWelcome?.ok !== true ||
+    secondWelcome?.eligible !== false ||
+    secondWelcome?.status !== 'not_eligible' ||
+    !Array.isArray(secondWelcome?.items) ||
+    secondWelcome.items.length !== 0
+  ) {
+    throw (
+      secondWelcomeError ||
+      new Error('A Lifetime-Second Club Incorrectly Received A Welcome Package.')
+    );
+  }
+
   const { data: storedPreset, error: storedPresetError } = await admin
     .from('clubs')
     .select('logo_url,avatar_url')
@@ -206,7 +302,9 @@ try {
     throw storedPresetError || new Error('The Placeholder Crest URL Was Not Stored Directly.');
   }
 
-  console.log(`PASS Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`);
+  console.log(
+    `PASS First-Club Welcome, Lifetime-Second Refusal, Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`
+  );
 } finally {
   const cleanupFailures = [];
   // Append-only financial records intentionally prevent a plain hard delete:
@@ -217,10 +315,11 @@ try {
   // warned "Fixture Hard Delete Skipped" and left a club behind holding its
   // 100,000-chip opening grant: 15 clubs, 1,300,000 chips.
   //
-  // fn_ca_retire_certification_club is the sanctioned door. It proves the club
-  // is a fixture, retires its chips to the Mint with a declared journal row,
-  // and removes it through the maintenance path that archives every journal row
-  // it touches. A failure here is now loud: a leaked fixture is a real defect.
+  // The welcome coordinator proves and removes only unused package-owned games,
+  // then invokes fn_ca_retire_certification_club in the same transaction. The
+  // long-standing retirement door still proves the club, retires its chips to
+  // the Mint with a declared journal row, and archives every journal row it
+  // touches. A failure here is loud: a leaked fixture is a real defect.
   if (clubIds.length) {
     const { error: retireError } = await admin
       .from('clubs')
@@ -229,10 +328,23 @@ try {
     if (retireError) console.error(`Fixture Retirement Failed: ${retireError.message}`);
 
     for (const clubId of clubIds) {
-      const { data, error } = await admin.rpc('fn_ca_retire_certification_club', {
-        p_club_id: clubId,
-        p_reason: 'cert-cleanup',
-      });
+      // The door is one idempotent transaction (a repeat answers already_gone),
+      // so a statement timeout during a database load spike is retried with
+      // backoff instead of leaking the club: 2026-09-28 one such timeout left a
+      // fixture owned by the reserved identity and wedged every post-deploy
+      // certificate for ten hours. A `success: false` refusal is definitive and
+      // is never retried.
+      const { data, error } = await retryTransient(
+        () =>
+          admin.rpc('fn_ca_retire_welcome_certification_club', {
+            p_club_id: clubId,
+            p_reason: 'cert-cleanup',
+          }),
+        {
+          failureOf: (result) => result?.error,
+          label: `retirement of certification club ${clubId}`,
+        }
+      );
       if (error) {
         console.error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`);
       } else if (data && data.success === false) {
@@ -244,8 +356,18 @@ try {
       }
     }
 
-    const { data: leaked } = await admin.from('clubs').select('id').in('id', clubIds);
-    if (leaked?.length) {
+    const { data: leaked, error: leakedError } = await retryTransient(
+      () => admin.from('clubs').select('id').in('id', clubIds),
+      { failureOf: (result) => result?.error, label: 'fixture club verification read' }
+    );
+    if (leakedError) {
+      // An unreadable answer is not an empty one.
+      cleanupFailures.push(
+        new Error(
+          `Certification could not verify its fixture clubs are gone: ${leakedError.message}`
+        )
+      );
+    } else if (leaked?.length) {
       cleanupFailures.push(
         new Error(
           `Certification leaked ${leaked.length} fixture club(s) into Club Arena: ${leaked

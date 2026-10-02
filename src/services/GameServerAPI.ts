@@ -738,7 +738,14 @@ export function sendAwayBeacon(tableId: string, accessToken: string | null): voi
 export async function setPreAction(
   tableId: string,
   action: string,
-  maxCallAmount?: number
+  maxCallAmount?: number,
+  /**
+   * LIGHTNING PHASE 6: the hand the arm belongs to. Sent only from a
+   * Lightning room, where one room deals hand after hand; the engine refuses
+   * an arm for any other hand and drops every arm when the hand changes.
+   * Omitted everywhere else, so a table's request body is unchanged.
+   */
+  handId?: string
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
@@ -749,7 +756,9 @@ export async function setPreAction(
     const response = await engineFetch(`${GAME_SERVER_URL}/preaction`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId, action, maxCallAmount }),
+      body: JSON.stringify(
+        handId ? { tableId, action, maxCallAmount, handId } : { tableId, action, maxCallAmount }
+      ),
     });
     if (!response.ok) {
       // HTTP 400 = invalid pre-action (not player's turn, not in hand) —

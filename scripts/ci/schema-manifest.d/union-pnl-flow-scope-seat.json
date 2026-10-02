@@ -1,0 +1,12 @@
+{
+  "_owner": "fix/union-pnl-flow-scope-seat-proof. NOT YET APPLIED when pushed (2026-09-29): migration 20260929001003_a_cash_out_a_lost_link_and_a_satellite_seat_are_proved_from_ is applied by the accounting coordinator after 20260928211132, 20260928222109 and 20260928230637 (its preimage guard refuses any other order). Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": ["union_pnl_cash_outcome_link_resolutions"],
+  "functions": [
+    "fn_union_pnl_satellite_seat_owner",
+    "fn_union_pnl_award_satellite_owner",
+    "fn_union_pnl_cash_outcome_link",
+    "fn_union_pnl_linked_cash_outcomes",
+    "fn_union_pnl_prove_cash_outcome_links",
+    "fn_union_pnl_resolve_cash_outcome_links"
+  ]
+}

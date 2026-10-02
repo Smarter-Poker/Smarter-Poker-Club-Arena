@@ -11,6 +11,15 @@ import type { CompletedHandObservation } from './horseDecision/protocol.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 import type { HorsePublicActionNode } from './HorsePublicActionNode.js';
 import type { TournamentBrainContext } from '../services/TournamentBrainContext.js';
+import {
+  captureHorseHandJournalContext,
+  bindHorseDecisionToCommittedHand,
+} from './HorseDecisionHandBinding.js';
+import {
+  createHorseExecutionWitness,
+  settleHorseExecutionWitness,
+} from './HorseExecutionWitness.js';
+import { buildHorseDecisionKey, type LiveHorseDecisionSnapshot } from './horseDecision/protocol.js';
 
 const NOW = Date.UTC(2026, 8, 12, 17);
 const handId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -25,14 +34,15 @@ function hand(
   config: Partial<HandConfig> = {},
   whole = false,
   allInStack?: number,
-  bigBlindOptionShove = false
+  bigBlindOptionShove = false,
+  layout?: { seats: number[]; dealerSeat: number }
 ): CompletedHandObservation {
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   const actions: NonNullable<CompletedHandObservation['actions']> = [];
   let completed = false;
-  const seats: SeatPlayer[] = ids.map((user_id, i) => ({
-    seat: i + 1,
-    user_id,
+  const seats: SeatPlayer[] = (layout?.seats ?? [1, 2]).map((seat, i) => ({
+    seat,
+    user_id: ids[i] ?? 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     username: 'private-name',
     stack: allInStack ?? 200,
     bet: 0,
@@ -53,7 +63,7 @@ function hand(
       ...config,
     },
     seats,
-    1,
+    layout?.dealerSeat ?? 1,
     config.isTournament
       ? () => ({
           status: 'complete',
@@ -94,7 +104,7 @@ function hand(
       : undefined
   );
   const seatGenerations = captureHandSeatGenerations(
-    ids.map((user_id) => ({
+    seats.map(({ user_id }) => ({
       user_id,
       seat_id: user_id,
       seat_joined_at: '2026-09-12T10:00:00.123456+00:00',
@@ -105,6 +115,7 @@ function hand(
     if (event.type === 'FORCED_BETS_POSTED')
       for (const p of event.postings)
         actions.push({
+          seat: p.seat,
           userId: p.userId,
           action: p.kind,
           amount: p.amount,
@@ -169,6 +180,100 @@ function qualified(h: CompletedHandObservation) {
 }
 
 describe('qualified adaptive observations', () => {
+  it.each([1, 4, 10])(
+    'binds and qualifies real dead-button actions at physical seat %i without inventing a live button',
+    (dealerSeat) => {
+      const dealtSeats = [2, 5, 9];
+      const clockwise = dealerSeat === 4 ? [5, 9, 2] : [2, 5, 9];
+      const h = hand(
+        {
+          isTournament: true,
+          blindSeats: { smallBlind: clockwise[0], bigBlind: clockwise[1] },
+        },
+        true,
+        undefined,
+        false,
+        { seats: dealtSeats, dealerSeat }
+      );
+      const voluntary = h.actions!.filter((action) => action.origin === 'player');
+      expect(voluntary.length).toBeGreaterThan(0);
+      expect(voluntary.every((action) => action.publicNode?.status === 'captured')).toBe(true);
+      expect(voluntary.every((action) => action.observationIdentity?.status === 'bound')).toBe(
+        true
+      );
+      const result = qualifyAdaptiveHand(h, NOW);
+      expect(result.observations).toHaveLength(voluntary.length);
+      expect(Object.keys(result.rejected)).toEqual(['non_betting_action']);
+      for (const observation of result.observations) {
+        const action = h.actions!.find(
+          (a) =>
+            a.observationIdentity?.status === 'bound' &&
+            a.observationIdentity.observationId === observation.observationId
+        )!;
+        const node = action.publicNode as Node;
+        expect(node.dealerSeat).toBe(dealerSeat);
+        expect(node.seats.map((seat) => seat[0])).toEqual(dealtSeats);
+        expect(observation.scope[11]).toBe(clockwise.indexOf(node.actorSeat) + 1);
+        expect((observation.scope[25] as number[][]).map((seat) => seat[0])).toEqual([1, 2, 3]);
+      }
+      expect(new Set(result.observations.map((q) => q.scope[13]))).toEqual(
+        new Set(['preflop', 'flop', 'turn', 'river'])
+      );
+
+      // A Horse action follows the same committed identity path and exact
+      // accepted-action join; the empty button never substitutes an actor.
+      const ordinal = h.actions!.indexOf(voluntary[0]);
+      const record = { ...voluntary[0], origin: 'horse_policy' as const };
+      h.actions![ordinal] = record;
+      h.fence = `${tableId}:1:99:observe`;
+      const snapshot = {
+        generation: 7,
+        fence: `${tableId}:1:${record.seat}:99:7`,
+        decisionTimeMs: NOW,
+        player: { seat: record.seat, user_id: record.userId, stack: 200, bet: 0 },
+        gameState: {
+          stage: record.stage,
+          gameVariant: 'nlh',
+          gameMode: 'tournament',
+          actionHistory: [],
+          toCall: 2,
+        },
+        handJournalContext: captureHorseHandJournalContext(h.actions!.slice(0, ordinal)),
+      } as unknown as LiveHorseDecisionSnapshot;
+      snapshot.decisionKey = buildHorseDecisionKey(snapshot);
+      const witness = createHorseExecutionWitness(
+        snapshot,
+        { action: record.action, thinkTime: 0 } as never,
+        { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+      );
+      settleHorseExecutionWitness(witness, {
+        applied: true,
+        acceptedActions: [{ record: record as never, intended: true }],
+      });
+      expect(bindHorseDecisionToCommittedHand(witness, h)).toMatchObject({
+        status: 'bound',
+        observationId: `${handId}:${ordinal}`,
+      });
+    }
+  );
+
+  it('keeps dead-button scopes distinct from an occupied button without changing occupied-button positions', () => {
+    const occupied = hand({}, true, undefined, false, { seats: [2, 5, 9], dealerSeat: 2 });
+    const base = qualified(occupied);
+    expect(base.scope[11]).toBe(0);
+    // The first actor in this three-handed hand is the occupied button.
+    // Move only the physical button into the preceding gap to compare the
+    // public structural keys independently of stack/action differences.
+    const empty = clone(occupied);
+    for (const action of empty.actions!)
+      if (action.publicNode?.status === 'captured')
+        (action.publicNode as MutableNode).dealerSeat = 1;
+    const dead = qualified(empty);
+    expect(dead.scope[11]).toBe(1);
+    expect(dead.scopeKey).not.toBe(base.scopeKey);
+    expect((dead.scope[25] as number[][]).map((seat) => seat[0])).toEqual([1, 2, 3]);
+  });
+
   it('uses a real committed controller action after original forced-money ordinals', () => {
     const h = hand(),
       q = qualified(h);
@@ -311,6 +416,10 @@ describe('qualified adaptive observations', () => {
     { variant: 'unknown' },
     { actorSeat: 9 },
     { dealerSeat: 9 },
+    { dealerSeat: 0 },
+    { dealerSeat: 11 },
+    { dealerSeat: 1.5 },
+    { dealerSeat: NaN },
     { bigBlind: 0 },
     { toCall: NaN },
     { boardCount: 10000 },

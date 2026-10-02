@@ -49,6 +49,7 @@ import ClubLaunchProgress, {
   useClubLaunchSkips,
 } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
+import ClubWelcomePackage from '../components/club/ClubWelcomePackage';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
 import {
   hasNewClubOpeningChecklist,
@@ -82,7 +83,20 @@ import {
   withClubLabel,
   withClusterFigures,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
+import {
+  isLightningMode,
+  lightningClusterIdsOf,
+  lightningRoute,
+  withLightningState,
+  type LightningLobbyState,
+} from '../lightning/lightningLobby';
+import { useLightningLobbyStates } from '../lightning/lightningLobbyFeed';
+import {
+  TOURNAMENT_ARENA_EMBED,
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../services/TournamentService';
+import { withDiamondSpinCeilings } from '../services/diamondSpinCeilings';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -337,6 +351,10 @@ interface TableData {
   cluster_state?: string | null;
   /** `cash_games.enabled`, embedded by the chain read; a disabled game is Closed on the board. */
   cluster_enabled?: boolean | null;
+  /** LIGHTNING PHASE 6: `cash_games.cluster_mode`, embedded by the chain read. */
+  cluster_mode?: string | null;
+  /** LIGHTNING PHASE 6: the pool state, stamped only on a Lightning Cluster's rows. */
+  cluster_lightning?: LightningLobbyState | null;
   role?: 'main' | 'feeder' | null;
   main_index?: number | null;
   lifecycle?: string | null;
@@ -1056,19 +1074,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       cancelled = true;
     };
   }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible, openingSetupReadRevision]);
-  /* THE LATCH IS ASKED FOR ONCE (2026-09-23). The first render in which every
+  /* THE LATCH IS ASKED FOR ONCE AT A TIME (2026-09-23). The first render in which every
      step is complete or validly skipped asks the server to record the list as
      finished, so it never comes back when a table closes or a member leaves.
-     One request per club per page, guarded while it is in flight; a refusal
-     or a failure is reported by the hook and today's behaviour stands. No
-     timer, no polling, no retry loop. */
+     A refusal clears the in-flight guard: a later unresolved -> resolved
+     transition may retry after the missing server state arrives. No timer,
+     polling or automatic retry loop. */
   const launchLatchRequestedRef = useRef<string | null>(null);
   const completeLaunchChecklist = launchSkips.complete;
   const latchOpeningChecklist = useCallback(() => {
     const latchClubId = club?.id;
     if (!latchClubId || launchLatchRequestedRef.current === latchClubId) return;
     launchLatchRequestedRef.current = latchClubId;
-    void completeLaunchChecklist();
+    void completeLaunchChecklist().then((completed) => {
+      if (!completed && launchLatchRequestedRef.current === latchClubId) {
+        launchLatchRequestedRef.current = null;
+      }
+    });
   }, [club?.id, completeLaunchChecklist]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
@@ -2936,7 +2958,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, kill_mode, kill_threshold_bb, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled, cluster_mode)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2991,8 +3013,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // get_club_home carried, vanished from the board here until now.
       const clubTournamentQuery = supabase
         .from('tournaments')
+        /* The arena embed (#5050) says which asset each event is drawn in, so
+           a Diamond Spin's card can advertise its own table's top
+           (withDiamondSpinCeilings below). */
         .select(
-          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name, is_rebuy, is_reentry, add_on_available, is_private, is_xmtt, union_id, blind_speed, ' +
+            TOURNAMENT_ARENA_EMBED
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3115,6 +3141,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               must_move?: boolean | null;
               state?: string | null;
               enabled?: boolean | null;
+              cluster_mode?: string | null;
             } | null;
           } & Record<string, unknown>;
           if (!game || typeof game !== 'object') return rest;
@@ -3124,6 +3151,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cluster_must_move: game.must_move ?? null,
             cluster_state: game.state ?? null,
             cluster_enabled: game.enabled ?? null,
+            /* LIGHTNING PHASE 6: the Cluster's mode, so a Lightning game's
+               card says LIGHTNING LIVE and its door is the Lightning route. */
+            cluster_mode: game.cluster_mode ?? null,
           };
         });
         flattenedTables = flattened as unknown as TableData[];
@@ -3146,7 +3176,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
       if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
-        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
+        /* A Diamond Spin advertises the top of the table its creation pinned;
+           a board with no Diamond Spin on it asks nothing (diamondSpinCeilings). */
+        const allTournaments: TournamentData[] = await withDiamondSpinCeilings([
+          /* The cast is the arena embed's: the generated types carry no
+             relationship names, so the typed client cannot resolve the join
+             (TournamentService.getTournaments makes the same one). */
+          ...(clubTournamentResult.data as unknown as TournamentData[]),
+        ]);
+        if (getIsMounted && !getIsMounted()) return;
 
         // The warm fast path cannot remove old rows. A confirmed empty read
         // may do so, but a failed or cache-only scope cannot prove absence.
@@ -3269,17 +3307,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      (which keeps the old aggregate), not realtime (which carries one table at
      a time) - so a seat change on the feeder moves the game's row the moment
      its `tables` UPDATE arrives. */
+  /* LIGHTNING PHASE 6: the pool state of each Cluster on the board whose
+     mode is Lightning. No Cluster is Lightning today, so the list is empty
+     and nothing is read. */
+  const lightningClusterIds = useMemo(
+    () => lightningClusterIdsOf(tables as unknown as LobbyTableRow[]),
+    [tables]
+  );
+  const lightningStates = useLightningLobbyStates(lightningClusterIds);
   const boardTables = useMemo(() => {
     /* Count exactly what is rendered. A cluster row that is not a census
        table is not part of its game (the controller has stopped counting it),
        so it leaves the board here rather than being rendered as a game while
        being excluded from that game's figures - the two-answers shape 5.2 is
        about. A table with no cluster is untouched: it is its own game. */
-    const rows = (tables as unknown as LobbyTableRow[]).filter(
-      (t) => !t.cluster_id || isCensusTable(t)
+    const rows = withLightningState(
+      (tables as unknown as LobbyTableRow[]).filter((t) => !t.cluster_id || isCensusTable(t)),
+      lightningStates
     );
     return withClusterFigures(rows) as unknown as TableData[];
-  }, [tables]);
+  }, [tables, lightningStates]);
 
   const styleCounts = useMemo(
     () =>
@@ -4004,6 +4051,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          table it names is opened exactly as any table is; the buy-in itself
          is still the table's own door. */
       const row = tablesRef.current.find((t) => t.id === tableId);
+      /* LIGHTNING PHASE 6: a Lightning Cluster has no table to pick and no
+         seat to choose. Its one door is the Lightning route, which opens the
+         player's pool session or takes them through the Cluster's join. */
+      if (row?.cluster_id && isLightningMode(row.cluster_mode)) {
+        navigate(`/lightning/${row.cluster_id}`);
+        return;
+      }
       if (row?.cluster_id && row.cluster_must_move !== false) {
         if (!gameEntryScope.active || gameEntryScope.busy) return;
         gameEntryScope.busy = true;
@@ -4436,29 +4490,31 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash'
-          ? (warmTable(e.id), navigate(`/table/${e.id}`))
-          : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
+        e.kind === 'cash' && e.game && isLightningMode((e.raw as LobbyTableRow).cluster_mode)
+          ? navigate(lightningRoute(e.game.id))
+          : e.kind === 'cash'
+            ? (warmTable(e.id), navigate(`/table/${e.id}`))
+            : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,
                stale ids and recycled siblings included) — an MTT keeps its
                own lobby screen. Heads-up SNGs ride the same table route for
                the same reason; multi-seat SNGs are registration games and
                keep the lobby. */
-            e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
-            ? spinQuickJoin(
-                {
-                  id: e.id,
-                  name: e.name,
-                  buy_in_amount: Number(
-                    filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
-                      e.buyInValue ??
-                      0
-                  ),
-                },
-                e.kind === 'sng' ? 'sng' : 'spin'
-              )
-            : openTournamentLobby(e.id),
+              e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
+              ? spinQuickJoin(
+                  {
+                    id: e.id,
+                    name: e.name,
+                    buy_in_amount: Number(
+                      filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
+                        e.buyInValue ??
+                        0
+                    ),
+                  },
+                  e.kind === 'sng' ? 'sng' : 'spin'
+                )
+              : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,
@@ -4855,10 +4911,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* THE OWNER'S OPENING JOURNEY, SHOWN TO THE OWNER. The wizard state and the
      agent state are read for the owner alone, so a staff viewer could never
      finish the list and was left with a permanent Owner Required row. */
-  const showLaunchChecklist =
-    openingChecklistEligible &&
-    isOwner &&
-    launchTasks.some((task) => !task.complete && !task.skipped);
+  const showLaunchChecklist = openingChecklistEligible && isOwner;
   /* Every step complete or validly skipped: the one moment the lobby asks the
      server to latch the list finished (latchOpeningChecklist above). */
   const launchChecklistFinished =
@@ -5546,6 +5599,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
+        {/* The Welcome Package receipt outlives the opening checklist latch.
+            Every owner club asks its authoritative RPC; old clubs answer
+            ineligible and render nothing, while an entitled first club keeps
+            its package and reset control after the checklist is complete. */}
+        {isOwner && <ClubWelcomePackage clubId={club.id} clubName={club.name} />}
         {showLaunchChecklist && (
           <ClubLaunchProgress
             key={`${club.id}:${currentUserId || 'unknown'}`}
@@ -5555,6 +5613,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             openingBank={Number(club.chip_treasury) || 0}
             tasks={launchTasks}
             skips={launchSkips}
+            waitForCompletion
           />
         )}
         <ClubLaunchCompletionLatch

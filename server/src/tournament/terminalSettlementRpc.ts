@@ -1,11 +1,36 @@
-import { supabase } from '../services/supabase.js';
+import { maintenanceSupabase, supabase } from '../services/supabase.js';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
+  parseLegacyFeeCustodyOrigin,
   verifyTournamentCompletionReceipt,
+  type LegacyFeeCustodyOrigin,
   type TournamentTerminalSettlementMode,
   type VerifiedTournamentCompletionReceipt,
 } from './completionSettlementReceipt.js';
+
+/**
+ * THE TERMINAL AUTHORITY IS ASKED ON A CLIENT THAT OUTLASTS IT (2026-09-27)
+ *
+ * fn_complete_tournament_terminal and fn_resolve_tournament_terminal_outcome
+ * carry their own 45-second statement ceiling, and each waits in turn for the
+ * platform finish lane (G shared, F exclusive, T(id) exclusive), every one of
+ * those waits bounded by the 8-second lock_timeout. On the ordinary 15-second
+ * game-data client an attempt queued behind the lane could be abandoned by
+ * the engine while the database was still answering. The database's own
+ * verdict (a 55P03 refusal, or a commit) then reached nobody, the attempt was
+ * counted as unproven, and a plain refusal was reported as "outcome unknown",
+ * which fences every table engine of the event. Measured 12:47-15:47Z on
+ * 2026-09-27: 12 of 12 Tournament.atomic_finish_outcome_unknown ended in
+ * "canceling statement due to lock timeout" or "supabase_timeout".
+ *
+ * The maintenance client's deadline (50 s) is longer than the functions' own
+ * ceiling, so every write attempt and every resolver call ends in an answer
+ * from the database: a receipt, or a SQLSTATE refusal the caller may retry.
+ * Nothing else changes: the attempts, their identity and the resolver are the
+ * same, and a transport failure is still unknown.
+ */
+const terminalAuthority = maintenanceSupabase;
 
 export class TerminalSettlementRefusedError extends Error {
   constructor(message: string) {
@@ -139,6 +164,45 @@ function storedParameters(raw: unknown): TerminalSettlementParameters | null {
   return { settlementMode: mode, winnerId: winner };
 }
 
+/**
+ * A LEGACY CUSTODY RECEIPT IS PROVEN BY THE DATABASE'S OWN ORIGIN (2026-10-02)
+ *
+ * A version 3 receipt pays the players and holds the event's pre-agreement
+ * fee in custody. The engine used to recognise that custody only for 13 event
+ * ids compiled into the verifier, so when the 26 September 8 Spins and
+ * heads-up Sit & Gos (20261001225325, every one a member of
+ * fn_ca_legacy_fee_custody_cohort) committed their terminal receipts at 02:16Z,
+ * each winner paid once and the escrow closed to the held fee, the engine
+ * called all 26 "outcome unknown", stopped their table engines and raised 26
+ * CRITICAL alerts. The origin is now read from the database, from the same
+ * obligation row the cohort reads (fn_ca_legacy_fee_custody_origin), and the
+ * receipt is verified field for field against it. An unread origin proves
+ * nothing, so the receipt stays unverified exactly as before.
+ */
+async function readLegacyFeeCustodyOrigin(
+  tournamentId: string
+): Promise<LegacyFeeCustodyOrigin | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_ca_legacy_fee_custody_origin', {
+      p_tournament_id: tournamentId,
+    });
+    return error ? null : parseLegacyFeeCustodyOrigin(data, tournamentId);
+  } catch {
+    return null;
+  }
+}
+
+async function verifyTerminalReceipt(
+  raw: unknown,
+  tournamentId: string,
+  mode: TournamentTerminalSettlementMode,
+  winnerId: string | null
+): Promise<VerifiedTournamentCompletionReceipt | null> {
+  const origin =
+    record(raw).receipt_version === 3 ? await readLegacyFeeCustodyOrigin(tournamentId) : null;
+  return verifyTournamentCompletionReceipt(raw, tournamentId, mode, winnerId, origin);
+}
+
 /** Read an existing immutable result through its serialized verifier; never pay. */
 export async function readCommittedTournamentTerminalReceipt(
   tournamentId: string
@@ -152,14 +216,14 @@ export async function readCommittedTournamentTerminalReceipt(
   if (!data) return null;
   const stored = storedParameters(data);
   if (!stored) throw new TerminalSettlementOutcomeUnknownError('Invalid stored terminal identity');
-  const response = await supabase.rpc('fn_resolve_tournament_terminal_outcome', {
+  const response = await terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome', {
     p_tournament_id: tournamentId,
     p_observed_winner_id: stored.winnerId,
     p_settlement_mode: stored.settlementMode,
   });
   if (response.error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(response.error));
   const outcome = record(response.data);
-  const receipt = verifyTournamentCompletionReceipt(
+  const receipt = await verifyTerminalReceipt(
     outcome.receipt,
     tournamentId,
     stored.settlementMode,
@@ -225,7 +289,7 @@ async function adoptStoredTerminalReceipt(
           lastFailure =
             'stored receipt agrees with the observed parameters yet the replay was refused';
         } else {
-          const { data: replay, error: replayError } = await supabase.rpc(
+          const { data: replay, error: replayError } = await terminalAuthority.rpc(
             'fn_complete_tournament_terminal',
             {
               p_tournament_id: tournamentId,
@@ -236,7 +300,7 @@ async function adoptStoredTerminalReceipt(
           if (replayError) {
             lastFailure = `replay with stored parameters refused: ${errorMessage(replayError)}`;
           } else {
-            const receipt = verifyTournamentCompletionReceipt(
+            const receipt = await verifyTerminalReceipt(
               replay,
               tournamentId,
               stored.settlementMode,
@@ -372,10 +436,10 @@ export async function requestTournamentTerminalReceipt(
     try {
       attemptedWrites++;
       const { data, error } = proposalRequest
-        ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
-        : await supabase.rpc('fn_complete_tournament_terminal', request);
+        ? await terminalAuthority.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
+        : await terminalAuthority.rpc('fn_complete_tournament_terminal', request);
       if (!error) {
-        const receipt = verifyTournamentCompletionReceipt(
+        const receipt = await verifyTerminalReceipt(
           data,
           tournamentId,
           settlementMode,
@@ -413,8 +477,11 @@ export async function requestTournamentTerminalReceipt(
   // that transaction and only then reports committed receipt or proven miss.
   try {
     const { data, error } = proposalRequest
-      ? await supabase.rpc('fn_resolve_tournament_terminal_proposal_outcome', proposalRequest)
-      : await supabase.rpc('fn_resolve_tournament_terminal_outcome', request);
+      ? await terminalAuthority.rpc(
+          'fn_resolve_tournament_terminal_proposal_outcome',
+          proposalRequest
+        )
+      : await terminalAuthority.rpc('fn_resolve_tournament_terminal_outcome', request);
     if (error) {
       if (isTerminalReplayDisagreement(error)) {
         // The receipt committed under different parameters while this request
@@ -443,7 +510,7 @@ export async function requestTournamentTerminalReceipt(
         outcome.definitively_not_committed === false &&
         outcome.status === 'COMPLETED'
       ) {
-        const receipt = verifyTournamentCompletionReceipt(
+        const receipt = await verifyTerminalReceipt(
           outcome.receipt,
           tournamentId,
           settlementMode,

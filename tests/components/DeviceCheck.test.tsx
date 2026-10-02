@@ -107,6 +107,58 @@ describe('the device check', () => {
     expect(row('Smoothness')).toMatch(/^6[01] Frames A Second, 0% Slow$/);
   });
 
+  it('puts the answers in the report, and a box to copy by hand when the clipboard is refused', async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('blocked'));
+    render(<DeviceCheck isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Test Vibration' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Did You Feel The Buzz?' })).getByRole('button', {
+        name: 'No',
+      })
+    );
+    expect(row('Device Accepted Buzz')).toBe('Yes');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy Report' }));
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Copy Was Blocked');
+    const box = screen.getByRole('textbox', { name: 'Device Check Report' }) as HTMLTextAreaElement;
+    expect(box.value).toContain('Test Buzz: Felt Nothing');
+    expect(box.value).toContain('Device Accepted Buzz: Yes');
+  });
+
+  it('says so instead of asking when there is no sound engine', () => {
+    sound.audioState.mockReturnValue('unavailable');
+    render(<DeviceCheck isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Test Sound' }));
+    expect(sound.playWin).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('This Browser Has No Working Sound Engine, So Nothing Can Play.')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Did You Hear The Sound?' })).toBeNull();
+    sound.audioState.mockReturnValue('running');
+  });
+
+  it('reports a session already in playback as heard on silent', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/26.5 Mobile/15E148 Safari/604.1',
+      audioSession: { type: 'playback' },
+    });
+    render(<DeviceCheck isOpen onClose={() => {}} />);
+    expect(row('Silent Switch')).toBe('Heard With The Silent Switch On');
+    expect(row('Device')).toBe('IPhone Or IPad Browser (Safari 26.5)');
+  });
+
+  it('stops measuring when the check is closed', () => {
+    const cancel = vi.spyOn(globalThis, 'cancelAnimationFrame');
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(() => 7);
+    const view = render(<DeviceCheck isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Measure Smoothness' }));
+    view.rerender(<DeviceCheck isOpen={false} onClose={() => {}} />);
+    expect(cancel).toHaveBeenCalledWith(7);
+  });
+
   it('copies the whole report', async () => {
     render(<DeviceCheck isOpen onClose={() => {}} />);
     await act(async () => {

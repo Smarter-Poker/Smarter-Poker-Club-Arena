@@ -10,6 +10,7 @@
  */
 import { Suspense, lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 import { StatRow } from './StatRow';
 import { SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import type { OverallStats } from './types';
@@ -17,6 +18,8 @@ import type { OverallStats } from './types';
 const EVLuckChart = lazy(() => import('../../components/stats/EVLuckChart'));
 
 export interface PerformanceTabProps {
+  /** The asset the page reads: chips, or Diamonds in the Diamond Arena. */
+  scope?: StatsScope;
   overall: OverallStats;
   /** Display-ready, including the `%`, or Not Yet Measured (the page formats it). */
   showdownWinRate: string;
@@ -28,6 +31,7 @@ export interface PerformanceTabProps {
 }
 
 export default function PerformanceTab({
+  scope = CHIP_STATS,
   overall,
   showdownWinRate,
   isOwnProfile,
@@ -45,7 +49,7 @@ export default function PerformanceTab({
       {isOwnProfile && (
         <PanelBoundary name="EV And Luck" resetKey={panelResetKey}>
           <Suspense fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}>
-            <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
+            <EVLuckChart userId={targetUserId} days={windowDays} still={printing} scope={scope} />
           </Suspense>
         </PanelBoundary>
       )}

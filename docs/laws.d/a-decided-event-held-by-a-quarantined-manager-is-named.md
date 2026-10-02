@@ -1,0 +1,3 @@
+# server/src/tournament/aDecidedEventHeldByAQuarantinedManagerIsNamed.law.test.ts
+
+On 2026-09-28 42 decided SNG/Spin events sat unpaid while the decided-but-RUNNING sweep printed "recovering the winner" every pass, because the manager holding each one was quarantined (its stop failed on retained time-bank custody) and a quarantined manager never sweeps. The law pins that both decided sweeps ask decidedOwnerAction first, never wake or claim to recover an event held by the exact quarantined manager, report it once per distinct quarantine reason as GameServer.decided_event_held_by_quarantined_manager, and count it on /health as decidedEventsHeldByQuarantine.

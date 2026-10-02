@@ -14,14 +14,44 @@ import { buildHorseDecisionKey } from './protocol.js';
 import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import { settleHorseExecutionWitness } from '../HorseExecutionWitness.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
+import { HorseLogic } from '../HorseLogic.js';
+import { seedFastRandom } from '../HorseEval.js';
+import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
 import {
+  HorseQualifiedAuthorityHolder,
+  liveHorsePhase8Authority,
+  type HorseAuthorityAdmission,
+} from '../HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
+import {
   HorseDecisionAbortedError,
+  HORSE_CAPTURE_LANE_MAX_QUEUED,
   HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
+
+// The process-wide main gate admits only the committed release selection,
+// which is null today. These tests replace that one export with a gate whose
+// admission they control; every other test keeps the unselected default.
+const phase8Main = vi.hoisted(() => ({ admission: null as unknown }));
+vi.mock('../HorseQualifiedAuthority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../HorseQualifiedAuthority.js')>();
+  return {
+    ...actual,
+    liveHorsePhase8Authority: new actual.HorsePhase8AuthorityGate(
+      () =>
+        (phase8Main.admission as HorseAuthorityAdmission | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      'client-test-main'
+    ),
+  };
+});
 
 class FakeWorker implements WorkerLike {
   readonly sent: unknown[] = [];
@@ -859,6 +889,37 @@ describe('LiveHorseDecisionWorkerClient', () => {
     await expect(pending).rejects.toThrow('invalid policy receipt');
     expect(client.status().phase).toBe('failed');
   });
+  it('refuses a Phase 7 receipt whose evidence is not bound to the request it answers', async () => {
+    // A real, structurally valid utility receipt computed for another table.
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'river');
+    seedFastRandom(1500921);
+    const foreign = structuredClone(
+      HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          mind: false,
+          telemetry: false,
+          decisionTimeMs: 0,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      )
+    );
+    expect(foreign.tournamentUtility?.evidence).toBeDefined();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('phase7-foreign'));
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'phase7-foreign');
+    reply.decision = foreign;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt: phase7_foreign_opponent');
+    expect(client.status().phase).toBe('failed');
+  });
   it.each(['fast', 'deep'] as const)(
     'rejects malformed %s policy graphs inside the failure boundary',
     async (lane) => {
@@ -1437,6 +1498,208 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
     worker.emitMessage(fastResult(4, 'successor'));
     await successor;
+  });
+
+  describe('the capture lane (2026-09-29, engine c0c986ad: capture_unavailable was queue expiry)', () => {
+    // A journal-configured client, because OBSERVE_EXECUTION exists only there.
+    const journalClient = (worker: FakeWorker, options: { jobTimeoutMs?: number } = {}) => {
+      const prior = process.env.HORSE_DECISION_JOURNAL_DIR;
+      process.env.HORSE_DECISION_JOURNAL_DIR = '/synthetic-horse-journal';
+      try {
+        return new LiveHorseDecisionWorkerClient({
+          workerFactory: () => worker,
+          maxInFlight: 1,
+          ...options,
+        });
+      } finally {
+        if (prior === undefined) delete process.env.HORSE_DECISION_JOURNAL_DIR;
+        else process.env.HORSE_DECISION_JOURNAL_DIR = prior;
+      }
+    };
+    const settleFold = (result: FastHorseDecisionResult, input: LiveHorseDecisionSnapshot) =>
+      settleHorseExecutionWitness(result.decision.executionWitness, {
+        applied: true,
+        acceptedActions: [
+          {
+            record: {
+              seat: 1,
+              userId: 'horse-1',
+              action: 'fold',
+              amount: 0,
+              stage: input.gameState.stage,
+              timestamp: 1000,
+            },
+            intended: true,
+          },
+        ],
+      });
+    const ack = (requestId: number, fence: string, operation: string) =>
+      ({ type: 'ACK', requestId, generation: 7, fence, operation }) as const;
+
+    it('posts a finalized execution ahead of every unposted decision, not behind them', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      const first = snapshot('cap-first');
+      const firstPending = client.decideFast(first);
+      worker.emitMessage(fastResult(1, first.fence));
+      const firstResult = await firstPending;
+      const active = client.decideFast(snapshot('cap-active')); // 2, posted
+      const waitingA = client.decideFast(snapshot('cap-a')); // 3, queued
+      const waitingB = client.decideFast(snapshot('cap-b')); // 4, queued
+      settleFold(firstResult, first); // 5, the record of a decision already made
+
+      worker.emitMessage(fastResult(2, 'cap-active'));
+      await active;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_EXECUTION', requestId: 5 });
+      worker.emitMessage(ack(5, first.fence, 'OBSERVE_EXECUTION'));
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+      worker.emitMessage(fastResult(3, 'cap-a'));
+      await waitingA;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
+      worker.emitMessage(fastResult(4, 'cap-b'));
+      await waitingB;
+    });
+
+    it('keeps capture jobs in their own order and puts a barrier commit where it was', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const active = client.decideFast(snapshot('order-active')); // 2, posted
+      const older = client.decideFast(snapshot('order-older')); // 3, queued
+      const enqueue = (request: object) =>
+        (client as any).enqueue(request, 'ACK', undefined, true) as Promise<unknown>;
+      void enqueue({ type: 'OBSERVE_EXECUTION', requestId: 100, generation: 7, fence: 'x' });
+      let successor!: ReturnType<typeof client.decideFast>;
+      let committed!: ReturnType<typeof client.commitDecisionEffects>;
+      client.runWithDispatchBarrier(() => {
+        successor = client.decideFast(snapshot('order-successor')); // 4
+        void enqueue({ type: 'OBSERVE_EXECUTION', requestId: 101, generation: 7, fence: 'x' });
+        committed = client.commitDecisionEffects(owned); // 5
+      });
+      const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
+        (job) => job.request.requestId
+      );
+      // captures 100 and 101 first, in the order they arrived; then the work
+      // queued before the barrier (3), the commit (5) and its successor (4).
+      expect(queued).toEqual([100, 101, 3, 5, 4]);
+      void active;
+      void older;
+      void successor;
+      void committed;
+    });
+
+    it('holds the lane to its bound and queues the job past it at the tail', async () => {
+      const worker = new FakeWorker();
+      const client = journalClient(worker);
+      worker.emitMessage(ready);
+      void client.decideFast(snapshot('bound-active')); // 1, posted
+      void client.decideFast(snapshot('bound-waiting')); // 2, queued
+      const enqueue = (requestId: number) =>
+        (client as any).enqueue(
+          { type: 'OBSERVE_EXECUTION', requestId: requestId + 1000, generation: 7, fence: 'x' },
+          'ACK',
+          undefined,
+          true
+        ) as Promise<unknown>;
+      for (let i = 0; i <= HORSE_CAPTURE_LANE_MAX_QUEUED; i++)
+        void enqueue(i).catch(() => undefined);
+      const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
+        (job) => job.request.requestId
+      );
+      expect(queued).toHaveLength(HORSE_CAPTURE_LANE_MAX_QUEUED + 2);
+      expect(queued[0]).toBe(1000);
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED - 1]).toBe(
+        1000 + HORSE_CAPTURE_LANE_MAX_QUEUED - 1
+      );
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED]).toBe(2);
+      expect(queued[HORSE_CAPTURE_LANE_MAX_QUEUED + 1]).toBe(1000 + HORSE_CAPTURE_LANE_MAX_QUEUED);
+    });
+
+    it('does not expire a finalized execution on the decision deadline while decisions are ahead of the worker', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const first = snapshot('exp-first');
+        const firstPending = client.decideFast(first);
+        worker.emitMessage(fastResult(1, first.fence));
+        const firstResult = await firstPending;
+        const wait = { deadlineMs: 10_000 };
+        const active = client.decideFast(snapshot('exp-active'), undefined, wait); // 2
+        const second = client.decideFast(snapshot('exp-second'), undefined, wait); // 3
+        settleFold(firstResult, first); // 4
+
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(2, 'exp-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200); // past the 1,000 ms decision deadline
+        // On the tail of the FIFO it was 1,100 ms old and expired unposted,
+        // which is what counted phase15_journal_capture_unavailable.
+        expect(client.status().expiredJobs).toBe(0);
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_EXECUTION', requestId: 4 });
+        worker.emitMessage(ack(4, first.fence, 'OBSERVE_EXECUTION'));
+        worker.emitMessage(fastResult(3, 'exp-second'));
+        await second;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('gives the completed-hand observation the observation deadline, not the decision deadline', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const wait = { deadlineMs: 10_000 };
+        const active = client.decideFast(snapshot('hand-active'), undefined, wait); // 1
+        const second = client.decideFast(snapshot('hand-second'), undefined, wait); // 2
+        const observed = client.observeCompletedHand({
+          generation: 7,
+          fence: 'hand-observed',
+          handKey: 'hand-key',
+          committedHandId: 'hand-id',
+          bigBlind: 2,
+          actions: [],
+        } as never); // 3, behind both
+
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(1, 'hand-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200);
+        expect(client.status().expiredJobs).toBe(0);
+        worker.emitMessage(fastResult(2, 'hand-second'));
+        await second;
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'OBSERVE_COMPLETED_HAND', requestId: 3 });
+        worker.emitMessage(ack(3, 'hand-observed', 'OBSERVE_COMPLETED_HAND'));
+        await observed;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still expires a decision on the decision deadline', async () => {
+      vi.useFakeTimers();
+      try {
+        const worker = new FakeWorker();
+        const client = journalClient(worker, { jobTimeoutMs: 1_000 });
+        worker.emitMessage(ready);
+        const active = client.decideFast(snapshot('dl-active'), undefined, { deadlineMs: 10_000 });
+        const waiting = client.decideFast(snapshot('dl-waiting'));
+        const rejection = expect(waiting).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(1, 'dl-active'));
+        await active;
+        await vi.advanceTimersByTimeAsync(200);
+        await rejection;
+        expect(client.status().expiredJobs).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('refreshes worker-owned governor and solver health after READY', async () => {
@@ -2051,4 +2314,125 @@ describe('/health shows the journal the Horse worker owns, not an empty main-thr
       vi.useRealTimers();
     }
   });
+});
+
+describe('Phase 8.3 qualified authority at the client boundary', () => {
+  let approval = 100;
+  function lane() {
+    approval += 1;
+    phase8Main.admission = qualifiedTestAdmission(approval);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const workerAuthority = new HorseQualifiedAuthorityHolder(`client-test-worker-${approval}`);
+    workerAuthority.apply(qualifiedTestAdmission(approval));
+    return { worker, client, workerAuthority };
+  }
+  const candidateLedger = (authority: unknown) => ({
+    version: 'horse-tournament-postflop-round1-v4',
+    mode: 'candidate',
+    eligible: true,
+    fired: true,
+    completed: true,
+    changed: true,
+    applied: true,
+    selection: 'selected',
+    authority,
+    authorityVerdict: null,
+    reason: 'candidate_changed',
+    reasons: [],
+    baselineAction: 'call',
+    baselineAmount: 4,
+    candidateAction: 'fold',
+    candidateAmount: null,
+    executionStatus: 'pending',
+    executedAction: null,
+    executedAmount: null,
+  });
+  function request(client: LiveHorseDecisionWorkerClient, fence: string) {
+    const input = snapshot(fence);
+    input.decisionKey = buildHorseDecisionKey(input);
+    return client.decideFast(input);
+  }
+
+  it('binds worker authority to the ledger and witness, and a worker exit restarts it', async () => {
+    const { worker, client, workerAuthority } = lane();
+    const pending = request(client, 'phase8-fence-1');
+    worker.emitMessage({
+      ...fastResult(1, 'phase8-fence-1'),
+      decision: {
+        action: 'fold',
+        thinkTime: 1500,
+        tournamentPostflop: candidateLedger(workerAuthority.receipt()),
+      },
+      phase8Authority: workerAuthority.receipt(),
+    });
+    const result = await pending;
+    const ledger = result.decision.tournamentPostflop!;
+    expect(ledger.authority).toMatchObject({
+      state: 'usable',
+      generation: workerAuthority.currentGeneration(),
+      mainGeneration: liveHorsePhase8Authority.mainGeneration(),
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+    });
+    expect(result.decision.executionWitness?.phase8Authority).toMatchObject({
+      continuationVersion: 'horse-tournament-postflop-round1-v4',
+      mode: 'candidate',
+      selection: 'selected',
+      verdict: null,
+      candidate: { action: 'fold', amount: null },
+      reference: { action: 'call', amount: 4 },
+      authority: { generation: workerAuthority.currentGeneration() },
+    });
+    expect(liveHorsePhase8Authority.check(ledger.authority)).toBe('usable');
+    worker.emitExit(1);
+    expect(liveHorsePhase8Authority.check(ledger.authority)).toBe('restarted');
+    void client;
+  });
+
+  it('a withdrawal reported by a later result stales already returned work', async () => {
+    const { worker, client, workerAuthority } = lane();
+    const first = request(client, 'phase8-fence-2');
+    worker.emitMessage({
+      ...fastResult(1, 'phase8-fence-2'),
+      decision: {
+        action: 'fold',
+        thinkTime: 1500,
+        tournamentPostflop: candidateLedger(workerAuthority.receipt()),
+      },
+      phase8Authority: workerAuthority.receipt(),
+    });
+    const returned = (await first).decision.tournamentPostflop!;
+    expect(liveHorsePhase8Authority.check(returned.authority)).toBe('usable');
+    workerAuthority.withdraw('safety_critical_commitment_increase');
+    const second = request(client, 'phase8-fence-3');
+    worker.emitMessage({
+      ...fastResult(2, 'phase8-fence-3'),
+      phase8Authority: workerAuthority.receipt(),
+    });
+    await second;
+    expect(liveHorsePhase8Authority.check(returned.authority)).toBe('withdrawn');
+    expect(liveHorsePhase8Authority.mainState()).toBe('withdrawn');
+  });
+
+  it.each(['missing', 'withdrawn'] as const)(
+    'refuses a candidate ledger whose worker authority is %s',
+    async (mode) => {
+      const { worker, client, workerAuthority } = lane();
+      if (mode === 'withdrawn') workerAuthority.withdraw('test');
+      const pending = request(client, `phase8-fence-${mode}`);
+      worker.emitMessage({
+        ...fastResult(1, `phase8-fence-${mode}`),
+        decision: {
+          action: 'fold',
+          thinkTime: 1500,
+          tournamentPostflop: candidateLedger(
+            mode === 'missing' ? null : workerAuthority.receipt()
+          ),
+        },
+      });
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+    }
+  );
 });

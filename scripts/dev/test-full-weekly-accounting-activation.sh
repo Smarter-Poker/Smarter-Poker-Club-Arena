@@ -51,7 +51,7 @@ finish_fixture() {
     fi
     started=0
   fi
-  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log payee-document-privacy.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
+  for artifact in background-isolation.log credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log payee-document-privacy.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
     if [ -f "$fixture/$artifact" ]; then
       if ! cp "$fixture/$artifact" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/$artifact"; then
         result=1
@@ -94,13 +94,15 @@ python3 "$root/tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py"
 
 # Use sequential independent clusters. The real pg_cron launcher can keep a
 # database connection even with job launching disabled, so do not clone it.
-phases=(rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance spin-mixed-cutover legacy-fee-finality sep8-spin-custody earlybird-fee-custody correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency)
+phases=(rejection-provenance rejection-authority rejection-privacy-bypass rejection-privacy rejection-messenger-reader rejection-push-writer rejection-push-rotation rejection-credit-request rejection-cashier-document rejection-correction-document rejection-browser-period rejection-correction-writer acceptance spin-mixed-cutover legacy-fee-finality sep8-spin-custody earlybird-fee-custody held-fee-owner-basis held-fee-spin-retention correction-writer-concurrency rejection-credit-reduction credit-reduction-concurrency)
 # A focused invocation reuses this exact original schema and activation path.
 # The normal protected invocation still executes every existing phase.
 if [ "${1:-}" = --spin-mixed-cutover-only ]; then phases=(spin-mixed-cutover); fi
 if [ "${1:-}" = --legacy-fee-finality-only ]; then phases=(legacy-fee-finality); fi
 if [ "${1:-}" = --sep8-spin-custody-only ]; then phases=(sep8-spin-custody); fi
 if [ "${1:-}" = --earlybird-fee-custody-only ]; then phases=(earlybird-fee-custody); fi
+if [ "${1:-}" = --held-fee-owner-basis-only ]; then phases=(held-fee-owner-basis); fi
+if [ "${1:-}" = --held-fee-spin-retention-only ]; then phases=(held-fee-spin-retention); fi
 for phase in "${phases[@]}"; do
 mkdir "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
 fixture=$(mktemp -d "$ACCOUNTING_FIXTURE_PARENT/accounting-activation.XXXXXX")
@@ -126,13 +128,16 @@ if [ "$phase" = acceptance ]; then fixture_bootstrap=accounting_fixture_bootstra
 # declare the C locale for its own lifecycle commands.
 LC_ALL=C LANG=C "$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
 LC_ALL=C LANG=C "$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
-  -o "-k $fixture/socket -p 55507 -h '' -c shared_preload_libraries=pg_cron -c cron.database_name=$fixture_db -c cron.launch_active_jobs=off" start > "$fixture/start.log" 2>&1
+  -o "-k $fixture/socket -p 55507 -h '' -c shared_preload_libraries=pg_cron -c cron.database_name=$fixture_db -c cron.launch_active_jobs=off -c autovacuum=off" start > "$fixture/start.log" 2>&1
 started=1
 if [ "$phase" = acceptance ]; then
   "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U "$fixture_bootstrap" -h "$fixture/socket" -p 55507 -d postgres \
     -c 'CREATE ROLE postgres LOGIN SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS; ALTER DATABASE postgres OWNER TO postgres;'
 fi
 psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p 55507)
+# Explicit concurrency remains owned by each test; unsolicited maintenance must
+# not race NOWAIT admission in this disposable cluster. Production is unchanged.
+"${psql[@]}" -d "$fixture_db" -c "SELECT json_build_object('autovacuum',current_setting('autovacuum'),'cron.launch_active_jobs',current_setting('cron.launch_active_jobs')) AS native_background_settings; DO \$guard\$ BEGIN IF current_setting('autovacuum') <> 'off' OR current_setting('cron.launch_active_jobs') <> 'off' THEN RAISE EXCEPTION 'Native fixture background writers are enabled'; END IF; END \$guard\$;" > "$fixture/background-isolation.log" 2>&1
 "${psql[@]}" -d "$fixture_db" \
   -f "$fixture_baseline" -f "$work/policies.sql" -f "$work/access.sql" -f "$work/seed-registry.sql" \
   -f "$root/tests/fixtures/accounting-alert-38644/installed-period-basis.sql" \
@@ -172,6 +177,21 @@ if [ "$phase" = earlybird-fee-custody ]; then
 python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
 python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/current-custody" --bootstrap-only
 python3 "$root/scripts/dev/qualify-earlybird-fee-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = held-fee-owner-basis ]; then
+# The retained Early Bird event reaches honest fee custody first, through the
+# same maintained phases; the owner-authorized basis then resolves it.
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
+python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/current-custody" --bootstrap-only
+python3 "$root/scripts/dev/qualify-earlybird-fee-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/earlybird"
+python3 "$root/scripts/dev/qualify-held-fee-owner-basis.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase"
+elif [ "$phase" = held-fee-spin-retention ]; then
+# The complete maintained September 8 Spin phase first; its five retained
+# standings witnesses then meet the owner's horse hand-history retention.
+"${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
+python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
+python3 "$root/scripts/dev/qualify-sep8-spin-custody.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/sep8"
+python3 "$root/scripts/dev/qualify-held-fee-owner-basis.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase" --spin-retention
 elif [ "$phase" = sep8-spin-custody ]; then
 "${psql[@]}" -d "$fixture_db" -f "$candidate" > "$fixture/activation.log" 2>&1
 python3 "$root/scripts/dev/qualify-legacy-fee-finality.py" "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/predecessor" --bootstrap-only
@@ -445,7 +465,7 @@ finish_fixture
 done
 # The focused command is complete after its own cleanup; unrelated maintained
 # post-loop suites remain mandatory for the normal protected invocation.
-if [ "${1:-}" = --spin-mixed-cutover-only ] || [ "${1:-}" = --legacy-fee-finality-only ] || [ "${1:-}" = --sep8-spin-custody-only ] || [ "${1:-}" = --earlybird-fee-custody-only ]; then exit 0; fi
+if [ "${1:-}" = --spin-mixed-cutover-only ] || [ "${1:-}" = --legacy-fee-finality-only ] || [ "${1:-}" = --sep8-spin-custody-only ] || [ "${1:-}" = --earlybird-fee-custody-only ] || [ "${1:-}" = --held-fee-owner-basis-only ] || [ "${1:-}" = --held-fee-spin-retention-only ]; then exit 0; fi
 
 # Original boundary capture is a separate prospective successor, never part of
 # the sealed installed 37-component migration or a replay of it.

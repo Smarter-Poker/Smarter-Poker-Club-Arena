@@ -11,6 +11,7 @@ import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   cleanupStaleTemporaryCustomizationAccounts,
   createTemporaryCustomizationAccount,
   expectedUnlockForFeature,
@@ -293,13 +294,20 @@ test.describe('production Table Studio commerce certification', () => {
     !CERTIFICATION_ENABLED,
     'Set CUSTOMIZATION_COMMERCE_CERTIFICATION=1 to create isolated production fixtures.'
   );
-  test.describe.configure({ mode: 'serial', timeout: 720_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 720_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('every sellable design charges once, unlocks live, persists, and remains account-scoped', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(720_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();

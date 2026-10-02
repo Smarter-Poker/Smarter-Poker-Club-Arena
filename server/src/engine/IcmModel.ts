@@ -39,6 +39,7 @@ export interface IcmEstimate {
 export interface IcmEquityEstimator {
   /** Optional bounded prefix of the same clocks; never regenerates or extends them. */
   estimate(stacks: number[], maximumTrials?: number): IcmEstimate;
+  /** Strongest method used by this workspace; each estimate names its own method. */
   method: IcmMethod;
   trials: number;
   randomClockDraws: number;
@@ -201,11 +202,18 @@ export function createIcmEquityEstimator(
     // Each estimate clears every reachable mask, including after a bust/revival.
     const exactScratch = new Float64Array(1 << EXACT_MAX_PLAYERS);
     const prizeMass = payoutMass(prizes);
+    let revivedField: IcmEquityEstimator | undefined;
     return {
-      method: 'exact_mh',
-      trials: 0,
-      randomClockDraws: 0,
-      estimate(vector: number[]): IcmEstimate {
+      get method() {
+        return revivedField?.method ?? 'exact_mh';
+      },
+      get trials() {
+        return revivedField?.trials ?? 0;
+      },
+      get randomClockDraws() {
+        return revivedField?.randomClockDraws ?? 0;
+      },
+      estimate(vector: number[], trialLimit?: number): IcmEstimate {
         if (vector.length !== reference.length) {
           throw new Error('ICM candidate vector length changed inside one action');
         }
@@ -216,6 +224,20 @@ export function createIcmEquityEstimator(
           }
         }
         const modeledPlayers = clean.filter((stack) => stack > 0).length;
+        if (modeledPlayers > EXACT_MAX_PLAYERS) {
+          // Committed all-in chips are absent from the reference stacks, but
+          // an award or permitted recovery can restore a live entrant. Keep
+          // <=10-player candidates exact and use one original-input MC clock
+          // population for larger candidates, rather than returning exact zero.
+          revivedField ??= createMonteCarloEquityEstimator(
+            reference,
+            prizes,
+            heroIdx,
+            mutable,
+            maximumTrials
+          );
+          return revivedField.estimate(clean, trialLimit);
+        }
         return {
           equity: exactCleanIcmEquity(clean, prizes, heroIdx, prizeMass, exactScratch),
           errorBound: 0,
@@ -226,6 +248,19 @@ export function createIcmEquityEstimator(
     };
   }
 
+  return createMonteCarloEquityEstimator(reference, prizes, heroIdx, mutable, maximumTrials);
+}
+
+/** Inputs are detached and sanitized by the public workspace admission. */
+function createMonteCarloEquityEstimator(
+  reference: number[],
+  prizes: number[],
+  heroIdx: number,
+  mutable: number[],
+  maximumTrials: number
+): IcmEquityEstimator {
+  const live = reference.filter((stack) => stack > 0).length;
+  const mutableSet = new Set(mutable);
   const mutableSlot = new Map(mutable.map((index, slot) => [index, slot]));
   const immutable = reference
     .map((stack, index) => ({ stack, index }))

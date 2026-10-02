@@ -8,6 +8,8 @@ import { gpuFrameRenderer } from './gpuFrameRenderer';
 import { isSoftwareRenderer } from './rendererTier';
 import { createQualityGovernor, FLOOR_TIER } from './qualityGovernor';
 import { applyQualityTier } from './sceneKit';
+import { createFramePacer } from './framePacer';
+import { createSceneTelemetry, reportSceneFailure } from './sceneTelemetry';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
@@ -309,6 +311,11 @@ function asphaltTextures(kit: SceneParts, anisotropy: number) {
     return kit.texture(texture);
   };
   return { map: tiled(color, true), roughnessMap: tiled(rough, false) };
+}
+/** Texels per sign unit: 1 on a 1x screen, 2 on anything sharper (a 3x phone gains little past 2). */
+export function signTextureScale(devicePixelRatio: number | undefined): number {
+  const ratio = Number(devicePixelRatio);
+  return Number.isFinite(ratio) && ratio > 1.25 ? 2 : 1;
 }
 /**
  * The road runs this far either side of the donkey's line, and past both
@@ -1222,6 +1229,7 @@ function CrossingScene(props: Props) {
     } catch (e) {
       setFailed(true);
       reportError(e, 'ChoiceScene.renderer');
+      reportSceneFailure('crossing', 'renderer');
       latest.current.onSettled?.();
       return;
     }
@@ -1586,9 +1594,19 @@ function CrossingScene(props: Props) {
     const SIGN_W = 256,
       SIGN_H = 128,
       SIGN_COLS = 4;
+    /* SHARP ON A SHARP SCREEN (2026-10-01). A near street's sign covers more
+       device pixels on a 2x or 3x phone than its 256 x 128 slot holds, so its
+       lettering was stretched and soft. The atlas is painted at up to twice
+       that size on such screens; the layout below stays in sign units and the
+       painter scales its drawing to match. */
+    const SIGN_SCALE = signTextureScale(
+      typeof window === 'undefined' ? 1 : window.devicePixelRatio
+    );
+    const ATLAS_W = SIGN_W * SIGN_COLS,
+      ATLAS_H = SIGN_H * Math.ceil(SIGN_SLOTS / SIGN_COLS);
     const atlas = document.createElement('canvas');
-    atlas.width = SIGN_W * SIGN_COLS;
-    atlas.height = SIGN_H * Math.ceil(SIGN_SLOTS / SIGN_COLS);
+    atlas.width = ATLAS_W * SIGN_SCALE;
+    atlas.height = ATLAS_H * SIGN_SCALE;
     const signTexture = kit.texture(new THREE.CanvasTexture(atlas));
     signTexture.colorSpace = THREE.SRGBColorSpace;
     signTexture.anisotropy = Math.min(8, anisotropy);
@@ -1608,8 +1626,8 @@ function CrossingScene(props: Props) {
           for (let v = 0; v < uv.count; v++)
             uv.setXY(
               v,
-              (ox + uv.getX(v) * SIGN_W) / atlas.width,
-              1 - (oy + (1 - uv.getY(v)) * SIGN_H) / atlas.height
+              (ox + uv.getX(v) * SIGN_W) / ATLAS_W,
+              1 - (oy + (1 - uv.getY(v)) * SIGN_H) / ATLAS_H
             );
           return plate;
         })
@@ -1644,6 +1662,8 @@ function CrossingScene(props: Props) {
     ) => {
       const ctx = atlas.getContext('2d');
       if (!ctx) return;
+      // Draw in sign units; the atlas holds SIGN_SCALE device texels per unit.
+      ctx.setTransform?.(SIGN_SCALE, 0, 0, SIGN_SCALE, 0, 0);
       const { ox, oy } = signSlot(street);
       const rich = typeof ctx.createLinearGradient === 'function';
       const blank = multiplier === null && street > 0;
@@ -1857,6 +1877,9 @@ function CrossingScene(props: Props) {
         needsDraw = true;
       },
     });
+    // One anonymous summary of how this phone drew the visit (sceneTelemetry.ts).
+    const telemetry = createSceneTelemetry('crossing', { software, startTier: governor.tier });
+    let stallReported = false;
     const resize = () => {
       const w = node.clientWidth,
         h = node.clientHeight;
@@ -1984,10 +2007,18 @@ function CrossingScene(props: Props) {
     /** The level each flickering lamp was last set to, so an unchanged lamp costs nothing. */
     const lampLevel = IDLE.flickering.map(() => 1);
     const lampTint = new THREE.Color();
+    // Every display frame while the donkey walks or a car arrives, about 30 a
+    // second while the road idles, nothing at all once parked (framePacer.ts).
+    const pacer = createFramePacer({ reducedMs: 100 });
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
       const reduced = reducedRef.current;
-      const pace = reduced ? 100 : animating ? 16 : 33;
+      const live = latest.current;
+      const pace = pacer.pace(now, {
+        reduced,
+        moving: animating || needsDraw,
+        signature: `${live.game}|${live.roundId}|${live.phase}|${live.picked.length}|${live.paused}|${live.mines?.length ?? -1}`,
+      });
       if (document.hidden || now - last < pace) return;
       last = now;
       const visibleDelta = lastVisibleFrame === null ? 0 : now - lastVisibleFrame;
@@ -2321,7 +2352,11 @@ function CrossingScene(props: Props) {
       // Nothing is drawn before compileAsync answers, so no beat and no
       // completion lands on a frame the driver has not linked yet.
       const drawing = compiled && !p.paused && onScreen && (!reduced || needsDraw);
-      const submitted = compiled && (drawing ? frames.render(pace) : true);
+      const submitted = compiled && (drawing ? frames.render(pacer.governorInterval(pace)) : true);
+      if (drawing && submitted) {
+        telemetry.tier(governor.tier);
+        telemetry.frame(now, pace === 0);
+      }
       if (drawing) needsDraw = false;
       animating = !finished || lean > 0 || stepping;
       // A beat belongs to the frame that shows it: the same terminal-frame
@@ -2338,13 +2373,22 @@ function CrossingScene(props: Props) {
       // terminal frame however long that takes.
       if (pending.current) {
         stalled = submitted ? 0 : stalled + visibleDelta;
-        if (stalled >= 8000) setFailed(true);
-      } else stalled = 0;
+        if (stalled >= 8000) {
+          setFailed(true);
+          // Reported once per stall, not once per frame of it.
+          if (!stallReported) reportSceneFailure('crossing', 'stalled');
+          stallReported = true;
+        }
+      } else {
+        stalled = 0;
+        stallReported = false;
+      }
     };
     raf = requestAnimationFrame(draw);
     const lost = (e: Event) => {
       e.preventDefault();
       setFailed(true);
+      reportSceneFailure('crossing', 'context_lost');
       latest.current.onSettled?.();
     };
     // A context the browser gives back is drawn on again: every sign is
@@ -2363,6 +2407,8 @@ function CrossingScene(props: Props) {
     canvas.addEventListener('webglcontextrestored', restored);
     return () => {
       cancelAnimationFrame(raf);
+      pacer.dispose();
+      telemetry.end();
       clearTimeout(compileTimer);
       silenceCar(0.05);
       document.removeEventListener('visibilitychange', visibilityChanged);

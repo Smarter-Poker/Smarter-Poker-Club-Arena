@@ -1,6 +1,6 @@
 # Current Smarter Poker owner policy
 
-Policy version: 2.9 — September 17, 2026. This file owns authorization and provider routes. Read the operating law, hardening standard and reference index alongside it; the index maps canonical and portable paths.
+Policy version: 2.9 — September 17, 2026; storage section amended September 29, 2026. This file owns authorization and provider routes. Read the operating law, hardening standard and reference index alongside it; the index maps canonical and portable paths.
 
 ## Authority and scope
 
@@ -20,7 +20,7 @@ Ask only for genuinely unavailable input or an explicit tool-required handoff, n
 
 ## Storage and local prechecks
 
-All agents on this Mac may use the mounted 2 TB external SSD within assigned scope. Verify mounted, writable storage and available space before use. Put new private worktrees, scratch and authorized caches in a unique task-owned directory under `/Volumes/SmarterWork/agent-work`; retain evidence/source archives under `/Volumes/SmarterArchives/agent-evidence`. APFS quotas may be smaller than the device. Existing directories may belong to other tasks: never overwrite, reset, prune, move or delete them. Move a worktree only with Git's supported operation, preserved clean state and coordinated readers.
+All agents on this Mac must do local work on the mounted external SSD, within assigned scope (owner direction, September 29, 2026). Verify it is mounted, writable and has space before use; if it is not, stop and report it, never fall back to the Mac's internal drive. Put new private worktrees, clones, scratch, dependencies, build output and authorized caches in a unique task-owned directory under `/Volumes/SmarterWork/agent-work`; retain evidence/source archives under `/Volumes/SmarterArchives/agent-evidence`. Never create work under `~/Documents/.agent-trees`, `~/Documents/agent-work` or elsewhere on the internal drive. APFS quotas may be smaller than the device. When a task finishes, remove its own worktree and delete its own scratch, dependencies and caches. Existing directories may belong to other tasks: never overwrite, reset, prune, move or delete them. Move a worktree only with Git's supported operation, preserved clean state and coordinated readers. The storage guide is `/Users/smarter.poker/Documents/MAC-STORAGE.md`.
 
 Applicable local checks must run before push or publication requests, on the exact candidate. Inspect the final diff and actual workflow: compilation, affected tests/builds, source contracts reading Markdown/scripts/workflows, configuration and qualification manifests all count. Record commands, actual results, tested revision/tree and provider-only pending checks. Recheck affected evidence after edits or integration. Missing tools, stale manifests or incomplete dependencies must be repaired; neither a checkpoint nor hosted CI substitutes for an available local check. Never bypass hooks or weaken assertions.
 

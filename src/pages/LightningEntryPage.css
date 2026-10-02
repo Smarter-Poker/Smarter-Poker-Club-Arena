@@ -1,0 +1,17 @@
+/* LIGHTNING PHASE 6: the Lightning route's one surface, inside the app shell.
+   The entry itself is the shared EmptyState card; this only centres it and
+   holds the space, so a quick answer shows nothing at all while it resolves. */
+.lightning-entry {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.lightning-entry__quiet {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}

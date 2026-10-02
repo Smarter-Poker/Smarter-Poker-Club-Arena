@@ -67,6 +67,12 @@ import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeCon
 import { titleCase } from '../../utils/titleCase';
 import { compactChips } from '../../utils/format';
 import styles from './ClubDataPage.module.css';
+import {
+  CLUB_GAMES_UNAVAILABLE_COPY,
+  CLUB_PLAYERS_UNAVAILABLE_COPY,
+  clubDataListState,
+  clubDataReadFailure,
+} from './clubDataReadOutcome';
 
 /**
  * The ledger presets. 90 is the ceiling because ca_club_data_snapshot clamps
@@ -836,14 +842,19 @@ export default function ClubDataPage() {
             setLedgerSource('cold');
           } else {
             reportError(rpcError, 'ClubDataPage.snapshot_rpc');
-            if (preserveOnError) {
-              setError(null);
-              setLedgerSource('degraded');
-            } else {
-              setError('Could Not Load Club Data.');
-            }
+            // Keep the last verified ledger only when one is actually held.
+            // With nothing held, "could not load" must say so, not render as
+            // an empty Games list (clubDataReadOutcome.ts).
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: snapshotRef.current !== null,
+              message: CLUB_GAMES_UNAVAILABLE_COPY,
+            });
+            setError(outcome.error);
+            if (outcome.degraded) setLedgerSource('degraded');
+            if (outcome.clearData) setSnapshot(null);
           }
-          if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
+          if (isAuthzError(rpcError)) setSnapshot(null);
           return false;
         } else if (
           !auditClubDataSnapshot(data).renderable ||
@@ -852,13 +863,14 @@ export default function ClubDataPage() {
           // A null or shapeless payload used to be stored as success, leaving a
           // page with no data, no skeleton and no message.
           reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
-          if (preserveOnError) {
-            setError(null);
-            setLedgerSource('degraded');
-          } else {
-            setError('Could Not Load Club Data.');
-            setSnapshot(null);
-          }
+          const outcome = clubDataReadFailure({
+            preserveOnError,
+            holdingVerifiedData: snapshotRef.current !== null,
+            message: CLUB_GAMES_UNAVAILABLE_COPY,
+          });
+          setError(outcome.error);
+          if (outcome.degraded) setLedgerSource('degraded');
+          if (outcome.clearData) setSnapshot(null);
           return false;
         } else {
           const snapshot = data as Snapshot;
@@ -967,13 +979,14 @@ export default function ClubDataPage() {
       } catch (err) {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.snapshot_request');
-        if (preserveOnError) {
-          setError(null);
-          setLedgerSource('degraded');
-        } else {
-          setError('Club Data Took Too Long To Respond. Try Again.');
-          setSnapshot(null);
-        }
+        const outcome = clubDataReadFailure({
+          preserveOnError,
+          holdingVerifiedData: snapshotRef.current !== null,
+          message: 'Club Data Took Too Long To Respond. Try Again.',
+        });
+        setError(outcome.error);
+        if (outcome.degraded) setLedgerSource('degraded');
+        if (outcome.clearData) setSnapshot(null);
         return false;
       } finally {
         if (!showSpinner && loadVersion.current === myVersion)
@@ -1135,9 +1148,15 @@ export default function ClubDataPage() {
             removeClubDataCaches(userId, clubUuid);
           } else {
             reportError(rpcError, 'ClubDataPage.players_rpc');
-            setPlayersError(preserveOnError ? null : 'Could Not Load Player Data.');
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: playersRef.current !== null,
+              message: CLUB_PLAYERS_UNAVAILABLE_COPY,
+            });
+            setPlayersError(outcome.error);
+            if (outcome.clearData) setPlayers(null);
           }
-          if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
+          if (isAuthzError(rpcError)) setPlayers(null);
           return false;
         } else if (
           !data ||
@@ -1146,8 +1165,13 @@ export default function ClubDataPage() {
           !Array.isArray(page.rows)
         ) {
           reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
-          setPlayersError(preserveOnError ? null : 'Could Not Load Player Data.');
-          if (!preserveOnError) setPlayers(null);
+          const outcome = clubDataReadFailure({
+            preserveOnError,
+            holdingVerifiedData: playersRef.current !== null,
+            message: CLUB_PLAYERS_UNAVAILABLE_COPY,
+          });
+          setPlayersError(outcome.error);
+          if (outcome.clearData) setPlayers(null);
           return false;
         } else {
           const breakdown = data as PlayerBreakdown;
@@ -1177,10 +1201,13 @@ export default function ClubDataPage() {
       } catch (err) {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.players_request');
-        setPlayersError(
-          preserveOnError ? null : 'Player Data Took Too Long To Respond. Try Again.'
-        );
-        if (!preserveOnError) setPlayers(null);
+        const outcome = clubDataReadFailure({
+          preserveOnError,
+          holdingVerifiedData: playersRef.current !== null,
+          message: 'Player Data Took Too Long To Respond. Try Again.',
+        });
+        setPlayersError(outcome.error);
+        if (outcome.clearData) setPlayers(null);
         return false;
       } finally {
         if (!showSpinner && playersVersion.current === myVersion)
@@ -2071,9 +2098,17 @@ export default function ClubDataPage() {
   }
 
   const syncing = loading && !snapshot;
+  /* What the Games list shows. "empty" needs a verified payload with zero
+     rows; no payload and no request in flight is "unavailable", never an
+     empty list (clubDataReadOutcome.ts, CLAUDE.md 10.86 rule 1). */
+  const gamesListView = clubDataListState({
+    loading,
+    error,
+    rowCount: snapshot ? snapshot.rows.length : null,
+  });
   /* A failed first read used to sit under a green "Live Club Ledger" lamp:
      ledgerSource stays 'cold' on an error, and cold read as live. */
-  const failed = Boolean(error) && !snapshot;
+  const failed = !snapshot && gamesListView === 'unavailable';
   const statusWord = syncing
     ? 'Syncing'
     : failed
@@ -2748,7 +2783,7 @@ export default function ClubDataPage() {
               aria-label="Games"
               tabIndex={0}
             >
-              {loading && !snapshot && !error && (
+              {gamesListView === 'loading' && (
                 <>
                   <span className={styles.srOnly} role="status">
                     Loading Games
@@ -2759,9 +2794,11 @@ export default function ClubDataPage() {
                 </>
               )}
 
-              {error && (
+              {gamesListView === 'unavailable' && (
                 <div className={styles.stateRow} role="alert">
-                  <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>{error}</span>
+                  <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>
+                    {error || CLUB_GAMES_UNAVAILABLE_COPY}
+                  </span>
                   <button
                     type="button"
                     className={`${styles.word} sc-ink--white`}
@@ -2772,7 +2809,7 @@ export default function ClubDataPage() {
                 </div>
               )}
 
-              {!loading && !error && snapshot && snapshot.rows.length === 0 && (
+              {gamesListView === 'empty' && (
                 <p className={`sc-copy sc-copy--center ${styles.empty}`}>
                   No Games In This Period.
                 </p>

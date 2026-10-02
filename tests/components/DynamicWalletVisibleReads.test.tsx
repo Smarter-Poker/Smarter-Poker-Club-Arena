@@ -26,59 +26,65 @@ vi.mock('../../src/lib/walletCache', () => ({
   writeWalletCacheDebounced: vi.fn(),
   dedupedFetch: (_key: string, read: () => unknown) => read(),
 }));
-vi.mock('../../src/lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const query = {
-        select: () => query,
-        eq: () => query,
-        abortSignal: () => query,
-        maybeSingle: async () => {
-          fixture.requests.push(table);
-          return {
-            error: null,
-            data:
-              table === 'profiles'
-                ? { diamonds: 8 }
-                : table === 'club_members'
-                  ? { chip_balance: 12 }
-                  : { agent_wallet_balance: fixture.agent, promo_wallet_balance: 15 },
-          };
-        },
-      };
-      return query;
+vi.mock('../../src/lib/supabase', () => {
+  const from = (table: string) => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      abortSignal: () => query,
+      maybeSingle: async () => {
+        fixture.requests.push(table);
+        return {
+          error: null,
+          data:
+            table === 'profiles'
+              ? { diamonds: 8 }
+              : table === 'club_members'
+                ? { chip_balance: 12 }
+                : { agent_wallet_balance: fixture.agent, promo_wallet_balance: 15 },
+        };
+      },
+    };
+    return query;
+  };
+  return {
+    supabase: {
+      from,
+      rpc: (name: string, args: unknown) => {
+        // The player's own balance is read through the owner door (ruling 25),
+        // which answers like the profiles row did.
+        if (name === 'get_my_full_profile') return from('profiles');
+        fixture.rpc(name, args);
+        const result = () => ({
+          error: fixture.failure ? { message: 'Read failed' } : null,
+          data: {
+            authorized: true,
+            scope: 'union',
+            in_union: true,
+            union_id: 'union-1',
+            club_treasury: fixture.bank,
+            club_promo_wallet: 7,
+            union_bank: fixture.unionBank,
+            rake_treasury: 9,
+            union_promo: 11,
+            bbj: { main: 50, backup: 10 },
+            next_close_at: '2026-10-01T00:00:00Z',
+          },
+        });
+        return {
+          abortSignal: async () => result(),
+          then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
+        };
+      },
+      channel: (...args: unknown[]) => {
+        fixture.channel(...args);
+        const channel = { on: () => channel, subscribe: () => channel };
+        return channel;
+      },
+      removeChannel: vi.fn(),
     },
-    rpc: (name: string, args: unknown) => {
-      fixture.rpc(name, args);
-      const result = () => ({
-        error: fixture.failure ? { message: 'Read failed' } : null,
-        data: {
-          authorized: true,
-          scope: 'union',
-          in_union: true,
-          union_id: 'union-1',
-          club_treasury: fixture.bank,
-          club_promo_wallet: 7,
-          union_bank: fixture.unionBank,
-          rake_treasury: 9,
-          union_promo: 11,
-          bbj: { main: 50, backup: 10 },
-          next_close_at: '2026-10-01T00:00:00Z',
-        },
-      });
-      return {
-        abortSignal: async () => result(),
-        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
-      };
-    },
-    channel: (...args: unknown[]) => {
-      fixture.channel(...args);
-      const channel = { on: () => channel, subscribe: () => channel };
-      return channel;
-    },
-    removeChannel: vi.fn(),
-  },
-}));
+  };
+});
 
 import DynamicWallet from '../../src/components/wallet/DynamicWallet';
 import * as clubIds from '../../src/utils/clubIdResolver';

@@ -45,6 +45,10 @@ import { multiplierLabel } from '../utils/diamondGamesFairness';
 import { roundedMinePrize } from '../utils/diamondChoiceMath';
 import styles from './diamondGames.module.css';
 import plinkoStyles from './diamondPlinko.module.css';
+// The real game pages install the scene-health writer; the test page never does.
+import { installDiamondSceneRecorder } from '../services/DiamondSceneRecorder';
+
+installDiamondSceneRecorder();
 
 /** What the page says while it mends something by itself. */
 const RECONNECTING = 'Reconnecting To Plinko';
@@ -868,6 +872,9 @@ function DiamondPlinkoGame() {
           clubUuid={uuid}
           awardId={result.award_id ?? null}
           chips={result.payout_chips}
+          stakeChips={
+            result.diamonds_per_chip > 0 ? result.bet_diamonds / result.diamonds_per_chip : null
+          }
           detail={`${result.drops.length} Drops Completed.`}
           // The best bucket the batch landed in, lit in its own tint.
           game="plinko"

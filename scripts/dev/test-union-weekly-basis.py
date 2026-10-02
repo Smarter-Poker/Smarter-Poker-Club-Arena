@@ -113,6 +113,32 @@ try:
  rewrite=next((root/'supabase/migrations').glob('20260925205938*.sql')).read_text()
  rewrite=rewrite[rewrite.index('CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_week_quality'):rewrite.rindex('COMMIT;')]
  run('SET check_function_bodies=off;\n'+rewrite,'weekly-rakeback-cost-rewrite')
+ # The installed period calculator reads one week of attributions
+ # (20260926042810); its own pre- and postimage assertions bind it to the
+ # rewrite above. That exact body is then kept beside its successor as
+ # fixture.predecessor_page_calculator, so page-evidence-regression.sql can show
+ # what a page cost before 20260927160709 and prove what it answers after.
+ run(next((root/'supabase/migrations').glob('20260926042810*.sql')).read_text(),'period-calculator-one-week')
+ # Production then ran 20260927155651, whose step 3c rewrote ONE expression of
+ # that calculator - the agreement instant of a tournament fee in the
+ # certificate loop - to fn_accounting_tournament_source_terms_at. That is the
+ # body 20260930232349 replaces (md5(prosrc) adea6633...), so the cluster takes
+ # the same step: the two terms-at functions verbatim from 155651, then its 3c
+ # replacement, refused unless it changes the body. A fixture contract names no
+ # owner basis, so the inlined CASE returns the charge instant exactly as before.
+ held=next((root/'supabase/migrations').glob('20260927155651*.sql')).read_text()
+ terms=held[held.index('CREATE FUNCTION public.fn_accounting_tournament_owner_basis_terms_at('):held.index('\nDO $owner_basis$')]
+ run('SET check_function_bodies=off;\n'+terms,'agreement-instant-terms-at')
+ c3=held[held.index(' -- 3c. Rakeback period agreement instant.'):held.index(' -- 3d.')]
+ run('DO $agreement$ DECLARE source text;changed text; BEGIN\n'+c3.replace("'%', PROCEDURE_GUARD||'rakeback agreement instant'","'agreement instant predecessor changed'")+'END $agreement$;','agreement-instant-calculator')
+ run("""DO $$ BEGIN EXECUTE replace(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure),
+  'FUNCTION public.fn_calculate_cash_rakeback_periods(','FUNCTION fixture.predecessor_page_calculator('); END $$;""",'predecessor-page-calculator')
+ # A page recompute reads only the evidence that changed (20260930232349,
+ # re-derived from the never-applied 20260927160709). The whole file is
+ # applied as the door applies it: three CREATE INDEX CONCURRENTLY statements,
+ # then one transaction whose assertions bind the calculator above. Every
+ # regression below runs with its checkpoint and its two insert guards armed.
+ run(next((root/'supabase/migrations').glob('20260930232349*.sql')).read_text(),'page-evidence-checkpoint')
  # The club settlement floor bounds standalone discovery. Its own preimage
  # assertions name this exact installed base, so it is applied here, while the
  # predecessors are still pristine. Its fixture runs last, below.
@@ -122,6 +148,10 @@ try:
  # pristine, so every regression below - including the real raked weekly close -
  # runs with the constraint armed.
  run(next((root/'supabase/migrations').glob('20260921022924*.sql')).read_text(),'rakeback-payout-document-source')
+ # The owner-authorized legacy discharge of a deferred week, installed while the
+ # document guard it extends is still the exact installed preimage, so every
+ # regression below runs with the extended guard armed.
+ run(next((root/'supabase/migrations').glob('20260926140858*.sql')).read_text(),'owner-legacy-discharge-source')
  # Export the exact installed candidate before any disposable test calendar or
  # fault injection. These are installation/readback contracts, not live proof.
  migration=next((root/'supabase/migrations').glob('20260917234315*.sql')).read_text()
@@ -184,6 +214,12 @@ try:
  # settler's drain page. It adds a hand to the raked table and closes a later
  # week, so it runs after every fixture that reads that table's own seals.
  run((root/'tests/fixtures/union-weekly-basis/period-coverage-regression.sql').read_text(),'period-coverage-regression')
+ # Then the page path's own proof: oracle, randomized property, calculator
+ # equivalence, before/after, the untouched whole period and the two guards.
+ run((root/'tests/fixtures/union-weekly-basis/page-evidence-regression.sql').read_text(),'page-evidence-regression')
+ # Last: a deferred week below the floors is discharged once through the
+ # weekly stages' leg shapes and document authority, and replays nothing.
+ run((root/'tests/fixtures/owner-legacy-discharge/regression.sql').read_text(),'owner-legacy-discharge-regression')
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

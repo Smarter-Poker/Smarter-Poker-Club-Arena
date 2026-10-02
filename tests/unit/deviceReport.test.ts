@@ -50,7 +50,9 @@ describe('the device check says what the device can do, in words', () => {
   it('says how the silent switch treats game sound', () => {
     expect(silentSwitchSummary(null, true)).toBe('Not Applicable On This Browser');
     expect(silentSwitchSummary('playback', true)).toBe('Heard With The Silent Switch On');
-    expect(silentSwitchSummary('ambient', true)).toBe('Muted When The Silent Switch Is On');
+    expect(silentSwitchSummary('auto', true)).toBe(
+      'Heard With The Silent Switch On From The First Game Sound'
+    );
     expect(silentSwitchSummary('playback', false)).toBe('Sounds Are Off In Settings');
   });
 

@@ -24,6 +24,18 @@ import { describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 90_000 });
 import { gitEnvironmentForCwd } from '../../scripts/ci/classify-ci-changes.mjs';
 
+/**
+ * Point the shipped step at a fixture engine without editing the step. A
+ * `data:` URL is a real fetch with a real 200 through the real reader, and it
+ * needs no server - which matters here, because spawnSync blocks this
+ * process's event loop and an in-process server could never answer the child.
+ */
+const onFixtureEngine = (script: string, health: string) =>
+  script.replaceAll(
+    '"https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID"',
+    `"data:application/json,${encodeURIComponent(health)}"`
+  );
+
 const root = resolve(__dirname, '../..');
 const workflow = parse(readFileSync(join(root, '.github/workflows/post-deploy-e2e.yml'), 'utf8'));
 const client = workflow.jobs['production-e2e'];
@@ -95,6 +107,13 @@ describe('post-publication verification belongs to its delivered component', () 
           join(root, 'scripts/ci/production-e2e-provenance.mjs'),
           join(cwd, 'scripts/ci/production-e2e-provenance.mjs')
         );
+        // The resolver reads the engine through scripts/ci/read-engine-release.mjs
+        // so a scheduled :55 restart is a wait rather than a red (run
+        // 36717851302). Copy the real reader and serve the fixture over HTTP,
+        // so this exercises the shipped transport instead of a stub of it.
+        for (const script of ['read-engine-release.mjs', 'await-engine-gameplay.mjs']) {
+          copyFileSync(join(root, 'scripts/ci', script), join(cwd, 'scripts/ci', script));
+        }
         mkdirSync(join(cwd, 'bin'));
         writeFileSync(join(cwd, 'bin/curl'), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
         chmodSync(join(cwd, 'bin/curl'), 0o755);
@@ -109,21 +128,29 @@ describe('post-publication verification belongs to its delivered component', () 
           GITHUB_STEP_SUMMARY: join(cwd, 'summary'),
           GITHUB_RUN_ID: '123',
         };
-        const resolved = spawnSync('bash', ['-c', resolver.run], {
-          cwd,
-          env: common,
-          encoding: 'utf8',
-          timeout: 10000,
-        });
+        const resolved = spawnSync(
+          'bash',
+          ['-c', onFixtureEngine(resolver.run, common.FIXTURE_HEALTH)],
+          {
+            cwd,
+            env: common,
+            encoding: 'utf8',
+            timeout: 10000,
+          }
+        );
         expect(resolved.status, resolved.stderr).toBe(0);
         const sha = readFileSync(output, 'utf8').match(/^sha=(.+)$/m)?.[1];
         expect(sha).toBe(event === 'repository_dispatch' ? pending : serving);
-        const ready = spawnSync('bash', ['-c', admission.run], {
-          cwd,
-          env: { ...common, EXPECTED_ENGINE_SHA: sha },
-          encoding: 'utf8',
-          timeout: 10000,
-        });
+        const ready = spawnSync(
+          'bash',
+          ['-c', onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
+          {
+            cwd,
+            env: { ...common, EXPECTED_ENGINE_SHA: sha },
+            encoding: 'utf8',
+            timeout: 10000,
+          }
+        );
         expect(ready.status, ready.stderr).toBe(event === 'repository_dispatch' ? 1 : 0);
       } finally {
         rmSync(cwd, { recursive: true, force: true });

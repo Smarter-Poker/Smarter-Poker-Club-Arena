@@ -70,7 +70,8 @@ export function GameConsole({
   }, []);
   const action = (button: PlateButtonProps | undefined, main = false) => {
     if (!button) return null;
-    const { label, ink, buttonRef, onClick, ...rest } = button;
+    // `haptic` is a PlateButton option; these plates always carry TapHaptic.
+    const { label, ink, buttonRef, onClick, haptic: _plateHaptic, ...rest } = button;
     const pending = rest['aria-disabled'] === true || rest['aria-disabled'] === 'true';
     return (
       <button

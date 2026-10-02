@@ -999,6 +999,9 @@ export default function HandHistoryPage() {
           onClose={() => setShareHand(null)}
           hand={shareHand}
           clubName="Club Arena"
+          /* The archive shares a stored record: its id is the hand_history
+             row, which is what Share As Video renders from. */
+          handId={shareHand.id}
         />
       )}
     </div>

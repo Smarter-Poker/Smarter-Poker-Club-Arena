@@ -56,6 +56,10 @@ import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
 import '../components/console/SpadeConsole.css';
 import styles from './diamondGames.module.css';
+// The real game pages install the scene-health writer; the test page never does.
+import { installDiamondSceneRecorder } from '../services/DiamondSceneRecorder';
+
+installDiamondSceneRecorder();
 
 interface Ticket {
   id: string;
@@ -1229,6 +1233,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           clubUuid={uuid}
           awardId={round.award_id ?? null}
           chips={round.payout_chips}
+          stakeChips={round.bet_chips}
           // Neither game's receipt sings: each scene has already said what
           // happened in its own beat (the crossing's landing, the Mines board's
           // booked sting on a cash-out, 2026-09-26), and a lost round is not a

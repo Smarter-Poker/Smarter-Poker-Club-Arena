@@ -1,0 +1,81 @@
+{
+  "containerName": "phase6b-route-proof-20260928t154841z",
+  "startedAt": "2026-09-28T15:48:41.843883+00:00",
+  "release": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+  "recordsRelease": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+  "scriptSha256": "e58f19b232ab59a28e7599d4e0f4605c2ea0ea37e524a53d3685a50f8b04c1fa",
+  "commandLine": "python3 server/scripts/phase6b-route-proof-observe.py 763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f 2026-09-28T14:12:00Z 2026-09-28T15:12:00Z docs/evidence/phase6b",
+  "servingHealthBefore": {
+    "ok": true,
+    "releaseSha": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+    "horseJournal": {
+      "mode": "ready",
+      "pausedReason": null,
+      "pausedSince": null,
+      "failedSince": null,
+      "lastFailureReason": null,
+      "records": 4983767,
+      "maxRowid": 9066917,
+      "pendingSegments": 0,
+      "queued": 0,
+      "publishers": {
+        "total": 2,
+        "byMode": {
+          "ready": 2
+        }
+      }
+    }
+  },
+  "execution": {
+    "containerName": "phase6b-route-proof-20260928t154841z",
+    "release": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+    "recordsRelease": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+    "imageId": "sha256:8e511ed693d2c621a0916f8d05e5af5db73ba7f39a0539e78351bc2d9351f315",
+    "servingContainer": "9e5dc12cfdfd2582cd2cdb2679e8c98db68534e424c61922ba5d2f569672ef70",
+    "servingStartedAt": "2026-09-28T06:55:53.795644969Z",
+    "horseJournalMountVerified": true,
+    "readOnly": true,
+    "network": "none",
+    "memoryBytes": 1073741824,
+    "cpus": 1.0,
+    "deadlineSeconds": 3000,
+    "exitCode": 3,
+    "wallSeconds": 23.2,
+    "stderrBytes": 6,
+    "oomKilled": false,
+    "containerExitCode": 3,
+    "cleanupExitCode": 0,
+    "stdoutBytes": 90,
+    "observation": {
+      "version": "phase6b-route-proof-v1",
+      "status": "unavailable",
+      "reason": "observation_failed"
+    },
+    "sameServingIdentityAfter": true,
+    "observerRemoved": true,
+    "scratchRemoved": true
+  },
+  "servingHealthAfter": {
+    "ok": true,
+    "releaseSha": "763e4cec8cdc21b61957e0a16dd6b4278f0a7f4f",
+    "horseJournal": {
+      "mode": "ready",
+      "pausedReason": null,
+      "pausedSince": null,
+      "failedSince": null,
+      "lastFailureReason": null,
+      "records": 4983706,
+      "maxRowid": 9070241,
+      "pendingSegments": 0,
+      "queued": 26,
+      "publishers": {
+        "total": 2,
+        "byMode": {
+          "ready": 2
+        }
+      }
+    }
+  },
+  "finishedAt": "2026-09-28T15:49:25.932065+00:00",
+  "completedObservation": false
+}

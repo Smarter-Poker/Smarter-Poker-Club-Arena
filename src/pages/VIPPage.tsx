@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { supabase } from '../lib/supabase';
+import { ownProfile } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import {
@@ -24,7 +25,7 @@ import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, type DiamondActivity } from '../components/vip/VIPActivityHistory';
 import { useToast } from '../components/common/Toast';
-import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
+import DiamondWalletModal, { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -89,18 +90,40 @@ export default function VIPPage() {
     return () => document.body.classList.remove('marketplace-color-scope');
   }, []);
 
-  // VIP Points System
+  /* VIP POINTS - ONLY THE TWO FIGURES THE PLATFORM ACTUALLY COMPUTES.
+     `monthly` and `activeStreak` used to sit in this object too, and NOTHING
+     ever wrote either one. `vip_points` has exactly four columns (user_id,
+     current_points, lifetime_points, updated_at), so the read below could
+     never have filled them, and no other writer existed anywhere in src/.
+     They reached the screen as their own initial state: every player was
+     shown a confident "0" and "0 Days" for two figures the platform does
+     not calculate.
+
+     Deleted rather than given the "Unavailable" treatment `current` and
+     `lifetime` get. That word means "the read could not answer THIS TIME",
+     which invites a player to refresh; these two had no source to read
+     from at all, so the honest act is to stop making the claim. Removing
+     them from the state shape (not merely from the JSX) is deliberate:
+     it is what stops the zero being reintroduced by the next reader.
+     docs/changelog/2026-09-30-the-vip-page-stops-inventing-two-figures.md */
   const [vipPoints, setVipPoints] = useState({
     current: 0,
     lifetime: 0,
-    monthly: 0,
-    activeStreak: 0,
   });
 
   const [recentDiamondActivities, setRecentDiamondActivities] = useState<DiamondActivity[]>([]);
   const [diamondActivityState, setDiamondActivityState] = useState<'loading' | 'ready' | 'error'>(
     'loading'
   );
+  /* CLAUDE.md 10.86 rule 1: "I could not tell" is a distinct outcome and must
+     have its own name. The balance and the points figures were both read with
+     the error discarded, so a failed read landed on the player as a confident
+     zero - the estate's signature failure mode, on a money surface. These two
+     states are what keep an unreadable figure apart from a real zero. */
+  const [diamondBalanceState, setDiamondBalanceState] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
+  const [vipPointsState, setVipPointsState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const membershipPerks = useMemo(() => {
     const isLifetime = vipGrade === 'lifetime';
@@ -218,7 +241,10 @@ export default function VIPPage() {
       'DIAMOND_BALANCE_CHANGED',
       (event: any) => {
         if (event?.payload?.newBalance !== undefined) {
+          // A balance that arrived from a completed movement is a real read,
+          // so it also clears an earlier "could not tell".
           setDiamonds(event.payload.newBalance);
+          setDiamondBalanceState('ready');
         }
       },
       500
@@ -258,6 +284,8 @@ export default function VIPPage() {
         setLoading(true);
         setRecentDiamondActivities([]);
         setDiamondActivityState('loading');
+        setDiamondBalanceState('loading');
+        setVipPointsState('loading');
       }
       try {
         const vipStatus = await vipService.checkVIPStatus(requestedUserId);
@@ -267,33 +295,52 @@ export default function VIPPage() {
         setVipExpiresAt(vipStatus.expiresAt);
         setMonthlyLimits(vipStatus.monthlyLimits);
 
-        const { data: profData } = await supabase
-          .from('profiles')
+        /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
+           Both reads below discarded the error, so an RLS denial, a dropped
+           connection or a PGRST 503 became `profData?.diamonds || 0` and the
+           player was shown a balance of 0 for money that was still there. The
+           error is now bound, reported, and kept as its own state. */
+        const { data: profData, error: profError } = await ownProfile(requestedUserId)
           .select('diamonds')
-          .eq('id', requestedUserId)
           .maybeSingle();
 
         if (!isCurrent()) return;
-        setDiamonds(profData?.diamonds || 0);
+        if (profError) {
+          reportError(profError, 'VIPPage.Diamond_balance_load_failed', {
+            userId: requestedUserId,
+          });
+          setDiamonds(0);
+          setDiamondBalanceState('error');
+        } else {
+          setDiamonds(Number(profData?.diamonds ?? 0));
+          setDiamondBalanceState('ready');
+        }
 
-        const { data: vp } = await supabase
+        const { data: vp, error: vpError } = await supabase
           .from('vip_points')
           .select('current_points, lifetime_points')
           .eq('user_id', requestedUserId)
           .maybeSingle();
         if (!isCurrent()) return;
-        setVipPoints((prev) => ({
-          ...prev,
-          current: Number(vp?.current_points || 0),
-          lifetime: Number(vp?.lifetime_points || 0),
-        }));
+        if (vpError) {
+          reportError(vpError, 'VIPPage.Vip_points_load_failed', { userId: requestedUserId });
+          setVipPoints((prev) => ({ ...prev, current: 0, lifetime: 0 }));
+          setVipPointsState('error');
+        } else {
+          setVipPoints((prev) => ({
+            ...prev,
+            current: Number(vp?.current_points || 0),
+            lifetime: Number(vp?.lifetime_points || 0),
+          }));
+          setVipPointsState('ready');
+        }
 
         /* Diamonds live in diamond_transactions. Read both transaction type
            columns because older rows use `type`, and report a failed money
            read instead of presenting an empty history as fact. */
         const { data: ledgerData, error: ledgerError } = await supabase
           .from('diamond_transactions')
-          .select('id, type, transaction_type, amount, description, balance_after, created_at')
+          .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
           .eq('user_id', requestedUserId)
           .order('created_at', { ascending: false })
           .limit(10);
@@ -313,8 +360,17 @@ export default function VIPPage() {
               id: entry.id,
               date: new Date(entry.created_at),
               action: amount > 0 ? 'earned' : 'spent',
+              /* Phase 6: the ledger's own player line (player_line), never the
+                 raw description an operator wrote. The fallback is the kind's
+                 row label, the same one PlayerWalletPage and DiamondWalletModal
+                 use - NOT the bare `kind`, which would have printed a player a
+                 snake_case enum ("arena_deposit") where every other surface
+                 says "Diamond Arena Buy-In". `diamondTxLabel` never returns
+                 blank: an unknown kind is Title Cased and an empty one reads
+                 "Diamond Movement". */
               description:
-                entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
+                (typeof entry.player_line === 'string' && entry.player_line) ||
+                diamondTxLabel(kind),
               diamonds: Math.abs(amount),
               balanceAfter: Number(entry.balance_after ?? 0),
             } as DiamondActivity;
@@ -329,6 +385,10 @@ export default function VIPPage() {
         if (isCurrent()) {
           setRecentDiamondActivities([]);
           setDiamondActivityState('error');
+          // Whatever threw, every figure this load owns is unread. None of
+          // them may be left reading as a settled zero.
+          setDiamondBalanceState('error');
+          setVipPointsState('error');
           toast.error('Failed To Load VIP Status');
         }
       } finally {
@@ -361,9 +421,11 @@ export default function VIPPage() {
       throwables: { used: 0, limit: 0 },
     });
     setDiamonds(0);
-    setVipPoints({ current: 0, lifetime: 0, monthly: 0, activeStreak: 0 });
+    setVipPoints({ current: 0, lifetime: 0 });
     setRecentDiamondActivities([]);
     setDiamondActivityState('loading');
+    setDiamondBalanceState('loading');
+    setVipPointsState('loading');
     setStateUserId(undefined);
     setLoading(true);
 
@@ -452,11 +514,10 @@ export default function VIPPage() {
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           crest="vip"
-          metrics={[
-            { label: 'Current Points', value: 'Syncing', tone: 'attention' },
-            { label: 'Monthly', value: 'Syncing', tone: 'live' },
-            { label: 'Active Streak', value: 'Syncing' },
-          ]}
+          /* Two further metrics, "Monthly" and "Active Streak", used to sit
+             beside this one in both header states. Neither had a writer.
+             See the vipPoints comment above. */
+          metrics={[{ label: 'Current Points', value: 'Syncing', tone: 'attention' }]}
         />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
@@ -475,9 +536,13 @@ export default function VIPPage() {
         status="VIP TELEMETRY // LIVE"
         crest="vip"
         metrics={[
-          { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
-          { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
-          { label: 'Active Streak', value: `${vipPoints.activeStreak} Days` },
+          {
+            label: 'Current Points',
+            // A points read that failed says so. It never borrows the look of a
+            // player who has spent every point they earned.
+            value: vipPointsState === 'error' ? 'Unavailable' : vipPoints.current.toLocaleString(),
+            tone: 'attention',
+          },
         ]}
       />
       {/* MEMBERSHIP, ALLOWANCES, POINTS.
@@ -490,6 +555,7 @@ export default function VIPPage() {
           expiresAt={vipExpiresAt}
           limits={monthlyLimits}
           points={vipPoints}
+          pointsState={vipPointsState}
         />
       )}
 
@@ -650,7 +716,17 @@ export default function VIPPage() {
               aria-hidden="true"
             />
             <div className="diamond-balance__copy">
-              <span className="diamond-count">{diamonds.toLocaleString()}</span>
+              {/* An unreadable balance reads "Unavailable", never "0". A player
+                  who is told they hold zero diamonds stops trying to spend
+                  them, and this figure was a discarded read away from saying
+                  that to somebody with a full wallet. */}
+              <span
+                className={`diamond-count${
+                  diamondBalanceState === 'error' ? ' diamond-count--unknown' : ''
+                }`}
+              >
+                {diamondBalanceState === 'error' ? 'Unavailable' : diamonds.toLocaleString()}
+              </span>
               <span className="diamond-label">Diamonds</span>
             </div>
           </div>
@@ -723,7 +799,10 @@ export default function VIPPage() {
       <DiamondTopUpModal
         isOpen={showTopUpModal}
         onClose={() => setShowTopUpModal(false)}
-        onPurchaseComplete={(newBal) => setDiamonds(newBal)}
+        onPurchaseComplete={(newBal) => {
+          setDiamonds(newBal);
+          setDiamondBalanceState('ready');
+        }}
       />
 
       {/* Diamond Wallet History Modal */}

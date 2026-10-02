@@ -20,6 +20,7 @@ jobs:
     outputs:
       release_required: ${{ steps.change.outputs.release_required }}
       target_sha: ${{ steps.change.outputs.target_sha }}
+      offer_reason: ${{ steps.change.outputs.offer_reason }}
     steps:
       # Do not use push.paths here. GitHub only evaluates a bounded portion of
       # a very large diff for path filters, which can omit a real server change
@@ -43,6 +44,7 @@ jobs:
         env:
           AFTER_SHA: ${{ github.sha }}
           BEFORE_SHA: ${{ github.event.before }}
+          ENGINE_HEALTH_URL: https://engine.smarter.poker/health
         run: |
           set -euo pipefail
           [[ "$AFTER_SHA" =~ ^[0-9a-f]{40}$ ]] \
@@ -65,9 +67,65 @@ jobs:
             echo "::notice::Previous commit is missing or unreadable; failing closed by staging the exact SHA."
           fi
 
+          # A RELEASE IS OWED UNTIL PRODUCTION HOLDS IT (2026-09-27).
+          #
+          # "Did this push touch engine code" is the question of the moment a
+          # commit merges. The question the release lane actually owes is "does
+          # production hold the newest engine code on main". From 15:09 UTC on
+          # 2026-09-26 to 15:03 UTC on 2026-09-27 those two answers disagreed:
+          # the only request (9e275e1c1a, run 36250934873) waited through two
+          # shut certificates and ended at 17:22, and the next 42 pushes were
+          # database, client and test changes, so each run here printed
+          # "Engine runtime release required: false" and production fell 61
+          # commits behind while nothing offered it anything.
+          #
+          # So when this push did not change the engine tree, ask the live
+          # engine which release it runs. If that release does not contain the
+          # newest engine commit on main, that commit is still owed and is
+          # offered again - through the same single receiver, with every gate it
+          # always had. The signal job below refuses to offer while a receiver
+          # for the same SHA is still running, and offers the same SHA at most
+          # once per OFFER_INTERVAL_SECONDS, so this is one offer per
+          # maintenance window, not a retry loop. It is driven by protected-main
+          # pushes, never by a timer (CLAUDE.md 10.85, no-workflow-gains-a-new-
+          # timer). "Could not tell" is its own outcome (CLAUDE.md 10.86): an
+          # unreadable /health, or a served SHA outside protected main, offers
+          # nothing on that basis and says so.
+          OFFER_REASON=changed
+          if [ "$RELEASE_REQUIRED" = false ]; then
+            LIVE_SHA=''
+            if [ -n "${ENGINE_HEALTH_URL:-}" ]; then
+              LIVE_SHA=$(curl -fsSL --max-time 15 \
+                -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+                "$ENGINE_HEALTH_URL" 2>/dev/null \
+                | python3 -c 'import json, sys
+          try:
+              value = json.load(sys.stdin).get("releaseSha")
+          except Exception:
+              value = None
+          print(value if isinstance(value, str) else "")' 2>/dev/null) || LIVE_SHA=''
+            fi
+            if ! [[ "$LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              OFFER_REASON=unknown
+              echo "::warning title=LIVE ENGINE RELEASE UNKNOWN::The live engine did not report one full releaseSha, so whether production holds $LATEST_REQUIRED could not be told."
+            elif ! git cat-file -e "${LIVE_SHA}^{commit}" 2>/dev/null \
+              || ! git merge-base --is-ancestor "$LIVE_SHA" "$AFTER_SHA"; then
+              OFFER_REASON=unknown
+              echo "::warning title=LIVE ENGINE RELEASE UNKNOWN::The live engine reports $LIVE_SHA, which is not in protected-main history at $AFTER_SHA."
+            elif git merge-base --is-ancestor "$LATEST_REQUIRED" "$LIVE_SHA"; then
+              OFFER_REASON=current
+            else
+              OFFER_REASON=behind
+              RELEASE_REQUIRED=true
+              echo "::notice title=ENGINE RELEASE STILL OWED::Production runs $LIVE_SHA, which does not contain protected-main engine $LATEST_REQUIRED; offering it again."
+            fi
+            echo "Live engine release: ${LIVE_SHA:-<unreadable>}"
+          fi
+
           echo "release_required=$RELEASE_REQUIRED" >> "$GITHUB_OUTPUT"
           echo "target_sha=$LATEST_REQUIRED" >> "$GITHUB_OUTPUT"
-          echo "Engine runtime release required: $RELEASE_REQUIRED"
+          echo "offer_reason=$OFFER_REASON" >> "$GITHUB_OUTPUT"
+          echo "Engine runtime release required: $RELEASE_REQUIRED ($OFFER_REASON)"
           echo "Exact engine component SHA: $LATEST_REQUIRED"
 
   signal:
@@ -80,7 +138,58 @@ jobs:
       actions: read
       contents: write
     steps:
+      # A push that changed the engine is always sent: that path is unchanged.
+      # A release that is only still OWED (offer_reason=behind) is offered once
+      # per window: never while a receiver for the same SHA is still running
+      # (it is already waiting for its break), and never twice inside
+      # OFFER_INTERVAL_SECONDS. Fifty minutes is under one hourly break period,
+      # so every window can be offered, and over the ~15 minutes a receiver
+      # takes to fail its own preflight, so a build that cannot pass costs at
+      # most one test matrix an hour rather than one per merge.
+      - name: Decide whether an owed release still needs an offer
+        id: offer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFER_REASON: ${{ needs.detect.outputs.offer_reason }}
+          REF_SHA: ${{ needs.detect.outputs.target_sha }}
+          REPO: ${{ github.repository }}
+          OFFER_INTERVAL_SECONDS: '3000'
+        run: |
+          set -euo pipefail
+          [[ "$REF_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::Protected-main push did not provide one full lowercase commit SHA."; exit 1; }
+          if [ "$OFFER_REASON" != behind ]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$OFFER_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ ]]
+          # An unreadable run list fails this step: an offer that cannot see
+          # the lane it would join must not guess that the lane is empty.
+          RUNS=$(gh api \
+            "repos/$REPO/actions/workflows/auto-deploy-hetzner.yml/runs?event=repository_dispatch&per_page=100")
+          MINE=$(printf '%s' "$RUNS" | jq -c --arg title "Engine Release $REF_SHA" \
+            '[.workflow_runs[] | select(.display_title == $title) | {id, status, created_at}]')
+          ACTIVE=$(printf '%s' "$MINE" | jq -r '[.[] | select(.status != "completed")][0].id // empty')
+          if [ -n "$ACTIVE" ]; then
+            echo "::notice::Engine $REF_SHA is still owed, and receiver run $ACTIVE is already offering it."
+            echo "send=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          AGE=$(printf '%s' "$MINE" | jq -r \
+            '[.[].created_at | fromdateiso8601] | if length == 0 then "" else (now - max | floor | tostring) end')
+          if [ -n "$AGE" ]; then
+            [[ "$AGE" =~ ^-?[0-9]+$ ]]
+            if [ "$AGE" -lt "$OFFER_INTERVAL_SECONDS" ]; then
+              echo "::notice::Engine $REF_SHA is still owed; it was last offered ${AGE}s ago, inside the ${OFFER_INTERVAL_SECONDS}s window."
+              echo "send=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "Engine $REF_SHA is still owed and no receiver is offering it; offering it again."
+          echo "send=true" >> "$GITHUB_OUTPUT"
+
       - name: Send the immutable engine release request
+        if: steps.offer.outputs.send == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REF_SHA: ${{ needs.detect.outputs.target_sha }}

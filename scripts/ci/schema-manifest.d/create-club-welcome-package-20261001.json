@@ -1,0 +1,25 @@
+{
+  "_owner": "agent/codex/create-club-welcome-package-20261001 - migrations 20261001154709 core, 20261001212300 certification cleanup, 20261001224720 tournament fence, 20261001232445 club history, 20261001232452 request activation, 20261002002030 declared welcome allocation clearing, 20261002065156 schedule-spawn cleanup and 20261002073521 interrupted-claim cleanup",
+  "tables": [
+    "club_owner_creation_history",
+    "club_welcome_entitlements",
+    "club_welcome_package_funding",
+    "club_welcome_package_items",
+    "club_welcome_package_receipts",
+    "club_welcome_reset_receipts"
+  ],
+  "functions": [
+    "fn_apply_club_welcome_economics",
+    "fn_ca_prepare_unused_welcome_certification_fixture",
+    "fn_ca_prepare_unused_welcome_certification_schedule_spawns",
+    "fn_ca_retire_welcome_certification_club",
+    "fn_club_welcome_package_config",
+    "fn_fence_welcome_package_schedule_spawn",
+    "fn_get_club_welcome_package",
+    "fn_get_club_welcome_package_reset_impact",
+    "fn_offer_lifetime_first_club_welcome",
+    "fn_provision_first_club_welcome_package",
+    "fn_remember_club_owner_transfer",
+    "fn_remove_first_club_welcome_games"
+  ]
+}

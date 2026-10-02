@@ -121,6 +121,9 @@ describe('a club game join belongs to its opening', () => {
       waitlistedText: () => 'Queue Place',
       reportError: vi.fn(),
       joinGameRefusalText: () => 'Refused',
+      // A must-move game, not a Lightning Cluster: the Lightning door is not taken.
+      isLightningMode: () => false,
+      lightningRoute: (id: string) => `/lightning/${id}`,
     };
     const join = () => new Function(...Object.keys(context), body)(...Object.values(context));
     const settle = async (value: unknown) => {

@@ -1,0 +1,147 @@
+/* LIGHTNING PHASE 6: the Lightning controls.
+
+   A strip pinned just above the action row, on the right, clear of the hero's
+   name plate. It is position: fixed and out of flow, so it never feeds the
+   felt's geometry (the reserve is static; see TablePage.css), and it is
+   always mounted in a Lightning room, so it never enters or leaves between
+   hands. Only the words change: lit while folding is available, invisible and
+   inert otherwise. One action is a lit word, not a drawn button
+   (#ClubArenaConsole), the same treatment as .footer-action-bar__btn. */
+.lightning-fold-bar {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--sp-bottom-row-h, 64px) + env(safe-area-inset-bottom, 0px) + 6px);
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.lightning-fold-bar__btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #45adff;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 120ms linear;
+}
+
+.lightning-fold-bar__btn--quiet {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.lightning-fold-bar__btn:disabled {
+  opacity: 0;
+  cursor: default;
+  pointer-events: none;
+}
+
+.lightning-fold-bar__btn:active:not(:disabled) {
+  filter: brightness(1.3);
+}
+
+/* The neutral line for a gap between hands that has run long. */
+.lightning-next-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* JOIN LIGHTNING completing: the anchor table is covered by one neutral line
+   until the tab moves to the pool-session room. Static: nothing animates. */
+.lightning-joining {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.lightning-joining__text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.lightning-joining__cancel {
+  min-height: 40px;
+  padding: 8px 14px;
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* LIGHTNING PHASE 7: the room after Lightning ends. Over the felt like the
+   joining state, with the player's way back to their own table. */
+.lightning-ended {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: rgba(0, 0, 0, 0.72);
+  text-align: center;
+}
+
+.lightning-ended__eyebrow {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.lightning-ended__text {
+  margin: 0;
+  max-width: 320px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.lightning-ended__go {
+  min-height: 44px;
+  padding: 10px 20px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}

@@ -965,6 +965,45 @@ jobs:
             exit 1
           fi
 
+      # AN ACCRUAL SHARES THE WEEKLY ACCOUNTING LANE (2026-09-29).
+      #
+      # fn_accrue_cash_hand_commissions, fn_settle_tournament_rake,
+      # fn_lock_cash_bank_accounting_week and
+      # fn_lock_accounting_tournament_recognition_week all guard the weekly
+      # period with an advisory lock keyed on (club-or-union, week). All four
+      # took it EXCLUSIVELY, so for a whole week every cash hand and every
+      # tournament rake settle in a club queued behind one lock in FIFO order.
+      # Measured 2026-09-29: 74.4% of all advisory waiting on the platform sat
+      # on these keys, queues seven deep, while the per-table hand locks that
+      # fan out correctly carried 0.80.
+      #
+      # The lock exists to exclude the weekly CLOSE - a reader/writer contract,
+      # built as writer/writer. Shared for the accrual, exclusive for the close,
+      # keeps the exclusion exactly and drops the convoy.
+      #
+      # All four move together: fn_settle_tournament_rake calls
+      # fn_lock_accounting_tournament_recognition_week on the SAME key, so one
+      # of them going back to exclusive is a lock upgrade, and this repo already
+      # learned those deadlock (2026-09-10).
+      - name: Supabase Invariants - An Accrual Shares The Weekly Accounting Lane
+        run: |
+          set -o pipefail
+          echo "## Weekly Accounting Lock Mode" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-accounting-week-lock-mode.mjs 2>&1 | tee /tmp/weeklane.log; then
+            echo "OK - no accrual takes the weekly accounting lane exclusively." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "An accrual takes the weekly accounting lane exclusively. That serialises" >> $GITHUB_STEP_SUMMARY
+              echo "a week of one club's hands behind a single lock. Use" >> $GITHUB_STEP_SUMMARY
+              echo "pg_advisory_xact_lock_shared; the close keeps the exclusive side." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
       # A TRIGGER ON A MONEY TABLE DECLARES ITSELF (2026-09-12).
       # UndeclaredTriggerOnAMoneyTable is critical and pages by SMS, and it read
       # 76 on 2026-09-12 having read 74 ninety minutes earlier: saturated, and
@@ -1299,17 +1338,32 @@ jobs:
         working-directory: server
         run: npm ci
       - name: Install PostgreSQL 17 tools without a default database service
+        env:
+          PG_CI_SHARD: ${{ matrix.shard }}
         shell: bash
         run: |
           set -euo pipefail
+          pg_ci_build_packages=()
           pg_ci_build_tools_ready=true
-          for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
-            if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
-          done
+          case "$PG_CI_SHARD" in
+            1|2) ;;
+            3|4)
+              pg_ci_build_packages=(postgresql-server-dev-17 build-essential bison flex perl bzip2 patch)
+              for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
+                if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+              done
+              if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
+                    ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
+              ;;
+            *) echo 'Unknown accounting shard' >&2; exit 1 ;;
+          esac
           if [[ "$pg_ci_build_tools_ready" == true &&
+                -x /usr/lib/postgresql/17/bin/postgres &&
                 -x /usr/lib/postgresql/17/bin/initdb &&
-                -x /usr/lib/postgresql/17/bin/pg_config &&
-                -f /usr/include/postgresql/17/server/postgres.h &&
+                -x /usr/lib/postgresql/17/bin/pg_ctl &&
+                -x /usr/lib/postgresql/17/bin/psql &&
+                -x /usr/lib/postgresql/17/bin/createdb &&
+                -x /usr/lib/postgresql/17/bin/pg_dump &&
                 -f /usr/share/postgresql/17/extension/pg_cron.control &&
                 -f /usr/lib/postgresql/17/lib/pg_cron.so ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
@@ -1331,7 +1385,7 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)
@@ -1380,9 +1434,19 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Horse original observation windows survive atomic persistence
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-observation-window.py
+
       - name: Reserved certification identities retain immutable ledger actors
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-retirement-postgres.py
+
+      - name: Backed payout discovery preserves every conservation term
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-backed-payout-scan-postgres.py
 
       - name: Reserved cleanup finds immutable cash sources without a trailing-key scan
         if: matrix.shard == 4
@@ -1391,6 +1455,10 @@ jobs:
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py
+
+      - name: Player search enforces global discovery and private account boundaries
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-player-search-privacy-postgres.py
 
       - name: Satellite conservation keeps exact results through an online source index
         if: matrix.shard == 4
@@ -1412,13 +1480,43 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-cumulative-reads.py
 
+      - name: Chip store coverage preserves results with one ledger read
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-chip-store-coverage.py
+
       - name: Settlement attribution retains complete financial coverage
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-attribution-postgres.py
 
+      - name: Stranded player reads preserve every event and latest stack
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-stranded-player-read-postgres.py
+      - name: Interrupted contract index recovery preserves source and concurrent writers
+        id: contract_index_recovery
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          node --test scripts/ci/contract-index-recovery.test.mjs
+          python3 -B scripts/ci/test-contract-index-recovery-postgres.py --root "$GITHUB_WORKSPACE" --scratch-parent "$RUNNER_TEMP" --output "$GITHUB_WORKSPACE/artifacts/contract-index-recovery"
+      - name: Retain original contract index recovery proof
+        if: always() && matrix.shard == 4 && steps.contract_index_recovery.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-index-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/contract-index-recovery/
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Settlement conservation preserves full results through a narrow online index
         if: matrix.shard == 4
         run: python3 scripts/ci/test-settlement-conservation-index-postgres.py
+
+      - name: The rakeback settler reads only what every writer has committed
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rakeback-settler-read-horizon-postgres.py
 
       - name: Event-owned engine recovery database boundaries
         if: matrix.shard == 1
@@ -1532,6 +1630,16 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-matcher.sh
+      - name: Lightning Phase 6 settles a hand onto its anchors through the physical path, frees a fast folder at once and refuses a forged settlement
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase6-settlement.sh
+      - name: Lightning Phase 7 reverts a drained pool to must move without moving a chip, and the tick drives both conversions
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-lightning-phase7-reversion.sh
       - name: Credit invoices bill only uninvoiced drawn debt
         if: matrix.shard == 1
         env:
@@ -1543,6 +1651,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: /tmp
         run: bash scripts/dev/test-accounting-delivery.sh
+      - name: A balance never moves without its ledger row (refused by name at commit, every live shape commits)
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-ledger-invariant.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
         if: matrix.shard == 1
         env:
@@ -1568,6 +1682,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-club-weekly-summary.sh
+      - name: Owner accounting copies reach Production Alerts, never the owner's phone
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-accounting-push-bridge.sh
       - name: One weekly accounting coordinator rolls back all financial stages and invoices
         if: matrix.shard == 1
         env:
@@ -1689,6 +1808,34 @@ jobs:
         with:
           name: hand-submission-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/hand-submission/
+          if-no-files-found: error
+          retention-days: 7
+      - name: A hand the table has already dealt past is disposed, and stops blocking the start
+        id: hand_submission_disposal
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-disposal
+      - name: Retain superseded hand disposal proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_disposal.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-disposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission-disposal/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retention closes the settlement request it prunes
+        id: hand_submission_retention_disposal
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-submission-retention-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-retention-disposal
+      - name: Retain retention disposal proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_retention_disposal.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-submission-retention-disposal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-submission-retention-disposal/
           if-no-files-found: error
           retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
@@ -2771,7 +2918,14 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: CSS Beat E2E (multi-table + animations)
+    # TWO HALVES, ONE GATE (2026-10-01). The required check named
+    # "CSS Beat E2E (multi-table + animations)" is now `css-beats-gate`, at the
+    # end of this file, and it passes only when this job AND
+    # `diamond-playfield-e2e` both pass. The Diamond playfield ran here, after
+    # the beats, on one worker for 7.1 of the job's 16 test minutes (run
+    # 36886817861); it builds its own bundle and needs neither this build nor
+    # the shared preview, so it runs beside this job instead of after it.
+    name: CSS Beat suites (multi-table, animations, Table Studio)
     runs-on: ubuntu-latest
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
@@ -3033,32 +3187,9 @@ jobs:
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
           PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
-          # Software WebGL must not compete with the other three browser workers.
-          # Keep the full real-scene transitions.
-          #
-          # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
-          # with --retries=0, so a SwiftShader timing flake in one of its real
-          # WebGL scenes turned a required check red and blocked a merge over
-          # nothing in the diff. It gets the same single retry as the suites
-          # above. A case that fails and then passes is Playwright's `flaky`
-          # status: the JSON report below is read by the next step, which names
-          # every flaky case as a warning and in the job summary, so a retried
-          # pass is seen rather than counted as clean. A case that fails twice
-          # still fails the job.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
 
-      # Reads the playfield invocation's JSON report and names every case that
-      # passed only on retry. Runs whether the suites passed or failed, and
-      # fails loudly if the suites reported success without a readable report.
-      - name: Name every Diamond playfield case that passed only on retry
-        if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
-        env:
-          PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
-          SUITE_OUTCOME: ${{ steps.css-beats.outcome }}
-        run: node scripts/ci/playwright-flaky-summary.mjs
-
-      # The same for the CSS Beat suites of the first invocation, which also
-      # run with one retry: a case that passed only on retry is named there too.
+      # The CSS Beat suites run with one retry: a case that passed only on
+      # retry is named, never counted as clean.
       - name: Name every CSS Beat case that passed only on retry
         if: ${{ always() && (steps.css-beats.outcome == 'success' || steps.css-beats.outcome == 'failure') }}
         env:
@@ -3122,3 +3253,124 @@ jobs:
           pid=$(cat /tmp/arena-preview.pid 2>/dev/null || echo "")
           [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
           exit 0
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE DIAMOND PLAYFIELD, BESIDE THE BEATS (2026-10-01).
+  #
+  # The real Crash, Plinko, Donkey Cross and Mines scenes in software WebGL.
+  # Its spec bundles the components itself with esbuild and serves them through
+  # page.route, so it needs no build of the app and no preview server: only
+  # the dependencies and Chromium. It used to run inside css-beats-e2e after
+  # the beats, on one worker, for 7.1 minutes of every merge's critical path.
+  # Same admission as css-beats-e2e, and css-beats-gate below requires both.
+  # ───────────────────────────────────────────────────────────────────────────
+  diamond-playfield-e2e:
+    needs: changes
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: Diamond playfield (software WebGL)
+    runs-on: ubuntu-latest
+    # 7.1 minutes measured inside the old job; room for a slow browser install.
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The same tree as css-beats-e2e (both install with --ignore-scripts), so
+      # the same key: whichever job saves it first warms the other.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run the Diamond playfields
+        id: diamond-playfield
+        run: |
+          # Software WebGL must not compete with the other three browser workers.
+          # Keep the full real-scene transitions.
+          #
+          # ONE RETRY, AND IT IS NEVER SILENT (2026-09-26). This invocation ran
+          # with --retries=0, so a SwiftShader timing flake in one of its real
+          # WebGL scenes turned a required check red and blocked a merge over
+          # nothing in the diff. It gets the same single retry as the suites
+          # above. A case that fails and then passes is Playwright's `flaky`
+          # status: the JSON report below is read by the next step, which names
+          # every flaky case as a warning and in the job summary, so a retried
+          # pass is seen rather than counted as clean. A case that fails twice
+          # still fails the job.
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+
+      # Reads the playfield invocation's JSON report and names every case that
+      # passed only on retry. Runs whether the suite passed or failed, and
+      # fails loudly if the suite reported success without a readable report.
+      - name: Name every Diamond playfield case that passed only on retry
+        if: ${{ always() && (steps.diamond-playfield.outcome == 'success' || steps.diamond-playfield.outcome == 'failure') }}
+        env:
+          PLAYFIELD_REPORT: ${{ runner.temp }}/diamond-playfield-report.json
+          SUITE_OUTCOME: ${{ steps.diamond-playfield.outcome }}
+        run: node scripts/ci/playwright-flaky-summary.mjs
+
+      - name: Preserve failed Diamond playfield browser evidence
+        if: ${{ failure() && steps.diamond-playfield.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE REQUIRED CHECK: BOTH HALVES OR NOTHING (2026-10-01).
+  #
+  # "CSS Beat E2E (multi-table + animations)" is the name the main ruleset
+  # requires (scripts/ci/apply-main-ruleset.mjs). It now belongs to this job,
+  # which runs no browser: it reads the two halves' results and passes only
+  # when both passed.
+  #
+  # FAILS CLOSED, for the reason css-beats-e2e spells out. `always()` makes it
+  # evaluate even when a half failed, was cancelled or was skipped by `needs:`;
+  # without it a failed half would skip this job, and a ruleset counts a
+  # skipped required check as SATISFIED. Its admission is the halves' own, so
+  # it is skipped exactly when they are meant to be (no src change, a
+  # superseded head) and runs, and judges, whenever they were meant to run.
+  # tests/the-css-beat-gate-requires-both-halves.law.test.ts pins all of it.
+  # ───────────────────────────────────────────────────────────────────────────
+  css-beats-gate:
+    needs: [changes, css-beats-e2e, diamond-playfield-e2e]
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.head_current != 'false' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: CSS Beat E2E (multi-table + animations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Both halves passed
+        env:
+          BEATS_RESULT: ${{ needs.css-beats-e2e.result }}
+          PLAYFIELD_RESULT: ${{ needs.diamond-playfield-e2e.result }}
+        run: |
+          echo "CSS Beat suites: $BEATS_RESULT"
+          echo "Diamond playfield: $PLAYFIELD_RESULT"
+          if [ "$BEATS_RESULT" != "success" ] || [ "$PLAYFIELD_RESULT" != "success" ]; then
+            echo "::error title=CSS Beat E2E::both halves must pass (CSS Beat suites: $BEATS_RESULT, Diamond playfield: $PLAYFIELD_RESULT)"
+            exit 1
+          fi

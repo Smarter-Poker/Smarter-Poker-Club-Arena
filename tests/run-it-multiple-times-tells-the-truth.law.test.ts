@@ -165,11 +165,16 @@ describe('second sweep (2026-09-04): the parts the first fix missed or broke', (
   });
 
   it('a reconnect during a runout sees the tabled hands, like everyone else', () => {
-    const eng = read('server/src/engine/ServerTableEngine.ts');
+    // Lightning Phase 6 (2026-09-27): broadcast and resync build through the
+    // shared projection, which reads the engine's flag as reveal.runoutRevealActive.
+    const eng =
+      read('server/src/engine/ServerTableEngine.ts') +
+      read('server/src/engine/presentation/projectHandState.ts');
     // Three reveal gates, one rule: broadcast, resync, observer.
     expect(
-      eng.match(/state\.stage === 'showdown' \|\| this\.runoutRevealActive/g)?.length ?? 0
+      eng.match(/state\.stage === 'showdown' \|\| (this|reveal)\.runoutRevealActive/g)?.length ?? 0
     ).toBeGreaterThanOrEqual(3);
+    expect(eng).toContain('runoutRevealActive: this.runoutRevealActive,');
   });
 
   it('an unknown balance is unknown on the normal buy-in and the cashier too', () => {

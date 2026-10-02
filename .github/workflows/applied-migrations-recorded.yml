@@ -61,19 +61,33 @@ jobs:
           repositories: Smarter-Poker-World-Hub
           permission-contents: read
 
+      # ONCE A WEEK, THE WHOLE HISTORY (2026-09-28). The default window is seven
+      # days, so a migration that slipped past it is invisible for ever: on
+      # 2026-09-28, 194 applied migrations had no file and 188 of them were
+      # older than any window this job had looked at. The Monday-morning run of
+      # the existing schedule (no new timer - tests/no-workflow-gains-a-new-timer)
+      # reads everything since 2026-04-01 instead, and a dispatch can ask for
+      # the same with client_payload.full_history=true.
       - name: Compare the live migration history against this repo
         id: compare
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GH_TOKEN: ${{ steps.estate-token.outputs.token }}
+          FULL_HISTORY_REQUESTED: ${{ github.event.client_payload.full_history }}
         run: |
           set -o pipefail
+          SINCE_ARGS=""
+          if [ "$FULL_HISTORY_REQUESTED" = "true" ] || \
+             { [ "$(date -u +%u)" = "1" ] && [ "$((10#$(date -u +%H)))" -lt 12 ]; }; then
+            SINCE_ARGS="--since 20260401"
+            echo "Weekly full-history run: every migration applied since 2026-04-01."
+          fi
           # --fail makes the run go red when the gap exists. The script exits 2
           # on its own errors (missing credentials, missing RPC), which is a
           # different failure and should also be visible rather than swallowed.
           set +e
-          node scripts/ci/check-applied-migrations-are-recorded.mjs --fail 2>&1 | tee /tmp/recorded.log
+          node scripts/ci/check-applied-migrations-are-recorded.mjs --fail $SINCE_ARGS 2>&1 | tee /tmp/recorded.log
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 

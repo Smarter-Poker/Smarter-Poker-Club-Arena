@@ -87,6 +87,9 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleMetrics>[1]['gameServer'] & {
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
     requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
+    /** Lightning Phase 6: a pool_session_id resolves to its seat proxy. */
+    getActionEngine?: GameServer['getActionEngine'];
+    getPreActionEngine?: GameServer['getPreActionEngine'];
   };
 
 export interface RouterDeps {
@@ -203,6 +206,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'running',
   'warned',
   'queuedAs',
+  'consolidating',
+  'runningLane',
   'dirtyAs',
   'queueTicket',
   'enqueuedAt',
@@ -218,6 +223,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'proofDeadlineMonotonicMs',
   'authorityExpired',
   'stopPending',
+  'seatMoveQuarantineRefusal',
+  'absentSeatMoveRefusalMeans',
   'schedulerPendingCount',
   'lifecyclePendingCount',
   'schedulerRecent',
@@ -234,6 +241,10 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'tableId',
   'availability',
   'engine',
+  'movement',
+  'claimedBoundary',
+  'retainedPermit',
+  'phase',
   'session',
   'sessionCoverage',
   'leaseAuthorityExpired',
@@ -491,7 +502,16 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     // State-mutating routes — handlers/*.ts (Phase U3.2 + U3.3).
     // ─────────────────────────────────────────────────────────────────────────
-    if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
+    if (method === 'POST' && url === '/action')
+      return handleAction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getActionEngine
+              ? gameServer.getActionEngine(tableId)
+              : gameServer.getTableEngine(tableId),
+        },
+      });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
     /**
      * ROUTED 2026-08-28. `handleRejectRebuy` was imported at the top of this
@@ -521,7 +541,18 @@ export function createRouter(
     // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
     // cap armed) without removing them — see handlers/away.ts.
     if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
-    if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
+    if (method === 'POST' && url === '/preaction')
+      return handlePreaction(req, res, {
+        // A Lightning pool_session_id resolves to its seat proxy (Phase 6).
+        gameServer: {
+          getTableEngine: (tableId) =>
+            gameServer.getPreActionEngine
+              ? gameServer.getPreActionEngine(tableId)
+              : (gameServer as Parameters<typeof handlePreaction>[2]['gameServer']).getTableEngine(
+                  tableId
+                ),
+        },
+      });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/leave-occupancy')
       return handleLeaveOccupancy(req, res, { gameServer });

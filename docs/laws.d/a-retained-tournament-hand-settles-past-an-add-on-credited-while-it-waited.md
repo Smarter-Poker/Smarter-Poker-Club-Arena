@@ -1,0 +1,3 @@
+# tests/a-retained-tournament-hand-settles-past-an-add-on-credited-while-it-waited.law.test.ts
+
+A finished tournament hand retained by a dead engine generation must still be handed off when a player's add-on was credited to their chair while the hand waited: `public.fn_ca_resume_hand_submission` admits, on a tournament table only, a named chair holding exactly `stack_before` plus the event's `addon_chips` when that registration has `add_on` true. The settlement runs in delta mode (every element carries `stack_before`), so the hand's result is applied on top of the add-on and the add-on is recorded as a rebase, never overwritten. Every other handoff clause refuses as before.

@@ -12,7 +12,7 @@
  * NO DEMO DATA - All operations are real.
  */
 
-import { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { Session, AuthChangeEvent, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
 import { readLocalSession as readLocalSessionShared, SPA_AUTH_BREADCRUMB } from '../lib/authUtils';
@@ -365,6 +365,18 @@ class IdentityDNACore {
     setTimeout(async () => {
       try {
         const profile = await this.loadUserProfile(userId);
+        if (profile && (profile as { status?: string | null }).status === 'deleted') {
+          /* THIS ACCOUNT WAS CLOSED (2026-09-29) - here, or on another device.
+             Closing it removed its sessions but not the access token this
+             device holds, which outlives the closure by days; the app kept
+             going as the scrubbed account, lobby and all (measured on the
+             Android emulator). The session is over: finish signing out rather
+             than show the tombstone. */
+          void this.logout().catch((err) =>
+            reportError(err, 'IdentityDNA.Closed_account_sign_out')
+          );
+          return;
+        }
         if (profile) {
           useUserStore.getState().setUser({
             id: profile.id,
@@ -417,9 +429,14 @@ class IdentityDNACore {
          never drift apart again. All eight are granted to `authenticated` -
          verified against the live schema, and it matters: per the note above,
          ONE ungranted column 403s the whole statement and the profile then
-         silently never loads. */
+         silently never loads. `status` (granted, checked 2026-09-29) is how a
+         closed account is recognised: 'deleted'. */
+      /* No `updated_at`: the presence heartbeat stamps it with last_seen, so
+         it is its owner's (ruling 25) and naming it 403s this read WHOLE -
+         which the benign-error branch below would swallow, and the profile
+         would silently never load. Nothing here reads it. */
       .select(
-        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number`
+        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, player_number, status`
       )
       .eq('id', userId)
       .maybeSingle();
@@ -441,7 +458,8 @@ class IdentityDNACore {
     }
 
     if (!data) return null;
-    return data as UserProfile;
+    // `status` rides along for the closed-account check in loadProfileInBackground.
+    return data as unknown as UserProfile;
   }
 
   /**
@@ -471,10 +489,21 @@ class IdentityDNACore {
 
   /**
    * Perform secure logout
+   *
+   * A sign-out the server already made is finished here, not reported: when
+   * the session is gone on the server (the account was closed, or it was
+   * signed out elsewhere) supabase-js 2.90 answers AuthSessionMissingError
+   * and keeps the local copy. See src/lib/forgetEndedSession.ts.
    */
   async logout(): Promise<void> {
     try {
       const { error } = await supabase.auth.signOut();
+      if (error && isAuthSessionMissingError(error)) {
+        // Rare, so loaded when needed rather than in first paint.
+        const { forgetEndedSession } = await import('../lib/forgetEndedSession');
+        await forgetEndedSession(supabase.auth);
+        return;
+      }
       if (error) {
         reportError(error, 'IdentityDNA.Error');
         throw error;

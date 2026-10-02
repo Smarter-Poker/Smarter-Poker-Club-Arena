@@ -76,6 +76,10 @@ interface Scenario {
   sourceWork?: unknown;
   sourceReadError?: { message: string };
   retryReceipts?: Array<Record<string, unknown>>;
+  /** What fn_rakeback_settler_read_horizon answers; defaults to far in the future. */
+  horizon?: { data: unknown; error: { message: string } | null } | (() => unknown);
+  /** Rows whose writer has not committed yet: no read can see them. */
+  inFlight?: Set<string>;
 }
 
 // vi.hoisted: supabase.ts calls reportError at module scope when the service
@@ -192,6 +196,8 @@ function applyCursor(dataset: RakeRow[], rec: Recorded, serverCap = Infinity): R
   const timeFilters = rec.ops.filter(
     ([name, args]) => ['eq', 'gt', 'gte'].includes(name) && args[0] === 'created_at'
   );
+  const below = rec.ops.find(([name, args]) => name === 'lt' && args[0] === 'created_at')?.[1][1];
+  const inFlight = (scenario.current.definition as Scenario | undefined)?.inFlight;
   if (timeFilters.length !== 1) throw new Error('source page requires one timestamp range');
   if (rec.ops.some(([name]) => name === 'or')) throw new Error('unexpected non-indexed OR cursor');
   const [operator, [, timestamp]] = timeFilters[0];
@@ -209,6 +215,8 @@ function applyCursor(dataset: RakeRow[], rec: Recorded, serverCap = Infinity): R
           : r.created_at >= String(timestamp)
     )
     .filter((r) => afterId === undefined || r.id > String(afterId))
+    .filter((r) => below === undefined || r.created_at < String(below))
+    .filter((r) => !inFlight?.has(r.id))
     .sort((a, b) =>
       a.created_at === b.created_at
         ? a.id.localeCompare(b.id)
@@ -341,7 +349,17 @@ function sourceReceipt(source: RakeRow, s: Scenario): Record<string, unknown> {
       : [],
   };
 }
-function success(name: string, args: Record<string, any>) {
+const FAR_HORIZON = '2999-12-31 00:00:00.000000+00';
+/** One RPC answer as supabase-js hands it back. A scenario's horizon answer is
+ *  deliberately arbitrary (it probes malformed payloads), so every answer is
+ *  typed by the envelope, not by one RPC's payload. */
+type RpcAnswer = { data: any; error: { message: string } | null };
+function success(name: string, args: Record<string, any>): RpcAnswer {
+  if (name === 'fn_rakeback_settler_read_horizon') {
+    const h = (scenario.current.definition as Scenario | undefined)?.horizon;
+    if (typeof h === 'function') return { data: { horizon: h() }, error: null };
+    return h ?? { data: { horizon: FAR_HORIZON }, error: null };
+  }
   if (name === 'fn_rakeback_recompute_periods')
     return {
       data: {
@@ -752,8 +770,10 @@ describe('cash source receipts protect the durable cursor', () => {
     expect(batches[0]).toEqual(batches[1]);
     expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_rakeback_recompute_periods',
     ]);
@@ -807,9 +827,11 @@ describe('cash source receipts protect the durable cursor', () => {
     expect(settlerUpserts()).toHaveLength(1);
     expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_rakeback_recompute_periods',
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
     ]);
     const drainedCalls = mockRpc.mock.calls.length;
     await settler.runSettlement();
@@ -844,6 +866,7 @@ describe('cash source receipts protect the durable cursor', () => {
     });
     expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_credit_agent_commissions_batch',
     ]);
@@ -935,11 +958,12 @@ describe('cash source receipts protect the durable cursor', () => {
     expect(await run()).toBe('more');
     expect(mockRpc.mock.calls.map((c) => c[0])).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_rakeback_recompute_periods',
     ]);
     expect(recorded.some((r) => r.table === 'rake_attributions')).toBe(false);
-    expect(mockRpc.mock.calls[2][1].p_club_id).toBe(uid(55));
+    expect(mockRpc.mock.calls[3][1].p_club_id).toBe(uid(55));
   });
   it('drains an older recovered source even when there are no new rake rows', async () => {
     const receipt = sourceReceipt(creditedRow(), { ledger });
@@ -948,6 +972,7 @@ describe('cash source receipts protect the durable cursor', () => {
     expect(settlerUpserts()).toHaveLength(0);
     expect(mockRpc.mock.calls.map((c) => c[0])).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_rakeback_recompute_periods',
     ]);
   });
@@ -962,7 +987,10 @@ describe('cash source receipts protect the durable cursor', () => {
     async (flag) => {
       setup({ dataset: [{ ...creditedRow(), ...flag }] });
       expect(await run()).toBe('more');
-      expect(mockRpc.mock.calls.map((c) => c[0])).toEqual(['fn_retry_cash_accounting_sources']);
+      expect(mockRpc.mock.calls.map((c) => c[0])).toEqual([
+        'fn_retry_cash_accounting_sources',
+        'fn_rakeback_settler_read_horizon',
+      ]);
       expect(settlerUpserts()).toHaveLength(1);
     }
   );
@@ -988,6 +1016,7 @@ describe('cash source receipts protect the durable cursor', () => {
     ]);
     expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_retry_cash_accounting_sources',
+      'fn_rakeback_settler_read_horizon',
       'fn_credit_agent_commissions_batch',
       'fn_rakeback_recompute_periods',
     ]);
@@ -1548,5 +1577,113 @@ describe('an open-week refusal the database already proved is not asked again', 
     expect(await run(settler)).toBe('more');
     expect(await run(settler)).toBe('more');
     expect(recomputes()).toHaveLength(2);
+  });
+});
+
+/**
+ * THE SETTLER READS ONLY WHAT EVERY WRITER HAS COMMITTED (2026-09-27)
+ *
+ * rake_records.created_at is the writer's TRANSACTION START. A hand stamped
+ * 04:46:01.27 committed about six seconds later (a lock wait in postgres_logs
+ * ends on its transaction id), while the settler read later-stamped rows that
+ * had already committed and saved its cursor past it. Fifty-one cash sources
+ * were stranded that way between 2026-09-26 13:38 and 2026-09-27 13:18, in the
+ * union's club and outside any union alike, and the union's certified week
+ * refused (union_cash_sources_do_not_match_bank). The settler now asks the
+ * database for the instant below which every writer has finished and reads
+ * only below it, so a row still in flight can never end up behind the cursor.
+ * scripts/ci/test-rakeback-settler-read-horizon-postgres.py proves the same
+ * race and the horizon with real concurrent transactions.
+ */
+describe('the settler reads only what every writer has committed', () => {
+  const run = (settler = new RakebackSettlerService()) =>
+    (settler as unknown as { _runSettlementInner(): Promise<string> })._runSettlementInner();
+  const submittedIds = () =>
+    mockRpc.mock.calls
+      .filter(([name]) => name === 'fn_credit_agent_commissions_batch')
+      .flatMap(([, args]) => args.p_items.map((item: { source_id: string }) => item.source_id));
+  beforeEach(() => {
+    recorded.length = 0;
+    mockFrom.mockClear();
+    mockRpc.mockReset();
+    mockReportError.mockReset();
+    mockRpc.mockImplementation(async (name, args) => success(name, args));
+  });
+
+  it('never moves the cursor past a row whose writer started earlier and commits later', async () => {
+    // Row 3 is stamped 150 but its transaction is still open when the page is
+    // read; rows 1 and 2 (100, 200) have committed. The oldest open transaction
+    // started at 150, so that is the horizon.
+    const inFlight = new Set([uid(3)]);
+    let horizon = ts(150);
+    install({
+      settlerState: { high_water_mark: ts(50), high_water_mark_id: uid(0) },
+      dataset: [row(1, 100), row(2, 200), row(3, 150)],
+      inFlight,
+      horizon: () => horizon,
+    });
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('more');
+    // Before the fix this page submitted rows 1 and 2 and saved the cursor at
+    // 200, so row 3 (150) committed behind it and was never submitted.
+    expect(submittedIds()).toEqual([uid(1)]);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(100),
+      high_water_mark_id: uid(1),
+    });
+
+    // The writer commits; nothing older is open any more.
+    inFlight.delete(uid(3));
+    horizon = ts(999);
+    let cycles = 0;
+    while ((await run(settler)) === 'more') {
+      if (++cycles > 5) throw new Error('drain made no bounded progress');
+    }
+    expect(submittedIds()).toEqual([uid(1), uid(3), uid(2)]);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(200),
+      high_water_mark_id: uid(2),
+    });
+    expect(rakeFetches()[0].ops).toContainEqual(['lt', ['created_at', ts(150)]]);
+  });
+
+  it('bounds the tie page and the later page by the same horizon', async () => {
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(1) },
+      dataset: [],
+      horizon: () => ts(120),
+    });
+    expect(await run()).toBe('idle');
+    expect(rakeFetches()).toHaveLength(2);
+    for (const fetch of rakeFetches())
+      expect(fetch.ops).toContainEqual(['lt', ['created_at', ts(120)]]);
+  });
+
+  it.each([
+    ['a transport error', { data: null, error: { message: 'horizon unavailable' } }],
+    [
+      'no horizon (a prepared transaction is open)',
+      { data: { horizon: null, reason: 'prepared_transaction_open' }, error: null },
+    ],
+    [
+      'a malformed horizon',
+      { data: { horizon: '2026-09-27T00:00:00Z,created_at.gt.0' }, error: null },
+    ],
+    ['no body', { data: null, error: null }],
+  ] as const)('holds the cursor and reads nothing on %s', async (_label, answer) => {
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [row(1, 200)],
+      horizon: answer as unknown as Scenario['horizon'],
+    });
+    expect(await run()).toBe('halted');
+    expect(rakeFetches()).toHaveLength(0);
+    expect(submittedIds()).toEqual([]);
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(
+      mockReportError.mock.calls.some(
+        ([, label]) => label === 'RakebackSettler.read_horizon_holds_cursor'
+      )
+    ).toBe(true);
   });
 });

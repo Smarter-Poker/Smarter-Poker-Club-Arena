@@ -897,6 +897,97 @@ export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
 // is a flush possible over my straight, is a bigger straight live, and is my
 // full house the BOTTOM boat. Cheap (no simulation), computed lazily.
 
+/**
+ * V15 BOATS (2026-09-28): how many opponent holdings beat hero's full house.
+ *
+ * Until this, every Omaha full house was nut-class (`cat >= 7`), whatever the
+ * board. The 2026-09-27 audit found two horses RE-RAISING a river raise with
+ * an under-full: sevens full of kings on 7c3c7d7s8s (any seven is quads) and
+ * tens full of deuces on Tc2hAh2cQh (AA, QQ and 22 all beat it). Replayed
+ * through decide(), both raised or jammed 73-74% of the time.
+ *
+ * Omaha plays exactly two hole cards and three board cards, so this walks
+ * every two-RANK holding an opponent could have (honouring cards already
+ * seen) against every three-card board subset, and counts the holdings whose
+ * best quads or full house is strictly above hero's, as bigger boats and as
+ * quads. Suits are ignored: boats and quads do not use them, and straight
+ * flushes are out of scope. Both counts are 0 when hero holds the nut boat or
+ * holds no boat at all.
+ */
+export interface OmahaBoatsAbove {
+  /** two-rank opponent holdings whose best hand is a BIGGER full house */
+  boats: number;
+  /** two-rank opponent holdings that make quads */
+  quads: number;
+}
+
+const NO_BOATS_ABOVE: OmahaBoatsAbove = { boats: 0, quads: 0 };
+
+/**
+ * A full house is dominated when any bigger boat is live, or when quads are
+ * reachable by more than one holding. A boat beaten only by one exact pocket
+ * pair making quads (aces full on 9-9-x, beaten by 99 alone) is still the
+ * effective nuts: nearly every boat on a paired board has that one holding
+ * against it, and treating it as dominated would neuter every boat.
+ */
+export function omahaBoatDominated(b: OmahaBoatsAbove): boolean {
+  return b.boats > 0 || b.quads >= 2;
+}
+
+export function omahaBoatsAbove(hole: Card[], board: Card[]): OmahaBoatsAbove {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_BOATS_ABOVE;
+  const R = (cd: Card) => RANK_VALUES[cd.rank];
+  // A five-rank hand's boat/quads strength; 0 when it is neither.
+  const strength = (ranks: number[]): number => {
+    const n = new Map<number, number>();
+    for (const r of ranks) n.set(r, (n.get(r) || 0) + 1);
+    let four = 0;
+    let three = 0;
+    let two = 0;
+    let kicker = 0;
+    for (const [r, k] of n) {
+      if (k === 4) four = r;
+      else if (k === 3) three = Math.max(three, r);
+      else if (k === 2) two = Math.max(two, r);
+      else kicker = Math.max(kicker, r);
+    }
+    if (four) return 2_000_000 + four * 100 + kicker;
+    if (three && two) return 1_000_000 + three * 100 + two;
+    return 0;
+  };
+  const boardRanks = board.map(R);
+  const triples: number[][] = [];
+  for (let i = 0; i < boardRanks.length; i++)
+    for (let j = i + 1; j < boardRanks.length; j++)
+      for (let k = j + 1; k < boardRanks.length; k++)
+        triples.push([boardRanks[i], boardRanks[j], boardRanks[k]]);
+  const best = (a: number, b: number): number => {
+    let top = 0;
+    for (const t of triples) top = Math.max(top, strength([a, b, ...t]));
+    return top;
+  };
+  let hero = 0;
+  const holeRanks = hole.map(R);
+  for (let i = 0; i < holeRanks.length; i++)
+    for (let j = i + 1; j < holeRanks.length; j++)
+      hero = Math.max(hero, best(holeRanks[i], holeRanks[j]));
+  if (hero < 1_000_000 || hero >= 2_000_000) return NO_BOATS_ABOVE; // not a full house
+  const seen = new Map<number, number>();
+  for (const r of holeRanks.concat(boardRanks)) seen.set(r, (seen.get(r) || 0) + 1);
+  const live = (r: number) => 4 - (seen.get(r) || 0);
+  const out: OmahaBoatsAbove = { boats: 0, quads: 0 };
+  for (let a = 2; a <= 14; a++) {
+    for (let b = a; b <= 14; b++) {
+      if (a === b ? live(a) < 2 : live(a) < 1 || live(b) < 1) continue;
+      const opp = best(a, b);
+      if (opp <= hero) continue;
+      if (opp >= 2_000_000) out.quads++;
+      else out.boats++;
+    }
+  }
+  return out;
+}
+
 export interface NlhNutStatus {
   /** made category of hero's best five (0 = unknown) */
   cat: number;

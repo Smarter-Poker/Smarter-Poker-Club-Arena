@@ -4,14 +4,17 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   verify: vi.fn(),
+  parseOrigin: vi.fn(),
 }));
 
 vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: mocks.rpc, from: mocks.from },
+  maintenanceSupabase: { rpc: mocks.rpc, from: mocks.from },
 }));
 
 vi.mock('./completionSettlementReceipt.js', () => ({
   verifyTournamentCompletionReceipt: mocks.verify,
+  parseLegacyFeeCustodyOrigin: mocks.parseOrigin,
 }));
 
 import {
@@ -109,6 +112,31 @@ describe('terminal settlement response recovery', () => {
       );
     }
   );
+
+  it('verifies a custody receipt against the origin the database holds, not a compiled list', async () => {
+    // 2026-10-02 02:16Z: 26 committed legacy-custody receipts were called
+    // "outcome unknown" because only 13 compiled event ids were recognised.
+    const custody = { receipt_version: 3, tournament_id: TOURNAMENT_ID };
+    const originRow = { tournament_id: TOURNAMENT_ID, amount: 2 };
+    const origin = { tournamentId: TOURNAMENT_ID, amount: 2 };
+    mocks.parseOrigin.mockReturnValue(origin);
+    mocks.rpc
+      .mockResolvedValueOnce({ data: custody, error: null })
+      .mockResolvedValueOnce({ data: originRow, error: null });
+
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'places', WINNER_ID, {
+        attempts: 1,
+        wait: noWait,
+      })
+    ).resolves.toBe(RECEIPT);
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'fn_ca_legacy_fee_custody_origin', {
+      p_tournament_id: TOURNAMENT_ID,
+    });
+    expect(mocks.parseOrigin).toHaveBeenCalledWith(originRow, TOURNAMENT_ID);
+    expect(mocks.verify).toHaveBeenCalledWith(custody, TOURNAMENT_ID, 'places', WINNER_ID, origin);
+  });
 
   it('releases only after the database proves the tournament is still RUNNING', async () => {
     mocks.rpc
@@ -345,7 +373,8 @@ describe('terminal replay disagreement is not retried forever', () => {
       { stored: true },
       TOURNAMENT_ID,
       'places',
-      WINNER_ID
+      WINNER_ID,
+      null
     );
   });
 

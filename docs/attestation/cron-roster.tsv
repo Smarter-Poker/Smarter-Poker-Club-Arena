@@ -3,9 +3,9 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-09-24T02:47:08Z
-# active: 121
-# retained-inactive: 2	the two bust sweeps, restored disabled by 20260910073355
+# observed_at: 2026-09-30T18:12:00Z
+# active: 124
+# retained-inactive: 3	the two bust sweeps restored disabled by 20260910073355, and union-weekly-rakeback-close
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
 # three_watchers_whose_defects_were_fixed_stop_running, because the writer that
@@ -30,6 +30,35 @@
 # fn_ca_cron_health() was read, and it returned 132 jobs, identical to the
 # previous body; this body is that reading minus those eleven rows, which is
 # what production holds once that migration is applied.
+# 2026-09-30: 121 -> 124 active, 2 -> 3 retained inactive. Read live at the
+# observed_at above; the schedule of every previously pinned job is unchanged.
+# FOUR APPEARED:
+#   rakeback-settler-stranded-source-check-hourly  28 * * * *
+#     scheduled by applied migration 20260927220353
+#     the_rakeback_settler_reads_only_what_every_writer_has_commit.
+#   horse-stackoff-audit-20m  7,27,47 * * * *
+#     scheduled by applied migration 20260927221321
+#     horse_stackoff_audit_runs_on_its_own_schedule.
+#   horse-daily-audit-fallback  30 7 * * *
+#     scheduled by applied migration 20260928000527
+#     horse_daily_audit_fallback_rescues_a_missed_day_loudly. That migration
+#     has NO FILE in either repo and no branch carries one: it is one of the
+#     three genuine gaps named in docs/changelog/2026-09-30-the-red-workflows-
+#     get-their-verdicts.md. Listed here, not judged here.
+#   midway-close-once-20260929d  4 13 29 9 *
+#     NOT from any migration: no row of supabase_migrations.schema_migrations
+#     mentions it. It carries the command union-weekly-rakeback-close used to
+#     carry, as a one-shot for 2026-09-29 13:04 UTC. cron.job_run_details says
+#     it ran exactly once, on that minute. Its next fire is 2027-09-29, so it
+#     is a spent one-shot still on the roster; unscheduling it is that work's
+#     owner's call and will move this number again.
+# ONE LEFT THE ACTIVE SET WITHOUT VANISHING:
+#   union-weekly-rakeback-close (jobid 272) is still a row in cron.job with
+#     active = false. fn_ca_cron_health() reports active jobs only, so it
+#     dropped out of this file. It was stood down while migration 20260928164258
+#     a_weekly_close_proves_each_book_once_and_never_holds_a_long_ reworked the
+#     close; its last run was 2026-09-29 09:00 UTC. It is counted in
+#     retained-inactive above, which is why that number moved from 2 to 3.
 # jobname	schedule
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
@@ -112,10 +141,13 @@ home-member-strike-decay	30 4 * * *
 home-trending-refresh	*/15 * * * *
 home-view-log-prune	0 3 * * *
 home-weekly-snapshots	30 0 * * 1
+horse-daily-audit-fallback	30 7 * * *
+horse-stackoff-audit-20m	7,27,47 * * * *
 index-usage-snapshot-daily	41 */2 * * *
 index-usage-snapshot-prune-daily	17 5 * * *
 leaderboard-payout-waterfall-daily	20 0 * * *
 managed-game-schedules-minute	* * * * *
+midway-close-once-20260929d	4 13 29 9 *
 pgrst-reload-watchdog	6,21,36,51 * * * *
 pnm-locations-refresh	*/30 * * * *
 prune-ca-hand-facts	17 * * * *
@@ -124,6 +156,7 @@ rake-attribution-drift-audit-hourly	47 * * * *
 rake-bbj-invariant-audit-hourly	38 * * * *
 rake-law-adherence-hourly	40 * * * *
 rake-law-wide-daily	50 7 * * *
+rakeback-settler-stranded-source-check-hourly	28 * * * *
 rate-limit-prune	17 3 * * *
 reconcile-club-member-daily-profit	35 0 * * *
 reconcile-ledger-integrity-6h	55 */6 * * *
@@ -151,4 +184,3 @@ ungated-money-rpc-check	15 4 * * *
 union-integrity-sweep	35 * * * *
 union-law-selftest	20 0 * * *
 union-rake-rollup-catchup	55 * * * *
-union-weekly-rakeback-close	0,30 * * * *

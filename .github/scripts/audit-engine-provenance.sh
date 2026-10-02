@@ -79,7 +79,7 @@ if git merge-base --is-ancestor "$SERVED" "$MAIN_SHA" && \
 fi
 
 say "::error title=ENGINE PROVENANCE MISMATCH::Hetzner serves $SERVED but protected main requires $REQ_SHORT and must contain the served commit."
-say 'The exact-SHA release owner was already signalled at merge; this audit does not create a competing delivery path.'
+say 'stage-engine-release.yml offers the owed engine SHA again on the next protected-main push (at most once per window, never beside a running receiver); this audit does not create a competing delivery path.'
 summary '### Engine provenance: BEHIND'
 summary ''
 summary "Hetzner serves \`$SERVED\`; protected main requires \`$REQ_SHORT\`."

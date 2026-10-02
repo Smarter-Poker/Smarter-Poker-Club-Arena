@@ -10,6 +10,7 @@ import {
   type WebSocketRoute,
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { withoutTapSwitchNesting } from './helpers/axe-tap-switch';
 import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
@@ -20,6 +21,7 @@ import {
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
+  CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
   deleteServiceRows,
   insertServiceRows,
@@ -71,8 +73,10 @@ async function expectNoAxeViolations(
     .include(selector)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
+  // A dialog's plates carry the iPhone tap switch: the one written exception.
+  const violations = await withoutTapSwitchNesting(page, results.violations);
   expect(
-    results.violations.map((violation) => ({
+    violations.map((violation) => ({
       id: violation.id,
       impact: violation.impact,
       help: violation.help,
@@ -297,13 +301,20 @@ test.describe('production Daily Missions certification', () => {
     !CERTIFICATION_ENABLED,
     'Set DAILY_MISSIONS_CERTIFICATION=1 to create one isolated production fixture.'
   );
-  test.describe.configure({ mode: 'serial', timeout: 600_000 });
+  /* The journey's own budget, plus room for the teardown to wait out one hourly
+   platform freeze rather than die inside it. The allowance is measured, not
+   guessed: see CLEANUP_FREEZE_ALLOWANCE_MS. It is spent only when a freeze is
+   actually enforced. */
+  const JOURNEY_TIMEOUT_MS = 600_000;
+  const CASE_TIMEOUT_MS = JOURNEY_TIMEOUT_MS + CLEANUP_FREEZE_ALLOWANCE_MS;
+
+  test.describe.configure({ mode: 'serial', timeout: CASE_TIMEOUT_MS });
 
   test('cold-loads once, settles every action exactly once, recovers, and leaves no fixture', async ({
     browser,
     baseURL,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(CASE_TIMEOUT_MS);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
@@ -865,12 +876,20 @@ test.describe('production Daily Missions certification', () => {
           (response) => response.url().includes('/rest/v1/rpc/reroll_daily_challenge'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
+        // The global wallet's authoritative Diamond read. Since #5679 (ruling 25,
+        // migration 20260930234500) `authenticated` holds no SELECT on
+        // profiles.diamonds, so every own-balance read goes through the owner
+        // door, ownProfile() in src/lib/ownProfile.ts:
+        // POST /rest/v1/rpc/get_my_full_profile?select=diamonds&id=eq.<uid>.
+        // DynamicWallet issues it on BALANCE_UPDATED, which the reroll emits.
+        // This pinned the retired GET /rest/v1/profiles read, which the client
+        // no longer sends, so it waited 60s for a request that cannot come.
         const globalBalanceRefresh = page.waitForResponse(
           (response) => {
             const url = new URL(response.url());
             return (
-              response.request().method() === 'GET' &&
-              url.pathname.endsWith('/rest/v1/profiles') &&
+              response.request().method() === 'POST' &&
+              url.pathname.endsWith('/rest/v1/rpc/get_my_full_profile') &&
               (url.searchParams.get('select') || '').includes('diamonds')
             );
           },

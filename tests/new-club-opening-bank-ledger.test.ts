@@ -58,6 +58,9 @@ describe('New Club Opening Bank Ledger', () => {
 
   it('certifies the bank and owner wallet independently', () => {
     expect(certification).toContain('Number(membership?.chip_balance) !== 0');
-    expect(certification).toContain('Number(storedClub?.chip_treasury) !== 100000');
+    expect(certification).toContain(
+      '100000 - Number(welcomeEconomics.bbj_seed) - Number(welcomeEconomics.spin_seed)'
+    );
+    expect(certification).toContain('Welcome BBJ And Spin Funding Receipts Were Not Exact.');
   });
 });

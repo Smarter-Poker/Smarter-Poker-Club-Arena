@@ -1,4 +1,10 @@
 // REAL-BROWSER multi-table walk against production club-arena.
+//
+// RETIRED FROM PRODUCTION PLAY (decided by Claude on Dan's delegation of
+// 2026-09-30, docs/DIAMOND-RULINGS.md Ruling 23). The walk buys in and plays,
+// so it starts only as a test identity (an address ending in .invalid) at a
+// club flagged as a test club (E2E_TEST_CLUB, tagged test-club). Anything else
+// is refused before a browser opens: see lib/test-only.mjs and README.md.
 // Verifies: join cash table -> + button -> embedded lobby with table alive ->
 // second table -> off-table route keeps both mounted (persistent layer + dock).
 // Supabase rotates refresh tokens: storageState is re-saved at end of EVERY run,
@@ -6,6 +12,7 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import { leaveAllSeats } from './lib/leave-all.mjs';
+import { Refusal, requirePageIdentity, requireTestClub, requireTestIdentity } from './lib/test-only.mjs';
 const AUTH=process.env.E2E_AUTH||'/tmp/e2e-work/auth.json';
 const S=(n)=>`${process.env.E2E_SHOTS||'/tmp/e2e-shots'}/mt-${n}.png`;
 const R=[]; const check=(n,ok,d='')=>{R.push({n,ok});console.log(`${ok?'PASS':'FAIL'} ${n}${d?' -- '+d:''}`)};
@@ -19,6 +26,17 @@ const R=[]; const check=(n,ok,d='')=>{R.push({n,ok});console.log(`${ok?'PASS':'F
  */
 const SKIPS=[];
 const skip=(n,d)=>{SKIPS.push({n,d});console.log(`SKIP ${n} -- ${d}`)};
+
+let IDENTITY, CLUB;
+try {
+  IDENTITY=requireTestIdentity({ authPath: AUTH });
+  CLUB=await requireTestClub();
+} catch (e) {
+  if (e instanceof Refusal) { console.log(`REFUSED: ${e.message}`); process.exit(2); }
+  throw e;
+}
+const CLUB_RE=new RegExp(CLUB.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+console.log(`WALK: ${CLUB.name} (${CLUB.id}) as ${IDENTITY}`);
 
 const browser=await chromium.launch({headless:true});
 const opts={viewport:{width:1280,height:900}};
@@ -67,13 +85,16 @@ async function gotoArena(){
 try{
   await gotoArena();
   let body=await page.innerText('body');
-  if(/JOIN A CLUB/i.test(body) && !/CLUB JAQK/i.test(body)){ console.log('stale session -> fresh login'); await freshLogin(); await gotoArena(); body=await page.innerText('body'); }
+  if(!(await requirePageIdentity(page, IDENTITY).then(()=>true).catch(()=>false))){ console.log('no test session in the page -> fresh login'); await freshLogin(); await gotoArena(); body=await page.innerText('body'); }
+  // The account the page is really signed in as, checked before any seat.
+  await requirePageIdentity(page, IDENTITY);
   if(await acceptTermsIfShown()) body=await page.innerText('body');
-  check('arena loads with club memberships', /CLUB JAQK|SHARK CLUB/i.test(body));
   await page.screenshot({path:S('00-clubs')});
 
-  // enter club
-  await page.locator('text=CLUB JAQK').first().click({timeout:15000});
+  // enter the test club (never a club picked from the list)
+  await page.goto(`https://smarter.poker/hub/club-arena/clubs/${CLUB.slug||CLUB.id}`,{waitUntil:'domcontentloaded',timeout:45000});
+  await page.waitForTimeout(4000);
+  check('test club home loads', CLUB_RE.test(await page.innerText('body')));
   // wait for the table list to actually load (spinner can take a while); re-check terms each poll
   let links=[];
   for (let i=0;i<15;i++){
@@ -185,7 +206,7 @@ try{
       if(await rtry.isVisible().catch(()=>false)) await rtry.click({timeout:8000}).catch(()=>{});
     }
     await page.screenshot({path:S('04-embedded-lobby')});
-    check('embedded lobby tab opened (club content, table 1 still mounted)', lobbyReady || /CLUB JAQK|Cash|Tournaments|Games/i.test(body));
+    check('embedded lobby tab opened (club content, table 1 still mounted)', lobbyReady || CLUB_RE.test(body) || /Cash|Tournaments|Games/i.test(body));
     // tab bar must now exist (tables.length>1 renders TableTabBar)
     check('tab bar with first table + lobby tab present', await page.locator('.table-tab-bar__add, [class*="table-tab-bar"]').count()>0);
 
@@ -245,7 +266,10 @@ try{
   const leaves=await leaveAllSeats(page, { rounds: 5 });
   check('left all seated tables (stack refunded, session clean)', leaves>=1, `leaves=${leaves}`);
   check('no page errors during walk', errs.length===0, errs.slice(0,2).join(' | '));
-}catch(e){ check('walk completed', false, e.message.slice(0,160)); await page.screenshot({path:S('99-err')}).catch(()=>{}); }
+}catch(e){
+  if(e instanceof Refusal){ console.log(`REFUSED: ${e.message}`); await browser.close(); process.exit(2); }
+  check('walk completed', false, e.message.slice(0,160)); await page.screenshot({path:S('99-err')}).catch(()=>{});
+}
 await ctx.storageState({path:AUTH}).catch(()=>{});
 const f=R.filter(x=>!x.ok).length;
 const allowSkips=process.env.E2E_ALLOW_SKIPS==='1';

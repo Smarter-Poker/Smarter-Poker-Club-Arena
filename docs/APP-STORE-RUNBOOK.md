@@ -37,16 +37,16 @@ The audit's phases and where each one lives:
 
 ## Account and credential prerequisites
 
-| account                                                                                   | why                                                                                  | where the value goes                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Apple Developer Program ($99/yr; organisation, D-U-N-S **142936760**, in hand 2026-09-09) | TestFlight, App Store Connect, signing, universal links                              | Team ID into `ios/App/App/App.entitlements` (Associated Domains) and into the World Hub's `apple-app-site-association`                                                                               |
-| Google Play Console ($25 once; identity verification)                                     | internal testing, the Play listing, app links                                        | release keystore SHA-256 into the World Hub's `assetlinks.json`                                                                                                                                      |
-| Xcode on the Mac (App Store download, ~10 GB)                                             | building and archiving iOS; this Mac has only the Command Line Tools                 | nothing to store                                                                                                                                                                                     |
-| A JDK 17 or 21 on PATH (Android Studio bundles one)                                       | Gradle refuses the Mac's default Java 25 (`Unsupported class file major version 69`) | nothing to store                                                                                                                                                                                     |
-| RevenueCat project (free under $2,500/mo)                                                 | StoreKit + Play Billing for diamonds and VIP                                         | public SDK keys as `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the native build; webhook auth as `REVENUECAT_WEBHOOK_AUTH` in Vercel                                                |
-| Firebase project (free)                                                                   | FCM for Android push and APNs relay for iOS                                          | `google-services.json` in `android/app/`, `GoogleService-Info.plist` in `ios/App/App/`, an APNs .p8 key uploaded to Firebase; service-account JSON as `FCM_SERVICE_ACCOUNT_JSON` in Vercel (phase 4) |
-| Capgo account (~$15/mo)                                                                   | OTA updates                                                                          | app id and channel in the Capgo console; `CAPGO_TOKEN` for the publisher (phase 6)                                                                                                                   |
-| Supabase dashboard: Auth > URL Configuration                                              | provider redirects from the app                                                      | add `capacitor://localhost` and `https://localhost` to the redirect allow-list (email links already use smarter.poker, which is allowed)                                                             |
+| account                                                                                   | why                                                                                  | where the value goes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apple Developer Program ($99/yr; organisation, D-U-N-S **142936760**, in hand 2026-09-09) | TestFlight, App Store Connect, signing, universal links                              | Team ID into `ios/App/App/App.entitlements` (Associated Domains) and into the World Hub's `apple-app-site-association`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Google Play Console ($25 once; identity verification)                                     | internal testing, the Play listing, app links                                        | release keystore SHA-256 into the World Hub's `assetlinks.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Xcode on the Mac (App Store download, ~10 GB)                                             | building and archiving iOS; this Mac has only the Command Line Tools                 | nothing to store                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| A JDK 17 or 21 on PATH (Android Studio bundles one)                                       | Gradle refuses the Mac's default Java 25 (`Unsupported class file major version 69`) | nothing to store                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| RevenueCat project (free under $2,500/mo)                                                 | StoreKit + Play Billing for diamonds and VIP                                         | public SDK keys as `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` in the native build; webhook auth as `REVENUECAT_WEBHOOK_AUTH` in Vercel                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Firebase project (free)                                                                   | FCM for Android push and APNs relay for iOS                                          | `google-services.json` in `android/app/` (the store bundle refuses to build without it), `GoogleService-Info.plist` in `ios/App/App/` added to the App target, the `FirebaseMessaging` package added to the App target in Xcode (File, Add Package Dependencies, `https://github.com/firebase/firebase-ios-sdk`), an APNs .p8 key uploaded to Firebase; service-account JSON as `FCM_SERVICE_ACCOUNT_JSON` in Vercel (phase 4). Until the iOS package is linked the app still compiles (`#if canImport`) but hands the Hub an APNs token, which FCM cannot deliver to |
+| Capgo account (~$15/mo)                                                                   | OTA updates                                                                          | app id and channel in the Capgo console; `CAPGO_TOKEN` for the publisher (phase 6)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Supabase dashboard: Auth > URL Configuration                                              | provider redirects from the app                                                      | add `capacitor://localhost` and `https://localhost` to the redirect allow-list (email links already use smarter.poker, which is allowed)                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Building the app
 
@@ -178,6 +178,42 @@ Android `versionName`. Bump all three together when a new binary is cut. OTA
 bundles are versioned `<native.version>.<publish run number>`, so they are
 unique, ordered, and never below the binary that installs them.
 
+## The Diamond games in the app (2026-10-01)
+
+The mobile graphics programme (phases 1 to 6, 2026-10-01) ships in the app
+bundle unchanged; nothing in it is web-only except the iPhone browser tap
+switch. What a first device walkthrough should look at, and how each part
+behaves inside the app:
+
+- **Frame rate.** Crash, Plinko and Donkey Cross draw at the screen's own rate
+  while something moves, 30 a second while settled, and park after 20 idle
+  seconds (`src/components/games/framePacer.ts`). The quality governor drops
+  pixel ratio and shadows on a slow GPU. Inside WKWebView and the Android
+  WebView this is the same code; nothing to configure.
+- **What real phones report.** Every scene visit records how the device drew
+  it, and every scene that cannot draw records why, with the device kind set
+  to `app_ios` or `app_android` inside the app
+  (`src/components/games/sceneTelemetry.ts`). The wheel records the same as
+  game `wheel`. The numbers land in the platform's own database
+  (`fn_record_diamond_scene`, a daily rollup with no user in it) and read
+  back on the admin dashboard as Diamond Scene Health, per game and kind of
+  device. After the first TestFlight and internal-testing builds, that panel
+  answers "does it run well on phones", split by app and browser.
+- **Haptics.** Inside the app every buzz goes through `@capacitor/haptics`
+  (`src/lib/native/haptics.ts`): the Big Win receipt's heavy impact, the game
+  plates and the pop-up plates. `TapHaptic`, the invisible switch an iPhone
+  browser needs, renders nothing in the app.
+- **The wheel on a small phone.** The wheel goes lite on 2 GB devices or after
+  a slow spin (`src/components/wheel/wheelLite.ts`); a low-end Android test
+  device shows it.
+- **Screen readers.** VoiceOver and TalkBack hear the Crash start, each
+  multiplier mark and the ending from one polite line, not the per-frame
+  readout.
+
+Still waiting on Dan, unchanged by this programme: the Apple Developer account
+in App Store Connect, Xcode on the Mac (only the Command Line Tools are
+installed) and the Play Console. Nothing graphics-side blocks a first build.
+
 ## OTA (phase 6, Capgo) - WIRED 2026-09-08, waiting on the account
 
 `@capgo/capacitor-updater` is installed, `capacitor.config.ts` has
@@ -186,7 +222,8 @@ launch - Capgo REQUIRES that call or it rolls the bundle back as broken.
 
 `publish-club-arena.yml` has a `publish-to-app` job: after the origin is
 verified serving a merge, it builds `dist-native` (`npm run build:native`)
-and runs `npx @capgo/cli bundle upload --channel production`. It is switched
+and runs `npx @capgo/cli@8 bundle upload --channel production --delta` (phones
+download only the files that changed, not the whole ~172 MB bundle). It is switched
 on by the repository VARIABLE `CAPGO_OTA_ENABLED=true` (a job-level `if` can
 read variables, not secrets); until then the job is skipped and the web
 publish is never held by a store account that does not exist. To turn it on:
@@ -221,8 +258,15 @@ the reviewer notes with Dan's chips sentence) written once for both stores.
 Give the reviewer a demo account (the service identity is NOT for this - make
 a review account) and, in the notes, Dan's sentence about chips above, plus:
 sign-in is email + password; purchases are diamonds (consumable) and VIP
-(subscription) through the store; account deletion is in Settings; the age
-gate asks a date of birth and refuses under 18. Budget two rounds.
+(subscription) through the store; account deletion is Menu > App Settings >
+Account Data & Closure > Close Account; the age gate asks a date of birth and
+refuses under 18. Budget two rounds.
+
+Give a SECOND review account with no chips for the deletion test and say so in
+the notes: closing an account that still holds chips, a seat, an open cashout
+or a tournament entry is refused until it is settled
+(docs/changelog/2026-09-29-an-account-can-be-closed-and-its-person-leaves-with-it.md),
+and a reviewer who closes the demo account would see that refusal.
 
 ## Where things stand
 

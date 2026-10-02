@@ -1320,7 +1320,8 @@
     "wheel_segments",
     "wheel_spins",
     "wishlists",
-    "youtube_embed_failures"
+    "youtube_embed_failures",
+    "smarter_private.ca_bust_backlog_drains"
   ],
   "functions": [
     "__plpgsql_show_dependency_tb",
@@ -4891,6 +4892,9 @@
     "xp_ban_guard_fn",
     "zz_a_payout_row_carries_its_key",
     "zz_chip_ledger_key_is_claimed_once",
-    "zz_closed_period_is_immutable"
+    "zz_closed_period_is_immutable",
+    "fn_ca_bust_backlog_stalled",
+    "fn_ca_drain_recorded_bust_backlog",
+    "fn_f06_close_abandoned_manager_transfer"
   ]
 }

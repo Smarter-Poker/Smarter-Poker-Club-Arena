@@ -119,10 +119,10 @@ describe('one terminal authority owns each tournament finish', () => {
       /const proposalRequest = dealProposal\s*\?\s*\{\s*\.\.\.request,\s*p_proposal_id:\s*dealProposal\.proposalId,\s*p_revision:\s*dealProposal\.revision,?\s*\}\s*:\s*null/
     );
     expect(terminalRpc).toMatch(
-      /proposalRequest\s*\?\s*await supabase\.rpc\('fn_complete_tournament_terminal_proposal',\s*proposalRequest\)/
+      /proposalRequest\s*\?\s*await terminalAuthority\.rpc\(\s*'fn_complete_tournament_terminal_proposal',\s*proposalRequest\s*\)/
     );
     expect(terminalRpc).toMatch(
-      /proposalRequest\s*\?\s*await supabase\.rpc\('fn_resolve_tournament_terminal_proposal_outcome',\s*proposalRequest\)/
+      /proposalRequest\s*\?\s*await terminalAuthority\.rpc\(\s*'fn_resolve_tournament_terminal_proposal_outcome',\s*proposalRequest\s*\)/
     );
     expect(terminalRpc).toContain('receipt && proposalIdentityIsExact(data)');
     expect(terminalRpc).toContain('proposalIdentityIsExact(outcome)');

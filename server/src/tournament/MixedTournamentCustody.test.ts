@@ -434,6 +434,57 @@ it('a replacement that holds a durable mixed transfer keeps strict recovery and 
   expect(asked).not.toContain('fn_f06_abort_abandoned_generation');
   expect(replacement.finishTournamentManagerAdmission).not.toHaveBeenCalled();
 });
+it('a discovered transfer is asked for again after its admission is refused (2026-09-28)', async () => {
+  // 160eb0c9 / 5ce1a271: another door closed the transfer while this process
+  // held its discovered copy. The copy must not outlive the refusal, or every
+  // later attempt re-admits a transfer the database says is closed.
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.drainedF06TournamentCustody.get(id(1)).mixed;
+  const replacement = server();
+  let open = true;
+  mocks.rpc.mockImplementation(async (name, a) => {
+    if (name === 'fn_f06_find_mixed_manager_custody')
+      return {
+        error: null,
+        data: { ok: true, tournament_id: id(1), receipt: open ? transfer.receipt : null },
+      };
+    if (name === 'fn_f06_admit_mixed_manager_custody')
+      return { error: { message: 'F06_MIXED_ORIGINAL_DISPOSITION_REQUIRED' }, data: null };
+    return mixedResponse(name, a);
+  });
+  await expect(
+    replacement.performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1)
+  ).rejects.toThrow('f06_mixed_successor_custody_unproven');
+  // The refused lease went back, and the discovered copy went with it.
+  expect(mocks.release).toHaveBeenCalled();
+  expect(replacement.durableMixedF06Custody.has(id(1))).toBe(false);
+
+  open = false; // closed by another door
+  mocks.rpc.mockClear();
+  await replacement
+    .performTournamentManagerAdmission(id(1), 'resume', 'replacement', 1)
+    .catch(() => undefined);
+  const asked = mocks.rpc.mock.calls.map(([name]) => name);
+  expect(asked).toContain('fn_f06_find_mixed_manager_custody');
+  expect(asked).not.toContain('fn_f06_admit_mixed_manager_custody');
+  const owner = replacement.tournamentEngines.get(id(1));
+  if (owner) managers.push(owner);
+});
+it('a transfer this process drained itself is kept after a refused admission', async () => {
+  const { s, m } = await mixedStopped();
+  await s.transferDrainedF06Custody(id(1), m);
+  const transfer = s.durableMixedF06Custody.get(id(1));
+  expect(transfer).toBeDefined();
+  (s as any).forgetRefusedDiscoveredMixedF06Transfer(
+    id(1),
+    s.drainedF06TournamentCustody.get(id(1)),
+    transfer
+  );
+  expect(s.durableMixedF06Custody.get(id(1))).toBe(transfer);
+  (s as any).forgetRefusedDiscoveredMixedF06Transfer(id(1), null, transfer);
+  expect(s.durableMixedF06Custody.get(id(1))).toBe(transfer);
+});
 it('missing receipt discovery is unknown and never starts a claim', async () => {
   const replacement = server();
   mocks.rpc.mockResolvedValue({ error: { message: 'unavailable' }, data: null });

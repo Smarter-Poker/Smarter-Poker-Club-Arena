@@ -19,19 +19,29 @@ import {
 const locatedPlayer: PlayerSearchResult = {
   id: 'player-1',
   username: 'sharkplayer',
-  display_name: 'Shark Player',
+  display_name: 'shark player',
   avatar_url: null,
   relationship: 'public',
   presence_status: 'playing',
   match_score: 0.62,
-  sensitive_accounts: [],
+  sensitive_accounts: [
+    {
+      club_uuid: 'managed-club-1',
+      club_name: 'deep stack society',
+      role: 'sub_agent',
+      access: 'downline',
+      wallets: { chip_balance: 0, player_wallet: 0, agent_wallet: 0, promo_wallet: 0 },
+      downline: { downline_direct: 0, downline_total: 0 },
+      stats: null,
+    },
+  ],
   affiliations: {
     clubs: [
       {
         club_uuid: 'club-uuid-1',
         club_id: 48291,
         club_slug: 'midnight-club',
-        club_name: 'Midnight Club',
+        club_name: 'midnight club',
         role: 'member',
         is_gated: false,
         viewer_membership_status: 'active',
@@ -41,27 +51,27 @@ const locatedPlayer: PlayerSearchResult = {
         club_uuid: 'club-uuid-2',
         club_id: 55110,
         club_slug: 'ivory-room',
-        club_name: 'Ivory Room',
+        club_name: 'ivory room',
         role: 'member',
         is_gated: true,
         viewer_membership_status: null,
         viewer_action: 'request_join',
       },
     ],
-    unions: [{ union_id: 'union-1', union_name: 'Midway Union', union_code: '900' }],
-    hidden_count: 2,
+    unions: [{ union_id: 'union-1', union_name: 'midway union', union_code: '900' }],
+    has_hidden: true,
   },
   tables: [
     {
       id: 'seat-1',
       table_id: 'live-table-1',
-      name: 'Midnight Cash',
-      game_variant: 'NLH',
+      name: 'midnight cash',
+      game_variant: 'nlh',
       stakes: '$1/$2',
       club_uuid: 'club-uuid-1',
       club_id: 48291,
       club_slug: 'midnight-club',
-      club_name: 'Midnight Club',
+      club_name: 'midnight club',
       is_tournament: false,
       can_watch: true,
       access_action: 'watch',
@@ -70,13 +80,13 @@ const locatedPlayer: PlayerSearchResult = {
       id: 'seat-2',
       table_id: 'live-table-2',
       tournament_id: 'tourney-1',
-      name: 'Ivory Nightly',
-      game_variant: 'MTT',
-      stakes: '$50 Buy-In',
+      name: 'ivory nightly',
+      game_variant: 'mtt',
+      stakes: '$50 buy-in',
       club_uuid: 'club-uuid-2',
       club_id: 55110,
       club_slug: 'ivory-room',
-      club_name: 'Ivory Room',
+      club_name: 'ivory room',
       is_tournament: true,
       can_watch: false,
       access_action: 'request_join',
@@ -157,14 +167,16 @@ describe('Find A Player locator', () => {
       expect(affiliations().getByText('Midnight Club')).toBeInTheDocument();
       expect(affiliations().getByText('Ivory Room')).toBeInTheDocument();
       expect(affiliations().getByText('Midway Union')).toBeInTheDocument();
+      expect(screen.getByText('Shark Player')).toBeInTheDocument();
+      expect(screen.getByText('Public')).toBeInTheDocument();
     });
 
-    it('counts private clubs without naming them', async () => {
+    it('signals private clubs without naming or counting them', async () => {
       const user = userEvent.setup();
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('2 Private Clubs Not Shown.')).toBeInTheDocument();
+      expect(screen.getByText('Private Clubs Not Shown.')).toBeInTheDocument();
     });
 
     it('routes a gated club chip into the join flow with no table to return to', async () => {
@@ -200,6 +212,8 @@ describe('Find A Player locator', () => {
 
       expect(screen.getByText('Cash Game')).toBeInTheDocument();
       expect(screen.getByText('Tournament')).toBeInTheDocument();
+      expect(screen.getByText('NLH / $1/$2 / Midnight Club')).toBeInTheDocument();
+      expect(screen.getByText('MTT / $50 Buy-In / Ivory Room')).toBeInTheDocument();
       expect(screen.getByText('Playing Now - 1 Cash Game And 1 Tournament')).toBeInTheDocument();
     });
 
@@ -246,6 +260,23 @@ describe('Find A Player locator', () => {
           watchTableId: 'live-table-2',
         })
       );
+      expect(PlayerSearchService.getTableWatchAccess).toHaveBeenCalledWith(
+        'live-table-2',
+        'player-1'
+      );
+    });
+  });
+
+  describe('dynamic Title Case', () => {
+    it('capitalizes authorized account labels returned by the server', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      await search(user);
+
+      await user.click(screen.getByRole('button', { name: 'Authorized Account Data (1)' }));
+
+      expect(screen.getByText('Deep Stack Society')).toBeInTheDocument();
+      expect(screen.getByText('Downline / Sub Agent')).toBeInTheDocument();
     });
   });
 

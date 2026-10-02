@@ -11877,8 +11877,7 @@
       "error_code",
       "error_msg",
       "raw_meta",
-      "occurred_at",
-      "forwarded_to_sentry"
+      "occurred_at"
     ],
     "signup_errors_archive": [
       "id",
@@ -11890,7 +11889,6 @@
       "error_msg",
       "raw_meta",
       "occurred_at",
-      "forwarded_to_sentry",
       "archived_at"
     ],
     "signup_health_view": [
@@ -17650,6 +17648,14 @@
       "resolved",
       "verification_status",
       "last_verified_at"
+    ],
+    "smarter_private.ca_bust_backlog_drains": [
+      "receipt_id",
+      "tournament_id",
+      "requested_limit",
+      "dry_run",
+      "result",
+      "created_at"
     ]
   }
 }

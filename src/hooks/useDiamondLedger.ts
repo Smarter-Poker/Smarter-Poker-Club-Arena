@@ -53,7 +53,18 @@ const SENT_KINDS = ['diamond_gift_sent', 'live_gift_sent', 'diamond_gift_refund'
 export interface DiamondLedgerRow {
   id: string;
   label: string;
-  description: string;
+  /**
+   * The line the player reads for this row: `player_line`, the ledger's own
+   * computed column (`fn_diamond_ledger_line`, phase 6). The description when
+   * it is player copy, cleaned; the kind's row label when the description is
+   * an operator note, a machine tail or a test row. Empty only when the read
+   * did not return it, and then the surface falls back to `label`.
+   */
+  line: string;
+  /* NO `description`. It was carried here "for the send/receive naming path
+     only" and that path has read `counterpartyId` and `line || label` since
+     phase 6, so the raw description was selected on a money query and printed
+     by nothing. Dropped 2026-09-30 with the column itself. */
   amount: number;
   createdAt: string;
   /**
@@ -124,7 +135,7 @@ export function useDiamondLedger(
           /* `type` AND `transaction_type`: the older rows carry their kind in
              `type` (signup_bonus, reconciliation), the newer in
              `transaction_type`. Reading one column blanks half the ledger. */
-          .select('id, type, transaction_type, amount, description, created_at, metadata')
+          .select('id, type, transaction_type, amount, player_line, created_at, metadata')
           .eq('user_id', userId);
 
         if (direction === 'in') {
@@ -151,7 +162,7 @@ export function useDiamondLedger(
           return {
             id: String(tx.id),
             label: diamondTxLabel(kind),
-            description: String(tx.description || ''),
+            line: typeof tx.player_line === 'string' ? tx.player_line : '',
             amount: Number(tx.amount) || 0,
             createdAt: String(tx.created_at),
             counterpartyId: typeof other === 'string' && other ? other : null,

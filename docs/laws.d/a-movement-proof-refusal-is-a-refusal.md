@@ -1,0 +1,3 @@
+# server/src/tournament/aMovementProofRefusalIsARefusal.law.test.ts
+
+A table break whose `fn_f06_begin_break` is refused with SQLSTATE 55000 and exactly `F06_MOVEMENT_ROSTER_CHANGED`, `F06_MOVEMENT_ELIMINATION_CHANGED`, `F06_MOVEMENT_WHOLE_ROSTER_REQUIRED` or `F06_MOVEMENT_BOUNDARY_CHANGED` (raised by the movement-proof trigger when the manifest is written, so the whole begin rolled back) is a refusal, not an unknown outcome: the begin is sent once, the proposal is released to history, the refusal is noted as `begin_refused:<code>` and the roster is read again on the next pass; any other code or SQLSTATE still keeps the exact proposal as outcome unproven.

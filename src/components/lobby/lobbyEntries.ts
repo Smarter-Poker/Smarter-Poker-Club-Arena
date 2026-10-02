@@ -22,6 +22,11 @@ import {
  */
 
 import {
+  lightningLobbyBadge,
+  type LightningLobbyState,
+  type LightningPoolStatus,
+} from '../../lightning/lightningLobby';
+import {
   describeStoredMttStructure,
   type MttStructureDescription,
 } from '../../../server/src/tournament/mttStructureDescription';
@@ -55,6 +60,8 @@ import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../utils/multiDaySchedule';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
+import { tournamentRowUnitCents, type TournamentArenaEmbed } from '../tournament/details/types';
+import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { isKillVariant, killTableRuleOf } from '../../utils/killPot';
 
@@ -111,6 +118,14 @@ export interface LobbyTableRow extends CashFeatureSource {
    * rather than offering a Join that can only fail.
    */
   cluster_enabled?: boolean | null;
+  /**
+   * LIGHTNING PHASE 6. `cash_games.cluster_mode` when the read carried it
+   * (the club-home chain embeds it with the game row), and the Cluster's
+   * Lightning pool state, which the board reads only for a Cluster whose mode
+   * is already Lightning. Absent on every other row: the card says MUST MOVE.
+   */
+  cluster_mode?: string | null;
+  cluster_lightning?: LightningLobbyState | null;
   /** Selected by realtime payloads; the fetches filter it to false and omit it. */
   is_deleted?: boolean | null;
 }
@@ -173,6 +188,18 @@ export interface LobbyTournamentRow {
   label_as_new?: boolean | null;
   hide_club_name?: boolean | null;
   is_pinned?: boolean | null;
+  /**
+   * The event's arena as TOURNAMENT_ARENA_EMBED reads it (#5050): the one
+   * source of which asset a Spin is drawn in. A row read without it (the fast
+   * path, a realtime insert) reads as chips, as it always has.
+   */
+  arena?: TournamentArenaEmbed['arena'];
+  /**
+   * DIAMOND PHASE 9: the top multiplier of the table a Diamond Spin's creation
+   * pinned, read by fn_poker_diamond_spin_ceilings (withDiamondSpinCeilings).
+   * Never set on a chip row.
+   */
+  diamond_spin_ceiling?: number | null;
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
@@ -228,6 +255,12 @@ export interface LobbyEntry {
     template: string | null;
     tables: number;
     state: string | null;
+    /**
+     * LIGHTNING PHASE 6: set only while the Cluster runs as Lightning. The
+     * card then says LIGHTNING LIVE with the pool's player count and one
+     * word for the pool, and its door is the Lightning route, never a table.
+     */
+    lightning?: { players: number; status: LightningPoolStatus } | null;
   };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
@@ -1348,6 +1381,18 @@ function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
   const figures = t.cluster_id ? clusterFiguresOf(t) : null;
+  /* LIGHTNING PHASE 6: a Cluster running as Lightning says so, with its pool. */
+  const lightning =
+    t.cluster_id && figures
+      ? lightningLobbyBadge({
+          clusterMode: t.cluster_mode,
+          state: t.cluster_lightning,
+          boardPlayers: figures.players,
+        })
+      : null;
+  const lightningStatus = lightning && lightning.mode === 'lightning' ? lightning.status : null;
+  /* A paused, frozen or dead Cluster is a closed game: no mode word, no join. */
+  const modeClosedLabel = lightning?.closedLabel ?? null;
   const cluster =
     t.cluster_id && figures
       ? {
@@ -1356,9 +1401,19 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
           template: t.cluster_template ?? null,
           tables: figures.tables,
           state: t.cluster_state ?? null,
+          /* `lightning` is what turns the door into JOIN LIGHTNING, so it is
+             set only while the mode is lightning itself. pending_off and
+             draining still say LIGHTNING LIVE below, with JOIN GAME. */
+          ...(lightning && lightningStatus && lightning.joinLightning
+            ? { lightning: { players: lightning.players, status: lightningStatus } }
+            : {}),
         }
       : null;
-  const gamePlayers = figures ? figures.players : 0;
+  const gamePlayers = figures
+    ? lightning && lightningStatus
+      ? lightning.players
+      : figures.players
+    : 0;
   /* R10: a game is never "full" - a full Main opens a feeder - so its status
      is running or open, from the game-wide count, never from one table. A
      game the host has disabled is Closed: its door refuses GAME_CLOSED, and
@@ -1366,9 +1421,11 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const st = cluster
     ? t.cluster_enabled === false
       ? { key: 'closed' as LobbyStatusKey, label: 'Closed' }
-      : gamePlayers > 0
-        ? { key: 'running' as LobbyStatusKey, label: 'Running' }
-        : { key: 'open' as LobbyStatusKey, label: 'Open' }
+      : modeClosedLabel
+        ? { key: 'closed' as LobbyStatusKey, label: modeClosedLabel }
+        : gamePlayers > 0
+          ? { key: 'running' as LobbyStatusKey, label: 'Running' }
+          : { key: 'open' as LobbyStatusKey, label: 'Open' }
     : cashStatus(t, waiting);
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
@@ -1416,14 +1473,25 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     live: (cluster ? gamePlayers : t.current_players || 0) > 0,
     rules: cluster
       ? [
-          {
-            key: cluster.mustMove ? 'must_move' : 'manual_table',
-            label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
-            detail: cluster.template ? cluster.template.toUpperCase() : undefined,
-            tip: cluster.mustMove
-              ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
-              : 'One Table The Host Runs By Hand.',
-          },
+          ...(modeClosedLabel
+            ? []
+            : [
+                lightning && lightningStatus
+                  ? {
+                      key: 'lightning_live',
+                      label: 'LIGHTNING LIVE',
+                      detail: lightningStatus,
+                      tip: 'One Pool, One Stream Of Hands. Fold And Your Next Hand Is Dealt At Once.',
+                    }
+                  : {
+                      key: cluster.mustMove ? 'must_move' : 'manual_table',
+                      label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+                      detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+                      tip: cluster.mustMove
+                        ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+                        : 'One Table The Host Runs By Hand.',
+                    },
+              ]),
           ...cashRuleMedallions(t),
         ]
       : cashRuleMedallions(t),
@@ -1556,6 +1624,25 @@ export function levelRemainingMs(t: LobbyTournamentRow, now: number): number | n
 export const SPIN_MAX_MULTIPLIER = SPIN_TIERS.reduce((max, t) => Math.max(max, t.multiplier), 0);
 
 /**
+ * THE CEILING A SPIN ADVERTISES BEFORE ITS DRAW (DIAMOND PHASE 9, 2026-09-29).
+ *
+ * A chip Spin draws from the one compiled ladder, so its ceiling is
+ * SPIN_MAX_MULTIPLIER, exactly as before. A Diamond Spin draws from the table
+ * its creation pinned, which may top out elsewhere; its ceiling is that
+ * table's top, read by fn_poker_diamond_spin_ceilings. Until that has been
+ * read the answer is null and the card prints no figure, never the chip
+ * ladder's (#5050: an unread arena prints no figure). Which asset a Spin is
+ * drawn in is the arena embed's answer, through tournamentRowUnitCents.
+ */
+export function spinCeilingMultiplier(
+  t: Pick<LobbyTournamentRow, 'arena' | 'diamond_spin_ceiling'>
+): number | null {
+  if (tournamentRowUnitCents(t) !== DIAMOND_UNIT_CENTS) return SPIN_MAX_MULTIPLIER;
+  const own = Number(t.diamond_spin_ceiling);
+  return t.diamond_spin_ceiling != null && Number.isFinite(own) && own > 0 ? own : null;
+}
+
+/**
  * A Spin's headline prize. The multiplier is NOT drawn until the game starts
  * (TournamentManagerBase writes spin_multiplier at start, and the row carries
  * null before that) — so a game still filling advertises the ceiling of the
@@ -1570,7 +1657,8 @@ export function spinPayoutLabel(entry: LobbyEntry): string | null {
      thing to shop by and gives nothing away. */
   const revealed = spinMultiplierLabel(entry.raw as Parameters<typeof spinMultiplierLabel>[0]);
   if (revealed) return revealed;
-  return `Win Up To ${SPIN_MAX_MULTIPLIER}x`;
+  const ceiling = spinCeilingMultiplier(entry.raw as LobbyTournamentRow);
+  return ceiling === null ? null : `Win Up To ${ceiling}x`;
 }
 
 /**
@@ -1600,7 +1688,9 @@ export function spinPrizeLabel(entry: LobbyEntry): string | null {
     const derived = (Number(t.buy_in_amount) || 0) * (Number(t.spin_multiplier) || 0);
     return derived > 0 ? `Prize Pool ${derived.toLocaleString()}` : null;
   }
-  const top = (Number(t.buy_in_amount) || 0) * SPIN_MAX_MULTIPLIER;
+  const ceiling = spinCeilingMultiplier(t);
+  if (ceiling === null) return null;
+  const top = (Number(t.buy_in_amount) || 0) * ceiling;
   return top > 0 ? `Top Prize ${top.toLocaleString()}` : null;
 }
 

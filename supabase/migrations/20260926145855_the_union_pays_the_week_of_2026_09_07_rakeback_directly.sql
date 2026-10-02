@@ -9,11 +9,13 @@
 -- 117,188.36 on 582, Deep Stack Society 3.99 on 1). 416 + 4 other periods of
 -- that week were paid on 2026-09-14 and are not touched. No clawback.
 --
--- This calls the operation installed by 20260926140858 exactly once, under
--- the fixed operation id e5b10b0a-4b5a-4a57-8804-1347b1910786:
+-- STEP 1 OF 2 (this file certifies; it moves no chip). It calls the operation
+-- installed by 20260926140858 exactly once, under the fixed operation id
+-- e5b10b0a-4b5a-4a57-8804-1347b1910786:
 --   fn_accounting_legacy_certify_week(..., 'union_direct', ...) certifies each
 --     recorded period (owner_legacy_v1) and chooses its destination wallet;
---   fn_accounting_legacy_pay_week pays each one from the union rake treasury
+--   fn_accounting_legacy_pay_week (in 20261002041812, a separate transaction)
+--     pays each one from the union rake treasury
 --     (fade0000-0000-0000-0000-000000000001) with one chip_ledger leg, one
 --     paid receipt, one Messenger record and one notification to the payee,
 --     closes the period and discharges both obligation rows.
@@ -36,12 +38,11 @@
 -- and a payer short of funds refuses with the exact shortfall. Pay refuses
 -- inside :45-:04 and during a platform freeze. No cron, watcher or retry.
 --
--- @live-proof: (SELECT state = 'paid' FROM public.accounting_owner_legacy_operations WHERE operation_id = 'e5b10b0a-4b5a-4a57-8804-1347b1910786')
--- @live-proof: (SELECT count(*) = 2 FROM public.accounting_deferred_obligations WHERE period_start = '2026-09-07 07:00:00+00' AND discharged_operation_id = 'e5b10b0a-4b5a-4a57-8804-1347b1910786')
+-- @live-proof: (SELECT state IN ('certified','paid') FROM public.accounting_owner_legacy_operations WHERE operation_id = 'e5b10b0a-4b5a-4a57-8804-1347b1910786')
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
-SET LOCAL statement_timeout = '600s';
+SET LOCAL statement_timeout = '840s';
 
 DO $op$
 DECLARE
@@ -68,46 +69,12 @@ BEGIN
     RAISE EXCEPTION 'week 2026-09-07: destinations moved since the read-only measurement: %', v_cert;
   END IF;
 
-  v_paid := public.fn_accounting_legacy_pay_week(c_op);
-  IF (v_paid->>'round3_amount')::numeric <> 117192.35 OR (v_paid->>'round3_periods')::int <> 583
-     OR (v_paid->>'round3_payees')::int <> 582 OR (v_paid->>'legs')::int <> 582
-     OR (v_paid->>'round1_union_to_clubs')::numeric <> 0 OR (v_paid->>'round2_legs')::int <> 0
-     OR (v_paid->>'union_rake_wallet_before')::numeric - (v_paid->>'union_rake_wallet_after')::numeric <> 117192.35
-     OR v_paid ? 'duplicate' THEN
-    RAISE EXCEPTION 'week 2026-09-07: the payment is not the certified one: %', v_paid;
+  IF (SELECT count(*) FROM public.accounting_legacy_rakeback_certificates WHERE operation_id = c_op) <> 583
+     OR (SELECT sum(rakeback_amount) FROM public.accounting_legacy_rakeback_certificates WHERE operation_id = c_op) <> 117192.35
+     OR (SELECT state FROM public.accounting_owner_legacy_operations WHERE operation_id = c_op) <> 'certified' THEN
+    RAISE EXCEPTION 'week 2026-09-07: the certification is not the measured one';
   END IF;
-
-  -- Every certified period paid once; every leg receipted and delivered to
-  -- its payee as an invoice Messenger record with its own notification.
-  SELECT count(*) INTO v_n FROM public.accounting_legacy_rakeback_certificates c
-    JOIN public.rakeback_periods rp ON rp.id = c.period_id
-   WHERE c.operation_id = c_op AND rp.status = 'paid'
-     AND (SELECT count(*) FROM public.rakeback_period_payouts pp WHERE pp.rakeback_period_id = rp.id AND pp.status = 'paid') = 1;
-  IF v_n <> 583 THEN RAISE EXCEPTION 'week 2026-09-07: % of 583 periods are paid exactly once', v_n; END IF;
-  IF (SELECT count(*) FROM public.chip_ledger l WHERE l.metadata->>'legacy_operation_id' = c_op::text) <> 582
-     OR EXISTS (SELECT 1 FROM public.chip_ledger l WHERE l.metadata->>'legacy_operation_id' = c_op::text
-       AND (l.from_type <> 'union_wallet' OR l.to_type <> 'player_wallet' OR l.category <> 'rakeback'
-         OR (SELECT count(*) FROM public.settlement_invoices i WHERE i.source_ledger_id = l.id AND i.status = 'paid' AND i.message_sent AND i.chips_transferred AND i.net_amount = l.amount) <> 1
-         OR NOT EXISTS (SELECT 1 FROM public.settlement_invoices i JOIN public.accounting_invoice_deliveries d ON d.invoice_id = i.id
-              JOIN public.social_messages m ON m.id = d.message_id AND m.message_type = 'invoice'
-              JOIN public.notifications n ON n.id = d.notification_id AND n.user_id = d.recipient_id
-             WHERE i.source_ledger_id = l.id AND d.recipient_id = l.to_entity_id))) THEN
-    RAISE EXCEPTION 'week 2026-09-07: a payment is missing its leg, receipt, Messenger record or notification';
-  END IF;
-  IF EXISTS (SELECT 1 FROM public.chip_ledger l WHERE l.metadata->>'legacy_operation_id' = c_op::text
-              AND (l.from_type = 'settlement_suspense' OR l.to_type = 'settlement_suspense')) THEN
-    RAISE EXCEPTION 'week 2026-09-07: a leg touched the clearing account';
-  END IF;
-  IF (SELECT count(*) FROM public.accounting_deferred_obligations WHERE period_start = c_from AND discharged_operation_id = c_op) <> 2
-     OR (SELECT sum(discharged_amount) FROM public.accounting_deferred_obligations WHERE period_start = c_from) <> 117192.35 THEN
-    RAISE EXCEPTION 'week 2026-09-07: the obligation rows are not discharged whole';
-  END IF;
-  IF (SELECT count(*) FROM cron.job) <> v_cron
-     OR (SELECT earliest_period_start FROM public.union_settlement_floor WHERE union_id = c_union) IS DISTINCT FROM v_floor
-     OR v_floor IS DISTINCT FROM '2026-09-21 07:00:00+00'::timestamptz THEN
-    RAISE EXCEPTION 'week 2026-09-07: the settlement schedule moved';
-  END IF;
-  RAISE NOTICE 'week 2026-09-07 paid by the union: %', v_paid;
+  RAISE NOTICE 'week 2026-09-07 certified (no chip moved): %', v_cert;
 END
 $op$;
 

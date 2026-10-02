@@ -32,6 +32,10 @@ receipt=$(ls "$root"/supabase/migrations/*_a_hands_fees_stay_on_the_felt_until_t
 # insurance, Spin reserve, tournament liability, ticket escrow and the clearing
 # stores, installed after the six-store proof above has run unchanged.
 stores=$(ls "$root"/supabase/migrations/*_every_chip_store_balances_with_its_ledger_row.sql | head -1)
+# No balance moves against settlement suspense (20261002065836): a store that
+# balances with a leg whose other end is suspense is refused, installed after
+# every store proof has run unchanged.
+suspense=$(ls "$root"/supabase/migrations/*_no_balance_moves_against_settlement_suspense.sql | head -1)
 export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UTC -c client_min_messages=notice'
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55493 -d postgres \
   -f "$root/tests/fixtures/ledger-invariant/bootstrap.sql" \
@@ -41,5 +45,8 @@ export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UT
   -f "$root/tests/fixtures/ledger-invariant/regression.sql" \
   -f "$root/tests/fixtures/ledger-invariant/stores-bootstrap.sql" \
   -f "$stores" \
-  -f "$root/tests/fixtures/ledger-invariant/stores-regression.sql"
-echo "ledger invariant: every refusal named, every live shape committed, on every chip store"
+  -f "$root/tests/fixtures/ledger-invariant/stores-regression.sql" \
+  -f "$root/tests/fixtures/ledger-invariant/suspense-bootstrap.sql" \
+  -f "$suspense" \
+  -f "$root/tests/fixtures/ledger-invariant/suspense-regression.sql"
+echo "ledger invariant: every refusal named, every live shape committed, on every chip store, and nothing balances against suspense"

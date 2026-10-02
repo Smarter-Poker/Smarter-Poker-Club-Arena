@@ -40,4 +40,17 @@ credited an agent wallet through the agents.business_balance mirror (the
 journal trigger never fires for it) out of a column holding no chips. The law
 requires the flip to be the last write to ca_ledger_invariant_store_mode.
 
+No balance moves against settlement suspense (20261002065836). A store can
+balance with a leg whose other end is `settlement_suspense` - the journal
+triggers' default counterparty when a writer declares none - and the chips then
+come from, or go to, a label with no balance outside the supply count. The tally
+counts every suspense leg (before the journal-only correction exemption) and
+the commit check refuses a transaction that wrote one and moved any covered
+balance, by name: `REFUSED: balance_moved_against_settlement_suspense`
+(judged by its own ca_ledger_invariant_store_mode row, 'settlement_suspense').
+A journal-only correction moves no balance and still commits. The law reads the
+latest body of both functions across every migration and plants a body without
+the rule to prove it goes red; tests/fixtures/ledger-invariant/suspense-regression.sql
+executes five planted regressions, three live shapes and the observe case.
+
 installed mode: refuse

@@ -241,9 +241,8 @@ describe('the batch the sweep prepared is the batch it records', () => {
     await sweep(manager);
 
     expect(eliminated).toHaveLength(3);
-    // Reset at admission (deadline not yet expired), closed after the batch,
-    // and closed once more as the sweep ends (it also bounds a decided finish).
-    expect(closings).toHaveLength(3);
+    // Reset at admission (deadline not yet expired), then closed after the batch.
+    expect(closings).toHaveLength(2);
     expect(closings[0].expired).toBe(false);
     expect(closings[1].at).toBeGreaterThanOrEqual(eliminated[2].at);
     // The deadline had long passed: the moment the window closed the clock

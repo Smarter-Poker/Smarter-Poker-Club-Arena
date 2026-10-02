@@ -1292,11 +1292,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       finishStage: {
         if (this.eliminationSweepCursor.nextStage > FINISH_STAGE) break finishStage;
-        // A decided field's finish is one bounded unit, admitted like the bust
-        // batch: the clock may not refuse its writes once it has started (a
-        // cohort satellite's qualifier completion asks
-        // eliminationMutationAllowed()). Stop and abort still refuse them.
-        if (lastBustRecordedThisPass || this.fieldIsDecided()) this.openEliminationMutationBatch();
         const satelliteFinish = await this.checkSatelliteQualifierCompletion();
         if (sweepStopped() || satelliteFinish === 'complete') return;
         if (satelliteFinish === 'pending') {
@@ -1469,7 +1464,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(3)) return;
       }
 
-      this.closeEliminationMutationBatch();
       finalDealStage: {
         if (this.eliminationSweepCursor.nextStage > 3) break finalDealStage;
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
@@ -1818,7 +1812,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(ackErr, 'Tournament.manager_wake_ack_threw');
         }
       }
-      this.closeEliminationMutationBatch();
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;

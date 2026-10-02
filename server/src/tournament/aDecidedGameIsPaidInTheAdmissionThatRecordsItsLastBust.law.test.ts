@@ -157,27 +157,4 @@ describe('a decided field runs from its last bust to its finish in one admission
     // Five bust-stage reads; the finish stage never asked for its count.
     expect(from).toHaveBeenCalledTimes(5);
   });
-
-  it('the decided finish stage is one bounded unit the clock cannot refuse', async () => {
-    vi.useFakeTimers();
-    vi.spyOn(supabase, 'from')
-      .mockReturnValueOnce(answer({ data: [], error: null }) as never)
-      .mockReturnValueOnce(answer({ count: 1, error: null }) as never)
-      .mockReturnValueOnce(answer({ data: { user_id: 'winner' }, error: null }) as never);
-    let mutationAllowedAtFinish: boolean | null = null;
-    const m = manager({
-      fieldDecidedDeclared: true,
-      checkSatelliteQualifierCompletion: vi.fn(async function (this: any) {
-        mutationAllowedAtFinish = this.eliminationMutationAllowed();
-        return 'legacy';
-      }),
-    });
-    m.refreshChipCapInputs.mockImplementation(async () => spendTheBudget());
-
-    await m.runEliminationSweep(new AbortController().signal);
-
-    expect(mutationAllowedAtFinish).toBe(true);
-    // The window closes with the sweep.
-    expect(m.eliminationMutationBatchIsOpen()).toBe(false);
-  });
 });

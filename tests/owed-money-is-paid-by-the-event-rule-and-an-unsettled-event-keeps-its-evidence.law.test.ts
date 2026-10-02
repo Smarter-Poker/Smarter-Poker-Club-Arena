@@ -102,3 +102,17 @@ describe('the week of 2026-09-14 owed alert closes only over a paid week', () =>
     expect(CLOSE).toContain("'house_retained_unattributable', round(v_pending - v_sum, 2)");
   });
 });
+
+describe('Deep Stack Society is funded for its share of the week through the sanctioned door', () => {
+  const FUND = migrationNamed('deep_stack_society_is_funded_for_its_share_of_the_week_0914');
+
+  it('mints only through fn_ca_fund_club, only what the payment needs plus the float, once', () => {
+    expect(FUND).toContain(
+      'v_amount := round(greatest(0, c_net + c_float - COALESCE(v_before, 0)), 2);'
+    );
+    expect(FUND).toContain('public.fn_ca_fund_club(c_dss, v_amount,');
+    expect(FUND).toContain('refusing to fund twice');
+    expect(sqlOnly(FUND)).not.toMatch(/UPDATE public\.clubs/);
+    expect(sqlOnly(FUND)).not.toMatch(/fn_credit_and_log/);
+  });
+});

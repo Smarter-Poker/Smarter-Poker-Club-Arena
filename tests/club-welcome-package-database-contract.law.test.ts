@@ -79,6 +79,13 @@ const boardLeaseCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const boardOriginCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261002111120_welcome_certification_accepts_exact_prelaunch_origins.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -636,6 +643,31 @@ describe('prospective lifetime-first club welcome package database contract', ()
     );
     expect(boardLeaseCleanupSql).toContain(
       'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_leases(uuid)\n  FROM PUBLIC,anon,authenticated,service_role'
+    );
+
+    expect(boardOriginCleanupSql).toContain(
+      'fn_ca_prepare_unused_welcome_certification_board_origins'
+    );
+    expect(boardOriginCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
+    expect(boardOriginCleanupSql).toContain("interval '10 minutes'");
+    expect(boardOriginCleanupSql).toContain("o.origin_kind IS DISTINCT FROM 'prelaunch'");
+    expect(boardOriginCleanupSql).toContain('o.launch_id IS NOT NULL');
+    expect(boardOriginCleanupSql).toContain('o.launch_lease_generation IS NOT NULL');
+    expect(boardOriginCleanupSql).toContain('DELETE FROM public.tournament_table_origins o');
+    expect(boardOriginCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_ORIGIN_LINEAGE_REFUSED');
+    const originPreparation = boardOriginCleanupSql.indexOf(
+      'v_origins:=public.fn_ca_prepare_unused_welcome_certification_board_origins(p_club_id)'
+    );
+    const originBoardPreparation = boardOriginCleanupSql.indexOf(
+      'v_board:=public.fn_ca_prepare_unused_welcome_certification_board_games(p_club_id)'
+    );
+    expect(originPreparation).toBeGreaterThan(0);
+    expect(originPreparation).toBeLessThan(originBoardPreparation);
+    expect(boardOriginCleanupSql).toContain(
+      "'board_origins_removed',COALESCE((v_origins->>'origins_removed')::integer,0)"
+    );
+    expect(boardOriginCleanupSql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_prepare_unused_welcome_certification_board_origins(uuid)\n  FROM PUBLIC,anon,authenticated,service_role'
     );
   });
 });

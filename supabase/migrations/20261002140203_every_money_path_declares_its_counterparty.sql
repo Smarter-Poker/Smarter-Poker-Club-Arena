@@ -1639,6 +1639,20 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'spin_reserve_wallet', v_res);
 END; $function$;
 
+-- Re-assert the closed grants production already holds on the four
+-- engine/trigger-only doors above (CREATE OR REPLACE keeps them; a reader of
+-- this file should not have to know that).
+REVOKE ALL ON FUNCTION public.fn_seed_horses_to_floor(uuid, numeric) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_spin_activate(uuid, numeric, numeric, text, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_spin_absorb_club_pool_into_union(uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_close_club_wallets_on_union_join(uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_spin_reserve_wallet_fund(uuid, numeric, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seed_horses_to_floor(uuid, numeric) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_spin_activate(uuid, numeric, numeric, text, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_spin_absorb_club_pool_into_union(uuid, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_close_club_wallets_on_union_join(uuid, uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_spin_reserve_wallet_fund(uuid, numeric, text, text) TO service_role;
+
 -- ---------------------------------------------------------------------------
 -- 5. fn_union_credit_wallet_zd3core: an unmapped tx_type is refused by name.
 --    "An unmapped tx_type declares nothing and stays on settlement_suspense"

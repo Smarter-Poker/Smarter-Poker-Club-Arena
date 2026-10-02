@@ -17,7 +17,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SQL = readFileSync(
   resolve(
     HERE,
-    '../../../supabase/migrations/20261002092628_a_table_start_reads_its_unsettled_hands_inside_a_three_secon.sql'
+    '../../../supabase/migrations/20261002102307_a_table_start_reads_two_hundred_hands_at_a_time_inside_two_s.sql'
   ),
   'utf8'
 );
@@ -43,10 +43,10 @@ describe('a table start reads only the hands after its settled mark', () => {
     const reads = resume.match(/FROM smarter_private\.hand_submissions j[\s\S]*?LIMIT \d+/g) ?? [];
     expect(reads.length).toBe(3);
     for (const read of reads) expect(read).toMatch(/j\.hand_number>lo/);
-    expect(resume).toContain('ORDER BY j.hand_number LIMIT 500) w;');
+    expect(resume).toContain('ORDER BY j.hand_number LIMIT 200) w;');
     // A call stops, saves its mark and answers pending inside a 3 s budget.
     expect(resume).toContain(
-      "IF clock_timestamp()-statement_timestamp()>interval '3 seconds' THEN"
+      "IF clock_timestamp()-statement_timestamp()>interval '2 seconds' THEN"
     );
     expect(resume).toContain("'reason','resume_scan_continues'");
   });

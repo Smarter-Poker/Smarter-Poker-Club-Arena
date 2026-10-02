@@ -600,3 +600,34 @@ describe('no balance moves against settlement suspense', () => {
     }
   });
 });
+
+describe('nothing balances against settlement suspense: the flip', () => {
+  const FLIP = '20261002073930_nothing_balances_against_settlement_suspense.sql';
+
+  it('the settlement_suspense judgement refuses, after a zero-finding window, and the flip is the last write to it', () => {
+    expect(migrations).toContain(FLIP);
+    const flip = stripComments(read(FLIP));
+    expect(flip.trim().startsWith('BEGIN;')).toBe(true);
+    expect(flip.trim().endsWith('COMMIT;')).toBe(true);
+    // the preimage: still observe, nothing found since the install, the bodies the install wrote
+    expect(flip).toMatch(/WHERE store = 'settlement_suspense'\) IS DISTINCT FROM 'observe' THEN/);
+    expect(flip).toMatch(
+      /account_key = 'settlement_suspense' AND found_at >= timestamptz '2026-10-02 07:36:04\+00'/
+    );
+    expect(flip).toMatch(/'fn_ca_tally_ledger_leg',\s+'[0-9a-f]{32}'/);
+    expect(flip).toMatch(/'fn_ca_balance_has_its_ledger_row', '[0-9a-f]{32}'/);
+    expect(flip).toMatch(
+      /UPDATE public\.ca_ledger_invariant_store_mode\s+SET mode = 'refuse',[\s\S]*?WHERE store = 'settlement_suspense';/
+    );
+    expect(flip).toMatch(/WHERE mode <> 'refuse'\)/);
+    // a data change only: it redefines nothing and drops nothing
+    expect(flip).not.toMatch(/CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|TRIGGER)\b/i);
+    expect(flip).not.toMatch(/^\s*DROP\b/im);
+    const writes = migrations.filter((f) =>
+      /(UPDATE|INSERT\s+INTO)\s+(public\.)?ca_ledger_invariant_store_mode\b[\s\S]*?'settlement_suspense'/i.test(
+        stripComments(read(f))
+      )
+    );
+    expect(writes[writes.length - 1]).toBe(FLIP);
+  });
+});

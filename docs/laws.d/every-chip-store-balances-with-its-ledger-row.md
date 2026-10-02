@@ -52,5 +52,8 @@ A journal-only correction moves no balance and still commits. The law reads the
 latest body of both functions across every migration and plants a body without
 the rule to prove it goes red; tests/fixtures/ledger-invariant/suspense-regression.sql
 executes five planted regressions, three live shapes and the observe case.
+Staged: installed in `observe` at 07:36:04 UTC on 2026-10-02 (20261002065836),
+moved to `refuse` by 20261002073930 after a zero-finding window across the hourly
+break; the law requires that flip to be the last write to the row.
 
 installed mode: refuse

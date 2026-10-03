@@ -859,6 +859,25 @@ export class HorseDecisionWorkerRuntime {
     const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
     if (gs.dealtSeatIds !== undefined)
       validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds);
+    // The posted blind seats (HorseGameStateV2.blindSeats). Absent on snapshots
+    // that predate the field and null on a hand that posted none; otherwise
+    // public seats, the small blind null only when it is dead.
+    if (gs.blindSeats !== undefined && gs.blindSeats !== null) {
+      const raw: unknown = gs.blindSeats;
+      const blinds: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...raw } : {};
+      const known = (seat: unknown) => Number.isSafeInteger(seat) && seats.has(seat as number);
+      if (
+        Object.keys(blinds).length !== 2 ||
+        !Object.hasOwn(blinds, 'smallBlind') ||
+        !known(blinds.bigBlind) ||
+        !(
+          blinds.smallBlind === null ||
+          (known(blinds.smallBlind) && blinds.smallBlind !== blinds.bigBlind)
+        )
+      )
+        throw new Error('horse state blind seats must be public seats');
+    }
     if (
       (gs.chipUnit !== undefined || gs.asset !== undefined) &&
       (!['chips', 'diamonds'].includes(gs.asset ?? '') ||

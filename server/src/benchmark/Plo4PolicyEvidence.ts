@@ -60,6 +60,8 @@ export function plo4ReferenceSpot(
       gameMode: 'cash',
       format: 'cash',
       dealerSeat: 1,
+      // Heads-up: the button posts the small blind (HandController's walk).
+      blindSeats: { smallBlind: 1, bigBlind: 2 },
       heroSeat: 1,
       currentPlayerSeat: 1,
       bettingStructure: 'pot_limit',

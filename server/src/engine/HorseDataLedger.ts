@@ -771,6 +771,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('bigBlind', 'stake'),
   state('dealerSeat', 'button (position reads)'),
   state(
+    'blindSeats',
+    'seats HandController posted the blinds from; small blind null when dead (tournament dead button). PLO4 pack positions',
+    'Plo4LivePolicy.plo4CanonicalPosition'
+  ),
+  state(
     'actionHistory',
     'this hand, every action with stage and amount (range reads, barrels, plans)'
   ),

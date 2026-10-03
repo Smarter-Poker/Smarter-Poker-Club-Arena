@@ -1572,6 +1572,47 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
   });
 
+  it.each([
+    ['absent, as on a snapshot older than the field', undefined],
+    ['null, a hand that posted no blinds', null],
+    ['the heads-up button posting the small blind', { smallBlind: 2, bigBlind: 3 }],
+    ['a dead small blind', { smallBlind: null, bigBlind: 3 }],
+  ])('accepts posted blind seats %s', async (_label, blindSeats) => {
+    const h = harness();
+    const request = structuredClone(fastRequest());
+    if (blindSeats === undefined) delete request.gameState.blindSeats;
+    else request.gameState.blindSeats = blindSeats;
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
+    expect(h.decisionsAtRng).toHaveLength(1);
+  });
+
+  it.each([
+    ['an unseated big blind', { smallBlind: 2, bigBlind: 7 }],
+    ['an unseated small blind', { smallBlind: 9, bigBlind: 3 }],
+    ['one seat posting both blinds', { smallBlind: 3, bigBlind: 3 }],
+    ['a fractional seat', { smallBlind: 2, bigBlind: 2.5 }],
+    ['no small blind field', { bigBlind: 3 }],
+    ['an extra field', { smallBlind: 2, bigBlind: 3, button: 2 }],
+    ['an array', [2, 3]],
+    ['a string', '2,3'],
+  ])(
+    'rejects posted blind seats with %s before HorseLogic reads them',
+    async (_label, blindSeats) => {
+      const h = harness();
+      const request = structuredClone(fastRequest());
+      request.gameState.blindSeats = blindSeats as any;
+      h.runtime.receive(rekey(request));
+      await h.runtime.drain();
+      expect(h.decisionsAtRng).toEqual([]);
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ERROR',
+        message: 'horse state blind seats must be public seats',
+      });
+    }
+  );
+
   it('rejects a contestable pot that includes an unreachable side pot', async () => {
     const h = harness();
     h.runtime.receive(
@@ -2675,6 +2716,8 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
     opts: { mind: false, telemetry: false },
   };
   request.gameState.dealerSeat = 2;
+  // Heads-up the button posts the small blind (HandController's walk).
+  request.gameState.blindSeats = { smallBlind: 2, bigBlind: 3 };
   request.decisionKey = buildHorseDecisionKey(request);
   const journaled: Array<{ readFrame: { sha256: string } | null }> = [];
   h.deps.journalEnabled = () => true;
@@ -2949,7 +2992,12 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
     rekey({
       ...fastRequest(requestId),
       player: { ...snapshot.player, cards: plo4Cards(cards) },
-      gameState: { ...structuredClone(snapshot.gameState), dealerSeat: 2 },
+      gameState: {
+        ...structuredClone(snapshot.gameState),
+        dealerSeat: 2,
+        // Heads-up the button posts the small blind (HandController's walk).
+        blindSeats: { smallBlind: 2, bigBlind: 3 },
+      },
       style: 'balanced',
       mods: {},
       opts: { mind: false },
@@ -2967,6 +3015,8 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
         legalActions: snapshot.gameState.legalActions,
         minRaiseTo: snapshot.gameState.minRaiseTo,
         maxRaiseTo: snapshot.gameState.maxRaiseTo,
+        // Heads-up the button (seat 2) posts the small blind.
+        blindSeats: { smallBlind: 2, bigBlind: 3 },
         tournament: { ...base.gameState.tournament!, gameVariant: 'plo4' },
       },
       style: 'balanced',

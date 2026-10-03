@@ -110,6 +110,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
       .filter((c) => c.cards.length > 0)
       .map((c) => c.seat)
       .sort((a, b) => a - b),
+    blindSeats: hc.getBlindSeatsSnapshot?.() ?? null,
     ...hc.getChipRulesSnapshot(),
     heroSeat: auth.heroSeat,
     currentPlayerSeat: auth.currentPlayerSeat,

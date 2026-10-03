@@ -95,10 +95,22 @@ export type Plo4RangeStatus =
   | 'consumed_unattributed'
   | 'consumed';
 
+/** The seats that posted the blinds this hand, as HandController posted them
+ * (HorseGameStateV2.blindSeats). `smallBlind` is null when the small blind is
+ * DEAD under the tournament dead-button rule (deadButton.ts): nobody posts it. */
+export interface Plo4BlindSeats {
+  readonly smallBlind: number | null;
+  readonly bigBlind: number;
+}
+
 /** The facts the proposal actually consumed, copied and frozen when it was
- * computed. A private receipt field: never public state or telemetry. */
+ * computed. A private receipt field: never public state or telemetry.
+ *
+ * v2 records the posted blind seats in the census and its positions are
+ * derived from them. v1 (retained receipts only) inferred the blinds from the
+ * button and is still read by the binding validator, with v1's own checks. */
 export interface Plo4InputBinding {
-  readonly version: 'plo4-input-binding-v1';
+  readonly version: 'plo4-input-binding-v2';
   readonly pack: Readonly<{
     version: string;
     source: 'explicit_heuristic_baseline';
@@ -119,6 +131,8 @@ export interface Plo4InputBinding {
     dealerSeat: number;
     heroSeat: number;
     dealtSeats: readonly number[];
+    /** The engine's posted blind seats this hand; positions are derived from them. */
+    blindSeats: Plo4BlindSeats;
     /** Unfolded opponents still contesting the pot: present, or all-in while away. */
     contestingOpponentSeats: readonly number[];
     /** Contesting opponents who can still act (not all-in). */
@@ -264,44 +278,105 @@ export function plo4ButtonOffset(
   return (clockwise.indexOf(seat) + 1) % sorted.length;
 }
 
+const physicalSeat = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 10;
+
 /**
- * Whether the dealer seat is one the pack can count positions from.
- *
- * `occupied`: the button is a dealt seat (every cash hand, every heads-up
- * hand, every tournament hand whose button did not bust).
- *
- * `proven` / `unproven`: an empty physical seat on a tournament table of
- * three or more, the only place the engine leaves a dead button
- * (tournamentDeadButtonSeats is null on a cash table and heads-up). Under the
- * engine's rule, with the button empty the seats between it and the small
- * blind seat are empty, and the first dealt seat after it is either the live
- * small blind or, when the small blind is DEAD (that seat busted too), the big
- * blind. The census does not say which seats posted, so only a first dealt
- * seat physically next to the empty button proves a live small blind: a dead
- * small blind always leaves its own empty seat in between. Anything else is
- * `unproven`, never guessed.
- *
- * `invalid`: no seat the engine could have dealt the button to.
+ * Whether the dealer seat is one the engine could have dealt this hand: a
+ * dealt seat (every cash hand, every heads-up hand, every tournament hand
+ * whose button did not bust), or an empty physical seat on a tournament table
+ * of three or more, the only place the engine leaves a dead button
+ * (tournamentDeadButtonSeats is null on a cash table and heads-up).
  */
-export function plo4ButtonStatus(
+export function plo4DealerSeatIsValid(
   dealerSeat: unknown,
   dealtSeats: readonly number[],
   tournament: boolean
-): 'occupied' | 'proven' | 'unproven' | 'invalid' {
-  if (dealtSeats.includes(dealerSeat as number)) return 'occupied';
-  if (
-    !tournament ||
-    dealtSeats.length < 3 ||
-    !Number.isSafeInteger(dealerSeat) ||
-    (dealerSeat as number) < 1 ||
-    (dealerSeat as number) > 10
-  )
-    return 'invalid';
-  const dealer = dealerSeat as number;
-  const first = dealtSeats.find((s) => s > dealer) ?? Math.min(...dealtSeats);
-  return first === dealer + 1 || (dealer === 10 && first === 1) ? 'proven' : 'unproven';
+): boolean {
+  if (dealtSeats.includes(dealerSeat as number)) return true;
+  return tournament && dealtSeats.length >= 3 && physicalSeat(dealerSeat);
 }
 
+/**
+ * P10.1 F3/F5: the blind seats the engine actually posted this hand, checked
+ * against the button and the dealt census.
+ *
+ * The census alone cannot say who posted: under the tournament dead-button
+ * rule (deadButton.ts, TDA Rule 30) the small blind can be DEAD, so the first
+ * dealt seat after the button is the big blind, and the button itself can be
+ * an empty seat. HandController records the seats it posted from and the
+ * decision state carries them (HorseGameStateV2.blindSeats), so nothing is
+ * inferred from seat numbers or from the table's physical size.
+ *
+ * `missing`: the state carries no blind seats (a legacy snapshot, or a hand
+ * that posted none). `invalid`: blind seats the engine could not have posted
+ * with this button and census: heads-up the button posts the small blind and
+ * the other seat the big blind; at three or more the first dealt seat
+ * clockwise of the button (excluding an occupied button) is the live small
+ * blind, then the big blind, or the big blind alone when the small blind is
+ * dead. A dead small blind exists only at a tournament table of three or more.
+ */
+export function plo4BlindSeatsStatus(
+  dealerSeat: unknown,
+  dealtSeats: readonly number[],
+  blinds: unknown,
+  tournament: boolean
+): 'valid' | 'missing' | 'invalid' {
+  if (blinds === undefined || blinds === null) return 'missing';
+  if (!exact(blinds, ['smallBlind', 'bigBlind']) || !physicalSeat(dealerSeat)) return 'invalid';
+  const { smallBlind, bigBlind } = blinds;
+  if (
+    !physicalSeat(bigBlind) ||
+    !dealtSeats.includes(bigBlind) ||
+    !(
+      smallBlind === null ||
+      (physicalSeat(smallBlind) && dealtSeats.includes(smallBlind) && smallBlind !== bigBlind)
+    ) ||
+    !plo4DealerSeatIsValid(dealerSeat, dealtSeats, tournament)
+  )
+    return 'invalid';
+  if (dealtSeats.length === 2) return smallBlind === dealerSeat ? 'valid' : 'invalid';
+  if (smallBlind === null && !tournament) return 'invalid';
+  // Action order from the button: offsets 1..n-1, then the button's slot (0).
+  const slot = (seat: number) =>
+    plo4ButtonOffset(seat, dealerSeat, dealtSeats) || dealtSeats.length;
+  const order = dealtSeats.filter((seat) => seat !== dealerSeat).sort((a, b) => slot(a) - slot(b));
+  const posted = smallBlind === null ? [bigBlind] : [smallBlind, bigBlind];
+  return posted.every((seat, i) => order[i] === seat) ? 'valid' : 'invalid';
+}
+
+/**
+ * P10.1 F3: the canonical position of a dealt seat, from the button and the
+ * blinds the engine actually posted (valid per plo4BlindSeatsStatus). The
+ * button's action slot (offset 0) is the button; the posting seats are the
+ * blinds; the seats after the big blind are early, middle and, last before
+ * the button, the cutoff. With an occupied button and a live small blind this
+ * is exactly the dealer-offset formula (plo4Position); with a dead small
+ * blind the big blind is offset 1 and the next seat is the first to act,
+ * where the offset formula called them the small and the big blind.
+ */
+export function plo4CanonicalPosition(
+  seat: number,
+  dealerSeat: number,
+  dealtSeats: readonly number[],
+  blinds: Plo4BlindSeats
+): Plo4Position {
+  const offset = plo4ButtonOffset(seat, dealerSeat, dealtSeats);
+  if (offset === 0) return 'button';
+  if (seat === blinds.bigBlind) return 'big_blind';
+  if (seat === blinds.smallBlind) return 'small_blind';
+  const bigBlindOffset = plo4ButtonOffset(blinds.bigBlind, dealerSeat, dealtSeats);
+  const afterBigBlind = offset - bigBlindOffset;
+  if (afterBigBlind === dealtSeats.length - 1 - bigBlindOffset) return 'cutoff';
+  return afterBigBlind === 1 ? 'early' : 'middle';
+}
+
+/**
+ * The dealer-offset position: blinds inferred as the first two dealt seats
+ * after the button. The PLO4 pack labels from the posted blinds instead
+ * (plo4CanonicalPosition); this inference remains for the Phase 11/12
+ * policies that import it.
+ */
 export function plo4Position(seat: number, state: HorseGameStateV2): Plo4Position {
   const seats = horsePolicyDealtPlayers(state.players, seat, state.dealtSeatIds)
     .map((p) => p.seat)
@@ -313,7 +388,11 @@ export function plo4Position(seat: number, state: HorseGameStateV2): Plo4Positio
   if (offset === seats.length - 1) return 'cutoff';
   return offset === 3 ? 'early' : 'middle';
 }
-export function plo4Role(hero: SeatPlayer, state: HorseGameStateV2): Plo4NodeRole {
+export function plo4Role(
+  hero: SeatPlayer,
+  state: HorseGameStateV2,
+  positionOf: (seat: number) => Plo4Position = (seat) => plo4Position(seat, state)
+): Plo4NodeRole {
   const line = (state.actionHistory ?? []).filter((a) => a.stage === state.stage);
   const raises = line.filter(
     (a) =>
@@ -337,15 +416,13 @@ export function plo4Role(hero: SeatPlayer, state: HorseGameStateV2): Plo4NodeRol
     );
     if (callers.length >= 2) return 'overcall';
     if (callers.length === 1) return 'squeeze';
-    return ['small_blind', 'big_blind'].includes(plo4Position(hero.seat, state))
-      ? 'defense'
-      : 'three_bet';
+    return ['small_blind', 'big_blind'].includes(positionOf(hero.seat)) ? 'defense' : 'three_bet';
   }
   if (
     line.some((a) => a.action === 'call' || (a.action === 'all_in' && a.isFullRaise === undefined))
   )
     return 'isolation';
-  if (plo4Position(hero.seat, state) === 'small_blind' || !state.toCall) return 'limp_option';
+  if (positionOf(hero.seat) === 'small_blind' || !state.toCall) return 'limp_option';
   return 'rfi';
 }
 /** Continuous heuristic atlas. Values are entry-quality bars, never equities. */
@@ -618,8 +695,20 @@ const RANGE_STATUSES: readonly Plo4RangeStatus[] = [
 ];
 const nullableFinite = (value: unknown) => value === null || finite(value);
 
+/** v1 bindings (retained receipts) inferred the small blind: an empty dealer
+ * was accepted only when the first dealt seat sat physically next to it, the
+ * check #5992 applied. Read-only: no binding is written at v1 any more. */
+function v1DeadButtonProven(dealerSeat: unknown, dealtSeats: readonly number[]): boolean {
+  if (dealtSeats.includes(dealerSeat as number)) return true;
+  if (dealtSeats.length < 3 || !physicalSeat(dealerSeat)) return false;
+  const first = dealtSeats.find((s) => s > dealerSeat) ?? Math.min(...dealtSeats);
+  return first === dealerSeat + 1 || (dealerSeat === 10 && first === 1);
+}
+
 /** Worker-boundary shape check of a returned binding. It does not recompute
- * the proposal; the journal reviewer binds it to the original request. */
+ * the proposal; the journal reviewer binds it to the original request. A v2
+ * binding's positions must be the canonical positions of its recorded button,
+ * census and posted blind seats. */
 export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBinding {
   if (
     !exact(value, [
@@ -633,9 +722,10 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
       'board',
       'range',
     ]) ||
-    value.version !== 'plo4-input-binding-v1'
+    (value.version !== 'plo4-input-binding-v1' && value.version !== 'plo4-input-binding-v2')
   )
     return false;
+  const v2 = value.version === 'plo4-input-binding-v2';
   const { pack, approximation, census, positions, geometry, depth, board, range } = value;
   if (
     !exact(pack, [
@@ -675,6 +765,7 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
       'dealerSeat',
       'heroSeat',
       'dealtSeats',
+      ...(v2 ? ['blindSeats'] : []),
       'contestingOpponentSeats',
       'actingOpponentSeats',
       'foldedSeats',
@@ -685,12 +776,21 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
     !seatList(census.dealtSeats, PLO4_POLICY_PACK.domain.maxSeats) ||
     census.dealtSeats.length < PLO4_POLICY_PACK.domain.minSeats ||
     !(census.dealtSeats as number[]).includes(census.heroSeat as number) ||
-    // An empty dealer seat only as the engine's tournament dead button, with
-    // the live small blind proven (P10.1 defect 3); tournament chips are whole.
-    !['occupied', 'proven'].includes(
-      plo4ButtonStatus(census.dealerSeat, census.dealtSeats as number[], true)
-    ) ||
-    (!(census.dealtSeats as number[]).includes(census.dealerSeat as number) &&
+    // v2: the posted blind seats are ones the engine could have posted with
+    // this button and census (P10.1 F3/F5). v1: an empty dealer only with the
+    // live small blind proven by adjacency (#5992).
+    (v2
+      ? plo4BlindSeatsStatus(
+          census.dealerSeat,
+          census.dealtSeats as number[],
+          census.blindSeats,
+          true
+        ) !== 'valid'
+      : !v1DeadButtonProven(census.dealerSeat, census.dealtSeats as number[])) ||
+    // An empty dealer or a dead small blind exists only at a tournament table,
+    // whose chips are whole.
+    ((!(census.dealtSeats as number[]).includes(census.dealerSeat as number) ||
+      (v2 && (census.blindSeats as Plo4BlindSeats).smallBlind === null)) &&
       !(object(geometry) && geometry.chipUnit === 1)) ||
     [
       'contestingOpponentSeats',
@@ -736,6 +836,22 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
     !['table_enabled_utg_2bb', 'none'].includes(positions.straddle as string)
   )
     return false;
+  if (v2) {
+    // P10.1 F3: the recorded positions are those of the recorded posted blinds.
+    const positionOf = (seat: number) =>
+      plo4CanonicalPosition(
+        seat,
+        census.dealerSeat as number,
+        census.dealtSeats as number[],
+        census.blindSeats as Plo4BlindSeats
+      );
+    if (
+      positions.hero !== positionOf(census.heroSeat as number) ||
+      (positions.aggressorSeat !== null &&
+        positions.aggressor !== positionOf(positions.aggressorSeat as number))
+    )
+      return false;
+  }
   if (
     !exact(geometry, [
       'bettingStructure',
@@ -973,11 +1089,9 @@ export function evaluatePlo4LivePolicy(
   } catch {
     return finish('canonical_state_unavailable');
   }
-  const button = plo4ButtonStatus(
-    s.dealerSeat,
-    seats.map((p) => p.seat),
-    s.gameMode === 'tournament'
-  );
+  const dealt = seats.map((p) => p.seat).sort((a, b) => a - b);
+  const tournamentTable = s.gameMode === 'tournament';
+  const blinds = plo4BlindSeatsStatus(s.dealerSeat, dealt, s.blindSeats, tournamentTable);
   if (
     s.stateSchemaVersion !== 1 ||
     s.bettingStructure !== 'pot_limit' ||
@@ -991,7 +1105,7 @@ export function evaluatePlo4LivePolicy(
         p.bet === hero.bet &&
         p.totalInvested === hero.totalInvested
     ) ||
-    button === 'invalid' ||
+    !plo4DealerSeatIsValid(s.dealerSeat, dealt, tournamentTable) ||
     new Set(seats.map((p) => p.seat)).size !== seats.length ||
     new Set(seats.map((p) => p.user_id)).size !== seats.length ||
     !s.legalActions?.includes(baseline.action)
@@ -1000,9 +1114,17 @@ export function evaluatePlo4LivePolicy(
   // A valid census larger than the pack (a nine-handed PLO4 tournament table)
   // is outside the declared domain, not an unavailable canonical state.
   if (seats.length > PLO4_POLICY_PACK.domain.maxSeats) return finish('seat_count_outside_pack');
-  // A dead button whose small blind the census cannot establish: refused by
-  // name, never labeled from a guess (P10.1 defect 3).
-  if (button === 'unproven') return finish('dead_button_blinds_unproven');
+  // Positions come from the blinds the engine posted (P10.1 F3/F5). A state
+  // without them is refused by name, never labeled from the button alone; blind
+  // seats the engine could not have posted with this button are malformed.
+  if (blinds === 'missing') return finish('blind_seats_unavailable');
+  if (blinds === 'invalid') return finish('canonical_state_unavailable');
+  const blindSeats: Plo4BlindSeats = Object.freeze({
+    smallBlind: s.blindSeats!.smallBlind,
+    bigBlind: s.blindSeats!.bigBlind,
+  });
+  const positionOf = (seat: number) =>
+    plo4CanonicalPosition(seat, s.dealerSeat!, dealt, blindSeats);
   if (
     s.players.some((p) => !Array.isArray(p.cards) || p.cards.length > 0 || p.knownDeadCards?.length)
   )
@@ -1076,8 +1198,8 @@ export function evaluatePlo4LivePolicy(
     return finish('invalid_cards');
   }
   const shape = plo4HandShape(hero.cards);
-  receipt.position = plo4Position(hero.seat, s);
-  receipt.role = plo4Role(hero, s);
+  receipt.position = positionOf(hero.seat);
+  receipt.role = plo4Role(hero, s, positionOf);
   const aggressor = (s.actionHistory ?? [])
     .filter(
       (a) =>
@@ -1088,7 +1210,7 @@ export function evaluatePlo4LivePolicy(
           (a.action === 'all_in' && a.isFullRaise !== undefined))
     )
     .at(-1);
-  receipt.aggressorPosition = aggressor ? plo4Position(aggressor.seat, s) : null;
+  receipt.aggressorPosition = aggressor ? positionOf(aggressor.seat) : null;
   receipt.eligible = true;
   receipt.fired = true;
   receipt.confidence = 'explicit_heuristic';
@@ -1107,6 +1229,7 @@ export function evaluatePlo4LivePolicy(
     dealerSeat: s.dealerSeat!,
     heroSeat: hero.seat,
     dealtSeats: Object.freeze(dealtSeats),
+    blindSeats,
     contestingOpponentSeats: seatsOf(active),
     actingOpponentSeats: seatsOf(active.filter((p) => !p.is_all_in)),
     foldedSeats: seatsOf(seats.filter((p) => p.is_folded)),
@@ -1161,7 +1284,7 @@ export function evaluatePlo4LivePolicy(
   });
   bind = () =>
     Object.freeze({
-      version: 'plo4-input-binding-v1',
+      version: 'plo4-input-binding-v2',
       pack: Object.freeze({
         version: PLO4_POLICY_PACK.version,
         source: PLO4_POLICY_PACK.source,

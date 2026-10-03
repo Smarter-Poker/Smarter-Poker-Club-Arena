@@ -3103,6 +3103,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         .filter((candidate) => candidate.cards.length > 0)
         .map((candidate) => candidate.seat)
         .sort((a, b) => a - b),
+      // The seats HandController posted the blinds from: under the tournament
+      // dead button the small blind can be dead, which neither the button nor
+      // the census can show (P10.1 F3).
+      blindSeats: handControllerRef.getBlindSeatsSnapshot?.() ?? null,
       ...handControllerRef.getChipRulesSnapshot(),
       heroSeat: boundedActions.heroSeat,
       currentPlayerSeat: boundedActions.currentPlayerSeat,

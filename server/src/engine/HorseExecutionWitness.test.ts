@@ -125,6 +125,8 @@ describe('private execution witness', () => {
 
   it('owns a compact immutable commitment to the Phase 10 input binding and its read frame', () => {
     const { hero, state } = jointPolicyFixture('plo4', 1, 'cash', 'preflop');
+    // The fixture's button is seat 4: the walk posts the blinds from seats 1 and 2.
+    state.blindSeats = { smallBlind: 1, bigBlind: 2 };
     const rng = saveFastRandom();
     let decision: HorseDecision;
     try {

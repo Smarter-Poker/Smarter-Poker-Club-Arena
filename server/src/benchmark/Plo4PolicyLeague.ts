@@ -394,6 +394,7 @@ export async function playPlo4PolicyHand(
         minRaise: state.minRaise,
         lastRaise: state.lastRaise,
         dealerSeat: state.dealerSeat,
+        blindSeats: controller.getBlindSeatsSnapshot(),
         stateSchemaVersion: 1,
         heroSeat: hero.seat,
         currentPlayerSeat: hero.seat,

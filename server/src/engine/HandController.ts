@@ -638,12 +638,34 @@ export class HandController {
     return { sbSeat, bbSeat: this.getNextActiveSeat(sbSeat) };
   }
 
+  /**
+   * The seats this hand posted its blinds from, recorded once by postBlinds:
+   * the small blind seat (null when it is DEAD, or no seat holds it) and the
+   * big blind seat. Null until the blinds are posted, and on a hand that posts
+   * none (a bomb pot). blindSeatsForHand itself cannot be asked later: its
+   * walk reads the active (unfolded) players, which change during the hand.
+   */
+  private postedBlindSeats: { smallBlind: number | null; bigBlind: number } | null = null;
+
+  /** The posted blind seats for the decision state (HorseGameStateV2.blindSeats). */
+  public getBlindSeatsSnapshot(): { smallBlind: number | null; bigBlind: number } | null {
+    return this.postedBlindSeats ? { ...this.postedBlindSeats } : null;
+  }
+
   private postBlinds(): void {
     const { smallBlind, bigBlind } = this.config;
     const activePlayers = this.getActivePlayers();
     if (activePlayers.length < 2) return;
 
     const { sbSeat, bbSeat } = this.blindSeatsForHand();
+    // Seats, not who paid: a killer posting the kill blind in place of a blind,
+    // or a short stack all-in for less, still holds that blind's position.
+    if (this.state.players.some((p) => p.seat === bbSeat)) {
+      this.postedBlindSeats = {
+        smallBlind: sbSeat > 0 && this.state.players.some((p) => p.seat === sbSeat) ? sbSeat : null,
+        bigBlind: bbSeat,
+      };
+    }
 
     // Individual antes precede live blinds. A short ante is all-in for that
     // contribution only; the table-wide BBA below keeps its BB-first policy.

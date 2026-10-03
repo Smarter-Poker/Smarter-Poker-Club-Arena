@@ -9,12 +9,17 @@ import {
 import { plo4CertificationCoordinates, plo4CoverageMatrix } from './Plo4PolicyPack.js';
 import { plo4Cards, plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
 import { HorseLogic } from '../HorseLogic.js';
-import { calculatePots } from '../PokerEngine.js';
+import { calculateContestablePot, calculatePots } from '../PokerEngine.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { plo4PublicRanges } from '../../benchmark/Plo4PublicRanges.js';
 import * as live from './Plo4LivePolicy.js';
 import { horsePolicyOwnership } from '../HorsePolicyRegistry.js';
 import { HorseMind } from '../HorseMind.js';
+import { HandController } from '../HandController.js';
+import { deadButtonPositions } from '../deadButton.js';
+import type { HorseGameStateV2 } from '../HorseLogic.js';
+import type { Plo4LiveReceipt } from './Plo4LivePolicy.js';
+import type { Card, HandConfig, HorseDecision, SeatPlayer } from '../../types.js';
 
 const evidence = { equity: 0.68, samples: 200, standardError: 0.025 };
 const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
@@ -1038,5 +1043,381 @@ describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
     expect(
       live.plo4LiveReceiptBindingIsValid({ ...structuredClone(receipt), inputs: binding })
     ).toBe(false);
+  });
+});
+
+/**
+ * P10.1 DEFECT 3: THE TOURNAMENT DEAD BUTTON (natural evidence, engine 46bb9cf6).
+ *
+ * Every hand here is a real engine hand: the button and the blind seats come
+ * from the engine's own rule (deadButtonPositions, TDA Rule 30, the one
+ * definition ServerTableEngineDealing applies to tournament tables), and
+ * HandController posts and deals it from `config.blindSeats` exactly as the
+ * dealing loop tells it. The expected positions are derived from what the
+ * engine actually did (which seats posted the blinds, who acts first), never
+ * from the policy's own arithmetic.
+ */
+describe('P10.1 defect 3: tournament dead button', () => {
+  const SB = 10;
+  const BB = 20;
+  const DECK = 'AKQJT98765432'
+    .split('')
+    .flatMap((rank) => ['s', 'h', 'd', 'c'].map((suit) => rank + suit))
+    .join(' ');
+
+  function deadButtonHand(
+    seatsNow: number[],
+    lastBlinds: { smallBlind: number; bigBlind: number }
+  ) {
+    const blinds = deadButtonPositions(seatsNow, lastBlinds)!;
+    const players: SeatPlayer[] = seatsNow.map((seat) => ({
+      seat,
+      user_id: `p${seat}`,
+      username: `P${seat}`,
+      stack: 2000,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      is_horse: true,
+    }));
+    const config: HandConfig = {
+      tableId: 'p10-1-dead-button',
+      handNumber: 7,
+      gameVariant: 'plo4',
+      smallBlind: SB,
+      bigBlind: BB,
+      ante: 0,
+      isTournament: true,
+      rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      // ServerTableEngineDealing: `blindSeats: isTournamentTable() ? {...} : undefined`
+      blindSeats: { smallBlind: blinds.smallBlind, bigBlind: blinds.bigBlind },
+    };
+    const controller = new HandController(config, players, blinds.button);
+    const deck = plo4Cards(DECK);
+    const instance = controller.getState().deck as unknown as {
+      deal(n?: number): Card[];
+      dealOne(): Card;
+      remaining(): number;
+      getRemainingCards(): Card[];
+    };
+    instance.deal = (n = 1) => deck.splice(0, n);
+    instance.dealOne = () => instance.deal(1)[0];
+    instance.remaining = () => deck.length;
+    instance.getRemainingCards = () => deck.slice();
+    controller.start();
+    /** The decision request for the seat to act, shaped like the live builder's. */
+    const view = () => {
+      const state = controller.getState();
+      const actor = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
+      const menu = controller.getAuthoritativeActionState(actor.user_id)!;
+      const s: HorseGameStateV2 = {
+        stateSchemaVersion: 1,
+        dealtSeatIds: state.players
+          .filter((p) => p.cards.length > 0)
+          .map((p) => p.seat)
+          .sort((a, b) => a - b),
+        ...controller.getChipRulesSnapshot(),
+        heroSeat: actor.seat,
+        currentPlayerSeat: actor.seat,
+        legalActions: [...menu.legalActions],
+        toCall: menu.toCall,
+        minRaiseTo: menu.minRaiseTo,
+        maxRaiseTo: menu.maxRaiseTo,
+        bettingStructure: menu.structure,
+        pots: controller.computeLivePots(),
+        contestablePot: calculateContestablePot(state.players, actor.user_id, menu.toCall),
+        rakeConfig: config.rakeConfig,
+        players: state.players.map((p) => ({ ...p, cards: [] })),
+        communityCards: [...state.communityCards],
+        communityCards2: [],
+        communityCards3: [],
+        bombPot: false,
+        boardCount: 1,
+        pot: state.pot,
+        currentBet: state.currentBet,
+        minRaise: state.minRaise,
+        stage: state.stage,
+        gameVariant: 'plo4',
+        bigBlind: BB,
+        dealerSeat: state.dealerSeat,
+        lastRaise: state.lastRaise,
+        actionHistory: state.actionHistory.map((a) => ({ ...a })),
+        gameMode: 'tournament',
+        format: 'mtt',
+        ante: 0,
+        straddleActive: false,
+        tournament: {
+          schemaVersion: 1,
+          contextStatus: 'complete',
+          contextIssues: [],
+          currentSmallBlind: SB,
+          currentBigBlind: BB,
+          currentAnte: 0,
+          anteType: 'none',
+          playersLeft: 40,
+          spotsPaid: 6,
+          payoutPct: [40, 25, 15, 10, 6, 4],
+          stacks: state.players.map((p) => p.stack + p.totalInvested),
+          stackByUser: Object.fromEntries(
+            state.players.map((p) => [p.user_id, p.stack + p.totalInvested])
+          ),
+        },
+      } as HorseGameStateV2;
+      const hero = { ...actor, cards: [...actor.cards] };
+      const baseline: HorseDecision = {
+        action: menu.toCall > 0 ? 'call' : 'check',
+        ...(menu.toCall > 0 ? { amount: menu.toCall } : {}),
+        thinkTime: 0,
+      };
+      const result = evaluatePlo4LivePolicy(hero, s, baseline, null, 'shadow', () => 0);
+      return { state, actor, menu, s, hero, baseline, result };
+    };
+    const act = (action: 'call' | 'check' | 'raise' | 'bet', amount?: number) => {
+      const seat = controller.getState().currentPlayerSeat;
+      expect(controller.performAction(seat, action, amount)).toBe(true);
+    };
+    return { blinds, controller, view, act };
+  }
+  const posted = (controller: HandController) =>
+    Object.fromEntries(
+      controller
+        .getState()
+        .players.filter((p) => p.bet > 0)
+        .map((p) => [p.seat, p.bet])
+    );
+  const ownership = (receipt: Plo4LiveReceipt) =>
+    horsePolicyOwnership('plo4', { action: 'call', thinkTime: 0, plo4Policy: receipt }, true);
+
+  // The production record (eventId 008571cc..., 15:09:37Z): dealt seats
+  // 1, 2, 4, 6, 7, 8 and dealer seat 5, empty. Last hand seat 5 held the
+  // small blind and seat 6 the big blind; seat 5 has since busted.
+  const PRODUCTION = { seats: [1, 2, 4, 6, 7, 8], last: { smallBlind: 5, bigBlind: 6 } };
+  // Derived from the engine's postings below: seat 6 posts the small blind,
+  // seat 7 the big blind, seat 8 opens the action, and seat 4 is the last
+  // seat to act before the blinds preflop and the last to act postflop, the
+  // button's action slot. Offsets count clockwise from the dead button.
+  const EXPECTED: Record<number, [string, number]> = {
+    6: ['small_blind', 1],
+    7: ['big_blind', 2],
+    8: ['early', 3],
+    1: ['middle', 4],
+    2: ['cutoff', 5],
+    4: ['button', 0],
+  };
+
+  it('computes every preflop decision of the production hand, positions counted from the dead button', () => {
+    const hand = deadButtonHand(PRODUCTION.seats, PRODUCTION.last);
+    // The engine's own rule and postings, independently of the policy.
+    expect(hand.blinds).toEqual({ button: 5, smallBlindSeat: 6, smallBlind: 6, bigBlind: 7 });
+    expect(hand.controller.getState().dealerSeat).toBe(5);
+    expect(posted(hand.controller)).toEqual({ 6: SB, 7: BB });
+    const order: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const { actor, menu, baseline, result } = hand.view();
+      order.push(actor.seat);
+      const [position, offset] = EXPECTED[actor.seat];
+      expect(result.receipt.reason).not.toBe('canonical_state_unavailable');
+      expect(result.receipt).toMatchObject({ eligible: true, fired: true, position });
+      // Shadow: the decision the table receives is the baseline.
+      expect(result.receipt.applied).toBe(false);
+      expect(result.decision).toBe(baseline);
+      expect(ownership(result.receipt)).toMatchObject({ outcome: 'computed' });
+      const inputs = result.receipt.inputs!;
+      expect(live.plo4InputBindingIsValid(structuredClone(inputs))).toBe(true);
+      expect(inputs.census).toMatchObject({
+        source: 'dealt_seat_ids',
+        dealerSeat: 5,
+        heroSeat: actor.seat,
+        dealtSeats: [1, 2, 4, 6, 7, 8],
+      });
+      expect(inputs.positions).toMatchObject({
+        hero: position,
+        heroOffset: offset,
+        straddle: 'none',
+        aggressor: i === 0 ? null : 'early',
+        aggressorSeat: i === 0 ? null : 8,
+      });
+      // Pot-limit geometry comes from the engine's pot, not from positions.
+      const callCost = Math.max(0, menu.toCall);
+      expect(inputs.geometry.callCost).toBe(callCost);
+      expect(inputs.geometry.potLimitRaiseTo).toBe(
+        hand.controller.getState().currentBet + hand.controller.getState().pot + callCost
+      );
+      if (i === 0) {
+        expect(result.receipt.role).toBe('rfi');
+        hand.act('raise', menu.minRaiseTo!);
+      } else hand.act('call');
+    }
+    expect(order).toEqual([8, 1, 2, 4, 6, 7]);
+    expect(hand.controller.getState().stage).toBe('flop');
+  });
+
+  it('computes flop and turn decisions with the same dead-button positions', () => {
+    const hand = deadButtonHand(PRODUCTION.seats, PRODUCTION.last);
+    for (let i = 0; i < 6; i++) hand.act(hand.view().menu.toCall > 0 ? 'call' : 'check');
+    expect(hand.controller.getState().stage).toBe('flop');
+    const flopOrder: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const { actor, result } = hand.view();
+      flopOrder.push(actor.seat);
+      expect(result.receipt).toMatchObject({
+        fired: true,
+        position: EXPECTED[actor.seat][0],
+        role: 'checked_to',
+      });
+      expect(result.receipt.inputs!.positions.heroOffset).toBe(EXPECTED[actor.seat][1]);
+      expect(result.receipt.inputs!.census.dealerSeat).toBe(5);
+      hand.act('check');
+    }
+    // Postflop the first dealt seat after the dead button acts first and
+    // seat 4 acts last: the engine's order, not a guess.
+    expect(flopOrder).toEqual([6, 7, 8, 1, 2, 4]);
+    expect(hand.controller.getState().stage).toBe('turn');
+    hand.act('bet', hand.view().menu.minRaiseTo!);
+    for (const seat of [7, 8, 1, 2, 4]) {
+      const { actor, result } = hand.view();
+      expect(actor.seat).toBe(seat);
+      expect(result.receipt).toMatchObject({
+        fired: true,
+        position: EXPECTED[seat][0],
+        role: 'facing_bet',
+        aggressorPosition: 'small_blind',
+      });
+      expect(result.receipt.inputs!.positions).toMatchObject({
+        heroOffset: EXPECTED[seat][1],
+        aggressor: 'small_blind',
+        aggressorSeat: 6,
+      });
+      expect(ownership(result.receipt).outcome).toBe('computed');
+      hand.act('call');
+    }
+  });
+
+  it('computes a dead button on the highest physical seat, wrapping to seat 1', () => {
+    // Seat 10 held the small blind and busted; seat 1 posted the big blind.
+    const hand = deadButtonHand([1, 2, 3, 5, 7, 9], { smallBlind: 10, bigBlind: 1 });
+    expect(hand.blinds).toEqual({ button: 10, smallBlindSeat: 1, smallBlind: 1, bigBlind: 2 });
+    expect(posted(hand.controller)).toEqual({ 1: SB, 2: BB });
+    const { actor, result } = hand.view();
+    expect(actor.seat).toBe(3);
+    expect(result.receipt).toMatchObject({ fired: true, position: 'early' });
+    expect(result.receipt.inputs!.positions.heroOffset).toBe(3);
+    expect(result.receipt.inputs!.census.dealerSeat).toBe(10);
+  });
+
+  it('refuses by name when the public census cannot establish a live small blind', () => {
+    // The same dealer seat and the same dealt seats, two different hands.
+    // A: seats 5 (small blind) and 6 (big blind) both busted last hand: the
+    //    small blind is DEAD and seat 7 posts the big blind (engine rule 2).
+    // B: seat 6 was already empty; seat 7 posted the big blind last hand and
+    //    now posts a live small blind, seat 8 the big blind.
+    const deadSmall = deadButtonHand([1, 2, 4, 7, 8], { smallBlind: 5, bigBlind: 6 });
+    const liveSmall = deadButtonHand([1, 2, 4, 7, 8], { smallBlind: 5, bigBlind: 7 });
+    expect(deadSmall.blinds).toEqual({
+      button: 5,
+      smallBlindSeat: 6,
+      smallBlind: null,
+      bigBlind: 7,
+    });
+    expect(liveSmall.blinds).toEqual({ button: 5, smallBlindSeat: 7, smallBlind: 7, bigBlind: 8 });
+    expect(posted(deadSmall.controller)).toEqual({ 7: BB });
+    expect(posted(liveSmall.controller)).toEqual({ 7: SB, 8: BB });
+    for (const hand of [deadSmall, liveSmall]) {
+      const { s, baseline, result } = hand.view();
+      expect(s.dealerSeat).toBe(5);
+      expect(s.dealtSeatIds).toEqual([1, 2, 4, 7, 8]);
+      // Labeling seat 7 the small blind would be wrong in A; nothing in the
+      // census tells A from B, so neither is computed.
+      expect(result.receipt).toMatchObject({
+        reason: 'dead_button_blinds_unproven',
+        eligible: false,
+        fired: false,
+        inputs: null,
+        position: null,
+      });
+      expect(result.decision).toBe(baseline);
+      expect(ownership(result.receipt)).toMatchObject({
+        outcome: 'unavailable',
+        reason: 'dead_button_blinds_unproven',
+      });
+    }
+  });
+
+  it('keeps an empty dealer seat unavailable where the engine never deals one', () => {
+    // Cash: tournamentDeadButtonSeats returns null off a tournament table and
+    // the moving button only ever lands on a dealt seat.
+    const cash = deadButtonHand(PRODUCTION.seats, PRODUCTION.last).view();
+    const cashState = { ...cash.s, gameMode: 'cash', format: 'cash' } as HorseGameStateV2;
+    delete cashState.tournament;
+    expect(
+      evaluatePlo4LivePolicy(cash.hero, cashState, cash.baseline, null, 'shadow', () => 0).receipt
+        .reason
+    ).toBe('canonical_state_unavailable');
+    // Heads-up: the button is the small blind and HandController moves an
+    // undealt button to a live seat, so an empty dealer is malformed.
+    const hu = tournament(plo4ReferenceSpot('premium_open'));
+    hu.state.dealerSeat = 3;
+    expect(run(hu).receipt.reason).toBe('canonical_state_unavailable');
+    // A dealer outside the physical seats is never a dead button.
+    const production = deadButtonHand(PRODUCTION.seats, PRODUCTION.last).view();
+    for (const dealerSeat of [0, 11, 5.5]) {
+      expect(
+        evaluatePlo4LivePolicy(
+          production.hero,
+          { ...production.s, dealerSeat },
+          production.baseline,
+          null,
+          'shadow',
+          () => 0
+        ).receipt.reason
+      ).toBe('canonical_state_unavailable');
+    }
+  });
+
+  it('leaves every occupied-button position exactly as before', () => {
+    // The pre-fix formula, written out independently.
+    const before = (seat: number, dealer: number, seats: number[]) => {
+      const sorted = [...seats].sort((a, b) => a - b);
+      const offset =
+        (sorted.indexOf(seat) - sorted.indexOf(dealer) + sorted.length) % sorted.length;
+      if (offset === 0) return 'button';
+      if (sorted.length === 2 || offset === 2) return 'big_blind';
+      if (offset === 1) return 'small_blind';
+      if (offset === sorted.length - 1) return 'cutoff';
+      return offset === 3 ? 'early' : 'middle';
+    };
+    let checked = 0;
+    for (let mask = 0; mask < 1 << 10; mask++) {
+      const seats = Array.from({ length: 10 }, (_, i) => i + 1).filter(
+        (s) => mask & (1 << (s - 1))
+      );
+      if (seats.length < 2 || seats.length > 8) continue;
+      const state = {
+        players: seats.map((seat) => ({ seat, user_id: `u${seat}`, cards: [] })),
+        dealtSeatIds: seats,
+      } as unknown as HorseGameStateV2;
+      for (const dealer of seats)
+        for (const seat of seats) {
+          state.dealerSeat = dealer;
+          expect(plo4Position(seat, state)).toBe(before(seat, dealer, seats));
+          checked++;
+        }
+    }
+    expect(checked).toBe(27_240);
+  });
+
+  it.each([
+    ['a tampered hero offset', (b: any) => (b.positions.heroOffset = 4)],
+    ['a dead dealer with no proven small blind', (b: any) => (b.census.dealerSeat = 9)],
+    ['a dealer outside the physical seats', (b: any) => (b.census.dealerSeat = 11)],
+  ])('rejects a dead-button binding with %s', (_label, mutate) => {
+    const { result } = deadButtonHand(PRODUCTION.seats, PRODUCTION.last).view();
+    const binding = structuredClone(result.receipt.inputs) as any;
+    expect(live.plo4InputBindingIsValid(binding)).toBe(true);
+    mutate(binding);
+    expect(live.plo4InputBindingIsValid(binding)).toBe(false);
   });
 });

@@ -2341,3 +2341,47 @@ groups:
             TLS attribution or a runtime memory limit. Use the existing
             on-host build gate to establish build headroom at the actual attempt.
           runbook: 'docs/runbooks/engine-memory.md'
+
+  # ── Client errors (2026-10-03) ────────────────────────────────────────────
+  # Players' browsers report errors to the first-party sink
+  # (public.fn_report_client_errors -> client_error_events; Sentry is retired
+  # and stays retired). server/scripts/collect-monitoring-health.sh reads
+  # public.fn_client_error_health() every minute into these gauges.
+  #
+  # THE THRESHOLD, derived conservatively because there is no baseline yet:
+  # the sink is new, and on 2026-10-03 no human player was seated (1,069 seats,
+  # all horses; horses have no browser, so they report nothing). So the rule
+  # does not guess a normal error RATE. It asks a question that is abnormal at
+  # any scale: have TEN DIFFERENT players hit the SAME error code within ten
+  # minutes, and stayed that way for ten more?
+  #   * distinct players, not events: one broken tab looping on an error is
+  #     capped at 60 rows a minute by the database and 30 by the client, and
+  #     still counts as one player here, so it can never trip this alone;
+  #   * one code, not all codes: unrelated background noise spread across many
+  #     codes does not add up to a spike;
+  #   * automated sessions (navigator.webdriver: the post-deploy suites) are
+  #     excluded at the source;
+  #   * the hourly maintenance break is excluded, because refusals while the
+  #     engine is being replaced are expected and already watched.
+  # Re-derive it from client_error_rates_10m once launch traffic gives the
+  # sink a week of baseline; until then a firing means a real, shared fault.
+  - name: client-errors
+    interval: 60s
+    rules:
+      - alert: ClientErrorSpike
+        expr: |
+          poker_client_error_top_code_users_10m >= 10
+          unless on() max_over_time(poker_maintenance_break_active[20m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: client
+        annotations:
+          summary: '{{ $value }} players hit the same client error code in the last 10 minutes'
+          description: |
+            At least ten distinct players' browsers reported the same error code
+            within ten minutes, sustained for ten minutes. Find the code with
+            SELECT * FROM public.client_error_rates_10m ORDER BY bucket_start DESC, users DESC LIMIT 20;
+            then read examples with SELECT received_at, code, source, route, message, context
+            FROM public.client_error_events WHERE code = '<code>' ORDER BY received_at DESC LIMIT 20;
+          runbook: 'docs/runbooks/client-errors.md'

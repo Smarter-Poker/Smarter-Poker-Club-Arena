@@ -41,7 +41,7 @@ The receipt's `equity` field now holds a frozen copy of the sample actually cons
 
 **Worker boundary.** `horseDecisionReceiptIsValid` now checks the binding's shape, labels and internal consistency (eligible receipts carry a valid binding, refused ones `null`; `range.status` agrees with the street, the approximation status and the provenance). A receipt without the field, as retained before this change, claims no binding and stays readable.
 
-**Telemetry.** One counter family, `phase10_range_<status>`, counts only; no binding content leaves the private receipt.
+**Telemetry.** One counter family, `phase10_range_<status>`, counts only; no binding content leaves the private receipt. It is registered in the `HorseDataLedger` contract as the receipt family `phase10_range_*` (consumer `evaluatePlo4LivePolicy -> HorseLogic`, ratio of `phase10_eligible`, minimum 0.99), in the same form as `phase10_reason_*`: every eligible proposal carries a binding, so the family partitions `phase10_eligible`. It is the only new telemetry key in the change.
 
 ## Coverage map for the declared matrix
 

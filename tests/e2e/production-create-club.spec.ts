@@ -154,7 +154,11 @@ test.describe('Production Create A Club Certificate', () => {
     });
     await expect(wizard).toBeVisible();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
-    await wizard.getByLabel('Club Tag Line', { exact: true }).fill('Production Certificate Club');
+    // The wrapped label also contains the live character counter, so the
+    // textbox's accessible name is "Club Tag Line 0 Of 72 Characters".
+    await wizard
+      .getByRole('textbox', { name: /^Club Tag Line\b/i })
+      .fill('Production Certificate Club');
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await expect(wizard.getByText(/Already Enabled And Funded BBJ/i)).toBeVisible();

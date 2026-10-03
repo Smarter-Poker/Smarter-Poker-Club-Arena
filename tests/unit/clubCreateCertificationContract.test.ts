@@ -223,6 +223,13 @@ describe('Create Club production certification contract', () => {
     expect(assertion).toBeGreaterThan(wizard);
   });
 
+  it('targets the tag-line textbox by its stable accessible-name prefix', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain("getByRole('textbox', { name: /^Club Tag Line\\b/i })");
+    expect(spec).not.toContain("getByLabel('Club Tag Line', { exact: true })");
+  });
+
   it('retires the created club through the published owner controls before cleanup', () => {
     const workflow = read('.github/workflows/club-create-certification.yml');
     const spec = read('tests/e2e/production-create-club.spec.ts');

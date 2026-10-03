@@ -78,6 +78,44 @@ written twice (select list and `ORDER BY`) as two copies free to drift.
 `distinct on (w.jobid)` and the single-row evidence columns are unchanged, so
 `20260919172421`'s law still holds.
 
+## 1a. The first version of this did not apply, and it was my mistake
+
+Worth keeping, because it is CLAUDE.md 10.86 rule 4 happening to the person
+writing about 10.86: a fix that leaves the same trap one level up has not
+landed.
+
+The first draft asked for the last three runs with a **correlated** subquery,
+`order by r2.start_time desc limit 3`, once per single-sample job.
+`cron.job_run_details` has **no index at all** - every read of it is a
+sequential scan of 280,684 rows - so that form re-scanned the whole log per
+job. The function went from **546 ms to 27,665 ms**: a 50x regression in the
+health check, shipped to repair a health check.
+
+It never reached production. Apply run
+[37108462464](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37108462464)
+was cancelled at 62,105 ms and the transaction rolled back whole; nothing
+committed and no `schema_migrations` row was written. Two separate things were
+wrong:
+
+1. **The look-back was O(jobs x log).** It is now one ranked pass -
+   `row_number() over (partition by jobid order by start_time desc)` with
+   `rn <= 3` - which Postgres pushes into the window as a `Run Condition` so it
+   stops early. **698 ms**, +152 ms on the old function, and the verdicts are
+   identical: 65 ok, 55 warn, 1 critical, 3 idle both ways.
+2. **The read-back only asked whether the function answered.** It did answer -
+   correctly, in 27.7 s - and the assertion passed. The read-back now **times**
+   it and refuses anything over 10 s, naming the correlated form in the error.
+
+And one thing about the applier that is easy to get wrong:
+`scripts/ci/apply-recorded-migration.mjs` sends the whole file in a single
+`client.query()`, so `statement_timeout` governs the **entire migration**, not
+each statement in it. `SET LOCAL statement_timeout = '60s'` was therefore a 60 s
+budget for the whole file. It is now 180 s against ~2.4 s of measured work.
+
+The honest version of the mistake: the **verdicts** were verified against
+production before applying, and the **cost** was not. `tests/unit/cronHealthSampleOfOne.test.ts`
+now forbids a correlated read of the run log, and pins the timing assertion.
+
 ## 2. The deep conservation audit really is broken
 
 It is **not** excused by the above, and stays critical until it completes.

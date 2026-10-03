@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, isTerminalSettlementFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -5374,7 +5374,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // while the platform freeze is active. A decided event has no later hand
     // or elimination to wake it, so make the deferral visible and explicitly
     // re-arm the same bounded manager work after the thaw.
-    if (isMaintenanceFrozen()) {
+    //
+    // THE LAST HAND PAYS (2026-10-03). Between the :53 announcement and a
+    // reserve before :55 the tables are finishing their hands and the database
+    // freeze is not armed; an event that hand decided settles now. This read
+    // used isMaintenanceFrozen(), so every event decided after :53 waited for
+    // the thaw (~:00:30) with its winner unpaid. See freezeState. A satellite
+    // keeps the full freeze: its settlement can admit a seat into a running
+    // target, and every seat door is closed from the announcement.
+    const terminalIdentity = this.tournamentCache as {
+      variant?: string;
+      tournament_type?: string;
+      satellite_target_id?: string | null;
+      satellite_target?: string | null;
+    } | null;
+    const terminalIsSatellite =
+      String(terminalIdentity?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(terminalIdentity?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(terminalIdentity?.satellite_target_id || terminalIdentity?.satellite_target);
+    if (terminalIsSatellite ? isMaintenanceFrozen() : isTerminalSettlementFrozen()) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finish deferred: the platform is frozen for the maintenance break; resuming after the thaw`
       );

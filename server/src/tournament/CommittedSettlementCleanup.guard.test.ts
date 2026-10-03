@@ -398,7 +398,12 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     // holds the platform five minutes an hour and a decided event that is
     // dropped inside one has no hands left to trigger another attempt
     // (CLAUDE.md 13 rule 4 - a deadline is thawed, not burned).
-    const firstFreeze = finish.indexOf('if (isMaintenanceFrozen())');
+    // 2026-10-03: a non-satellite event decided by its last hand settles in
+    // the :53-:55 window (isTerminalSettlementFrozen); a satellite keeps the
+    // full freeze. Either way the gate precedes the terminal receipt.
+    const firstFreeze = finish.indexOf(
+      'if (terminalIsSatellite ? isMaintenanceFrozen() : isTerminalSettlementFrozen())'
+    );
     const frozenRefusal = sliceEnclosingBlock(
       finish,
       'finish deferred: the platform is frozen for the maintenance break'

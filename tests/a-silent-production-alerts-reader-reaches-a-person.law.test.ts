@@ -76,7 +76,7 @@ describe('a silent Production Alerts reader reaches a person', () => {
       /EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING 'fn_ca_owner_route_reader_silence failed/
     );
     // Title Case, no em dash (CLAUDE.md 5.7 and 10.7).
-    expect(MIG).not.toContain('—');
+    expect(MIG).not.toContain(String.fromCharCode(0x2014));
   });
 
   it('adds no schedule and is closed to browsers', () => {

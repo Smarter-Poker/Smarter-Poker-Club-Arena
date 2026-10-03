@@ -64,6 +64,16 @@ def one(pattern):
 
 FIRST = one('*_a_counter_is_not_a_public_write.sql')
 SHIPPED = one('*_a_stale_tab_counts_through_the_same_door.sql')
+# 20261002225448 (#5878, restored by #5886): production applied it AFTER this
+# file, a rebuild runs it BEFORE. Both orders must end on the same definitions.
+REEL_FILE = one('*_a_browser_moves_only_the_reel_counters_it_is_the_evidence_fo.sql')
+MD5S = ("SELECT string_agg(md5(pg_get_functiondef(p.oid)), ',' ORDER BY p.proname)"
+        " FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN"
+        " ('increment_reel_count','decrement_reel_count','increment_post_count','decrement_post_count');")
+# Measured on production after both applies (decrement_post, decrement_reel,
+# increment_post, increment_reel - the ORDER BY proname above).
+POST_IMAGE = ('211f5a4ce3d048732300767d815bf661,134cd0b4b7ec6f3275541bf101869d57,'
+              '8c24e53c088acfa607cf9ffa3c636be2,320e296097947b7d2b8046de486eeefb')
 
 ALICE = '00000000-0000-0000-0000-00000000a11c'
 BOB = '00000000-0000-0000-0000-000000000b0b'
@@ -302,8 +312,8 @@ def require(ok, message):
         raise RuntimeError(message)
 
 
-def run(name, sql, expected=None):
-    r = command(cmd, sql)
+def run(name, sql, expected=None, db='postgres'):
+    r = command(cmd[:-1] + [db], sql)
     (out / (name + '.log')).write_text(r.stdout + r.stderr)
     passed = r.returncode == 0
     if expected is not None:
@@ -353,6 +363,13 @@ try:
     # ---------------- The shipped follow-up, verbatim (md5 pins included) ----------------
     run('shipped-migration', SHIPPED)
 
+    run('the-post-image-is-production', MD5S, POST_IMAGE)
+    # Production order: 225448 after this file. Then this file again.
+    run('production-order-225448-after', REEL_FILE)
+    run('production-order-ends-on-production', MD5S, POST_IMAGE)
+    run('it-runs-again-on-its-own-result', SHIPPED)
+    run('and-changes-nothing', MD5S, POST_IMAGE)
+
     # ---------------- AFTER ----------------
     run('a-stale-tab-view-counts-once',
         as_user(ALICE, '\n'.join(f"SELECT public.increment_reel_count('{REEL2}', 'view_count');"
@@ -395,6 +412,32 @@ try:
     run('a-session-with-no-request-is-the-server',
         f"SELECT public.increment_reel_count('{ALIAS}', 'share_count');" + views(REEL2) + views(REEL),
         '\n2/1\n0/1')
+
+
+    # ---------------- A REBUILD: file order, 225448 first ----------------
+    run('rebuild-database', 'CREATE DATABASE rebuild;')
+    roles = FIXTURE.split('\n')[1]
+    require(roles.startswith('CREATE ROLE anon'), 'the fixture moved: ' + roles)
+    run('rebuild-fixture', FIXTURE.replace(roles, '', 1) +
+        f"INSERT INTO public.social_reels (id) VALUES ('{REEL2}');", db='rebuild')
+    run('rebuild-pre-image-is-production', MD5S,
+        '6e8206b74bc797839782a9017bb94570,2f3f5d1cf59b0645aaee4951943dec6c,'
+        '4dab81e6b5c5eed82f71ab751a07a54e,23f843d6fb8c218559dfed7ad59f8421', db='rebuild')
+    run('rebuild-first-migration', FIRST, db='rebuild')
+    run('rebuild-225448', REEL_FILE, db='rebuild')
+    run('rebuild-then-this-file', SHIPPED, db='rebuild')
+    run('rebuild-ends-on-production', MD5S, POST_IMAGE, db='rebuild')
+    run('rebuild-a-stale-tab-view-counts-once',
+        as_user(ALICE, '\n'.join(f"SELECT public.increment_reel_count('{REEL2}', 'view_count');"
+                                  for _ in range(3))) + views(REEL2), '\n' * 3 + '1/0', db='rebuild')
+    # The moved-underneath guard still bites: any other body aborts the file.
+    run('rebuild-a-foreign-body', "CREATE OR REPLACE FUNCTION public.decrement_post_count(p_post_id uuid, p_field text)"
+        " RETURNS void LANGUAGE plpgsql AS $$ BEGIN END $$;", db='rebuild')
+    r = command(cmd[:-1] + ['rebuild'], SHIPPED)
+    (out / 'a-moved-routine-still-aborts-the-file.log').write_text(r.stdout + r.stderr)
+    passed = r.returncode != 0 and 'COUNTER_MOVED_UNDERNEATH' in r.stderr
+    results['cases'].append({'name': 'a-moved-routine-still-aborts-the-file', 'passed': passed})
+    require(passed, 'a-moved-routine-still-aborts-the-file: ' + r.stderr[-800:])
 
     results['passed'] = all(c.get('passed', True) for c in results['cases'])
 finally:

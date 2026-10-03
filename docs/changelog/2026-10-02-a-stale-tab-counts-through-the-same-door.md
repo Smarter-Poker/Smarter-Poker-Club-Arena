@@ -34,8 +34,9 @@ names keep their signatures and decide by who is calling, using
 | anon                                   | no grant                                                 | no grant            |
 
 Each replacement is pinned. A DO block asserts the md5 of `pg_get_functiondef` for all four
-production functions before anything is replaced, and aborts with `COUNTER_MOVED_UNDERNEATH` if
-any of them moved. The server half of each body is the live text, unchanged.
+functions before anything is replaced: each must be production's pre-image or already exactly this
+file's result, measured on production after the apply. Anything else aborts with
+`COUNTER_MOVED_UNDERNEATH`. The server half of each body is the live text, unchanged.
 
 The migration has no DROP. The Supabase MCP holds a DROP for an interactive confirmation that an
 unattended apply cannot give.
@@ -62,20 +63,30 @@ browser decrements. That combined text was applied at 23:28 under that migration
 (schema_migrations `20261002232859`); both `@live-proof`s held. #5885 then deleted
 `20261002225448` as a never-applied duplicate.
 
-The deletion was right about the file but wrong about the apply. So
-`scripts/ci/applied-migration-aliases.json` maps `20261002232859` to this file, whose reel text is
-exactly what ran (`appliedMd5` `bffd1d417d4472e9bccebd84ebab8e7f`). Without that row,
-production would hold a migration with no file.
+The deletion was right about the file but wrong about the apply, and #5886 restored
+`20261002225448` as the text that ran there (md5 `bffd1d417d4472e9bccebd84ebab8e7f`). This file
+was applied before it, as `20261002232315`. No alias row is needed: each applied name has its own
+file.
+
+Production applied the two in the opposite order to a rebuild, which runs files by version
+(`20261002225448` first). The original pin accepted only the pre-image, so a rebuild would have
+aborted here with `COUNTER_MOVED_UNDERNEATH`. The pin now also accepts this file's own result.
+That is the only change from the text recorded at `20261002232315`, and it changes nothing on a
+database that ran it. The two files hold the same reel bodies, and `pg_get_functiondef` carries no
+COMMENT, so both orders end on the same four definitions.
 
 ## Proof
 
-`scripts/ci/test-a-stale-tab-counts-through-the-same-door.py` (18 cases, all green). It runs
+`scripts/ci/test-a-stale-tab-counts-through-the-same-door.py` (33 cases, all green). It runs
 against both texts of the first migration: the one merged in #5876 and the one that ran.
 
 It loads production's exact counter text; the md5 of all four is pinned in the case
 `pre-image-is-production`. It then runs both shipped migrations verbatim and proves the following
 as the browser role:
 
+- **Both orders:** production's order (this file, then `20261002225448`, then this file again)
+  and a rebuild's order (`20261002225448`, then this file) each end on the md5s measured on
+  production after the apply. A routine with any other body still aborts the file.
 - **Before:** an old view call is refused.
 - **After:**
   - five old view calls count once;

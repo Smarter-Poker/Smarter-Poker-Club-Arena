@@ -12,7 +12,8 @@
  * unchanged body; a browser's view or share goes through the same once-a-day
  * receipt for auth.uid(); anything else a browser asks for is refused.
  * scripts/ci/test-a-stale-tab-counts-through-the-same-door.py proves it on
- * production's exact pre-image (18 cases).
+ * production's exact pre-image, in production's apply order and in a
+ * rebuild's file order, and ends on production's measured post-image (33 cases).
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -77,16 +78,19 @@ describe('a stale tab counts through the same door', () => {
     }
   });
 
-  it('replaces only the pinned live text, and keeps anon out', () => {
-    for (const md5 of [
-      '23f843d6fb8c218559dfed7ad59f8421',
-      '2f3f5d1cf59b0645aaee4951943dec6c',
-      '4dab81e6b5c5eed82f71ab751a07a54e',
-      '6e8206b74bc797839782a9017bb94570',
+  it('replaces only the pinned live text or its own result, and keeps anon out', () => {
+    // Pre-image and post-image, in that order, per routine. Nothing else passes.
+    for (const [pre, post] of [
+      ['23f843d6fb8c218559dfed7ad59f8421', '320e296097947b7d2b8046de486eeefb'],
+      ['2f3f5d1cf59b0645aaee4951943dec6c', '134cd0b4b7ec6f3275541bf101869d57'],
+      ['4dab81e6b5c5eed82f71ab751a07a54e', '8c24e53c088acfa607cf9ffa3c636be2'],
+      ['6e8206b74bc797839782a9017bb94570', '211f5a4ce3d048732300767d815bf661'],
     ]) {
-      expect(CODE).toContain(`'${md5}'`);
+      expect(CODE).toContain(`jsonb_build_array('${pre}', '${post}')`);
     }
-    expect(CODE).toContain('COUNTER_MOVED_UNDERNEATH');
+    expect(CODE).toMatch(
+      /IF NOT \(v_expected -> k\) \? md5\(pg_get_functiondef\(k::regprocedure\)\) THEN\s+RAISE EXCEPTION 'COUNTER_MOVED_UNDERNEATH/
+    );
     for (const fn of [
       'increment_reel_count',
       'decrement_reel_count',
@@ -121,9 +125,20 @@ describe('a stale tab counts through the same door', () => {
       'a-browser-cannot-take-a-post-count-down',
       'anon-still-cannot-call-a-counter',
       'the-server-keeps-the-unchanged-body',
+      'the-post-image-is-production',
+      'production-order-ends-on-production',
+      'it-runs-again-on-its-own-result',
+      'rebuild-225448',
+      'rebuild-then-this-file',
+      'rebuild-ends-on-production',
+      'a-moved-routine-still-aborts-the-file',
     ]) {
       expect(HARNESS).toContain(name);
     }
     expect(HARNESS).toContain("run('shipped-migration', SHIPPED)");
+    // The rebuild runs the restored 20261002225448 file first, as file order does.
+    expect(HARNESS).toContain(
+      "REEL_FILE = one('*_a_browser_moves_only_the_reel_counters_it_is_the_evidence_fo.sql')"
+    );
   });
 });

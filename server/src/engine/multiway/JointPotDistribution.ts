@@ -31,9 +31,12 @@ function hasRepeat<T>(values: readonly T[], read: (value: T) => unknown): boolea
 }
 
 /** Prepare hypothetical seats after their candidate investments. This is
- * memory-only: no controller state or wallet is changed. Unmatched live
- * contributions are refunded before pot construction, as at settlement;
- * individual antes and shared dead money retain their distinct pot rights. */
+ * memory-only: no controller state or wallet is changed. Unmatched
+ * contributions are refunded before pot construction, as at settlement
+ * (HandController.returnUncalledBet): measured in matched contribution, so an
+ * individual ante counts and shared dead money never does, and refunded from
+ * live money first. Individual antes and shared dead money retain their
+ * distinct pot rights. */
 export function prepareJointPots(players: readonly SeatPlayer[], chipUnit: 0.01 | 1) {
   if (
     ![0.01, 1].includes(chipUnit) ||
@@ -63,22 +66,39 @@ export function prepareJointPots(players: readonly SeatPlayer[], chipUnit: 0.01 
     return { ...p, cards: [] };
   });
   const refunds: Record<string, number> = Object.fromEntries(players.map((p) => [p.user_id, 0]));
-  // Live units per seat (every seat validated in order), then the stable
-  // descending order's first two entries: the first seat holding the most
-  // units, and the most units among all other seats.
-  const units = seats.map((p) => unitsOf(p.totalInvested - (p.deadInvested ?? 0), chipUnit));
+  // Matched units per seat (every seat validated in order): live money plus
+  // the individual ante, the measure calculatePots builds levels from. Then
+  // the stable descending order's first two entries: the first seat holding
+  // the most units, and the most units among all other seats.
+  const live = seats.map((p) => unitsOf(p.totalInvested - (p.deadInvested ?? 0), chipUnit));
+  const ante = seats.map((p) =>
+    unitsOf(Math.min(p.individualAnteInvested ?? 0, p.deadInvested ?? 0), chipUnit)
+  );
+  const units = seats.map((_, i) => live[i] + ante[i]);
   let top = 0;
   for (let i = 1; i < units.length; i++) if (units[i] > units[top]) top = i;
   let second = -Infinity;
   for (let i = 0; i < units.length; i++) if (i !== top && units[i] > second) second = units[i];
-  if (!seats[top].is_folded && units[top] > second) {
-    const refund = (units[top] - second) * chipUnit;
+  // A lone contributor has called nothing and contests nothing: like the
+  // controller, leave the money for the award path.
+  const contributors = units.filter((u) => u > 0).length;
+  if (contributors >= 2 && !seats[top].is_folded && units[top] > second) {
+    const refundUnits = units[top] - second;
+    const fromLive = Math.min(refundUnits, live[top]);
+    const fromAnte = refundUnits - fromLive;
+    // Whole units back to amounts by division, so 230 cents is 2.3 exactly.
+    const amountOf = (u: number) => (chipUnit === 1 ? u : u / 100);
     const player = seats[top];
-    refunds[player.user_id] = refund;
-    player.stack = (unitsOf(player.stack, chipUnit) + unitsOf(refund, chipUnit)) * chipUnit;
-    player.totalInvested =
-      (unitsOf(player.totalInvested, chipUnit) - unitsOf(refund, chipUnit)) * chipUnit;
-    player.bet = Math.max(0, Math.round((player.bet - refund) / chipUnit)) * chipUnit;
+    refunds[player.user_id] = amountOf(refundUnits);
+    player.stack = amountOf(unitsOf(player.stack, chipUnit) + refundUnits);
+    player.totalInvested = amountOf(unitsOf(player.totalInvested, chipUnit) - refundUnits);
+    player.bet = amountOf(Math.max(0, Math.round(player.bet / chipUnit) - fromLive));
+    if (fromAnte > 0) {
+      player.deadInvested = amountOf(unitsOf(player.deadInvested ?? 0, chipUnit) - fromAnte);
+      player.individualAnteInvested = amountOf(
+        unitsOf(player.individualAnteInvested ?? 0, chipUnit) - fromAnte
+      );
+    }
   }
   const pots = calculatePots(seats).map((p) => ({
     amount: unitsOf(p.amount, chipUnit) * chipUnit,
@@ -215,7 +235,24 @@ export function settleJointScores(input: {
   const distributed = Object.values(totals).reduce((a, b) => a + b, 0);
   if (Math.abs(distributed - pots.reduce((n, p) => n + p.amount, 0)) > chipUnit / 1e4)
     throw new Error('joint_scores_conservation');
-  return { awards, totals, boardTotals, resultingStacks, refunds: prepared.refunds };
+  // The controller's odd-chip order (distributePot): clockwise distance from
+  // the button, the button last. Multi-board rake scaling breaks remainder
+  // ties with it (applyJointDeductions).
+  const maxSeat = Math.max(...seats.map((p) => p.seat), input.dealerSeat) + 1;
+  const oddChipRank: Record<string, number> = Object.fromEntries(
+    seats.map((p) => {
+      const distance = (p.seat - input.dealerSeat + maxSeat * 10) % maxSeat;
+      return [p.user_id, distance === 0 ? maxSeat : distance];
+    })
+  );
+  return {
+    awards,
+    totals,
+    boardTotals,
+    resultingStacks,
+    refunds: prepared.refunds,
+    oddChipRank,
+  };
 }
 
 /** Retain the joint distribution rather than averaging independently sampled

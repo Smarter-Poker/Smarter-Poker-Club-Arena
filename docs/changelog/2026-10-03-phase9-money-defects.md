@@ -74,6 +74,17 @@ exact, a whole exact share (a sole board winner) is paid exactly, and nobody
 exceeds the pre-rake entitlement. Used only when two or more boards settle;
 single-board and run-it-N hands keep `scaleWinnerUnitsForRake` unchanged.
 
+## The Horse joint-settlement mirror follows the controller
+
+`multiway/JointPotDistribution.prepareJointPots` and
+`multiway/JointDeductions.applyJointDeductions` price Horse decisions with a
+copy of the controller's settlement, and `JointDeductions.test.ts` pins them to
+the controller's final net winners on every board count. Both now use the same
+rules: the uncalled refund in matched contribution (with the controller's
+lone-contributor guard), and multi-board rake scaling by largest remainder with
+`settleJointScores` supplying the odd-chip seat order. No money moves through
+these; they keep Horse pricing equal to what the table pays.
+
 ## Tests
 
 - `server/src/engine/PartialIndividualAnte.test.ts`: the production hand
@@ -82,3 +93,7 @@ single-board and run-it-N hands keep `scaleWinnerUnitsForRake` unchanged.
 - `server/src/engine/Phase9MultiboardUnits.test.ts`: hand 177246036add
   through the real controller (failed before: 7.84 / 3.93 / 3.93), plus the
   allocator against exact integer arithmetic over 500 seeded hands.
+- `server/src/engine/multiway/JointPotDistribution.test.ts`: the production
+  hand through the mirror (failed before: 2.00 refunded instead of 2.30).
+  `JointDeductions.test.ts` (controller parity, all board counts) failed
+  against the new controller until the mirror followed it.

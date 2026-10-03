@@ -55,6 +55,8 @@
 -- refuses that.
 -- ============================================================================
 
+-- @live-proof: (SELECT provolatile = 's' FROM pg_proc WHERE oid = 'public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)'::regprocedure)
+
 BEGIN;
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '60s';

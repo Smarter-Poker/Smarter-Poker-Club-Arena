@@ -18,8 +18,17 @@ name: Schema Integrity Audit
 # Each was hand-patched to unblock the PR in flight. At that point the manifest
 # was 9 tables and 46 functions behind live.
 #
-# Hand-patching one entry at a time is what produced the drift. This runs the
-# generator in a disposable checkout and fails when reviewed source is stale.
+# Hand-patching one entry at a time is what produced the drift, and the answer
+# to it is scripts/ci/schema-manifest.d - a fragment per agent, so no two
+# branches conflict over one snapshot (scripts/ci/schema-manifest.mjs).
+#
+# So this runs the generator in a disposable checkout and asks the question that
+# still matters: production may be AHEAD of the committed contract, which is the
+# normal state here and is reported; the contract may never BLESS a table,
+# function or column production does not have, because the phantom-reference
+# gates read it and would approve a reference runtime refuses. Being merely
+# behind used to fail this job, which made it fail on every single run it ever
+# completed and buried everything else it measures.
 
 on:
   schedule:
@@ -87,6 +96,7 @@ jobs:
       # nothing to install. Keeping this dependency-free is deliberate: a
       # manifest refresh must not be able to fail on an unrelated npm problem.
       - name: Regenerate the manifest
+        id: regenerate
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -100,16 +110,6 @@ jobs:
         continue-on-error: true
         run: node scripts/ci/prune-schema-fragments.mjs
 
-      - name: Refuse unreviewed schema drift
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- scripts/ci/; then
-            echo "Manifest already matches live schema — nothing to do."
-            exit 0
-          fi
-          echo "::error::The committed schema contract differs from production. Regenerate it in a reviewed change; this audit cannot mutate source."
-          git diff --stat -- scripts/ci/
-          exit 1
 
   # ───────────────────────────────────────────────────────────────────────────
   # THE SWEEP THAT FOUND NINETEEN, REPEATED EVERY DAY.
@@ -124,6 +124,37 @@ jobs:
   # already runs daily. Its own job, so a schema-manifest problem and a security
   # finding cannot mask each other.
   # ───────────────────────────────────────────────────────────────────────────
+
+      # THE CONTRACT MAY LAG PRODUCTION; IT MAY NEVER BLESS WHAT PRODUCTION LACKS.
+      #
+      # This replaces `git diff --quiet -- scripts/ci/`, which failed on ANY
+      # difference between the committed manifests and the regeneration and told
+      # the reader to "regenerate it in a reviewed change". That command cannot
+      # pass here. scripts/ci/schema-manifest.mjs made the base snapshot
+      # READ-ONLY to agents on 2026-09-22 - it was the most-changed file on main,
+      # 25 commits in 24 hours, and any two branches touching it conflicted - so
+      # the only action that satisfies a byte-diff is the one the fragment system
+      # exists to forbid. Measured: `refresh` RAN sixteen times between
+      # 2026-09-13 and 2026-10-02 and FAILED all sixteen, while prune in the last
+      # of them reported `445 absorbed, 10 trimmed, 10 still landing, 0 stale`.
+      # Nothing was wrong, and the permanent red buried every other verdict here.
+      #
+      # The script separates the two harms the diff conflated: production being
+      # AHEAD of the contract is the documented steady state and is reported,
+      # while the contract blessing a name production does not have is a phantom
+      # reference the CI gates will approve and runtime will refuse - the one
+      # direction nothing in this repository ever checked, because prune only
+      # judges fragments and never the base.
+      #
+      # `if: always()` so this and the stale-fragment step cannot mask one
+      # another, but ONLY when the regeneration actually succeeded: without it
+      # the "live" files on disk are the committed ones straight out of the
+      # checkout, and comparing those with themselves would report a clean
+      # contract having measured nothing (CLAUDE.md 10.86 rule 2).
+      - name: The contract may lag production, never bless what it lacks
+        id: contract
+        if: always() && steps.regenerate.outcome == 'success'
+        run: node scripts/ci/check-schema-contract.mjs
 
       # After the manifest has landed, not before: a fragment naming something
       # production does not have is widening the phantom-reference gate for a
@@ -190,6 +221,27 @@ jobs:
           # eight new days had been attested since 2026-09-10 and nothing had
           # committed them.
           UNANCHORED_BACKLOG_FAILS_AT: '14'
+          # AND A BACKLOG NOBODY IS TOLD ABOUT IS THE SAME BLIND SPOT AGAIN.
+          #
+          # The 2026-09-19 change separated the backlog from the incident, which
+          # was right, and then gave the backlog NO READER (CLAUDE.md 10.86 rule
+          # 3): it printed a ::warning nothing reads, and the first thing a
+          # person could see was this job going red on the fourteenth day -
+          # arriving as "Schema Integrity Audit has been red", indistinguishable
+          # from the incident and masked outright by any open issue naming this
+          # workflow, which is the exact failure the two steps below were added
+          # to prevent. It then happened: the anchor stopped at 2026-09-18 and
+          # nobody heard about it until 2026-10-03, when it crossed the bound
+          # with fourteen days of chip_ledger unanchored.
+          #
+          # DERIVED, NOT GUESSED (CLAUDE.md 10.84). When the anchoring was being
+          # done it was one line a day: ea1bf545e4 (2026-09-08), 241e3a2e65
+          # (09-09), 97ae9bfe56 (09-10), 1a0cdc3eed (09-11), each +1. A day is
+          # attested the morning after it closes, so 0 or 1 behind is the normal
+          # state and must never file anything. Three means at least two
+          # consecutive days were missed, which has never been normal here, and
+          # it leaves eleven days of warning before the hard bound above.
+          BACKLOG_ISSUE_AT: '3'
         run: |
           set -euo pipefail
           # Assume the incident until the script returns: an unexplained change
@@ -212,6 +264,13 @@ jobs:
           echo "verdict=behind" >> "$GITHUB_OUTPUT"
           echo "::warning title=Ledger anchor::${NEW} attested day(s) are not in docs/attestation/chip-ledger-days.tsv. Run scripts/ci/anchor-ledger-days.mjs and commit the result - git is where this history is supposed to live."
           git diff -- docs/attestation/ | head -60
+
+          # Set before the hard bound below, so a backlog that has already
+          # crossed it still reaches the issue rather than only the red run.
+          if [ "$NEW" -ge "$BACKLOG_ISSUE_AT" ]; then
+            echo "backlog_alarm=yes" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "$NEW" -ge "$UNANCHORED_BACKLOG_FAILS_AT" ]; then
             echo "::error title=Ledger anchor::${NEW} day(s) behind, at or past the ${UNANCHORED_BACKLOG_FAILS_AT}-day bound. An attestation stored only in the database it hashes proves nothing; it means something while git carries it."
             exit 1
@@ -263,6 +322,53 @@ jobs:
           else
             gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
           fi
+
+      # THE BACKLOG'S OWN READER, SEPARATE FROM THE INCIDENT'S.
+      #
+      # A different issue with a different title, so the two verdicts can never
+      # be mistaken for one another and closing one never closes the other. It
+      # runs on `always()` because a backlog past the hard bound has already
+      # failed the step, and that is precisely when somebody has to be told.
+      - name: Say the anchor is behind, on the day it falls behind
+        if: always() && steps.anchor.outputs.backlog_alarm == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NEW_DAYS: ${{ steps.anchor.outputs.new_days }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: attested days are not anchored in git"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "\`ca_ledger_day_manifests\` has attested **${NEW_DAYS}** day(s) that \`docs/attestation/chip-ledger-days.tsv\` does not carry." \
+            "" \
+            "The attestation hashes \`chip_ledger\` and is stored in the same database as the journal it hashes, so it proves nothing to anybody who does not already trust that database. It means something while git carries it, and git does not carry these days." \
+            "" \
+            "This is NOT the incident - no anchored day has changed its sha. It is the file not being committed, and one reviewed change fixes it: run \`node scripts/ci/anchor-ledger-days.mjs\` (it needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY), then commit \`docs/attestation/chip-ledger-days.tsv\` through the normal route in PUBLISHING.md." \
+            "" \
+            "Never edit a line this file already carries - it is append-only. This audit is \`contents: read\` and cannot commit for you; that is deliberate." \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the backlog issue when git has caught up
+        if: always() && steps.anchor.outputs.verdict == 'clean'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: attested days are not anchored in git"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Caught up. Every day the database has attested is now carried by docs/attestation/chip-ledger-days.tsv. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true
 
       - name: Close the alarm when the anchor agrees again
         if: success() && steps.anchor.outcome == 'success'

@@ -154,8 +154,8 @@ test.describe('Production Create A Club Certificate', () => {
     });
     await expect(wizard).toBeVisible();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
-    // The wrapped label also contains the live character counter, so the
-    // textbox's accessible name is "Club Tag Line 0 Of 72 Characters".
+    // The field is named "Club Tag Line"; its live character counter is the
+    // accessible description. The prefix match also accepts an older bundle.
     await wizard
       .getByRole('textbox', { name: /^Club Tag Line\b/i })
       .fill('Production Certificate Club');

@@ -15,8 +15,16 @@
  *
  *   indexLagSeconds          now() minus the index ceiling
  *   recentHandsWithoutStat   hands from the last 3.5 minutes (less a 90 s
- *                            write grace) that have no ca_hand_player_stat
- *                            row - publication is delayed if this is > 0
+ *                            write grace) with no ca_hand_player_stat row
+ *                            AND no hand_projection_outbox row: a writer
+ *                            that finished without writing (2026-09-27;
+ *                            before that it also counted hands still
+ *                            pending projection, which is lag, not loss)
+ *   recentHandsPendingProjection  hands from the same window still pending
+ *                            in hand_projection_outbox (lag, not loss);
+ *                            exported as poker_stats_recent_hands_pending_projection.
+ *                            null when the database still runs the pre-2026-09-27
+ *                            ca_stats_health(), whose gap count includes them
  *   repair.*                 where the money repair cursor is
  *   lastAudit.*              what the 15-minute witness audit last found:
  *                            button_seat vs the blind posts, the derived
@@ -47,6 +55,12 @@ export interface StatsHealthSnapshot {
   indexRows: number | null;
   recentHands: number | null;
   recentHandsWithoutStat: number | null;
+  /**
+   * Hands from the gap window still pending in hand_projection_outbox. null
+   * means the installed ca_stats_health() predates this field, so
+   * recentHandsWithoutStat still counts pending hands too.
+   */
+  recentHandsPendingProjection: number | null;
   repair: {
     done: boolean | null;
     cursorAt: string | null;
@@ -222,7 +236,8 @@ function statsGapMeasurement(raw: unknown, snapshot: StatsHealthSnapshot): strin
     // window fields. Do not synthesize an observed timestamp interval.
     return (
       `Current measurement: recentHands=${sample}${empty}; ` +
-      `recentHandsWithoutStat=${count(measurement?.recentHandsWithoutStat)}; ${time}. ` +
+      `recentHandsWithoutStat=${count(measurement?.recentHandsWithoutStat)}; ` +
+      `recentHandsPendingProjection=${count(measurement?.recentHandsPendingProjection)}; ${time}. ` +
       'Window reference: current source-contract reconstruction only, 120 seconds ending ' +
       '90 seconds before database checkedAt; exact observed bounds unknown. ' +
       'This does not certify repair of previously missing hands.'
@@ -269,6 +284,7 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
     indexRows: num(r.indexRows),
     recentHands: num(r.recentHands),
     recentHandsWithoutStat: num(r.recentHandsWithoutStat),
+    recentHandsPendingProjection: num(r.recentHandsPendingProjection),
     repair: repair
       ? {
           done: bool(repair.done),
@@ -489,6 +505,11 @@ export class StatsHealthMonitor {
         s?.recentHandsWithoutStat ?? null
       ),
       ...g(
+        'poker_stats_recent_hands_pending_projection',
+        'Hands from the same window still pending in hand_projection_outbox (projection lag, not loss); NaN when the installed ca_stats_health() does not report it',
+        s?.recentHandsPendingProjection ?? null
+      ),
+      ...g(
         'poker_stats_witness_disagreements',
         'button_seat vs blind posts plus derived showdown vs showdown roster, from the last witness audit; 0 is healthy',
         disagree
@@ -571,8 +592,14 @@ export class StatsHealthMonitor {
 
     // 2. Missing published stats. Accepted atomic hands deliberately bypass
     //    the inline stats trigger and publish through hand_projection_outbox.
-    //    A gap proves publication is late; it does not identify a failed writer.
+    //    Once ca_stats_health() reports recentHandsPendingProjection it leaves
+    //    hands still pending there out of this count (projection lag is
+    //    HandProjectionOutboxBacklog's), so a gap is a hand whose writer
+    //    finished without writing its stat rows. Against the older function
+    //    (field absent) the count still includes pending hands, and the text
+    //    says so rather than claiming a lost write.
     const gap = s.recentHandsWithoutStat;
+    const excludesPending = s.recentHandsPendingProjection !== null;
     if (gap !== null && gap > 0) {
       if (
         !(await this.deliverAlert(generation, () =>
@@ -580,12 +607,21 @@ export class StatsHealthMonitor {
             alertname: STATS_TRIGGER_GAP_ALERT,
             severity: 'warning',
             component: STATS_HEALTH_COMPONENT,
-            summary: `${gap} recent hand(s) have no stat row - stats publication is delayed`,
+            summary: excludesPending
+              ? `${gap} recent hand(s) have no stat row and no pending projection`
+              : `${gap} recent hand(s) have no stat row - stats publication is delayed`,
             description:
               'Accepted atomic hands publish stats through hand_projection_outbox; their inline ' +
-              'stats trigger intentionally skips that work. Match each missing hand to its atomic ' +
-              'receipt and outbox row, then inspect projection progress and the active drain. ' +
-              'For hands outside that path, inspect trg_ca_stats_live_from_hand warnings. ' +
+              'stats trigger intentionally skips that work. ' +
+              (excludesPending
+                ? 'Hands still pending in the outbox are not counted here. Each counted hand has ' +
+                  'neither a stat row nor an outbox row: for an atomic hand fn_project_hand_side_effects ' +
+                  'consumed the outbox row without writing stats; for any other hand inspect ' +
+                  'trg_ca_stats_live_from_hand warnings. '
+                : 'The installed ca_stats_health() does not separate hands still pending in the outbox, ' +
+                  'so this count includes them. Match each missing hand to its atomic receipt and outbox ' +
+                  'row, then inspect projection progress and the active drain. For hands outside that ' +
+                  'path, inspect trg_ca_stats_live_from_hand warnings. ') +
               'A maintenance run can clear the gap temporarily; verify the writer before closing the incident. ' +
               gapMeasurement,
             labels: { hands_without_stat: String(gap) },

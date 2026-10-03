@@ -288,6 +288,48 @@ describe('StatsHealthMonitor', () => {
     );
   });
 
+  it('names a lost write only when ca_stats_health() excludes hands pending projection', async () => {
+    // Pre-2026-09-27 function: no recentHandsPendingProjection field, so the
+    // gap still includes pending hands and the alert must not claim a loss.
+    const legacy = harness([{ ...LIVE_SAMPLE, recentHandsWithoutStat: 5 }]);
+    await legacy.mon.tick();
+    expect(legacy.raise.mock.calls[0]![0].summary).toBe(
+      '5 recent hand(s) have no stat row - stats publication is delayed'
+    );
+    expect(legacy.raise.mock.calls[0]![0].description).toContain('so this count includes them');
+    expect(legacy.mon.publish()?.recentHandsPendingProjection).toBeNull();
+
+    // Current function: pending hands are reported separately, so a gap is a
+    // hand with neither a stat row nor an outbox row.
+    const current = harness([
+      { ...LIVE_SAMPLE, recentHandsWithoutStat: 2, recentHandsPendingProjection: 1400 },
+    ]);
+    await current.mon.tick();
+    const alert = current.raise.mock.calls[0]![0];
+    expect(alert.summary).toBe('2 recent hand(s) have no stat row and no pending projection');
+    expect(alert.description).toContain('Hands still pending in the outbox are not counted here');
+    expect(alert.description).toContain('recentHandsPendingProjection=1400');
+    expect(alert.labels).toEqual({ hands_without_stat: '2' });
+    expect(current.mon.publish()?.recentHandsPendingProjection).toBe(1400);
+    expect(current.mon.prometheusLines().join('\n')).toContain(
+      'poker_stats_recent_hands_pending_projection 1400'
+    );
+
+    // Pending hands alone are lag, not a gap: the gap alert resolves.
+    const lagOnly = harness([
+      { ...LIVE_SAMPLE, recentHandsWithoutStat: 0, recentHandsPendingProjection: 1400 },
+    ]);
+    await lagOnly.mon.tick();
+    expect(
+      lagOnly.raise.mock.calls.some(([a]) => a.alertname === STATS_TRIGGER_GAP_ALERT)
+    ).toBe(false);
+    expect(lagOnly.resolve).toHaveBeenCalledWith(
+      STATS_TRIGGER_GAP_ALERT,
+      STATS_HEALTH_COMPONENT,
+      expect.any(String)
+    );
+  });
+
   it('retains the database measurement precision rather than the local clock', async () => {
     const checkedAt = '2026-09-12T07:42:10.123456789+00:00';
     const { mon, raise } = harness([
@@ -687,6 +729,7 @@ describe('StatsHealthMonitor', () => {
     lines = mon.prometheusLines().join('\n');
     expect(lines).toContain('poker_stats_index_lag_seconds 600.5');
     expect(lines).toContain('poker_stats_recent_hands_without_stat 0');
+    expect(lines).toContain('poker_stats_recent_hands_pending_projection NaN');
     expect(lines).toContain('poker_stats_witness_disagreements 0');
     expect(lines).toContain('poker_stats_human_hands_without_facts 0');
     expect(lines).toContain('poker_stats_money_repair_done 0');

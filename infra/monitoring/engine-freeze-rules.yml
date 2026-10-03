@@ -477,9 +477,11 @@ groups:
             array from /api/cron/club-stats-maintenance. Found 17 hours behind
             on 2026-09-03 with nothing watching.
 
-      # A hand with no ca_hand_player_stat row 90 s after it was written means
-      # trg_ca_stats_live_from_hand raised and swallowed it. The page is no
-      # longer live until this returns to 0.
+      # A hand with no ca_hand_player_stat row 90 s after it was written AND
+      # no hand_projection_outbox row: its writer finished without writing.
+      # Hands still pending projection are not counted (2026-09-27): accepted
+      # atomic hands publish stats through the outbox minutes later, and that
+      # lag is HandProjectionOutboxBacklog's to report.
       - alert: StatsLiveTriggerMissingHands
         expr: poker_stats_recent_hands_without_stat > 0
         for: 3m
@@ -487,11 +489,13 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: '{{ $value }} recent hand(s) have no stat row'
+          summary: '{{ $value }} recent hand(s) have no stat row and no pending projection'
           description: |
-            The live stats trigger is failing inside the hand insert (it WARNs
-            and lets the hand land). Read the Postgres log for
-            "trg_ca_stats_live_from_hand:".
+            A recent hand has neither a stat row nor a hand_projection_outbox
+            row. For an accepted atomic hand fn_project_hand_side_effects
+            consumed the outbox row without writing stats; for any other hand
+            the inline trigger failed (it WARNs and lets the hand land): read
+            the Postgres log for "trg_ca_stats_live_from_hand:".
 
       # Zero is the only healthy number. A disagreement is a recording defect
       # in the engine (button_seat or the showdown roster) or a failed writer.

@@ -54,6 +54,8 @@
 -- counted substitutions, so this cannot regress anything else that changed
 -- in them since 2026-09-09. Each substitution must match exactly once or the
 -- whole migration aborts.
+--
+-- @live-proof: (SELECT count(*) = 2 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('fn_ca_find_tournament_entry_ticket_for', 'fn_ca_register_for_tournament_with_ticket_for') AND position('source_h.receipt_version>=3' IN p.prosrc) > 0)
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 

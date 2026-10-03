@@ -17,7 +17,11 @@ Decided Spins and Sit & Gos reached their receipt (receipt `settled_at` minus th
 
 ## What changed
 
-- The ask now uses the answer-only overload `fn_ca_lock_settlement_lane_for_satellite_finish(uuid, boolean)`. It takes G shared, then F **shared**, then both T keys exclusively in uuid order. The satellite's payer (F exclusive, both T keys) and sweeps are still waited for and excluded. So are global authorities, both tournaments' hands and rolling authorities, and a finish of the target. Unrelated finishes are no longer blocked. The payer and every other caller keep the one-argument lane.
+- The ask now locks through `fn_ca_lock_satellite_answer_lane(uuid)`. It takes G shared, F **shared** and T(first) through the re-entry path of `fn_ca_lock_settlement_lane_for_finish`, so it never names F itself and the lane doctrine is unchanged. It then takes T(second), in uuid order. The satellite's payer (F exclusive, both T keys) and sweeps are still waited for and excluded. So are global authorities, both tournaments' hands and rolling authorities, and a finish of the target. Unrelated finishes are no longer blocked. The payer and every other caller keep `fn_ca_lock_settlement_lane_for_satellite_finish`. Only the owner can execute the helper.
 - `idx_tables_club_activity_live` is a partial index on `tables(club_id)` whose predicate is exactly the refresh filter. The refresh writes the club row only when a count changed.
 
 Nothing changes in money paths, receipts, escrow, conservation proofs, F06 or seat guards, or the engine. One note: the engine comment in `TournamentManagerEliminations.ts` (#5967) still says the ask takes F exclusively. Its five-minute answer reuse is still correct, and now it simply saves round trips.
+
+## First dispatch refused
+
+The first version added an overload of `fn_ca_lock_settlement_lane_for_satellite_finish`. The doctrine check inside the migration refused it, because rule 2 lists one name per overload. The whole transaction rolled back at 17:12 UTC. Only the `CONCURRENTLY`-built index remained, and the file was never installed. It was corrected in place to the helper above, and the overload-law allowlist entry was removed.

@@ -25,7 +25,7 @@ const sql = readFileSync(
   'utf8'
 );
 const lane = sql.slice(
-  sql.indexOf('CREATE FUNCTION public.fn_ca_lock_settlement_lane_for_satellite_finish('),
+  sql.indexOf('CREATE FUNCTION public.fn_ca_lock_satellite_answer_lane('),
   sql.indexOf('$function$;')
 );
 
@@ -48,44 +48,43 @@ describe('a finish waits only for what it shares', () => {
     expect(sql).toContain('AND i.indisvalid AND i.indisready AND i.indislive');
   });
 
-  it('the answer-only lane takes G and F shared, then both T keys exclusively in uuid order', () => {
-    const g = lane.indexOf(
-      "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0))"
+  it('the answer-only lane takes G, F and T(first) through the finish re-entry, then T(second), in uuid order', () => {
+    const scope = lane.indexOf("PERFORM set_config('ca.finish_lane_scope', '', true);");
+    const name = lane.indexOf(
+      "PERFORM set_config('ca.finish_lane_tournament', v_first::text, true);"
     );
-    const f = lane.indexOf(
-      "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-finish-lane:v1', 0))"
+    const reentry = lane.lastIndexOf('PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);');
+    const second = lane.indexOf("'ca:tournament-terminal-settlement:v1:' || v_second::text");
+    const satellite = lane.indexOf(
+      "PERFORM set_config('ca.finish_lane_tournament', p_satellite_id::text, true);"
     );
-    const t1 = lane.indexOf("'ca:tournament-terminal-settlement:v1:' || v_first::text");
-    const t2 = lane.indexOf("'ca:tournament-terminal-settlement:v1:' || v_second::text");
-    expect(g).toBeGreaterThan(0);
-    expect(f).toBeGreaterThan(g);
-    expect(t1).toBeGreaterThan(f);
-    expect(t2).toBeGreaterThan(t1);
+    expect(scope).toBeGreaterThan(0);
+    expect(name).toBeGreaterThan(scope);
+    expect(reentry).toBeGreaterThan(name);
+    expect(second).toBeGreaterThan(reentry);
+    expect(satellite).toBeGreaterThan(second);
     expect(lane).toContain('IF p_satellite_id::text < v_target_id::text THEN');
-    // F is never taken exclusively here, and G is never taken exclusively.
-    expect(lane).not.toMatch(
-      /pg_advisory_xact_lock\(\s*hashtextextended\('ca:tournament-finish-lane:v1'/
-    );
-    expect(lane).not.toMatch(
-      /pg_advisory_xact_lock\(\s*hashtextextended\('ca:tournament-terminal-settlement:v1', 0\)/
-    );
+  });
+
+  it('never names F or G itself, so the lane doctrine still sees only its three F helpers', () => {
+    expect(lane).not.toContain('ca:tournament-finish-lane');
+    expect(lane).not.toMatch(/'ca:tournament-terminal-settlement:v1'/);
     expect(lane).not.toContain('fn_ca_lock_settlement_lane_global');
   });
 
-  it('every caller that is not only answering keeps the one-argument lane', () => {
-    expect(lane).toContain('IF NOT COALESCE(p_answer_only, false) THEN');
+  it('no target, or a re-entry, keeps the lane it always had', () => {
+    expect(lane).toContain(
+      'PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_satellite_id);'
+    );
     expect(
-      lane.match(
-        /PERFORM public\.fn_ca_lock_settlement_lane_for_satellite_finish\(p_satellite_id\);/g
-      )?.length
+      lane.match(/PERFORM public\.fn_ca_lock_settlement_lane_for_finish\(NULL\);/g)?.length
     ).toBe(2);
-    expect(lane).toContain('PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);');
   });
 
   it('only the qualifier ask moves to it, edited from its exact preimage', () => {
     expect(sql).toContain("IF md5(d) <> 'c98348c74d821296e277f94b2987bdec' THEN");
     expect(sql).toContain(
-      "E' PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_tournament_id, true);\\n'"
+      "E' PERFORM public.fn_ca_lock_satellite_answer_lane(p_tournament_id);\\n'"
     );
     expect(sql).toContain(
       "RAISE EXCEPTION 'qualifier ask postimage differs from the substituted text'"
@@ -100,6 +99,7 @@ describe('a finish waits only for what it shares', () => {
 
   it('asks the lane doctrine in the same transaction and grants nothing to browsers', () => {
     expect(sql).toContain('public.fn_ca_settlement_lane_doctrine()');
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.fn_ca_lock_satellite_answer_lane(uuid)');
     expect(sql).toContain('FROM PUBLIC, anon, authenticated, service_role;');
     expect(sql).toContain("IS DISTINCT FROM '{postgres=X/postgres}' THEN");
     expect(sql).not.toMatch(/GRANT[^;]*\b(anon|authenticated)\b/);

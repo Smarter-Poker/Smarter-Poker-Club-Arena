@@ -158,7 +158,10 @@ test.describe('Production Create A Club Certificate', () => {
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await expect(wizard.getByText(/Already Enabled And Funded BBJ/i)).toBeVisible();
-    await expect(wizard.getByRole('button', { name: 'Not Now', exact: true })).toBeDisabled();
+    // Each choice card's name is its title plus its explanation
+    // (for example "Not Now" + "Record The Decision Without Funding"), so match the
+    // title prefix.
+    await expect(wizard.getByRole('button', { name: /^Not Now/ })).toBeDisabled();
     await wizard.getByRole('button', { name: 'Close Opening Wizard', exact: true }).click();
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
 
@@ -177,7 +180,13 @@ test.describe('Production Create A Club Certificate', () => {
 
     const retirement = page.getByRole('dialog', { name: 'Retire Club', exact: true });
     await expect(retirement).toBeVisible({ timeout: 30_000 });
-    await expect(retirement.getByText('100,000', { exact: false })).toBeVisible({
+    // A pristine welcome club names 100,000 twice: the verified opening grant
+    // and the canonical wallet total. Prove each line on its own so the
+    // locator is never ambiguous.
+    await expect(
+      retirement.getByText(/^Exact Unused Welcome Package Verified - .*100,000-Chip Grant/)
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(retirement.getByText(/^100,000 Chips Or Credit Across Canonical/)).toBeVisible({
       timeout: 30_000,
     });
     await retirement.getByLabel('Type The Club Name To Confirm:', { exact: true }).fill(clubName);

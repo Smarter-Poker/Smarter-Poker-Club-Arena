@@ -1,0 +1,59 @@
+name: Conservation sweep reads and the cron failure watch (native PostgreSQL 17)
+
+# Migrations 20261001152917 (recording the four online indexes built by
+# scripts/ops/build-conservation-sweep-read-indexes-concurrently.sql) and
+# 20261001152926 (fn_ca_cron_failure_watch). Runs both native proofs against
+# a throwaway PostgreSQL 17 cluster, never production, as the unprivileged
+# runner user. A dedicated workflow rather than a ci.yml step, so a change to
+# these proofs never has to rewrite ci.yml. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths the proofs read.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261001152917_conservation_sweep_reads_use_covering_partial_indexes.sql
+      - supabase/migrations/20261001152926_a_failing_hourly_cron_reaches_the_board.sql
+      - scripts/ops/build-conservation-sweep-read-indexes-concurrently.sql
+      - scripts/ci/test-conservation-sweep-read-indexes-postgres.py
+      - scripts/ci/test-cron-failure-watch-postgres.py
+      - scripts/ci/fixtures/conservation-sweep-read-indexes/**
+      - .github/workflows/conservation-sweep-read-proofs.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conservation-sweep-read-proofs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-proofs:
+    name: Sweep read indexes and cron failure watch (throwaway PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: The conservation sweep's history-wide reads keep exact results through online covering indexes
+        run: python3 scripts/ci/test-conservation-sweep-read-indexes-postgres.py
+      - name: A failing hourly cron reaches the board
+        run: python3 scripts/ci/test-cron-failure-watch-postgres.py

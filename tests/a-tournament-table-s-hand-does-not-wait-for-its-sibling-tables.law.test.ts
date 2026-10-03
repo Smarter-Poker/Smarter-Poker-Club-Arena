@@ -6,8 +6,8 @@
  * UPDATE, so the tables of one tournament dealt one at a time: a 40-table MTT
  * logged 4,800+ waits of 1 s or more on that one key in two hours and dealt
  * 126 hands in 10 minutes. The per-table calls now take
- * public.fn_ca_f06_share_table_lane: lease fence, G and T(id) SHARED,
- * tournament row FOR SHARE, this table and its seats FOR UPDATE.
+ * public.fn_ca_f06_share_table_lane: lease fence, G and T(id) SHARED, this
+ * table and its seats FOR UPDATE, and no lock on the tournament row.
  *
  * What this pins: the helper's lock shape and order (and that it never takes
  * T or G exclusively); exactly which calls move (number state, begin, an
@@ -59,7 +59,6 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
       "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));",
       "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || p_tournament_id::text, 0));",
       'smarter_private.f06_authority(p_tournament_id, p_lease_generation, false);',
-      'FROM public.tournaments WHERE id = p_tournament_id FOR SHARE;',
       'FROM public.tables WHERE id = p_table_id FOR UPDATE;',
       'ORDER BY s.id FOR UPDATE OF s;',
     ].map((s) => b.indexOf(s));
@@ -67,7 +66,10 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
     for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1]);
     expect(b).not.toMatch(/pg_advisory_xact_lock\(/);
     expect(b).not.toMatch(/fn_ca_lock_settlement_lane/);
-    expect(b).not.toMatch(/tournaments[^;]*FOR UPDATE/);
+    // The tournament row is read, never locked: a shared row lock from every
+    // table at once only feeds MultiXact churn, and status writers already
+    // hold T(id) exclusive.
+    expect(b).not.toMatch(/public\.tournaments/);
     expect(MIG).toContain(
       'REVOKE ALL ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;'
     );
@@ -105,7 +107,7 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
     expect(MIG.match(/IF v_n <> 1 THEN/g)).toHaveLength(3);
     expect(MIG.match(/md5\(replace\(v_after, v_new, v_old\)\) <> v_pin/g)).toHaveLength(3);
     expect(MIG.match(/has_function_privilege\('anon', v_sig, 'EXECUTE'\)/g)).toHaveLength(3);
-    expect(MIG).toContain("'e498a501aaa983f397bd4da1afa09875'");
+    expect(MIG).toContain("'fb338521b04173262828517e71741d73'");
   });
 
   it('ships the disposable-cluster proof', () => {

@@ -22,9 +22,12 @@
 -- These calls now take public.fn_ca_f06_share_table_lane: the lease fence
 -- (f06_authority before and after, unchanged), G shared and T(id) SHARED (the
 -- shape fn_ca_share_settlement_lane_for_table gives the same table's hand
--- settlement), the tournament row FOR SHARE (what settlement and
--- fn_ca_retain_hand_submission already take), then this table's row and its
--- seats FOR UPDATE, in f06_prefix's order. Calls on one table still
+-- settlement), then this table's row and its seats FOR UPDATE, in
+-- f06_prefix's order. The tournament row is not locked: these calls only read
+-- its status, and every status writer holds T(id) or G exclusive, which waits
+-- for the shared holders. A shared row lock taken by 40 concurrent tables
+-- would only add MultiXact churn, whose caches are already thrashing (about
+-- 46M member and 37M offset block reads between 21:00 and 23:30). Calls on one table still
 -- serialize on the table row; calls on different tables no longer wait for
 -- each other. Every tournament-wide authority (breaks, parks, moves,
 -- eliminations, custody, generation changes, cancellation, finish of a hand
@@ -46,11 +49,11 @@
 -- functions (each fragment exactly once, reverse substitution reproduces the
 -- pin, privileges unchanged). Post-images, computed on the exact live
 -- pre-images by scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-
--- its-sibling-tables.py: fn_f06_hand_number_state 79c2a20b8f72b7fdacab80bbe7850e30,
--- fn_f06_begin_hand e498a501aaa983f397bd4da1afa09875,
+-- its-sibling-tables.py: fn_f06_hand_number_state 3d11dc858210c0ea3daec4a671791f5b,
+-- fn_f06_begin_hand fb338521b04173262828517e71741d73,
 -- fn_f06_finish_hand f85ee8fbf794e9087926715fd340499d.
 --
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure)) = 'e498a501aaa983f397bd4da1afa09875')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure)) = 'fb338521b04173262828517e71741d73')
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -65,10 +68,11 @@ AS $function$
 BEGIN
   /* THE SHARED TABLE LANE OF A TOURNAMENT (2026-10-03). For per-table F06
      hand calls only: what f06_prefix does for one table and no users, with
-     the tournament lane T(id) taken SHARED instead of exclusive and the
-     tournament row FOR SHARE instead of FOR UPDATE. Same order as f06_prefix
-     and as fn_ca_share_settlement_lane_for_table: lease fence, G shared,
-     T(id) shared, lease re-check, tournament row, table row, seats. */
+     the tournament lane T(id) taken SHARED instead of exclusive and no lock
+     on the tournament row (its status is written only under T(id) or G
+     exclusive). Same order as f06_prefix and as
+     fn_ca_share_settlement_lane_for_table: lease fence, G shared, T(id)
+     shared, lease re-check, table row, seats. */
   IF p_table_id IS NULL THEN
     RAISE EXCEPTION 'F06_TABLE_LANE_NEEDS_A_TABLE' USING ERRCODE = '22023';
   END IF;
@@ -78,7 +82,6 @@ BEGIN
   PERFORM pg_advisory_xact_lock_shared(
     hashtextextended('ca:tournament-terminal-settlement:v1:' || p_tournament_id::text, 0));
   PERFORM smarter_private.f06_authority(p_tournament_id, p_lease_generation, false);
-  PERFORM 1 FROM public.tournaments WHERE id = p_tournament_id FOR SHARE;
   PERFORM 1 FROM public.tables WHERE id = p_table_id FOR UPDATE;
   PERFORM s.id FROM public.table_seats s JOIN public.tables tb ON tb.id = s.table_id
    WHERE tb.tournament_id = p_tournament_id AND s.table_id = p_table_id
@@ -88,7 +91,7 @@ $function$;
 REVOKE ALL ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) TO service_role;
 COMMENT ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) IS
-  'Per-table F06 hand lane: lease fence, G and T(id) shared, tournament row FOR SHARE, this table and its seats FOR UPDATE. Only for calls that touch one table and prove nothing about other tables; tournament-wide authorities take f06_prefix (T(id) exclusive).';
+  'Per-table F06 hand lane: lease fence, G and T(id) shared, this table and its seats FOR UPDATE. Only for calls that touch one table and prove nothing about other tables; tournament-wide authorities take f06_prefix (T(id) exclusive).';
 
 DO $subs$
 DECLARE
@@ -104,8 +107,8 @@ BEGIN
   END IF;
   v_old := E' PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,\'{}\',ARRAY[p_table_id]);\n';
   v_new := E' /* A TABLE\'S HAND DOES NOT WAIT FOR ITS SIBLING TABLES (2026-10-03): the\n'
-        || E'    tournament lane T(id) shared, the tournament row FOR SHARE, this table\n'
-        || E'    and its seats FOR UPDATE. See fn_ca_f06_share_table_lane. */\n'
+        || E'    tournament lane T(id) shared, then this table and its seats FOR\n'
+        || E'    UPDATE. See fn_ca_f06_share_table_lane. */\n'
         || E' PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);\n';
   v_n := (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old);
   IF v_n <> 1 THEN
@@ -134,8 +137,8 @@ BEGIN
   END IF;
   v_old := E' PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,\'{}\',ARRAY[p_table_id]);\n';
   v_new := E' /* A TABLE\'S HAND DOES NOT WAIT FOR ITS SIBLING TABLES (2026-10-03): the\n'
-        || E'    tournament lane T(id) shared, the tournament row FOR SHARE, this table\n'
-        || E'    and its seats FOR UPDATE. See fn_ca_f06_share_table_lane. */\n'
+        || E'    tournament lane T(id) shared, then this table and its seats FOR\n'
+        || E'    UPDATE. See fn_ca_f06_share_table_lane. */\n'
         || E' PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);\n';
   v_n := (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old);
   IF v_n <> 1 THEN

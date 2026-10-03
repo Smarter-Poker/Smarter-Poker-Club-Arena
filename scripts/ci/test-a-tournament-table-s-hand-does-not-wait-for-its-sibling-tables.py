@@ -4,7 +4,7 @@
 Migration 20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl
 moves the per-table F06 hand calls from smarter_private.f06_prefix (tournament
 lane T(id) EXCLUSIVE, tournament row FOR UPDATE) to
-public.fn_ca_f06_share_table_lane (T(id) SHARED, tournament row FOR SHARE,
+public.fn_ca_f06_share_table_lane (T(id) SHARED, no tournament row lock,
 this table and its seats FOR UPDATE).
 
 Two disposable PostgreSQL clusters hold the EXACT live definitions of the three
@@ -189,8 +189,8 @@ try:
     posts = new.psql("SELECT string_agg(p.proname || '=' || md5(pg_get_functiondef(p.oid)), ',' ORDER BY p.proname) FROM pg_proc p "
                      "WHERE p.proname IN ('fn_f06_hand_number_state','fn_f06_begin_hand','fn_f06_finish_hand');").stdout.strip()
     case('APPLY the shipped migration to its pinned post-images', r.returncode == 0 and posts ==
-         'fn_f06_begin_hand=e498a501aaa983f397bd4da1afa09875,fn_f06_finish_hand=f85ee8fbf794e9087926715fd340499d,'
-         'fn_f06_hand_number_state=79c2a20b8f72b7fdacab80bbe7850e30', stderr=r.stderr.strip()[-600:], posts=posts)
+         'fn_f06_begin_hand=fb338521b04173262828517e71741d73,fn_f06_finish_hand=f85ee8fbf794e9087926715fd340499d,'
+         'fn_f06_hand_number_state=3d11dc858210c0ea3daec4a671791f5b', stderr=r.stderr.strip()[-600:], posts=posts)
 
     # BEFORE: the defect on the pre-image.
     t = hold(old, state(TABLES[0]), 2)

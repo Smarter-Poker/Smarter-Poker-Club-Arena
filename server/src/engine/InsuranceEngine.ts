@@ -201,8 +201,10 @@ export class InsuranceEngine {
    *
    * Default offer is FULL insurance (100% coverage).
    * Player can adjust via acceptPartial() with a slider before accepting.
-   * Premium = (1 - equity%) × insuredAmount × houseMargin
-   * Max insurable = min(pot × maxInsurablePercent%, pot × equity%)
+   * Premium = insuredAmount × pLoss / pWin × houseMargin, pLoss and pWin
+   *   conditional on no push (the fee is kept only when the leader wins alone;
+   *   see POKERBROS PARITY below). Insured = pot × maxInsurablePercent%, where
+   *   pot is the leader's insurable pot (computeInsurablePot).
    */
   createOffers(
     tableId: string,

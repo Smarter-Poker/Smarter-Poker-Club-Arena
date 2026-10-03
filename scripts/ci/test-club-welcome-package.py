@@ -21,6 +21,7 @@ BOARD_LEASE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002102542_welco
 BOARD_ORIGIN_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002111120_welcome_certification_accepts_exact_prelaunch_origins.sql'
 BOARD_DELETE_PERMIT_MIGRATION = ROOT / 'supabase/migrations/20261002115605_welcome_certification_deletes_only_its_unused_board_tables.sql'
 FRESH_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002205511_welcome_certification_accepts_fresh_exact_board.sql'
+INCREMENTAL_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261003005742_welcome_cleanup_accepts_incremental_exact_board.sql'
 POST_RESET_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002210559_post_reset_welcome_certification_cleanup.sql'
 POST_RESET_UUID_ORDER_MIGRATION = ROOT / 'supabase/migrations/20261002223819_post_reset_cleanup_orders_uuid_values.sql'
 POST_RESET_ATOMIC_BOARD_MIGRATION = ROOT / 'supabase/migrations/20261002231724_post_reset_cleanup_accepts_atomic_board_absence.sql'
@@ -42,7 +43,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name, POST_RESET_SPIN_RETURN_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name, POST_RESET_SPIN_RETURN_MIGRATION.name, INCREMENTAL_BOARD_CLEANUP_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -492,6 +493,8 @@ $restore$;
     run('restore-post-reset-spin-return-config',
         "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
     run('verify-restored-post-reset-spin-return-config',POST_RESET_SPIN_RETURN_MIGRATION.read_text())
+    run('install-incremental-board-cleanup',INCREMENTAL_BOARD_CLEANUP_MIGRATION.read_text())
+    run('reinstall-incremental-board-cleanup',INCREMENTAL_BOARD_CLEANUP_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
 CREATE FUNCTION test_shape_post_reset_welcome_fixture(
   p_club uuid,p_owner uuid,p_board_count integer DEFAULT 12,
@@ -743,6 +746,7 @@ COMMIT;
     owner27='00000000-0000-4000-8000-000000000027'; c28='00000000-0000-4000-9000-000000000028'
     owner28='00000000-0000-4000-8000-000000000028'; c29='00000000-0000-4000-9000-000000000029'
     owner29='00000000-0000-4000-8000-000000000029'; c30='00000000-0000-4000-9000-000000000030'
+    owner30='00000000-0000-4000-8000-000000000030'; c31='00000000-0000-4000-9000-000000000031'
     def shape_post_reset_fixture(case,owner,club,board_count=12,materialize_schedule=True):
         tournament_count=board_count+(1 if materialize_schedule else 0)
         table_count=9+tournament_count
@@ -843,6 +847,66 @@ SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c11}'),
        (SELECT NOT is_active AND balance=0 FROM spin_bonus_pools WHERE club_id='{c11}')
   FROM club_welcome_package_items WHERE club_id='{c11}';
 """,'12|12|12|3\n0|0|0|0|0|0|t')
+    run('certification-cleanup-retires-incremental-exact-owner-board',f"""
+INSERT INTO auth.users VALUES('{owner30}','ca-customization-cert-postdeploy-incremental-board@example.invalid');
+INSERT INTO clubs(id,owner_id,name) VALUES('{c31}','{owner30}','Crest Cert Incremental Board');
+INSERT INTO club_members(club_id,user_id) VALUES('{c31}','{owner30}');
+SET request.jwt.claim.sub='{owner30}';
+INSERT INTO club_creation_requests VALUES('{owner30}',gen_random_uuid(),'{c31}');
+WITH expected(ord,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,seats,stack) AS (
+ VALUES
+ (1,'NLH Heads-Up 1','NLH','sng','SNG',0.95,0.05,2,1000),
+ (2,'PLO4 Heads-Up 1','PLO4','sng','SNG',0.95,0.05,2,1000),
+ (3,'NLH Heads-Up 1 Turbo','NLH','sng','SNG',0.95,0.05,2,300),
+ (4,'PLO4 Heads-Up 1 Turbo','PLO4','sng','SNG',0.95,0.05,2,300),
+ (5,'1 Chip Spin NLH','NLH','spin','SPIN',1,0,3,300),
+ (6,'1 Chip Spin PLO4','PLO4','spin','SPIN',1,0,3,300),
+ (7,'1 Chip Spin PLO5','PLO5','spin','SPIN',1,0,3,300),
+ (8,'1 Chip Spin PLO6','PLO6','spin','SPIN',1,0,3,300),
+ (9,'1 Chip Deep Stack Spin NLH','NLH','spin','SPIN',1,0,3,1000),
+ (10,'1 Chip Deep Stack Spin PLO4','PLO4','spin','SPIN',1,0,3,1000),
+ (11,'1 Chip Deep Stack Spin PLO5','PLO5','spin','SPIN',1,0,3,1000),
+ (12,'1 Chip Deep Stack Spin PLO6','PLO6','spin','SPIN',1,0,3,1000)
+), games AS(
+ INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+  max_players,min_players,table_size,starting_chips,current_players,status,created_at,updated_at)
+ SELECT gen_random_uuid(),'{c31}',name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+  seats,seats,seats,stack,0,'REGISTERING',now(),now()
+ FROM expected WHERE ord<=5 RETURNING id,name,max_players
+)
+INSERT INTO tables(id,club_id,tournament_id,name,game_type,status,current_players,max_players,is_deleted,created_at,updated_at)
+SELECT gen_random_uuid(),'{c31}',id,name,'tournament','waiting',0,max_players,false,now(),now() FROM games;
+INSERT INTO engine_tournament_leases(tournament_id,instance_id,engine_version,acquired_at,heartbeat_at,lease_generation,protocol_version)
+SELECT id,'retired-incremental-cert-engine','test',now()-interval '11 minutes',now()-interval '11 minutes',gen_random_uuid(),2
+  FROM tournaments WHERE club_id='{c31}' AND schedule_id IS NULL;
+INSERT INTO tournament_table_origins(table_id,tournament_id,origin_kind)
+SELECT id,tournament_id,'prelaunch' FROM tables
+ WHERE club_id='{c31}' AND tournament_id IN
+   (SELECT id FROM tournaments WHERE club_id='{c31}' AND schedule_id IS NULL);
+SELECT count(*),count(DISTINCT t.name),
+       count(*) FILTER(WHERE l.acquired_at<now()-interval '10 minutes'
+                         AND l.heartbeat_at<now()-interval '10 minutes'
+                         AND l.protocol_version=2),
+       count(o.table_id)
+  FROM tournaments t
+  JOIN tables b ON b.tournament_id=t.id AND b.club_id=t.club_id
+  JOIN engine_tournament_leases l ON l.tournament_id=t.id
+  JOIN tournament_table_origins o ON o.table_id=b.id AND o.tournament_id=t.id
+ WHERE t.club_id='{c31}' AND t.schedule_id IS NULL;
+SET request.jwt.claim.role='service_role';
+WITH retired AS (
+ SELECT fn_ca_retire_welcome_certification_club('{c31}','incremental-board-cert') AS result
+)
+SELECT result->>'board_tournaments_removed',result->>'board_tournament_leases_removed',
+       result->>'board_origins_removed',result->>'chips_retired' FROM retired;
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c31}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c31}'),
+       (SELECT count(*) FROM engine_tournament_leases),
+       (SELECT count(*) FROM tournament_table_origins),
+       (SELECT count(*) FROM smarter_private.ca_welcome_certification_table_delete_permits),
+       (SELECT NOT is_active AND balance=0 FROM spin_bonus_pools WHERE club_id='{c31}')
+  FROM club_welcome_package_items WHERE club_id='{c31}';
+""",'5|5|5|5\n5|5|5|100000.00\n0|0|0|0|0|0|t')
     run('certification-board-cleanup-refuses-fresh-and-active-atomically',f"""
 INSERT INTO auth.users VALUES('{owner11}','ca-customization-cert-postdeploy-board-active@example.invalid');
 INSERT INTO clubs(id,owner_id,name) VALUES('{c12}','{owner11}','Crest Cert Board Active');

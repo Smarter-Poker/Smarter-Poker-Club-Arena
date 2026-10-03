@@ -29,8 +29,8 @@
       "sha256": "9f490c9970870e0e6b442e28bddc081768ba0927361aff4539e401eacc8327a3"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
-      "bytes": 30583,
-      "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
+      "bytes": 30584,
+      "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
       "bytes": 30159,
@@ -97,12 +97,12 @@
       "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
     },
     "supabase/components/cash-failed-run-intake.rollback.sql": {
-      "bytes": 31016,
-      "sha256": "2f14ebcc798eb73e411f7dceb3c40738d3317ac415bacb58a6261d3654856c4e"
+      "bytes": 31018,
+      "sha256": "7782ab1c7d07a8884092ab98c936417b7301b86b6cd2328f6a8b40f1eb3b29ea"
     },
     "supabase/components/cash-failed-run-intake.sql": {
-      "bytes": 31017,
-      "sha256": "9e2b0f7d2645a3fb7ee1efff928a87cfa7ae920294da4066d90f040cbf460fd9"
+      "bytes": 31019,
+      "sha256": "6f5b33b06b6ff5dcfcfa3368970938b26c77cb965e5ea7ed711688066ed854fb"
     },
     "supabase/components/cash-pot-check-evidence.rollback.sql": {
       "bytes": 50461,
@@ -1415,6 +1415,47 @@
         "current": {
           "bytes": 184999,
           "sha256": "9bb6ce8b9c7e24502ce11e6b9a223c2a6c1b799f5bccf761bce6905a65004f5f"
+        }
+      }
+    ]
+  },
+  "cashPotAuditWindow20261003": {
+    "reason": "Production job 259 (ca-cash-pot-conservation-hourly) now calls fn_cash_pot_conservation_check(8) instead of the 24-hour default (migration 20261003044110), and production fn_ca_cash_failed_run_intake pins that command. The scheduler fixture's COMMAND and both intake components' v_command and md5(command) pin move to the same text, so the native failure-intake qualification schedules and observes the command production runs. Schedule, checker body, assertions, routing and every other input unchanged.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/test-cash-failure-pgcron.py",
+        "previous": {
+          "bytes": 30583,
+          "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
+        },
+        "current": {
+          "bytes": 30584,
+          "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
+        }
+      },
+      {
+        "section": "files",
+        "path": "supabase/components/cash-failed-run-intake.rollback.sql",
+        "previous": {
+          "bytes": 31016,
+          "sha256": "2f14ebcc798eb73e411f7dceb3c40738d3317ac415bacb58a6261d3654856c4e"
+        },
+        "current": {
+          "bytes": 31018,
+          "sha256": "7782ab1c7d07a8884092ab98c936417b7301b86b6cd2328f6a8b40f1eb3b29ea"
+        }
+      },
+      {
+        "section": "files",
+        "path": "supabase/components/cash-failed-run-intake.sql",
+        "previous": {
+          "bytes": 31017,
+          "sha256": "9e2b0f7d2645a3fb7ee1efff928a87cfa7ae920294da4066d90f040cbf460fd9"
+        },
+        "current": {
+          "bytes": 31019,
+          "sha256": "6f5b33b06b6ff5dcfcfa3368970938b26c77cb965e5ea7ed711688066ed854fb"
         }
       }
     ]

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-a5/close-prepared-step. Migration 20261003121635_a_close_attempt_that_prepared_a_long_week_pays_in_the_next: the private invoker function that ends a chunked close attempt after a long preparation.",
+  "functions": ["fn_accounting_close_prepared_long"]
+}

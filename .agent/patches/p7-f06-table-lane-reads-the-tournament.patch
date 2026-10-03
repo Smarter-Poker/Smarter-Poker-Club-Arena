@@ -1,0 +1,204 @@
+diff --git a/docs/changelog/2026-10-03-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md b/docs/changelog/2026-10-03-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
+index 42b3ac05..e0912a4d 100644
+--- a/docs/changelog/2026-10-03-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
++++ b/docs/changelog/2026-10-03-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
+@@ -29,10 +29,13 @@ had named the cost and left it.
+ ## Change
+ 
+ New `public.fn_ca_f06_share_table_lane(tournament, lease generation, table)`
+-(service role only): lease fence, G shared, T(id) shared, lease re-check,
+-tournament row `FOR SHARE`, this table `FOR UPDATE`, its seats `FOR UPDATE`, in
+-`f06_prefix`'s order and the shape the same table's hand settlement already
+-takes. It replaces `f06_prefix` in `fn_f06_hand_number_state` (and so in
++(service role only): lease fence, G shared, T(id) shared, lease re-check, this
++table `FOR UPDATE`, its seats `FOR UPDATE`, in `f06_prefix`'s order and the lane
++shape the same table's hand settlement already takes. The tournament row is
++read, not locked: its status is written only under T(id) or G exclusive, which
++waits for the shared holders, and a shared row lock from 40 tables at once
++would only add MultiXact churn (the MultiXact caches were already thrashing:
++about 46M member and 37M offset block reads between 21:00 and 23:30). It replaces `f06_prefix` in `fn_f06_hand_number_state` (and so in
+ `fn_f06_allocate_hand_number` and `fn_f06_table_state`), `fn_f06_begin_hand`, and
+ `fn_f06_finish_hand` for an accepted hand. Nothing else changes:
+ 
+@@ -59,7 +62,7 @@ applies the shipped migration to one, and checks:
+ 
+ | case | result |
+ | --- | --- |
+-| migration applies to its pinned post-images (`79c2a20b`, `e498a501`, `f85ee8fb`) | ok |
++| migration applies to its pinned post-images (`3d11dc85`, `fb338521`, `f85ee8fb`) | ok |
+ | before: a sibling table waits 1.5 s behind a held table | ok (the defect) |
+ | after: the sibling answers in 11 ms | ok |
+ | after: the same table still waits | ok |
+diff --git a/docs/laws.d/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md b/docs/laws.d/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
+index a73bf2db..c74e8ef7 100644
+--- a/docs/laws.d/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
++++ b/docs/laws.d/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.md
+@@ -4,8 +4,8 @@ The tables of one tournament deal in parallel. The per-table F06 hand calls
+ (`fn_f06_hand_number_state`, and through it `fn_f06_allocate_hand_number` and
+ `fn_f06_table_state`; `fn_f06_begin_hand`; `fn_f06_finish_hand` for an accepted
+ hand) take `fn_ca_f06_share_table_lane`: the lease fence before and after, G and
+-the tournament lane T(id) shared, the tournament row `FOR SHARE`, then this
+-table's row and seats `FOR UPDATE`. They used to take `f06_prefix` (T(id)
++the tournament lane T(id) shared, then this table's row and seats
++`FOR UPDATE`; the tournament row is read, not locked. They used to take `f06_prefix` (T(id)
+ exclusive, tournament row `FOR UPDATE`), so a 40-table MTT dealt one table at a
+ time. Calls on one table still serialize on its row; every tournament-wide
+ authority keeps T(id) exclusive; a `never_started` finish keeps `f06_prefix`
+diff --git a/scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.py b/scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.py
+index 2aea7d6c..19dfd871 100644
+--- a/scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.py
++++ b/scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.py
+@@ -4,7 +4,7 @@
+ Migration 20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl
+ moves the per-table F06 hand calls from smarter_private.f06_prefix (tournament
+ lane T(id) EXCLUSIVE, tournament row FOR UPDATE) to
+-public.fn_ca_f06_share_table_lane (T(id) SHARED, tournament row FOR SHARE,
++public.fn_ca_f06_share_table_lane (T(id) SHARED, no tournament row lock,
+ this table and its seats FOR UPDATE).
+ 
+ Two disposable PostgreSQL clusters hold the EXACT live definitions of the three
+@@ -189,8 +189,8 @@ try:
+     posts = new.psql("SELECT string_agg(p.proname || '=' || md5(pg_get_functiondef(p.oid)), ',' ORDER BY p.proname) FROM pg_proc p "
+                      "WHERE p.proname IN ('fn_f06_hand_number_state','fn_f06_begin_hand','fn_f06_finish_hand');").stdout.strip()
+     case('APPLY the shipped migration to its pinned post-images', r.returncode == 0 and posts ==
+-         'fn_f06_begin_hand=e498a501aaa983f397bd4da1afa09875,fn_f06_finish_hand=f85ee8fbf794e9087926715fd340499d,'
+-         'fn_f06_hand_number_state=79c2a20b8f72b7fdacab80bbe7850e30', stderr=r.stderr.strip()[-600:], posts=posts)
++         'fn_f06_begin_hand=fb338521b04173262828517e71741d73,fn_f06_finish_hand=f85ee8fbf794e9087926715fd340499d,'
++         'fn_f06_hand_number_state=3d11dc858210c0ea3daec4a671791f5b', stderr=r.stderr.strip()[-600:], posts=posts)
+ 
+     # BEFORE: the defect on the pre-image.
+     t = hold(old, state(TABLES[0]), 2)
+diff --git a/supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql b/supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql
+index de21ed1f..20395d94 100644
+--- a/supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql
++++ b/supabase/migrations/20261003230910_a_tournament_table_s_hand_does_not_wait_for_its_sibling_tabl.sql
+@@ -22,9 +22,12 @@
+ -- These calls now take public.fn_ca_f06_share_table_lane: the lease fence
+ -- (f06_authority before and after, unchanged), G shared and T(id) SHARED (the
+ -- shape fn_ca_share_settlement_lane_for_table gives the same table's hand
+--- settlement), the tournament row FOR SHARE (what settlement and
+--- fn_ca_retain_hand_submission already take), then this table's row and its
+--- seats FOR UPDATE, in f06_prefix's order. Calls on one table still
++-- settlement), then this table's row and its seats FOR UPDATE, in
++-- f06_prefix's order. The tournament row is not locked: these calls only read
++-- its status, and every status writer holds T(id) or G exclusive, which waits
++-- for the shared holders. A shared row lock taken by 40 concurrent tables
++-- would only add MultiXact churn, whose caches are already thrashing (about
++-- 46M member and 37M offset block reads between 21:00 and 23:30). Calls on one table still
+ -- serialize on the table row; calls on different tables no longer wait for
+ -- each other. Every tournament-wide authority (breaks, parks, moves,
+ -- eliminations, custody, generation changes, cancellation, finish of a hand
+@@ -46,11 +49,11 @@
+ -- functions (each fragment exactly once, reverse substitution reproduces the
+ -- pin, privileges unchanged). Post-images, computed on the exact live
+ -- pre-images by scripts/ci/test-a-tournament-table-s-hand-does-not-wait-for-
+--- its-sibling-tables.py: fn_f06_hand_number_state 79c2a20b8f72b7fdacab80bbe7850e30,
+--- fn_f06_begin_hand e498a501aaa983f397bd4da1afa09875,
++-- its-sibling-tables.py: fn_f06_hand_number_state 3d11dc858210c0ea3daec4a671791f5b,
++-- fn_f06_begin_hand fb338521b04173262828517e71741d73,
+ -- fn_f06_finish_hand f85ee8fbf794e9087926715fd340499d.
+ --
+--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure)) = 'e498a501aaa983f397bd4da1afa09875')
++-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure)) = 'fb338521b04173262828517e71741d73')
+ 
+ BEGIN;
+ SET LOCAL lock_timeout = '3s';
+@@ -65,10 +68,11 @@ AS $function$
+ BEGIN
+   /* THE SHARED TABLE LANE OF A TOURNAMENT (2026-10-03). For per-table F06
+      hand calls only: what f06_prefix does for one table and no users, with
+-     the tournament lane T(id) taken SHARED instead of exclusive and the
+-     tournament row FOR SHARE instead of FOR UPDATE. Same order as f06_prefix
+-     and as fn_ca_share_settlement_lane_for_table: lease fence, G shared,
+-     T(id) shared, lease re-check, tournament row, table row, seats. */
++     the tournament lane T(id) taken SHARED instead of exclusive and no lock
++     on the tournament row (its status is written only under T(id) or G
++     exclusive). Same order as f06_prefix and as
++     fn_ca_share_settlement_lane_for_table: lease fence, G shared, T(id)
++     shared, lease re-check, table row, seats. */
+   IF p_table_id IS NULL THEN
+     RAISE EXCEPTION 'F06_TABLE_LANE_NEEDS_A_TABLE' USING ERRCODE = '22023';
+   END IF;
+@@ -78,7 +82,6 @@ BEGIN
+   PERFORM pg_advisory_xact_lock_shared(
+     hashtextextended('ca:tournament-terminal-settlement:v1:' || p_tournament_id::text, 0));
+   PERFORM smarter_private.f06_authority(p_tournament_id, p_lease_generation, false);
+-  PERFORM 1 FROM public.tournaments WHERE id = p_tournament_id FOR SHARE;
+   PERFORM 1 FROM public.tables WHERE id = p_table_id FOR UPDATE;
+   PERFORM s.id FROM public.table_seats s JOIN public.tables tb ON tb.id = s.table_id
+    WHERE tb.tournament_id = p_tournament_id AND s.table_id = p_table_id
+@@ -88,7 +91,7 @@ $function$;
+ REVOKE ALL ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;
+ GRANT EXECUTE ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) TO service_role;
+ COMMENT ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) IS
+-  'Per-table F06 hand lane: lease fence, G and T(id) shared, tournament row FOR SHARE, this table and its seats FOR UPDATE. Only for calls that touch one table and prove nothing about other tables; tournament-wide authorities take f06_prefix (T(id) exclusive).';
++  'Per-table F06 hand lane: lease fence, G and T(id) shared, this table and its seats FOR UPDATE. Only for calls that touch one table and prove nothing about other tables; tournament-wide authorities take f06_prefix (T(id) exclusive).';
+ 
+ DO $subs$
+ DECLARE
+@@ -104,8 +107,8 @@ BEGIN
+   END IF;
+   v_old := E' PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,\'{}\',ARRAY[p_table_id]);\n';
+   v_new := E' /* A TABLE\'S HAND DOES NOT WAIT FOR ITS SIBLING TABLES (2026-10-03): the\n'
+-        || E'    tournament lane T(id) shared, the tournament row FOR SHARE, this table\n'
+-        || E'    and its seats FOR UPDATE. See fn_ca_f06_share_table_lane. */\n'
++        || E'    tournament lane T(id) shared, then this table and its seats FOR\n'
++        || E'    UPDATE. See fn_ca_f06_share_table_lane. */\n'
+         || E' PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);\n';
+   v_n := (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old);
+   IF v_n <> 1 THEN
+@@ -134,8 +137,8 @@ BEGIN
+   END IF;
+   v_old := E' PERFORM smarter_private.f06_prefix(p_tournament_id,p_lease_generation,\'{}\',ARRAY[p_table_id]);\n';
+   v_new := E' /* A TABLE\'S HAND DOES NOT WAIT FOR ITS SIBLING TABLES (2026-10-03): the\n'
+-        || E'    tournament lane T(id) shared, the tournament row FOR SHARE, this table\n'
+-        || E'    and its seats FOR UPDATE. See fn_ca_f06_share_table_lane. */\n'
++        || E'    tournament lane T(id) shared, then this table and its seats FOR\n'
++        || E'    UPDATE. See fn_ca_f06_share_table_lane. */\n'
+         || E' PERFORM public.fn_ca_f06_share_table_lane(p_tournament_id,p_lease_generation,p_table_id);\n';
+   v_n := (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old);
+   IF v_n <> 1 THEN
+diff --git a/tests/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.law.test.ts b/tests/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.law.test.ts
+index 1128422b..f9b057e7 100644
+--- a/tests/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.law.test.ts
++++ b/tests/a-tournament-table-s-hand-does-not-wait-for-its-sibling-tables.law.test.ts
+@@ -6,8 +6,8 @@
+  * UPDATE, so the tables of one tournament dealt one at a time: a 40-table MTT
+  * logged 4,800+ waits of 1 s or more on that one key in two hours and dealt
+  * 126 hands in 10 minutes. The per-table calls now take
+- * public.fn_ca_f06_share_table_lane: lease fence, G and T(id) SHARED,
+- * tournament row FOR SHARE, this table and its seats FOR UPDATE.
++ * public.fn_ca_f06_share_table_lane: lease fence, G and T(id) SHARED, this
++ * table and its seats FOR UPDATE, and no lock on the tournament row.
+  *
+  * What this pins: the helper's lock shape and order (and that it never takes
+  * T or G exclusively); exactly which calls move (number state, begin, an
+@@ -59,7 +59,6 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
+       "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));",
+       "pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || p_tournament_id::text, 0));",
+       'smarter_private.f06_authority(p_tournament_id, p_lease_generation, false);',
+-      'FROM public.tournaments WHERE id = p_tournament_id FOR SHARE;',
+       'FROM public.tables WHERE id = p_table_id FOR UPDATE;',
+       'ORDER BY s.id FOR UPDATE OF s;',
+     ].map((s) => b.indexOf(s));
+@@ -67,7 +66,10 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
+     for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1]);
+     expect(b).not.toMatch(/pg_advisory_xact_lock\(/);
+     expect(b).not.toMatch(/fn_ca_lock_settlement_lane/);
+-    expect(b).not.toMatch(/tournaments[^;]*FOR UPDATE/);
++    // The tournament row is read, never locked: a shared row lock from every
++    // table at once only feeds MultiXact churn, and status writers already
++    // hold T(id) exclusive.
++    expect(b).not.toMatch(/public\.tournaments/);
+     expect(MIG).toContain(
+       'REVOKE ALL ON FUNCTION public.fn_ca_f06_share_table_lane(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;'
+     );
+@@ -105,7 +107,7 @@ describe("a tournament table's hand does not wait for its sibling tables", () =>
+     expect(MIG.match(/IF v_n <> 1 THEN/g)).toHaveLength(3);
+     expect(MIG.match(/md5\(replace\(v_after, v_new, v_old\)\) <> v_pin/g)).toHaveLength(3);
+     expect(MIG.match(/has_function_privilege\('anon', v_sig, 'EXECUTE'\)/g)).toHaveLength(3);
+-    expect(MIG).toContain("'e498a501aaa983f397bd4da1afa09875'");
++    expect(MIG).toContain("'fb338521b04173262828517e71741d73'");
+   });
+ 
+   it('ships the disposable-cluster proof', () => {

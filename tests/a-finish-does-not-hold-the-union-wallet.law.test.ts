@@ -23,7 +23,9 @@ import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
-const ALL = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort();
+const ALL = readdirSync(MIGRATIONS)
+  .filter((f) => f.endsWith('.sql'))
+  .sort();
 const NAME = ALL.filter((f) => f.endsWith('_a_finish_does_not_hold_the_union_wallet.sql')).at(-1);
 if (!NAME) throw new Error('the finish union-wallet migration is missing');
 const SQL = readFileSync(join(MIGRATIONS, NAME), 'utf8');
@@ -32,9 +34,10 @@ const CODE = SQL.split('\n')
   .join('\n');
 const side = (name: 'v_old' | 'v_new'): string => {
   const block = CODE.slice(CODE.indexOf('DO $subs$'), CODE.indexOf('END $subs$;'));
+  // Each side runs from its own assignment to the next statement's.
   const start = block.indexOf(`${name} := `);
-  const end = block.indexOf(name === 'v_old' ? "';\n" : "END IF;\\n';", start);
-  return [...block.slice(start, end + 12).matchAll(/E'((?:[^'\\]|\\.)*)'/g)]
+  const end = block.indexOf(name === 'v_old' ? '  v_new := ' : '  v_n := ', start);
+  return [...block.slice(start, end).matchAll(/E'((?:[^'\\]|\\.)*)'/g)]
     .map((m) => m[1].replace(/\\'/g, "'").replace(/\\n/g, '\n'))
     .join('');
 };
@@ -58,18 +61,28 @@ describe('a finish does not hold the union wallet', () => {
     const newCode = newText.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(newCode).not.toMatch(/\bUPDATE\b[^;]*union_wallets|INSERT INTO public\.union_wallets/);
     expect(newText.match(/pg_advisory_xact_lock\(/g)?.length).toBe(2);
-    expect(newText).toContain("'ca:union-finish-bank:v1:' || LEAST(v_event_union_id,v_current_union_id)::text");
-    expect(newText).toContain("'ca:union-finish-bank:v1:' || GREATEST(v_event_union_id,v_current_union_id)::text");
+    expect(newText).toContain(
+      "'ca:union-finish-bank:v1:' || LEAST(v_event_union_id,v_current_union_id)::text"
+    );
+    expect(newText).toContain(
+      "'ca:union-finish-bank:v1:' || GREATEST(v_event_union_id,v_current_union_id)::text"
+    );
     // LEAST before GREATEST: the same sorted order the row lock had.
-    expect(newText.indexOf('LEAST(v_event_union_id')).toBeLessThan(newText.indexOf('GREATEST(v_event_union_id'));
+    expect(newText.indexOf('LEAST(v_event_union_id')).toBeLessThan(
+      newText.indexOf('GREATEST(v_event_union_id')
+    );
     expect(newText).not.toMatch(/pg_try_advisory|_shared\(/);
   });
 
   it('keeps the claim after the club wallet and before the cash authority', () => {
     expect(CODE).toContain('FINISH_STILL_HOLDS_THE_UNION_WALLET');
     expect(CODE).toContain('FINISH_UNION_ORDER_LOST');
-    expect(CODE).toMatch(/position\('PERFORM 1 FROM public\.club_wallets cw' IN v_src\) > position\('ca:union-finish-bank:v1:'/);
-    expect(CODE).toMatch(/position\('ca:union-finish-bank:v1:' IN v_src\) > position\('public\.fn_settle_tournament_places\('/);
+    expect(CODE).toMatch(
+      /position\('PERFORM 1 FROM public\.club_wallets cw' IN v_src\) > position\('ca:union-finish-bank:v1:'/
+    );
+    expect(CODE).toMatch(
+      /position\('ca:union-finish-bank:v1:' IN v_src\) > position\('public\.fn_settle_tournament_places\('/
+    );
   });
 
   it('pins both images, keeps the privileges, and refuses to land if the live text moved', () => {

@@ -816,21 +816,28 @@ describe('certification-club retirement transport contract', () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-03T06:00:00.000Z'));
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const result = { success: true, chips_retired: 100000 };
-    let retirementCalls = 0;
+    const refusal = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const client = (failure?: Error) => ({
+      connect: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+          if (failure) throw failure;
+          return { rows: [{ result }] };
+        }
+        return { rows: [] };
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    });
+    const firstClient = client(refusal);
+    const secondClient = client();
+    const databaseClientFactory = vi
+      .fn()
+      .mockResolvedValueOnce(firstClient)
+      .mockResolvedValueOnce(secondClient);
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/rpc/fn_ca_retire_welcome_certification_club')) {
-        retirementCalls += 1;
-        return retirementCalls === 1
-          ? Response.json(
-              {
-                code: '55000',
-                message: 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED',
-              },
-              { status: 500 }
-            )
-          : Response.json(result);
-      }
       if (url.includes('/club_welcome_package_items?')) {
         expect(init?.method).toBeUndefined();
         expect(init?.body).toBeUndefined();
@@ -850,14 +857,16 @@ describe('certification-club retirement transport contract', () => {
         configuration,
         clubId,
         reason,
-        environment: {},
-        databaseClientFactory: vi.fn(),
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
         fetchImpl: fetchMock,
         wait,
       })
     ).resolves.toEqual(result);
 
-    expect(retirementCalls).toBe(2);
+    expect(databaseClientFactory).toHaveBeenCalledTimes(2);
+    expect(firstClient.end).toHaveBeenCalledTimes(1);
+    expect(secondClient.end).toHaveBeenCalledTimes(1);
     expect(wait.mock.calls).toEqual([[2_000]]);
     expect(
       fetchMock.mock.calls.some(([input]) =>

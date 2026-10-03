@@ -574,7 +574,7 @@ export async function retireCertificationClubWithRetry({
   clubId,
   reason,
   fetchImpl = fetch,
-  wait,
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
   environment = process.env,
   databaseClientFactory,
 }) {

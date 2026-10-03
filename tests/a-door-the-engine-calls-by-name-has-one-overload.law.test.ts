@@ -168,12 +168,22 @@ describe('a door the engine calls by name has one overload', () => {
 
   it('every new fn_consume_time_bank signature is followed by the drop of (uuid, integer)', () => {
     const offenders: string[] = [];
-    parsed.forEach(({ file, creates }, index) => {
+    // A signature is new where it is first created; re-creating the same
+    // three-argument door later (CREATE OR REPLACE of the one door) adds no
+    // overload, so the drop is looked for after the FIRST creation.
+    const firstCreated = new Map<string, number>();
+    parsed.forEach(({ creates }, index) => {
+      for (const c of creates) {
+        if (c.name !== 'fn_consume_time_bank') continue;
+        if (!firstCreated.has(sig(c.types))) firstCreated.set(sig(c.types), index);
+      }
+    });
+    parsed.forEach(({ file, creates }) => {
       for (const c of creates) {
         if (c.name !== 'fn_consume_time_bank') continue;
         if (sig(c.types) === 'uuid,integer') continue;
         const dropped = parsed
-          .slice(index)
+          .slice(firstCreated.get(sig(c.types)))
           .some(({ drops }) =>
             drops.some((d) => d.name === 'fn_consume_time_bank' && sig(d.types) === 'uuid,integer')
           );

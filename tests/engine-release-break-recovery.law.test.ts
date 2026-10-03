@@ -14,6 +14,11 @@ const recovery = read('server/scripts/engine-release-recover.sh');
 const desiredRecoveryDeadlineSeconds = 20;
 const desiredRecoveryProcessTimeoutMs = (desiredRecoveryDeadlineSeconds + 1) * 1000;
 const desiredRecoveryTestTimeoutMs = desiredRecoveryProcessTimeoutMs + 5000;
+// This fixture drives a synchronous child process, so Vitest cannot enforce
+// its per-test timer until the child exits. Keep the child finite and leave
+// headroom for cleanup under the measured pre-push suite contention.
+const uncertainAbortProcessTimeoutMs = 60_000;
+const uncertainAbortTestTimeoutMs = 90_000;
 
 describe('engine release recovery stays inside one honest break boundary', () => {
   it('bounds every protected-main Git read and the pending-owner read', () => {
@@ -228,73 +233,79 @@ printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","i
     desiredRecoveryTestTimeoutMs
   );
 
-  it('forces desired recovery even when abort returns an uncertain failure', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-abort-uncertain-'));
-    try {
-      const bin = join(sandbox, 'bin');
-      const control = join(sandbox, 'control');
-      const requests = join(sandbox, 'requests');
-      const pins = join(sandbox, 'pins');
-      const leases = join(sandbox, 'leases');
-      const marker = join(sandbox, 'supervisor.env');
-      mkdirSync(bin);
-      mkdirSync(control);
-      mkdirSync(requests);
-      mkdirSync(pins);
-      mkdirSync(leases);
-      writeFileSync(join(requests, '77-1.request'), 'must remain on uncertain abort\n');
-      writeFileSync(join(control, 'engine-release-recover.sh'), recovery);
-      chmodSync(join(control, 'engine-release-recover.sh'), 0o755);
-      writeFileSync(
-        join(control, 'engine-release-seal.py'),
-        '#!/usr/bin/env bash\n[ "$1" = abort ] && exit 91\nexit 92\n'
-      );
-      chmodSync(join(control, 'engine-release-seal.py'), 0o755);
-      writeFileSync(
-        join(control, 'engine-supervisor.sh'),
-        `#!/usr/bin/env bash
+  it(
+    'forces desired recovery even when abort returns an uncertain failure',
+    () => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-abort-uncertain-'));
+      try {
+        const bin = join(sandbox, 'bin');
+        const control = join(sandbox, 'control');
+        const requests = join(sandbox, 'requests');
+        const pins = join(sandbox, 'pins');
+        const leases = join(sandbox, 'leases');
+        const marker = join(sandbox, 'supervisor.env');
+        mkdirSync(bin);
+        mkdirSync(control);
+        mkdirSync(requests);
+        mkdirSync(pins);
+        mkdirSync(leases);
+        writeFileSync(join(requests, '77-1.request'), 'must remain on uncertain abort\n');
+        writeFileSync(join(control, 'engine-release-recover.sh'), recovery);
+        chmodSync(join(control, 'engine-release-recover.sh'), 0o755);
+        writeFileSync(
+          join(control, 'engine-release-seal.py'),
+          '#!/usr/bin/env bash\n[ "$1" = abort ] && exit 91\nexit 92\n'
+        );
+        chmodSync(join(control, 'engine-release-seal.py'), 0o755);
+        writeFileSync(
+          join(control, 'engine-supervisor.sh'),
+          `#!/usr/bin/env bash
 printf '%s\n%s\n%s\n' "$ENGINE_SUPERVISOR_FORCE_DESIRED" "$ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH" "$ENGINE_RECOVERY_DEADLINE_EPOCH" > '${marker}'
 exit 0
 `
-      );
-      chmodSync(join(control, 'engine-supervisor.sh'), 0o755);
-      writeFileSync(
-        join(bin, 'id'),
-        '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexit 1\n'
-      );
-      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-      writeFileSync(join(bin, 'docker'), '#!/usr/bin/env bash\n[ "$1" = info ]\n');
-      writeFileSync(
-        join(bin, 'timeout'),
-        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-      );
-      for (const command of ['id', 'flock', 'docker', 'timeout']) {
-        chmodSync(join(bin, command), 0o755);
-      }
-
-      const result = spawnSync(
-        'bash',
-        [join(control, 'engine-release-recover.sh'), '--run-id', '77-1', '--mode', 'retryable'],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ''}`,
-            ENGINE_RELEASE_REQUEST_ROOT: requests,
-            ENGINE_RELEASE_PIN_ROOT: pins,
-            ENGINE_RELEASE_IMAGE_LEASE_ROOT: leases,
-            ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
-          },
+        );
+        chmodSync(join(control, 'engine-supervisor.sh'), 0o755);
+        writeFileSync(
+          join(bin, 'id'),
+          '#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { printf "0\\n"; exit 0; }\nexit 1\n'
+        );
+        writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+        writeFileSync(join(bin, 'docker'), '#!/usr/bin/env bash\n[ "$1" = info ]\n');
+        writeFileSync(
+          join(bin, 'timeout'),
+          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+        );
+        for (const command of ['id', 'flock', 'docker', 'timeout']) {
+          chmodSync(join(bin, command), 0o755);
         }
-      );
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(91);
-      const forceEnv = readFileSync(marker, 'utf8').trim().split('\n');
-      expect(forceEnv[0]).toBe('1');
-      expect(forceEnv[1]).toBe('1');
-      expect(Number(forceEnv[2])).toBeGreaterThan(Math.floor(Date.now() / 1000));
-      expect(readFileSync(join(requests, '77-1.request'), 'utf8')).toContain('must remain');
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
-  });
+
+        const result = spawnSync(
+          'bash',
+          [join(control, 'engine-release-recover.sh'), '--run-id', '77-1', '--mode', 'retryable'],
+          {
+            encoding: 'utf8',
+            timeout: uncertainAbortProcessTimeoutMs,
+            killSignal: 'SIGKILL',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              ENGINE_RELEASE_REQUEST_ROOT: requests,
+              ENGINE_RELEASE_PIN_ROOT: pins,
+              ENGINE_RELEASE_IMAGE_LEASE_ROOT: leases,
+              ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
+            },
+          }
+        );
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(91);
+        const forceEnv = readFileSync(marker, 'utf8').trim().split('\n');
+        expect(forceEnv[0]).toBe('1');
+        expect(forceEnv[1]).toBe('1');
+        expect(Number(forceEnv[2])).toBeGreaterThan(Math.floor(Date.now() / 1000));
+        expect(readFileSync(join(requests, '77-1.request'), 'utf8')).toContain('must remain');
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    },
+    uncertainAbortTestTimeoutMs
+  );
 });

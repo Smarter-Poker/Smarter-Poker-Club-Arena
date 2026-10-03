@@ -362,6 +362,11 @@ exit 91
         [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
         {
           encoding: 'utf8',
+          // This synchronous fixture blocks Vitest's test timer until the
+          // subprocess exits. Bound the child separately and retain 30s of
+          // the documented 90s suite allowance for cleanup/assertions.
+          timeout: 60_000,
+          killSignal: 'SIGKILL',
           env: {
             ...process.env,
             PATH: `${bin}:${process.env.PATH ?? ''}`,
@@ -378,6 +383,7 @@ exit 91
         }
       );
 
+      expect(result.error, `${result.stdout}\n${result.stderr}`).toBeUndefined();
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('release seal refused the candidate');
       expect(result.stdout).toContain(
@@ -416,7 +422,7 @@ exit 91
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it('the workflow delegates mutation and independently proves routing-ready health', () => {
     expect(workflow).toContain('server/scripts/install-engine-intake.sh');

@@ -152,6 +152,62 @@ function scaleWinnerUnitsForRake(
   return adjusted;
 }
 
+/**
+ * Scale a MULTI-BOARD hand's pre-rake awards down to the post-rake total, in
+ * whole payout units, by largest remainder (natural-evidence F2, 2026-10-03).
+ *
+ * Each player is owed exactly `entitlement * total / grossEntitlement`. Every
+ * player gets the floor of that exact share; the few indivisible units left
+ * over go one each to the largest fractional remainders, and a tie between
+ * equal remainders goes by the engine's odd-chip rule - the first winner
+ * clockwise of the button (`oddChipRank`, lower first; distributePot, Bible V8
+ * 2.7). So every player lands strictly within one unit of the exact share, a
+ * player whose exact share is whole (a sole board winner on an even split)
+ * gets exactly that, and nobody exceeds their pre-rake entitlement while the
+ * total is below the gross.
+ *
+ * scaleWinnerUnitsForRake rounds every share to nearest and then pulls any
+ * overshoot from index 0. On a multi-board hand index 0 is the board-1 winner,
+ * so two split halves of 3.925 both rounded up to 3.93 and the board-1
+ * winner's exact 7.85 paid 7.84 (hand 177246036add; 91 two-board bombs one
+ * cent off). That function still serves single-board and run-it-N hands,
+ * unchanged.
+ *
+ * Integer arithmetic throughout (BigInt for the products), so a large pot
+ * cannot lose precision in `entitlement * total`.
+ */
+export function scaleMultiBoardWinnerUnits(
+  preRakeAmounts: readonly number[],
+  totalWinnings: number,
+  unitsPerAmount: 1 | 100,
+  oddChipRank: readonly number[]
+): number[] {
+  const total = BigInt(Math.max(0, Math.round(totalWinnings * unitsPerAmount)));
+  const entitlement = preRakeAmounts.map((a) =>
+    BigInt(Math.max(0, Math.round(a * unitsPerAmount)))
+  );
+  const gross = entitlement.reduce((sum, units) => sum + units, 0n);
+  if (gross === 0n) return preRakeAmounts.map(() => 0);
+  const floors = entitlement.map((units) => (units * total) / gross);
+  const remainders = entitlement.map((units) => (units * total) % gross);
+  let leftover = total - floors.reduce((sum, units) => sum + units, 0n);
+  const rank = (i: number) => oddChipRank[i] ?? Number.MAX_SAFE_INTEGER;
+  const order = preRakeAmounts
+    .map((_, i) => i)
+    .sort((a, b) => {
+      if (remainders[a] !== remainders[b]) return remainders[a] > remainders[b] ? -1 : 1;
+      if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      return a - b;
+    });
+  const result = floors.map((units) => Number(units));
+  for (const i of order) {
+    if (leftover <= 0n) break;
+    result[i] += 1;
+    leftover -= 1n;
+  }
+  return result;
+}
+
 /** Private controller receipt for a Horse audit. Never attach this to HandEvent. */
 export interface HorseDiscardControllerReceipt {
   readonly seat: number;
@@ -2429,29 +2485,61 @@ export class HandController {
    * front all correct at once. Returns the amount refunded (0 if none).
    */
   private returnUncalledBet(): number {
-    // Compare LIVE invested only (totalInvested minus dead money such as antes /
-    // Big Blind Ante / dead small blinds). Dead money can never be an uncalled
-    // bet — otherwise the BB who fronts a Big Blind Ante is refunded the whole
-    // table's ante whenever it is the unique top contributor.
+    /*
+     * UNCALLED MONEY IS MEASURED IN MATCHED CONTRIBUTION (2026-10-03).
+     *
+     * The uncalled excess is the top contributor's MATCHED contribution minus
+     * the next one's, where matched contribution is exactly what
+     * calculatePots builds its levels from: totalInvested minus SHARED dead
+     * money (a Big Blind Ante fronted for the table, a dead small blind) plus
+     * the INDIVIDUAL ante. Shared dead money is never refundable - the BB who
+     * fronts a BBA is not refunded the table's ante for being the unique top
+     * contributor - and that rule is unchanged.
+     *
+     * This used to compare LIVE investment only (totalInvested minus every
+     * kind of dead money, individual antes included) while calculatePots
+     * counted the individual ante as a matched contribution. The two
+     * disagreed whenever the other players still in the hand had matched only
+     * an ante. Hand 0e68afa3 (natural-evidence bad804ab1731, PLO6 run three
+     * times, heads-up, 2026-09-30): the BB posted 2.00 plus a 1.00 ante, the
+     * button was all-in for a 0.70 ante. Live investment saw ONE contributor,
+     * returned nothing, and calculatePots then built 1.40 [both] plus a 2.30
+     * pot only the BB could win - and the hand raked all 3.70 (0.19) instead
+     * of the contested 1.40 (0.07). The same mismatch let a short individual
+     * ante leave the unmatched part of a full ante in a private pot.
+     *
+     * The refund comes from the live portion first and only then from the
+     * individual ante, so a refunded ante leaves deadInvested and
+     * individualAnteInvested consistent with what stays in the pot.
+     */
+    const cents = (value: number): number => Math.round(value * 100) / 100;
     const invAll = this.state.players.map((p) => {
       const dead = p.deadInvested ?? 0;
+      const ante = Math.min(p.individualAnteInvested ?? 0, dead);
       const total = p.totalInvested ?? p.bet ?? 0;
-      return { p, live: Math.max(0, Math.round((total - dead) * 100) / 100) };
+      return {
+        p,
+        live: Math.max(0, cents(total - dead)),
+        ante,
+        matched: Math.max(0, cents(total - dead + ante)),
+      };
     });
-    const withMoney = invAll.filter((x) => x.live > 0);
+    const withMoney = invAll.filter((x) => x.matched > 0);
     if (withMoney.length < 2) {
-      // Nobody, or a single live contributor (e.g. a walk) — nothing was
-      // "called", but there's also no contest, so leave it for the award path.
+      // Nobody, or a single contributor of any kind: nothing was "called",
+      // but there's also no contest, so leave it for the award path.
       return 0;
     }
-    const sorted = [...withMoney].sort((a, b) => b.live - a.live);
+    const sorted = [...withMoney].sort((a, b) => b.matched - a.matched);
     const top = sorted[0];
     const second = sorted[1];
-    // Only a UNIQUE, non-folded highest live contributor can have an uncalled bet.
-    if (top.live <= second.live) return 0;
+    // Only a UNIQUE, non-folded highest contributor can have an uncalled bet.
+    if (top.matched <= second.matched) return 0;
     if (top.p.is_folded) return 0;
-    const uncalled = Math.round((top.live - second.live) * 100) / 100;
+    const uncalled = cents(top.matched - second.matched);
     if (uncalled <= 0) return 0;
+    const fromLive = Math.min(uncalled, top.live);
+    const fromAnte = cents(uncalled - fromLive);
 
     top.p.stack += uncalled;
     top.p.totalInvested = Math.round(((top.p.totalInvested ?? 0) - uncalled) * 100) / 100;
@@ -2461,7 +2549,13 @@ export class HandController {
     // rake_attributions.returned_uncalled). Accumulate: this function can run
     // on both the fast-fold path and completeHand, and only refunds once.
     top.p.returnedUncalled = Math.round(((top.p.returnedUncalled ?? 0) + uncalled) * 100) / 100;
-    top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
+    // The ante never sat in `bet` (the live street wager), so only the live
+    // part of the refund comes off it.
+    top.p.bet = Math.max(0, cents(top.p.bet - fromLive));
+    if (fromAnte > 0) {
+      top.p.deadInvested = cents((top.p.deadInvested ?? 0) - fromAnte);
+      top.p.individualAnteInvested = cents((top.p.individualAnteInvested ?? 0) - fromAnte);
+    }
     this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
     this.emit({
       type: 'UNCALLED_BET_RETURNED',
@@ -2493,6 +2587,21 @@ export class HandController {
   private emitBombPotCompleted(): void {
     if (!this.config.bombPot) return;
     this.emit({ type: 'BOMB_POT_COMPLETED', handNumber: this.config.handNumber });
+  }
+
+  /**
+   * Odd-chip order for a settlement tie: clockwise distance from the button,
+   * the button itself LAST - exactly distributePot's rule (FIX 169 / Bible V8
+   * 2.7). Lower ranks receive an indivisible unit first. A user not seated in
+   * this hand sorts after everyone.
+   */
+  private oddChipRank(userId: string): number {
+    const player = this.state.players.find((p) => p.user_id === userId);
+    if (!player) return Number.MAX_SAFE_INTEGER;
+    const dealerSeat = this.state.dealerSeat;
+    const maxSeat = Math.max(...this.state.players.map((p) => p.seat), dealerSeat) + 1;
+    const distance = (player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+    return distance === 0 ? maxSeat : distance;
   }
 
   private completeHand(): void {
@@ -2588,6 +2697,8 @@ export class HandController {
     // The merged winner list sums to exactly the original pot cents, so rake
     // scaling and chip conservation downstream are untouched.
     let winners: Winner[];
+    // Multi-board awards are scaled for rake by largest remainder (F2 below).
+    let multiBoardSettlement = false;
     const settlementBoards: Card[][] = [this.state.communityCards];
     if (this.multiBoardActive && this.state.communityCards2.length === 5) {
       settlementBoards.push(this.state.communityCards2);
@@ -2596,6 +2707,7 @@ export class HandController {
       settlementBoards.push(this.state.communityCards3);
     }
     if (settlementBoards.length >= 2) {
+      multiBoardSettlement = true;
       const boardCount = settlementBoards.length;
       // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
       // board b. splitAcrossBoards (spec §18.1): floor division, remainder
@@ -2850,11 +2962,24 @@ export class HandController {
     // After Math.round, adjustedCents.sum may be over OR under totalCents.
     // Two separate distribute loops handle both directions so the post
     // condition `sum(adjustedCents) === totalCents` always holds.
-    const adjustedCents = scaleWinnerUnitsForRake(
-      winners.map((w) => w.amount),
-      totalWinnings,
-      this.config.asset === 'diamonds' ? 1 : 100
-    );
+    //
+    // MULTI-BOARD (natural-evidence F2, 2026-10-03): the merged winners of a
+    // double/triple-board hand are scaled by largest remainder with the
+    // odd-chip seat order breaking ties, so a sole board winner keeps an
+    // exact share instead of funding two rounded-up split halves. Single-board
+    // and run-it-N hands keep scaleWinnerUnitsForRake, byte for byte.
+    const adjustedCents = multiBoardSettlement
+      ? scaleMultiBoardWinnerUnits(
+          winners.map((w) => w.amount),
+          totalWinnings,
+          this.config.asset === 'diamonds' ? 1 : 100,
+          winners.map((w) => this.oddChipRank(w.userId))
+        )
+      : scaleWinnerUnitsForRake(
+          winners.map((w) => w.amount),
+          totalWinnings,
+          this.config.asset === 'diamonds' ? 1 : 100
+        );
     const adjustedAmounts = adjustedCents.map(
       (c) => c / (this.config.asset === 'diamonds' ? 1 : 100)
     );

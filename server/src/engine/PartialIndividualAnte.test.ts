@@ -287,3 +287,138 @@ it('ante-only all-ins exclude an undealt sitting-out seat from every pot', () =>
     { amount: 0.02, eligiblePlayers: ['u1', 'u2'] },
   ]);
 });
+
+/**
+ * NATURAL-EVIDENCE F1 (2026-10-03): UNCALLED MONEY BEHIND AN ANTE-ONLY ALL-IN.
+ *
+ * Hand 0e68afa3 (natural-evidence hash bad804ab1731), PLO6 run three times,
+ * heads-up, 2026-09-30: the BB posted 2.00 plus a 1.00 individual ante and the
+ * button was all-in for a 0.70 ante. Production kept the BB's uncalled 2.30 as
+ * a one-player pot and raked all 3.70 (0.19). Matched contribution is 3.00
+ * against 0.70, so 2.30 was never called: it goes back to the BB before any
+ * deduction, the only pot is 0.70 x 2 = 1.40, and heads-up rake is 5% of 1.40.
+ * Every expected figure below is that arithmetic, not engine output.
+ */
+describe('uncalled money behind an ante-only all-in is returned before rake', () => {
+  const rakeConfig = {
+    percent: 10,
+    cap: 5,
+    noFlopNoDrop: true,
+    playerCountCaps: [
+      { players: 2, cap: 2.5 },
+      { players: 3, cap: 5 },
+      { players: 4, cap: 5 },
+    ],
+  };
+  const seats = (stacks: Record<number, number>) =>
+    Object.entries(stacks).map(([seat, stack]) => ({
+      seat: Number(seat),
+      user_id: `u${seat}`,
+      username: `P${seat}`,
+      stack,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    })) as SeatPlayer[];
+
+  it('PLO6 heads-up, BB 2.00 + ante 1.00 against a 0.70 ante all-in, through the run-it settlement steps', () => {
+    const events: HandEvent[] = [];
+    const h = new HandController(
+      {
+        tableId: 'f1-uncalled-ante',
+        handNumber: 1,
+        gameVariant: 'plo6',
+        smallBlind: 1,
+        bigBlind: 2,
+        ante: 1,
+        bigBlindAnte: false,
+        rakeConfig,
+      } as HandConfig,
+      seats({ 1: 100, 3: 0.7 }),
+      3
+    );
+    h.onEvent((e) => events.push(e));
+    h.start();
+    const seat = (n: number) => h.getState().players.find((p) => p.seat === n)!;
+    // The postings recorded on the hand: 2.00 BB + 1.00 ante; 0.70 ante all-in.
+    expect(seat(1).totalInvested).toBe(3);
+    expect(seat(3).totalInvested).toBe(0.7);
+    expect(seat(3).is_all_in).toBe(true);
+    expect(h.getState().currentPlayerSeat).toBe(1);
+    expect(h.performAction(1, 'check')).toBe(true);
+
+    // 3.00 matched - 0.70 matched = 2.30, of which 2.00 is the live blind and
+    // 0.30 the unmatched part of the BB's own ante.
+    const refunds = events.filter(
+      (e) => e.type === ('UNCALLED_BET_RETURNED' as never)
+    ) as never as {
+      seat: number;
+      amount: number;
+    }[];
+    expect(refunds.map((r) => [r.seat, r.amount])).toEqual([[1, 2.3]]);
+    expect(seat(1).stack).toBe(99.3);
+    expect(seat(1).totalInvested).toBe(0.7);
+    expect(seat(1).deadInvested).toBe(0.7);
+    expect(seat(1).individualAnteInvested).toBe(0.7);
+    expect(seat(1).returnedUncalled).toBe(2.3);
+    expect(h.getState().pot).toBe(1.4);
+
+    // ServerTableEngineRunout's own sequence for a run-it hand.
+    h.markFlopSeen();
+    expect(h.settleUncalledBet()).toBe(0);
+    expect(h.computeLivePots()).toEqual([{ amount: 1.4, eligiblePlayers: ['u1', 'u3'] }]);
+    expect(h.computeRakeAndBBJ()).toEqual({ rake: 0.07, bbjFee: 0 });
+  });
+
+  it('NLH heads-up single board: a full-ante all-in leaves the BB blind uncalled, never raked', () => {
+    const events: HandEvent[] = [];
+    const h = new HandController(
+      {
+        tableId: 'f1-uncalled-ante-single',
+        handNumber: 1,
+        gameVariant: 'nlh',
+        smallBlind: 1,
+        bigBlind: 2,
+        ante: 1,
+        bigBlindAnte: false,
+        rakeConfig,
+      } as HandConfig,
+      seats({ 1: 100, 2: 1 }),
+      2
+    );
+    h.onEvent((e) => events.push(e));
+    h.start();
+    expect(h.getState().players.find((p) => p.seat === 2)!.is_all_in).toBe(true);
+    expect(h.performAction(1, 'check')).toBe(true);
+    expect(events.some((e) => e.type === 'ALL_IN_RUNOUT')).toBe(true);
+    const internal = (h as any).state;
+    internal.players.find((p: SeatPlayer) => p.seat === 1).cards = cards(['7c', '2d']);
+    internal.players.find((p: SeatPlayer) => p.seat === 2).cards = cards(['As', 'Ac']);
+    // The runout's board, fixed so the winner is known. Dealing it is what
+    // marks the flop seen, so the fixture marks it with the board.
+    internal.communityCards = cards(['Kh', 'Qd', '9c', '5s', '3h']);
+    internal.sawFlop = true;
+    h.continueRunout();
+
+    // Matched 3.00 v 1.00: 2.00 returned. Pot 1.00 x 2 = 2.00, 5% heads-up
+    // rake = 0.10, the button's aces collect 1.90.
+    const complete = events.find((e) => e.type === 'HAND_COMPLETE') as any;
+    expect(complete.rake).toBe(0.1);
+    expect(complete.bbjFee).toBe(0);
+    const refunds = events.filter(
+      (e) => e.type === ('UNCALLED_BET_RETURNED' as never)
+    ) as never as {
+      seat: number;
+      amount: number;
+    }[];
+    expect(refunds.map((r) => [r.seat, r.amount])).toEqual([[1, 2]]);
+    const winners = (events.find((e) => e.type === 'WINNERS') as any).winners;
+    expect(winners.map((w: any) => [w.userId, w.amount])).toEqual([['u2', 1.9]]);
+    const final = h.getState().players;
+    expect(final.find((p) => p.seat === 1)!.stack).toBe(99);
+    expect(final.find((p) => p.seat === 2)!.stack).toBe(1.9);
+  });
+});

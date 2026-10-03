@@ -2243,16 +2243,22 @@ groups:
           severity: critical
           component: monitoring
         annotations:
-          summary: 'The SMS pager has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
+          summary: 'The operational inbox webhook has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
           description: |
-            Alertmanager could not deliver to the pager webhook. A `serverError`
-            is the World Hub route answering 502, which it does when Twilio
-            refuses or when its three TWILIO_* values are missing from the
-            hub-vanguard environment; a `clientError` is a 4xx, usually the
-            bearer secret. Until this clears, every `page: sms` alert on this
-            platform is reaching nobody by text. This alert is routed to email
-            on purpose - it is about the pager, so it must not travel through
-            it.
+            Alertmanager could not deliver to World Hub's
+            /api/internal/alertmanager-page, which since 2026-09-13 records
+            every alert in public.operational_alert_events and sends no SMS
+            (docs/runbooks/operational-alert-intake.md). A `serverError` is
+            almost always a 503 "Operational inbox unavailable": that table
+            lives in PokerIQ-Production, so the inbox is down whenever the
+            database is. Every serverError on 2026-10-03 (16:45, 19:20,
+            20:30-21:15) was a database outage. Check DatabaseNotAnswering
+            and GET /v1/projects/kuklfnapbkmacvwxktbh/health?services=db
+            first. While the database is down the critical emails are the
+            only channel that reaches a person, and they do not depend on
+            the database. A `clientError` is a 4xx, usually the bearer
+            secret (/opt/smarter-poker-monitoring/cron_secret against World
+            Hub CRON_SECRET). This alert goes to email for the same reason.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/changelog/2026-09-11-the-pager-is-watched.md'
 
       - alert: CriticalEmailDeliveryFailing

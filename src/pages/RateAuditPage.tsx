@@ -234,12 +234,13 @@ export default function RateAuditPage() {
   if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.srOnly}>Rate Audit Trail</h1>
         <SpadeConsole
           family="shark"
           crest="flat"
           eyebrow="Club Arena Data"
           title="Rate Audit Trail"
+          titleAs="h1"
+          titleId="rate-audit-title"
           pill={scope.status === 'loading' ? 'Checking' : 'Closed'}
           pillInk={scope.status === 'loading' ? 'gold' : 'red'}
           plates={{
@@ -249,6 +250,7 @@ export default function RateAuditPage() {
               disabled: scope.status === 'loading',
             },
           }}
+          aria-labelledby="rate-audit-title"
         >
           <strong className="sc-label sc-ink--blue">Verify Club Access</strong>
           <p className="sc-copy sc-copy--center" role="status">
@@ -261,16 +263,18 @@ export default function RateAuditPage() {
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.srOnly}>Rate Audit Trail</h1>
       <SpadeConsole
         family="shark"
         crest="flat"
         eyebrow="Club Arena Data"
         title="Rate Audit Trail"
+        titleAs="h1"
+        titleId="rate-audit-title"
         subtitle="Commission And Rake Rate Change History"
         pill={loading ? 'Reading' : loadError ? 'Error' : String(changes.length)}
         pillInk={loadError ? 'red' : loading ? 'gold' : 'blue'}
         plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
+        aria-labelledby="rate-audit-title"
       >
         <section className={styles.filters} aria-label="Audit Filters">
           <span className="sc-label sc-ink--blue">Rate Type</span>

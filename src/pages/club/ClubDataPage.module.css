@@ -242,14 +242,18 @@
 
 .rangeBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 2cqw;
 }
 
 .rangeChip {
+  order: -1;
   display: inline-flex;
+  flex: 1 0 100%;
   align-items: baseline;
+  justify-content: center;
   gap: 1.6cqw;
   font-size: 4cqw;
   font-weight: 700;
@@ -541,18 +545,5 @@
   .skeletonRow,
   .integrityAttention .statusLight {
     animation: none;
-  }
-}
-
-@media (max-width: 430px) {
-  .rangeBar {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .rangeChip {
-    order: -1;
-    flex: 1 0 100%;
-    justify-content: center;
   }
 }

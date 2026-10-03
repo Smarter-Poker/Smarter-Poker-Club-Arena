@@ -1500,6 +1500,17 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * A recovery that ends without leaving a retry scheduled is not a table
+   * failing admission any more: it was admitted, replaced by a generation that
+   * owns its own recovery, or removed (broken, closed). Only a pending retry
+   * keeps the first-failure stamp.
+   */
+  private forgetAdmissionFailureUnlessRetrying(tableId: string): void {
+    if (!this.tableEngineRecoveryTimers.has(tableId))
+      this.tableAdmissionFailingSince.delete(tableId);
+  }
+
+  /**
    * Tables this manager has been failing to bring back into play, and for how
    * long. Identification only: GameServer publishes it as a stall, and nothing
    * is restarted, retried or rebuilt because of it.
@@ -1690,6 +1701,7 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryExpected.delete(tableId);
       if (!this.lifecycleIsCurrent(lifecycle)) {
         this.tableEngineRecoveryAttempts.delete(tableId);
+        this.forgetAdmissionFailureUnlessRetrying(tableId);
         return;
       }
 
@@ -1697,6 +1709,7 @@ export abstract class TournamentManagerBase {
         if (expected) {
           if (this.tableEngines.get(tableId) !== expected) {
             this.tableEngineRecoveryAttempts.delete(tableId);
+            this.forgetAdmissionFailureUnlessRetrying(tableId);
             return;
           }
           await this.recoverManagedTableEngine(
@@ -1711,6 +1724,7 @@ export abstract class TournamentManagerBase {
 
         if (this.tableEngines.has(tableId)) {
           this.tableEngineRecoveryAttempts.delete(tableId);
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
           return;
         }
         await this.admitMissingManagedTableEngine(tableId, lifecycle, `${reason}:retry`);
@@ -1721,9 +1735,19 @@ export abstract class TournamentManagerBase {
           reason,
           attempt,
         });
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        // A retry that ends here schedules no other: whoever replaced or
+        // removed this generation owns the table now, so it no longer names
+        // a failing admission (2026-10-03, 73834884: broken while its retry
+        // failed, then reported "admission failing" on /health for hours).
+        if (!this.lifecycleIsCurrent(lifecycle)) {
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
+          return;
+        }
         const incumbent = this.tableEngines.get(tableId);
-        if (expected && incumbent !== expected) return;
+        if (expected && incumbent !== expected) {
+          this.forgetAdmissionFailureUnlessRetrying(tableId);
+          return;
+        }
         this.scheduleManagedTableEngineRecovery(tableId, incumbent ?? null, lifecycle, reason);
       }
     }, delayMs);

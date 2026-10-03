@@ -168,3 +168,49 @@ single-call and bounded, with the traps written down: the per-transaction
 stats snapshot, `blks_zeroed` as the only live creation counter, and the fact
 that a `DO` block's `RAISE NOTICE` does not come back through the Supabase MCP
 so a probe has to RETURN rows.
+
+## Found on the way: public.clubs is 1300x bloated, and it is not a multixact fix
+
+Not the multixact problem, but measured in the same session and worth a
+maintenance window on its own.
+
+`public.clubs` holds **5 live rows totalling 4.6 kB of data in 756 pages
+(6,048 kB)**. With 5 rows the planner will always seqscan it, so every read
+of the hottest configuration table in the database walks 756 pages to return
+5 rows. It is the FK target of `agent_commissions` (14.6 M rows) and
+`chip_ledger` (8.6 M), so a great many transactions touch it.
+
+Normalised against its peers, it is alone in this:
+
+| table                                        | pages | live rows | pages per live row |
+| -------------------------------------------- | ----- | --------- | ------------------ |
+| `public.clubs`                               | 756   | 5 to 10   | **75.60**          |
+| `public.profiles`                            | 2,134 | 2,952     | 0.72               |
+| `public.daily_challenge_dashboard_revisions` | 218   | 1,527     | 0.14               |
+| `public.club_members`                        | 203   | 1,929     | 0.11               |
+| `auth.users`                                 | 119   | 1,692     | 0.07               |
+| `public.feature_pricing`                     | 2     | 68        | 0.03               |
+
+`n_dead_tup` is 50 and autovacuum has run 2,647 times, so this is not dead
+tuples. It is 290,824 updates worth of free space that plain VACUUM cannot
+return, with the 5 live rows scattered across the page range so there are no
+trailing empty pages to truncate. That is why 2,647 autovacuums have not
+shrunk it.
+
+**This would NOT reduce multixact lookups.** Those are per row, and there are
+only 5 rows. It would cut the buffer traffic and the scan time of every
+`clubs` read, which shortens the transactions that hold `FOR KEY SHARE` on
+those rows, so the benefit to multixact pressure is indirect and second
+order. Do not sell it as the fix.
+
+**Do not VACUUM FULL it ad hoc.** It needs ACCESS EXCLUSIVE, and taking a
+strong lock on a hot FK parent is the exact shape of the 2026-09-08
+four-minute outage in section 2 rule 7: every writer to `clubs` queues behind
+it. The actual rewrite is 4.6 kB and takes no time at all; the danger is
+entirely the lock queue. The right place is inside the hourly :55 break,
+where the platform is already frozen and nothing is writing money or seats,
+with `lock_timeout` set so it abandons rather than queues. VACUUM FULL is not
+DDL, so the `:50-:03` migration refusal does not apply to it.
+
+Left alone this session. It is a maintenance-window job, not a multixact fix,
+and this was a multixact investigation.

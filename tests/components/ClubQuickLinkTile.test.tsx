@@ -135,9 +135,7 @@ describe('ClubQuickLinkTile', () => {
     // Right-click is the pointer path to the quick-switch popover
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(
-      await screen.findByText(new RegExp(`${(1234).toLocaleString()} Chips`, 'i'))
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/1\.2K Chips/i)).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(onSelect).toHaveBeenCalledWith(B);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -154,7 +152,9 @@ describe('ClubQuickLinkTile', () => {
       .mockImplementation(() => rect);
 
     fireEvent.contextMenu(trigger);
-    const directory = screen.getByRole('menu').parentElement as HTMLDivElement;
+    const directory = screen
+      .getByRole('menu')
+      .closest('[class*="cashierSwitchMenu"]') as HTMLDivElement;
     const overlay = document.querySelector('[class*="cashierSwitchOverlay"]');
     expect(container).not.toContainElement(directory);
     expect(directory.parentElement).toBe(document.body);
@@ -163,6 +163,7 @@ describe('ClubQuickLinkTile', () => {
     expect(directory.style.getPropertyValue('--quick-link-anchor-bottom')).toBe(
       `${window.innerHeight - 600 + 8}px`
     );
+    vi.spyOn(directory, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 360, 326));
 
     rect = new DOMRect(200, 500, 60, 90);
     fireEvent.scroll(container);
@@ -171,7 +172,7 @@ describe('ClubQuickLinkTile', () => {
     );
     rect = new DOMRect(100, 500, 60, 90);
     fireEvent.resize(window);
-    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('130px');
+    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('188px');
 
     await act(async () => {});
     unmount();
@@ -259,12 +260,12 @@ describe('ClubQuickLinkTile', () => {
       .mockReturnValueOnce(nextRead.promise);
     const rendered = renderTile({ clubs: [A], targetClub: A });
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
-    expect(await screen.findByRole('menuitem', { name: /1,234 Chips/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /1\.2K Chips/i })).toBeInTheDocument();
 
     authState.userId = 'next-user-456';
     rendered.rerender(<ClubQuickLinkTile {...(rendered.props as never)} />);
 
-    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\.2K Chips/i)).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/Reading Wallet Balances/i);
 
     await act(async () => {
@@ -272,7 +273,7 @@ describe('ClubQuickLinkTile', () => {
       await nextRead.promise;
     });
     expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
-    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1\.2K Chips/i)).not.toBeInTheDocument();
   });
 
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {

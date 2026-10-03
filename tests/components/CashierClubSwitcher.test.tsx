@@ -101,9 +101,7 @@ describe('CashierClubSwitcher', () => {
     });
     renderSwitcher(A.id);
     await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
-    expect(
-      await screen.findByText(new RegExp(`${(4200).toLocaleString()} Chips`, 'i'))
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/4\.2K Chips/i)).toBeInTheDocument();
     expect(screen.getByText(/15 chips/i)).toBeInTheDocument();
   });
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import { footerOverlapScroll } from '../e2e/support/viewportGeometry';
 import { readDailyChallengesUnit } from '../helpers/dailyChallengesSources';
 
 import { readDailyChallengesStylesheet } from '../helpers/dailyChallengesSources';
@@ -221,8 +222,17 @@ describe('Daily Missions production certification', () => {
 
   it('keeps every mission control above the fixed Club Arena footer', () => {
     const css = readDailyChallengesStylesheet();
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
     expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
+    expect(pageObject).toContain('const footerOverlap =');
+    expect(pageObject).toContain("window.scrollBy({ top: pixels, behavior: 'auto' })");
+    expect(pageObject).toContain('{ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }');
+  });
+
+  it('repairs footer overlap after a late responsive reflow', () => {
+    expect(footerOverlapScroll({ y: 496, height: 44 }, { y: 520, height: 48 })).toBe(28);
+    expect(footerOverlapScroll({ y: 468, height: 44 }, { y: 520, height: 48 })).toBe(0);
   });
 
   it('keeps modal dialogs above inert toasts and contains backdrop scrolling', () => {

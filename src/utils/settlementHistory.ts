@@ -53,6 +53,46 @@ function exactCents(value: unknown): bigint | null {
   return cents <= BigInt(Number.MAX_SAFE_INTEGER) ? cents : null;
 }
 
+/**
+ * Some immutable historical JSON mirrors carry a binary serialization tail
+ * such as 4247.389999999999. The table's gross_amount and net_amount columns
+ * remain the exact-cent authorities. Accept only a sub-millionth-of-a-cent
+ * mirror artifact, then require it to equal those authoritative columns below.
+ */
+function mirroredCents(value: unknown): bigint | null {
+  const exact = exactCents(value);
+  if (exact !== null) return exact;
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'number' && !Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  const source = String(value).trim();
+  if (!source || source.length > 128) return null;
+  const match = /^(0|[1-9]\d*)(?:\.(\d+))?$/.exec(source);
+  if (!match) return null;
+  const fraction = match[2] ?? '';
+  const scale = 10n ** BigInt(fraction.length);
+  const units = BigInt(match[1]) * scale + BigInt(fraction || '0');
+  const scaledCents = units * 100n;
+  const floorCents = scaledCents / scale;
+  const remainder = scaledCents % scale;
+  const nearestCent = floorCents + (remainder * 2n >= scale ? 1n : 0n);
+  const dust =
+    scaledCents >= nearestCent * scale
+      ? scaledCents - nearestCent * scale
+      : nearestCent * scale - scaledCents;
+
+  // dust / (scale * 100) is the exact difference in chips. The accepted
+  // ceiling is 0.00000001 chip, or one millionth of a cent.
+  if (nearestCent > BigInt(Number.MAX_SAFE_INTEGER) || dust * 100000000n > scale * 100n) {
+    return null;
+  }
+  return nearestCent;
+}
+
 function amountFromCents(cents: bigint): number | null {
   const amount = Number(cents) / 100;
   return Number.isFinite(amount) && Math.round(amount * 100) === Number(cents) ? amount : null;
@@ -62,8 +102,10 @@ function amountFromCents(cents: bigint): number | null {
  * Validates the settlement-history read model before any value reaches the
  * console. The table contract stores gross/net as exact cents. For this rake
  * split, net_amount is the union hold and the remainder is retained by the
- * club. Historical rows may omit the duplicated breakdown fields, but when a
- * split is supplied it must agree with those authoritative amounts exactly.
+ * club. invoice_type is a direction and is also used by unrelated transfer
+ * documents, so callers select only rows carrying both rake-split mirrors.
+ * The parser requires those mirrors and verifies them against the exact-cent
+ * authorities, tolerating only historical binary-serialization dust.
  */
 export function parseSettlementHistory(value: unknown): SettlementHistoryCycle[] | null {
   if (!Array.isArray(value)) return null;
@@ -94,8 +136,8 @@ export function parseSettlementHistory(value: unknown): SettlementHistoryCycle[]
 
     const suppliedUnionHold = row.breakdown.union_hold_amount;
     const suppliedRetained = row.breakdown.club_retained;
-    const unionHold = suppliedUnionHold === undefined ? net : exactCents(suppliedUnionHold);
-    const retained = suppliedRetained === undefined ? gross - net : exactCents(suppliedRetained);
+    const unionHold = mirroredCents(suppliedUnionHold);
+    const retained = mirroredCents(suppliedRetained);
     if (
       unionHold === null ||
       retained === null ||
@@ -106,8 +148,8 @@ export function parseSettlementHistory(value: unknown): SettlementHistoryCycle[]
     }
 
     const totalRake = amountFromCents(gross);
-    const unionTax = amountFromCents(unionHold);
-    const netSettlement = amountFromCents(retained);
+    const unionTax = amountFromCents(net);
+    const netSettlement = amountFromCents(gross - net);
     if (totalRake === null || unionTax === null || netSettlement === null) return null;
 
     seen.add(id);

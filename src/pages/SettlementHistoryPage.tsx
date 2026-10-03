@@ -77,7 +77,14 @@ export default function SettlementHistoryPage() {
           .select(
             'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
           )
-          .eq('invoice_type', 'union_to_club'),
+          .eq('invoice_type', 'union_to_club')
+          // invoice_type records transfer direction, so later rakeback and
+          // commission documents also use union_to_club. A settlement cycle
+          // is the narrower rake-split record with both duplicated split
+          // fields. Filter before ordering and limiting so unrelated transfer
+          // documents cannot displace valid history or corrupt its totals.
+          .not('breakdown->>union_hold_amount', 'is', null)
+          .not('breakdown->>club_retained', 'is', null),
         { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide }
       )
         .order('created_at', { ascending: false })

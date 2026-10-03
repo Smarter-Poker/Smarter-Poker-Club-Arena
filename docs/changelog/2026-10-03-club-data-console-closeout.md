@@ -31,10 +31,25 @@ The Club Arena Data route and its connected financial, statement, report, casewo
 
 The release candidate requires focused Data-family tests, TypeScript, affected-file lint, copy and painted-console gates, production build, protected merge, the normal Club Arena publisher, matching public build provenance at both origins, the independent client post-deploy job, and signed-in desktop plus 375px and 393px production verification before completion is reported.
 
+## Settlement History Live Contract Correction
+
+Signed-in production verification found that `union_to_club` describes a transfer direction, not a settlement-cycle category. Four newer rakeback transfer documents shared that direction with the genuine rake-split history row, and the immutable legacy split mirror contained harmless binary serialization dust even though its authoritative gross and net columns remained exact cents. The reader now filters for both rake-split mirror fields on the server before its limit, refuses direction-only transfer documents, and accepts only sub-millionth-of-a-cent legacy mirror dust that reconciles exactly to the authoritative columns.
+
 ## Policy Receipt
 
 - Policy version: `2.9`
 - Read at: `2026-10-03T14:33:04.256Z`
+- Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
+- Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+- Operating law: `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+- Hardening standard: `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+- Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+- Reader: `d5e6189878846064ac60269a41dfc4e6d9a7bda54610110ddc5813230198f36e`
+
+### Resumption Receipt
+
+- Read at: `2026-10-03T16:28:35.288Z`
+- Policy version: `2.9`
 - Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
 - Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
 - Operating law: `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`

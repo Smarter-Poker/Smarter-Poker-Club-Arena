@@ -55,6 +55,10 @@ vi.mock('../../src/lib/supabase', () => ({
         filters.push([column, value]);
         return query;
       });
+      query.not = vi.fn((column: string, operator: string, value: unknown) => {
+        filters.push([`${column}:${operator}`, value]);
+        return query;
+      });
       query.order = vi.fn(() => query);
       query.limit = vi.fn(() => query);
       query.then = (done: (value: unknown) => unknown, fail: (error: unknown) => unknown) => {
@@ -116,6 +120,8 @@ describe('SettlementHistoryPage request scope', () => {
     expect(screen.queryByText(/Previous Week/)).toBeNull();
     expect(m.reads[0].filters).toContainEqual(['club_id', '11111111-1111-4111-8111-111111111111']);
     expect(m.reads[1].filters).toContainEqual(['club_id', '22222222-2222-4222-8222-222222222222']);
+    expect(m.reads[1].filters).toContainEqual(['breakdown->>union_hold_amount:is', null]);
+    expect(m.reads[1].filters).toContainEqual(['breakdown->>club_retained:is', null]);
   });
 
   it('refuses a malformed cycle instead of painting a green completed zero', async () => {

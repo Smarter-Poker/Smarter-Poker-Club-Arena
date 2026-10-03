@@ -615,6 +615,27 @@ groups:
           description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
           runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
+      # The same reading, read as the database itself. On 2026-10-03 the
+      # database VM stopped answering at 20:18:30 UTC (TCP to :5432 timed out,
+      # WAL flat) and stayed down for 44 minutes; nothing named the database
+      # until ReplicationMetricsBlind's 20-minute warning. The collector reads
+      # the database every few seconds (stale is ~7 s when healthy), so three
+      # minutes without one successful read means the database is not
+      # answering the engine.
+      # docs/changelog/2026-10-03-the-database-keeps-memory-headroom.md
+      - alert: DatabaseNotAnswering
+        expr: |
+          poker_pg_replication_metrics_stale_seconds > 180
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: 'The database has not answered the engine for {{ $value }}s'
+          description: 'No successful database read for over three minutes outside the break. Check GET /v1/projects/kuklfnapbkmacvwxktbh/health?services=db - a hung database VM did not recover by itself on 2026-10-03 and needed POST /v1/projects/kuklfnapbkmacvwxktbh/restart.'
+          runbook: 'docs/changelog/2026-10-03-the-database-keeps-memory-headroom.md'
+
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
       - alert: ReplicationSlotsDisappeared

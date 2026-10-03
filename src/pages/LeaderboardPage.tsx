@@ -276,6 +276,7 @@ export default function LeaderboardPage() {
   const [programHistory, setProgramHistory] = useState<LeaderboardProgramHistoryEntry[] | null>(
     null
   );
+  const [programHistoryLoading, setProgramHistoryLoading] = useState(false);
   const [programHistoryError, setProgramHistoryError] = useState<string | null>(null);
   const [programHistoryReloadKey, setProgramHistoryReloadKey] = useState(0);
   const [showFullProgramHistory, setShowFullProgramHistory] = useState(false);
@@ -995,8 +996,10 @@ export default function LeaderboardPage() {
     setProgramHistoryError(null);
     if (!programHistoryClubId) {
       setProgramHistory(null);
+      setProgramHistoryLoading(false);
       return;
     }
+    setProgramHistoryLoading(true);
     // A different club's rows never stay on screen while this club loads.
     setProgramHistory((current) =>
       current && current[0]?.club_id === programHistoryClubId ? current : null
@@ -1012,6 +1015,9 @@ export default function LeaderboardPage() {
           }
           setProgramHistoryError('Program History Could Not Be Loaded.');
         }
+      })
+      .finally(() => {
+        if (requestId === programHistoryRequestRef.current) setProgramHistoryLoading(false);
       });
     return () => {
       // A newer request (or unmount) retires this one's result.
@@ -1245,6 +1251,13 @@ export default function LeaderboardPage() {
         }
         pillInk={currentError ? 'red' : 'green'}
         aria-labelledby="leaderboard-title"
+        aria-busy={
+          clubsLoading ||
+          (activeTab === 'rankings' ? loading : tournamentsLoading) ||
+          (activeTab === 'rankings' &&
+            scope === 'my-clubs' &&
+            (settingsLoading || settlementLoading || programHistoryLoading))
+        }
       >
         <div className="lb-live-rail" aria-live="polite">
           <span>

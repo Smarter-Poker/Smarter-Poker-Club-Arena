@@ -74,6 +74,16 @@ describe('Leaderboard Painted Console Contract', () => {
     expect(historyCatch).toContain("error.message === 'Program History Returned Invalid Data'");
     expect(historyCatch).toContain("reportError(error, 'LeaderboardPage.Program_history_invalid')");
   });
+  it('exposes a busy state until leaderboard and prize metadata finish loading', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    expect(page).toContain('aria-busy={');
+    expect(page).toMatch(
+      /settingsLoading\s*\|\|\s*settlementLoading\s*\|\|\s*programHistoryLoading/
+    );
+    expect(readFileSync('tests/e2e/mobile-chrome-occlusion.spec.ts', 'utf8')).toContain(
+      "getByRole('region', { name: 'Leaderboards' })"
+    );
+  });
   it('keeps promotion row feedback when reduced motion is requested', () => {
     const css = readFileSync('src/components/leaderboard/LeaderboardCard.module.css', 'utf8');
     expect(css).not.toMatch(/(?:animation|transition):\s*none/);

@@ -329,10 +329,34 @@ export function createClientErrorSink(deps: SinkDeps): ClientErrorSink {
 // THE BROWSER INSTANCE
 // ─────────────────────────────────────────────────────────────────────────────
 
-function env(name: string): string | null {
+/**
+ * Build-time values, each read by its full static name: Vite replaces
+ * `import.meta.env.VITE_X` at build time and does not promise a dynamic
+ * `import.meta.env[name]` lookup.
+ */
+function nonEmpty(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+function supabaseUrl(): string | null {
   try {
-    const value = (import.meta as { env?: Record<string, unknown> }).env?.[name];
-    return typeof value === 'string' && value ? value : null;
+    return nonEmpty(import.meta.env.VITE_SUPABASE_URL);
+  } catch {
+    return null;
+  }
+}
+
+function supabaseKey(): string | null {
+  try {
+    return nonEmpty(import.meta.env.VITE_SUPABASE_ANON_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function appVersion(): string | null {
+  try {
+    return nonEmpty(import.meta.env.VITE_APP_VERSION);
   } catch {
     return null;
   }
@@ -340,8 +364,8 @@ function env(name: string): string | null {
 
 function sendToSupabase(events: SinkEvent[], keepalive: boolean): void {
   try {
-    const base = env('VITE_SUPABASE_URL');
-    const key = env('VITE_SUPABASE_ANON_KEY');
+    const base = supabaseUrl();
+    const key = supabaseKey();
     if (!base || !key || events.length === 0) return;
     // Signed-in players only: the RPC is not executable by anon (the live
     // definer audit holds anon-executable DEFINER writers at zero), so a
@@ -382,7 +406,7 @@ function createBrowserSink(): ClientErrorSink {
     /* defaults stand */
   }
   const sink = createClientErrorSink({
-    appVersion: env('VITE_APP_VERSION'),
+    appVersion: appVersion(),
     userAgent,
     automated,
     send: sendToSupabase,

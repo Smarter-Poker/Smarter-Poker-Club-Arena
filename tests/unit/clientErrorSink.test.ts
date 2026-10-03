@@ -264,7 +264,7 @@ describe('the sink is first-party only', () => {
   it('talks to our own Supabase RPC and nothing else', () => {
     const sink = readFileSync(join(ROOT, files[0]), 'utf8');
     expect(sink).toContain('/rest/v1/rpc/fn_report_client_errors');
-    expect(sink).toContain("env('VITE_SUPABASE_URL')");
+    expect(sink).toContain('import.meta.env.VITE_SUPABASE_URL');
     for (const f of files) {
       const src = readFileSync(join(ROOT, f), 'utf8').replace(/^\s*(\*|\/\/).*$/gm, '');
       expect(src, f).not.toMatch(/https?:\/\//);

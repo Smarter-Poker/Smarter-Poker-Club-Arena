@@ -142,6 +142,9 @@ interface PendingTournamentSeatMoveOutcome {
  */
 class TournamentBreakAwaitsSeatsError extends Error {}
 
+/** The two doors out of an unbegun park whose table keeps its players. */
+type NoStartExit = 'continue' | 'withdraw';
+
 export class TournamentManager extends TournamentManagerEliminations {
   private mixedRecovery: {
     transfer: MixedF06Transfer;
@@ -1664,8 +1667,31 @@ export class TournamentManager extends TournamentManagerEliminations {
       state: TournamentTableBreakState;
       engine: ServerTableEngine;
       binding: BreakRetirementBinding;
+      /** Which door this pending request went through; absent = continuation. */
+      exit?: NoStartExit;
     }
   >();
+
+  /**
+   * Take one no-start exit for a stopped original's unbegun park. The last
+   * table's continuation answers false when it cannot read the witness; the
+   * withdrawal answers false when the field has room for the roster (the break
+   * then goes on) or the witness is missing. A withdrawal the database refuses
+   * outright is not this break's failure: it waits for seats exactly as before.
+   */
+  private async takeNoStartExit(
+    exit: NoStartExit,
+    state: TournamentTableBreakState
+  ): Promise<boolean> {
+    const rpc = this.tableBreakRpc();
+    if (exit === 'continue') return rpc.continueNoStartLastTable(state);
+    try {
+      return await rpc.withdrawUnplaceablePark(state);
+    } catch (error) {
+      if (error instanceof TournamentNoStartContinuationRefusedError) return false;
+      throw error;
+    }
+  }
 
   private forgetContinuedNoStartPark(
     state: TournamentTableBreakState,
@@ -1722,7 +1748,11 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (custody.engine !== engine || engine.getF06RetainedPermit())
           throw new Error('F06 no-start original disposition unresolved');
         try {
-          if (!(await this.tableBreakRpc().continueNoStartLastTable(state))) {
+          const replayed =
+            pending.exit === 'withdraw'
+              ? await this.tableBreakRpc().withdrawUnplaceablePark(state)
+              : await this.tableBreakRpc().continueNoStartLastTable(state);
+          if (!replayed) {
             this.pendingNoStartContinuations.delete(breakId);
             throw new Error(
               'F06 continuation is not eligible; ordinary retirement remains pending'
@@ -1931,28 +1961,64 @@ export class TournamentManager extends TournamentManagerEliminations {
                  */
                 const last = await this.isOnlyOpenTournamentTable(binding.tableId);
                 custody.assertCurrent();
-                if (!last)
-                  throw new TournamentBreakAwaitsSeatsError(
-                    'F06 original roster awaits seats at the other open tables'
-                  );
-                // The last physical table cannot move its roster elsewhere.
-                // SQL accepts only the original immutable never-started outcome.
-                this.pendingNoStartContinuations.set(owned.break_id, {
-                  state: owned,
-                  engine,
-                  binding,
-                });
-                try {
-                  if (!(await rpc.continueNoStartLastTable(owned))) {
-                    this.pendingNoStartContinuations.delete(owned.break_id);
-                    throw new Error('F06 original placement remains pending');
+                /*
+                 * A ROSTER NOBODY CAN SEAT IS NOT PARKED FOR EVER (2026-10-03).
+                 *
+                 * Event 79feebfc (Prime Time Free Buy): a Supabase IO stall
+                 * at 01:07Z left fifteen full tables' permits unknown, the
+                 * zombie watchdog rebuilt them and this path parked every one
+                 * as a stopped original. The field needed every table it had,
+                 * so each break waited here for seats - its custody holding
+                 * the stopped dealer - and 135 players were dealt nothing for
+                 * over an hour. The withdrawal door was never reached from
+                 * here, only from discovery, which this custody fences out.
+                 *
+                 * So the roster that cannot be seated is withdrawn under this
+                 * same custody: the database proves the park never began, that
+                 * nothing is in flight and that the other tables really lack
+                 * the seats, and the dealer is readmitted as after a
+                 * continuation. The last table tries its continuation first.
+                 * Only a field the database finds room in still waits.
+                 */
+                const exits: NoStartExit[] = last ? ['continue', 'withdraw'] : ['withdraw'];
+                let exit: NoStartExit | null = null;
+                for (const candidate of exits) {
+                  // A bust being recorded may free the chairs this roster needs.
+                  if (candidate === 'withdraw' && !this.unplaceableGraceElapsed(owned.break_id))
+                    continue;
+                  this.pendingNoStartContinuations.set(owned.break_id, {
+                    state: owned,
+                    engine,
+                    binding,
+                    exit: candidate,
+                  });
+                  let taken = false;
+                  try {
+                    taken = await this.takeNoStartExit(candidate, owned);
+                  } catch (error) {
+                    if (error instanceof TournamentNoStartContinuationRefusedError)
+                      this.pendingNoStartContinuations.delete(owned.break_id);
+                    throw error;
                   }
-                } catch (error) {
-                  if (error instanceof TournamentNoStartContinuationRefusedError)
-                    this.pendingNoStartContinuations.delete(owned.break_id);
-                  throw error;
+                  custody.assertCurrent();
+                  if (taken) {
+                    exit = candidate;
+                    break;
+                  }
+                  this.pendingNoStartContinuations.delete(owned.break_id);
                 }
-                custody.assertCurrent();
+                if (!exit) {
+                  if (!last)
+                    throw new TournamentBreakAwaitsSeatsError(
+                      'F06 original roster awaits seats at the other open tables'
+                    );
+                  throw new Error('F06 original placement remains pending');
+                }
+                this.unplaceableParkSince.delete(owned.break_id);
+                if (exit === 'withdraw')
+                  console.log(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${owned.break_id.slice(0, 8)} withdrawn: its roster has no free seats; table ${binding.tableId.slice(0, 8)} deals again`
+                  );
                 continued = true;
                 return;
               }
@@ -2347,6 +2413,17 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   private readonly unplaceableParkSince = new Map<string, number>();
 
+  /** True once this park has found no seats for UNPLACEABLE_PARK_GRACE_MS. */
+  private unplaceableGraceElapsed(breakId: string): boolean {
+    const now = Date.now();
+    const since = this.unplaceableParkSince.get(breakId);
+    if (since === undefined) this.unplaceableParkSince.set(breakId, now);
+    if (since !== undefined && now - since >= TournamentManager.UNPLACEABLE_PARK_GRACE_MS)
+      return true;
+    this.requestUrgentEliminationSweepAfter(TournamentManager.UNPLACEABLE_PARK_GRACE_MS);
+    return false;
+  }
+
   protected async withdrawUnplaceablePark(state: TournamentTableBreakState): Promise<boolean> {
     const refusal = this.lastBreakPreparationRefusal(state.break_id);
     if (
@@ -2396,10 +2473,29 @@ export class TournamentManager extends TournamentManagerEliminations {
         tableId,
         current,
         async (assertCurrent) => {
+          // The door admits only the park's custodian. A park made by an
+          // earlier generation (an engine release since) names that dead
+          // generation, so the live one claims it first - the same claim
+          // retirement makes - or the door refuses every time (it had never
+          // fired in production before 2026-10-03).
+          let park = state;
+          if (park.custody_generation !== leaseGeneration) {
+            const claimed = await rpc.claimCustody(state.break_id, randomUUID(), state.revision);
+            assertCurrent();
+            this.rememberTournamentBreak(claimed);
+            if (
+              !claimed.ok ||
+              claimed.state !== 'park_requested' ||
+              claimed.members.length !== 0 ||
+              claimed.custody_generation !== leaseGeneration
+            )
+              return false;
+            park = claimed;
+          }
           // The database decides first, while the dealer is still parked on
           // this break: a refusal writes nothing and leaves the park exactly
           // as it was. Only a withdrawn park's dealer is stopped.
-          if (!(await rpc.withdrawUnplaceablePark(state))) return false;
+          if (!(await rpc.withdrawUnplaceablePark(park))) return false;
           assertCurrent();
           try {
             await engine.stop();

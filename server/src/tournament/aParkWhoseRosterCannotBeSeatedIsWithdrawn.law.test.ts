@@ -52,7 +52,10 @@ function fullField(freeAt: number[] = []) {
   });
 }
 
-function fixture(withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn') {
+function fixture(
+  withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn',
+  parkGeneration: string = lease
+) {
   const calls: { name: string; params: any }[] = [];
   const park = {
     ok: true,
@@ -64,7 +67,7 @@ function fixture(withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn') {
     state: 'park_requested' as const,
     revision: '1',
     custody_id: custody,
-    custody_generation: lease,
+    custody_generation: parkGeneration,
     members: [],
     terminal_handoff_required: false,
   };
@@ -124,6 +127,14 @@ function fixture(withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn') {
   vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, params: any) => {
     calls.push({ name, params });
     if (name === 'fn_f06_break_state') return { data: { ...park }, error: null };
+    if (name === 'fn_f06_claim_custody') {
+      Object.assign(park, {
+        custody_id: params.p_custody_id,
+        custody_generation: lease,
+        revision: String(BigInt(park.revision) + 1n),
+      });
+      return { data: { ...park }, error: null };
+    }
     if (name === 'fn_f06_withdraw_unplaceable_park') {
       if (withdrawAnswer === 'roster_fits')
         return { data: null, error: { code: '55000', message: 'F06_WITHDRAWAL_ROSTER_FITS' } };
@@ -136,8 +147,8 @@ function fixture(withdrawAnswer: 'withdrawn' | 'roster_fits' = 'withdrawn') {
           table_id: source,
           lifecycle: '7',
           break_id: breakId,
-          park_custody_id: custody,
-          park_revision: '1',
+          park_custody_id: park.custody_id,
+          park_revision: park.revision,
           lease_generation: lease,
           original_generation: lease,
           permit_id: id(91),
@@ -217,4 +228,24 @@ it('a park refused for any other reason is never withdrawn, and a park with room
   expect(f.manager.lastBreakPreparationRefusal(breakId)).toBe('source_park_probe_missed');
   expect(names(f.calls)).not.toContain('fn_f06_withdraw_unplaceable_park');
   expect(f.stop).not.toHaveBeenCalled();
+});
+
+it('a park an earlier generation left is claimed by the live one before it is withdrawn (79feebfc, after a release)', async () => {
+  const dead = id(4);
+  const f = fixture('withdrawn', dead);
+  let now = 1_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  await f.manager.recoverTournamentBreak({ ...f.park });
+  now += TournamentManager.UNPLACEABLE_PARK_GRACE_MS;
+  await f.manager.recoverTournamentBreak({ ...f.park });
+  const order = names(f.calls).filter((n) => n !== 'fn_f06_break_state');
+  expect(order).toEqual(['fn_f06_claim_custody', 'fn_f06_withdraw_unplaceable_park']);
+  const withdraw = f.calls.find((c) => c.name === 'fn_f06_withdraw_unplaceable_park');
+  expect(withdraw?.params).toMatchObject({
+    p_lease_generation: lease,
+    p_park_custody_id: f.park.custody_id,
+    p_park_revision: '2',
+  });
+  expect(f.park.custody_id).not.toBe(custody);
+  expect(f.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(source, f.engine);
 });

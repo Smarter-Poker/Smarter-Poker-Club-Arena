@@ -501,13 +501,22 @@ export interface TableConfigPageProps {
   onExit?: (exit: TableConfigExit) => void;
   /** The parent Table Management console already owns the painted chassis. */
   embedded?: boolean;
+  /** The standalone route's GameCreationGuard already proved club authority. */
+  accessPrevalidated?: boolean;
 }
+
+const PREVALIDATED_STANDALONE_ACCESS: GameCreationAccess = {
+  allowed: true,
+  unionId: null,
+  reason: 'ok',
+};
 
 export default function TableConfigPage({
   clubIdOverride,
   gameTypeOverride,
   onExit,
   embedded = false,
+  accessPrevalidated = false,
 }: TableConfigPageProps = {}) {
   const params = useParams<{ clubId: string; gameType: string }>();
   const clubId = clubIdOverride || params.clubId;
@@ -557,7 +566,9 @@ export default function TableConfigPage({
   // The same builder is reached from a standalone club or from the union
   // console. fn_game_creation_access distinguishes an authorized union
   // operator from the member club's own staff.
-  const [access, setAccess] = useState<GameCreationAccess | null>(null);
+  const [access, setAccess] = useState<GameCreationAccess | null>(() =>
+    accessPrevalidated ? PREVALIDATED_STANDALONE_ACCESS : null
+  );
   const checkingAccess = access === null;
   const canBuildHere = access?.allowed === true;
 
@@ -567,10 +578,19 @@ export default function TableConfigPage({
     setStarting(false);
     setSelectedTemplateId('');
     setSavingTemplate(false);
-    setAccess(null);
-  }, [clubId]);
+    setAccess(accessPrevalidated ? PREVALIDATED_STANDALONE_ACCESS : null);
+  }, [clubId, accessPrevalidated]);
 
   useEffect(() => {
+    // The standalone route is already fail-closed behind GameCreationGuard.
+    // Repeating the same caller-bound RPC here briefly remounted an authorized
+    // form in a second "checking" state and could strand its first catalog
+    // read behind a duplicate request. Embedded hosts still require this page
+    // to perform its own authoritative check.
+    if (accessPrevalidated) {
+      setAccess(PREVALIDATED_STANDALONE_ACCESS);
+      return;
+    }
     if (!clubId) {
       setAccess({ allowed: false, unionId: null, reason: 'unknown_club' });
       return;
@@ -598,7 +618,7 @@ export default function TableConfigPage({
     return () => {
       isMounted = false;
     };
-  }, [clubId]);
+  }, [clubId, accessPrevalidated]);
 
   const gameInfo = GAME_TYPE_LABELS[gameType || 'nlh'] || GAME_TYPE_LABELS.nlh;
 

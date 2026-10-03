@@ -103,6 +103,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('descendantOffenders: Array.from');
     expect(spec).toContain('if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;');
     expect(spec).toContain('descendantOffenders: []');
+    const disconnectedAlertRecovery = spec.slice(
+      spec.indexOf("test.step('reset alert reaches notifications"),
+      spec.indexOf("test.step('an injected dashboard outage")
+    );
+    expect(disconnectedAlertRecovery).toContain("navigateWithinArena('notifications')");
+    expect(disconnectedAlertRecovery).toContain("navigateWithinArena('challenges')");
+    expect(disconnectedAlertRecovery).not.toContain('page.reload(');
   });
 
   it('certifies authentic seven-day settlement, legacy multiplier history, and two-tab calm', () => {

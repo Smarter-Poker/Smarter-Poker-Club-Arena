@@ -172,6 +172,10 @@ for (const width of [393, 1440]) {
     await page.keyboard.press('Enter');
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowLeft');
+    // The tab handler moves focus in requestAnimationFrame. Wait for that
+    // public keyboard contract before pressing Enter so the key cannot land on
+    // the previously focused Tournament Stats tab on a slower production run.
+    await expect(tabs.first()).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
 

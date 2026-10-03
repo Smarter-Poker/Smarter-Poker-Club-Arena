@@ -15,10 +15,14 @@ The first two rules are diagnostic: do not restart the engine simply because
 its queue is non-empty or a tournament promise is slow. Correctness work is
 admitted only by a durable state transition, manager admission, or an exact
 known deadline; there is no periodic all-tournament repair scan. The saturation
-alert requires all four physical slots plus a causal item waiting beyond the
-two-minute queue SLO, sustained for another two minutes. The all-slots-stalled
-alert independently catches four over-budget physical promises even when the
-logical queue is temporarily empty.
+alert requires at least four physical slots in use plus a causal item waiting
+beyond the two-minute queue SLO, sustained for another two minutes. Since
+2026-10-03 the scheduler has twelve general slots, four decided-lane slots and
+one consolidation slot: a sweep is a chain of cross-region PostgREST round
+trips, so the cap is sized for latency, not for the CPU
+(`DEFAULT_MAX_CONCURRENT_SWEEPS`). The all-slots-stalled alert independently
+catches four over-budget physical promises even when the logical queue is
+temporarily empty.
 
 ## First Checks
 

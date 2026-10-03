@@ -158,7 +158,7 @@ describe('the measured fan-out is replaced, not merely charted', () => {
   });
 
   it('bounds global concurrency without an all-tournament wall-clock repair pass', () => {
-    expect(SCHEDULER).toContain('DEFAULT_MAX_CONCURRENT_SWEEPS = 4');
+    expect(SCHEDULER).toContain('DEFAULT_MAX_CONCURRENT_SWEEPS = 12');
     expect(SCHEDULER).not.toContain('DEFAULT_SAFETY_SWEEP_MS');
     expect(SCHEDULER).not.toContain('runSafetySweep');
     expect(SCHEDULER.match(/setInterval\(/g)).toHaveLength(1);

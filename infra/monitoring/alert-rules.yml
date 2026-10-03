@@ -1338,11 +1338,12 @@ groups:
           severity: critical
           component: tournament-scheduler
         annotations:
-          summary: 'All four elimination slots are occupied while causal work waits beyond two minutes'
+          summary: 'Elimination slots are occupied while causal work waits beyond two minutes'
           description: |
-            The process-wide scheduler has used all four physical slots while
-            at least one tournament's event or deadline has waited beyond the
-            queue SLO. Do not release a slot whose promise is still live: that
+            The process-wide scheduler has at least four physical slots in use
+            (twelve general, four decided, one consolidation since 2026-10-03)
+            while at least one tournament's event or deadline has waited beyond
+            the queue SLO. Do not release a slot whose promise is still live: that
             recreates unbounded database concurrency behind a smaller gauge.
             Inspect failed/timed-out dispatches, PostgREST latency and engine
             event-loop delay using the runbook.
@@ -1363,10 +1364,10 @@ groups:
           severity: critical
           component: tournament-scheduler
         annotations:
-          summary: 'All four elimination promises have remained unresolved beyond their warning budget'
+          summary: 'At least four elimination promises have remained unresolved beyond their warning budget'
           description: |
-            Every physical scheduler slot is held by a promise that has
-            exceeded the sweep warning budget. This alert remains effective
+            At least four physical scheduler slots are held by promises that
+            have exceeded the sweep warning budget. This alert remains effective
             even when no logical work is queued. Do not release an unresolved
             promise or restart solely from this signal; inspect PostgREST,
             error outcomes, event-loop delay and the shared liveness verdict.

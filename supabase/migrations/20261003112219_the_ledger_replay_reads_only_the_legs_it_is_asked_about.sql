@@ -255,6 +255,11 @@ AS $function$
   END;
   $function$;
 
+-- CREATE OR REPLACE keeps the live grants; they are restated so the file says
+-- what the database holds (scripts/ci/check-definer-authorization.mjs).
+REVOKE ALL ON FUNCTION public.fn_ca_ledger_replay(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_ledger_replay(integer) TO service_role;
+
 DO $post$
 BEGIN
   IF md5(pg_get_functiondef('public.fn_ca_ledger_replay(integer)'::regprocedure)) IS DISTINCT FROM '8bd897bd17bde110e610ef3d3564f25e'

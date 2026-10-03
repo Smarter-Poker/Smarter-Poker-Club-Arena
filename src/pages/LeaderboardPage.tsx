@@ -49,7 +49,6 @@ import {
 } from '../utils/leaderboardPrizePlans';
 import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { describeProgramChanges } from '../utils/leaderboardProgramHistory';
-import { LEADERBOARD_CACHE_PREFIX } from '../utils/leaderboardCache';
 
 /* Owner program history: the newest versions are shown, and one extra is read
    so the oldest shown version can still say what it changed. */
@@ -225,6 +224,7 @@ const METRIC_OPTIONS: {
 ];
 
 const PAGE_SIZE = 50;
+const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_';
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'daily', label: 'Today' },

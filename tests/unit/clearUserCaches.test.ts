@@ -23,7 +23,6 @@ import {
   CASHIER_REQUEST_RECOVERY_PREFIX,
 } from '@/services/CashierResilience';
 import { UNION_WALLET_RECOVERY_PREFIX } from '@/services/UnionWalletRecovery';
-import { LEADERBOARD_CACHE_PREFIX } from '@/utils/leaderboardCache';
 
 describe('clearUserCaches', () => {
   beforeEach(() => {
@@ -93,12 +92,12 @@ describe('clearUserCaches', () => {
   });
 
   it('purges the leaderboard rankings written by the live page on sign-out', () => {
-    sessionStorage.setItem(`${LEADERBOARD_CACHE_PREFIX}club-a_profit_weekly_0`, '{"private":true}');
+    sessionStorage.setItem('lb_cache_v2_club-a_profit_weekly_0', '{"private":true}');
 
     clearUserCaches();
 
-    expect(sessionStorage.getItem(`${LEADERBOARD_CACHE_PREFIX}club-a_profit_weekly_0`)).toBeNull();
-    expect(SWR_CACHE_PREFIXES).toContain(LEADERBOARD_CACHE_PREFIX);
+    expect(sessionStorage.getItem('lb_cache_v2_club-a_profit_weekly_0')).toBeNull();
+    expect(SWR_CACHE_PREFIXES).toContain('lb_cache_v2_');
   });
 
   it('keeps device preferences — a sign-out is not a factory reset', () => {

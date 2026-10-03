@@ -109,7 +109,11 @@ export interface SpinMetricsSnapshot {
   openBoards: number;
   /** Partly filled, open, unstarted Spins; population telemetry, not an expiry alarm. */
   unfilledWaits: number;
-  /** Enabled-policy expiry candidates, excluding booked draws, receipts and retained hands. */
+  /**
+   * Conservative alert subset of enabled-policy, overdue, partially filled Spins.
+   * Launch-receipt and retained-hand exclusions are stricter than the expiry sweep;
+   * zero does not prove that no lifecycle-evidence conflict exists.
+   */
   expiryOverdueWaits: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
   reserveThinClubs: number;
@@ -369,7 +373,7 @@ export class SpinMetrics {
     );
     gauge(
       'poker_spin_expiry_overdue_waits',
-      'Enabled-policy, overdue, partially filled Spins with no draw, launch receipt or retained hand; candidate count only',
+      'Conservative alert subset: enabled-policy, overdue, partially filled Spins with no draw, launch receipt or retained hand. Launch-receipt and retained-hand exclusions are stricter than the expiry sweep; zero does not prove no lifecycle-evidence conflict.',
       s.expiryOverdueWaits
     );
     gauge(

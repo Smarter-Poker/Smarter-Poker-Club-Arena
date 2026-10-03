@@ -1,6 +1,7 @@
 -- 20261003030000_actionable_spin_expiry_overdue_metric.sql
--- Preserve the unfilled population gauge and add the expiry-eligible subset.
--- The rule consumes only the subset; booked/played Spins remain protected.
+-- Preserve the unfilled population gauge and add a conservative alert subset.
+-- It excludes launch receipts and retained hands more strictly than the expiry
+-- sweep; zero does not prove that no lifecycle-evidence conflict exists.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 --  A FLEET THAT PRODUCES NOTHING LOOKS LIKE A QUIET NIGHT

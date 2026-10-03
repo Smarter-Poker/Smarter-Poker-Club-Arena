@@ -147,7 +147,7 @@ describe('the engine exposes spin gauges', () => {
     expect(stale).toBeGreaterThan(600);
   });
 
-  it('emits the exact enabled-policy expiry candidate count', async () => {
+  it('emits the conservative enabled-policy overdue subset count and caveat', async () => {
     const m = seeded();
     vi.mocked(supabase.rpc).mockResolvedValueOnce({
       data: { expiry_overdue_waits: '3' },
@@ -155,7 +155,10 @@ describe('the engine exposes spin gauges', () => {
     } as any);
     await m.refresh();
     expect(m.get().expiryOverdueWaits).toBe(3);
-    expect(m.toPrometheus().join('\n')).toContain('poker_spin_expiry_overdue_waits 3');
+    const metrics = m.toPrometheus().join('\n');
+    expect(metrics).toContain('poker_spin_expiry_overdue_waits 3');
+    expect(metrics).toContain('conservative alert subset');
+    expect(metrics).toContain('zero does not prove no lifecycle-evidence conflict');
   });
 
   it.each([undefined, null, '', '   ', '01', '-1', 'not-a-count'])(
@@ -257,7 +260,7 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
    * week — the exact failure the tournament seat-first gauge was scoped to
    * avoid. Only growth may alert.
    */
-  it('alerts only on the expiry-eligible gauge, not ordinary wait population', () => {
+  it('alerts only on the conservative overdue gauge, not ordinary wait population', () => {
     const src = rules();
     const start = src.indexOf('alert: SpinUnfilledBacklog');
     const end = src.indexOf("runbook: 'docs/runbooks/spin-unfilled-backlog.md'", start);

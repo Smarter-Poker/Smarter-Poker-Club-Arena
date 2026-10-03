@@ -1,0 +1,6 @@
+{
+  "_owner": "claude/alerts-engine-break-recovery-route",
+  "_comment": "20260928155739 is HELD and stacked on #5512 (store-only delivery, 20260927235053): this function is PROMISED until it is installed, after 20260927235053 and the held cleanup 20260928000622, outside :50-:03 UTC. The nightly refresh goes red if it is merged and never installed, which is the right alarm.",
+  "tables": [],
+  "functions": ["fn_ca_break_scorecard_recovered"]
+}

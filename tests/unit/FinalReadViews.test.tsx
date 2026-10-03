@@ -103,9 +103,10 @@ vi.mock('../../src/components/layouts/StandardContentLayout', () => ({
   default: ({ children }: any) => <div>{children}</div>,
 }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
-  SpadeConsole: ({ children, title, titleAs: Title = 'h2', titleId }: any) => (
+  SpadeConsole: ({ children, pill, title, titleAs: Title = 'h2', titleId }: any) => (
     <div>
       <Title id={titleId}>{title}</Title>
+      {pill && <span>{pill}</span>}
       {children}
     </div>
   ),
@@ -406,6 +407,15 @@ describe('achievement reads and page-owned notification invalidation', () => {
 });
 
 describe('visible scoped rate history', () => {
+  it('labels an authorized empty history as zero changes without offering a retry', async () => {
+    h.response = () => ({ data: [], error: null });
+    render(<RateAuditPage />);
+    await settle();
+    expect(screen.getByText('0 Changes', { exact: true })).toBeTruthy();
+    expect(screen.getByText('No Rate Changes Recorded Yet', { exact: true })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry', exact: true })).toBeNull();
+  });
+
   it('observes bounded histories for the authorized club, pauses when hidden and cleans up', async () => {
     h.response = (q) => ({
       data: q.table === 'commission_rate_audit' ? [rate()] : [],

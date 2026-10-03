@@ -271,7 +271,7 @@ export default function RateAuditPage() {
         titleAs="h1"
         titleId="rate-audit-title"
         subtitle="Commission And Rake Rate Change History"
-        pill={loading ? 'Reading' : loadError ? 'Error' : String(changes.length)}
+        pill={loading ? 'Reading' : loadError ? 'Error' : `${changes.length} Changes`}
         pillInk={loadError ? 'red' : loading ? 'gold' : 'blue'}
         plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
         aria-labelledby="rate-audit-title"

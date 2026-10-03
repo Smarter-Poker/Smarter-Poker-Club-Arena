@@ -125,8 +125,7 @@ AS $fn$
                              FROM merged, unnest(merged.m) x), 0)) / 60.0, 1) END
 $fn$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) TO service_role;
 
 DO $mig$

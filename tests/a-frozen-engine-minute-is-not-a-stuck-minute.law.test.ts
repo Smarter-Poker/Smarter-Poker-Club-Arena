@@ -53,7 +53,7 @@ describe('a frozen engine minute is not a stuck minute', () => {
   it('is not a definer function and is not callable by clients', () => {
     expect(HELPER).not.toMatch(/SECURITY DEFINER/);
     expect(FIX).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) FROM anon, authenticated;'
+      'REVOKE ALL ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;'
     );
     expect(FIX).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_ca_engine_live_minutes(timestamptz, timestamptz) TO service_role;'

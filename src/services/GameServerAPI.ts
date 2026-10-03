@@ -131,22 +131,6 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 }
 
 /**
- * fetch() against the engine with ONE retry on 401 (2026-09-04).
- *
- * A 401 from the engine means the request was refused before it ran, so
- * replaying it is safe for every endpoint here, including /action. The retry
- * asks auth-js for a refreshed session and re-sends with the new token; if
- * there is no session to refresh, the original 401 is returned and the caller
- * surfaces it as before. Every engine call in this file goes through it.
- * (The retry is engineFetchWithAuthRetry; this wrapper adds the refusal note.)
- */
-async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const resp = await engineFetchWithAuthRetry(url, init);
-  if (!resp.ok && resp.status !== 429) noteEngineRefusal(url, resp);
-  return resp;
-}
-
-/**
  * Every engine refusal reaches the first-party error sink (2026-10-03), with
  * the engine's own code: ACTION_CONTEXT_REQUIRED, SEAT_OCCUPANCY_REQUIRED,
  * STALE_ACTION, or HTTP_<status> when the body names none. This is the one
@@ -156,13 +140,16 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
  *
  * 429 is left out on purpose: it means "not processed, retry", submitAction
  * retries it, and the exhausted case reaches the player (and the sink) as the
- * toast it becomes.
+ * toast it becomes. So is 401: engineFetch refreshes the session and retries
+ * it once, and a session that is really dead has its own path
+ * (src/lib/sessionRevoked.ts).
  *
  * The caller's response is never touched: the body is read from a clone, in
  * the background, and nothing here can throw or delay the request.
  */
 function noteEngineRefusal(url: string, resp: Response): void {
   try {
+    if (resp.ok || resp.status === 401 || resp.status === 429) return;
     if (!isClientErrorSinkEnabled()) return;
     let path = url;
     try {
@@ -195,7 +182,16 @@ function noteEngineRefusal(url: string, resp: Response): void {
   }
 }
 
-async function engineFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
+/**
+ * fetch() against the engine with ONE retry on 401 (2026-09-04).
+ *
+ * A 401 from the engine means the request was refused before it ran, so
+ * replaying it is safe for every endpoint here, including /action. The retry
+ * asks auth-js for a refreshed session and re-sends with the new token; if
+ * there is no session to refresh, the original 401 is returned and the caller
+ * surfaces it as before. Every engine call in this file goes through it.
+ */
+async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const suppliedToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
   if (
     suppliedToken &&
@@ -204,6 +200,7 @@ async function engineFetchWithAuthRetry(url: string, init: RequestInit = {}): Pr
     throw new Error('Engine request login changed');
   }
   const resp = await fetch(url, init);
+  noteEngineRefusal(url, resp);
   if (resp.status !== 401) return resp;
   // A refusal belongs to the login that sent it. The SDK's current session
   // may have changed while fetch or refresh was pending. Never turn an old

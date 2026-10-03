@@ -12,6 +12,7 @@ import {
   dedupeKey,
   scrubContext,
   scrubText,
+  signedInAccessToken,
   SINK_LIMITS,
   toSinkEvent,
   type ClientErrorCapture,
@@ -237,6 +238,32 @@ describe('repeat sampling and rate limit', () => {
       advance(60_000);
     }
     expect(sends.flatMap((s) => s.events)).toHaveLength(SINK_LIMITS.perSession);
+  });
+});
+
+describe('signed-in sessions only', () => {
+  it('reads the shared session token and refuses a missing or expiring one', () => {
+    const now = 1_700_000_000_000;
+    localStorage.removeItem('smarter-poker-auth');
+    expect(signedInAccessToken(now)).toBeNull();
+    localStorage.setItem(
+      'smarter-poker-auth',
+      JSON.stringify({ access_token: 'tok', expires_at: now / 1000 + 3600 })
+    );
+    expect(signedInAccessToken(now)).toBe('tok');
+    localStorage.setItem(
+      'smarter-poker-auth',
+      JSON.stringify({ access_token: 'tok', expires_at: now / 1000 + 10 })
+    );
+    expect(signedInAccessToken(now)).toBeNull();
+    localStorage.setItem('smarter-poker-auth', '{not json');
+    expect(signedInAccessToken(now)).toBeNull();
+    localStorage.removeItem('smarter-poker-auth');
+  });
+
+  it('does not link the account modules (the Diamond test page must not)', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'src/utils/clientErrorSink.ts'), 'utf8');
+    expect(src).not.toMatch(/from\s+['"][^'"]*lib\/(authUtils|supabase)['"]/);
   });
 });
 

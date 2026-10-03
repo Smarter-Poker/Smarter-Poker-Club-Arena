@@ -27,7 +27,6 @@
  * Loaded lazily by errorReporter.ts on the first error, so the entry chunk
  * pays nothing for it.
  */
-import { readLocalSession } from '../lib/authUtils';
 
 /** What errorReporter hands over, captured synchronously at the moment of the error. */
 export interface ClientErrorCapture {
@@ -362,6 +361,30 @@ function appVersion(): string | null {
   }
 }
 
+/**
+ * The signed-in player's access token, read straight from the shared SSO
+ * storage key, or null when there is none or it has (nearly) expired.
+ *
+ * Deliberately not authUtils.readLocalSession: this module is also reachable
+ * from the standalone Diamond test page, which must not link the account
+ * modules (tests/e2e/helpers/diamond-test-fixture.mjs refuses a page that does). The key
+ * is the same one (AUTH_STORAGE_KEY, shared with the World Hub).
+ */
+export function signedInAccessToken(now: number = Date.now()): string | null {
+  try {
+    const raw = globalThis.localStorage?.getItem('smarter-poker-auth');
+    if (!raw) return null;
+    const session = JSON.parse(raw) as { access_token?: unknown; expires_at?: unknown };
+    const token = session?.access_token;
+    if (typeof token !== 'string' || token === '') return null;
+    const expiresAt = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
+    if (expiresAt !== null && expiresAt - now < 30_000) return null;
+    return token;
+  } catch {
+    return null;
+  }
+}
+
 function sendToSupabase(events: SinkEvent[], keepalive: boolean): void {
   try {
     const base = supabaseUrl();
@@ -371,12 +394,7 @@ function sendToSupabase(events: SinkEvent[], keepalive: boolean): void {
     // definer audit holds anon-executable DEFINER writers at zero), so a
     // signed-out send would only be refused. Every table, buy-in and leave
     // flow is signed in.
-    let token: string | null = null;
-    try {
-      token = readLocalSession()?.accessToken || null;
-    } catch {
-      token = null;
-    }
+    const token = signedInAccessToken();
     if (!token) return;
     void fetch(`${base.replace(/\/+$/, '')}/rest/v1/rpc/fn_report_client_errors`, {
       method: 'POST',

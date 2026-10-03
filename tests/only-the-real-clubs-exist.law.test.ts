@@ -124,6 +124,27 @@ describe('only the real clubs exist', () => {
 });
 
 describe('the certification cleans up after itself', () => {
+  it('observes welcome reset under the canonical lanes and can never commit it', () => {
+    const globalLane = CERT.indexOf('SELECT public.fn_ca_lock_settlement_lane_global()');
+    const clubLock = CERT.indexOf(
+      'SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE',
+      globalLane
+    );
+    const reset = CERT.indexOf('public.fn_remove_first_club_welcome_games', clubLock);
+    const rollback = CERT.indexOf("await client.query('ROLLBACK')", reset);
+    const retry = CERT.indexOf('await retryTransient(', CERT.indexOf('const resetOperationId'));
+    const freshTransaction = CERT.indexOf('certifyWelcomeResetInsideRollback({', retry);
+
+    expect(globalLane).toBeGreaterThan(-1);
+    expect(globalLane).toBeLessThan(clubLock);
+    expect(clubLock).toBeLessThan(reset);
+    expect(reset).toBeLessThan(rollback);
+    expect(retry).toBeGreaterThan(-1);
+    expect(retry).toBeLessThan(freshTransaction);
+    expect(CERT).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(CERT).not.toContain("await client.query('COMMIT')");
+  });
+
   it('retires each fixture through the sanctioned door instead of a bare delete', () => {
     expect(CERT).toContain('retireCertificationClubWithRetry({');
     expect(CERT).not.toContain("admin.rpc('fn_ca_retire_welcome_certification_club'");

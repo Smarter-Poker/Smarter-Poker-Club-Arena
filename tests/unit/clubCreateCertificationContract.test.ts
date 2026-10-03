@@ -196,6 +196,33 @@ describe('Create Club production certification contract', () => {
     expect(spec).not.toContain('getByText(/99\\.7K/).first()');
   });
 
+  it('dismisses the Diamond Spins interruption before opening setup', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+    const diamondSpins = spec.indexOf(
+      "const diamondSpins = page.getByRole('dialog', { name: /Diamond Spins/i })"
+    );
+    const visible = spec.indexOf('if (await diamondSpins.isVisible())', diamondSpins);
+    const dismiss = spec.indexOf(
+      "diamondSpins.getByRole('button', { name: 'Not Now', exact: true }).click()",
+      visible
+    );
+    const hidden = spec.indexOf('await expect(diamondSpins).toBeHidden()', dismiss);
+    const start = spec.indexOf(
+      "getByRole('button', { name: 'Start Setup', exact: true }).click()",
+      hidden
+    );
+    const wizard = spec.indexOf("const wizard = page.getByRole('dialog'", start);
+    const assertion = spec.indexOf('await expect(wizard).toBeVisible()', start);
+
+    expect(diamondSpins).toBeGreaterThan(-1);
+    expect(visible).toBeGreaterThan(diamondSpins);
+    expect(dismiss).toBeGreaterThan(visible);
+    expect(hidden).toBeGreaterThan(dismiss);
+    expect(start).toBeGreaterThan(hidden);
+    expect(wizard).toBeGreaterThan(start);
+    expect(assertion).toBeGreaterThan(wizard);
+  });
+
   it('retires the created club through the published owner controls before cleanup', () => {
     const workflow = read('.github/workflows/club-create-certification.yml');
     const spec = read('tests/e2e/production-create-club.spec.ts');
@@ -227,7 +254,8 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('SET LOCAL ROLE authenticated');
     expect(script).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(script).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
-    expect(script).toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(script).toContain('SELECT public.fn_ca_lock_settlement_lane_global()');
+    expect(script).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
     expect(script).toContain('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
     expect(script).toContain('ORDER BY slot_key FOR UPDATE');
     expect(script).toContain('SELECT 1 FROM public.tournament_schedules');
@@ -237,6 +265,9 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain(') ORDER BY t.id FOR UPDATE');
     expect(script).toContain("await client.query('ROLLBACK')");
     expect(script).not.toContain("await client.query('COMMIT')");
+    expect(script).toContain(
+      'label: `rollback-only welcome reset certification for club ${club.id}`'
+    );
     expect(script).toContain('welcomeCash.length !== 9');
     expect(script).toContain('welcomeSchedules.length !== 1');
     expect(script).toContain("welcome?.status !== 'provisioned'");
@@ -253,8 +284,8 @@ describe('Create Club production certification contract', () => {
   it('fails closed around independent reset preimages and exact residue cleanup', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
 
-    const serviceRole = script.indexOf('SET LOCAL ROLE service_role');
-    const laneLock = script.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const globalLane = script.indexOf('SELECT public.fn_ca_lock_settlement_lane_global()');
+    const serviceRole = script.indexOf('SET LOCAL ROLE service_role', globalLane);
     const clubLock = script.indexOf('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
     const packageItemLocks = script.indexOf('ORDER BY slot_key FOR UPDATE');
     const scheduleLocks = script.indexOf(
@@ -274,8 +305,10 @@ describe('Create Club production certification contract', () => {
     const mutation = script.indexOf('public.fn_remove_first_club_welcome_games');
     const rollback = script.indexOf("await client.query('ROLLBACK')");
 
-    expect(serviceRole).toBeLessThan(laneLock);
-    expect(laneLock).toBeLessThan(clubLock);
+    expect(globalLane).toBeGreaterThan(-1);
+    expect(globalLane).toBeLessThan(serviceRole);
+    expect(serviceRole).toBeLessThan(clubLock);
+    expect(script).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
     expect(clubLock).toBeLessThan(packageItemLocks);
     expect(packageItemLocks).toBeLessThan(scheduleLocks);
     expect(scheduleLocks).toBeLessThan(scheduleLockOrder);
@@ -287,6 +320,12 @@ describe('Create Club production certification contract', () => {
     expect(preimage).toBeLessThan(authenticatedRole);
     expect(authenticatedRole).toBeLessThan(mutation);
     expect(mutation).toBeLessThan(rollback);
+
+    const retry = script.indexOf('await retryTransient(', script.indexOf('const resetOperationId'));
+    const rollbackOnlyReset = script.indexOf('certifyWelcomeResetInsideRollback({', retry);
+    expect(retry).toBeGreaterThan(-1);
+    expect(retry).toBeLessThan(rollbackOnlyReset);
+    expect(script).not.toContain("await client.query('COMMIT')");
 
     expect(script).toContain(
       'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'

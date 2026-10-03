@@ -140,6 +140,14 @@ test.describe('Production Create A Club Certificate', () => {
       await expect(task.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
     }
 
+    // Diamond Spins is enabled for a new club and can legitimately offer its
+    // first-run door here. Dismiss it before opening setup so its modal exit
+    // animation cannot intercept the checklist control.
+    const diamondSpins = page.getByRole('dialog', { name: /Diamond Spins/i });
+    if (await diamondSpins.isVisible()) {
+      await diamondSpins.getByRole('button', { name: 'Not Now', exact: true }).click();
+      await expect(diamondSpins).toBeHidden();
+    }
     await page.getByRole('button', { name: 'Start Setup', exact: true }).click();
     const wizard = page.getByRole('dialog', {
       name: new RegExp(`Open ${escapeRegExp(clubName)}`, 'i'),

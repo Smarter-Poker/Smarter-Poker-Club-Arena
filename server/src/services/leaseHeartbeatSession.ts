@@ -300,7 +300,8 @@ class LeaseHeartbeatSession {
        out the 8 s statement timeout. Its turn is still handed on in order
        when the statement ahead settles, so the session never runs two. */
     if (!(await settlesWithin(prior, LEASE_HEARTBEAT_HEDGE_TO_SHARED_AFTER_MS))) {
-      void prior.then(release);
+      // `prior` never rejects (it is a turn, not a statement); the catch is for form.
+      void prior.then(release).catch(() => undefined);
       return this.shared(args);
     }
     try {

@@ -123,6 +123,53 @@ describe('private execution witness', () => {
     expect(witness.phase7Evidence).toEqual(expected);
   });
 
+  it('owns a compact immutable commitment to the Phase 10 input binding and its read frame', () => {
+    const { hero, state } = jointPolicyFixture('plo4', 1, 'cash', 'preflop');
+    const rng = saveFastRandom();
+    let decision: HorseDecision;
+    try {
+      seedFastRandom(7300930);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          phase10EvidenceMode: true,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    const receipt = decision.plo4Policy!;
+    expect(receipt.inputs).not.toBeNull();
+    receipt.readFrameSha256 = 'a'.repeat(64);
+    const witness = createHorseExecutionWitness(
+      { ...input, player: hero, gameState: state },
+      decision,
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    const expected = {
+      version: 'horse-phase10-input-binding-v1',
+      inputSha256: createHash('sha256').update(horseJournalJson(receipt.inputs)).digest('hex'),
+      readFrameSha256: 'a'.repeat(64),
+      rangeStatus: 'not_consumed_preflop',
+    };
+    expect(witness.phase10Inputs).toEqual(expected);
+    expect(Object.isFrozen(witness.phase10Inputs)).toBe(true);
+    receipt.readFrameSha256 = 'b'.repeat(64);
+    decision.plo4Policy = { ...receipt, inputs: null, eligible: false };
+    expect(witness.phase10Inputs).toEqual(expected);
+    // A refused proposal binds nothing, and a legacy receipt is not upgraded.
+    expect(make({ ...decision }).phase10Inputs).toBeNull();
+    expect(make({ action: 'check', thinkTime: 1 }).phase10Inputs).toBeNull();
+  });
+
   it.each([10, 20])(
     'reconciles a sized call against its selected amount, not just its name (%s)',
     (amount) => {

@@ -4,6 +4,7 @@ import type { HorsePolicyGraphReceipt } from './HorsePolicyGraph.js';
 import { noteFire } from './BrainTelemetry.js';
 import { copyPhase6Attribution } from './HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceSha256 } from './HorseTournamentUtilityEvidence.js';
+import { plo4InputBindingSha256, type Plo4RangeStatus } from './plo4/Plo4LivePolicy.js';
 import type { Phase8Selection } from './HorseTournamentPostflop.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
@@ -89,6 +90,15 @@ export interface HorseExecutionWitness {
     readFrameSha256: string | null;
     selectedAction: ActionType;
     selectedAmount: number | null;
+  }> | null;
+  /** P10.1 compact private commitment to the facts the PLO4 proposal used and
+   * the read frame it was decided against. Absent on retained legacy receipts
+   * and null for a refused proposal; never strength or calibration proof. */
+  readonly phase10Inputs?: Readonly<{
+    version: 'horse-phase10-input-binding-v1';
+    inputSha256: string;
+    readFrameSha256: string | null;
+    rangeStatus: Plo4RangeStatus;
   }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
@@ -216,6 +226,14 @@ export function createHorseExecutionWitness(
           readFrameSha256: decision.tournamentUtility.readFrameSha256 ?? null,
           selectedAction: decision.tournamentUtility.selectedAction,
           selectedAmount: decision.tournamentUtility.selectedAmount,
+        })
+      : null,
+    phase10Inputs: decision.plo4Policy?.inputs
+      ? Object.freeze({
+          version: 'horse-phase10-input-binding-v1' as const,
+          inputSha256: plo4InputBindingSha256(decision.plo4Policy.inputs),
+          readFrameSha256: decision.plo4Policy.readFrameSha256 ?? null,
+          rangeStatus: decision.plo4Policy.inputs.range.status,
         })
       : null,
     policyOwnership: decision.policyOwnership

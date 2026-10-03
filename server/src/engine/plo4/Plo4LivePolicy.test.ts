@@ -12,6 +12,9 @@ import { HorseLogic } from '../HorseLogic.js';
 import { calculatePots } from '../PokerEngine.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { plo4PublicRanges } from '../../benchmark/Plo4PublicRanges.js';
+import * as live from './Plo4LivePolicy.js';
+import { horsePolicyOwnership } from '../HorsePolicyRegistry.js';
+import { HorseMind } from '../HorseMind.js';
 
 const evidence = { equity: 0.68, samples: 200, standardError: 0.025 };
 const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
@@ -502,5 +505,538 @@ describe('Phase 10 complete bounded PLO4 baseline', () => {
     expect(first).not.toEqual(unraised);
     input.state.players[1].cards = plo4Cards('Ah Ad 6c 7c');
     expect(plo4PublicRanges(input.hero, input.state, 100101)).toEqual(unraised);
+  });
+});
+
+/* ───────────────────────── P10.1 input binding ─────────────────────────
+ * Every expected value below is derived by hand from the poker rules named
+ * beside it (pot-limit raise-to, the dealt ring, rake tiers, main/side pot
+ * eligibility), never by calling the production calculation under test. */
+type Spot = ReturnType<typeof plo4ReferenceSpot>;
+const run = (input: Spot, ev: Parameters<typeof evaluatePlo4LivePolicy>[3] = null) =>
+  evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, ev, 'candidate', () => 0);
+const setHero = (input: Spot, patch: Partial<Spot['hero']>) => {
+  Object.assign(input.hero, patch);
+  input.state.players[0] = { ...input.hero, cards: [] };
+};
+/** River, hero on the button facing a 20 bet. Seat 3 folded with a deep
+ * stack, seat 4 is away but all-in, seat 5 is away and folded, seat 6 was
+ * never dealt. Hero covers everyone. */
+function censusSpot() {
+  const input = plo4ReferenceSpot('non_nut_flush');
+  setHero(input, { stack: 1000 });
+  const base = input.state.players[1];
+  input.state.players.push(
+    {
+      ...base,
+      user_id: 'folded_deep',
+      seat: 3,
+      stack: 1000,
+      bet: 0,
+      totalInvested: 20,
+      is_folded: true,
+    },
+    {
+      ...base,
+      user_id: 'away_all_in',
+      seat: 4,
+      stack: 0,
+      bet: 0,
+      totalInvested: 20,
+      is_all_in: true,
+      is_sitting_out: true,
+    },
+    {
+      ...base,
+      user_id: 'away_folded',
+      seat: 5,
+      stack: 300,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: true,
+      is_sitting_out: true,
+    },
+    {
+      ...base,
+      user_id: 'spectator',
+      seat: 6,
+      stack: 500,
+      bet: 0,
+      totalInvested: 0,
+      is_sitting_out: true,
+    }
+  );
+  input.state.dealtSeatIds = [1, 2, 3, 4, 5];
+  input.state.pot = 100; // 20 + 40 + 20 + 20
+  input.state.maxRaiseTo = 140;
+  input.state.rakeConfig = {
+    percent: 10,
+    cap: 10,
+    noFlopNoDrop: true,
+    playerCountCaps: [
+      { players: 2, cap: 2 },
+      { players: 5, cap: 3 },
+      { players: 6, cap: 9 },
+    ],
+  };
+  return input;
+}
+const provenanceFor = (userIds: string[]) => ({
+  version: 'plo4-range-provenance-v1' as const,
+  source: 'horse_mind_public_line' as const,
+  calibration: 'uncalibrated' as const,
+  solverInput: false as const,
+  publicLine: { window: 'full_hand' as const, actions: 1, sizeReads: true, boardContact: false },
+  equity: {
+    basis: 'horse_monte_carlo_after_structural_caps' as const,
+    structuralCapApplied: false,
+    samples: 'adaptive_first_checkpoint' as const,
+  },
+  scope: 'omaha:short' as const,
+  window: { version: 1 as const, coverage: 'complete' as const, fromMs: 1000, toMs: 2000 },
+  opponents: userIds.map((userId, i) => ({
+    userId,
+    band: i === 0 ? ([0.2, 0.7] as [number, number]) : null,
+    statistics: (i === 0 ? 'pooled' : 'unavailable') as 'pooled' | 'unavailable',
+    scope: null,
+    sourceWindow:
+      i === 0
+        ? { version: 1 as const, coverage: 'complete' as const, fromMs: 1000, toMs: 2000 }
+        : { version: 1 as const, coverage: 'unknown' as const, fromMs: null, toMs: null },
+  })),
+});
+const deepFrozen = (value: unknown): boolean =>
+  value === null ||
+  typeof value !== 'object' ||
+  (Object.isFrozen(value) && Object.values(value as object).every(deepFrozen));
+
+describe('P10.1 binds the facts the PLO4 proposal consumed', () => {
+  it('records the dealt census and separates folded and away seats from contesting opponents', () => {
+    const input = censusSpot();
+    const { receipt } = run(input);
+    expect(receipt.reason).not.toBe('depth_or_ante_outside_pack');
+    expect(receipt.fired).toBe(true);
+    const inputs = receipt.inputs!;
+    expect(inputs.census).toEqual({
+      source: 'dealt_seat_ids',
+      dealerSeat: 1,
+      heroSeat: 1,
+      dealtSeats: [1, 2, 3, 4, 5],
+      contestingOpponentSeats: [2, 4],
+      actingOpponentSeats: [2],
+      foldedSeats: [3, 5],
+      awaySeats: [4, 5],
+      allInSeats: [4],
+    });
+    // Five dealt seats, dealer seat 1: hero offset 0 is the button; the seat-2
+    // bettor sits one to its left, the small blind.
+    expect(inputs.positions).toEqual({
+      hero: 'button',
+      heroOffset: 0,
+      role: 'facing_bet',
+      aggressor: 'small_blind',
+      aggressorSeat: 2,
+      straddle: 'none',
+    });
+    // Hero covers 1000 (500 BB). The folded 1000 stack cannot be played
+    // against; the deepest contesting cover is seat 2's 100 + 20 = 120.
+    expect(inputs.depth).toEqual({
+      effectiveBB: 60,
+      heroCoverBB: 500,
+      deepestOpponentCoverBB: 60,
+      basis: 'stack_plus_street_bet_vs_deepest_contesting_opponent',
+    });
+    // Rake tier for five dealt players is the 5-player cap of 3, not 9 (six
+    // seated) or 2 (three contesting): 10% of 120 = 12, capped at 3. Hero
+    // covers everyone, so the whole 120 after the call is eligible.
+    expect(inputs.geometry.rake.dealtCount).toBe(5);
+    expect(inputs.geometry.postflop).toEqual({
+      contestablePot: 100,
+      eligibleAfterCall: 120,
+      chargedRake: 3,
+      netPotAfterCall: 117,
+      callPrice: 20 / 117,
+      spr: 10,
+    });
+    expect(receipt.callPrice).toBe(20 / 117);
+    expect(inputs.board).toMatchObject({
+      street: 'river',
+      cards: 5,
+      paired: false,
+      flushBoard: true,
+    });
+    expect(inputs.board.features).toEqual(receipt.features);
+    expect(inputs.board.features).toContain('multiway');
+    expect(inputs.range.status).toBe('unavailable');
+    expect(live.plo4InputBindingIsValid(inputs)).toBe(true);
+  });
+
+  it('enforces the exact pot-limit raise-to and records the geometry it used', () => {
+    // River royal flush facing 20 into 60: call 20, then raise the pot of
+    // 60 + 20 + 20 = 100, so the pot-limit raise-to is 20 + 80 = 100.
+    const input = plo4ReferenceSpot('royal_flush');
+    setHero(input, { stack: 400 });
+    input.state.players[1].stack = 400;
+    input.state.maxRaiseTo = 400; // a looser engine bound must not lift the pot limit
+    const loose = run(input);
+    expect(loose.receipt.reason).toBe('postflop_nut_raise');
+    expect(loose.decision).toMatchObject({ action: 'raise', amount: 100 });
+    expect(loose.receipt.inputs!.geometry).toMatchObject({
+      potLimitRaiseTo: 100,
+      stackRaiseTo: 400,
+      wagerCap: 100,
+      callCost: 20,
+      chipUnit: 0.01,
+    });
+    // A 70 stack caps the raise at the stack, still inside the pot limit.
+    setHero(input, { stack: 70 });
+    input.state.maxRaiseTo = 70;
+    const short = run(input);
+    expect(short.decision).toMatchObject({ action: 'raise', amount: 70 });
+    expect(short.receipt.inputs!.geometry).toMatchObject({ stackRaiseTo: 70, wagerCap: 70 });
+  });
+
+  it.each([
+    ['cash', 40.26],
+    ['tournament', 40],
+  ] as const)('sizes a two-thirds pot bet in %s units exactly', (mode, amount) => {
+    // Checked to on the river with 61 in the pot: 0.66 x 61 = 40.26. Cash
+    // keeps cents; tournament chips floor to whole chips.
+    const input = plo4ReferenceSpot('royal_flush');
+    setHero(input, { stack: 400, totalInvested: 21 });
+    Object.assign(input.state.players[1], { stack: 400, bet: 0 });
+    Object.assign(input.state, {
+      pot: 61,
+      currentBet: 0,
+      toCall: 0,
+      legalActions: ['check', 'bet'],
+      minRaiseTo: 2,
+      maxRaiseTo: 61,
+    });
+    input.state.actionHistory = [];
+    input.baseline = { action: 'check', thinkTime: 0 };
+    if (mode === 'tournament') tournament(input);
+    const result = run(input);
+    expect(result.receipt.reason).toBe('postflop_value');
+    expect(result.decision).toMatchObject({ action: 'bet', amount });
+    expect(result.receipt.inputs!.geometry).toMatchObject({
+      potLimitRaiseTo: 61,
+      wagerCap: 61,
+      chipUnit: mode === 'tournament' ? 1 : 0.01,
+    });
+  });
+
+  it('records the side-pot eligible price that the proposal consumed', () => {
+    // Hero has 20 behind and 10 in; two opponents are in for 50 with 30 bet.
+    // A 20 call reaches 30 in, so hero can win 30 x 3 = 90 (main pot); the
+    // 40 above that is a side pot hero cannot win. 10% of the 130 in play is
+    // 13, charged proportionally to the eligible 90: 90 - 9 = 81.
+    const input = plo4ReferenceSpot('non_nut_flush');
+    setHero(input, { stack: 20, totalInvested: 10 });
+    Object.assign(input.state.players[1], { bet: 30, totalInvested: 50 });
+    input.state.players.push({ ...input.state.players[1], user_id: 'third', seat: 3 });
+    Object.assign(input.state, { pot: 110, currentBet: 30, toCall: 30 });
+    input.state.rakeConfig!.cap = 100;
+    const { receipt } = run(input);
+    expect(receipt.fired).toBe(true);
+    expect(receipt.inputs!.geometry.postflop).toEqual({
+      contestablePot: 70,
+      eligibleAfterCall: 90,
+      chargedRake: 13,
+      netPotAfterCall: 81,
+      callPrice: 20 / 81,
+      spr: 20 / 70,
+    });
+    // 30 + 110 + 20 = 160 by pot limit, but hero holds only 20: no raise exists.
+    expect(receipt.inputs!.geometry).toMatchObject({
+      potLimitRaiseTo: 160,
+      stackRaiseTo: 20,
+      wagerCap: 20,
+    });
+  });
+
+  it.each([
+    ['both covers at 500', 499, 498, 'fires'],
+    ['hero deeper, opponent at 500', 5000, 498, 'fires'],
+    ['both one cent past the endpoint', 499.01, 498.01, 'refuses'],
+    ['hero deeper, opponent one cent past', 5000, 498.01, 'refuses'],
+  ] as const)('applies the 250 BB depth endpoint: %s', (_label, heroStack, villainStack, want) => {
+    // Preflop heads-up, big blind 2: covers are stack + street bet, so 499 + 1
+    // and 498 + 2 are both 500 chips = 250 BB effective.
+    const input = plo4ReferenceSpot('premium_open');
+    setHero(input, { stack: heroStack });
+    input.state.players[1].stack = villainStack;
+    const { receipt } = run(input);
+    if (want === 'fires') {
+      expect(receipt.fired).toBe(true);
+      expect(receipt.inputs!.depth.effectiveBB).toBe(250);
+      return;
+    }
+    expect(receipt.reason).toBe('depth_or_ante_outside_pack');
+    expect(receipt.inputs).toBeNull();
+    expect(
+      horsePolicyOwnership('plo4', { action: 'call', thinkTime: 0, plo4Policy: receipt }, true)
+    ).toMatchObject({ outcome: 'outside_domain', reason: 'depth_or_ante_outside_pack' });
+  });
+
+  it('accepts an ante of exactly 1 BB and the table straddle, and refuses a larger ante by name', () => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.ante = 2;
+    input.state.straddleActive = true;
+    const { receipt } = run(input);
+    expect(receipt.fired).toBe(true);
+    expect(receipt.inputs!.geometry).toMatchObject({ ante: 2, anteBB: 1 });
+    expect(receipt.inputs!.positions.straddle).toBe('table_enabled_utg_2bb');
+    expect(receipt.inputs!.range.status).toBe('not_consumed_preflop');
+    input.state.ante = 2.01;
+    expect(run(input).receipt.reason).toBe('depth_or_ante_outside_pack');
+  });
+
+  it.each([
+    [10, 'fires'],
+    [10.01, 'rake_schedule_unavailable'],
+    [null, 'rake_schedule_unavailable'],
+  ] as const)('applies the rake domain at %s percent', (percent, want) => {
+    const input = plo4ReferenceSpot('non_nut_flush');
+    if (percent === null) delete input.state.rakeConfig;
+    else input.state.rakeConfig!.percent = percent;
+    const { receipt } = run(input);
+    if (want === 'fires') {
+      expect(receipt.fired).toBe(true);
+      expect(receipt.inputs!.geometry.rake).toMatchObject({ percent: 10, cap: 10 });
+    } else {
+      expect(receipt.reason).toBe(want);
+      expect(receipt.inputs).toBeNull();
+    }
+  });
+
+  it('names a nine-handed dealt census as outside the pack, not as unavailable state', () => {
+    // PLO4 tournament tables may seat up to the deck limit of 11; the pack
+    // declares 2-8 dealt seats.
+    const input = plo4ReferenceSpot('premium_open');
+    for (let seat = 3; seat <= 9; seat++)
+      input.state.players.push({
+        ...input.state.players[1],
+        seat,
+        user_id: `v${seat}`,
+        bet: 0,
+        totalInvested: 0,
+      });
+    const { receipt } = run(input);
+    expect(receipt.reason).toBe('seat_count_outside_pack');
+    expect(receipt.fired).toBe(false);
+    expect(receipt.inputs).toBeNull();
+    expect(
+      horsePolicyOwnership('plo4', { action: 'call', thinkTime: 0, plo4Policy: receipt }, true)
+    ).toMatchObject({ outcome: 'outside_domain', reason: 'seat_count_outside_pack' });
+  });
+
+  it('rejects private dead cards on an opponent seat', () => {
+    const input = plo4ReferenceSpot('non_nut_flush');
+    input.state.players[1].knownDeadCards = plo4Cards('2c');
+    expect(run(input).receipt).toMatchObject({ reason: 'private_state_rejected', inputs: null });
+  });
+
+  it('never records a malformed equity sample as consumed evidence', () => {
+    for (const bad of [
+      { equity: NaN, samples: 10, standardError: 0.1 },
+      { equity: 1.5, samples: 10, standardError: 0.1 },
+      { equity: 0.5, samples: 0, standardError: 0.1 },
+    ]) {
+      const input = plo4ReferenceSpot('non_nut_flush');
+      const withBad = run(input, bad);
+      const without = run(input, null);
+      expect(withBad.receipt.equity).toBeNull();
+      expect(withBad.receipt.confidence).toBe('explicit_heuristic');
+      expect(withBad.receipt.inputs!.range).toEqual({
+        status: 'rejected_malformed',
+        equity: null,
+        samples: null,
+        standardError: null,
+        provenance: null,
+      });
+      expect(withBad.receipt.inputs!.approximation.status).toBe('explicit_heuristic');
+      expect(withBad.decision).toEqual(without.decision);
+    }
+  });
+
+  it.each([
+    ['a folded seat', ['opponent', 'away_all_in', 'folded_deep']],
+    ['a missing contesting opponent', ['opponent']],
+    ['a player from another table', ['opponent', 'elsewhere']],
+  ])('refuses an equity sampled against %s', (_label, ids) => {
+    const input = censusSpot();
+    const evidence = { equity: 0.9, samples: 500, standardError: 0.01 };
+    const unattributed = run(input, evidence);
+    expect(unattributed.receipt.inputs!.range.status).toBe('consumed_unattributed');
+    const consumed = run(input, { ...evidence, range: provenanceFor(['opponent', 'away_all_in']) });
+    expect(consumed.receipt.inputs!.range.status).toBe('consumed');
+    const foreign = run(input, { ...evidence, range: provenanceFor(ids) });
+    expect(foreign.receipt.inputs!.range.status).toBe('rejected_population');
+    expect(foreign.receipt.equity).toBeNull();
+    expect(foreign.decision).toEqual(run(input, null).decision);
+  });
+
+  it.each([
+    ['calibration', (p: any) => (p.calibration = 'calibrated')],
+    ['solver input', (p: any) => (p.solverInput = true)],
+    ['a band with no public line', (p: any) => (p.source = 'uniform_no_public_read')],
+    ['a scoped row outside the decision scope', (p: any) => (p.opponents[0].scope = 'holdem:hu')],
+    ['an unmerged window', (p: any) => (p.window = { ...p.window, toMs: 9999 })],
+  ])('refuses a range provenance that misstates %s', (_label, mutate) => {
+    const input = censusSpot();
+    const range = provenanceFor(['opponent', 'away_all_in']);
+    mutate(range);
+    const result = run(input, { equity: 0.9, samples: 500, standardError: 0.01, range });
+    expect(result.receipt.inputs!.range.status).toBe('rejected_population');
+    expect(result.receipt.equity).toBeNull();
+  });
+
+  it('detaches and freezes the binding against later asynchronous mutation', () => {
+    const input = censusSpot();
+    const range = provenanceFor(['opponent', 'away_all_in']);
+    const evidence = { equity: 0.9, samples: 500, standardError: 0.01, range };
+    const { receipt } = run(input, evidence);
+    const before = JSON.stringify({ inputs: receipt.inputs, equity: receipt.equity });
+    expect(deepFrozen(receipt.inputs)).toBe(true);
+    expect(deepFrozen(receipt.equity)).toBe(true);
+    // The table moves on and the equity owner reuses its objects.
+    input.state.players[1].stack = 1;
+    input.state.dealtSeatIds!.push(6);
+    input.state.communityCards[0].rank = '2';
+    input.state.rakeConfig!.percent = 0;
+    input.state.rakeConfig!.playerCountCaps![1].cap = 99;
+    input.state.actionHistory!.length = 0;
+    evidence.equity = 0.01;
+    range.opponents[0].band![0] = 0.99;
+    range.opponents[0].userId = 'someone_else';
+    range.window.toMs = 1;
+    expect(JSON.stringify({ inputs: receipt.inputs, equity: receipt.equity })).toBe(before);
+    expect(() => {
+      (receipt.inputs!.geometry as { pot: number }).pot = 0;
+    }).toThrow(TypeError);
+  });
+
+  it('binds HorseMind public-line ranges and their observation window from the live equity pass', () => {
+    const input = plo4ReferenceSpot('dominated_flop_draw');
+    input.state.actionHistory = [
+      {
+        userId: 'opponent',
+        seat: 2,
+        stage: 'preflop',
+        action: 'raise',
+        amount: 6,
+        timestamp: 1,
+        isFullRaise: true,
+      },
+      { userId: 'hero', seat: 1, stage: 'preflop', action: 'call', amount: 5, timestamp: 2 },
+      ...input.state.actionHistory!,
+    ];
+    const window = { version: 1 as const, coverage: 'complete' as const, fromMs: 1000, toMs: 2000 };
+    const decide = (mind: boolean, observeMind = false) => {
+      const reads = HorseMind.createSandbox();
+      return HorseMind.runInSandbox(reads, () => {
+        HorseMind.importStats([
+          {
+            user_id: 'opponent',
+            hands: 30,
+            vpip: 12,
+            pfr: 8,
+            folds: 10,
+            facedAggr: 15,
+            sourceWindow: window,
+          },
+        ]);
+        seedFastRandom(100101);
+        return HorseLogic.decide(
+          input.hero,
+          input.state,
+          'balanced',
+          {},
+          {
+            telemetry: false,
+            mind,
+            observeMind,
+            decisionTimeMs: 0,
+            phase10Plo4: 'shadow',
+            phase10EvidenceMode: true,
+            phase13Joint: 'off',
+          }
+        );
+      });
+    };
+    const withMind = decide(true).plo4Policy!;
+    expect(withMind.inputs!.range.status).toBe('consumed');
+    const provenance = withMind.inputs!.range.provenance!;
+    expect(provenance).toMatchObject({
+      source: 'horse_mind_public_line',
+      calibration: 'uncalibrated',
+      solverInput: false,
+      scope: 'omaha:hu',
+      window,
+      publicLine: { window: 'full_hand', actions: 3 },
+    });
+    expect(provenance.opponents).toHaveLength(1);
+    expect(provenance.opponents[0]).toMatchObject({
+      userId: 'opponent',
+      statistics: 'pooled', // 30 scoped hands would be below the 40-hand scope floor
+      scope: null,
+      sourceWindow: window,
+    });
+    expect(provenance.opponents[0].band).not.toBeNull();
+    expect(withMind.inputs!.approximation.status).toBe(
+      'explicit_heuristic_with_uncalibrated_range_sample'
+    );
+    expect(withMind.equity).toEqual({
+      equity: withMind.inputs!.range.equity,
+      samples: withMind.inputs!.range.samples,
+      standardError: withMind.inputs!.range.standardError,
+    });
+    // With observation on, the opponent's public raise (timestamp 1) enters the
+    // pooled row before the equity pass, so the bound envelope widens to 1..2000.
+    const observed = decide(true, true).plo4Policy!.inputs!.range.provenance!;
+    expect(observed.opponents[0].sourceWindow).toEqual({ ...window, fromMs: 1 });
+    expect(observed.window).toEqual({ ...window, fromMs: 1 });
+    const withoutMind = decide(false).plo4Policy!;
+    expect(withoutMind.inputs!.range.provenance).toMatchObject({
+      source: 'uniform_mind_disabled',
+      opponents: [{ userId: 'opponent', band: null, statistics: 'disabled', scope: null }],
+    });
+    // The canonical journal JSON round trip keeps the same commitment.
+    const sha = live.plo4InputBindingSha256(withMind.inputs!);
+    expect(sha).toMatch(/^[a-f0-9]{64}$/);
+    expect(live.plo4InputBindingSha256(JSON.parse(JSON.stringify(withMind.inputs)))).toBe(sha);
+    expect(live.plo4InputBindingIsValid(structuredClone(withMind.inputs))).toBe(true);
+  });
+
+  it.each([
+    [
+      'heuristic shape relabeled as a probability',
+      (b: any) => (b.approximation.handShape.probability = true),
+    ],
+    ['a solver-input claim', (b: any) => (b.approximation.solverInput = true)],
+    ['a calibrated pack', (b: any) => (b.pack.calibratedConfidence = 0.9)],
+    ['a range sample claimed without consumption', (b: any) => (b.range.status = 'unavailable')],
+    ['a contesting folded seat', (b: any) => (b.census.foldedSeats = [2, 3, 5])],
+    ['depth beyond the pack', (b: any) => (b.depth.effectiveBB = 250.5)],
+    [
+      'a census beyond eight seats',
+      (b: any) => (b.census.dealtSeats = [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    ],
+  ])('rejects a returned binding with %s', (_label, mutate) => {
+    const input = censusSpot();
+    const { receipt } = run(input, {
+      equity: 0.9,
+      samples: 500,
+      standardError: 0.01,
+      range: provenanceFor(['opponent', 'away_all_in']),
+    });
+    const binding = structuredClone(receipt.inputs) as any;
+    expect(live.plo4InputBindingIsValid(binding)).toBe(true);
+    mutate(binding);
+    expect(live.plo4InputBindingIsValid(binding)).toBe(false);
+    expect(
+      live.plo4LiveReceiptBindingIsValid({ ...structuredClone(receipt), inputs: binding })
+    ).toBe(false);
   });
 });

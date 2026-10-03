@@ -16,6 +16,8 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
+import { horseDecisionReceiptIsValid } from './responseValidation.js';
+import * as plo4Live from '../plo4/Plo4LivePolicy.js';
 import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 import {
   HorseDecisionWorkerRuntime,
@@ -2659,6 +2661,10 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   };
   request.gameState.dealerSeat = 2;
   request.decisionKey = buildHorseDecisionKey(request);
+  const journaled: Array<{ readFrame: { sha256: string } | null }> = [];
+  h.deps.journalEnabled = () => true;
+  h.deps.journalDecision = (_request, payload) =>
+    journaled.push(payload as unknown as (typeof journaled)[number]);
   // This proves execution/wiring, not latency. A shared runner pause cannot
   // be required to fit the production 4 ms window. Budget refusal is tested
   // independently by Plo4LivePolicy; no live request clock control is enabled.
@@ -2675,6 +2681,27 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   expect(result.decision.plo4Policy?.eligible).toBe(true);
   expect(result.decision.plo4Policy?.fired).toBe(true);
   expect(structuredClone(result).decision.plo4Policy?.finalAction).toBe(result.decision.action);
+  // P10.1: the frozen input binding crosses the boundary bound to the same
+  // private read frame the journal retained for this decision.
+  const receipt = result.decision.plo4Policy!;
+  expect(plo4Live.plo4LiveReceiptBindingIsValid(structuredClone(receipt))).toBe(true);
+  expect(receipt.inputs?.census.dealerSeat).toBe(2);
+  expect(receipt.inputs?.positions.hero).toBe('button');
+  expect(receipt.readFrameSha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(journaled).toHaveLength(1);
+  expect(receipt.readFrameSha256).toBe(journaled[0].readFrame?.sha256);
+  expect(horseDecisionReceiptIsValid(structuredClone(result.decision), 'plo4')).toBe(true);
+  const forged = structuredClone(result.decision) as any;
+  forged.plo4Policy.inputs.approximation.solverInput = true;
+  expect(horseDecisionReceiptIsValid(forged, 'plo4')).toBe(false);
+  const relabeled = structuredClone(result.decision) as any;
+  relabeled.plo4Policy.inputs.range.provenance = { source: 'solver' };
+  expect(horseDecisionReceiptIsValid(relabeled, 'plo4')).toBe(false);
+  // A retained legacy receipt without the field claims no binding and stays readable.
+  const legacy = structuredClone(result.decision) as any;
+  delete legacy.plo4Policy.inputs;
+  delete legacy.plo4Policy.readFrameSha256;
+  expect(horseDecisionReceiptIsValid(legacy, 'plo4')).toBe(true);
 });
 
 it.each(['plo5', 'plo6', 'plo8'] as const)(

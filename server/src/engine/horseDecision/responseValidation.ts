@@ -1,3 +1,4 @@
+import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
 import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
@@ -446,6 +447,8 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!horsePhase8LedgerIsValid(value.tournamentPostflop, value)) return false;
+  if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
+    return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

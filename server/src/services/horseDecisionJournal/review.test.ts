@@ -48,7 +48,8 @@ const turn = (x: any) =>
 function fixture(
   variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh',
   historyPrefix: readonly Record<string, unknown>[] = [],
-  phase7 = false
+  phase7 = false,
+  phase10 = false
 ) {
   const raw = jointPolicyFixture(variant, 1, phase7 ? 'tournament' : 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
@@ -56,7 +57,7 @@ function fixture(
       ? `20000000-0000-4000-8000-00000000000${Number(v.slice(1)) + 1}`
       : v
   );
-  state.toCall = phase7 ? 0 : 1;
+  state.toCall = phase7 || phase10 ? 0 : 1;
   if (phase7) {
     state.legalActions = ['check'];
     state.minRaiseTo = null;
@@ -106,6 +107,29 @@ function fixture(
     if (!decision.tournamentUtility?.evidence)
       throw Error('Phase 7 fixture did not evaluate utility');
   }
+  if (phase10) {
+    const rng = saveFastRandom();
+    try {
+      seedFastRandom(7300930);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          phase10EvidenceMode: true,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    if (!decision.plo4Policy?.inputs) throw Error('Phase 10 fixture did not bind its inputs');
+  }
   const d = {
     snapshot,
     readFrame: encodeHorseDecisionReads(
@@ -123,6 +147,7 @@ function fixture(
   };
   if (decision.tournamentUtility?.evidence)
     decision.tournamentUtility.readFrameSha256 = d.readFrame.sha256;
+  if (decision.plo4Policy?.inputs) decision.plo4Policy.readFrameSha256 = d.readFrame.sha256;
   const w = createHorseExecutionWitness(snapshot, decision, {
     requestId: 1,
     lane: 'fast',
@@ -133,7 +158,7 @@ function fixture(
     seat: hero.seat,
     userId: hero.user_id,
     action: decision.action,
-    amount: phase7 ? (decision.amount ?? 0) : 1,
+    amount: phase7 || phase10 ? (decision.amount ?? 0) : 1,
     timestamp: 1001,
     stage: 'preflop' as const,
   };
@@ -267,6 +292,61 @@ describe('private retained-hand journal consumer', () => {
     );
     expect(changed.sha256).not.toBe(f.d.readFrame.sha256);
     f.d.readFrame = changed;
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'incomplete',
+      matchedActions: 0,
+      gaps: expect.arrayContaining(['read_frame_unavailable']),
+    });
+  });
+
+  it('reconciles the Phase 10 input binding and its original read frame to acceptance', () => {
+    const f = fixture('plo4', [], false, true);
+    expect(f.w.phase10Inputs?.readFrameSha256).toBe(f.d.readFrame.sha256);
+    expect(f.w.phase10Inputs?.rangeStatus).toBe('not_consumed_preflop');
+    const persisted = JSON.parse(f.rows()[0]!.body) as typeof f.d;
+    const recovered = createHorseExecutionWitness(persisted.snapshot, persisted.decision, {
+      requestId: 1,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    expect(recovered.phase10Inputs).toEqual(f.w.phase10Inputs);
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      matchedActions: 1,
+      gaps: [],
+      gtoVerified: false,
+      activationAllowed: false,
+    });
+  });
+
+  it('rejects a changed Phase 10 input commitment even when the accepted action still matches', () => {
+    const f = fixture('plo4', [], false, true);
+    f.w = { ...f.w, phase10Inputs: { ...f.w.phase10Inputs!, inputSha256: 'f'.repeat(64) } };
+    const report = reconcileHorseJournalHand(f.rows(), handKey);
+    expect(report.status).toBe('incomplete');
+    expect(report.matchedActions).toBe(0);
+    expect(report.gaps).toContain('input_mismatch');
+  });
+
+  it('rejects a read frame that no longer owns the Phase 10 input binding', () => {
+    const f = fixture('plo4', [], false, true);
+    const reads = HorseMind.createSandbox();
+    HorseMind.runInSandbox(reads, () => {
+      HorseMind.importStats([
+        {
+          user_id: f.d.snapshot.gameState.players[1]!.user_id,
+          hands: 50,
+          folds: 20,
+          facedAggr: 30,
+        },
+      ]);
+    });
+    f.d.readFrame = encodeHorseDecisionReads(
+      reads,
+      f.d.snapshot.gameState.players,
+      HorseMind.handKeyOf(f.d.snapshot.gameState.actionHistory)
+    );
     expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
       status: 'incomplete',
       matchedActions: 0,

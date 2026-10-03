@@ -31,9 +31,11 @@ import {
 } from './omaha/OmahaVariantLivePolicy.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import {
+  capturePlo4RangeProvenance,
   evaluatePlo4LivePolicy,
   type Plo4EquityEvidence,
   type Plo4LiveMode,
+  type Plo4RangeProvenance,
 } from './plo4/Plo4LivePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -3007,6 +3009,8 @@ export class HorseLogic {
           noteDecisionMs('phase10', phase10.receipt.latencyMs);
           noteFire(`phase10_reason_${phase10.receipt.reason}`);
           if (phase10.receipt.eligible) noteFire('phase10_eligible');
+          if (phase10.receipt.inputs)
+            noteFire(`phase10_range_${phase10.receipt.inputs.range.status}`);
           if (phase10.receipt.fired) {
             noteFire('phase10_fired');
             noteFire(`phase10_street_${gs.stage}`);
@@ -6739,10 +6743,33 @@ export class HorseLogic {
         Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
       );
       const value = clamp01(eq15);
+      // P10.1: attribute the sample to the ranges that produced it - the same
+      // live opponents, bands and HorseMind read view used above. Attribution
+      // is best-effort; without it the policy records the sample unattributed.
+      let range: Plo4RangeProvenance | undefined;
+      try {
+        range = capturePlo4RangeProvenance({
+          opponents,
+          bands,
+          mindEnabled: useMind,
+          publicLine: useHR ? 'full_hand' : 'preflop_only',
+          actions: (useHR
+            ? (gs.actionHistory ?? [])
+            : (gs.actionHistory ?? []).filter((a) => a.stage === 'preflop')
+          ).length,
+          sizeReads: useSizeReads,
+          boardContact: oppReads?.some((read) => read !== null) ?? false,
+          structuralCapApplied: eq15 < equity,
+          adaptiveSamples: useAdaptiveMC,
+        });
+      } catch {
+        range = undefined;
+      }
       phase10EquityEvidence = {
         equity: value,
         samples: sampleCount,
         standardError: Math.sqrt((value * (1 - value)) / sampleCount),
+        ...(range ? { range } : {}),
       };
     }
 

@@ -593,6 +593,7 @@ export function reconcileHorseJournalHand(
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||
           !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
+          !same(w.phase10Inputs ?? null, expectedWitness.phase10Inputs ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
           w.expectedExecutionAmount !== expectedAmount ||
           w.computeMs !== d.computeMs ||
@@ -615,6 +616,11 @@ export function reconcileHorseJournalHand(
             d.decision.tournamentUtility.readFrameSha256 !== d.readFrame.sha256
           )
             throw Error('Phase 7 original observation read frame does not match');
+          if (
+            d.decision.plo4Policy?.inputs &&
+            d.decision.plo4Policy.readFrameSha256 !== d.readFrame.sha256
+          )
+            throw Error('Phase 10 original read frame does not match');
         } catch {
           gap('read_frame_unavailable');
           continue;

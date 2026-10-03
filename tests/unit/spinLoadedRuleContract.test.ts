@@ -148,7 +148,7 @@ describe('the loaded Spin rule must carry the actual reporting correction', () =
   it('refuses stale selected source, missing/duplicate blocks and a changed source group', () => {
     expect(() =>
       compareSpinReportingContract(
-        source.replace('eligible for unfilled expiry', 'obsolete claim'),
+        source.replace('This conservative alert count', 'This obsolete alert count'),
         loaded()
       )
     ).toThrow('source changed');

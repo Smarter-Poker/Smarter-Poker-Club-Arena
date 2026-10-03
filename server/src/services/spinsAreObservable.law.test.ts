@@ -157,7 +157,7 @@ describe('the engine exposes spin gauges', () => {
     expect(m.get().expiryOverdueWaits).toBe(3);
     const metrics = m.toPrometheus().join('\n');
     expect(metrics).toContain('poker_spin_expiry_overdue_waits 3');
-    expect(metrics).toContain('conservative alert subset');
+    expect(metrics).toContain('Conservative alert subset:');
     expect(metrics).toContain('zero does not prove no lifecycle-evidence conflict');
   });
 

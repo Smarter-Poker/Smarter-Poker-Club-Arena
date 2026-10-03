@@ -1,0 +1,17 @@
+{
+ "window": [
+  "2026-10-03T20:00:56Z",
+  "2026-10-03T20:45:57Z"
+ ],
+ "byFormatSeats": {
+  "('hu_sng', 2)": 9287,
+  "('spin', 3)": 3908,
+  "('mtt', 3)": 393
+ },
+ "tournamentsWithMaxDealtAtLeast4": {},
+ "tournaments": 238,
+ "tournamentsByMaxDealt": {
+  "2": 173,
+  "3": 65
+ }
+}

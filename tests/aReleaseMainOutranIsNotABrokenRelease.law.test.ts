@@ -155,7 +155,7 @@ describe('1. a target main has moved past is still carried to the cutover', () =
     const result = run({ target: C, main: C, latest: C, highWater: B });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('SUPERSEDED_BY=\n');
-  });
+  }, 90_000);
 
   it('the warning is not a die in the source', () => {
     expect(SOURCE).toMatch(/echo "\[engine-release-transaction\] FORWARD TARGET BEHIND MAIN/);

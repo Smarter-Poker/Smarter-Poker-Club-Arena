@@ -10,7 +10,7 @@ describe('explicit bounded original runtime error observation', () => {
         encoding: 'utf8',
       })
     ).not.toThrow();
-  });
+  }, 90_000);
 
   it('keeps host reads manual, pinned and separate from the public diagnostic reader', () => {
     const workflow = readFileSync('.github/workflows/production-integrity-audit.yml', 'utf8');

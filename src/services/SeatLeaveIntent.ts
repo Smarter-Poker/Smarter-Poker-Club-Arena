@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { notifyServerLeaveOccupancy, notifyServerKickOccupancy } from './GameServerAPI';
+import { reportError } from '../utils/errorReporter';
 
 type Intent = {
   version: 1;
@@ -174,13 +175,17 @@ async function requestSeatWithIntent(
         if (matches && (result.code === 'STALE_OCCUPANCY' || result.code === 'LEAVE_LOCKED')) {
           storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
         }
+        const refusal =
+          typeof result.error === 'string' ? result.error : 'The Server Did Not Confirm The Leave.';
+        reportError(new Error(refusal), 'SeatLeaveIntent.leave_refused', {
+          code:
+            typeof result.code === 'string' && result.code ? result.code : 'LEAVE_NOT_CONFIRMED',
+          action: action.kind,
+        });
         return {
           success: false,
           chipsReturned: 0,
-          error:
-            typeof result.error === 'string'
-              ? result.error
-              : 'The Server Did Not Confirm The Leave.',
+          error: refusal,
         };
       }
       if (!matches || typeof result.immediate !== 'boolean') {
@@ -218,6 +223,10 @@ async function requestSeatWithIntent(
       storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
       return { ...outcome, occupancyId: intent.occupancyId };
     } catch (error) {
+      reportError(error, 'SeatLeaveIntent.leave_failed', {
+        code: 'LEAVE_NOT_CONFIRMED',
+        action: action.kind,
+      });
       return {
         success: false,
         chipsReturned: 0,

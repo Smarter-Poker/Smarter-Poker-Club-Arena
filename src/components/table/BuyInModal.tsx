@@ -293,9 +293,12 @@ export function BuyInModal({
       const confirmed = await onConfirm(clampedBuyIn, autoRebuy);
       if (confirmed === false) {
         setConfirmError('Buy-In Not Yet Confirmed.');
+        reportError(new Error('Buy-In Not Yet Confirmed.'), 'BuyInModal.buy_in_not_confirmed', {
+          code: 'BUY_IN_NOT_CONFIRMED',
+        });
       }
     } catch (err) {
-      reportError(err, 'BuyInModal.onConfirm_threw');
+      reportError(err, 'BuyInModal.onConfirm_threw', { code: 'BUY_IN_CONFIRM_FAILED' });
       setConfirmError('Unable To Confirm Your Buy-In. Please Check Your Connection And Try Again.');
     } finally {
       confirmInFlightRef.current = false;

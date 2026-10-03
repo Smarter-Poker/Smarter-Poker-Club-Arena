@@ -21,7 +21,7 @@ import {
   shouldSurfaceError,
   extractRawErrorText,
 } from '../../utils/safeErrorMessage';
-import { reportError } from '../../utils/errorReporter';
+import { captureClientError, reportError } from '../../utils/errorReporter';
 import './Toast.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -296,6 +296,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             }
             reportError(new Error(original), 'Toast.error.sanitized', { shownToPlayer: text });
           }
+        } else {
+          // Shown to the player as written. Counted by the first-party sink
+          // (2026-10-03) so we see what players actually read; sink only, the
+          // message is already on screen and needs no console line.
+          captureClientError(new Error(original), 'Toast.error.shown', {
+            code: 'PLAYER_ERROR_SHOWN',
+          });
         }
       }
       const styled = formatPopupText(text);

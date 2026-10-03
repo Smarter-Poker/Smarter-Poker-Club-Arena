@@ -21383,6 +21383,13 @@ function LiveTablePage({
       console.warn('[Table] suppressed self-healing action error:', data.error);
       return;
     }
+    // What the player is about to read, with the engine's code, reaches the
+    // first-party error sink (2026-10-03).
+    if (data) {
+      reportError(new Error(data.error), 'TablePage.action_error_shown', {
+        code: data.code || 'ACTION_ERROR',
+      });
+    }
     setActionErrorData(data);
   }, []);
 

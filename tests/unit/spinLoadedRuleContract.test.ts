@@ -148,7 +148,7 @@ describe('the loaded Spin rule must carry the actual reporting correction', () =
   it('refuses stale selected source, missing/duplicate blocks and a changed source group', () => {
     expect(() =>
       compareSpinReportingContract(
-        source.replace('partially filled field', 'obsolete claim'),
+        source.replace('partly filled past their human window', 'obsolete claim'),
         loaded()
       )
     ).toThrow('source changed');

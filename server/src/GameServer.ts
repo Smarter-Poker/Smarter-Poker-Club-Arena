@@ -10405,8 +10405,6 @@ export class GameServer {
     paid: number,
     windowClosed: boolean
   ): Promise<void> {
-    const now = Date.now();
-    const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
     /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
 
        Measured on the live engine: 96 Deep Stack Society seat-first boards
@@ -10426,21 +10424,59 @@ export class GameServer {
        board with a HUMAN in a seat keeps the 12 s cadence - Dan 2026-08-29,
        a human is never left waiting - and if that board cannot fill either,
        seat_first_human_waiting still says so once a minute. */
-    const misses = windowClosed ? (this.seatFirstFillMisses.get(tournamentId) ?? 0) : 0;
+    /* WHO IS SITTING IS KNOWN BEFORE THE CADENCE IS CHOSEN (2026-10-03).
+       A human's board keeps the 12 s cadence and first claim on free horses
+       whatever its window says; only a horse-only board backs off. The answer
+       is cached per paid count (seatFirstHasHuman), so a board is asked "who
+       is here" once per change in its seats, not once per attempt - which
+       keeps the saving round 15 bought for the stuck-board case. */
+    const hasHuman = await this.seatFirstHasHuman(tournamentId, paid);
+    if (hasHuman === null) return;
+    if (!hasHuman && !windowClosed) return;
+    const misses = hasHuman ? 0 : (this.seatFirstFillMisses.get(tournamentId) ?? 0);
     const interval = Math.min(12_000 * 2 ** Math.min(misses, 6), 10 * 60_000);
-    if (now - last < interval) return;
+    // Check and set with no await between, after the read: two passes that
+    // both awaited the occupancy answer can never both ask for this board.
+    const now = Date.now();
+    if (now - (this.lastHumanFillAt.get(tournamentId) ?? 0) < interval) return;
     this.lastHumanFillAt.set(tournamentId, now);
 
-    /* ROUND 15 OPTIMISATION. When the human window has already closed the
-       board fills regardless of WHO is sitting in it, so the two reads that
-       exist purely to answer "is one of them a human" are pure waste. Skip
-       straight to the top-up and spend nothing. Only a board still inside its
-       window has to ask, because there the answer decides. */
-    if (windowClosed) {
-      await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'window closed');
-      return;
-    }
+    await this.topUpPartialSeatFirst(
+      tournamentId,
+      seats,
+      paid,
+      hasHuman ? 'a human is waiting' : 'window closed',
+      hasHuman
+    );
+  }
 
+  /** Last "is a human seated here" answer per seat-first game, keyed by its paid count. */
+  private seatFirstOccupancy = new Map<string, { paid: number; hasHuman: boolean }>();
+
+  /**
+   * Is a live seat on this seat-first game held by a human? Read once per
+   * change in the game's paid-seat count: seats on a REGISTERING seat-first
+   * game only change through a buy-in or an exit, both of which move the
+   * count the fast lane already reads every second. null = could not tell
+   * (reported); the caller then does nothing this pass rather than guess.
+   * is_horse is used to IDENTIFY the occupant only (CLAUDE.md 10.5).
+   */
+  private seatFirstOccupancyReads = new Map<string, Promise<boolean | null>>();
+
+  private seatFirstHasHuman(tournamentId: string, paid: number): Promise<boolean | null> {
+    const cached = this.seatFirstOccupancy.get(tournamentId);
+    if (cached && cached.paid === paid) return Promise.resolve(cached.hasHuman);
+    // The fast lane asks every second; one read per board is in flight at a time.
+    const inFlight = this.seatFirstOccupancyReads.get(tournamentId);
+    if (inFlight) return inFlight;
+    const read = this.readSeatFirstHasHuman(tournamentId, paid).finally(() =>
+      this.seatFirstOccupancyReads.delete(tournamentId)
+    );
+    this.seatFirstOccupancyReads.set(tournamentId, read);
+    return read;
+  }
+
+  private async readSeatFirstHasHuman(tournamentId: string, paid: number): Promise<boolean | null> {
     const { data: primaryId, error: primErr } = await supabase.rpc('fn_tournament_primary_table', {
       p_tournament_id: tournamentId,
     });
@@ -10451,7 +10487,7 @@ export class GameServer {
           'GameServer.human_fill_primary_table_read_failed'
         );
       }
-      return;
+      return null;
     }
 
     const { data: occupants, error: occErr } = await supabase
@@ -10464,12 +10500,14 @@ export class GameServer {
         new Error(`[GameServer] human-fill occupant read failed: ${occErr.message}`),
         'GameServer.human_fill_occupant_read_failed'
       );
-      return;
+      return null;
     }
     const ids = (occupants || [])
       .map((o) => String((o as { user_id?: string }).user_id ?? ''))
       .filter((v) => v.length > 0);
-    if (ids.length === 0) return;
+    // Nobody on the primary table (seats split onto a duplicate): no human to
+    // serve here, and a closed window still fills it, exactly as before.
+    if (ids.length === 0) return false;
 
     const { data: profiles, error: profErr } = await supabase
       .from('profiles')
@@ -10480,12 +10518,11 @@ export class GameServer {
         new Error(`[GameServer] human-fill profile read failed: ${profErr.message}`),
         'GameServer.human_fill_profile_read_failed'
       );
-      return;
+      return null;
     }
     const hasHuman = (profiles || []).some((p) => !(p as { is_horse?: boolean }).is_horse);
-    if (!hasHuman) return;
-
-    await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'a human is waiting');
+    this.seatFirstOccupancy.set(tournamentId, { paid, hasHuman });
+    return hasHuman;
   }
 
   /**
@@ -10499,9 +10536,18 @@ export class GameServer {
     tournamentId: string,
     seats: number,
     paid: number,
-    why: string
+    why: string,
+    forHuman: boolean
   ): Promise<void> {
-    const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
+    /* A HUMAN'S BOARD FILLS FIRST (2026-10-03). The seats a waiting human
+       still needs are declared before the ask, so every horse-only claim on
+       the pool (board openers, window-closed fills, SNG and MTT top-ups)
+       leaves them free; this ask may also draw on the cash lane and on the
+       cash-room floor. See TournamentRecurringService.noteHumanSeatDemand. */
+    if (forHuman) this.tournamentRecurring.noteHumanSeatDemand(tournamentId, seats - paid);
+    const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats, {
+      forHuman,
+    });
     let shortfall = seats - paid;
     /* THE ALARM IS JUDGED ON WHAT THE TOP-UP SAW, NOT ON THE COUNT THIS LANE
        READ A SECOND EARLIER (2026-09-11). `paid` is this lane's read; the
@@ -10519,8 +10565,11 @@ export class GameServer {
     }
     // See the backoff in fillPartialSeatFirstGame: a filled board forgets its
     // misses, a short one counts another.
-    if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);
-    else
+    if (added >= shortfall) {
+      this.seatFirstFillMisses.delete(tournamentId);
+      this.seatFirstOccupancy.delete(tournamentId);
+      this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
+    } else
       this.seatFirstFillMisses.set(
         tournamentId,
         (this.seatFirstFillMisses.get(tournamentId) ?? 0) + 1

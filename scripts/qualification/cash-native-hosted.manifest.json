@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 184999,
-      "sha256": "9bb6ce8b9c7e24502ce11e6b9a223c2a6c1b799f5bccf761bce6905a65004f5f"
+      "bytes": 185281,
+      "sha256": "9edd744c427c839855345784d17f22ec7d02ace77f0aa88e20daeee4b0ff0a8d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1456,6 +1456,23 @@
         "current": {
           "bytes": 31019,
           "sha256": "6f5b33b06b6ff5dcfcfa3368970938b26c77cb965e5ea7ed711688066ed854fb"
+        }
+      }
+    ]
+  },
+  "clientErrorSinkQualification20261003": {
+    "reason": "Add one step to the shard-1 PostgreSQL 17 steps: python3 scripts/ci/test-client-error-sink.py, the isolated qualification of migration 20261003080431 (first-party client error sink: identity, grants, caps, scrubbing, retention). Five lines; no accounting runner, fixture, cash input or assertion changes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 184999,
+          "sha256": "9bb6ce8b9c7e24502ce11e6b9a223c2a6c1b799f5bccf761bce6905a65004f5f"
+        },
+        "current": {
+          "bytes": 185281,
+          "sha256": "9edd744c427c839855345784d17f22ec7d02ace77f0aa88e20daeee4b0ff0a8d"
         }
       }
     ]

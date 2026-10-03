@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/claude-a5/close-gate. Migration 20261003155132_the_first_close_of_a_long_week_waits_for_a_quiet_hour: the gate that holds a long week's first close attempt (and its inventory seal) until a quiet hour, and the job 272 hook that runs it when the gate lifts.",
+  "tables": ["accounting_close_gates"],
+  "functions": [
+    "fn_accounting_close_gate_holds",
+    "fn_accounting_close_seal_held",
+    "fn_accounting_close_gate_lifted_unstarted"
+  ]
+}

@@ -1743,7 +1743,20 @@ test.describe('production Daily Missions certification', () => {
           '[aria-labelledby="challenge-reward-title"]',
           'Individual Reward Settlement Dialog'
         );
-        await reward.getByRole('button', { name: 'Continue' }).click();
+        const rewardHeading = reward.getByRole('heading', { name: 'Reward Settled' });
+        const continueButton = reward.getByRole('button', { name: 'Continue' });
+        await expect(rewardHeading).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(continueButton).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(reward).toHaveCount(0);
+        await expect(
+          page.locator(`#mission-card-${requestBody.p_challenge_row_ids[0]}`)
+        ).toBeFocused();
 
         await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
         await expect

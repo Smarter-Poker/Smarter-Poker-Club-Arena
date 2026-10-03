@@ -48,8 +48,11 @@ const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules();
+  // Written against the earlier 500-claim bound; the production bound (50)
+  // is pinned in aSlowHeartbeatHoldsOnlyItsOwnBatch.law.test.ts.
+  (await import('./leaseHeartbeatBatches.js'))._setHeartbeatClaimsPerRequestForTests(500);
   rpc.mockReset();
   now = 0;
   delete process.env.ENGINE_PG_LISTEN_URL; // the production configuration on 2026-09-26

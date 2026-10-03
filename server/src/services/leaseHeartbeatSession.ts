@@ -28,7 +28,8 @@
  *
  *   - One statement at a time per scope. The session sets statement_timeout
  *     to 8 s, and a local bound of 10 s drops a session whose socket went
- *     silent, so one bad statement can delay the next by at most that.
+ *     silent. A request does not wait more than 1 s behind a statement that
+ *     has not answered: it asks on the shared client instead (2026-10-03).
  *   - A lost session reconnects in the background with jittered backoff. The
  *     heartbeat loop never waits for a reconnect: while the session is down
  *     each request uses the shared client exactly as before.
@@ -205,6 +206,20 @@ function sessionSurvives(err: unknown): boolean {
   return !code.startsWith('08') && !code.startsWith('57P');
 }
 
+/** True when `turn` settles within `ms`; the timer never holds the process open. */
+async function settlesWithin(turn: Promise<void>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([turn.then(() => true as const), late]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 type SessionState = 'idle' | 'connecting' | 'ready' | 'disabled';
 
 class LeaseHeartbeatSession {
@@ -277,7 +292,18 @@ class LeaseHeartbeatSession {
     this.tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await prior;
+    /* A QUEUED BATCH DOES NOT WAIT OUT A STUCK ONE EITHER (2026-10-03). A pass
+       now sends several small batches (leaseHeartbeatBatches), so batches
+       queue here behind each other. Waiting more than a second for the turn
+       means the statement ahead has not answered: the same evidence as the
+       rule above, so this batch asks on the shared client instead of sitting
+       out the 8 s statement timeout. Its turn is still handed on in order
+       when the statement ahead settles, so the session never runs two. */
+    if (!(await settlesWithin(prior, LEASE_HEARTBEAT_HEDGE_TO_SHARED_AFTER_MS))) {
+      // `prior` never rejects (it is a turn, not a statement); the catch is for form.
+      void prior.then(release).catch(() => undefined);
+      return this.shared(args);
+    }
     try {
       const client = this.client;
       if (this.state !== 'ready' || !client) return await this.shared(args);

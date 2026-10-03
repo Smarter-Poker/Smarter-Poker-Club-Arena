@@ -40,6 +40,12 @@ const ticketPins = JSON.parse(
 const ticketPath = ticketPins.migration;
 const ticketMigration = read(ticketPath);
 const ticketScalar = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-scalar.sql');
+// The conservation scan's one-pass read (2026-10-03) reads the scalar's md5
+// as a preimage and rewrites fn_tournament_money_conservation, not the scalar;
+// tests/the-conservation-scan-reads-every-event-in-one-pass.law.test.ts pins it.
+const conservationPath = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/conservation-set-expectations.json')
+).migration;
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
 beforeAll(async () => {
@@ -344,7 +350,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        ![migrationPath, successorPath, inlinePath, incomePath, ticketPath].some(
+        ![migrationPath, successorPath, inlinePath, incomePath, ticketPath, conservationPath].some(
           (path) => file === path.split('/').at(-1)
         ) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&

@@ -1,0 +1,66 @@
+Horse Brain Phase 9: uncalled-money check (walks and one-player pots), predeclaration
+=====================================================================================
+
+Declared at: 2026-10-03T10:04:45Z (UTC), before any record of either window below was read for
+this check. Read so far: source (HandController.returnUncalledBet at
+origin/main, commit 5c7d15db = #5918, PokerEngine.calculatePots), git
+ancestry, and the auto-deploy workflow run list.
+
+1. Windows and releases
+-----------------------
+POST (fix): hand_history.created_at in [2026-10-03T06:00:00Z, 2026-10-03T09:00:00Z).
+  Releases that can have served it: 5c7d15db (serving from 05:55:22Z per the
+  coordinator; deploy run 37098736112 finished 06:02:55Z), 58c8219e (two
+  failed deploy runs 05:57-06:58Z), 60c4f7e8 (run 37102322532, finished
+  06:57:41Z), d0a17759 (container started 08:55:56Z). Every one contains
+  5c7d15db (git merge-base --is-ancestor). If a rollback to an image without
+  5c7d15db happened inside the window it is not visible in the sources read;
+  that is stated as a limitation, not assumed away.
+PRE (baseline): [2026-10-03T00:00:00Z, 2026-10-03T03:00:00Z), wholly on
+  f5322827 (declaration-classic.txt section 1), which does not contain 5c7d15db.
+
+2. Population W (per window, every natural hand, any variant, any mode)
+-----------------------------------------------------------------------
+W1 walks: hands in which every player action other than forced posts
+  (sb, bb, ante, post, bomb_ante) and uncalled returns is a fold, every fold
+  is preflop, at least one fold exists, a bb was posted, and there is no
+  straddle or kill blind (everyone folded to the big blind).
+W2 one-player pots: hands whose recorded pots contain at least one pot with
+  exactly one eligible player.
+W = W1 union W2. Nothing is sampled. Split by mode (cash chips, cash
+diamonds, tournament) and variant.
+Export: psql on the operator Mac, SELECT only, BEGIN READ ONLY ... ROLLBACK,
+statement_timeout 170 s, one 15-minute slice per statement; an interval that
+cannot be read even in 5-minute slices is reported as unknown_not_exported.
+
+3. Rule (engine's stated rule, returnUncalledBet at 5c7d15db)
+-------------------------------------------------------------
+Contributions are replayed from actions before any return (same replay as
+p9-natural-compare.mts). Matched contribution = total - shared dead money,
+where shared dead money is a shared big blind ante (ante type big_blind) and
+a dead blind post; individual antes (per_player ante, bomb_ante) count as
+matched. With at least two contributors, a UNIQUE non-folded top contributor
+has uncalled excess = top matched - second matched. That excess must be
+refunded (a recorded return to that player of exactly that amount, to the
+cent) and must never form a one-player pot. A one-player pot is allowed only
+when it is genuinely contested money as calculatePots defines it: its level,
+built from post-refund matched contributions, has at least one other
+(folded) contributor, or it is the pooled dead-money pot.
+Counts per window, mode and variant:
+  one-player pots (hands with one; pots), split genuine / uncontested-money;
+  walks with a refund equal to the expected excess;
+  walks with no refund and the excess recorded inside a one-player pot;
+  walks with no excess expected (nothing to refund);
+  any other refund disagreement (wrong amount, refund where none is due).
+Cash rake on W hands: expected per the engine's stated rules: no rake and no
+BBJ when no flop was dealt; otherwise rake = min(round(pot after refund x
+pct), cap tier by dealt), pct at most 5 heads-up, BBJ = feeBB x big blind
+when enabled, a flop was dealt and dealt >= minPlayersDealt; from the
+hand's captured configuration (none -> unknown). Tournament: rake 0, BBJ 0.
+Excluded/unknown by reason, never zero-filled: replay_disagrees_with_capture,
+unresolved_raise_amount, unhandled_action, ante_type_unknown, pots_not_recorded.
+
+4. Output
+---------
+Aggregates and hashed hand ids only, added as a small artifact on the PR
+#5945 branch.

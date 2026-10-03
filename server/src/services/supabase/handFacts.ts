@@ -215,6 +215,72 @@ const RIT_EVENT_TYPES = new Set([
   'insurance_offers',
 ]);
 
+/**
+ * ── EVERY ROW CARRIES ITS OWN IDENTITY AND ITS OWN CLOCK (2026-10-03) ────
+ *
+ * The Phase 9 natural evidence (docs/evidence/phase9/phase9-natural-evidence-
+ * 2026-10-03-f5322827.json) could not join these rows without guessing:
+ * single_run had no reason, all_accepted and result had no run count, and
+ * chooser_decided had no hand number, so it was joined by table, chooser and
+ * a created_at window of offer -5 s to +45 s.
+ *
+ * And one chooser_decided row looked MISSING. It was not. Hand 20807344
+ * (plo6, 2026-10-03): its chooser_decided row was written with created_at
+ * 00:20:19.17 and its offer row with 00:20:32.76 - thirteen seconds AFTER the
+ * decision that answered it, and after that hand's result and all_accepted
+ * rows too. `created_at` is the database's insert time, and each row is an
+ * independent fire-and-forget request, so rows land out of order by seconds
+ * under load. Every chooser path - the human request and the horse chooser,
+ * which calls the same respondToRIT - emits the row; the time-window join is
+ * what lost it.
+ *
+ * So: every row now names its hand and offer (hand_number, offer_id) and
+ * records the engine's own clock and order at emit time (event_at,
+ * event_seq), which the join must use instead of created_at. And because the
+ * write is still best-effort by design (telemetry must never affect a hand;
+ * a failed insert is swallowed, not retried), every OUTCOME row reconstructs
+ * the decision on its own: all_accepted and result carry the chooser and the
+ * agreed run count, single_run carries its reason, actor and decision, and
+ * result carries the number of boards actually dealt.
+ *
+ * Additive only: every pre-existing details field and the user_id rule are
+ * unchanged. Nothing here can carry a card - board cards, awards and
+ * distributions are deliberately not copied (hand_history owns those).
+ */
+let ritEventSeq = 0;
+
+const strOrNull = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+const numOrNull = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : null;
+const idsOrNull = (v: unknown): string[] | null =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
+
+/**
+ * PHASE 9 CLOSE-OUT 2026-10-03: insurance pricing inputs, audit-only.
+ *
+ * The Phase 9 natural evidence could not recompute any offered premium: the
+ * engine_insurance_offers row recorded the pot and an offer count, and the
+ * offer-event row records pot-share equity, while the premium is priced from
+ * strict-loss and push probabilities, the house margin and the insurable-pot
+ * deductions. The engine now attaches one pricing record per offer
+ * (ServerTableEngineRunout.broadcastInsuranceOffers) and this capture writes
+ * them into details.pricing.
+ *
+ * Keyed by the payload OBJECT in a WeakMap rather than carried as a payload
+ * field, so the records never reach the wire: the hub serialises the payload
+ * for every subscriber, and pricing internals are not table-facing data. The
+ * entry dies with the payload. The records hold no cards, and the audit row's
+ * user_id stays null, so no client policy can read it.
+ */
+const insuranceOfferPricing = new WeakMap<object, Record<string, unknown>[]>();
+
+export function attachInsuranceOfferPricing(
+  payload: object,
+  pricing: Record<string, unknown>[]
+): void {
+  insuranceOfferPricing.set(payload, pricing);
+}
+
 export function captureRitEvent(tableId: string, payload: Record<string, unknown>): void {
   try {
     const type = typeof payload?.type === 'string' ? payload.type : '';
@@ -237,6 +303,27 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
           chosen_runs: payload.chosenRuns ?? null,
           pot: payload.pot ?? null,
           offers: Array.isArray(payload.offers) ? (payload.offers as unknown[]).length : null,
+          // ── 2026-10-03, additive (see the block above) ──
+          telemetry_version: 2,
+          event_at: new Date().toISOString(),
+          event_seq: ++ritEventSeq,
+          hand_id: strOrNull(payload.hand_id),
+          offer_id: strOrNull(payload.offer_id),
+          actor: strOrNull(payload.actor),
+          decision: strOrNull(payload.decision),
+          chooser_id: strOrNull(payload.chooser_id) ?? strOrNull(payload.chooserPlayerId),
+          reason: strOrNull(payload.reason),
+          outcome_reason: strOrNull(payload.outcome_reason),
+          requested_runs: numOrNull(payload.requested_runs),
+          chooser_runs: numOrNull(payload.chooser_runs),
+          agreed_runs: numOrNull(payload.agreed_runs),
+          runs_dealt: numOrNull(payload.runs_dealt),
+          boards_dealt: Array.isArray(payload.boards) ? (payload.boards as unknown[]).length : null,
+          accepted_ids: idsOrNull(payload.accepted_ids),
+          waiting_for: idsOrNull(payload.waiting_for ?? payload.waitingFor),
+          ...(type === 'insurance_offers'
+            ? { pricing: insuranceOfferPricing.get(payload) ?? null }
+            : {}),
         },
       })
     ).catch(() => {

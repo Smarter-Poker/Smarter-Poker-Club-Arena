@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-a5/rake-basis-windows. Migration 20261003224956_the_open_week_rake_basis_is_refreshed_two_hours_at_a_time: job 123's open-week rake basis from saved two-hour earned-plan windows.",
+  "tables": ["union_rake_basis_windows"],
+  "functions": ["fn_union_rake_basis_windowed"]
+}

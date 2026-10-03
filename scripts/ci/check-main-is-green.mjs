@@ -56,6 +56,24 @@
  * lives in `SELF_ALARMING_WORKFLOWS`, where it is declared rather than
  * guessed. Full reasoning: scripts/ci/lib/workflowVerdicts.mjs.
  *
+ * ── AND ITS OWN VERDICT IS NOT EVIDENCE ABOUT THE ESTATE (2026-10-03) ────────
+ * This file reads EVERY active workflow, including the one it is running
+ * inside. So its own exit code decided its own next input, and green was
+ * unreachable by arithmetic: with the whole estate green, the previous run's
+ * failure still put `Production Integrity Audit` in `red`, past the threshold,
+ * and alarmed. Measured on run 37098827354 as "112 consecutive failed
+ * verdict(s) over at least 21.5 days, no green run in the window", reported by
+ * a job inside that workflow.
+ *
+ * The 2026-09-30 registry cannot reach this by its own rule - an entry names
+ * the label of the issue THAT workflow files and never
+ * MAIN_HEALTH_READER_LABEL, and the main-health issue is this workflow's only
+ * write path - so this is 10.86 rule 4, the same trap one level up. Removed by
+ * deleting the circular part ONLY: this detector's own workflow stops alarming
+ * when every failing job in its latest verdict is the job that runs this
+ * detector, and alarms as before the moment any other job of it is red.
+ * `onlyFailingJobIs` in the lib carries the full reasoning.
+ *
  * Usage:
  *   node scripts/ci/check-main-is-green.mjs                # 6h threshold
  *   MAIN_RED_HOURS=24 node scripts/ci/check-main-is-green.mjs
@@ -70,7 +88,9 @@ import {
   collectActiveWorkflowRuns,
   groupByWorkflow,
   issueCarriesWorkflowAlarm,
+  MAIN_HEALTH_JOB_NAME,
   MAIN_HEALTH_READER_LABEL,
+  onlyFailingJobIs,
   RED_STATE,
   redWorkflows,
   SELF_ALARMING_WORKFLOWS,
@@ -81,6 +101,10 @@ const REPO = process.env.GITHUB_REPOSITORY || '';
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
 const HOURS = Number(process.env.MAIN_RED_HOURS || 6);
 const BRANCH = process.env.MAIN_RED_BRANCH || 'main';
+// The workflow this detector is running inside, as Actions names it - the same
+// string the run inventory reports. Empty outside Actions, which disables the
+// self-reference check entirely rather than guessing a name.
+const SELF_WORKFLOW = (process.env.GITHUB_WORKFLOW || '').trim();
 
 /**
  * ── THREE OUTCOMES, BECAUSE TWO CLOSED A REAL ALARM (2026-09-07) ────────────
@@ -218,6 +242,35 @@ async function isSelfAlarming(red) {
   });
 }
 
+/**
+ * Is this red workflow nothing but this detector's own reflection?
+ *
+ * Only ever true for the workflow named by `GITHUB_WORKFLOW`, and only when the
+ * Actions jobs API says every failing job in its latest verdict was
+ * `MAIN_HEALTH_JOB_NAME`. Any other failing job - a live-drift reader, chip
+ * conservation, the engine provenance audit - is a real finding and must still
+ * alarm, so this returns false and the workflow is classified exactly as any
+ * other.
+ *
+ * Unreadable is not "nothing else failed" (10.86 rule 2): every failure path
+ * here returns false, which is the loud direction.
+ */
+async function isSelfReferential(red) {
+  if (!SELF_WORKFLOW || red?.name !== SELF_WORKFLOW) return false;
+  const runId = red?.latestRunId;
+  if (!runId) return false;
+  let jobs;
+  try {
+    const d = await api(
+      `/repos/${REPO}/actions/runs/${encodeURIComponent(String(runId))}/jobs?per_page=100`
+    );
+    jobs = d?.jobs;
+  } catch {
+    return false;
+  }
+  return onlyFailingJobIs(jobs, MAIN_HEALTH_JOB_NAME);
+}
+
 const hrs = (h) => (h >= 48 ? `${(h / 24).toFixed(1)} days` : `${h.toFixed(1)}h`);
 
 console.log(
@@ -239,6 +292,7 @@ for (const r of red) {
   const verdict = classifyRedState(r, {
     tracked: isAlreadyReported(r.name, r.since),
     selfAlarmed: await isSelfAlarming(r),
+    selfReferential: await isSelfReferential(r),
     thresholdHours: HOURS,
   });
   r.state = verdict.state;
@@ -258,7 +312,11 @@ for (const r of red) {
       ? " [already named by this detector's own open issue - reported again, not subtracted]"
       : r.state === RED_STATE.SELF_ALARMING
         ? ` [declared self-alarming: ${r.declared?.reason || 'no reason recorded'}]`
-        : '';
+        : r.state === RED_STATE.SELF_REFERENTIAL
+          ? ` [this detector's own workflow; the only failing job in its latest verdict is ` +
+            `"${MAIN_HEALTH_JOB_NAME}", so reporting it would be this detector reading its own ` +
+            `exit code - printed, never subtracted from the estate's health]`
+          : '';
   console.log(
     `  ${r.state} ${r.name} - ${r.consecutive} consecutive failed verdict(s) over ` +
       `${r.windowLimited ? 'at least ' : ''}${hrs(r.hours)}` +
@@ -272,11 +330,25 @@ for (const r of red) {
 }
 console.log('');
 
+// A self-referential red is still ANNOUNCED, every run, on the run itself. The
+// durable issue carries this whole log, so the issue names it too; this is the
+// reader for the case where nothing alarms and the job goes green (10.86 rule 3).
+for (const r of red.filter((x) => x.state === RED_STATE.SELF_REFERENTIAL)) {
+  console.log(
+    `::warning title=This audit is red only because of its own verdict::${r.name} has been red ` +
+      `for ${hrs(r.hours)} over ${r.consecutive} consecutive verdict(s), and the only failing job ` +
+      `in its latest verdict is "${MAIN_HEALTH_JOB_NAME}". Nothing else in the estate is being ` +
+      `reported through it. ${r.url}`
+  );
+}
+
 if (overdue.length === 0) {
   const quiet = red.filter((r) => r.state === RED_STATE.SELF_ALARMING).length;
+  const mirrored = red.filter((r) => r.state === RED_STATE.SELF_REFERENTIAL).length;
   console.log(
     `${red.length} workflow(s) red on ${BRANCH}, none past ${HOURS}h that this detector owns: ` +
-      `${red.length - quiet} still fresh, ${quiet} declared self-alarming and currently speaking.`
+      `${red.length - quiet - mirrored} still fresh, ${quiet} declared self-alarming and ` +
+      `currently speaking, ${mirrored} this detector's own verdict reflected back at it.`
   );
   process.exit(0);
 }

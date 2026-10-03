@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/claude-a5/round2-windows. Migration 20261003141618_round_two_is_planned_two_hours_at_a_time: round 2's per-window plan, its combine and the scheduler hook that proves windows in attempts of their own.",
+  "functions": [
+    "fn_settle_accounting_commission_window",
+    "fn_settle_accounting_commission_advance",
+    "fn_settle_accounting_commission_combine",
+    "fn_accounting_close_windows_pending"
+  ]
+}

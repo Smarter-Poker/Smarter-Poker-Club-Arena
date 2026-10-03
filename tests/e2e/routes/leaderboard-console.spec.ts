@@ -172,6 +172,7 @@ for (const width of [393, 1440]) {
     await page.keyboard.press('Enter');
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowLeft');
+    // Ensure the reverse arrow transition is complete before Enter activates the focused tab.
     await expect(tabs.first()).toBeFocused();
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Enter');

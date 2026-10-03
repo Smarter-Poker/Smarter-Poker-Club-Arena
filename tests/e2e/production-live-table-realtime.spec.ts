@@ -70,6 +70,8 @@ const CASH_CASE_TAIL_MS = 15_000;
 /** Cash tables raced for the pre-navigation "next hand started" proof. */
 const CASH_PROGRESS_CANDIDATES = 8;
 const PRESENTATION_DEADLINE_MS = 3_000;
+/** Time to read the in-page journal; the accepted window stays PRESENTATION_DEADLINE_MS. */
+const PRESENTATION_READ_SLACK_MS = 10_000;
 const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const;
 
 /**
@@ -750,7 +752,12 @@ async function expectNextHandPresentation(
         };
       },
       {
-        timeout: PRESENTATION_DEADLINE_MS,
+        // The 3s deadline is enforced on the page's own record timestamps
+        // above. Run 37031008860: the deal was recorded 0.9s after
+        // hand_started, but the WebKit main thread held the evaluate that
+        // read it for 2.3s, so it returned after a 3s poll had already given
+        // up. Allow time to READ the journal; never widen what it accepts.
+        timeout: PRESENTATION_DEADLINE_MS + PRESENTATION_READ_SLACK_MS,
         intervals: [50, 100, 250],
         message:
           `${phase}: hand ${cycle.nextHandNumber} started, but its deal-card animation ` +

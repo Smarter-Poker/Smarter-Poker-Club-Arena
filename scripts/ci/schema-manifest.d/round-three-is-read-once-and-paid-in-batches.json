@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/claude-a5/round3-batches. Migration 20261003162308_round_three_is_read_once_and_paid_in_batches: round 3's windowed source read, its certificates' read, the kept read's combine and the batched payout of a chunked close.",
+  "functions": [
+    "fn_settle_accounting_rakeback_window",
+    "fn_settle_accounting_rakeback_pairs",
+    "fn_settle_accounting_rakeback_plan",
+    "fn_settle_accounting_rakeback_advance",
+    "fn_settle_accounting_rakeback_plan_get"
+  ]
+}

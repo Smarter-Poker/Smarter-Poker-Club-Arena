@@ -41,6 +41,26 @@
  * So: the backlog warns and, past a bound, fails on its own terms; the
  * incident still fails and is still the only thing that raises the incident
  * issue. Two signals, two shapes, one job.
+ *
+ * ---------------------------------------------------------------------------
+ * AND THEN THE BACKLOG HAD NO READER (added 2026-10-03).
+ *
+ * Separating the two verdicts was right and it left the same trap one level up
+ * (CLAUDE.md 10.86 rule 4). The backlog's only output was a `::warning` in a
+ * scheduled run, which nothing reads, so the FIRST thing a person could see
+ * was this job going red on the fourteenth day - arriving through
+ * `check-main-is-green` as "Schema Integrity Audit has been red", shaped
+ * exactly like the incident and masked outright by any open issue naming this
+ * workflow. That is the failure the two issue steps in this job were written
+ * to prevent, and the backlog did not copy them either.
+ *
+ * It then happened. The anchor stopped at 2026-09-18 and nobody heard a word
+ * until 2026-10-03, when fourteen unanchored days crossed the bound - run
+ * 37110065144. Every one of the 48 anchored days still hashed the same.
+ *
+ * So the backlog now has its own reader: its own issue, its own title, filed
+ * at a threshold derived from the measured one-line-a-day cadence, closed when
+ * git catches up, and never mistakable for the incident's issue.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -129,6 +149,32 @@ describe('a ledger anchor that is behind is not a ledger that changed', () => {
     expect(YAML).toContain("if: failure() && steps.anchor.outputs.verdict == 'changed'");
     expect(YAML).not.toContain("if: failure() && steps.anchor.outcome == 'failure'");
     expect(YAML).toContain('Ledger attestation: an anchored day now hashes differently');
+  });
+
+  it('the backlog has a reader of its own, well before the hard bound', () => {
+    // A ::warning in a scheduled run is not a reader (CLAUDE.md 10.86 rule 3).
+    expect(ANCHOR_STEP).toContain('BACKLOG_ISSUE_AT');
+    expect(ANCHOR_STEP_CODE).toMatch(/if \[ "\$NEW" -ge "\$BACKLOG_ISSUE_AT" \]/);
+    expect(ANCHOR_STEP_CODE).toContain('backlog_alarm=yes');
+
+    // Set BEFORE the hard bound fails the step, or a backlog that has already
+    // crossed fourteen days would reach the red run and nobody else.
+    const alarmAt = ANCHOR_STEP_CODE.indexOf('backlog_alarm=yes');
+    const failAt = ANCHOR_STEP_CODE.indexOf('UNANCHORED_BACKLOG_FAILS_AT" ]');
+    expect(alarmAt).toBeGreaterThan(-1);
+    expect(failAt).toBeGreaterThan(alarmAt);
+
+    // The threshold is derived, not guessed, and the derivation is beside it.
+    expect(ANCHOR_STEP).toMatch(/one line a day/);
+
+    // Its own issue, with its own title, so neither verdict can be mistaken
+    // for - or closed by - the other.
+    expect(YAML).toContain('Ledger attestation: attested days are not anchored in git');
+    expect(YAML).toContain("if: always() && steps.anchor.outputs.backlog_alarm == 'yes'");
+    expect(YAML).toContain("if: always() && steps.anchor.outputs.verdict == 'clean'");
+    const backlogTitle = 'Ledger attestation: attested days are not anchored in git';
+    const incidentTitle = 'Ledger attestation: an anchored day now hashes differently';
+    expect(backlogTitle).not.toEqual(incidentTitle);
   });
 
   it('the anchor file is well formed and carries every day it claims', () => {

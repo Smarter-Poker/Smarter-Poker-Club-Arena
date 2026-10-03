@@ -255,6 +255,32 @@ const numOrNull = (v: unknown): number | null =>
 const idsOrNull = (v: unknown): string[] | null =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
 
+/**
+ * PHASE 9 CLOSE-OUT 2026-10-03: insurance pricing inputs, audit-only.
+ *
+ * The Phase 9 natural evidence could not recompute any offered premium: the
+ * engine_insurance_offers row recorded the pot and an offer count, and the
+ * offer-event row records pot-share equity, while the premium is priced from
+ * strict-loss and push probabilities, the house margin and the insurable-pot
+ * deductions. The engine now attaches one pricing record per offer
+ * (ServerTableEngineRunout.broadcastInsuranceOffers) and this capture writes
+ * them into details.pricing.
+ *
+ * Keyed by the payload OBJECT in a WeakMap rather than carried as a payload
+ * field, so the records never reach the wire: the hub serialises the payload
+ * for every subscriber, and pricing internals are not table-facing data. The
+ * entry dies with the payload. The records hold no cards, and the audit row's
+ * user_id stays null, so no client policy can read it.
+ */
+const insuranceOfferPricing = new WeakMap<object, Record<string, unknown>[]>();
+
+export function attachInsuranceOfferPricing(
+  payload: object,
+  pricing: Record<string, unknown>[]
+): void {
+  insuranceOfferPricing.set(payload, pricing);
+}
+
 export function captureRitEvent(tableId: string, payload: Record<string, unknown>): void {
   try {
     const type = typeof payload?.type === 'string' ? payload.type : '';
@@ -295,6 +321,9 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
           boards_dealt: Array.isArray(payload.boards) ? (payload.boards as unknown[]).length : null,
           accepted_ids: idsOrNull(payload.accepted_ids),
           waiting_for: idsOrNull(payload.waiting_for ?? payload.waitingFor),
+          ...(type === 'insurance_offers'
+            ? { pricing: insuranceOfferPricing.get(payload) ?? null }
+            : {}),
         },
       })
     ).catch(() => {

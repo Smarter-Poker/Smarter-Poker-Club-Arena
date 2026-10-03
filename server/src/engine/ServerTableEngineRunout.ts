@@ -246,17 +246,44 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected emitRitAllAccepted(allPlayerIds: string[], runs: number): void {
     try {
+      const st = this.runItTwiceEngine.getState(this.tableId);
       this.hub?.emitEvent(this.tableId, {
         type: 'rit_all_accepted',
         table_id: this.tableId,
         hand_number: this.handCount,
         allPlayerIds,
         runs,
+        // RIT TELEMETRY COMPLETENESS 2026-10-03 (Phase 9 close-out): the
+        // outcome row alone reconstructs the decision - who chose, how many
+        // runs everyone agreed to, and who agreed - so a lost or misordered
+        // chooser_decided row never leaves the join guessing. Additive only.
+        offer_id: this.ritOfferId(),
+        chooser_id: st?.chooserPlayerId ?? null,
+        chosenRuns: runs,
+        agreed_runs: runs,
+        accepted_ids: st ? [...st.acceptedBy] : [...allPlayerIds],
+        outcome_reason: 'all_accepted',
       });
     } catch {
       /* broadcast failure is non-fatal */
     }
   }
+
+  /**
+   * The identity of this hand's Run It Twice offer: the RunItTwiceEngine key,
+   * `${tableId}:${handNumber}`, which is also exactly the (table_id,
+   * hand_number) key hand_history is joined on. No hand_history UUID exists
+   * yet while the offer is live (settlement mints it), so this is the hand
+   * identity every engine_rit_* row can carry.
+   */
+  protected ritOfferId(): string {
+    return (
+      this.runItTwiceEngine.getState(this.tableId)?.handId ?? `${this.tableId}:${this.handCount}`
+    );
+  }
+
+  /** The hand whose extra boards the table forced (run_it_mode mandatory_*). */
+  protected ritMandatoryHand = -1;
 
   /**
    * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins
@@ -359,6 +386,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.hub?.emitEvent(this.tableId, {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
+        // RIT TELEMETRY COMPLETENESS 2026-10-03: this row had no hand number,
+        // so the Phase 9 evidence had to join it by table, chooser and time.
+        hand_number: this.handCount,
+        offer_id: this.ritOfferId(),
+        actor: userId,
+        decision: 'runs',
+        requested_runs: runs,
         chooserPlayerId: userId,
         chosenRuns: state.chosenRuns,
         waitingFor: state.allPlayerIds.filter((pid) => !state.acceptedBy.has(pid)),
@@ -390,6 +424,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           type: 'rit_response_update',
           table_id: this.tableId,
           hand_number: this.handCount,
+          offer_id: this.ritOfferId(),
+          actor: userId,
+          decision: 'accept',
+          chooser_id: stateNow.chooserPlayerId ?? null,
+          chooser_decided: stateNow.chooserDecided,
           player_id: userId,
           accepted_ids: [...stateNow.acceptedBy],
           waiting_for: stateNow.allPlayerIds.filter((pid) => !stateNow.acceptedBy.has(pid)),
@@ -1251,6 +1290,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             pot,
             forcedRuns
           );
+          this.ritMandatoryHand = this.handCount;
           this.hub?.emitEvent(this.tableId, {
             type: 'rit_mandatory',
             table_id: this.tableId,
@@ -1258,6 +1298,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             allPlayerIds,
             pot,
             runs: forcedRuns,
+            offer_id: this.ritOfferId(),
+            agreed_runs: forcedRuns,
+            outcome_reason: 'mandatory',
           });
           requestStandaloneEquity();
           void this.dealAndResolveRIT(allInPlayers);
@@ -1283,6 +1326,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           type: 'rit_offer',
           table_id: this.tableId,
           hand_number: this.handCount,
+          offer_id: this.ritOfferId(),
           chooserPlayerId,
           allPlayerIds,
           pot,
@@ -1776,12 +1820,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (this.ritSingleRunNotifiedHand === this.handCount) return;
     this.ritSingleRunNotifiedHand = this.handCount;
     try {
+      const st = this.runItTwiceEngine.getState(this.tableId);
       this.hub?.emitEvent(this.tableId, {
         type: 'rit_single_run',
         table_id: this.tableId,
         hand_number: this.handCount,
         reason,
         player_id: playerId ?? null,
+        // RIT TELEMETRY COMPLETENESS 2026-10-03: `reason` stays the client's
+        // vocabulary (TablePage maps it to copy); outcome_reason names the
+        // outcome for the record - `no_agreement` is only ever emitted when
+        // the shared offer window ran out, so it is recorded as `timeout`.
+        offer_id: this.ritOfferId(),
+        outcome_reason: reason === 'no_agreement' ? 'timeout' : reason,
+        actor: playerId ?? null,
+        decision:
+          reason === 'chooser_chose_one' ? 'runs' : reason === 'player_declined' ? 'decline' : null,
+        requested_runs: reason === 'chooser_chose_one' ? 1 : null,
+        chooser_id: st?.chooserPlayerId ?? null,
+        chooser_runs: st?.chooserDecided ? st.chosenRuns : null,
+        // A single run is one board dealt. Only `deck_too_short` follows an
+        // agreement to more: it keeps the agreed count beside the one dealt.
+        agreed_runs: reason === 'deck_too_short' ? (st?.chosenRuns ?? null) : 1,
+        runs_dealt: 1,
       });
     } catch {
       /* broadcast failure is non-fatal */
@@ -2451,6 +2512,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       table_id: this.tableId,
       hand_number: this.handCount,
       runs,
+      // RIT TELEMETRY COMPLETENESS 2026-10-03: what was agreed and what was
+      // actually dealt, side by side, plus who chose and why it ran N times.
+      offer_id: this.ritOfferId(),
+      agreed_runs: runs,
+      runs_dealt: boards.length,
+      chooser_id:
+        this.ritMandatoryHand === this.handCount
+          ? null
+          : (this.runItTwiceEngine.getState(this.tableId)?.chooserPlayerId ?? null),
+      outcome_reason: this.ritMandatoryHand === this.handCount ? 'mandatory' : 'all_accepted',
       boards: boards.map((b) => b.map((c) => `${c.rank}${c.suit}`)),
       distribution: Object.fromEntries(totalDistribution),
       // Exact winners of each run (splits/side pots included) for the

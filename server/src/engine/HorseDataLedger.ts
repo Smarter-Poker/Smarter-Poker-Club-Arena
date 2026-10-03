@@ -1804,6 +1804,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase10'
   ),
   receipt(
+    'phase10_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P10.3)',
+    'none, shadow change (never applied), authority-backed cash selection, controller acceptance or withdrawal before acceptance; never a tournament objective selection',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_authority_*',
+    'HorsePhase10Authority (HorseQualifiedAuthority) -> workerRuntime / client / ServerTableEngineTurns (P10.3)',
+    'protected-release PLO4 authority admission, local withdrawal and acceptance-time verdicts',
+    'Phase10'
+  ),
+  receipt(
     'phase11_seen',
     'HorseLogic -> evaluateOmahaVariantPolicy',
     'natural PLO5/PLO6/PLO8 decisions entering the versioned policy',

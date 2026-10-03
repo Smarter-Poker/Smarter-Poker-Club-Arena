@@ -78,7 +78,31 @@ vi.mock('./HorseQualifiedAuthority.js', async (importOriginal) => {
   };
 });
 
+// P10.3: the Phase 10 main gate is the same class with its own admission.
+const phase10Main = vi.hoisted(() => ({ admission: null as unknown }));
+vi.mock('./HorsePhase10Authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./HorsePhase10Authority.js')>();
+  const { HorsePhase8AuthorityGate } = await import('./HorseQualifiedAuthority.js');
+  return {
+    ...actual,
+    liveHorsePhase10Authority: new HorsePhase8AuthorityGate(
+      () =>
+        (phase10Main.admission as
+          | import('./HorseQualifiedAuthority.js').HorseAuthorityAdmission
+          | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      'turns-test-phase10-main',
+      'plo4-policy-round1-v3'
+    ),
+  };
+});
+
 import { HandController } from './HandController.js';
+import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
+import { qualifiedPhase10TestAdmission } from './HorsePhase10Authority.test-support.js';
 import {
   HorseQualifiedAuthorityHolder,
   liveHorsePhase8Authority,
@@ -1758,6 +1782,244 @@ describe('Phase 8.3 acceptance-time authority recheck', () => {
     // Later work admitted under that worker generation is now refused.
     expect(liveHorsePhase8Authority.check(liveHorsePhase8Authority.stamp(worker.receipt()))).toBe(
       'withdrawn'
+    );
+  });
+});
+
+describe('P10.3 acceptance-time Phase 10 authority recheck (the Phase 8 law)', () => {
+  let approval = 300;
+  beforeEach(() => {
+    enableBrainTelemetry();
+    drainFires();
+  });
+  function authority() {
+    approval += 1;
+    phase10Main.admission = qualifiedPhase10TestAdmission(approval);
+    liveHorsePhase10Authority.refresh();
+    const worker = new HorseQualifiedAuthorityHolder(
+      `turns-p10-worker-${approval}`,
+      'plo4-policy-round1-v3'
+    );
+    worker.apply(qualifiedPhase10TestAdmission(approval));
+    liveHorsePhase10Authority.observeWorker(worker.receipt());
+    return worker;
+  }
+  const receiptFor = (
+    worker: HorseQualifiedAuthorityHolder | null,
+    proposal: { action: string; amount: number | null },
+    baseline: { action: string; amount: number | null },
+    selected = true
+  ) => ({
+    version: 'plo4-policy-round1-v3',
+    mode: selected ? 'candidate' : 'shadow',
+    eligible: true,
+    fired: true,
+    changed: true,
+    applied: selected,
+    selection: selected ? 'selected' : 'shadow_change',
+    selectionRefusal: null,
+    authority: worker ? liveHorsePhase10Authority.stamp(worker.receipt()) : null,
+    authorityVerdict: null,
+    baselineAction: baseline.action,
+    baselineAmount: baseline.amount,
+    proposalAction: proposal.action,
+    proposalAmount: proposal.amount,
+    finalAction: selected ? proposal.action : baseline.action,
+    finalAmount: selected ? proposal.amount : baseline.amount,
+    utilityOwner: 'cash',
+    executionStatus: 'pending',
+    executedAction: null,
+    executedAmount: null,
+  });
+  const result = (snapshot: any, receipt: any): any => {
+    const decision: any = {
+      action: receipt.finalAction,
+      ...(receipt.finalAmount === null ? {} : { amount: receipt.finalAmount }),
+      thinkTime: 1000,
+      plo4Policy: receipt,
+    };
+    decision.executionWitness = createHorseExecutionWitness(snapshot, decision, {
+      requestId: 92,
+      lane: 'fast',
+      computeMs: 2,
+      governorScale: 1,
+    });
+    return {
+      type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 92 }),
+      requestId: 92,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision,
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    };
+  };
+
+  it('accepts a selected PLO4 proposal under usable authority and records selected, accepted and baseline actions', async () => {
+    const worker = authority();
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = receiptFor(
+      worker,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null }
+    );
+    let witness: any;
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+      const r = result(s, receipt);
+      witness = r.decision.executionWitness;
+      return r;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(performAction).toHaveBeenCalledOnce();
+    expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['bet', 20, 'horse_policy']);
+    expect(receipt).toMatchObject({
+      applied: true,
+      selection: 'controller_accepted',
+      authorityVerdict: 'usable',
+      executionStatus: 'intended',
+      executedAction: 'bet',
+      executedAmount: 20,
+    });
+    expect(witness.executionStatus).toBe('intended');
+    expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+    expect(witness.phase10Authority).toMatchObject({
+      continuationVersion: 'plo4-policy-round1-v3',
+      mode: 'candidate',
+      selection: 'controller_accepted',
+      verdict: 'usable',
+      candidate: { action: 'bet', amount: 20 },
+      reference: { action: 'check', amount: null },
+    });
+    expect(witness.acceptedActions[0].record).toMatchObject({ action: 'bet', amount: 20 });
+    expect(drainFires().map(({ feature }) => feature)).toEqual(
+      expect.arrayContaining([
+        'phase10_authority_verdict_usable',
+        'phase10_selection_controller_accepted',
+      ])
+    );
+  });
+
+  it.each(['withdrawn', 'stale_generation', 'restarted', 'refresh_failed'] as const)(
+    'Phase 10 authority %s during think time executes the shadow baseline exactly',
+    async (verdict) => {
+      const worker = authority();
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const receipt = receiptFor(
+        worker,
+        { action: 'check', amount: null },
+        { action: 'bet', amount: 20 }
+      );
+      let witness: any;
+      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+        const r = result(s, receipt);
+        witness = r.decision.executionWitness;
+        return r;
+      });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(receipt.executionStatus).toBe('pending');
+      if (verdict === 'withdrawn') liveHorsePhase10Authority.withdraw('test_withdrawal');
+      if (verdict === 'stale_generation') {
+        worker.apply({ status: 'refused', reason: 'unreadable_evidence', transient: true });
+        worker.apply(qualifiedPhase10TestAdmission(approval));
+        liveHorsePhase10Authority.observeWorker(worker.receipt());
+      }
+      if (verdict === 'restarted') liveHorsePhase10Authority.forgetWorker(worker.epoch);
+      if (verdict === 'refresh_failed') {
+        phase10Main.admission = {
+          status: 'refused',
+          reason: 'unreadable_evidence',
+          transient: true,
+        };
+        liveHorsePhase10Authority.refresh();
+      }
+      await vi.advanceTimersByTimeAsync(1250);
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['bet', 20, 'horse_policy']);
+      expect(receipt).toMatchObject({
+        applied: false,
+        selection: 'withdrawn_before_acceptance',
+        authorityVerdict: verdict,
+        finalAction: 'bet',
+        finalAmount: 20,
+        executionStatus: 'intended',
+        executedAction: 'bet',
+        executedAmount: 20,
+      });
+      expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+      expect(witness.executionStatus).toBe('intended');
+      expect(witness.phase10Authority).toMatchObject({
+        selection: 'withdrawn_before_acceptance',
+        verdict,
+        candidate: { action: 'check', amount: null },
+        reference: { action: 'bet', amount: 20 },
+      });
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+      expect(drainFires().map(({ feature }) => feature)).toEqual(
+        expect.arrayContaining([
+          'phase10_selection_withdrawn_before_acceptance',
+          `phase10_authority_verdict_${verdict}`,
+        ])
+      );
+    }
+  );
+
+  it('a controller refusal of a selected PLO4 proposal withdraws Phase 10 authority for this process', async () => {
+    const worker = authority();
+    const { engine, player, enginePlayer, state } = harness(false);
+    const receipt = receiptFor(
+      worker,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null }
+    );
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => result(s, receipt));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(receipt.executionStatus).toBe('fallback');
+    expect(receipt.selection).toBe('selected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('withdrawn');
+    expect(liveHorsePhase10Authority.check(liveHorsePhase10Authority.stamp(worker.receipt()))).toBe(
+      'withdrawn'
+    );
+  });
+
+  it('a shadow PLO4 receipt is never rechecked and executes the baseline it already carries', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = receiptFor(
+      null,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null },
+      false
+    );
+    let witness: any;
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+      const r = result(s, receipt);
+      witness = r.decision.executionWitness;
+      return r;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(performAction.mock.calls[0][1]).toBe('check');
+    expect(receipt).toMatchObject({
+      selection: 'shadow_change',
+      authorityVerdict: null,
+      executionStatus: 'intended',
+    });
+    expect(witness.phase10Authority).toMatchObject({
+      mode: 'shadow',
+      selection: 'shadow_change',
+      verdict: null,
+      candidate: { action: 'bet', amount: 20 },
+      reference: { action: 'check', amount: null },
+    });
+    expect(drainFires().map(({ feature }) => feature)).not.toContain(
+      'phase10_authority_verdict_usable'
     );
   });
 });

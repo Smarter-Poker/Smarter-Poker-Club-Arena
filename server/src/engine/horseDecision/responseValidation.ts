@@ -10,6 +10,7 @@ import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
 import { PHASE8_POLICY } from '../HorseTournamentPostflop.js';
 import { horseAuthorityReceiptIsWellFormed } from '../HorseQualifiedAuthority.js';
+import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -408,6 +409,57 @@ export function horsePhase8LedgerIsValid(value: unknown, decision: RecordValue):
   );
 }
 
+/**
+ * P10.3: the PLO4 receipt's selection as the worker returns it. A changed
+ * action is legitimate only as an authority-backed cash selection: candidate
+ * mode, a usable worker Phase 10 authority receipt for the running pack
+ * version, cash utility ownership (never a tournament objective decision) and
+ * the final action equal to the proposal. Acceptance-time fields stay unset.
+ * A receipt retained before P10.3 carries no selection and claims no
+ * authority, so it may not carry an applied candidate either.
+ */
+export function horsePhase10SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (!record(value)) return false;
+  const wager = (action: unknown) => action === 'bet' || action === 'raise';
+  if (!Object.hasOwn(value, 'selection'))
+    return (
+      value.applied !== true &&
+      !Object.hasOwn(value, 'authority') &&
+      !Object.hasOwn(value, 'authorityVerdict')
+    );
+  const authority = value.authority;
+  if (
+    !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.changed !== 'boolean' ||
+    !['shadow', 'candidate'].includes(value.mode as string) ||
+    (value.authorityVerdict !== undefined && value.authorityVerdict !== null) ||
+    (value.selectionRefusal !== undefined &&
+      value.selectionRefusal !== null &&
+      value.selectionRefusal !== 'illegal_candidate') ||
+    (authority !== undefined &&
+      authority !== null &&
+      (!horseAuthorityReceiptIsWellFormed(authority) ||
+        authority.continuationVersion !== PLO4_POLICY_PACK.version))
+  )
+    return false;
+  if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
+    return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.selection === 'selected' &&
+    value.utilityOwner === 'cash' &&
+    decision.action === value.proposalAction &&
+    decision.action === value.finalAction &&
+    (!wager(decision.action) ||
+      ((decision.amount ?? null) === value.proposalAmount &&
+        (decision.amount ?? null) === value.finalAmount))
+  );
+}
+
 /** Phase 7 owns the action Phase 8 received; an applied candidate replaces it. */
 function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'amount'> {
   const phase8 = value.tournamentPostflop;
@@ -449,6 +501,7 @@ export function horseDecisionReceiptIsValid(
   if (!horsePhase8LedgerIsValid(value.tournamentPostflop, value)) return false;
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
     return false;
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, value)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

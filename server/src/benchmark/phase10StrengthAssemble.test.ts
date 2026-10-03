@@ -18,6 +18,14 @@ import {
   plo4StrengthContractDigest,
   plo4StrengthRequiredShards,
 } from './Plo4StrengthContract.js';
+import { createHash } from 'node:crypto';
+import {
+  admitHorsePhase10QualifiedAuthority,
+  HORSE_PHASE10_DOMAIN,
+  HORSE_PHASE10_EVIDENCE_DIRECTORY,
+  HORSE_PHASE10_QUALIFICATION_SCHEMA,
+  type HorsePhase10AuthoritySelection,
+} from '../engine/HorsePhase10Authority.js';
 
 const exec = promisify(execFile);
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -145,6 +153,87 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('phase10-strength-assemble', () => {
+  it(
+    'P10.3: the Phase 10 admission reads the real assembler output and never selects a development assembly',
+    async () => {
+      const outcome = await assemble(`--out=${outDir()}`, '--development');
+      expect(outcome.code).toBe(0);
+      const qualificationPath = 'docs/evidence/phase10/phase10-qualification-2026-10-03.json';
+      const bytes = readFileSync(path.join(repo, qualificationPath));
+      const file = JSON.parse(bytes.toString('utf8'));
+      expect(file.schema).toBe(HORSE_PHASE10_QUALIFICATION_SCHEMA);
+      expect(file.domain).toBe(HORSE_PHASE10_DOMAIN);
+      expect(file.evidencePath.startsWith(HORSE_PHASE10_EVIDENCE_DIRECTORY)).toBe(true);
+      expect(qualificationPath.startsWith(HORSE_PHASE10_EVIDENCE_DIRECTORY)).toBe(true);
+      const reader = { read: (relative: string) => readFileSync(path.join(repo, relative)) };
+      const now = Date.parse('2026-10-04T01:00:00.000Z');
+      const selectionFor = (
+        qualification: Buffer,
+        overrides: Partial<HorsePhase10AuthoritySelection> = {}
+      ): HorsePhase10AuthoritySelection => ({
+        schema: 'horse-qualified-authority-selection-v1',
+        phase: 'phase10',
+        sourceSha: HEAD,
+        packVersion: file.packVersion,
+        contractVersion: file.contractVersion,
+        contractDigest: file.contractDigest,
+        domain: file.domain,
+        qualificationPath,
+        qualificationSha256: createHash('sha256').update(qualification).digest('hex'),
+        approvalGeneration: 1,
+        issuedAt: '2026-10-04T00:00:00.000Z',
+        expiresAt: null,
+        withdrawn: null,
+        ...overrides,
+      });
+      const digest = plo4StrengthContractDigest();
+      // The assembler's own development file: refused, whatever selects it.
+      expect(
+        admitHorsePhase10QualifiedAuthority(selectionFor(bytes), reader, now, digest)
+      ).toMatchObject({ status: 'refused', reason: 'not_qualified' });
+      // Shape compatibility, in this temporary directory only (never committed):
+      // the same real file relabelled as a contract-mode cash qualification is
+      // read field for field, bound to its digest, source and strength record.
+      const relabelled = Buffer.from(
+        JSON.stringify({
+          ...file,
+          qualified: true,
+          mode: 'contract',
+          objectives: { ...file.objectives, cash: { qualified: true, status: 'measured' } },
+        })
+      );
+      writeFileSync(path.join(repo, qualificationPath), relabelled);
+      const admitted = admitHorsePhase10QualifiedAuthority(
+        selectionFor(relabelled),
+        reader,
+        now,
+        digest
+      );
+      expect(admitted).toMatchObject({
+        status: 'admitted',
+        authority: {
+          phase: 'phase10',
+          sourceSha: HEAD,
+          contractDigest: digest,
+          policyDigest: file.policyDigest,
+        },
+      });
+      expect(
+        admitHorsePhase10QualifiedAuthority(
+          selectionFor(relabelled, { sourceSha: 'c'.repeat(40) }),
+          reader,
+          now,
+          digest
+        )
+      ).toMatchObject({ status: 'refused', reason: 'source_mismatch' });
+      writeFileSync(path.join(outDir(), 'strength.json'), '{}\n');
+      expect(
+        admitHorsePhase10QualifiedAuthority(selectionFor(relabelled), reader, now, digest)
+      ).toMatchObject({ status: 'refused', reason: 'hash_mismatch' });
+    },
+    RUN_TIMEOUT_MS
+  );
+
   it(
     'assembles a development matrix with the real verdict and never qualifies it',
     async () => {

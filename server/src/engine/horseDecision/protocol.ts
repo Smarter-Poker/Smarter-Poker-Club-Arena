@@ -377,6 +377,9 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   /** The worker's Phase 8 authority after this decision. Optional only for
    * injected test workers; absent is never usable authority. */
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
+   * same receipt shape and laws as Phase 8. Absent is never usable authority. */
+  phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
 }
 
 export interface DeepHorseDecisionResult extends HorseDecisionFence {
@@ -387,6 +390,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   computeMs: number;
   governorScale: number;
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
 }
 
 export interface HorseDecisionWorkerAck extends HorseDecisionFence {

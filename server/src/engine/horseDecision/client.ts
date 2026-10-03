@@ -29,6 +29,7 @@ import {
   onHorseExecutionFinalized,
 } from '../HorseExecutionWitness.js';
 import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
+import { liveHorsePhase10Authority } from '../HorsePhase10Authority.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -451,6 +452,8 @@ export class LiveHorseDecisionWorkerClient {
 
   /** Epoch of this client's worker Phase 8 authority, once it has reported. */
   private phase8WorkerEpoch: string | null = null;
+  /** P10.3: epoch of this client's worker Phase 10 authority. */
+  private phase10WorkerEpoch: string | null = null;
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
@@ -458,6 +461,7 @@ export class LiveHorseDecisionWorkerClient {
     // release selection. A transient read failure here is a refresh failure,
     // never a withdrawal and never a renewal.
     liveHorsePhase8Authority.refresh();
+    liveHorsePhase10Authority.refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -652,6 +656,18 @@ export class LiveHorseDecisionWorkerClient {
         noteFire(`phase8_authority_effects_${verdict}`);
         this.retireDecisionEffects(result, 'decision_finalized');
         return Promise.reject(new Error(`Horse plan commit refused: Phase 8 authority ${verdict}`));
+      }
+    }
+    // P10.3: the same effect law for a selected PLO4 candidate.
+    const phase10 = result.decision.plo4Policy;
+    if (phase10?.applied) {
+      const verdict = liveHorsePhase10Authority.check(phase10.authority);
+      if (verdict !== 'usable') {
+        noteFire(`phase10_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 10 authority ${verdict}`)
+        );
       }
     }
     const request: CommitDecisionEffectsRequest = {
@@ -1256,6 +1272,14 @@ export class LiveHorseDecisionWorkerClient {
       const phase8Ledger = message.decision.tournamentPostflop;
       if (phase8Ledger?.authority)
         phase8Ledger.authority = liveHorsePhase8Authority.stamp(phase8Ledger.authority);
+      // P10.3: mirror and stamp the Phase 10 receipt by the same law.
+      if (message.phase10Authority) {
+        this.phase10WorkerEpoch = message.phase10Authority.epoch;
+        liveHorsePhase10Authority.observeWorker(message.phase10Authority);
+      }
+      const plo4Receipt = message.decision.plo4Policy;
+      if (plo4Receipt?.authority)
+        plo4Receipt.authority = liveHorsePhase10Authority.stamp(plo4Receipt.authority);
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -1339,6 +1363,7 @@ export class LiveHorseDecisionWorkerClient {
     if (this.phase === 'failed' || this.phase === 'stopped') return;
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1485,6 +1510,7 @@ export class LiveHorseDecisionWorkerClient {
 
   private terminateWorker(): Promise<void> {
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

@@ -22,6 +22,7 @@ On 2026-10-03, `fn_tournament_money_conservation` had 22 open alerts. None of th
 - **Tickets.** A seat's ticket is read from its award row or, when there is no award row, from the payout row's `ticket_id`. A ticket id that is not a well-formed uuid is treated as no ticket, never cast, so one malformed row cannot break the read for every event. Production has 1,102 such rows today and none is malformed.
 - **House corrections.** A house `correction` leg into the event's prize liability (club treasury or union bank) now counts as funding. It is a separate term added alongside the overlay, so an event with both an overlay and a correction counts both. A player's leg or a settlement-suspense leg never counts as house funding.
 - **Both paths.** `fn_pay_backed_payout_shortfalls` reads tickets and house corrections the same way, through a `house_corrections` CTE. The batch path and the per-event path still compute the same figure.
+- **Authority, restated.** The migration restates the scalar's grants where it declares the function, as every earlier declaration did: closed to `PUBLIC`, `anon` and `authenticated`, executable by `service_role`. `CREATE OR REPLACE` keeps the ACL, so on production this is the state already held (`{postgres=X, service_role=X}`), and the regression test refuses any other grant or revoke.
 
 No chip moves, nothing is backfilled, and no job is added (CLAUDE.md 10.12). The hourly conservation job's first pass closes the 22 alerts once their delta reads zero.
 

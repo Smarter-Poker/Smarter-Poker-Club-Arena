@@ -194,6 +194,13 @@ AS $function$
   FROM m;
 $function$;
 
+-- The scalar's authority, restated where it is declared (as every earlier
+-- declaration did). CREATE OR REPLACE keeps the ACL, so on production this
+-- is the state already held: {postgres=X, service_role=X}, read 2026-10-03.
+-- GRANT/REVOKE are not in pgrst_ddl_watch's list, so this costs no reload.
+REVOKE ALL ON FUNCTION public.fn_tournament_conservation_delta(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_conservation_delta(uuid) TO service_role;
+
 DO $batch$
 DECLARE
   v_src text;

@@ -277,25 +277,21 @@ groups:
             it and expect SpinDrawFairnessDrift to follow.
           runbook: 'docs/runbooks/spin-reserve-thin.md'
 
-      # This is the population of partly filled, open, unstarted Spins.
-      # The view exposes wait age but does not filter on the fill deadline
-      # or booked draws. A population above five for twenty minutes does
-      # not establish each member's age or its eligibility for cancellation.
+      # Population telemetry stays available, but only an overdue, undrawn
+      # member past the enabled product timeout is an expiry incident.
       - alert: SpinUnfilledBacklog
-        expr: poker_spin_unfilled_waits > 5
-        for: 20m
+        expr: poker_spin_expiry_overdue_waits > 0
+        for: 10m
         labels:
           severity: warning
           component: spin
         annotations:
-          summary: "{{ $value }} Spins remain open with a partially filled field"
+          summary: "{{ $value }} Spins remain overdue and eligible for unfilled expiry"
           description: |
-            v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins
-            with no recorded start and between one live seat and one fewer
-            than capacity. It does not filter wait age, policy or booked draws.
-            Inspect each board's oldest_seat_at, spin_fill_policy, draw and
-            hand evidence, and the actual fn_spin_expire_unfilled result.
-            A drawn or played game requires its continuation or settlement
-            authority. This count alone proves neither that expiry is due
-            nor that the expiry timer failed.
+            This candidate count includes only partly filled, open, unstarted
+            Spins older than the single enabled spin_fill_policy timeout. It
+            excludes booked draws, draw receipts, launch receipts and retained
+            hands. A disabled timeout produces zero. This observation does not
+            authorize cancellation or prove the expiry call failed; inspect its
+            actual result and preserve the continuation/settlement owner.
           runbook: 'docs/runbooks/spin-unfilled-backlog.md'

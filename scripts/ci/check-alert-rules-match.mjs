@@ -59,23 +59,21 @@ const CANARY = 'MonitoringCanary';
 const SPIN_RULE = 'SpinUnfilledBacklog';
 const SPIN_GROUP = 'spin-experience';
 const SPIN_FILE = '/etc/prometheus/spin-rules.yml';
-const SPIN_BLOCK_SHA256 = '53f0555e2fda6fe374a90737a7c6af8d25b389ac4501847aaeee5e9aa951b0e1';
+const SPIN_BLOCK_SHA256 = '3ca975c1e05ab5f75a93475497fa867588c227bcb885dfe1ca78878b7e8aa7ea';
 const SPIN_CONTRACT = {
-  query: 'poker_spin_unfilled_waits > 5',
-  duration: 1200,
+  query: 'poker_spin_expiry_overdue_waits > 0',
+  duration: 600,
   keepFiringFor: 0,
   labels: { severity: 'warning', component: 'spin' },
   annotations: {
-    summary: '{{ $value }} Spins remain open with a partially filled field',
+    summary: '{{ $value }} Spins remain overdue and eligible for unfilled expiry',
     description:
-      'v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins\n' +
-      'with no recorded start and between one live seat and one fewer\n' +
-      'than capacity. It does not filter wait age, policy or booked draws.\n' +
-      "Inspect each board's oldest_seat_at, spin_fill_policy, draw and\n" +
-      'hand evidence, and the actual fn_spin_expire_unfilled result.\n' +
-      'A drawn or played game requires its continuation or settlement\n' +
-      'authority. This count alone proves neither that expiry is due\n' +
-      'nor that the expiry timer failed.\n',
+      'This candidate count includes only partly filled, open, unstarted\n' +
+      'Spins older than the single enabled spin_fill_policy timeout. It\n' +
+      'excludes booked draws, draw receipts, launch receipts and retained\n' +
+      'hands. A disabled timeout produces zero. This observation does not\n' +
+      'authorize cancellation or prove the expiry call failed; inspect its\n' +
+      'actual result and preserve the continuation/settlement owner.\n',
     runbook: 'docs/runbooks/spin-unfilled-backlog.md',
   },
 };

@@ -8,21 +8,25 @@ served anything.
 ## What it means
 
 ```
-poker_spin_unfilled_waits > 5   for: 20m   severity: warning
+poker_spin_expiry_overdue_waits > 0   for: 10m   severity: warning
 ```
 
-More than five Spins have sat for twenty minutes open, unstarted and partly
-filled. It is a population count. As the rule's own description says, it does
-not filter on wait age, on the fill policy or on a booked draw, so it proves
-neither that any member is due for expiry nor that the expiry timer failed.
-Seated players in these games have paid their buy-in and are waiting.
+This is the actionable subset of the broader population gauge. It counts only
+partly filled, open, unstarted Spins whose oldest live seat passed the enabled
+`spin_fill_policy` timeout, with no booked draw, draw receipt, launch receipt or
+retained hand. A zero timeout disables the candidate count. The gauge is an
+observation, not cancellation authority and not proof the expiry call failed.
+The engine's expiry function remains the sole refund/cancellation owner.
 
 ## What the expression measures
 
-`fn_spin_metrics` counts every row of `v_spin_unfilled_waits`: Spins in
-REGISTERING or ANNOUNCED with `started_at` NULL and between one live seat and
-`max_players - 1` (default 3). The view also gives `oldest_seat_at`,
-`longest_wait` and `chips_locked` (`buy_in_amount * live_seats`).
+`poker_spin_unfilled_waits` remains population telemetry and counts every row
+of `v_spin_unfilled_waits`: Spins in REGISTERING or ANNOUNCED with
+`started_at` NULL and between one live seat and `max_players - 1` (default 3).
+`poker_spin_expiry_overdue_waits` narrows that population to candidates beyond
+the configured deadline and excludes draw/launch/played evidence. The view also
+gives `oldest_seat_at`, `longest_wait` and `chips_locked`
+(`buy_in_amount * live_seats`).
 
 Measured 2026-09-26 06:50 UTC with the query in step 1 below: 33 rows. 20
 were ordinary waits under the 30-minute policy (1,107.00 seated). The other 13
@@ -48,6 +52,7 @@ The timeout is the product rule, not a repair.
 ## First checks
 
 1. Split the backlog by what expiry will do with each row, read-only:
+
    ```sql
    SELECT w.tournament_id, w.club_id, w.live_seats, w.longest_wait, w.chips_locked,
           coalesce(t.spin_multiplier, 0) > 0 AS multiplier_set,
@@ -68,6 +73,7 @@ The timeout is the product rule, not a repair.
      launch evidence (`/health.spinLaunchParks`, the engine log for the id) and
      `docs/runbooks/spin-fleet-stalled.md`.
    - Not yet past the policy: ordinary waiting.
+
 2. The expiry's last result, from the engine log:
    `docker logs --since 1h club-arena-engine 2>&1 | grep -i 'unfilled-spin' | tail`.
 

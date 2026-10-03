@@ -36,7 +36,7 @@ function loaded() {
   const rules = groups[0].rules.filter((rule: any) => rule.alert === 'SpinUnfilledBacklog');
   expect(rules).toHaveLength(1);
   const rule = rules[0];
-  expect(rule.for).toBe('20m');
+  expect(rule.for).toBe('10m');
   return {
     status: 'success',
     data: {
@@ -50,7 +50,7 @@ function loaded() {
               type: 'alerting',
               name: rule.alert,
               query: rule.expr,
-              duration: 1200,
+              duration: 600,
               keepFiringFor: 0,
               labels: rule.labels,
               annotations: rule.annotations,
@@ -148,7 +148,7 @@ describe('the loaded Spin rule must carry the actual reporting correction', () =
   it('refuses stale selected source, missing/duplicate blocks and a changed source group', () => {
     expect(() =>
       compareSpinReportingContract(
-        source.replace('partially filled field', 'obsolete claim'),
+        source.replace('eligible for unfilled expiry', 'obsolete claim'),
         loaded()
       )
     ).toThrow('source changed');

@@ -52,6 +52,7 @@ const seeded = (over: Partial<SpinMetricsSnapshot> = {}): SpinMetrics => {
     secondsSinceLastStart: 12,
     openBoards: 9,
     unfilledWaits: 1,
+    expiryOverdueWaits: 2,
     reserveThinClubs: 0,
     reserveMinBalance: 63885.44,
     collectedAt: Date.now(),
@@ -79,6 +80,7 @@ describe('the engine exposes spin gauges', () => {
       'poker_spin_unpaid_settlements',
       'poker_spin_draw_booking_gaps',
       'poker_spin_unfilled_waits',
+      'poker_spin_expiry_overdue_waits',
       'poker_spin_reserve_thin_clubs',
       'poker_spin_reserve_min_balance',
       'poker_rake_attribution_gaps',
@@ -144,6 +146,30 @@ describe('the engine exposes spin gauges', () => {
     // can never read the database looks perfectly healthy forever.
     expect(stale).toBeGreaterThan(600);
   });
+
+  it('emits the exact enabled-policy expiry candidate count', async () => {
+    const m = seeded();
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: { expiry_overdue_waits: '3' },
+      error: null,
+    } as any);
+    await m.refresh();
+    expect(m.get().expiryOverdueWaits).toBe(3);
+    expect(m.toPrometheus().join('\n')).toContain('poker_spin_expiry_overdue_waits 3');
+  });
+
+  it.each([undefined, null, '', '   ', '01', '-1', 'not-a-count'])(
+    'preserves the last good snapshot for malformed actionable output %j',
+    async (value) => {
+      const m = seeded({ expiryOverdueWaits: 7 });
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: { expiry_overdue_waits: value },
+        error: null,
+      } as any);
+      await m.refresh();
+      expect(m.get().expiryOverdueWaits).toBe(7);
+    }
+  );
 
   it('a failed refresh keeps the last good snapshot rather than zeroing it', async () => {
     const m = seeded();
@@ -231,6 +257,36 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
    * week — the exact failure the tournament seat-first gauge was scoped to
    * avoid. Only growth may alert.
    */
+  it('alerts only on the expiry-eligible gauge, not ordinary wait population', () => {
+    const src = rules();
+    const start = src.indexOf('alert: SpinUnfilledBacklog');
+    const end = src.indexOf("runbook: 'docs/runbooks/spin-unfilled-backlog.md'", start);
+    const body = src.slice(start, end);
+    expect(body).toContain('expr: poker_spin_expiry_overdue_waits > 0');
+    expect(body).not.toContain('poker_spin_unfilled_waits');
+    expect(body).toContain('for: 10m');
+  });
+
+  it('pins every protection predicate in the expiry metric migration', () => {
+    const migration = read(
+      '../../../supabase/migrations/20261003030000_actionable_spin_expiry_overdue_metric.sql'
+    );
+    for (const predicate of [
+      'p.timeout_minutes > 0',
+      'w.oldest_seat_at < now() - make_interval(mins => p.timeout_minutes)',
+      "l.kind = 'jackpot_draw'",
+      'public.spin_draw_receipts',
+      'public.tournament_launch_receipts',
+      'public.hands h',
+      'from fill_policy p\n    left join (',
+      'count(w.tournament_id)::bigint as population',
+      "IF NOT has_function_privilege('service_role', 'public.fn_spin_metrics(integer)', 'EXECUTE')",
+      'r.expiry_overdue_waits IS NULL',
+    ]) {
+      expect(migration).toContain(predicate);
+    }
+  });
+
   it('alerts on NEW booking gaps, never on the closed historical eleven', () => {
     const src = rules();
     const expr = src

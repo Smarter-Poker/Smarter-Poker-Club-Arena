@@ -28,8 +28,8 @@
  * punctuality, measurable at all only since spin_reveal_lag_ms shipped) and
  * the depth of every spin repair queue — unpaid settlements, unattributed
  * rake, booking gaps, unfilled waits. Each of those already had a view and a
- * repair job; none of them had an alert, so a repair job that stopped running
- * would have looked exactly like a repair job with nothing to do.
+ * repair job. For unfilled Spins, the population gauge remains visible while
+ * the alert counts only deadline-expired, undrawn candidates.
  *
  * ── FAIL-CLOSED, LOUDLY (the TournamentMetrics precedent) ─────────────────
  * A failed read must never read as "zero of everything", which is
@@ -107,8 +107,10 @@ export interface SpinMetricsSnapshot {
   secondsSinceLastStart: number | null;
   /** Spin boards sitting in REGISTERING. Pairs with the number above. */
   openBoards: number;
-  /** Partly filled, open, unstarted Spins; the view does not filter wait age or draws. */
+  /** Partly filled, open, unstarted Spins; population telemetry, not an expiry alarm. */
   unfilledWaits: number;
+  /** Enabled-policy expiry candidates, excluding booked draws, receipts and retained hands. */
+  expiryOverdueWaits: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
   reserveThinClubs: number;
   /** Smallest reserve balance across clubs. null when no club has a pool. */
@@ -138,6 +140,7 @@ const EMPTY: SpinMetricsSnapshot = {
   secondsSinceLastStart: null,
   openBoards: 0,
   unfilledWaits: 0,
+  expiryOverdueWaits: 0,
   reserveThinClubs: 0,
   reserveMinBalance: null,
   collectedAt: 0,
@@ -197,7 +200,22 @@ export class SpinMetrics {
         const x = Number(v);
         return Number.isFinite(x) ? x : null;
       };
+      // Unlike the population counter, this drives an incident alert. Missing or
+      // malformed SQL output must retain the previous sample and age it as stale.
+      const expiryOverdueWaits = (v: unknown): number => {
+        const x =
+          typeof v === 'number'
+            ? v
+            : typeof v === 'string' && /^(0|[1-9]\d*)$/.test(v)
+              ? Number(v)
+              : NaN;
+        if (v === null || v === undefined || !Number.isSafeInteger(x) || x < 0) {
+          throw new Error('fn_spin_metrics returned invalid expiry_overdue_waits');
+        }
+        return x;
+      };
 
+      const overdueWaits = expiryOverdueWaits(row.expiry_overdue_waits);
       this.snapshot = {
         revealSpins: n(row.reveal_spins),
         revealP50Ms: f(row.reveal_p50_ms),
@@ -218,6 +236,7 @@ export class SpinMetrics {
         secondsSinceLastStart: f(row.seconds_since_last_start),
         openBoards: n(row.open_boards),
         unfilledWaits: n(row.unfilled_waits),
+        expiryOverdueWaits: overdueWaits,
         reserveThinClubs: n(row.reserve_thin_clubs),
         reserveMinBalance: f(row.reserve_min_balance),
         collectedAt: Date.now(),
@@ -345,8 +364,13 @@ export class SpinMetrics {
     );
     gauge(
       'poker_spin_unfilled_waits',
-      'Partly filled, open Spins with no recorded start; count includes all wait ages and booked draws',
+      'Partly filled, open Spins with no recorded start; population telemetry includes all wait ages and booked draws',
       s.unfilledWaits
+    );
+    gauge(
+      'poker_spin_expiry_overdue_waits',
+      'Enabled-policy, overdue, partially filled Spins with no draw, launch receipt or retained hand; candidate count only',
+      s.expiryOverdueWaits
     );
     gauge(
       'poker_spin_reserve_thin_clubs',

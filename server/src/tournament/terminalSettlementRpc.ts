@@ -87,6 +87,78 @@ interface TerminalSettlementRetryOptions {
   dealProposal?: { proposalId: string; revision: string };
   /** Enables a fresh authoritative inactivity check, never an unconditional downgrade. */
   legacyDealAuthority?: 'proposal_authority_not_active';
+  /**
+   * The host club whose bank scope the database serializes this finish on
+   * (fn_ca_lock_settlement_lane_for_finish). Attempts sharing it wait their
+   * turn in this process instead of in a lock queue; see withTerminalFinishLane.
+   * Defaults to the club the tournament's manager noted (noteTerminalFinishClub).
+   */
+  clubId?: string | null;
+}
+
+/**
+ * The host club of each tournament this process manages, noted when the
+ * manager loads its row. Bounded: the oldest notes are forgotten first, and a
+ * forgotten note only means the finish is sent ungated, as before.
+ */
+const terminalFinishClubs = new Map<string, string>();
+const TERMINAL_FINISH_CLUBS_KEPT = 10_000;
+
+export function noteTerminalFinishClub(tournamentId: string, clubId: unknown): void {
+  if (typeof clubId !== 'string' || !clubId) return;
+  terminalFinishClubs.delete(tournamentId);
+  terminalFinishClubs.set(tournamentId, clubId);
+  if (terminalFinishClubs.size > TERMINAL_FINISH_CLUBS_KEPT) {
+    const oldest = terminalFinishClubs.keys().next().value;
+    if (oldest !== undefined) terminalFinishClubs.delete(oldest);
+  }
+}
+
+/**
+ * ONE FINISH PER CLUB IS ASKED AT A TIME (2026-10-03).
+ *
+ * fn_complete_tournament_terminal takes F(scope) exclusively, the scope being
+ * the host club's union or the club, and holds it for the whole settlement:
+ * 2-12 s of CPU inside Postgres, measured on production 2026-10-03. Every
+ * other finish of that club waits in the lock queue, holding a PostgREST
+ * connection, and is cancelled by the 8 s lock_timeout (55P03), then retried
+ * with backoff behind newer arrivals. Once the elimination scheduler stopped
+ * rationing decided games (#5958) that became 28-66 cancelled finishes every
+ * fifteen minutes (0-4 before), and a finish's turn depended on when its
+ * backoff happened to fire.
+ *
+ * The database stays the authority and still serializes. This only keeps a
+ * second request for the same club from being sent while the first one is
+ * still in flight, in arrival order. A request without a club id is sent at
+ * once, as before. Each attempt is gated separately, so a backoff never holds
+ * the lane, and a request's own client deadline bounds how long it is held.
+ */
+const terminalFinishLaneTails = new Map<string, Promise<void>>();
+
+export async function withTerminalFinishLane<T>(
+  clubId: string | null | undefined,
+  run: () => Promise<T>
+): Promise<T> {
+  if (!clubId) return run();
+  const ahead = terminalFinishLaneTails.get(clubId) ?? Promise.resolve();
+  let release!: () => void;
+  const turn = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = ahead.then(() => turn);
+  terminalFinishLaneTails.set(clubId, tail);
+  try {
+    await ahead;
+    return await run();
+  } finally {
+    release();
+    if (terminalFinishLaneTails.get(clubId) === tail) terminalFinishLaneTails.delete(clubId);
+  }
+}
+
+/** Requests currently holding or waiting for a club's finish lane (tests and diagnostics). */
+export function terminalFinishLanesInUse(): number {
+  return terminalFinishLaneTails.size;
 }
 
 const defaultWait = (delayMs: number): Promise<void> =>
@@ -396,6 +468,8 @@ export async function requestTournamentTerminalReceipt(
         p_revision: dealProposal.revision,
       }
     : null;
+  const clubId =
+    options.clubId === undefined ? (terminalFinishClubs.get(tournamentId) ?? null) : options.clubId;
   let lastFailure = 'terminal settlement returned no receipt';
   let attemptedWrites = 0;
   // Attempts whose outcome the database did not state: a lost response, or a
@@ -435,9 +509,11 @@ export async function requestTournamentTerminalReceipt(
     }
     try {
       attemptedWrites++;
-      const { data, error } = proposalRequest
-        ? await terminalAuthority.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
-        : await terminalAuthority.rpc('fn_complete_tournament_terminal', request);
+      const { data, error } = await withTerminalFinishLane(clubId, async () =>
+        proposalRequest
+          ? await terminalAuthority.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
+          : await terminalAuthority.rpc('fn_complete_tournament_terminal', request)
+      );
       if (!error) {
         const receipt = await verifyTerminalReceipt(
           data,

@@ -1,3 +1,4 @@
+import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import { channelHub } from '../hub/ChannelHub.js';
 import {
@@ -5204,6 +5205,7 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      noteTerminalFinishClub(this.tournamentId, tournament.club_id);
       await this.readTournamentClub(tournament.club_id);
       this.assertLifecycleCurrent(lifecycle);
 
@@ -6650,6 +6652,7 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      noteTerminalFinishClub(this.tournamentId, tournament.club_id);
       // Restore the durable hold before admitting replacement dealers. Even
       // an expired countdown remains paused until its release is acknowledged.
       this.onBreak = tournament.on_break === true;
@@ -7604,6 +7607,7 @@ export abstract class TournamentManagerBase {
     }
     if (!Array.isArray(tournament.blind_structure)) tournament.blind_structure = [];
     this.tournamentCache = tournament;
+    noteTerminalFinishClub(this.tournamentId, tournament.club_id);
     this.prizePoolFinalized = tournament.prize_pool_finalized || false;
     this.tournamentEntryWindowClosed = this.prizePoolFinalized;
 

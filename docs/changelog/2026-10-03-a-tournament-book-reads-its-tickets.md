@@ -47,3 +47,4 @@ No chip moves, nothing is backfilled, and no job is added (CLAUDE.md 10.12). The
 
 - **Production probe.** A single MCP call ending in `RAISE`, so nothing committed. It built the fixture scalar and the replaced batch in `pg_temp` and checked 923 events from 45 days that carry a payout ticket or a correction leg: 22 corrected, 0 moved the wrong way, 0 left off. The batch report is identical to the live one.
 - **Regression test.** `tests/backedPayoutScanRegression.test.ts` now treats `ticket-funding-scalar.sql` as the maintained scalar and pins the migration, its replacements and the native proofs.
+- **Live.** Applied at 04:04 UTC as schema_migrations `20261003040452`, and the `@live-proof` is true. Every one of the 22 alerted events now reads 0.00. A rolled-back report-mode call of the batch returns `ok`, with nothing paid, withheld or refused.

@@ -1,0 +1,52 @@
+name: Owner inbox store-only delivery
+
+# supabase/migrations/20260927235053_owner_operational_notifications_are_delivered_to_the_operati.sql
+# delivers an owner-operational notification to the Production Alerts task
+# only: fn_capture_owner_notification_destination returns NULL after it has
+# captured and recorded the original; zz_authorize_owner_operational_original
+# refuses, as the writer, every writer row-level security would have refused
+# (a routed row never reaches row-level security); the capture routes only a
+# row PostgreSQL would have accepted; and the three database readers that
+# treated the owner's personal row as proof of delivery read the routed
+# original instead (Production Alerts board,
+# Smarter-Poker/Smarter-Poker-Club-Arena#5070, incident
+# owner-inbox-operational-rows).
+#
+# This runs the executable red-before/green-after proof against a throwaway
+# PostgreSQL cluster built from production as it stands before the migration -
+# its roles, default privileges, grants, policies, constraints and BEFORE
+# INSERT triggers, every function pinned to the md5 production returns - never
+# production. It adds no timer (CLAUDE.md 10.85): pull_request only, scoped to
+# the paths the proof reads. The runtime detector for a recurrence is the
+# migration's own zz_owner_operational_original_reached_personal_inbox trigger.
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/20260927235053_owner_operational_notifications_are_delivered_to_the_operati.sql
+      - scripts/dev/probe-owner-inbox-store-only.sh
+      - scripts/dev/fixtures/owner-inbox-store-only/**
+      - scripts/ci/schema-manifest.d/owner-inbox-store-only-delivery.json
+      - .github/workflows/owner-inbox-store-only.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-inbox-store-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-proof:
+    name: Red before, green after (throwaway PostgreSQL, never production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a PostgreSQL server if the runner has none
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y postgresql-16
+          fi
+      - name: Run the executable red/green proof
+        run: bash scripts/dev/probe-owner-inbox-store-only.sh

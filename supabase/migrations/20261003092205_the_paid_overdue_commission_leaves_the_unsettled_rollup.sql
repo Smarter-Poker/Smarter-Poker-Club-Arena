@@ -58,7 +58,7 @@ BEGIN
   PERFORM 1 FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id)
     ORDER BY r.club_id, r.user_id FOR UPDATE OF r;
 
-  SELECT sum(r.owed) INTO v_before FROM public.agent_commission_unsettled_rollup r;
+  SELECT sum(r.owed) INTO v_before FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id);
   IF EXISTS (SELECT 1 FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id)
               WHERE r.owed < d.amount OR r.rows_behind < d.n)
      OR (SELECT count(*) FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id))
@@ -79,7 +79,7 @@ BEGIN
    WHERE r.club_id = d.club_id AND r.user_id = d.user_id;
   GET DIAGNOSTICS v_n = ROW_COUNT;
 
-  SELECT sum(r.owed) INTO v_after FROM public.agent_commission_unsettled_rollup r;
+  SELECT sum(r.owed) INTO v_after FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id);
   IF v_n <> (SELECT count(*) FROM _oc_done) OR v_before - v_after <> v_paid
      OR EXISTS (SELECT 1 FROM public.agent_commission_unsettled_rollup r JOIN _oc_done d USING (club_id, user_id)
                  WHERE r.owed < 0 OR r.rows_behind < 0 OR (r.rows_behind = 0) <> (r.oldest_unsettled IS NULL)

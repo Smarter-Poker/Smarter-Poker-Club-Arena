@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-fin/fix/union-row-hold. Declared by migration 20261003201157_a_finish_waits_for_a_commission_key_holding_nothing, applied after merge through apply-merged-migration.yml: the owner-only wait a finish makes for busy club commission keys before its lane and before the union credit.",
+  "functions": ["fn_ca_await_commission_keys_free"]
+}

@@ -277,22 +277,54 @@ function currentRoute(): string {
   }
 }
 
+/** True only when the browser itself says it has no network at all. */
+function browserIsOffline(): boolean {
+  try {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  } catch {
+    return false;
+  }
+}
+
 function deliver(capture: Capture): void {
   if (!sinkLoad) {
+    // NEVER FETCH THE SINK WHILE OFFLINE (2026-10-03). The first error of a
+    // network loss (the table's own failed reads) used to start this import
+    // with no network. Vite hands a failed dynamic import to the stale-chunk
+    // recovery in lazyWithRetry.ts, which treats it as an old deploy: it
+    // drops the service worker and caches and tries to replace the table the
+    // player is sitting at, mid-outage. An offline capture could not be
+    // sent anyway, so it is dropped (the sink's own contract) and the chunk
+    // is fetched by the first error after the network is back.
+    if (browserIsOffline()) return;
     // One attempt per page. A chunk that will not load (a publish mid-session)
     // must not turn every later error into another failing import.
+    //
+    // `m?.` and the `?? null` are load-bearing: when that recovery claims the
+    // failure it cancels Vite's event, and the import then RESOLVES with
+    // undefined instead of rejecting. `m.clientErrorSink` threw on it, the
+    // cached promise rejected for the rest of the page, and every later error
+    // became an unhandled rejection that main.tsx reported straight back in
+    // here - a self-feeding loop of ~4,000 rejections a second that starved
+    // the table's renderer, so the "Reconnecting" banner never painted.
     sinkLoad = import('./clientErrorSink').then(
-      (m) => m.clientErrorSink,
+      (m) => m?.clientErrorSink ?? null,
       () => null
     );
   }
-  void sinkLoad.then((sink) => {
-    try {
-      sink?.enqueue(capture);
-    } catch {
-      /* best effort */
+  void sinkLoad.then(
+    (sink) => {
+      try {
+        sink?.enqueue(capture);
+      } catch {
+        /* best effort */
+      }
+    },
+    () => {
+      /* telemetry never reports itself: a rejection here would reach the
+         unhandledrejection reporter and come straight back */
     }
-  });
+  );
 }
 
 function forwardToSink(

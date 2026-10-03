@@ -286,12 +286,15 @@ groups:
           severity: warning
           component: spin
         annotations:
-          summary: "{{ $value }} Spins remain overdue and eligible for unfilled expiry"
+          summary: "{{ $value }} undrawn Spins have overdue unfilled seats"
           description: |
-            This candidate count includes only partly filled, open, unstarted
-            Spins older than the single enabled spin_fill_policy timeout. It
-            excludes booked draws, draw receipts, launch receipts and retained
-            hands. A disabled timeout produces zero. This observation does not
-            authorize cancellation or prove the expiry call failed; inspect its
-            actual result and preserve the continuation/settlement owner.
+            This conservative alert count includes only partly filled, open,
+            unstarted Spins whose oldest live seat passed the enabled
+            spin_fill_policy timeout. It excludes booked draws, draw receipts,
+            launch receipts and retained hands. The extra launch/hand exclusions
+            are stricter than the expiry sweep selector, so this is not an exact
+            count of expiry candidates and zero does not prove no lifecycle
+            conflict exists. A disabled timeout produces zero. This observation
+            does not authorize cancellation or prove the expiry call failed;
+            inspect its actual result and preserve the continuation owner.
           runbook: 'docs/runbooks/spin-unfilled-backlog.md'

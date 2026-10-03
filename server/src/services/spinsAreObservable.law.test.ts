@@ -264,6 +264,8 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
     const body = src.slice(start, end);
     expect(body).toContain('expr: poker_spin_expiry_overdue_waits > 0');
     expect(body).not.toContain('poker_spin_unfilled_waits');
+    expect(body).not.toContain('eligible for unfilled expiry');
+    expect(body).toContain('not an exact');
     expect(body).toContain('for: 10m');
   });
 

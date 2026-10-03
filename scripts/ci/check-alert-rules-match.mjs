@@ -59,21 +59,24 @@ const CANARY = 'MonitoringCanary';
 const SPIN_RULE = 'SpinUnfilledBacklog';
 const SPIN_GROUP = 'spin-experience';
 const SPIN_FILE = '/etc/prometheus/spin-rules.yml';
-const SPIN_BLOCK_SHA256 = '3ca975c1e05ab5f75a93475497fa867588c227bcb885dfe1ca78878b7e8aa7ea';
+const SPIN_BLOCK_SHA256 = '2baf221b5ffc541b0704c54afff699ca8ec1dc686e72f0683cd2d9eb5fcc4f9f';
 const SPIN_CONTRACT = {
   query: 'poker_spin_expiry_overdue_waits > 0',
   duration: 600,
   keepFiringFor: 0,
   labels: { severity: 'warning', component: 'spin' },
   annotations: {
-    summary: '{{ $value }} Spins remain overdue and eligible for unfilled expiry',
+    summary: '{{ $value }} undrawn Spins have overdue unfilled seats',
     description:
-      'This candidate count includes only partly filled, open, unstarted\n' +
-      'Spins older than the single enabled spin_fill_policy timeout. It\n' +
-      'excludes booked draws, draw receipts, launch receipts and retained\n' +
-      'hands. A disabled timeout produces zero. This observation does not\n' +
-      'authorize cancellation or prove the expiry call failed; inspect its\n' +
-      'actual result and preserve the continuation/settlement owner.\n',
+      'This conservative alert count includes only partly filled, open,\n' +
+      'unstarted Spins whose oldest live seat passed the enabled\n' +
+      'spin_fill_policy timeout. It excludes booked draws, draw receipts,\n' +
+      'launch receipts and retained hands. The extra launch/hand exclusions\n' +
+      'are stricter than the expiry sweep selector, so this is not an exact\n' +
+      'count of expiry candidates and zero does not prove no lifecycle\n' +
+      'conflict exists. A disabled timeout produces zero. This observation\n' +
+      'does not authorize cancellation or prove the expiry call failed;\n' +
+      'inspect its actual result and preserve the continuation owner.\n',
     runbook: 'docs/runbooks/spin-unfilled-backlog.md',
   },
 };

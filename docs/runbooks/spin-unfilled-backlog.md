@@ -11,12 +11,15 @@ served anything.
 poker_spin_expiry_overdue_waits > 0   for: 10m   severity: warning
 ```
 
-This is the actionable subset of the broader population gauge. It counts only
+This is a conservative subset of the broader population gauge. It counts only
 partly filled, open, unstarted Spins whose oldest live seat passed the enabled
 `spin_fill_policy` timeout, with no booked draw, draw receipt, launch receipt or
-retained hand. A zero timeout disables the candidate count. The gauge is an
-observation, not cancellation authority and not proof the expiry call failed.
-The engine's expiry function remains the sole refund/cancellation owner.
+retained hand. The launch-receipt and retained-hand exclusions are stricter
+than the expiry sweep's current selector, so the gauge is not an exact count of
+expiry candidates; zero does not prove that no lifecycle-evidence conflict
+exists. A zero timeout disables the candidate count. The gauge is observation
+only, not cancellation authority and not proof the expiry call failed. The
+engine's expiry function remains the sole refund/cancellation owner.
 
 ## What the expression measures
 

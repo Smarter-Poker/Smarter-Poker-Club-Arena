@@ -556,6 +556,8 @@ export class ScheduledTournamentService {
   private readonly guaranteeBackoff = new GuaranteeRefusalBackoff();
   /** One funding-bank read per club per poll, shared by every deferred spawn. */
   private fundingBankReads = new Map<string, Promise<number | null>>();
+  /** Schedules found deleted (FK 23503) during the current pass. */
+  private retiredScheduleIds = new Set<string>();
 
   /** The bank that funds this club's overlays: its union's wallet, else its treasury. */
   private readonly readFundingBank = (clubId: string): Promise<number | null> => {
@@ -658,6 +660,7 @@ export class ScheduledTournamentService {
     if (this.polling) return;
     this.polling = true;
     this.fundingBankReads = new Map();
+    this.retiredScheduleIds = new Set();
     try {
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
@@ -765,6 +768,7 @@ export class ScheduledTournamentService {
     }
 
     for (const spawn of due) {
+      if (this.retiredScheduleIds.has(schedule.id)) return; // deleted mid-pass
       if (claimedSet?.has(spawn.spawnKey)) continue; // already spawned
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
     }
@@ -989,6 +993,28 @@ export class ScheduledTournamentService {
     if (!error) return true;
     const msg = error.message ?? '';
     if (error.code === '23505' || /duplicate key|unique constraint/i.test(msg)) return false;
+    /* A SCHEDULE DELETED MID-PASS IS RETIRED, NOT FAILED (2026-10-03).
+       The pass reads every active schedule once, then walks them for minutes.
+       A schedule deleted in between (club deletion, the welcome/certification
+       reset, an owner removing it) has no row for the spawn key to reference,
+       and the claim answers 23503 on tournament_schedule_spawns_schedule_id_fkey.
+       Nothing was spawned and nothing should be: the schedule is gone. This
+       used to be reported as a failure once per pending date - 24 reports
+       across 9 deleted schedules on 2026-10-03 - burying real spawn faults.
+       Stand the rest of this schedule's dates down for the pass, quietly; the
+       next pass does not read it at all. */
+    if (
+      (error.code === '23503' || /foreign key constraint/i.test(msg)) &&
+      /tournament_schedule_spawns_schedule_id_fkey/.test(msg)
+    ) {
+      if (!this.retiredScheduleIds.has(scheduleId)) {
+        this.retiredScheduleIds.add(scheduleId);
+        console.log(
+          `[ScheduledTournaments] schedule ${scheduleId.slice(0, 8)} was deleted during this pass - nothing spawned, its remaining dates stand down`
+        );
+      }
+      return false;
+    }
     reportError(
       new Error(`[ScheduledTournaments] spawn claim failed for ${spawnKey}: ${msg}`),
       'ScheduledTournaments.spawn_claim_failed'

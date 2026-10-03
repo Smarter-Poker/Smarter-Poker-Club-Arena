@@ -122,6 +122,29 @@ const DAYS = Number(flag('days', '21'));
  */
 const MIN_AGE_HOURS = Number(flag('min-age-hours', '0'));
 
+/**
+ * RECORDED UNDER ITS OWN FILE NAME (2026-10-03). An apply can record the
+ * migration's name as the whole file stem - its own version included - while
+ * the transport stamps a new version: production carries
+ * `20260927041957 20260927035803_certification_cleanup_removes_archived_public_user_residue`
+ * for the file 20260927035803_certification_cleanup_removes_archived_public_user_residue.sql.
+ * A name that carries the file's own version AND slug can only be that file,
+ * so it matches by name exactly as the bare slug does.
+ *
+ * Before this, three such 2026-09-27 files fell through to step 3, whose
+ * proofs begin `NOT public.fn_platform_frozen()`: every run inside a
+ * maintenance freeze (the :55 cutover) read an installed migration as
+ * MERGED BUT NOT LIVE, and `Installed and merged migrations agree` went red on
+ * main and on every pull request for as long as the freeze lasted.
+ */
+export function matchedByName(file, recorded, recordedPrefixes) {
+  const stem = String(file).replace(/\.sql$/, '');
+  const slug = stem.slice(stem.indexOf('_') + 1);
+  return [slug, stem].some(
+    (n) => recorded.has(n) || recordedPrefixes.has(n.slice(0, NAME_PREFIX))
+  );
+}
+
 export function stampedAt(file) {
   const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/.exec(String(file));
   if (!m) return null;
@@ -451,7 +474,7 @@ function main() {
   const superseded = [];
   for (const file of files) {
     const slug = file.slice(file.indexOf('_') + 1, -4);
-    if (recorded.has(slug) || recordedPrefixes.has(slug.slice(0, NAME_PREFIX))) continue;
+    if (matchedByName(file, recorded, recordedPrefixes)) continue;
     if (aliasedLive(file)) continue;
     const sql = readFileSync(join(DIR, file), 'utf8');
     const by = supersededBy(sql, dirFiles) || aliases.superseded.get(file)?.by || null;

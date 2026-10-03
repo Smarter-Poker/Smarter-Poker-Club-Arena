@@ -80,6 +80,42 @@ describe('the jackpot epoch counts each pool from its own opening', () => {
     );
   });
 
+  it("a later pool's journalled legs are the complement of what is already counted", () => {
+    // 2026-10-03. The first version of the follow-up named ONE category each
+    // way, and refused by its own assertion at 200.00 - post-EXECUTE, so its
+    // own new body did not reconcile. Across every post-epoch pool the journal
+    // carries club_opening_allocation in and, out, either 'burn' (86 legs) or
+    // 'treasury_transfer' (2 legs): a certification seed returned to the club
+    // treasury instead of burned in place, each conserved and each followed by
+    // the treasury being burned whole. Naming only 'burn' read those two
+    // 100.00 seeds as inflow against no outflow. So the journalled legs are
+    // now the COMPLEMENT of what the rest of the identity already holds -
+    // v_in has 'bbj_contribution', v_out has 'bbj_payout' and 'promo' - which
+    // a new retirement category cannot fall outside (CLAUDE.md 10.86 rule 4).
+    const f = readdirSync(MIG).find((n) =>
+      /^\d{14}_the_jackpot_lifetime_counts_an_unopened_pool\.sql$/.test(n)
+    );
+    expect(f, 'follow-up migration').toBeTruthy();
+    const s = readFileSync(resolve(MIG, f!), 'utf8');
+    // the enumerated filters are the ANCHORS, so they appear in the file; what
+    // matters is that each is REPLACED by the complement.
+    expect(s).toMatch(
+      /v_new := replace\(v_new, v_anchor, \$a\$\s+AND l\.category NOT IN \('bbj_payout', 'promo'\)\), 0\) AS burned\$a\$\);/
+    );
+    expect(s).toMatch(
+      /v_new := replace\(v_new, v_anchor, \$a\$\s+AND l\.category <> 'bbj_contribution'\), 0\) AS seeded,\$a\$\);/
+    );
+    // and each anchor's absence is a refusal, not a silent no-op
+    expect(s).toMatch(/anchor C \(journalled inflow\) not found/);
+    expect(s).toMatch(/anchor D \(journalled outflow\) not found/);
+    // the journalled legs must net to zero, and NO tolerance is widened to
+    // make that true: a stranded seed is refused, not absorbed.
+    expect(s).toMatch(/a later pool holds seed the journal does not account for/);
+    expect(s).toMatch(/abs\(\(v_res->'epoch'->>'moved_since_recorded'\)::numeric\) > 0\.01/);
+    expect(s).toMatch(/abs\(\(v_res->'lifetime'->>'moved_since_resolution'\)::numeric\) > 1\.00/);
+    expect(s).not.toMatch(/UPDATE public\.bbj_conservation_baseline\s+SET tolerance/);
+  });
+
   it('the numbers are asserted at apply time, and nothing is rebaselined or moved', () => {
     expect(sql).toMatch(
       /AND l\.category = 'club_opening_allocation' AND l\.created_at = o\.opened_at;/

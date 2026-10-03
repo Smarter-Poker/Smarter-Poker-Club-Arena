@@ -59,23 +59,28 @@ const CANARY = 'MonitoringCanary';
 const SPIN_RULE = 'SpinUnfilledBacklog';
 const SPIN_GROUP = 'spin-experience';
 const SPIN_FILE = '/etc/prometheus/spin-rules.yml';
-const SPIN_BLOCK_SHA256 = '53f0555e2fda6fe374a90737a7c6af8d25b389ac4501847aaeee5e9aa951b0e1';
+const SPIN_BLOCK_SHA256 = 'ca8465099d41f4c36f6f6729c719cd3e548c81374c0dc8707a74b4f290f6c125';
+// 2026-10-03: the rule now counts boards past their human window
+// (fn_spin_fill_waits) instead of every partly filled board, which was
+// ~40 at steady state by Dan's 90-350s human-window rule and fired by
+// construction. See docs/changelog/2026-10-03-spin-backlog-counts-who-is-waiting.md.
 const SPIN_CONTRACT = {
-  query: 'poker_spin_unfilled_waits > 5',
+  query:
+    'poker_spin_unfilled_past_window > 5 unless on () max_over_time(poker_maintenance_break_active[6m]) == 1',
   duration: 1200,
   keepFiringFor: 0,
   labels: { severity: 'warning', component: 'spin' },
   annotations: {
-    summary: '{{ $value }} Spins remain open with a partially filled field',
+    summary: '{{ $value }} Spins are partly filled past their human window',
     description:
-      'v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins\n' +
-      'with no recorded start and between one live seat and one fewer\n' +
-      'than capacity. It does not filter wait age, policy or booked draws.\n' +
-      "Inspect each board's oldest_seat_at, spin_fill_policy, draw and\n" +
-      'hand evidence, and the actual fn_spin_expire_unfilled result.\n' +
-      'A drawn or played game requires its continuation or settlement\n' +
-      'authority. This count alone proves neither that expiry is due\n' +
-      'nor that the expiry timer failed.\n',
+      'fn_spin_fill_waits counts REGISTERING or ANNOUNCED Spins with no\n' +
+      'recorded start, one live seat to one fewer than capacity, whose\n' +
+      'human window (start_time) closed over 120s ago. The fleet should\n' +
+      'have seated the last horse within seconds of the window. Check\n' +
+      'poker_spin_unfilled_oldest_wait_seconds, the engine log for\n' +
+      "seat-first fill refusals, and each board's fn_spin_expire_unfilled\n" +
+      'result. A drawn or played game requires its continuation or\n' +
+      'settlement authority.\n',
     runbook: 'docs/runbooks/spin-unfilled-backlog.md',
   },
 };

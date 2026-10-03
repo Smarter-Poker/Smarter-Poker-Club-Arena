@@ -48,9 +48,14 @@ describe('the fast lane owns the human case', () => {
 
 describe('fillHumanSeatFirstGame', () => {
   const fill = sliceBlockAfter(GAME_SERVER, 'private async fillPartialSeatFirstGame(');
+  // 2026-10-03: the "who is seated" reads moved into one cached helper, so a
+  // board is asked once per change in its seats (aHumansBoardFillsFirst.test.ts).
+  const occupancy = sliceBlockAfter(GAME_SERVER, 'private async readSeatFirstHasHuman(');
 
   it('fills only when a HUMAN holds a seat - horse-only partials keep their designs', () => {
-    expect(fill).toContain('if (!hasHuman) return');
+    // A horse-only partial is filled only once its human window has closed.
+    expect(fill).toContain('if (!hasHuman && !windowClosed) return');
+    expect(fill).toContain('this.seatFirstHasHuman(tournamentId, paid)');
   });
 
   it('is throttled per game so the 5s lane cannot stampede the top-up', () => {
@@ -59,9 +64,11 @@ describe('fillHumanSeatFirstGame', () => {
   });
 
   it('every read is error-bound and reported', () => {
-    expect(fill).toContain('human_fill_primary_table_read_failed');
-    expect(fill).toContain('human_fill_occupant_read_failed');
-    expect(fill).toContain('human_fill_profile_read_failed');
+    expect(occupancy).toContain('human_fill_primary_table_read_failed');
+    expect(occupancy).toContain('human_fill_occupant_read_failed');
+    expect(occupancy).toContain('human_fill_profile_read_failed');
+    // An unreadable answer fills nobody this pass rather than guessing.
+    expect(fill).toContain('if (hasHuman === null) return');
   });
 
   it('a short fill raises the human-waiting alarm, throttled', () => {
@@ -71,7 +78,7 @@ describe('fillHumanSeatFirstGame', () => {
   });
 
   it('resolves the table through the same occupancy election as everything else', () => {
-    expect(fill).toContain("supabase.rpc('fn_tournament_primary_table'");
+    expect(occupancy).toContain("supabase.rpc('fn_tournament_primary_table'");
   });
 });
 

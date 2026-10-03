@@ -34,15 +34,17 @@ describe('a seat-first board that will not fill is asked less and less often', (
   });
 
   it('only the window-closed trigger backs off - a human is never left waiting', () => {
+    // 2026-10-03: keyed on who is seated, read before the cadence, so a human
+    // on a board whose window has closed keeps the 12 s cadence too.
     expect(fill).toMatch(
-      /const misses = windowClosed \? \(this\.seatFirstFillMisses\.get\(tournamentId\) \?\? 0\) : 0;/
+      /const misses = hasHuman \? 0 : \(this\.seatFirstFillMisses\.get\(tournamentId\) \?\? 0\);/
     );
   });
 
   it('a filled board forgets its misses; a short one counts another', () => {
     const topUp = sliceBlockAfter(GAME_SERVER, 'private async topUpPartialSeatFirst(');
-    expect(topUp).toContain(
-      'if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);'
+    expect(topUp).toMatch(
+      /if \(added >= shortfall\) \{\s*this\.seatFirstFillMisses\.delete\(tournamentId\);/
     );
     expect(topUp).toMatch(
       /this\.seatFirstFillMisses\.set\(\s*tournamentId,\s*\(this\.seatFirstFillMisses\.get\(tournamentId\) \?\? 0\) \+ 1\s*\)/

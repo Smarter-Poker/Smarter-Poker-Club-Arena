@@ -1023,6 +1023,70 @@ export function selectHorseCandidates(
     return gameLaneFor(id) !== 'cash';
   });
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HUMAN'S BOARD FILLS FIRST (2026-10-03)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A seat-first game a real player has paid into starts only when its other
+ * seats are bought, and the only buyers on the platform today are horses. The
+ * free horses were first come, first served: a board opener seating two
+ * opening horses, a horse-only board whose window had closed, an SNG or an MTT
+ * ramp could each take the last free horse a waiting human needed, and the
+ * human's board asks only every 12 s. HorseOverlayGuard logged "every
+ * candidate is at the four-table cap" and the board opener "the pool is thin"
+ * through the night of 2026-10-02/03, which is exactly when that race is lost.
+ *
+ * So the seats a waiting human still needs are declared (noteHumanSeatDemand)
+ * and every OTHER claim leaves that many free horses unclaimed
+ * (humanSeatsOwed), while the human's own ask may also take an active
+ * cash-lane horse and is not held to the cash-room floor - the same widening
+ * a freeroll already gets (selectHorseCandidates allLanes). This steers the
+ * fleet; it denies no horse anything a human gets (CLAUDE.md 10.5). A
+ * declaration lapses after HUMAN_SEAT_DEMAND_TTL_MS unless the human's board
+ * asks again (it asks every 12 s while short), so a board that started or a
+ * player who left stops holding horses back on its own.
+ */
+export const HUMAN_SEAT_DEMAND_TTL_MS = 45_000;
+
+export interface HumanSeatDemand {
+  seats: number;
+  at: number;
+}
+
+/** Seats waiting humans still need, excluding the asking game's own demand. */
+export function humanSeatsOwed(
+  demand: ReadonlyMap<string, HumanSeatDemand>,
+  exceptTournamentId: string | undefined,
+  nowMs: number = Date.now()
+): number {
+  let owed = 0;
+  for (const [id, d] of demand) {
+    if (id === exceptTournamentId) continue;
+    if (nowMs - d.at > HUMAN_SEAT_DEMAND_TTL_MS) continue;
+    owed += Math.max(0, Math.floor(Number(d.seats) || 0));
+  }
+  return owed;
+}
+
+/**
+ * The candidate list for a waiting human's game: the events/both lanes first,
+ * then any cash-lane horse that is playing right now, never a busy horse.
+ * Each tier keeps its input order; the caller shuffles within a tier.
+ */
+export function selectHumanFillCandidates(
+  fleetIds: string[],
+  busy: ReadonlySet<string>,
+  hourUTC: number
+): { events: string[]; cash: string[] } {
+  const events = selectHorseCandidates(fleetIds, busy, false, hourUTC);
+  const inEvents = new Set(events);
+  const cash = selectHorseCandidates(fleetIds, busy, true, hourUTC).filter(
+    (id) => !inEvents.has(id)
+  );
+  return { events, cash };
+}
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST GAMES (Dan, 2026-08-21)
@@ -2709,6 +2773,33 @@ export class TournamentRecurringService {
    * not read as 720 boards.
    */
   private seatFirstHeldIds = new Set<string>();
+
+  /** Seats waiting humans still need, by seat-first game. See humanSeatsOwed. */
+  private humanSeatDemand = new Map<string, HumanSeatDemand>();
+
+  /**
+   * A human is seated in this seat-first game and it is `seats` short. Called
+   * by GameServer's fast lane before each ask for that game; until it is
+   * cleared or lapses, every other claim on the pool leaves that many free.
+   */
+  noteHumanSeatDemand(tournamentId: string, seats: number, nowMs: number = Date.now()): void {
+    const n = Math.max(0, Math.floor(Number(seats) || 0));
+    if (n === 0) {
+      this.humanSeatDemand.delete(tournamentId);
+      return;
+    }
+    this.humanSeatDemand.set(tournamentId, { seats: n, at: nowMs });
+    // Lapsed declarations are dropped here so the map never outgrows the
+    // handful of games that have a human waiting at once.
+    for (const [id, d] of this.humanSeatDemand) {
+      if (nowMs - d.at > HUMAN_SEAT_DEMAND_TTL_MS) this.humanSeatDemand.delete(id);
+    }
+  }
+
+  /** The game is full (or its human is no longer waiting): stop holding horses for it. */
+  clearHumanSeatDemand(tournamentId: string): void {
+    this.humanSeatDemand.delete(tournamentId);
+  }
   private lastHeldReportAt = 0;
   /**
    * Tournaments whose top-up was refused because their prize pool is already
@@ -5147,7 +5238,8 @@ export class TournamentRecurringService {
     count: number,
     allLanes = false,
     tournamentId?: string,
-    pass?: HorseTopUpPass
+    pass?: HorseTopUpPass,
+    forHuman = false
   ): Promise<string[]> {
     if (count <= 0) return [];
     try {
@@ -5249,7 +5341,11 @@ export class TournamentRecurringService {
         : null;
       const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
 
-      const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
+      const hourUTC = new Date().getUTCHours();
+      const humanTiers = forHuman ? selectHumanFillCandidates(inClub, busy, hourUTC) : null;
+      const candidates = humanTiers
+        ? humanTiers.events
+        : selectHorseCandidates(inClub, busy, allLanes, hourUTC);
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -5287,15 +5383,30 @@ export class TournamentRecurringService {
       // V23: shuffle BEFORE the cash-room reserve trim. The trim used to cut
       // the tail of the (stable, id-ordered) unshuffled list, so the same
       // physical horses were held back for the cash room every single call.
-      for (let i = candidates.length - 1; i > 0; i--) {
-        const j = nodeCrypto.randomInt(i + 1);
-        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+      const shuffle = (list: string[]) => {
+        for (let i = list.length - 1; i > 0; i--) {
+          const j = nodeCrypto.randomInt(i + 1);
+          [list[i], list[j]] = [list[j], list[i]];
+        }
+      };
+      shuffle(candidates);
+
+      /* A WAITING HUMAN'S ASK (see humanSeatsOwed): events lanes first, then
+         active cash-lane horses, and not held to the cash-room floor - a paid
+         seat at a game that cannot start outranks a cash table's second horse. */
+      if (humanTiers) {
+        shuffle(humanTiers.cash);
+        return [...candidates, ...humanTiers.cash].slice(0, count);
       }
+
       const reserved = await this.cashRoomReserve(pass);
-      const claimable = Math.max(0, candidates.length - reserved);
+      const owedToHumans = humanSeatsOwed(this.humanSeatDemand, tournamentId);
+      const claimable = Math.max(0, candidates.length - reserved - owedToHumans);
       if (claimable < count) {
         console.log(
-          `[TournamentRecurring] holding ${reserved} horse(s) back for the cash room; ${claimable} of ${count} claimable`
+          `[TournamentRecurring] holding ${reserved} horse(s) back for the cash room` +
+            (owedToHumans > 0 ? ` and ${owedToHumans} for waiting human(s)` : '') +
+            `; ${claimable} of ${count} claimable`
         );
       }
       candidates.length = Math.min(candidates.length, claimable);
@@ -5621,7 +5732,13 @@ export class TournamentRecurringService {
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
-    opts: { allLanes?: boolean; pass?: HorseTopUpPass; redeemTickets?: boolean } = {}
+    opts: {
+      allLanes?: boolean;
+      pass?: HorseTopUpPass;
+      redeemTickets?: boolean;
+      /** A human is seated in this seat-first game: first claim on the pool. */
+      forHuman?: boolean;
+    } = {}
   ): Promise<number> {
     const pass = opts.pass;
     const generation = this.lifecycleGeneration;
@@ -5905,7 +6022,15 @@ export class TournamentRecurringService {
           const wantCandidates = seatFirstCandidateCount(shortfall);
           const poolWanted = Math.max(0, wantCandidates - own.length);
           const pool =
-            poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId, pass) : [];
+            poolWanted > 0
+              ? await this.pickFreeHorses(
+                  poolWanted,
+                  false,
+                  tournamentId,
+                  pass,
+                  opts.forHuman === true
+                )
+              : [];
           const candidates = seatFirstFillOrder(wantCandidates, own, pool);
 
           /* THE LEDGER (see seatFirstSeatPrecheck). The table's capacity is the

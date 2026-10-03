@@ -92,6 +92,9 @@ const playerPage = {
 const latestInvoice = {
   invoice_id: 'invoice-1',
   status: 'awaiting_payment',
+  overdue: false,
+  paid_total: 0,
+  outstanding: 350,
   issued_at: '2026-08-30T09:00:00Z',
   due_at: '2026-09-02T09:00:00Z',
   amount: 350,
@@ -288,7 +291,7 @@ describe('ClubDataPage', () => {
     render(<ClubDataPage />);
 
     expect(screen.getByRole('heading', { name: /Read The Room/i })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('2.4K')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Games' })).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('heading', { name: 'Data Integrity' })).toBeInTheDocument();
@@ -366,6 +369,7 @@ describe('ClubDataPage', () => {
       await screen.findAllByText('Exported All 2 Games.', undefined, { timeout: 10_000 })
     ).toHaveLength(2);
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
+    expect(downloadMock.mock.calls[0][2]).toEqual(expect.any(Function));
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_game_export_start',
       expect.objectContaining({ p_sort: 'recent', p_request_id: expect.any(String) })
@@ -374,6 +378,155 @@ describe('ClubDataPage', () => {
       p_export_id: 'export-1',
     });
   }, 20_000);
+
+  it('refuses a completed file handoff after the club route changes', async () => {
+    let finishHandoff: ((value: boolean) => void) | null = null;
+    const handoff = new Promise<boolean>((resolve) => {
+      finishHandoff = resolve;
+    });
+    downloadMock.mockReturnValue(handoff as unknown as boolean);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_game_export_start') {
+        return { data: { export_id: 'export-guard', total_rows: 1, status: 'ready' }, error: null };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: { rows: snapshot.rows, total_rows: 1, next_offset: 1, has_more: false },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    const view = render(<ClubDataPage />);
+    const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
+    const guard = downloadMock.mock.calls[0]?.[2] as (() => boolean) | undefined;
+    expect(guard?.()).toBe(true);
+
+    routeState.clubId = 'b52545cc-9e1d-411b-901e-f9c4e76bfee5';
+    view.rerender(<ClubDataPage />);
+    expect(guard?.()).toBe(false);
+    finishHandoff?.(true);
+
+    await waitFor(() => expect(screen.queryByText('Exported All 1 Games.')).toBeNull());
+  });
+
+  it('refuses malformed money in a prepared game export instead of downloading a partial file', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_game_export_start') {
+        return {
+          data: { export_id: 'bad-game-export', total_rows: 1, status: 'ready' },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: {
+            rows: [{ ...snapshot.rows[0], fee: 42.501 }],
+            total_rows: 1,
+            next_offset: 1,
+            has_more: false,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      fireEvent.click(exportButton);
+
+      expect(
+        await screen.findAllByText(
+          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+        )
+      ).toHaveLength(2);
+      expect(downloadMock).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('refuses an unreconciled prepared player export instead of downloading it', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_player_export_start') {
+        return {
+          data: { export_id: 'bad-player-export', total_rows: 1, status: 'ready' },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: {
+            rows: [{ ...playerBreakdown.players[0], net: 120.01 }],
+            total_rows: 1,
+            next_offset: 1,
+            has_more: false,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await screen.findByText('Table Regular');
+      const exportButton = screen.getByRole('button', { name: 'Export As CSV' });
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      fireEvent.click(exportButton);
+
+      expect(
+        await screen.findAllByText(
+          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+        )
+      ).toHaveLength(2);
+      expect(downloadMock).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('fails closed when the union statement service returns malformed rows', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [null], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(
+        await screen.findByText('Could Not Refresh Your Union Statement.')
+      ).toBeInTheDocument();
+      expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.queryByText(/You Owe/i)).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 
   /**
    * THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed matters
@@ -530,7 +683,7 @@ describe('ClubDataPage', () => {
     let resolveSecondSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
     rpcMock.mockImplementation((fn: string, args?: { p_club_id?: string }) => {
       if (fn === 'ca_club_data_snapshot' && args?.p_club_id === secondClubId) {
-        return new Promise((resolve) => {
+        return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
           resolveSecondSnapshot = resolve;
         });
       }
@@ -551,7 +704,7 @@ describe('ClubDataPage', () => {
     rerender(<ClubDataPage />);
 
     expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
-    expect(screen.queryByText('2,450.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('2.4K')).not.toBeInTheDocument();
 
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
@@ -560,6 +713,47 @@ describe('ClubDataPage', () => {
       )
     );
     resolveSecondSnapshot({ data: snapshot, error: null });
+    await screen.findByText('Shark Table One');
+  });
+
+  it('clears the previous account ledger before the same club can load for a new account', async () => {
+    let resolveNextSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
+    let resolveNextInvoices!: (result: { data: (typeof latestInvoice)[]; error: null }) => void;
+    rpcMock.mockImplementation((fn: string) => {
+      const nextAccount = authState.current.user?.id === 'owner-2';
+      if (fn === 'ca_club_data_snapshot' && nextAccount) {
+        return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
+          resolveNextSnapshot = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices' && nextAccount) {
+        return new Promise<{ data: (typeof latestInvoice)[]; error: null }>((resolve) => {
+          resolveNextInvoices = resolve;
+        });
+      }
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
+      if (fn === 'ca_club_union_invoices') {
+        return Promise.resolve({ data: [latestInvoice], error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const view = render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+    await screen.findByText('-350');
+
+    authState.current = { user: { id: 'owner-2' }, isHydrating: false };
+    view.rerender(<ClubDataPage />);
+
+    expect(screen.queryByText('Shark Table One')).toBeNull();
+    expect(screen.queryByText('-350')).toBeNull();
+    expect(screen.queryByText('2.4K')).toBeNull();
+    await waitFor(() => expect(resolveNextSnapshot).toBeTypeOf('function'));
+    await waitFor(() => expect(resolveNextInvoices).toBeTypeOf('function'));
+
+    resolveNextSnapshot({ data: snapshot, error: null });
+    resolveNextInvoices({ data: [], error: null });
     await screen.findByText('Shark Table One');
   });
 
@@ -719,7 +913,7 @@ describe('ClubDataPage', () => {
 
     try {
       render(<ClubDataPage />);
-      await screen.findByText(/350\.00/);
+      await screen.findByText(/-350/);
       const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
       await waitFor(() => expect(refresh).toBeEnabled());
 
@@ -727,7 +921,7 @@ describe('ClubDataPage', () => {
 
       await screen.findByText(/Could Not Refresh Your Union Statement/i);
       expect(screen.getByText(/Showing The Last Verified Statement/i)).toBeInTheDocument();
-      expect(screen.getByText(/350\.00/)).toBeInTheDocument();
+      expect(screen.getByText(/-350/)).toBeInTheDocument();
       expect(screen.getByText('Refresh Finished With Some Data Unavailable.')).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();

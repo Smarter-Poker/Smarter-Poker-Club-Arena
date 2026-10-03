@@ -65,7 +65,6 @@
     system-ui,
     sans-serif;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
@@ -188,4 +187,10 @@
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.errorState {
+  display: grid;
+  justify-items: center;
+  gap: 1cqw;
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 const m = vi.hoisted(() => ({
   send: vi.fn(),
@@ -9,10 +9,12 @@ const m = vi.hoisted(() => ({
   clubId: '20000000-0000-4000-8000-000000000001',
   readMember: vi.fn(),
   readCommissions: vi.fn(),
+  readDebt: vi.fn(),
   balanceRefresh: () => undefined as unknown,
   commissionRefresh: undefined as undefined | (() => unknown),
   owner: '10000000-0000-4000-8000-000000000001',
   agentBalance: 100,
+  creditLimit: 0,
   memberBalance: 456,
   memberError: false,
   filters: [] as unknown[],
@@ -28,7 +30,14 @@ vi.mock('../../src/lib/supabase', () => ({
           filters[key] = value;
           return q;
         },
-        gte: () => q,
+        gte: (key: string, value: string) => {
+          m.filters.push([table, key, value]);
+          return q;
+        },
+        lte: (key: string, value: string) => {
+          m.filters.push([table, key, value]);
+          return q;
+        },
         order: () => q,
         limit: () => q,
         maybeSingle: async () =>
@@ -39,8 +48,9 @@ vi.mock('../../src/lib/supabase', () => ({
                   user_id: m.owner,
                   club_id: filters.club_id || m.clubId,
                   agent_wallet_balance: m.agentBalance,
+                  promo_wallet_balance: 0,
                   player_wallet_balance: 999999,
-                  credit_limit: 0,
+                  credit_limit: m.creditLimit,
                 },
                 error: null,
               }
@@ -59,7 +69,7 @@ vi.mock('../../src/services/WalletService', () => ({
   WalletService: { agentSelfTransfer: m.send },
 }));
 vi.mock('../../src/services/CreditService', () => ({
-  CreditService: { calculateDebt: async () => ({ debtOwed: 0 }) },
+  CreditService: { calculateDebt: (...args: unknown[]) => m.readDebt(...args) },
 }));
 vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => ({ error: m.error, success: m.success }),
@@ -107,6 +117,7 @@ beforeEach(() => {
   m.owner = '10000000-0000-4000-8000-000000000001';
   m.memberBalance = 456;
   m.agentBalance = 100;
+  m.creditLimit = 0;
   m.memberError = false;
   m.filters = [];
   m.commissionRefresh = undefined;
@@ -116,6 +127,11 @@ beforeEach(() => {
     error: m.memberError ? new Error('denied') : null,
   }));
   m.readCommissions.mockReset().mockReturnValue({ data: [], error: null });
+  m.readDebt.mockReset().mockResolvedValue({
+    creditLimit: m.creditLimit,
+    debtOwed: 0,
+    isPrepaid: false,
+  });
   vi.stubGlobal('prompt', vi.fn().mockReturnValue('5'));
 });
 
@@ -126,7 +142,7 @@ describe('routable agent wallet', () => {
     await screen.findByText('456');
     expect(m.filters).toContainEqual(['agents', 'club_id', '20000000-0000-4000-8000-000000000001']);
     expect(screen.queryByText('999,999')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /LOAD FROM BIZ/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
     await waitFor(() =>
@@ -138,7 +154,7 @@ describe('routable agent wallet', () => {
     m.send.mockResolvedValue(true);
     mount();
     await screen.findByText('456');
-    fireEvent.click(screen.getByRole('button', { name: /LOAD FROM BIZ/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
     await waitFor(() => expect(m.send).toHaveBeenCalledTimes(1));
@@ -147,8 +163,51 @@ describe('routable agent wallet', () => {
     m.memberError = true;
     mount();
     await screen.findByRole('alert');
-    expect(screen.getByRole('button', { name: /LOAD FROM BIZ/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Open Clubs/ })).toBeEnabled();
     expect(m.send).not.toHaveBeenCalled();
+  });
+
+  it('does not turn an unreadable debt into a zero balance or an all clear', async () => {
+    m.readDebt.mockRejectedValue(new Error('Debt Read Refused'));
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Debt Read Refused');
+    expect(screen.queryByText('456')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Transfer To Play/ })).toBeNull();
+  });
+
+  it('reports a failed commission source instead of rendering a zero total', async () => {
+    m.readCommissions.mockReturnValue({ data: null, error: new Error('Commission Read Refused') });
+    mount();
+    await screen.findByText('456');
+    expect(await screen.findByText(/Commission Read Refused/)).toBeInTheDocument();
+    expect(screen.queryByText('Total: 0 Chips')).toBeNull();
+  });
+
+  it('refuses a malformed commission date instead of dropping the amount into a false zero', async () => {
+    m.readCommissions.mockReturnValue({
+      data: [{ amount: 12, created_at: 'not-a-date' }],
+      error: null,
+    });
+    mount();
+    await screen.findByText('456');
+    expect(await screen.findByText(/Commission Date Could Not Be Verified/)).toBeInTheDocument();
+    expect(screen.queryByText('Total: 0 Chips')).toBeNull();
+  });
+
+  it('shows canonical drawn credit instead of deriving usage from the business wallet', async () => {
+    m.agentBalance = 30_000;
+    m.creditLimit = 20_000;
+    m.readDebt.mockResolvedValue({
+      creditLimit: 20_000,
+      debtOwed: 75.23,
+      isPrepaid: false,
+    });
+    mount();
+    const credit = await screen.findByRole('region', { name: 'Credit Line' });
+    expect(within(credit).getByText('Used').nextElementSibling).toHaveTextContent('75');
+    expect(within(credit).getByText('Available').nextElementSibling).toHaveTextContent('19.9K');
+    expect(within(credit).getByText('Drawn Credit')).toBeInTheDocument();
+    expect(within(credit).queryByText('Invoice Due')).toBeNull();
   });
 });
 
@@ -168,6 +227,25 @@ const commissionResult = (amount: number) => ({
 });
 
 describe('agent page response ordering', () => {
+  it('clears club A balances while club B is still resolving', async () => {
+    const clubBRead = deferred<ReturnType<typeof memberResult>>();
+    m.readMember.mockImplementation((filters) =>
+      filters.club_id === clubB ? clubBRead.promise : memberResult(456)
+    );
+    const view = mount();
+    await screen.findByText('456');
+
+    m.clubId = clubB;
+    view.rerender(
+      <MemoryRouter>
+        <AgentPortalPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.queryByText('456')).toBeNull());
+    await act(async () => clubBRead.resolve(memberResult(789)));
+    expect(await screen.findByText('789')).toBeInTheDocument();
+  });
+
   it('keeps club B selected when a transfer started in club A finishes late', async () => {
     const transfer = deferred<boolean>();
     m.send.mockReturnValueOnce(transfer.promise).mockResolvedValue(true);
@@ -176,7 +254,7 @@ describe('agent page response ordering', () => {
     );
     const view = mount();
     await screen.findByText('456');
-    fireEvent.click(screen.getByRole('button', { name: /LOAD FROM BIZ/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
     await waitFor(() => expect(m.send).toHaveBeenCalledWith(clubA, 5));
@@ -194,7 +272,7 @@ describe('agent page response ordering', () => {
     expect(screen.getByText('789')).toBeInTheDocument();
     expect(screen.queryByText('456')).toBeNull();
     expect(m.success).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /LOAD FROM BIZ/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '6' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
     await waitFor(() => expect(m.send).toHaveBeenLastCalledWith(clubB, 6));

@@ -9,13 +9,14 @@ import {
 } from 'react';
 import { useParams } from 'react-router-dom';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { titleCase } from '../utils/titleCase';
 import './ReportReviewPage.css';
 
 interface PlayerReport {
@@ -36,6 +37,15 @@ interface PlayerReport {
 type ReportFilter = 'all' | 'pending' | 'reviewed';
 const REPORT_FILTERS: ReportFilter[] = ['pending', 'reviewed', 'all'];
 
+interface ReportScope {
+  viewKey: string;
+  clubUuid: string;
+}
+
+interface SelectedReport extends ReportScope {
+  report: PlayerReport;
+}
+
 /** The moderation queue refreshes on this cadence while the tab is visible.
  *  See the polling effect below for why this is not a realtime subscription. */
 const REPORT_POLL_MS = 45_000;
@@ -49,53 +59,97 @@ export default function ReportReviewPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogShellRef = useRef<HTMLDivElement>(null);
   const [reports, setReports] = useState<PlayerReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<ReportFilter>('pending');
-  const [selectedReport, setSelectedReport] = useState<PlayerReport | null>(null);
+  const [loadedViewKey, setLoadedViewKey] = useState<string | null>(null);
+  const [listScope, setListScope] = useState<ReportScope | null>(null);
+  const [selectedReport, setSelectedReport] = useState<SelectedReport | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [processing, setProcessing] = useState(false);
+  const mountedRef = useRef(false);
+  const loadRequestRef = useRef(0);
+  const actionRequestRef = useRef(0);
+  const listRevisionRef = useRef(0);
+  const selectionRevisionRef = useRef(0);
+  const viewKey = `${clubId ?? ''}:${user?.id ?? 'signed-out'}:${filter}`;
+  const currentViewKeyRef = useRef(viewKey);
+  currentViewKeyRef.current = viewKey;
 
-  const loadReports = useCallback(
-    async (getIsMounted?: () => boolean) => {
-      setLoading(true);
-      setLoadError(false);
-      try {
-        /* SCOPED TO THIS CLUB (20260905194441). The RPC returns only reports
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadRequestRef.current += 1;
+      actionRequestRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    /* A route, viewer or filter change is a new moderation scope. Hide the old
+       list synchronously through `loadedViewKey`, then retire every result and
+       modal that was created under the previous identity. */
+    loadRequestRef.current += 1;
+    actionRequestRef.current += 1;
+    listRevisionRef.current += 1;
+    selectionRevisionRef.current += 1;
+    setReports([]);
+    setListScope(null);
+    setLoadedViewKey(null);
+    setLoadError(false);
+    setLoading(Boolean(clubId));
+    setSelectedReport(null);
+    setAdminNotes('');
+    setProcessing(false);
+  }, [viewKey, clubId]);
+
+  const loadReports = useCallback(async () => {
+    if (!clubId) return;
+    const requestedViewKey = `${clubId}:${user?.id ?? 'signed-out'}:${filter}`;
+    const requestId = ++loadRequestRef.current;
+    const isCurrent = () =>
+      mountedRef.current &&
+      requestId === loadRequestRef.current &&
+      requestedViewKey === currentViewKeyRef.current;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      /* SCOPED TO THIS CLUB (20260905194441). The RPC returns only reports
            the caller may moderate - that gate is unchanged - but it took no
            club argument, so this page pooled every club an operator runs under
            whichever club header they happened to open, and the three counts
            above described the pool. `clubId` was previously used only as an
            `if` gate before this call. */
-        const resolvedForReports = await resolveClubUUIDStrict(clubId!);
-        const { data, error } = await supabase.rpc('fn_list_player_reports', {
-          p_status: filter,
-          p_club_id: resolvedForReports,
-        });
-        if (getIsMounted && !getIsMounted()) return;
-        if (error) throw error;
-        setReports((data as PlayerReport[]) || []);
-      } catch (error) {
-        if (getIsMounted && !getIsMounted()) return;
-        setReports([]);
-        setLoadError(true);
-        reportError(error, 'ReportReviewPage.Failed_to_load_reports');
-        toast.error('Failed to load reports');
-      } finally {
-        if (!getIsMounted || getIsMounted()) setLoading(false);
-      }
-    },
-    [filter, toast, clubId]
-  );
+      const resolvedForReports = await resolveClubUUIDStrict(clubId);
+      if (!isCurrent()) return;
+      const { data, error } = await supabase.rpc('fn_list_player_reports', {
+        p_status: filter,
+        p_club_id: resolvedForReports,
+      });
+      if (!isCurrent()) return;
+      if (error) throw error;
+      listRevisionRef.current += 1;
+      setReports((data as PlayerReport[]) || []);
+      setListScope({ viewKey: requestedViewKey, clubUuid: resolvedForReports });
+      setLoadedViewKey(requestedViewKey);
+    } catch (error) {
+      if (!isCurrent()) return;
+      listRevisionRef.current += 1;
+      setReports([]);
+      setListScope(null);
+      setLoadedViewKey(requestedViewKey);
+      setLoadError(true);
+      reportError(error, 'ReportReviewPage.Failed_to_load_reports');
+      toast.error('Failed to load reports');
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
+  }, [filter, toast, clubId, user?.id]);
 
   useEffect(() => {
-    let isMounted = true;
-    if (clubId) void loadReports(() => isMounted);
-    return () => {
-      isMounted = false;
-    };
+    if (clubId) void loadReports();
   }, [clubId, loadReports]);
 
   /**
@@ -121,28 +175,34 @@ export default function ReportReviewPage() {
    */
   useEffect(() => {
     if (!clubId) return;
-    let isMounted = true;
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void loadReports(() => isMounted);
+      if (document.visibilityState === 'visible') void loadReports();
     }, REPORT_POLL_MS);
     return () => {
-      isMounted = false;
       clearInterval(timer);
     };
   }, [clubId, loadReports]);
 
+  const closeReport = useCallback(() => {
+    selectionRevisionRef.current += 1;
+    setSelectedReport(null);
+    setAdminNotes('');
+  }, []);
+
   useEffect(() => {
     if (!selectedReport) return;
-    closeButtonRef.current?.focus();
+    dialogShellRef.current?.querySelector<HTMLButtonElement>('[data-testid="sc-close"]')?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedReport(null);
+      if (event.key === 'Escape') closeReport();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [selectedReport]);
+  }, [closeReport, selectedReport]);
 
   const openReport = (report: PlayerReport) => {
-    setSelectedReport(report);
+    if (!listScope || listScope.viewKey !== currentViewKeyRef.current) return;
+    selectionRevisionRef.current += 1;
+    setSelectedReport({ ...listScope, report });
     setAdminNotes(report.admin_notes || '');
   };
 
@@ -165,11 +225,26 @@ export default function ReportReviewPage() {
   };
 
   const handleAction = (reportId: string, action: 'actioned' | 'dismissed') => {
+    const selection = selectedReport;
+    if (
+      !selection ||
+      selection.report.id !== reportId ||
+      selection.viewKey !== currentViewKeyRef.current
+    ) {
+      return;
+    }
+    const requestId = ++actionRequestRef.current;
+    const actionViewKey = selection.viewKey;
+    const isCurrent = () =>
+      mountedRef.current &&
+      requestId === actionRequestRef.current &&
+      actionViewKey === currentViewKeyRef.current;
     setProcessing(true);
     const previousReports = reports;
     const previousSelected = selectedReport;
     const previousNotes = adminNotes;
     const sanitizedNotes = sanitizeInput(adminNotes);
+    const optimisticRevision = ++listRevisionRef.current;
     setReports((current) =>
       current.map((report) =>
         report.id === reportId
@@ -183,6 +258,7 @@ export default function ReportReviewPage() {
           : report
       )
     );
+    const closedSelectionRevision = ++selectionRevisionRef.current;
     setSelectedReport(null);
     setAdminNotes('');
     /* THE SUCCESS MESSAGE MOVED BELOW THE WRITE (2026-09-05 sweep). It used to
@@ -200,11 +276,18 @@ export default function ReportReviewPage() {
       })
     )
       .then(({ data, error }) => {
+        if (!isCurrent()) return;
         const result = data as { success?: boolean; error?: string } | null;
         if (error || result?.success === false) {
-          setReports(previousReports);
-          setSelectedReport(previousSelected);
-          setAdminNotes(previousNotes);
+          if (listRevisionRef.current === optimisticRevision) {
+            listRevisionRef.current += 1;
+            setReports(previousReports);
+          }
+          if (selectionRevisionRef.current === closedSelectionRevision) {
+            selectionRevisionRef.current += 1;
+            setSelectedReport(previousSelected);
+            setAdminNotes(previousNotes);
+          }
           toast.error(result?.error || 'Failed to update report');
           reportError(error || result?.error, 'ReportReviewPage.Failed_to_update_report');
         } else {
@@ -213,17 +296,26 @@ export default function ReportReviewPage() {
         setProcessing(false);
       })
       .catch((error: unknown) => {
-        setReports(previousReports);
-        setSelectedReport(previousSelected);
-        setAdminNotes(previousNotes);
+        if (!isCurrent()) return;
+        if (listRevisionRef.current === optimisticRevision) {
+          listRevisionRef.current += 1;
+          setReports(previousReports);
+        }
+        if (selectionRevisionRef.current === closedSelectionRevision) {
+          selectionRevisionRef.current += 1;
+          setSelectedReport(previousSelected);
+          setAdminNotes(previousNotes);
+        }
         setProcessing(false);
         toast.error('Failed to update report');
         reportError(error, 'ReportReviewPage.Failed_to_update_report');
       });
   };
 
-  const pendingCount = reports.filter((report) => report.status === 'pending').length;
-  const actionedCount = reports.filter((report) => report.status === 'actioned').length;
+  const viewIsCurrent = loadedViewKey === viewKey;
+  const visibleReports = viewIsCurrent ? reports : [];
+  const pendingCount = visibleReports.filter((report) => report.status === 'pending').length;
+  const actionedCount = visibleReports.filter((report) => report.status === 'actioned').length;
 
   return (
     <div className="report-review-page">
@@ -234,181 +326,203 @@ export default function ReportReviewPage() {
         title="Player Report Review"
         description="Triage Player Conduct Signals, Inspect The Evidence, And Record A Moderation Decision Without Leaving The Live Club Workflow."
         metrics={[
-          { label: 'In View', value: reports.length },
+          { label: 'In View', value: visibleReports.length },
           { label: 'Pending', value: pendingCount, tone: pendingCount ? 'active' : 'neutral' },
           { label: 'Actioned', value: actionedCount, tone: actionedCount ? 'risk' : 'neutral' },
         ]}
       />
 
       <main className="report-workspace">
-        <div className="case-toolbar">
-          <div>
+        <SpadeConsole
+          className="report-console"
+          family="spade"
+          crest="spade"
+          eyebrow="Integrity Casework"
+          title="Conduct Reports"
+          pill={titleCase(filter)}
+          pillInk={loadError ? 'red' : pendingCount > 0 ? 'gold' : 'blue'}
+          foot="foot"
+        >
+          <div className="case-toolbar">
             <p className="case-kicker">Moderation Queue</p>
-            <h2>Conduct Reports</h2>
-          </div>
-          <div className="filter-tabs" role="tablist" aria-label="Filter Reports By Status">
-            {REPORT_FILTERS.map((item) => (
-              <button
-                key={item}
-                id={`report-filter-${item}`}
-                type="button"
-                role="tab"
-                aria-selected={filter === item}
-                aria-controls="report-case-panel"
-                tabIndex={filter === item ? 0 : -1}
-                className={`filter-tab ${filter === item ? 'active' : ''}`}
-                onClick={() => setFilter(item)}
-                onKeyDown={(event) => handleFilterKeyDown(event, item)}
-              >
-                {item.charAt(0).toUpperCase() + item.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div id="report-case-panel" role="tabpanel" aria-labelledby={`report-filter-${filter}`}>
-          {loading ? (
-            <PageSkeleton variant="list" />
-          ) : loadError ? (
-            <div className="report-state report-error" role="alert">
-              <strong>Report Queue Unavailable</strong>
-              <p>
-                The Live Moderation Feed Could Not Be Loaded. Existing Case Data Was Not Changed.
-              </p>
-              <button type="button" onClick={() => void loadReports()}>
-                Retry Report Feed
-              </button>
-            </div>
-          ) : reports.length === 0 ? (
-            <div className="report-state">
-              <span className="state-signal" aria-hidden="true" />
-              <strong>Queue Clear</strong>
-              <p>No {filter === 'pending' ? 'Pending ' : ''}reports Match This View.</p>
-            </div>
-          ) : (
-            <div className="reports-list">
-              {/* fn_list_player_reports takes the newest 100 and offers no
-                  cursor. A queue that silently stops at its own ceiling looks
-                  like a queue that has been worked down. */}
-              {reports.length >= REPORT_PAGE_SIZE && (
-                <p className="report-cap" role="status">
-                  Showing The {REPORT_PAGE_SIZE} Most Recent Reports. Work This View Down To See
-                  Older Cases.
-                </p>
-              )}
-              {reports.map((report) => (
+            <div className="filter-tabs" role="tablist" aria-label="Filter Reports By Status">
+              {REPORT_FILTERS.map((item) => (
                 <button
-                  key={report.id}
+                  key={item}
+                  id={`report-filter-${item}`}
                   type="button"
-                  className="report-card"
-                  aria-haspopup="dialog"
-                  onClick={() => openReport(report)}
+                  role="tab"
+                  aria-selected={filter === item}
+                  aria-controls="report-case-panel"
+                  tabIndex={filter === item ? 0 : -1}
+                  className={`filter-tab ${filter === item ? 'active' : ''}`}
+                  onClick={() => setFilter(item)}
+                  onKeyDown={(event) => handleFilterKeyDown(event, item)}
                 >
-                  <span className="report-header">
-                    <span className="reason-label">{report.reason}</span>
-                    <span className={`status-badge status-${report.status}`}>{report.status}</span>
-                  </span>
-                  <span className="report-players">
-                    <span>
-                      <strong>Filed By</strong>
-                      {report.reporter_username || 'Unknown Player'}
-                    </span>
-                    <span>
-                      <strong>Against</strong>
-                      {report.reported_username || 'Unknown Player'}
-                    </span>
-                  </span>
-                  <span className="report-date">
-                    Opened {new Date(report.created_at).toLocaleDateString()}
-                  </span>
-                  <span className="inspect-label">Inspect Case</span>
+                  {titleCase(item)}
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+
+          <div id="report-case-panel" role="tabpanel" aria-labelledby={`report-filter-${filter}`}>
+            {!viewIsCurrent || loading ? (
+              <div
+                className="report-state sc-copy sc-copy--center"
+                role="status"
+                aria-live="polite"
+              >
+                <strong className="sc-label sc-ink--blue">Loading Report Queue</strong>
+                <p>Confirming The Current Club And Moderation Scope.</p>
+              </div>
+            ) : loadError ? (
+              <div className="report-state report-error sc-copy sc-copy--center" role="alert">
+                <strong className="sc-label sc-ink--red">Report Queue Unavailable</strong>
+                <p>
+                  The Live Moderation Feed Could Not Be Loaded. Existing Case Data Was Not Changed.
+                </p>
+                <button type="button" onClick={() => void loadReports()}>
+                  Retry Report Feed
+                </button>
+              </div>
+            ) : visibleReports.length === 0 ? (
+              <div className="report-state sc-copy sc-copy--center">
+                <strong className="sc-label sc-ink--blue">Queue Clear</strong>
+                <p>No {filter === 'pending' ? 'Pending ' : ''}Reports Match This View.</p>
+              </div>
+            ) : (
+              <div className="reports-list">
+                {/* fn_list_player_reports takes the newest 100 and offers no
+                  cursor. A queue that silently stops at its own ceiling looks
+                  like a queue that has been worked down. */}
+                {visibleReports.length >= REPORT_PAGE_SIZE && (
+                  <p className="report-cap" role="status">
+                    Showing The {REPORT_PAGE_SIZE} Most Recent Reports. Work This View Down To See
+                    Older Cases.
+                  </p>
+                )}
+                {visibleReports.map((report) => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    className="report-card"
+                    aria-haspopup="dialog"
+                    onClick={() => openReport(report)}
+                  >
+                    <span className="report-header">
+                      <span className="reason-label sc-ink--silver">
+                        {titleCase(report.reason)}
+                      </span>
+                      <span className={`status-badge status-${report.status}`}>
+                        {titleCase(report.status)}
+                      </span>
+                    </span>
+                    <span className="report-players">
+                      <span>
+                        <strong>Filed By</strong>
+                        {titleCase(report.reporter_username || 'Unknown Player')}
+                      </span>
+                      <span>
+                        <strong>Against</strong>
+                        {titleCase(report.reported_username || 'Unknown Player')}
+                      </span>
+                    </span>
+                    <span className="report-date">
+                      Opened {new Date(report.created_at).toLocaleDateString()}
+                    </span>
+                    <span className="inspect-label">Inspect Case</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </SpadeConsole>
       </main>
 
-      {selectedReport && (
+      {selectedReport && selectedReport.viewKey === viewKey && (
         <div
           className="modal-overlay"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setSelectedReport(null);
+            if (event.currentTarget === event.target) closeReport();
           }}
         >
-          <section
-            className="modal-content"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="report-dialog-title"
-          >
-            <div className="modal-header">
-              <div>
-                <p className="case-kicker">Conduct Case</p>
-                <h2 id="report-dialog-title">Report Details</h2>
+          <div className="report-dialog-shell" ref={dialogShellRef}>
+            <SpadeConsole
+              className="report-dialog-console"
+              family="riveted"
+              crest="flat"
+              eyebrow="Conduct Case"
+              title="Report Details"
+              titleId="report-dialog-title"
+              pill={titleCase(selectedReport.report.status)}
+              pillInk={selectedReport.report.status === 'pending' ? 'gold' : 'blue'}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="report-dialog-title"
+              onClose={closeReport}
+              foot={selectedReport.report.status === 'pending' ? 'plates' : 'foot'}
+              plates={
+                selectedReport.report.status === 'pending'
+                  ? {
+                      secondary: {
+                        label: 'Dismiss Report',
+                        disabled: processing,
+                        onClick: () => handleAction(selectedReport.report.id, 'dismissed'),
+                      },
+                      primary: {
+                        label: 'Take Action',
+                        ink: 'red',
+                        disabled: processing,
+                        onClick: () => handleAction(selectedReport.report.id, 'actioned'),
+                      },
+                    }
+                  : undefined
+              }
+            >
+              <div className="modal-body">
+                <dl className="case-details">
+                  <div>
+                    <dt>Reported Player</dt>
+                    <dd>
+                      {titleCase(selectedReport.report.reported_username || 'Unknown Player')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Reported By</dt>
+                    <dd>
+                      {titleCase(selectedReport.report.reporter_username || 'Unknown Player')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Reason</dt>
+                    <dd>{titleCase(selectedReport.report.reason)}</dd>
+                  </div>
+                  <div className="full-detail">
+                    <dt>Description</dt>
+                    <dd>
+                      {titleCase(
+                        selectedReport.report.details || 'No Additional Details Supplied.'
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                {selectedReport.report.status === 'pending' && (
+                  <>
+                    <div className="notes-field">
+                      <label htmlFor="report-admin-notes">Decision Notes</label>
+                      <textarea
+                        id="report-admin-notes"
+                        value={adminNotes}
+                        onChange={(event) => setAdminNotes(event.target.value)}
+                        placeholder="Record The Evidence And Decision Rationale"
+                        rows={4}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-              <button
-                ref={closeButtonRef}
-                type="button"
-                onClick={() => setSelectedReport(null)}
-                aria-label="Close Report Details"
-              >
-                Close
-              </button>
-            </div>
-            <div className="modal-body">
-              <dl className="case-details">
-                <div>
-                  <dt>Reported Player</dt>
-                  <dd>{selectedReport.reported_username || 'Unknown Player'}</dd>
-                </div>
-                <div>
-                  <dt>Reported By</dt>
-                  <dd>{selectedReport.reporter_username || 'Unknown Player'}</dd>
-                </div>
-                <div>
-                  <dt>Reason</dt>
-                  <dd>{selectedReport.reason}</dd>
-                </div>
-                <div className="full-detail">
-                  <dt>Description</dt>
-                  <dd>{selectedReport.details || 'No Additional Details Supplied.'}</dd>
-                </div>
-              </dl>
-              {selectedReport.status === 'pending' && (
-                <>
-                  <div className="notes-field">
-                    <label htmlFor="report-admin-notes">Decision Notes</label>
-                    <textarea
-                      id="report-admin-notes"
-                      value={adminNotes}
-                      onChange={(event) => setAdminNotes(event.target.value)}
-                      placeholder="Record The Evidence And Decision Rationale"
-                      rows={4}
-                    />
-                  </div>
-                  <div className="action-buttons">
-                    <button
-                      className="btn btn-danger"
-                      type="button"
-                      onClick={() => handleAction(selectedReport.id, 'actioned')}
-                      disabled={processing}
-                    >
-                      Take Action
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={() => handleAction(selectedReport.id, 'dismissed')}
-                      disabled={processing}
-                    >
-                      Dismiss Report
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
+            </SpadeConsole>
+          </div>
         </div>
       )}
     </div>

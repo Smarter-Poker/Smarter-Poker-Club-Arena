@@ -14,7 +14,6 @@ import { supabase } from '../lib/supabase';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -95,6 +94,124 @@ export interface DisputeResolution {
   adjustmentType?: 'credit' | 'debit' | 'none';
 }
 
+const DISPUTE_TARGETS = new Set<DisputeTarget>([
+  'agent_settlement',
+  'cashout_request',
+  'credit_invoice',
+  'commission_payout',
+]);
+const DISPUTE_STATUSES = new Set<DisputeStatus>([
+  'open',
+  'under_review',
+  'resolved',
+  'escalated',
+  'withdrawn',
+]);
+
+function disputeRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Dispute record could not be verified');
+  }
+  return value as Record<string, unknown>;
+}
+
+function disputeText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${label} could not be verified`);
+  }
+  return value;
+}
+
+function nullableDisputeText(value: unknown, label: string): string | undefined {
+  return value === null ? undefined : disputeText(value, label);
+}
+
+function disputeTimestamp(value: unknown, label: string): string {
+  const timestamp = disputeText(value, label);
+  if (!Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} could not be verified`);
+  return timestamp;
+}
+
+function disputeMoney(value: unknown, positive = false): number | null {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'number' && !Number.isFinite(value))
+  ) {
+    return null;
+  }
+  const source = String(value).trim();
+  if (!source || source.length > 128) return null;
+  const match = /^(?:(\d+)(?:\.(\d*))?|\.(\d+))$/.exec(source);
+  const fraction = match?.[2] ?? match?.[3] ?? '';
+  if (!match || /[1-9]/.test(fraction.slice(2))) return null;
+  const cents = BigInt(match[1] ?? '0') * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2));
+  if ((positive && cents === 0n) || cents > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  const amount = Number(cents) / 100;
+  return Math.round(amount * 100) === Number(cents) ? amount : null;
+}
+
+/** A dispute adjustment is optional, but when selected it is positive exact cents. */
+export function parseDisputeAdjustmentAmount(value: string): number | null {
+  return disputeMoney(value, true);
+}
+
+export function parseDispute(value: unknown): Dispute {
+  const row = disputeRecord(value);
+  const targetType = disputeText(row.target_type, 'Dispute target type') as DisputeTarget;
+  const status = disputeText(row.status, 'Dispute status') as DisputeStatus;
+  const amount = disputeMoney(row.amount);
+  if (!DISPUTE_TARGETS.has(targetType) || !DISPUTE_STATUSES.has(status) || amount === null) {
+    throw new Error('Dispute financial state could not be verified');
+  }
+  const createdAt = disputeTimestamp(row.created_at, 'Dispute creation time');
+  const updatedAt = disputeTimestamp(row.updated_at, 'Dispute update time');
+  const resolvedAt =
+    row.resolved_at === null
+      ? undefined
+      : disputeTimestamp(row.resolved_at, 'Dispute resolution time');
+  if (
+    Date.parse(updatedAt) < Date.parse(createdAt) ||
+    (resolvedAt !== undefined && Date.parse(resolvedAt) < Date.parse(createdAt))
+  ) {
+    throw new Error('Dispute timeline could not be verified');
+  }
+  return {
+    id: disputeText(row.id, 'Dispute identity'),
+    submittedBy: disputeText(row.submitted_by, 'Dispute submitter'),
+    submitterName: disputeText(row.submitter_name, 'Dispute submitter name'),
+    targetType,
+    targetId: disputeText(row.target_id, 'Dispute target'),
+    clubId: disputeText(row.club_id, 'Dispute club'),
+    amount,
+    reason: disputeText(row.reason, 'Dispute reason'),
+    status,
+    assignedTo: nullableDisputeText(row.assigned_to, 'Dispute assignee'),
+    resolution: nullableDisputeText(row.resolution, 'Dispute resolution'),
+    createdAt,
+    updatedAt,
+    resolvedAt,
+  };
+}
+
+function parseDisputeList(
+  value: unknown,
+  expected: { clubId?: string; submitterId?: string } = {}
+): Dispute[] {
+  if (!Array.isArray(value)) throw new Error('Dispute list could not be verified');
+  const disputes = value.map(parseDispute);
+  if (
+    new Set(disputes.map((dispute) => dispute.id)).size !== disputes.length ||
+    disputes.some(
+      (dispute) =>
+        (expected.clubId !== undefined && dispute.clubId !== expected.clubId) ||
+        (expected.submitterId !== undefined && dispute.submittedBy !== expected.submitterId)
+    )
+  ) {
+    throw new Error('Dispute list scope could not be verified');
+  }
+  return disputes;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -162,12 +279,13 @@ export const DisputeService = {
    * Get disputes for a club (owner/admin view)
    */
   async getClubDisputes(clubId: string, status?: DisputeStatus): Promise<Dispute[]> {
+    const resolvedClubId = await resolveClubUUID(clubId);
     let query = supabase
       .from('disputes')
       .select(
         'id, submitted_by, submitter_name, target_type, target_id, club_id, amount, reason, status, assigned_to, resolution, created_at, updated_at, resolved_at'
       )
-      .eq('club_id', await resolveClubUUID(clubId))
+      .eq('club_id', resolvedClubId)
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -175,7 +293,7 @@ export const DisputeService = {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []).map(this.mapDispute);
+    return parseDisputeList(data, { clubId: resolvedClubId });
   },
 
   /**
@@ -192,7 +310,7 @@ export const DisputeService = {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
-    return (data || []).map(this.mapDispute);
+    return parseDisputeList(data, { submitterId: userId });
   },
 
   /**
@@ -253,6 +371,12 @@ export const DisputeService = {
     reviewerId: string,
     resolution: DisputeResolution
   ): Promise<Dispute> {
+    const adjustmentType = resolution.adjustmentType ?? 'none';
+    const adjustmentAmount =
+      adjustmentType === 'none' ? 0 : disputeMoney(resolution.adjustmentAmount, true);
+    if (adjustmentAmount === null) {
+      throw new Error('Adjustment amount must be a positive whole-cent amount');
+    }
     // AUDIT M17: this used to mark the dispute resolved, then adjust the wallet
     // in a second round trip. The comment above that ordering argued it was the
     // safe direction — "if wallet adjustment fails after status update, we can
@@ -275,8 +399,8 @@ export const DisputeService = {
     const { data: res, error } = await supabase.rpc('fn_resolve_dispute', {
       p_dispute_id: disputeId,
       p_resolution: resolution.resolution,
-      p_adjustment_type: resolution.adjustmentType ?? 'none',
-      p_adjustment_amount: resolution.adjustmentAmount ?? 0,
+      p_adjustment_type: adjustmentType,
+      p_adjustment_amount: adjustmentAmount,
     });
 
     if (error) {
@@ -397,23 +521,8 @@ export const DisputeService = {
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  mapDispute(row: any): Dispute {
-    return {
-      id: row.id,
-      submittedBy: row.submitted_by,
-      submitterName: row.submitter_name,
-      targetType: row.target_type,
-      targetId: row.target_id,
-      clubId: row.club_id,
-      amount: row.amount,
-      reason: row.reason,
-      status: row.status,
-      assignedTo: row.assigned_to,
-      resolution: row.resolution,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      resolvedAt: row.resolved_at,
-    };
+  mapDispute(row: unknown): Dispute {
+    return parseDispute(row);
   },
 };
 

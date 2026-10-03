@@ -28,6 +28,7 @@ import { useToast } from '../components/common/Toast';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import './FinancialHealthPage.css';
 import { reportError } from '../utils/errorReporter';
+import { compactChips } from '../utils/format';
 
 interface CronStatus {
   isRunning: boolean;
@@ -119,6 +120,7 @@ export default function FinancialHealthPage() {
       <div className="financial-health-page">
         <SpadeConsole
           className="fhp__console"
+          family="shark"
           eyebrow="Financial Admin"
           title="Financial Health"
           titleId="financial-health-title"
@@ -138,6 +140,7 @@ export default function FinancialHealthPage() {
     <div className="financial-health-page">
       <SpadeConsole
         className="fhp__console"
+        family="riveted"
         eyebrow="Financial Admin"
         title="Financial Health"
         titleId="financial-health-title"
@@ -220,10 +223,8 @@ export default function FinancialHealthPage() {
               </div>
               <div className="fhp__row">
                 <span className="fhp__row-label sc-ink--blue">Difference</span>
-                {/* A drift figure is a number the admin acts on to the chip, so it
-                    prints exactly rather than compacted. */}
                 <span className="fhp__row-value sc-ink--silver">
-                  {status.lastReconciliation.difference.toLocaleString()} Chips
+                  {compactChips(status.lastReconciliation.difference)} Chips
                 </span>
               </div>
               <div className="fhp__row">

@@ -193,17 +193,18 @@ describe('the client knows what a void invoice is', () => {
     // `inv.amount_remaining || inv.debt_owed` is falsy-coalescing: 0 became the
     // full original debt, so a settled or voided invoice reported its whole
     // balance as still due and drew a Pay Now button on it.
-    expect(codeOnly(CREDIT_SERVICE)).not.toMatch(/amount_remaining \|\| inv\.debt_owed/);
-    expect(CREDIT_SERVICE).toMatch(/amountRemaining: inv\.amount_remaining \?\? inv\.debt_owed/);
+    expect(codeOnly(CREDIT_SERVICE)).not.toMatch(/amount_remaining \|\| (?:inv|row)\.debt_owed/);
+    expect(CREDIT_SERVICE).toMatch(/invoiceMoney\(row\.amount_remaining,\s*'balance'\)/);
+    expect(CREDIT_SERVICE).toContain('paidCents + remainingCents !== debtCents');
   });
 
   it('the pay button asks the status, not only the number', () => {
     expect(INVOICES_PANEL).toMatch(
-      /const canPay =\s*OWED_INVOICE_STATUSES\.has\(inv\.status\) &&\s*inv\.status !== 'disputed' &&\s*inv\.amountRemaining > 0/
+      /const canPay =\s*OWED_INVOICE_STATUSES\.has\(inv\.status\) &&\s*inv\.amountRemaining > 0/
     );
   });
 
-  it('a void invoice has its own colour rather than the unknown-state fallback', () => {
-    expect(INVOICES_PANEL).toMatch(/void: '#718096'/);
+  it('a void invoice has its own muted console ink rather than the unknown-state fallback', () => {
+    expect(INVOICES_PANEL).toMatch(/void: 'muted'/);
   });
 });

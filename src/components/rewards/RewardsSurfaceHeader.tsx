@@ -3,6 +3,7 @@ import { formatPopupText } from '../../utils/popupStyle';
 import {
   SpadeConsole,
   type ConsoleCrest,
+  type ConsoleFamily,
   type ConsoleInk,
   type PlateButtonProps,
 } from '../console/SpadeConsole';
@@ -38,6 +39,8 @@ interface RewardsSurfaceHeaderProps {
   pillInk?: ConsoleInk;
   /** The emblem this page's console wears. Every page picks its own. */
   crest?: ConsoleCrest;
+  /** The approved painted chassis this page uses. */
+  family?: ConsoleFamily;
   /** More of the page, printed on the same glass so the surface stays one picture. */
   children?: ReactNode;
 }
@@ -104,12 +107,13 @@ export default function RewardsSurfaceHeader({
   pill,
   pillInk,
   crest = 'spade',
+  family = 'spade',
   children,
 }: RewardsSurfaceHeaderProps) {
   const titleId = useId();
   /* The master's eyebrow zone ends where the crest begins, so the eyebrow
      prints the family ("Rewards Circuit"); the section is the title. */
-  const family = eyebrow.split('/')[0].trim();
+  const eyebrowFamily = eyebrow.split('/')[0].trim();
   const fromStatus = pillFromStatus(status);
   const pillText = pill ? formatPopupText(pill) : fromStatus.text;
   const ink = pillInk ?? (pill ? 'blue' : fromStatus.ink);
@@ -118,12 +122,13 @@ export default function RewardsSurfaceHeader({
     <div className={styles.header}>
       <SpadeConsole
         as="section"
-        eyebrow={formatPopupText(family)}
+        eyebrow={formatPopupText(eyebrowFamily)}
         title={formatPopupText(title)}
         titleId={titleId}
         pill={pillText}
         pillInk={ink}
         crest={crest}
+        family={family}
         foot={plates ? 'plates' : 'foot'}
         plates={plates}
         className={styles.console}

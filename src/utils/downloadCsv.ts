@@ -100,8 +100,19 @@ export function downloadBlob(
   return true;
 }
 
-export function downloadCsv(filename: string, csv: string): boolean {
+export function downloadCsv(filename: string, csv: string): boolean;
+export function downloadCsv(
+  filename: string,
+  csv: string,
+  isCurrent: () => boolean
+): boolean | Promise<boolean>;
+export function downloadCsv(
+  filename: string,
+  csv: string,
+  isCurrent?: () => boolean
+): boolean | Promise<boolean> {
   // The BOM is what makes Excel read this as UTF-8 instead of guessing;
   // club and player names are not all ASCII.
-  return downloadBlob(filename, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  return isCurrent ? downloadBlob(filename, blob, isCurrent) : downloadBlob(filename, blob);
 }

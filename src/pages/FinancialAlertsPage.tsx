@@ -260,6 +260,7 @@ function FinancialAlertsContent({ actorId }: { actorId?: string }) {
       <div className="financial-alerts-page">
         <SpadeConsole
           className="fap__console"
+          family="shark"
           eyebrow="Financial Admin"
           title="Financial Alerts"
           titleId="financial-alerts-title"
@@ -290,6 +291,7 @@ function FinancialAlertsContent({ actorId }: { actorId?: string }) {
       <div className="financial-alerts-page">
         <SpadeConsole
           className="fap__console"
+          family="shark"
           eyebrow="Financial Admin"
           title="Financial Alerts"
           titleId="financial-alerts-title"
@@ -322,6 +324,7 @@ function FinancialAlertsContent({ actorId }: { actorId?: string }) {
     <div className="financial-alerts-page">
       <SpadeConsole
         className="fap__console"
+        family="riveted"
         eyebrow="Financial Admin"
         title="Financial Alerts"
         titleId="financial-alerts-title"
@@ -377,8 +380,8 @@ function FinancialAlertsContent({ actorId }: { actorId?: string }) {
         {/* Critical rows are prioritized but remain bounded by query/provider caps. */}
         {notShown > 0 && (
           <p className="sc-copy fap__note sc-ink--muted">
-            Loaded {alerts.length} Alerts; Separate Reads Report {totalCount} Unresolved. This
-            List May Be Incomplete.
+            Loaded {alerts.length} Alerts; Separate Reads Report {totalCount} Unresolved. This List
+            May Be Incomplete.
           </p>
         )}
 

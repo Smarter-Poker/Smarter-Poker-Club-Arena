@@ -63,8 +63,15 @@ process.env.EQUITY_GOVERNOR = 'off';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(here, '..');
+/** Git finds this checkout from the script's own location. An inherited GIT_DIR
+ * (a git hook exports one) would make the working directory the work tree, so
+ * root-relative paths such as server/src/... would name files that do not exist. */
+const gitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+);
 const sourceRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: serverRoot,
+  env: gitEnv,
   encoding: 'utf8',
 }).trim();
 
@@ -137,6 +144,7 @@ export function policySourceRefusal(head, repo = sourceRepo) {
   try {
     execFileSync('git', ['diff', '--quiet', head, '--', ...POLICY_SOURCE_FILES], {
       cwd: repo,
+      env: gitEnv,
       stdio: 'ignore',
     });
     return null;
@@ -281,6 +289,7 @@ export function inspectAttempts({ runsDir, development = false, defective = {} }
     try {
       execFileSync('git', ['cat-file', '-e', `${head}^{commit}`], {
         cwd: sourceRepo,
+        env: gitEnv,
         stdio: 'ignore',
       });
     } catch {

@@ -16,7 +16,7 @@ does not already trust that database. `docs/attestation/chip-ledger-days.tsv` is
 where git carries the same history, which is the entire point of the file.
 
 It stopped at **2026-09-18**. Fourteen days - 2026-09-19 through 2026-10-02,
-3,104,522 ledger rows - had been attested by the database and anchored nowhere
+3,584,522 ledger rows - had been attested by the database and anchored nowhere
 else. Every one of the 48 days the file already carried still hashed exactly the
 same, so this was never the incident the job exists to catch.
 

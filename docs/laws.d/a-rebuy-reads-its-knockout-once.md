@@ -1,0 +1,3 @@
+# tests/a-rebuy-reads-its-knockout-once.law.test.ts
+
+`fn_ca_latest_committed_knockout_candidate` is STABLE, so `process_tournament_rebuy`'s `WHERE c.id = fn_ca_latest_committed_knockout_candidate(...)` is one primary-key read instead of a sequential scan that called the function once per row of `tournament_knockout_candidates` (~402,000 rows). As VOLATILE it held the MTT's settlement lane for 18-29 s per rebuy and timed out ~240 per-hand calls in ten minutes (2026-10-03 16:40-16:50 UTC). The law pins the single-transaction ALTER with its assertion and refuses any later migration that redefines the function without STABLE or alters it back to VOLATILE.

@@ -91,6 +91,11 @@ describe('Daily Missions production certification', () => {
     expect(spec.indexOf('routedRealtimeServers.splice(0)')).toBeLessThan(
       spec.indexOf('name: /^Claim (?:All|Next) / })')
     );
+    const liveRecovery = spec.indexOf("const liveRecovery = expect(page.getByText('Live Now'))");
+    const claimRecovery = spec.indexOf('name: /^Claim (?:All|Next) / })');
+    expect(liveRecovery).toBeGreaterThan(spec.indexOf('routedRealtimeServers.splice(0)'));
+    expect(spec.indexOf('await Promise.all([', liveRecovery)).toBeGreaterThan(liveRecovery);
+    expect(liveRecovery).toBeLessThan(claimRecovery);
     expect(spec).not.toMatch(/revision cursor watchdog/);
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.

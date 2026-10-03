@@ -1674,14 +1674,22 @@ test.describe('production Daily Missions certification', () => {
               // The reconnect proof below is what decides that.
             }
           }
-          await expect
-            .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
-            .toBeGreaterThan(socketsBeforeInterruption);
-          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
-          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-          await expect(page.getByText('Live Now')).toBeVisible({
+          // Observe the live recovery while the replacement socket is being
+          // established. The dashboard read below may finish after a valid
+          // transient SUBSCRIBED state, and starting this assertion only after
+          // the Claim control renders can miss that recovery when the provider
+          // degrades again immediately afterward.
+          const liveRecovery = expect(page.getByText('Live Now')).toBeVisible({
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           });
+          await Promise.all([
+            expect
+              .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+              .toBeGreaterThan(socketsBeforeInterruption),
+            liveRecovery,
+          ]);
+          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
+          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
           const catchUpReads = cursorReads - cursorReadsBeforeInterruption;
           expect(
             catchUpReads,

@@ -126,11 +126,17 @@ EXTENSIONS = [
     'B2, B3, B4 and B5 checks; the P10.1 C7 is evaluated inside B4 (its failures keep their C7 names)',
     'reported breakdowns: dead-button and dead-small-blind decisions by mode, street and outcome; gameState.blindSeats presence; dead-button canonical_state_unavailable beside 465',
     'B1 verdict aggregated from C1-C6',
+    'window bounds accept fractional seconds (T0 is the container start to the nanosecond): the half-open window on the integer decisionTimeMs uses ceil(bound in ms) at both ends, which is exactly [T0+5min, T0+50min)',
 ]
 def iso_epoch(s):
-    return calendar.timegm(time.strptime(s.replace('Z', ''), '%Y-%m-%dT%H:%M:%S'))
-WS, WE = iso_epoch(ws_iso), iso_epoch(we_iso)
-WS_MS, WE_MS = WS * 1000, WE * 1000
+    return calendar.timegm(time.strptime(s.replace('Z', '').split('.')[0], '%Y-%m-%dT%H:%M:%S'))
+def iso_ms_ceil(s):
+    """The exact instant in ms, rounded up: an integer decisionTimeMs dt satisfies dt >= instant iff dt >= ceil."""
+    from decimal import Decimal, ROUND_CEILING
+    frac = s.replace('Z', '').split('.')[1] if '.' in s else '0'
+    return int((Decimal(iso_epoch(s)) * 1000 + Decimal('0.' + frac) * 1000).to_integral_value(rounding=ROUND_CEILING))
+WS, WE = iso_epoch(ws_iso), iso_epoch(we_iso)   # whole seconds (floor): segment choice (WS - margin) and the late-segment count only
+WS_MS, WE_MS = iso_ms_ceil(ws_iso), iso_ms_ceil(we_iso)
 iso = lambda e: time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(e))
 
 # ---- canonical JSON, independent of the engine --------------------------------------

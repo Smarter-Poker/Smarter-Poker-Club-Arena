@@ -154,8 +154,8 @@ test.describe('Production Create A Club Certificate', () => {
     });
     await expect(wizard).toBeVisible();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
-    // The wrapped label also contains the live character counter, so the
-    // textbox's accessible name is "Club Tag Line 0 Of 72 Characters".
+    // The field is named "Club Tag Line"; its live character counter is the
+    // accessible description. The prefix match also accepts an older bundle.
     await wizard
       .getByRole('textbox', { name: /^Club Tag Line\b/i })
       .fill('Production Certificate Club');
@@ -184,7 +184,13 @@ test.describe('Production Create A Club Certificate', () => {
 
     const retirement = page.getByRole('dialog', { name: 'Retire Club', exact: true });
     await expect(retirement).toBeVisible({ timeout: 30_000 });
-    await expect(retirement.getByText('100,000', { exact: false })).toBeVisible({
+    // A pristine welcome club names 100,000 twice: the verified opening grant
+    // and the canonical wallet total. Prove each line on its own so the
+    // locator is never ambiguous.
+    await expect(
+      retirement.getByText(/^Exact Unused Welcome Package Verified - .*100,000-Chip Grant/)
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(retirement.getByText(/^100,000 Chips Or Credit Across Canonical/)).toBeVisible({
       timeout: 30_000,
     });
     await retirement.getByLabel('Type The Club Name To Confirm:', { exact: true }).fill(clubName);
@@ -198,15 +204,15 @@ test.describe('Production Create A Club Certificate', () => {
       fullPage: true,
     });
 
-    const retireResponse = page.waitForResponse(
-      (candidate) =>
-        candidate.request().method() === 'POST' &&
-        new URL(candidate.url()).pathname.endsWith('/rest/v1/rpc/fn_retire_settled_club'),
-      { timeout: 60_000 }
-    );
-    await confirmRetirement.click();
-    const retired = await retireResponse;
-    expect(retired.ok(), `retire RPC returned ${retired.status()}`).toBe(true);
-    await expect(page).toHaveURL(/\/clubs(?:[/?#]|$)/, { timeout: 60_000 });
+    // Stop at the enabled confirmation. Committing the owner retirement here
+    // would cancel the opening board through atomic_cancel_tournament, whose
+    // receipts are immutable financial records: the fixture could then never
+    // be erased and every later certificate would inherit it. The commit path
+    // of that same unwind is proved by the rollback-only reset probe in
+    // scripts/ci/certify-club-create.mjs, which forces the deferred receipt
+    // constraint before its ROLLBACK. The pristine fixture is retired by the
+    // workflow's guarded cleanup step.
+    await retirement.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(retirement).toBeHidden({ timeout: 30_000 });
   });
 });

@@ -470,6 +470,95 @@ export async function cleanupStaleProductionE2EAccounts({
  * statement timeout rolled it back and a replay is safe. Transient failures
  * are retried with backoff; a `success: false` refusal is definitive.
  */
+const IDLE_ENGINE_RELEASE_TIMEOUT_MS = 180_000;
+const IDLE_ENGINE_RELEASE_POLL_MS = 5_000;
+
+/**
+ * A brand-new club's opening cash tables are live, so the engine can take a
+ * lease on an empty Main table (a horse-seating wake or a viewer) and keep it
+ * while the table stays open. The fixture-only cleanup door refuses any table
+ * that carries an engine lease, which is right: it never deletes a table out
+ * from under an engine. Run 37099058184 left a fixture behind exactly that way.
+ *
+ * Close only EMPTY leased cash tables of this fixture through the owner's own
+ * product door (fn_close_managed_game refuses a table with a seated player and
+ * moves no chips), then wait for the engine to hand the lease back, which it
+ * does when it observes the closure. The cleanup door then re-proves zero
+ * activity under its own locks. Bounded; if a lease outlives the wait, the door
+ * refuses as before and the run fails visibly.
+ */
+async function releaseIdleFixtureTableEngines({
+  client,
+  clubId,
+  wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
+  now = () => Date.now(),
+}) {
+  const leasedTables = async () =>
+    (
+      await client.query(
+        `SELECT l.table_id::text AS table_id, t.status
+           FROM public.engine_table_leases l
+           JOIN public.tables t ON t.id=l.table_id
+          WHERE t.club_id=$1::uuid AND t.tournament_id IS NULL
+          ORDER BY l.table_id`,
+        [clubId]
+      )
+    ).rows || [];
+  const leased = await leasedTables();
+  if (!leased.length) return 0;
+
+  const owner = (
+    await client.query('SELECT owner_id::text AS owner_id FROM public.clubs WHERE id=$1::uuid', [
+      clubId,
+    ])
+  ).rows?.[0]?.owner_id;
+  if (!owner) return 0;
+
+  for (const { table_id: tableId, status } of leased) {
+    if (['closed', 'completed', 'cancelled', 'finished'].includes(String(status).toLowerCase())) {
+      continue;
+    }
+    await client.query('BEGIN');
+    try {
+      await client.query("SET LOCAL statement_timeout = '30s'");
+      await client.query("SET LOCAL lock_timeout = '15s'");
+      await client.query(
+        `SELECT set_config('request.jwt.claims', $1::text, true),
+                set_config('request.jwt.claim.sub', $2::text, true)`,
+        [JSON.stringify({ sub: owner, role: 'authenticated' }), owner]
+      );
+      const closed = (
+        await client.query("SELECT public.fn_close_managed_game('table', $1::uuid) AS result", [
+          tableId,
+        ])
+      ).rows?.[0]?.result;
+      await client.query('COMMIT');
+      console.log(
+        `[production-e2e-account] closed idle leased fixture table ${tableId}: ${JSON.stringify(closed)}`
+      );
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Preserve the original error.
+      }
+      throw error;
+    }
+  }
+
+  const deadline = now() + IDLE_ENGINE_RELEASE_TIMEOUT_MS;
+  let remaining = await leasedTables();
+  while (remaining.length && now() < deadline) {
+    await wait(IDLE_ENGINE_RELEASE_POLL_MS);
+    remaining = await leasedTables();
+  }
+  console.log(
+    `[production-e2e-account] ${leased.length} fixture table lease(s) found; ` +
+      `${remaining.length} remain after closing idle tables.`
+  );
+  return leased.length;
+}
+
 export async function retireCertificationClubWithRetry({
   configuration,
   clubId,
@@ -504,31 +593,50 @@ export async function retireCertificationClubWithRetry({
           application_name: 'club-create-certification-retirement',
         });
     await client.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query("SET LOCAL statement_timeout = '120s'");
-      await client.query("SET LOCAL lock_timeout = '15s'");
-      await client.query("SET LOCAL request.jwt.claim.role = 'service_role'");
-      // The published UI now proves the real retained-record retirement door
-      // before this fixture-only hard cleanup runs. Its retained child rows
-      // are intentionally immutable, so open the narrowly-scoped maintenance
-      // gate for this service-role transaction. The cleanup RPC still proves
-      // the reserved account, fixture name, zero activity and protected IDs.
-      await client.query("SET LOCAL app.club_retirement_maintenance = 'on'");
-      const response = await client.query(
-        'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
-        [clubId, reason]
-      );
-      await client.query('COMMIT');
-      return response.rows?.[0]?.result;
-    } catch (error) {
+    const runDoor = async () => {
       try {
-        await client.query('ROLLBACK');
-      } catch {
-        // Preserve the original error. The idempotent guarded door plus the
-        // caller's readback determines whether an unknown result committed.
+        await client.query('BEGIN');
+        await client.query("SET LOCAL statement_timeout = '120s'");
+        await client.query("SET LOCAL lock_timeout = '15s'");
+        await client.query("SET LOCAL request.jwt.claim.role = 'service_role'");
+        // Retained child rows of a retired club are intentionally immutable,
+        // so open the narrowly-scoped maintenance gate for this service-role
+        // transaction. The cleanup RPC still proves the reserved account,
+        // fixture name, zero activity and protected IDs.
+        await client.query("SET LOCAL app.club_retirement_maintenance = 'on'");
+        const response = await client.query(
+          'SELECT public.fn_ca_retire_welcome_certification_club($1::uuid,$2::text) AS result',
+          [clubId, reason]
+        );
+        await client.query('COMMIT');
+        return response.rows?.[0]?.result;
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // Preserve the original error. The idempotent guarded door plus the
+          // caller's readback determines whether an unknown result committed.
+        }
+        throw error;
       }
-      throw error;
+    };
+    try {
+      try {
+        return await runDoor();
+      } catch (error) {
+        // An engine lease on an empty opening table is the one "activity" a
+        // never-played fixture can carry. Hand it back through the owner's
+        // close door, then let the cleanup door re-prove zero activity once.
+        if (
+          error?.code !== '55000' ||
+          !String(error?.message || '').includes('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY')
+        ) {
+          throw error;
+        }
+        const released = await releaseIdleFixtureTableEngines({ client, clubId, wait });
+        if (!released) throw error;
+        return await runDoor();
+      }
     } finally {
       await client.end();
     }

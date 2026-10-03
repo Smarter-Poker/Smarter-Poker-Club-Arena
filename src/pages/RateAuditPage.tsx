@@ -12,11 +12,12 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibleRead } from '../hooks/useVisibleRead';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
-import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import { titleCase } from '../utils/titleCase';
+import styles from './RateAuditPage.module.css';
 
 interface RateChange {
   id: string;
@@ -32,6 +33,53 @@ interface RateChange {
 }
 
 type FilterType = 'all' | 'commission' | 'rake';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+export function parseRateAuditRows(value: unknown, source: RateChange['source']): RateChange[] {
+  if (!Array.isArray(value)) throw new Error(`${titleCase(source)} Rate Rows Were Not Returned`);
+  return value.map((row) => {
+    if (!isRecord(row)) throw new Error(`${titleCase(source)} Rate Row Was Invalid`);
+    const entityId = source === 'commission' ? row.agent_id : row.club_id;
+    const oldRate = Number(row.old_rate);
+    const newRate = Number(row.new_rate);
+    if (
+      typeof row.id !== 'string' ||
+      !row.id ||
+      typeof entityId !== 'string' ||
+      !entityId ||
+      typeof row.rate_type !== 'string' ||
+      !row.rate_type ||
+      typeof row.created_at !== 'string' ||
+      !Number.isFinite(Date.parse(row.created_at)) ||
+      !Number.isFinite(oldRate) ||
+      !Number.isFinite(newRate) ||
+      oldRate < 0 ||
+      newRate < 0 ||
+      oldRate > 1 ||
+      newRate > 1 ||
+      (row.changed_by != null && typeof row.changed_by !== 'string') ||
+      (row.notes != null && typeof row.notes !== 'string')
+    ) {
+      throw new Error(`${titleCase(source)} Rate Row Was Invalid`);
+    }
+    const entityWord = source === 'commission' ? 'Agent' : 'Club';
+    return {
+      id: row.id,
+      source,
+      entityId,
+      entityLabel: `${entityWord} ${entityId.slice(0, 8)}`,
+      changedBy: typeof row.changed_by === 'string' ? row.changed_by.slice(0, 8) : 'Unknown',
+      oldRate,
+      newRate,
+      rateType: row.rate_type,
+      createdAt: row.created_at,
+      notes: typeof row.notes === 'string' ? row.notes : undefined,
+    };
+  });
+}
 
 export default function RateAuditPage() {
   const navigate = useNavigate();
@@ -56,7 +104,7 @@ export default function RateAuditPage() {
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
 
-  const readScope = `${user?.id || ''}:${scopeStatus}:${scopeClubId || ''}:${scopePlatformWide}`;
+  const readScope = `${user?.id || ''}:${scopeStatus}:${scopeClubId || ''}:${scopePlatformWide}:${dateRange}`;
   const ownsData = loadedScope === readScope;
   const changes = ownsData ? storedChanges : [];
   const loading = !ownsData || isLoading;
@@ -75,59 +123,47 @@ export default function RateAuditPage() {
         platformWide: scopePlatformWide,
       };
       const allChanges: RateChange[] = [];
+      const windowEnd = new Date();
+      const cutoffMs =
+        dateRange === '7d'
+          ? windowEnd.getTime() - 7 * 86400000
+          : dateRange === '30d'
+            ? windowEnd.getTime() - 30 * 86400000
+            : dateRange === '90d'
+              ? windowEnd.getTime() - 90 * 86400000
+              : null;
+      const cutoff = cutoffMs === null ? null : new Date(cutoffMs).toISOString();
+      let commissionQuery = clubScoped(
+        supabase
+          .from('commission_rate_audit')
+          .select('id, agent_id, changed_by, old_rate, new_rate, rate_type, created_at'),
+        /* error bound by commResult below */
+        scopeKey
+      );
+      let rakeQuery = clubScoped(
+        supabase
+          .from('rake_rate_audit')
+          .select('id, club_id, changed_by, old_rate, new_rate, rate_type, created_at, notes'),
+        /* error bound by rakeResult below */
+        scopeKey
+      );
+      if (cutoff) {
+        commissionQuery = commissionQuery
+          .gte('created_at', cutoff)
+          .lte('created_at', windowEnd.toISOString());
+        rakeQuery = rakeQuery.gte('created_at', cutoff).lte('created_at', windowEnd.toISOString());
+      }
 
       // Both reads run for the club in scope; either failing is a failure of
       // the page, not an empty history.
       const [commResult, rakeResult] = await Promise.all([
-        clubScoped(
-          supabase
-            .from('commission_rate_audit')
-            .select('id, agent_id, changed_by, old_rate, new_rate, rate_type, created_at'),
-          scopeKey
-        )
-          .order('created_at', { ascending: false })
-          .limit(100)
-          .abortSignal(signal),
-        clubScoped(
-          supabase
-            .from('rake_rate_audit')
-            .select('id, club_id, changed_by, old_rate, new_rate, rate_type, created_at, notes'),
-          scopeKey
-        )
-          .order('created_at', { ascending: false })
-          .limit(100)
-          .abortSignal(signal),
+        commissionQuery.order('created_at', { ascending: false }).limit(100).abortSignal(signal),
+        rakeQuery.order('created_at', { ascending: false }).limit(100).abortSignal(signal),
       ]);
       if (commResult.error) throw commResult.error;
       if (rakeResult.error) throw rakeResult.error;
-
-      allChanges.push(
-        ...(commResult.data || []).map((r: any) => ({
-          id: r.id,
-          source: 'commission' as const,
-          entityId: r.agent_id,
-          entityLabel: `Agent ${r.agent_id?.slice(0, 8)}...`,
-          changedBy: r.changed_by?.slice(0, 8) + '...',
-          oldRate: r.old_rate,
-          newRate: r.new_rate,
-          rateType: r.rate_type,
-          createdAt: r.created_at,
-        }))
-      );
-      allChanges.push(
-        ...(rakeResult.data || []).map((r: any) => ({
-          id: r.id,
-          source: 'rake' as const,
-          entityId: r.club_id,
-          entityLabel: `Club ${r.club_id?.slice(0, 8)}...`,
-          changedBy: r.changed_by?.slice(0, 8) + '...',
-          oldRate: r.old_rate,
-          newRate: r.new_rate,
-          rateType: r.rate_type,
-          createdAt: r.created_at,
-          notes: r.notes,
-        }))
-      );
+      allChanges.push(...parseRateAuditRows(commResult.data, 'commission'));
+      allChanges.push(...parseRateAuditRows(rakeResult.data, 'rake'));
 
       // Sort all by date descending
       allChanges.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -165,20 +201,12 @@ export default function RateAuditPage() {
       timers.push(setTimeout(() => setVisibleRows((prev) => new Set(prev).add(i)), i * 40));
     });
     return () => timers.forEach(clearTimeout);
+    // Row staging restarts only when the visible result count changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changes.length]);
 
-  const getDateCutoff = (): number => {
-    if (dateRange === '7d') return Date.now() - 7 * 86400000;
-    if (dateRange === '30d') return Date.now() - 30 * 86400000;
-    if (dateRange === '90d') return Date.now() - 90 * 86400000;
-    return 0; // 'all'
-  };
-
   const filteredByType = filter === 'all' ? changes : changes.filter((c) => c.source === filter);
-  const filtered =
-    dateRange === 'all'
-      ? filteredByType
-      : filteredByType.filter((c) => new Date(c.createdAt).getTime() >= getDateCutoff());
+  const filtered = filteredByType;
 
   const formatRate = (rate: number, source: string): string => {
     if (source === 'rake') return `${(rate * 10000).toFixed(1)}‱`; // basis points for rake
@@ -194,236 +222,144 @@ export default function RateAuditPage() {
     });
   };
 
-  const getRateDirection = (oldR: number, newR: number): { icon: string; color: string } => {
-    if (newR > oldR) return { icon: '▲', color: '#ef4444' };
-    if (newR < oldR) return { icon: '▼', color: '#10b981' };
-    return { icon: '─', color: '#6b7280' };
+  const getRateDirection = (
+    oldR: number,
+    newR: number
+  ): { label: string; ink: 'red' | 'green' | 'muted' } => {
+    if (newR > oldR) return { label: 'Increased To', ink: 'red' };
+    if (newR < oldR) return { label: 'Decreased To', ink: 'green' };
+    return { label: 'Unchanged At', ink: 'muted' };
   };
 
   if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return (
-      <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
-        <FinancialAdminScopeState scope={scope} />
-      </div>
+      <main className={styles.page}>
+        <h1 className={styles.srOnly}>Rate Audit Trail</h1>
+        <SpadeConsole
+          family="shark"
+          crest="flat"
+          eyebrow="Club Arena Data"
+          title="Rate Audit Trail"
+          pill={scope.status === 'loading' ? 'Checking' : 'Closed'}
+          pillInk={scope.status === 'loading' ? 'gold' : 'red'}
+          plates={{
+            primary: {
+              label: scope.status === 'loading' ? 'Checking' : 'Retry Access',
+              onClick: scope.reload,
+              disabled: scope.status === 'loading',
+            },
+          }}
+        >
+          <strong className="sc-label sc-ink--blue">Verify Club Access</strong>
+          <p className="sc-copy sc-copy--center" role="status">
+            {scope.message || 'Verifying Your Financial Access'}
+          </p>
+        </SpadeConsole>
+      </main>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: '16px',
-        width: '100%',
-        maxWidth: '900px',
-        margin: '0 auto',
-        paddingBottom: '100px',
-        boxSizing: 'border-box',
-        overflowX: 'hidden',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '20px',
-        }}
+    <main className={styles.page}>
+      <h1 className={styles.srOnly}>Rate Audit Trail</h1>
+      <SpadeConsole
+        family="shark"
+        crest="flat"
+        eyebrow="Club Arena Data"
+        title="Rate Audit Trail"
+        subtitle="Commission And Rake Rate Change History"
+        pill={loading ? 'Reading' : loadError ? 'Error' : String(changes.length)}
+        pillInk={loadError ? 'red' : loading ? 'gold' : 'blue'}
+        plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}
       >
-        <div>
-          <button
-            onClick={() => navigate(-1)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#3b82f6',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              padding: '10px 10px 10px 0',
-              minHeight: '44px',
-              touchAction: 'manipulation',
-              marginBottom: '4px',
-            }}
-          >
-            ← Back
-          </button>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Rate Audit Trail</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-            Commission & Rake Rate Change History
-          </p>
-        </div>
-        <span
-          style={{
-            padding: '4px 10px',
-            background: 'rgba(59,130,246,0.1)',
-            border: '1px solid rgba(59,130,246,0.3)',
-            borderRadius: '8px',
-            color: '#3b82f6',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-          }}
-        >
-          {changes.length} Changes
-        </span>
-      </div>
-
-      {/* Filter Tabs */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-        {(['all', 'commission', 'rake'] as FilterType[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            style={{
-              padding: '6px 14px',
-              minHeight: '44px',
-              touchAction: 'manipulation',
-              borderRadius: '8px',
-              border: `1px solid ${filter === f ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
-              background: filter === f ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.03)',
-              color: filter === f ? '#3b82f6' : 'rgba(255,255,255,0.6)',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {f === 'all' ? 'All' : f === 'commission' ? 'Commission' : '♠ Rake'}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <PageSkeleton variant="list" />
-      ) : loadError ? (
-        <div role="alert" style={{ textAlign: 'center', padding: '32px', color: '#f87171' }}>
-          <div>{loadError}</div>
-          <button
-            type="button"
-            onClick={() => loadAuditData()}
-            style={{
-              marginTop: '12px',
-              padding: '8px 16px',
-              background: 'rgba(239,68,68,0.15)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: '8px',
-              color: '#f87171',
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '60px 20px',
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}
-        >
-          <div style={{ fontSize: '2rem', marginBottom: '12px' }}>▤</div>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-            No Rate Changes Recorded Yet
-          </p>
-          <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>
-            Rate Changes Will Appear Here When Commission Or Rake Rates Are Modified
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {filtered.map((change, idx) => {
-            const dir = getRateDirection(change.oldRate, change.newRate);
-            return (
-              <div
-                key={change.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                  padding: '12px 14px',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderRadius: '10px',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  opacity: visibleRows.has(idx) ? 1 : 0,
-                  transform: visibleRows.has(idx) ? 'translateY(0)' : 'translateY(6px)',
-                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
+        <section className={styles.filters} aria-label="Audit Filters">
+          <span className="sc-label sc-ink--blue">Rate Type</span>
+          <div className={styles.filterWords} role="group" aria-label="Rate Type">
+            {(['all', 'commission', 'rake'] as FilterType[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={styles.filterWord}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
               >
-                {/* Source Badge */}
-                <span
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    fontSize: '0.65rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    background:
-                      change.source === 'commission'
-                        ? 'rgba(139,92,246,0.15)'
-                        : 'rgba(16,185,129,0.15)',
-                    color: change.source === 'commission' ? '#8b5cf6' : '#10b981',
-                    border: `1px solid ${
-                      change.source === 'commission'
-                        ? 'rgba(139,92,246,0.3)'
-                        : 'rgba(16,185,129,0.3)'
-                    }`,
-                    flexShrink: 0,
-                  }}
-                >
-                  {change.source}
-                </span>
+                {value === 'all' ? 'All' : titleCase(value)}
+              </button>
+            ))}
+          </div>
+          <span className="sc-label sc-ink--blue">Reading Window</span>
+          <div className={styles.filterWords} role="group" aria-label="Reading Window">
+            {(
+              [
+                ['all', 'All Dates'],
+                ['7d', 'Seven Days'],
+                ['30d', 'Thirty Days'],
+                ['90d', 'Ninety Days'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={styles.filterWord}
+                aria-pressed={dateRange === value}
+                onClick={() => setDateRange(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
 
-                {/* Entity + Type */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff' }}>
-                    {change.rateType.replace(/_/g, ' ')}
+        {loading ? (
+          <p className="sc-copy sc-copy--center" role="status">
+            Reading Rate History For This Authorized Scope
+          </p>
+        ) : loadError ? (
+          <div className={styles.statusBlock} role="alert">
+            <p className="sc-copy sc-copy--center">{loadError}</p>
+            <button type="button" className={styles.litAction} onClick={loadAuditData}>
+              Retry
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className={styles.statusBlock} role="status">
+            <p className="sc-copy sc-copy--center">No Rate Changes Recorded Yet</p>
+            <p className="sc-copy sc-copy--center sc-ink--muted">
+              Rate Changes Will Appear Here When Commission Or Rake Rates Are Modified
+            </p>
+          </div>
+        ) : (
+          <section className={styles.rows} aria-label="Rate Changes">
+            {filtered.map((change, idx) => {
+              const direction = getRateDirection(change.oldRate, change.newRate);
+              return (
+                <article key={change.id} className={styles.row} data-visible={visibleRows.has(idx)}>
+                  <div className={styles.rowHeading}>
+                    <span className="sc-label sc-ink--blue">{titleCase(change.source)}</span>
+                    <time dateTime={change.createdAt}>{formatDate(change.createdAt)}</time>
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                    {change.entityLabel} • By {change.changedBy}
+                  <strong className={styles.rateType}>
+                    {titleCase(change.rateType.replace(/_/g, ' '))}
+                  </strong>
+                  <span className={styles.identityLine}>
+                    {titleCase(change.entityLabel)} By {titleCase(change.changedBy)}
+                  </span>
+                  <div className={styles.rateLine}>
+                    <span className="sc-ink--muted">
+                      {formatRate(change.oldRate, change.source)}
+                    </span>
+                    <span className={`sc-ink--${direction.ink}`}>{direction.label}</span>
+                    <strong className={`sc-ink--${direction.ink}`}>
+                      {formatRate(change.newRate, change.source)}
+                    </strong>
                   </div>
-                </div>
-
-                {/* Rate Change */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                  <span
-                    style={{
-                      fontSize: '0.8rem',
-                      color: 'rgba(255,255,255,0.5)',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {formatRate(change.oldRate, change.source)}
-                  </span>
-                  <span style={{ fontSize: '0.75rem', color: dir.color, fontWeight: 700 }}>
-                    {dir.icon}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.8rem',
-                      color: dir.color,
-                      fontWeight: 700,
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {formatRate(change.newRate, change.source)}
-                  </span>
-                </div>
-
-                {/* Date */}
-                <span
-                  style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}
-                >
-                  {formatDate(change.createdAt)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+                  {change.notes && <p className={styles.notes}>{titleCase(change.notes)}</p>}
+                </article>
+              );
+            })}
+          </section>
+        )}
+      </SpadeConsole>
+    </main>
   );
 }

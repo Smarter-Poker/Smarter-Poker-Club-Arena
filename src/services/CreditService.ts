@@ -92,6 +92,45 @@ export const OWED_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<Invoice
   'overdue',
 ]);
 
+const INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
+  'pending',
+  'partial',
+  'paid',
+  'overdue',
+  'disputed',
+  'void',
+]);
+
+function invoiceText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Invoice ${field} is unavailable`);
+  }
+  return value;
+}
+
+function invoiceDate(value: unknown, field: string): string {
+  const text = invoiceText(value, field);
+  if (!Number.isFinite(Date.parse(text))) throw new Error(`Invoice ${field} is unavailable`);
+  return text;
+}
+
+function invoiceMoney(value: unknown, field: string): number {
+  const amount =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : NaN;
+  if (
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-7
+  ) {
+    throw new Error(`Invoice ${field} is unavailable`);
+  }
+  return amount;
+}
+
 export interface CreditAccount {
   agentId: string;
   userId?: string;
@@ -724,26 +763,56 @@ export const CreditService = {
     return 0;
   },
 
-  mapInvoice(inv: any, agentName?: string): CreditInvoice {
+  mapInvoice(inv: unknown, agentName?: string): CreditInvoice {
+    if (!inv || typeof inv !== 'object' || Array.isArray(inv)) {
+      throw new Error('Invoice receipt is unavailable');
+    }
+    const row = inv as Record<string, unknown>;
+    const status = row.status;
+    if (typeof status !== 'string' || !INVOICE_STATUSES.has(status as InvoiceStatus)) {
+      throw new Error('Invoice status is unavailable');
+    }
+    const debtOwed = invoiceMoney(row.debt_owed, 'debt');
+    const amountPaid = invoiceMoney(row.amount_paid, 'paid amount');
+    const amountRemaining = invoiceMoney(row.amount_remaining, 'balance');
+    const debtCents = Math.round(debtOwed * 100);
+    const paidCents = Math.round(amountPaid * 100);
+    const remainingCents = Math.round(amountRemaining * 100);
+    if (status === 'void') {
+      if (remainingCents !== 0 || paidCents > debtCents) {
+        throw new Error('Invoice void balance is unavailable');
+      }
+    } else if (paidCents + remainingCents !== debtCents) {
+      throw new Error('Invoice balance does not reconcile');
+    }
+    if (
+      (status === 'paid' && (remainingCents !== 0 || paidCents !== debtCents)) ||
+      (status === 'partial' && (paidCents <= 0 || remainingCents <= 0)) ||
+      (status === 'pending' && paidCents !== 0) ||
+      (status === 'overdue' && remainingCents <= 0)
+    ) {
+      throw new Error('Invoice status does not match its balance');
+    }
+    const paidAt = row.paid_at == null ? undefined : invoiceDate(row.paid_at, 'paid date');
     return {
-      id: inv.id,
-      agentId: inv.agent_id,
+      id: invoiceText(row.id, 'identity'),
+      agentId: invoiceText(row.agent_id, 'agent'),
       agentName: agentName || 'Unknown',
-      periodStart: inv.period_start,
-      periodEnd: inv.period_end,
-      debtOwed: inv.debt_owed,
-      amountPaid: inv.amount_paid || 0,
+      periodStart: invoiceDate(row.period_start, 'period start'),
+      periodEnd: invoiceDate(row.period_end, 'period end'),
+      debtOwed,
+      amountPaid,
       // `||` not `??` was a live bug the moment any invoice reached zero
       // remaining: 0 is falsy, so a fully paid - or, since 20260901000001, a
       // VOIDED - invoice reported its whole original debt as still due, and
       // AgentInvoicesPanel drew a "Pay now" button on 224 cancelled bills.
       // The RPC refused them, so no money moved; the user just got "Payment
       // failed" on something they did not owe.
-      amountRemaining: inv.amount_remaining ?? inv.debt_owed,
-      status: inv.status,
-      dueDate: inv.due_date,
-      createdAt: inv.created_at,
-      paidAt: inv.paid_at,
+      amountRemaining,
+      status: status as InvoiceStatus,
+      dueDate: invoiceDate(row.due_date, 'due date'),
+      createdAt: invoiceDate(row.created_at, 'created date'),
+      paidAt,
     };
   },
 

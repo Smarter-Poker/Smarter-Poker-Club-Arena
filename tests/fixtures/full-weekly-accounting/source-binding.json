@@ -160,7 +160,7 @@
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
     "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
-    "tests/unit/ClubWeeklyAccountingReader.test.ts": "182a890cc9d33e1f27550f3ed51c92bc40f657f06155f06c87d7830025305be7",
+    "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
     "tests/fixtures/browser-period-observer/README.md": "43b9b9f94e8ddd1cc01bcd1d635995d196ea4f1cfafa6d35233761bb84a91da0",
     "tests/fixtures/browser-period-observer/captured-dependencies.json": "c9874b776f79b4636dffeee5f1046910093e2f36ae1208a95cd2bcb98f530ae3",
@@ -175,14 +175,14 @@
     "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
     "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
     "tests/unit/anApprovalCanBeRetried.test.ts": "e4364e4b911ccea5161b870eae3f61c62a0a47aace36a56ced56079d2dbd3506",
-    "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
-    "tests/components/WeeklyAccountingWorkspace.test.tsx": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
+    "tests/components/UnionAccountingRunStatus.test.tsx": "31c23688aff53a097e1b71717aeeb46893b63639b97cd62f36d0eab40cb60717",
+    "tests/components/WeeklyAccountingWorkspace.test.tsx": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7",
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "b90cb1f4f102279d48b5b757b27cdee1c8eafa43756d96d6144c41e9380fb780",
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3377,5 +3377,34 @@
         "current": "847c6fa4bb558a94884548564a52edf27ba39029aa3f9524dfe66804666ca51b"
       }
     ]
+  },
+  "clubDataConsoleRebinding20261003": {
+    "base_commit": "362322eb315fe01d38ec939bf3f642a35bd1fcc4",
+    "source_branch": "agent/codex/club-data-final-20261003",
+    "prior_binding_sha256": "68094b9cfdb2bf1c204f5109a2a87f5c414f1569c7834bb988c6d5d2c981bc6f",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/UnionAccountingRunStatus.test.tsx",
+        "previous_sha256": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
+        "sha256": "31c23688aff53a097e1b71717aeeb46893b63639b97cd62f36d0eab40cb60717"
+      },
+      {
+        "path": "tests/components/WeeklyAccountingWorkspace.test.tsx",
+        "previous_sha256": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
+        "sha256": "3fa2ec057866093383ec05539ac3a60de8cec52abfee780d2491ead8894f5be7"
+      },
+      {
+        "path": "tests/unit/ClubWeeklyAccountingReader.test.ts",
+        "previous_sha256": "182a890cc9d33e1f27550f3ed51c92bc40f657f06155f06c87d7830025305be7",
+        "sha256": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "c8f70264c8feb094dd5aba898c33da8f3b1a43d3b4c808fdaad2ba1d2229660c",
+        "sha256": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e"
+      }
+    ],
+    "reason": "The Club Data console audit keeps the maintained accounting observation components and tests aligned with scope-safe reads, operator-visible failures and painted status output. UnionAccountingRunStatus and WeeklyAccountingWorkspace assertions now exercise the current console presentation and reporting behavior; ClubWeeklyAccountingReader covers the stricter read contract; discardedErrorReadRatchet tightens the allowed discarded reads for the changed Data surfaces. No assertion, captured financial fixture, native accounting component or production object is removed or weakened.",
+    "verification": "Each replacement is the exact SHA-256 of the reviewed file bytes in this branch. The changed tests passed in the candidate suites, and scripts/ci/verify-source-bindings.py re-reads every repository and fixture pin after this targeted restamp. The binding edit preserves all prior audit history and changes only these four hashes plus this audit block."
   }
 }

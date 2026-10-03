@@ -7,13 +7,15 @@
  * Used on: Union Dashboard, Agent Dashboard, CashierPage, ClubFinancials
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { isUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
+import { compactChips } from '../../utils/format';
+import './TransactionLedgerView.css';
 
 interface LedgerEntry {
   id: string;
@@ -28,6 +30,68 @@ interface LedgerEntry {
   created_at: string;
   club_id: string | null;
   union_id: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isNullableText(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isLedgerEntry(value: unknown): value is LedgerEntry {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.performed_by === 'string' &&
+    typeof value.from_type === 'string' &&
+    isNullableText(value.from_label) &&
+    typeof value.to_type === 'string' &&
+    isNullableText(value.to_label) &&
+    typeof value.amount === 'number' &&
+    Number.isFinite(value.amount) &&
+    value.amount > 0 &&
+    typeof value.category === 'string' &&
+    isNullableText(value.description) &&
+    typeof value.created_at === 'string' &&
+    Number.isFinite(Date.parse(value.created_at)) &&
+    isNullableText(value.club_id) &&
+    isNullableText(value.union_id)
+  );
+}
+
+function ledgerRows(value: unknown): LedgerEntry[] | null {
+  return Array.isArray(value) && value.every(isLedgerEntry) ? value : null;
+}
+
+function visibleLedgerCopy(entry: LedgerEntry) {
+  // A horse is a player everywhere a customer can see. The journal retains
+  // its operational category and labels, but the rendered row cannot expose
+  // which funded seat used that internal path.
+  if (
+    [
+      entry.category,
+      entry.from_type,
+      entry.from_label,
+      entry.to_type,
+      entry.to_label,
+      entry.description,
+    ].some((value) => /horse/i.test(value ?? ''))
+  ) {
+    return {
+      category: 'Table Funding',
+      path: 'The Club To A Table',
+      description: null,
+    };
+  }
+  return {
+    category: formatPopupText(entry.category.replace(/_/g, ' ')),
+    path: `${formatPopupText(entry.from_label || entry.from_type)} To ${formatPopupText(
+      entry.to_label || entry.to_type
+    )}`,
+    description: entry.description ? formatPopupText(entry.description) : null,
+  };
 }
 
 interface Props {
@@ -49,38 +113,6 @@ interface Props {
   clubScoped?: boolean;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  mint: '#22c55e',
-  transfer: '#3b82f6',
-  agent_funding: '#a855f7',
-  player_funding: '#06b6d4',
-  distribute: '#f59e0b',
-  buyin: '#ec4899',
-  cashout: '#10b981',
-  clawback: '#ef4444',
-  commission: '#f97316',
-  rake: '#6366f1',
-  settlement: '#14b8a6',
-  deposit_to_union: '#22c55e',
-  union_to_club: '#3b82f6',
-};
-
-const CATEGORY_ICONS: Record<string, string> = {
-  mint: '+',
-  transfer: '->',
-  agent_funding: 'A',
-  player_funding: 'P',
-  distribute: 'D',
-  buyin: 'B',
-  cashout: 'C',
-  clawback: 'X',
-  commission: '%',
-  rake: 'R',
-  settlement: 'S',
-  deposit_to_union: '+',
-  union_to_club: '->',
-};
-
 export default function TransactionLedgerView({
   unionId,
   clubId,
@@ -93,10 +125,15 @@ export default function TransactionLedgerView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  const requestSequence = useRef(0);
 
   const loadLedger = useCallback(async () => {
+    const request = ++requestSequence.current;
+    const current = () => requestSequence.current === request;
     setLoading(true);
     setError(null);
+    setDenied(false);
+    setEntries([]);
     try {
       if (clubScoped) {
         // The RPC takes a uuid. Every club route in this app carries a SLUG,
@@ -104,33 +141,40 @@ export default function TransactionLedgerView({
         // an outage - twice over in phase 6 alone. A caller that has not
         // resolved the club yet gets nothing rather than a false failure.
         if (!clubId || !isUUID(clubId)) {
-          setEntries([]);
+          if (!current()) return;
           setError(clubId ? 'The Club Ledger Could Not Be Loaded' : null);
           if (clubId)
             reportError(
               new Error(`club ledger called with "${clubId}"`),
               'TransactionLedgerView.unresolved_club'
             );
-          setLoading(false);
           return;
         }
         const { data, error: rpcError } = await supabase.rpc('ca_club_chip_ledger', {
           p_club_id: clubId,
           p_limit: limit,
         });
+        if (!current()) return;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setDenied(true);
-            setEntries([]);
           } else {
             reportError(rpcError, 'TransactionLedgerView.club_rpc');
             setError('The Club Ledger Could Not Be Loaded');
           }
         } else {
+          const rows = ledgerRows((data as { rows?: unknown } | null)?.rows);
+          if (!rows) {
+            reportError(
+              new Error('Club ledger response did not contain valid rows'),
+              'TransactionLedgerView.club_shape'
+            );
+            setError('The Club Ledger Could Not Be Loaded');
+            return;
+          }
           setDenied(false);
-          setEntries(((data as { rows?: LedgerEntry[] } | null)?.rows || []) as LedgerEntry[]);
+          setEntries(rows);
         }
-        setLoading(false);
         return;
       }
 
@@ -145,9 +189,7 @@ export default function TransactionLedgerView({
           new Error('TransactionLedgerView mounted with no union, club or user'),
           'TransactionLedgerView.unscoped'
         );
-        setEntries([]);
         setError('The Ledger Needs A Club, A Union Or A Player To Show');
-        setLoading(false);
         return;
       }
 
@@ -170,21 +212,37 @@ export default function TransactionLedgerView({
       const { data, error: readError } = await query;
       // A discarded error read as "no transactions", which on a ledger is the
       // one answer that must never be guessed.
+      if (!current()) return;
       if (readError) {
         reportError(readError, 'TransactionLedgerView.read');
         setError('The Ledger Could Not Be Loaded');
-      } else if (data) {
-        setEntries(data as LedgerEntry[]);
+      } else {
+        const rows = ledgerRows(data);
+        if (!rows) {
+          reportError(
+            new Error('Ledger response did not contain valid rows'),
+            'TransactionLedgerView.read_shape'
+          );
+          setError('The Ledger Could Not Be Loaded');
+        } else {
+          setEntries(rows);
+        }
       }
     } catch (e) {
+      if (!current()) return;
       reportError(e, 'TransactionLedgerView.useCallback');
       setError('The Ledger Could Not Be Loaded');
+    } finally {
+      if (current()) setLoading(false);
     }
-    setLoading(false);
   }, [unionId, clubId, userId, limit, clubScoped]);
 
   useEffect(() => {
-    loadLedger();
+    void loadLedger();
+    const request = requestSequence.current;
+    return () => {
+      if (requestSequence.current === request) requestSequence.current = request + 1;
+    };
   }, [loadLedger]);
 
   // Auto-refresh on new transactions
@@ -194,7 +252,7 @@ export default function TransactionLedgerView({
 
   if (loading) {
     return (
-      <div style={{ padding: '16px', textAlign: 'center', color: '#666' }}>
+      <div className="tlv-state sc-copy sc-copy--center" role="status" aria-live="polite">
         Loading Transactions...
       </div>
     );
@@ -202,7 +260,7 @@ export default function TransactionLedgerView({
 
   if (denied) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: '#888' }}>
+      <div className="tlv-state sc-copy sc-copy--center sc-ink--muted">
         This Ledger Is Available To Club Owners, Admins And Super Agents.
       </div>
     );
@@ -210,20 +268,9 @@ export default function TransactionLedgerView({
 
   if (error) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: '#f87171' }} role="alert">
+      <div className="tlv-state sc-copy sc-copy--center sc-ink--red" role="alert">
         <div>{error}</div>
-        <button
-          type="button"
-          onClick={() => loadLedger()}
-          style={{
-            marginTop: 10,
-            padding: '6px 14px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.2)',
-            background: 'transparent',
-            color: 'inherit',
-          }}
-        >
+        <button type="button" onClick={() => loadLedger()} className="tlv-word sc-ink--white">
           Try Again
         </button>
       </div>
@@ -232,112 +279,39 @@ export default function TransactionLedgerView({
 
   if (entries.length === 0) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
-        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'▤'}</div>
-        <div>No Transactions Yet</div>
-      </div>
+      <div className="tlv-state sc-copy sc-copy--center sc-ink--muted">No Transactions Yet</div>
     );
   }
 
   return (
-    <div>
-      <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
+    <section className="tlv" aria-label={formatPopupText(title)}>
+      <div className="tlv-count sc-label sc-ink--muted">
         {entries.length} Transaction{entries.length !== 1 ? 's' : ''} Shown
       </div>
-      <div
-        style={{
-          maxHeight: '400px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-        }}
-      >
+      <ol className="tlv-list">
         {entries.map((e) => {
-          const color = CATEGORY_COLORS[e.category] || '#888';
-          const icon = CATEGORY_ICONS[e.category] || '?';
           const timeStr = new Date(e.created_at).toLocaleString();
+          const copy = visibleLedgerCopy(e);
 
           return (
-            <div
-              key={e.id}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                padding: '8px 10px',
-                background: 'rgba(255,255,255,0.03)',
-                borderRadius: '8px',
-                borderLeft: `3px solid ${color}`,
-                fontSize: '12px',
-              }}
-            >
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: `${color}22`,
-                  color: color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 700,
-                  fontSize: '10px',
-                  flexShrink: 0,
-                }}
-              >
-                {icon}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontWeight: 600,
-                    color: '#e0e0e0',
-                    textTransform: 'uppercase',
-                    fontSize: '10px',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  {e.category.replace(/_/g, ' ')}
-                </div>
-                <div
-                  style={{
-                    color: '#aaa',
-                    fontSize: '11px',
-                    marginTop: '2px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {e.from_label || e.from_type} → {e.to_label || e.to_type}
-                </div>
-                {e.description && (
-                  <div
-                    style={{
-                      color: '#777',
-                      fontSize: '10px',
-                      marginTop: '2px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatPopupText(e.description)}
-                  </div>
+            <li key={e.id} className="tlv-row" data-category={copy.category}>
+              <div className="tlv-detail">
+                <div className="tlv-category sc-label sc-ink--blue">{copy.category}</div>
+                <div className="tlv-path sc-copy">{copy.path}</div>
+                {copy.description && (
+                  <div className="tlv-description sc-ink--muted">{copy.description}</div>
                 )}
               </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontWeight: 700, color: color, fontSize: '13px' }}>
-                  {Number(e.amount).toLocaleString()}
-                </div>
-                <div style={{ fontSize: '9px', color: '#666', marginTop: '2px' }}>{timeStr}</div>
+              <div className="tlv-amount">
+                <div className="tlv-value sc-ink--silver">{compactChips(Number(e.amount))}</div>
+                <time className="tlv-time sc-ink--muted" dateTime={e.created_at}>
+                  {timeStr}
+                </time>
               </div>
-            </div>
+            </li>
           );
         })}
-      </div>
-    </div>
+      </ol>
+    </section>
   );
 }

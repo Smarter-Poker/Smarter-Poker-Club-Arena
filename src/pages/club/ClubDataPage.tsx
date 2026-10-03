@@ -60,7 +60,6 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
-import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
 import type { RakeScope } from '../../services/ClubRakeSnapshotService';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
@@ -389,12 +388,114 @@ function toISODate(d: Date): string {
 }
 
 function money(n: number | null | undefined): string {
-  const v = Number(n || 0);
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return compactChips(Number(n || 0));
 }
 
 function compactInt(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString('en-US');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isExactCent(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const cents = value * 100;
+  return Number.isSafeInteger(Math.round(cents)) && Math.abs(cents - Math.round(cents)) <= 1e-6;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isSnapshotExportRow(value: unknown): value is SnapshotRow {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.kind === 'string' &&
+    value.kind.length > 0 &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    typeof value.variant === 'string' &&
+    value.variant.length > 0 &&
+    typeof value.game_class === 'string' &&
+    value.game_class.length > 0 &&
+    typeof value.stakes_tier === 'string' &&
+    value.stakes_tier.length > 0 &&
+    isStringOrNull(value.blinds) &&
+    (value.rake_percent === null ||
+      (typeof value.rake_percent === 'number' && Number.isFinite(value.rake_percent))) &&
+    isStringOrNull(value.started_at) &&
+    (value.started_at === null || Number.isFinite(Date.parse(value.started_at))) &&
+    isStringOrNull(value.status) &&
+    isStringOrNull(value.creator_id) &&
+    isStringOrNull(value.creator_name) &&
+    isStringOrNull(value.creator_avatar) &&
+    isExactCent(value.fee) &&
+    isExactCent(value.winnings) &&
+    isNonNegativeInteger(value.hands) &&
+    isNonNegativeInteger(value.players)
+  );
+}
+
+function isPlayerExportRow(value: unknown): value is PlayerRow {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.user_id !== 'string' ||
+    value.user_id.length === 0 ||
+    typeof value.username !== 'string' ||
+    value.username.length === 0 ||
+    !isStringOrNull(value.avatar_url) ||
+    !isExactCent(value.net) ||
+    !isExactCent(value.cash_net) ||
+    !isExactCent(value.tournament_net) ||
+    !isExactCent(value.rake) ||
+    !isNonNegativeInteger(value.hands)
+  ) {
+    return false;
+  }
+  return (
+    Math.round(value.net * 100) ===
+    Math.round(value.cash_net * 100) + Math.round(value.tournament_net * 100)
+  );
+}
+
+function isInvoiceRow(value: unknown): value is InvoiceRow {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.invoice_id !== 'string' ||
+    value.invoice_id.length === 0 ||
+    typeof value.status !== 'string' ||
+    value.status.length === 0 ||
+    typeof value.overdue !== 'boolean' ||
+    !isExactCent(value.paid_total) ||
+    value.paid_total < 0 ||
+    !isExactCent(value.outstanding) ||
+    value.outstanding < 0 ||
+    typeof value.issued_at !== 'string' ||
+    !Number.isFinite(Date.parse(value.issued_at)) ||
+    !isStringOrNull(value.due_at) ||
+    (value.due_at !== null && !Number.isFinite(Date.parse(value.due_at))) ||
+    !isExactCent(value.amount) ||
+    !isStringOrNull(value.direction) ||
+    !isStringOrNull(value.period_start) ||
+    (value.period_start !== null && !Number.isFinite(Date.parse(value.period_start))) ||
+    !isStringOrNull(value.period_end) ||
+    (value.period_end !== null && !Number.isFinite(Date.parse(value.period_end))) ||
+    !(value.breakdown === null || isRecord(value.breakdown)) ||
+    typeof value.message_sent !== 'boolean'
+  ) {
+    return false;
+  }
+  const amountCents = Math.abs(Math.round(value.amount * 100));
+  const paidCents = Math.round(value.paid_total * 100);
+  return Math.round(value.outstanding * 100) === Math.max(amountCents - paidCents, 0);
 }
 
 function rowsToCsv(rows: SnapshotRow[]): string {
@@ -462,7 +563,7 @@ export default function ClubDataPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [gameCursor, setGameCursor] = useState<PageCursor | null>(null);
+  const [, setGameCursor] = useState<PageCursor | null>(null);
   const [gamesHasMore, setGamesHasMore] = useState(false);
   const [gamesLoadingMore, setGamesLoadingMore] = useState(false);
   const [gamesPageError, setGamesPageError] = useState<string | null>(null);
@@ -489,7 +590,7 @@ export default function ClubDataPage() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
-  const [playerCursor, setPlayerCursor] = useState<PageCursor | null>(null);
+  const [, setPlayerCursor] = useState<PageCursor | null>(null);
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
   const [playersPageError, setPlayersPageError] = useState<string | null>(null);
@@ -569,6 +670,8 @@ export default function ClubDataPage() {
   const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
   const exportControllerRef = useRef<AbortController | null>(null);
+  const exportGenerationRef = useRef(0);
+  const exportViewKeyRef = useRef('');
   const restoredGameKeyRef = useRef<string | null>(null);
   const restoredGameCacheHitRef = useRef(false);
   const restoredPlayerKeyRef = useRef<string | null>(null);
@@ -584,7 +687,9 @@ export default function ClubDataPage() {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
+      exportGenerationRef.current += 1;
       exportControllerRef.current?.abort();
+      exportControllerRef.current = null;
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
       eventRefreshDeadlineRef.current = null;
     };
@@ -630,10 +735,38 @@ export default function ClubDataPage() {
   const gameScopeKey = [userId, clubUuid, gameCacheKey].join(':');
   const playerScopeKey = [userId, clubUuid, playerCacheKey].join(':');
   const invoiceCacheKey = 'kind=invoices';
+  const exportViewKey = [
+    userId,
+    clubParam,
+    clubUuid,
+    tab,
+    startDate,
+    endDate,
+    tab === 'players' ? playerSort : game,
+    tab === 'players' ? '' : stakes,
+    tab === 'players' ? '' : search,
+    tab === 'players' ? '' : gameSort,
+  ].join(':');
 
-  // Invalidate every club-scoped value before the browser paints a new route.
-  // A normal effect runs after paint; that left one frame where changing from
-  // one club slug to another showed the first club's money under the new URL.
+  // A complete financial export belongs to the exact painted question. Abort
+  // before paint when the viewer, route, tab, range, filter or sort changes.
+  useLayoutEffect(() => {
+    if (exportViewKeyRef.current === exportViewKey) return;
+    exportViewKeyRef.current = exportViewKey;
+    const active = exportControllerRef.current;
+    if (!active) return;
+    exportControllerRef.current = null;
+    exportGenerationRef.current += 1;
+    active.abort();
+    setExporting(false);
+    setExportProgress(null);
+    setExportNote(null);
+  }, [exportViewKey]);
+
+  // Invalidate every account-and-club-scoped value before the browser paints a
+  // new route or signed-in account. A normal effect runs after paint; that left
+  // one frame where changing the route or account showed the outgoing viewer's
+  // money under the incoming identity.
   useLayoutEffect(() => {
     loadVersion.current += 1;
     // A load still in flight for the OUTGOING club must not be able to put the
@@ -678,6 +811,7 @@ export default function ClubDataPage() {
     setLastVerifiedAt(null);
     setLastRequestMs(null);
     setRealtimeFeeds(INITIAL_REALTIME_FEEDS);
+    setRakeScopes(['club']);
     restoredGameKeyRef.current = null;
     restoredGameCacheHitRef.current = false;
     restoredPlayerKeyRef.current = null;
@@ -690,7 +824,7 @@ export default function ClubDataPage() {
     setLoading(Boolean(clubParam));
     setPlayersLoading(false);
     setInvoicesLoading(false);
-  }, [clubParam]);
+  }, [clubParam, userId]);
 
   // Resolve a club code or slug only after auth restoration. A protected club
   // lookup that races the session can return "not found" for a valid club and
@@ -1388,7 +1522,6 @@ export default function ClubDataPage() {
     }
   }, [
     clubUuid,
-    gameCursor,
     gamesHasMore,
     isHydrating,
     userId,
@@ -1483,7 +1616,6 @@ export default function ClubDataPage() {
     }
   }, [
     clubUuid,
-    playerCursor,
     playersHasMore,
     playersLoading,
     isHydrating,
@@ -1680,8 +1812,16 @@ export default function ClubDataPage() {
         if (isAuthzError(invErr)) removeClubDataCaches(userId, clubUuid);
         return false;
       } else {
+        if (!Array.isArray(data) || !data.every(isInvoiceRow)) {
+          reportError(
+            new Error('Union statement response was invalid'),
+            'ClubDataPage.invoices_shape'
+          );
+          setInvoicesError('Could Not Refresh Your Union Statement.');
+          return false;
+        }
         setInvoicesError(null);
-        const rows = (data as InvoiceRow[]) || [];
+        const rows = data as InvoiceRow[];
         setInvoices(rows);
         writeClubDataCache<InvoiceRow[]>(userId, clubUuid, invoiceCacheKey, rows);
         return true;
@@ -1900,10 +2040,18 @@ export default function ClubDataPage() {
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
     const controller = new AbortController();
+    const generation = ++exportGenerationRef.current;
+    const viewKey = exportViewKey;
     exportControllerRef.current = controller;
     setExporting(true);
     setExportNote(null);
     setExportProgress({ stage: 'preparing', loaded: 0, total: null });
+    const ownsExport = () =>
+      !cancelledRef.current &&
+      exportControllerRef.current === controller &&
+      exportGenerationRef.current === generation &&
+      exportViewKeyRef.current === viewKey &&
+      !controller.signal.aborted;
     try {
       const requestId = uuid();
       if (tab === 'players') {
@@ -1918,10 +2066,20 @@ export default function ClubDataPage() {
           },
           requestId,
           signal: controller.signal,
+          validateRow: isPlayerExportRow,
           rowKey: (row) => row.user_id,
-          onProgress: setExportProgress,
+          onProgress: (progress) => {
+            if (ownsExport()) setExportProgress(progress);
+          },
         });
-        if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(rows))) {
+        if (!ownsExport()) return;
+        const downloaded = await downloadCsv(
+          `club_players_${startDate}_${endDate}.csv`,
+          playersToCsv(rows),
+          ownsExport
+        );
+        if (!ownsExport()) return;
+        if (!downloaded) {
           setExportNote('This Browser Could Not Start The Download.');
         } else {
           setExportNote(`Exported All ${compactInt(rows.length)} Players.`);
@@ -1943,15 +2101,32 @@ export default function ClubDataPage() {
         },
         requestId,
         signal: controller.signal,
+        validateRow: isSnapshotExportRow,
         rowKey: (row) => `${row.kind}:${row.id}`,
-        onProgress: setExportProgress,
+        onProgress: (progress) => {
+          if (ownsExport()) setExportProgress(progress);
+        },
       });
-      if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
+      if (!ownsExport()) return;
+      const downloaded = await downloadCsv(
+        `club_data_${startDate}_${endDate}.csv`,
+        rowsToCsv(rows),
+        ownsExport
+      );
+      if (!ownsExport()) return;
+      if (!downloaded) {
         setExportNote('This Browser Could Not Start The Download.');
       } else {
         setExportNote(`Exported All ${compactInt(rows.length)} Games.`);
       }
     } catch (e) {
+      if (
+        exportControllerRef.current !== controller ||
+        exportGenerationRef.current !== generation ||
+        exportViewKeyRef.current !== viewKey
+      ) {
+        return;
+      }
       if (isClubDataExportAbort(e)) {
         setExportNote('Export Cancelled. No Partial File Was Downloaded.');
       } else {
@@ -1961,16 +2136,45 @@ export default function ClubDataPage() {
         );
       }
     } finally {
-      if (!cancelledRef.current) {
+      if (
+        !cancelledRef.current &&
+        exportControllerRef.current === controller &&
+        exportGenerationRef.current === generation &&
+        exportViewKeyRef.current === viewKey
+      ) {
         setExporting(false);
         setExportProgress(null);
       }
-      if (exportControllerRef.current === controller) exportControllerRef.current = null;
+      if (
+        exportControllerRef.current === controller &&
+        exportGenerationRef.current === generation
+      ) {
+        exportControllerRef.current = null;
+      }
     }
-  }, [clubUuid, exporting, tab, startDate, endDate, playerSort, game, stakes, search, gameSort]);
+  }, [
+    clubUuid,
+    exporting,
+    tab,
+    startDate,
+    endDate,
+    playerSort,
+    game,
+    stakes,
+    search,
+    gameSort,
+    exportViewKey,
+  ]);
 
   const cancelExport = useCallback(() => {
-    exportControllerRef.current?.abort();
+    const active = exportControllerRef.current;
+    if (!active) return;
+    exportControllerRef.current = null;
+    exportGenerationRef.current += 1;
+    active.abort();
+    setExporting(false);
+    setExportProgress(null);
+    setExportNote('Export Cancelled. No Partial File Was Downloaded.');
   }, []);
 
   /**
@@ -2063,18 +2267,43 @@ export default function ClubDataPage() {
   if (isHydrating && !user) {
     return (
       <div className={styles.page}>
-        <LoadingState message="Opening Club Data" />
+        <SpadeConsole
+          eyebrow="Club Intelligence"
+          title="Opening Club Data"
+          pill="Checking"
+          pillInk="blue"
+          crest="flat"
+          family="shark"
+          foot="foot"
+          className={styles.console}
+          aria-busy="true"
+        >
+          <p className={`sc-copy ${styles.note}`} role="status">
+            Restoring Your Verified Club Access.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
   if (!user) {
     return (
       <div className={styles.page}>
-        <PermissionState
+        <SpadeConsole
+          eyebrow="Permission Gate"
           title="Sign In To View Club Data"
-          description="Financial And Player Analytics Are Restricted To Authenticated Club Operators."
-          onBack={() => navigate('/')}
-        />
+          pill="Restricted"
+          pillInk="red"
+          crest="flat"
+          family="riveted"
+          className={styles.console}
+          plates={{
+            primary: { label: 'Go Back', onClick: () => navigate('/') },
+          }}
+        >
+          <p className={`sc-copy ${styles.note}`}>
+            Financial And Player Analytics Are Restricted To Authenticated Club Operators.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
@@ -2084,15 +2313,24 @@ export default function ClubDataPage() {
        out, and it can resolve a club of its own even when the route gave none. */
     return (
       <div className={styles.page}>
-        <EmptyState
-          icon="CLUB"
+        <SpadeConsole
           eyebrow="Club Context Required"
-          tone="permission"
           title="Choose A Club To View Its Data"
-          description="Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club Data From That Club's Operations Menu."
-          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
-          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
-        />
+          pill="Choose Club"
+          pillInk="gold"
+          crest="spade"
+          family="spade"
+          className={styles.console}
+          plates={{
+            secondary: { label: 'Find Clubs', onClick: () => navigate('/search') },
+            primary: { label: 'Return To Arena', onClick: () => navigate('/') },
+          }}
+        >
+          <p className={`sc-copy ${styles.note}`}>
+            Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club
+            Data From That Club's Operations Menu.
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
@@ -2179,6 +2417,7 @@ export default function ClubDataPage() {
         pill={statusWord}
         pillInk={statusInk}
         crest="spade"
+        family="spade"
         className={styles.console}
         aria-labelledby="club-data-title"
         plates={{
@@ -2269,6 +2508,7 @@ export default function ClubDataPage() {
         pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
         pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
         crest="flat"
+        family="shark"
         foot="foot"
         className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
         aria-labelledby="club-data-integrity-title"
@@ -2322,7 +2562,8 @@ export default function ClubDataPage() {
         titleId="club-data-pulse-title"
         pill={loading ? 'Syncing' : 'Live'}
         pillInk={loading ? 'blue' : 'green'}
-        crest="club"
+        crest="spade"
+        family="riveted"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-pulse-title"
@@ -2336,7 +2577,7 @@ export default function ClubDataPage() {
               onClick={() => shiftRange(-1)}
               aria-label="Previous Period"
             >
-              &#8592;
+              Prev
             </button>
             <span className={`sc-ink--silver ${styles.rangeChip}`}>
               <span>{startDate}</span>
@@ -2351,7 +2592,7 @@ export default function ClubDataPage() {
               disabled={isToday}
               aria-label="Next Period"
             >
-              &#8594;
+              Next
             </button>
           </div>
 
@@ -2375,7 +2616,7 @@ export default function ClubDataPage() {
         </section>
 
         {/* ZEROS ARE A LIE ON THIS PAGE (Dan 2026-08-25).
-          money(undefined) is "0.00", so any failed RPC - an authz refusal, a
+          money(undefined) is "0", so any failed RPC - an authz refusal, a
           timeout, a shapeless payload - painted "Games 0, Total Winnings 0.00,
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
@@ -2448,7 +2689,8 @@ export default function ClubDataPage() {
           titleId="club-data-statement-title"
           pill={invoicePill}
           pillInk={invoicePillInk}
-          crest="diamond"
+          crest="flat"
+          family="shark"
           foot="foot"
           className={styles.console}
           aria-labelledby="club-data-statement-title"
@@ -2581,7 +2823,7 @@ export default function ClubDataPage() {
                     <div className={styles.dataRow} key={String(label)}>
                       <span className={`sc-copy ${styles.lineLabel}`}>{String(label)}</span>
                       {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
-                          line item printed as a real 0.00. Show that it is missing. */}
+                          line item printed as a real zero. Show that it is missing. */}
                       <span className={`sc-ink--silver ${styles.dataValue}`}>
                         {Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}
                       </span>
@@ -2659,6 +2901,7 @@ export default function ClubDataPage() {
         pill={ledgerPill}
         pillInk="blue"
         crest="flat"
+        family="riveted"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-ledger-title"

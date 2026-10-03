@@ -42,8 +42,25 @@ import {
 import { reportError } from '../../utils/errorReporter';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
-import { clubDataQueryKey, readClubDataCache, writeClubDataCache } from '../../lib/clubDataCache';
-import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
+import {
+  clubDataQueryKey,
+  readClubDataCache,
+  removeClubDataCaches,
+  writeClubDataCache,
+} from '../../lib/clubDataCache';
+import { supabase } from '../../lib/supabase';
+import { downloadCsv } from '../../utils/downloadCsv';
+import { isClubDataExportAbort, type ClubDataExportProgress } from '../../utils/clubDataExport';
+import {
+  fetchRakeSnapshotExport,
+  isRakeExportAuthorizationError,
+  isRakeExportBusy,
+  isRakeExportEntitlementChanged,
+  isRakeExportUnavailable,
+  RAKE_EXPORT_SEARCH_MAX_LENGTH,
+  rakeSnapshotExportToCsv,
+} from '../../utils/rakeSnapshotExport';
+import { uuid } from '../../utils/uuid';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { titleCase } from '../../utils/titleCase';
 import { compactChips } from '../../utils/format';
@@ -100,10 +117,7 @@ function roleLabel(role: string | null | undefined): string {
 
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return NO_VALUE;
-  return Number(n).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return compactChips(Number(n));
 }
 
 function count(n: number | null | undefined): string {
@@ -189,6 +203,8 @@ export default function RakeSnapshotPanel({
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [custom, setCustom] = useState(() => periodToRange('month'));
   const [snapshot, setSnapshot] = useState<RakeSnapshot | null>(null);
+  /** The complete reporting question that produced the painted snapshot. */
+  const [snapshotViewKey, setSnapshotViewKey] = useState<string | null>(null);
   /**
    * Rows accumulate across pages; the snapshot only ever holds the LAST page.
    * Keeping them apart is what lets a Load More append without the summary,
@@ -217,9 +233,14 @@ export default function RakeSnapshotPanel({
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<RakeSortKey>('rake');
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<ClubDataExportProgress | null>(null);
+  const [exportAnnouncement, setExportAnnouncement] = useState('');
 
   const version = useRef(0);
   const cancelled = useRef(false);
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
+  const exportGenerationRef = useRef(0);
   /** Whether the last head read failed - see the bus subscription below. */
   const lastReadFailed = useRef(false);
   /**
@@ -239,6 +260,9 @@ export default function RakeSnapshotPanel({
     cancelled.current = false;
     return () => {
       cancelled.current = true;
+      exportGenerationRef.current += 1;
+      exportAbortControllerRef.current?.abort();
+      exportAbortControllerRef.current = null;
     };
   }, []);
 
@@ -290,6 +314,39 @@ export default function RakeSnapshotPanel({
    * would be discarded as belonging to somebody else.
    */
   const contextId = focusClubId ?? unionId;
+  const viewIdentityRef = useRef('');
+
+  // A financial answer belongs to one authenticated viewer and one reporting
+  // context. Never leave the previous viewer's rows painted while the next
+  // account or club is being resolved, and never let a late export cross that
+  // boundary.
+  useEffect(() => {
+    const nextIdentity = `${userId ?? ''}:${contextId ?? ''}`;
+    if (viewIdentityRef.current === nextIdentity) return;
+    const hadIdentity = viewIdentityRef.current.length > 0;
+    viewIdentityRef.current = nextIdentity;
+    version.current += 1;
+    cursor.current = 0;
+    expanded.current = false;
+    if (hadIdentity) {
+      setSnapshot(null);
+      setSnapshotViewKey(null);
+      setRows([]);
+      setError(null);
+      setPageError(null);
+    }
+    const active = exportAbortControllerRef.current;
+    if (active) {
+      exportAbortControllerRef.current = null;
+      exportGenerationRef.current += 1;
+      active.abort();
+      setExporting(false);
+      setExportProgress(null);
+      setExportAnnouncement(
+        'Reporting Access Changed During Export. No Partial File Was Downloaded.'
+      );
+    }
+  }, [userId, contextId]);
 
   /**
    * One key per distinct question. Scope, period and the agent being drilled
@@ -317,6 +374,20 @@ export default function RakeSnapshotPanel({
     [scope, range.start, range.end, focusUserId, focusClubId, unionId, sort, query]
   );
 
+  // Search, sort, range, scope and drill depth define the export question. If
+  // one changes while the immutable snapshot is being prepared, cancel it so
+  // the control can never hand off a file answering the previous question.
+  useEffect(() => {
+    const active = exportAbortControllerRef.current;
+    if (!active) return;
+    exportAbortControllerRef.current = null;
+    exportGenerationRef.current += 1;
+    active.abort();
+    setExporting(false);
+    setExportProgress(null);
+    setExportAnnouncement('Export Cancelled After The Reporting View Changed.');
+  }, [cacheKey]);
+
   // A new question is a new list. Anything carried over from the last one -
   // the cursor, the fact that it was expanded - describes rows that are gone.
   useEffect(() => {
@@ -335,6 +406,7 @@ export default function RakeSnapshotPanel({
     if (!cached) return;
     const cachedRows = Array.isArray(cached.breakdown) ? cached.breakdown : [];
     setSnapshot(cached);
+    setSnapshotViewKey(cacheKey);
     setRows(cachedRows);
     cursor.current = cachedRows.length;
     setLoading(false);
@@ -364,6 +436,7 @@ export default function RakeSnapshotPanel({
         if (cancelled.current || mine !== version.current) return;
         lastReadFailed.current = false;
         setSnapshot(next);
+        setSnapshotViewKey(cacheKey);
         // THE HEAD ALWAYS REFRESHES. The rows only refresh if the operator has
         // not opened past page one.
         //
@@ -661,157 +734,149 @@ export default function RakeSnapshotPanel({
     );
   };
 
-  const exportSnapshot = useCallback(() => {
-    if (!snapshot) return;
-    const lines: string[] = [];
-    lines.push(
-      [
-        'scope',
-        'label',
-        'start',
-        'end',
-        'days',
-        'fee',
-        'cash_fee',
-        'mtt_fee',
-        'games',
-        'hands',
-        'total_winnings',
-        'mtt_winnings',
-        // The summary above is the WHOLE club; the rows below are only the
-        // matches. Without this column the file reads as though the club
-        // produced the summary from those few rows.
-        'row_filter',
-        'row_sort',
-      ].join(',')
-    );
-    lines.push(
-      [
-        snapshot.scope,
-        snapshot.scope_label,
-        snapshot.range.start,
-        snapshot.range.end,
-        snapshot.range.days,
-        snapshot.summary.fee,
-        snapshot.summary.cash_fee,
-        snapshot.summary.mtt_fee,
-        snapshot.summary.games,
-        snapshot.summary.hands,
-        snapshot.summary.total_winnings,
-        snapshot.summary.mtt_winnings,
-        snapshot.applied_search ?? '',
-        snapshot.applied_sort ?? 'rake',
-      ]
-        .map(csvEscape)
-        .join(',')
-    );
-
-    // The EXPORT takes what is on screen, which is rows, not the last page the
-    // RPC happened to return. Exporting snapshot.breakdown after a Load More
-    // would hand the operator page two only.
-    if (rows.length) {
-      lines.push('');
-      if (snapshot.breakdown_kind === 'club') {
-        lines.push(
-          [
-            'club_id',
-            'name',
-            'code',
-            'games',
-            'hands',
-            'fee',
-            'cash_fee',
-            'mtt_fee',
-            'winnings',
-          ].join(',')
-        );
-        for (const r of rows as RakeClubRow[]) {
-          lines.push(
-            [r.club_id, r.name, r.code, r.games, r.hands, r.fee, r.cash_fee, r.mtt_fee, r.winnings]
-              .map(csvEscape)
-              .join(',')
-          );
-        }
-      } else if (snapshot.breakdown_kind === 'agent') {
-        lines.push(
-          [
-            'agent_user_id',
-            'name',
-            'role',
-            'commission_rate',
-            'direct_players',
-            'direct_active',
-            'direct_hands',
-            'direct_rake',
-            'sub_agents',
-            'network_players',
-            'network_rake',
-            'commission_earned',
-            'commission_outstanding',
-            'commission_settled',
-          ].join(',')
-        );
-        for (const r of rows as RakeAgentRow[]) {
-          lines.push(
-            [
-              r.agent_user_id,
-              r.name,
-              r.role,
-              r.commission_rate,
-              r.direct_players,
-              r.direct_active,
-              r.direct_hands,
-              r.direct_rake,
-              r.sub_agents,
-              r.network_players,
-              r.network_rake,
-              r.commission_earned,
-              r.commission_outstanding,
-              r.commission_settled,
-            ]
-              .map(csvEscape)
-              .join(',')
-          );
-        }
-      } else {
-        lines.push(
-          [
-            'player_id',
-            'name',
-            'role',
-            'depth',
-            'upline',
-            'hands',
-            'rake',
-            'downline_players',
-            'downline_rake',
-          ].join(',')
-        );
-        for (const r of rows as RakeDownlineRow[]) {
-          lines.push(
-            [
-              r.player_id,
-              r.name,
-              r.role,
-              r.depth,
-              r.upline_name,
-              r.hands,
-              r.rake,
-              r.downline_players,
-              r.downline_rake,
-            ]
-              .map(csvEscape)
-              .join(',')
-          );
-        }
-      }
+  const exportSnapshot = useCallback(async () => {
+    if (exporting) {
+      const active = exportAbortControllerRef.current;
+      if (!active) return;
+      exportAbortControllerRef.current = null;
+      exportGenerationRef.current += 1;
+      active.abort();
+      setExporting(false);
+      setExportProgress(null);
+      setExportAnnouncement('Export Cancelled. No Partial File Was Downloaded.');
+      return;
     }
 
-    downloadCsv(
-      `rake-snapshot-${snapshot.scope}-${snapshot.range.start}-to-${snapshot.range.end}.csv`,
-      lines.join('\n')
-    );
-  }, [snapshot, rows]);
+    const scopeId = scope === 'union' ? unionId : focusClubId;
+    const normalizedQuery = query || null;
+    if (
+      !snapshot ||
+      !userId ||
+      !scopeId ||
+      loading ||
+      snapshot.range.start !== range.start ||
+      snapshot.range.end !== range.end ||
+      snapshot.applied_search !== normalizedQuery ||
+      snapshot.applied_sort !== sort ||
+      snapshot.scope !== scope ||
+      snapshotViewKey !== cacheKey
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const generation = ++exportGenerationRef.current;
+    exportAbortControllerRef.current = controller;
+    setExporting(true);
+    setExportProgress({ stage: 'preparing', loaded: 0, total: null });
+    setExportAnnouncement('');
+
+    const ownsExport = () =>
+      !cancelled.current &&
+      exportAbortControllerRef.current === controller &&
+      exportGenerationRef.current === generation &&
+      !controller.signal.aborted;
+
+    try {
+      const result = await fetchRakeSnapshotExport({
+        rpc: supabase.rpc.bind(supabase),
+        scope,
+        scopeId,
+        start: snapshot.range.start,
+        end: snapshot.range.end,
+        agentUserId: scope === 'agent' ? focusUserId : null,
+        viewerUserId: userId,
+        search: snapshot.applied_search,
+        sort: snapshot.applied_sort,
+        requestId: uuid(),
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (ownsExport()) setExportProgress(progress);
+        },
+      });
+      if (!ownsExport()) return;
+      const downloaded = await downloadCsv(
+        `rake-snapshot-${result.metadata.scope_type}-${result.metadata.date_from}-to-${result.metadata.date_to}.csv`,
+        rakeSnapshotExportToCsv(result),
+        ownsExport
+      );
+      if (!ownsExport()) return;
+      if (!downloaded) {
+        setExportAnnouncement('This Browser Could Not Start The Rake CSV Download.');
+        return;
+      }
+      setExportAnnouncement(
+        `Exported All ${count(result.totalRows)} ${result.totalRows === 1 ? 'Row' : 'Rows'} From The Exact Server Snapshot.`
+      );
+    } catch (exportError) {
+      if (
+        exportAbortControllerRef.current !== controller ||
+        exportGenerationRef.current !== generation
+      ) {
+        return;
+      }
+      if (isClubDataExportAbort(exportError)) {
+        setExportAnnouncement('Export Cancelled. No Partial File Was Downloaded.');
+      } else if (isRakeExportUnavailable(exportError)) {
+        setExportAnnouncement(
+          'The Prepared Rake Export Expired Or Was No Longer Available. No Partial File Was Downloaded. Try Again.'
+        );
+      } else if (isRakeExportEntitlementChanged(exportError)) {
+        setExportAnnouncement(
+          'Reporting Access Changed During Export. No Partial File Was Downloaded. Prepare A New Export.'
+        );
+        version.current += 1;
+        void load(true);
+      } else if (isRakeExportBusy(exportError)) {
+        setExportAnnouncement(
+          'Another Club Data Export Is Being Prepared. Wait A Moment, Then Try Again.'
+        );
+      } else if (isRakeExportAuthorizationError(exportError)) {
+        if (userId && contextId) removeClubDataCaches(userId, contextId);
+        version.current += 1;
+        cursor.current = 0;
+        expanded.current = false;
+        setSnapshot(null);
+        setSnapshotViewKey(null);
+        setRows([]);
+        setError(describeRakeSnapshotError(exportError));
+        setExportAnnouncement(
+          'Reporting Access Changed During Export. No Partial File Was Downloaded.'
+        );
+      } else {
+        reportError(exportError, 'RakeSnapshotPanel.export');
+        setExportAnnouncement(
+          'The Complete Rake Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+        );
+      }
+    } finally {
+      if (
+        exportAbortControllerRef.current === controller &&
+        exportGenerationRef.current === generation
+      ) {
+        exportAbortControllerRef.current = null;
+        setExporting(false);
+        setExportProgress(null);
+      }
+    }
+  }, [
+    exporting,
+    scope,
+    unionId,
+    focusClubId,
+    snapshot,
+    userId,
+    loading,
+    range.start,
+    range.end,
+    query,
+    focusUserId,
+    contextId,
+    sort,
+    snapshotViewKey,
+    cacheKey,
+    load,
+  ]);
 
   const subject = snapshot
     ? `${titleCase(snapshot.scope_label)}${
@@ -820,6 +885,23 @@ export default function RakeSnapshotPanel({
           : ''
       }`
     : SCOPE_COPY[scope].note;
+  const exportReady = Boolean(
+    snapshot &&
+    userId &&
+    !loading &&
+    snapshot.range.start === range.start &&
+    snapshot.range.end === range.end &&
+    snapshot.applied_search === (query || null) &&
+    snapshot.applied_sort === sort &&
+    snapshot.scope === scope &&
+    snapshotViewKey === cacheKey
+  );
+  const exportStatus =
+    exportProgress?.stage === 'preparing'
+      ? 'Preparing An Exact Rake Snapshot For Export.'
+      : exportProgress
+        ? `Downloading ${count(exportProgress.loaded)} Of ${count(exportProgress.total)} Rows.`
+        : exportAnnouncement;
   const seriesUnit = snapshot?.series_bucket ?? 'day';
   const wordInk = (active: boolean) => (active ? 'sc-ink--white' : 'sc-ink--muted');
 
@@ -831,7 +913,8 @@ export default function RakeSnapshotPanel({
       subtitle={subject}
       pill={SCOPE_COPY[scope].label}
       pillInk="blue"
-      crest="club"
+      crest="spade"
+      family="shark"
       foot="foot"
       className={styles.panel}
       aria-labelledby="rake-snapshot-title"
@@ -860,13 +943,23 @@ export default function RakeSnapshotPanel({
         <button
           type="button"
           className={`${styles.exportBtn} sc-ink--white`}
-          onClick={exportSnapshot}
-          disabled={!snapshot}
-          title="Export This Snapshot As CSV"
+          onClick={() => void exportSnapshot()}
+          disabled={!exporting && !exportReady}
+          title={exporting ? 'Cancel Exact CSV Export' : 'Export Complete Snapshot As CSV'}
         >
-          Export
+          {exporting ? 'Cancel Export' : 'Export CSV'}
         </button>
       </div>
+
+      <p
+        className={`sc-label sc-ink--blue ${styles.exportStatus}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Rake Export Status"
+      >
+        {exportStatus}
+      </p>
 
       <div className={styles.periods} role="group" aria-label="Reporting Period">
         {RAKE_PERIODS.map((p) => (
@@ -1073,6 +1166,7 @@ export default function RakeSnapshotPanel({
             <input
               type="search"
               value={search}
+              maxLength={RAKE_EXPORT_SEARCH_MAX_LENGTH}
               placeholder="Search By Name"
               autoComplete="off"
               onChange={(e) => setSearch(e.target.value)}

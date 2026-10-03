@@ -78,7 +78,9 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     it(`${page} resolves its scope through useFinancialAdminScope and gates on it`, () => {
       expect(source).toMatch(/useFinancialAdminScope\(\)/);
       expect(source).toMatch(/from '\.\.\/hooks\/useFinancialAdminScope'/);
-      expect(source).toMatch(/<FinancialAdminScopeState scope=\{scope\} \/>/);
+      expect(source).toMatch(
+        /<FinancialAdminScopeState scope=\{scope\} \/>|scope\.message \|\| 'Verifying Your Financial Access'/
+      );
       expect(source).toMatch(/scope\.status !== 'ready'/);
     });
 

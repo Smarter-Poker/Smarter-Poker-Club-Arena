@@ -194,7 +194,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/AchievementService.ts', 1],
   ['src/pages/admin/AnalyticsDashboard.tsx', 0],
   ['src/pages/XMTTPage.tsx', 0],
-  ['src/pages/UnionStatementsPage.tsx', 1],
+  // 1 -> 0 on 2026-10-03. Statement issuing now refuses and reports a session
+  // read failure instead of treating it as an ordinary signed-out response.
+  ['src/pages/UnionStatementsPage.tsx', 0],
   ['src/pages/TournamentPage.tsx', 1],
   ['src/pages/TableConfigPage.tsx', 1],
   ['src/pages/SettingsPage.tsx', 1],

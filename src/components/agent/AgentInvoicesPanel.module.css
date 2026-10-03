@@ -1,0 +1,143 @@
+/* ========================================================================
+   AGENT INVOICES - one approved #ClubArenaConsole master.
+
+   The frame, crest, header well and closing rail come from SpadeConsole.
+   Invoice history prints as engraved rows on its black glass, and the one
+   action on a row is a lit word. Nothing here draws a card, pill or button.
+   ======================================================================== */
+
+.panel {
+  --sc-max: 760px;
+}
+
+.state {
+  display: grid;
+  justify-items: center;
+  gap: 2cqw;
+  padding-block: 3cqw;
+}
+
+.invoiceList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invoiceRow {
+  display: grid;
+  grid-template-areas:
+    'identity amount'
+    'action action';
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.4cqw 3cqw;
+  min-width: 0;
+  padding: 2.4cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.invoiceIdentity {
+  grid-area: identity;
+  display: grid;
+  gap: 0.8cqw;
+  min-width: 0;
+}
+
+.period {
+  min-width: 0;
+  color: #e4e7ec;
+  font:
+    800 3.6cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.03em;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6cqw 2cqw;
+  color: #9aa5b3;
+  font:
+    700 2.8cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.05em;
+}
+
+.invoiceAmount {
+  grid-area: amount;
+  display: grid;
+  justify-items: end;
+  gap: 0.6cqw;
+  min-width: max-content;
+  text-align: right;
+}
+
+.invoiceAmount strong {
+  font:
+    800 4.1cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.invoiceAmount strong span,
+.invoiceAmount small {
+  color: #9aa5b3;
+  font:
+    700 2.5cqw/1.2 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.05em;
+}
+
+.litAction {
+  grid-area: action;
+  appearance: none;
+  justify-self: end;
+  min-width: 92px;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.2cqw 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.litAction:active {
+  filter: brightness(1.25);
+}
+
+.litAction:disabled {
+  color: #9aa5b3;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.litAction:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
+}
+
+@container (min-width: 560px) {
+  .invoiceRow {
+    grid-template-areas: 'identity amount action';
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+}

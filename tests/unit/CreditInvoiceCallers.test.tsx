@@ -76,18 +76,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const empty = () => ({ data: [], error: null });
-const owed = (status = 'overdue') => ({
-  data: [
-    {
-      id: 'i',
-      agent_id: 'a',
-      status,
-      due_date: '2020-01-01',
-      amount_remaining: 10,
-    },
-  ],
-  error: null,
-});
+const owed = (status = 'overdue') => {
+  const settled = status === 'paid' || status === 'void';
+  const partial = status === 'partial';
+  return {
+    data: [
+      {
+        id: 'i',
+        agent_id: 'a',
+        period_start: '2019-12-22T00:00:00.000Z',
+        period_end: '2019-12-29T00:00:00.000Z',
+        debt_owed: 10,
+        amount_paid: status === 'paid' ? 10 : partial ? 5 : 0,
+        amount_remaining: settled ? 0 : partial ? 5 : 10,
+        status,
+        due_date: '2020-01-01T00:00:00.000Z',
+        created_at: '2019-12-29T00:00:00.000Z',
+        paid_at: status === 'paid' ? '2019-12-30T00:00:00.000Z' : null,
+      },
+    ],
+    error: null,
+  };
+};
 const agents = (n = 1) => ({
   data: Array.from({ length: n }, (_, i) => ({
     id: 'a' + i,

@@ -46,17 +46,39 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-import { DisputeService } from '../../src/services/DisputeService';
+import {
+  DisputeService,
+  parseDispute,
+  parseDisputeAdjustmentAmount,
+} from '../../src/services/DisputeService';
 import { supabase } from '../../src/lib/supabase';
 
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
 const from = supabase.from as unknown as ReturnType<typeof vi.fn>;
 
+const disputeRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'd-1',
+  submitted_by: 'user-1',
+  submitter_name: 'Player One',
+  target_type: 'agent_settlement',
+  target_id: 'settlement-9',
+  club_id: 'club-uuid-1',
+  amount: '250.50',
+  reason: 'the settlement is short',
+  status: 'open',
+  assigned_to: null,
+  resolution: null,
+  created_at: '2026-10-03T12:00:00Z',
+  updated_at: '2026-10-03T12:00:00Z',
+  resolved_at: null,
+  ...overrides,
+});
+
 describe('DisputeService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     rpc.mockResolvedValue({ data: null, error: null });
-    from.mockImplementation(() => buildChain());
+    from.mockImplementation(() => buildChain([]));
   });
 
   describe('getClubDisputes', () => {
@@ -69,12 +91,31 @@ describe('DisputeService', () => {
       const result = await DisputeService.getClubDisputes('club-1', 'pending');
       expect(Array.isArray(result)).toBe(true);
     });
+
+    it('refuses a row from outside the requested club', async () => {
+      const requestedClub = '11111111-1111-4111-8111-111111111111';
+      from.mockImplementationOnce(() =>
+        buildChain([disputeRow({ club_id: '22222222-2222-4222-8222-222222222222' })])
+      );
+
+      await expect(DisputeService.getClubDisputes(requestedClub)).rejects.toThrow(
+        'scope could not be verified'
+      );
+    });
   });
 
   describe('getMyDisputes', () => {
     it('should return empty array for user with no disputes', async () => {
       const result = await DisputeService.getMyDisputes('user-1');
       expect(result).toEqual([]);
+    });
+
+    it('refuses a row from outside the signed-in account', async () => {
+      from.mockImplementationOnce(() => buildChain([disputeRow({ submitted_by: 'someone-else' })]));
+
+      await expect(DisputeService.getMyDisputes('user-1')).rejects.toThrow(
+        'scope could not be verified'
+      );
     });
   });
 
@@ -100,7 +141,7 @@ describe('DisputeService', () => {
   describe('submitDispute', () => {
     it('files through the definer entry point, not through a table write', async () => {
       rpc.mockResolvedValueOnce({ data: { ok: true, dispute_id: 'd-1' }, error: null });
-      from.mockImplementationOnce(() => buildChain({ id: 'd-1', status: 'open', amount: 250.5 }));
+      from.mockImplementationOnce(() => buildChain(disputeRow()));
 
       const filed = await DisputeService.submitDispute('ignored-caller-id', aDispute);
 
@@ -120,7 +161,7 @@ describe('DisputeService', () => {
 
     it('never sends a caller-supplied user id, because the server takes the session', async () => {
       rpc.mockResolvedValueOnce({ data: { ok: true, dispute_id: 'd-2' }, error: null });
-      from.mockImplementationOnce(() => buildChain({ id: 'd-2' }));
+      from.mockImplementationOnce(() => buildChain(disputeRow({ id: 'd-2' })));
 
       await DisputeService.submitDispute('someone-elses-id', aDispute);
 
@@ -165,6 +206,57 @@ describe('DisputeService', () => {
         error: null,
       });
       await expect(DisputeService.withdrawDispute('d-1', 'u')).rejects.toThrow('already resolved');
+    });
+  });
+
+  describe('verified dispute money', () => {
+    it.each([
+      ['1', 1],
+      ['1.2', 1.2],
+      ['1.23', 1.23],
+      ['0.01', 0.01],
+      ['.5', 0.5],
+      ['01.20', 1.2],
+      ['1.230', 1.23],
+    ])('accepts positive exact-cent adjustment %s', (input, expected) => {
+      expect(parseDisputeAdjustmentAmount(input)).toBe(expected);
+    });
+
+    it.each(['', '0', '0.00', '-1', '1.001', 'NaN', 'Infinity', '1e3'])(
+      'refuses invalid adjustment %s',
+      (input) => {
+        expect(parseDisputeAdjustmentAmount(input)).toBeNull();
+      }
+    );
+
+    it('refuses a malformed or sub-cent dispute amount', () => {
+      expect(() => parseDispute(disputeRow({ amount: '250.501' }))).toThrow(
+        'financial state could not be verified'
+      );
+    });
+
+    it('refuses an impossible dispute timeline', () => {
+      expect(() => parseDispute(disputeRow({ updated_at: '2026-10-03T11:59:59Z' }))).toThrow(
+        'timeline could not be verified'
+      );
+    });
+
+    it('does not call the resolver with an empty or sub-cent adjustment', async () => {
+      await expect(
+        DisputeService.resolveDispute('d-1', 'reviewer', {
+          resolution: 'Reviewed',
+          adjustmentType: 'credit',
+          adjustmentAmount: 0,
+        })
+      ).rejects.toThrow('positive whole-cent');
+      await expect(
+        DisputeService.resolveDispute('d-1', 'reviewer', {
+          resolution: 'Reviewed',
+          adjustmentType: 'credit',
+          adjustmentAmount: 1.001,
+        })
+      ).rejects.toThrow('positive whole-cent');
+      expect(rpc).not.toHaveBeenCalled();
     });
   });
 

@@ -36,10 +36,12 @@ import {
   IncidentStatus,
 } from '../services/DriftIncidentService';
 import DriftGatePanel from './DriftGatePanel';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useAuthUser } from '../hooks/useAuthUser';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
 import { reportError } from '../utils/errorReporter';
+import { compactChips } from '../utils/format';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import './DriftIncidentsPage.css';
@@ -78,19 +80,9 @@ function formatEnum(value: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * EXACT, NOT COMPACT, AND DELIBERATELY SO.
- *
- * `compactChips` is the rule for chip figures outside the felt, and it is the
- * rule here for counts. It is NOT the rule for these three: expected, actual
- * and the discrepancy between them are the sum an operator reconciles and
- * then corrects, so they are "the exact amount an operator is about to move".
- * Rounding 2,450.37 to 2.4K would hand somebody a range 100 chips wide and
- * call it a ledger. Untouched from the version this page shipped with.
- */
 function formatAmount(n: number | null | undefined): string {
   if (n === null || n === undefined) return '--';
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return compactChips(Number(n));
 }
 
 function formatMinutes(mins: number): string {
@@ -105,6 +97,13 @@ function shortId(id: string): string {
 }
 
 export default function DriftIncidentsPage() {
+  const { user } = useAuthUser();
+  const scopeKey = useCashoutScopeKey(user?.id, 'drift-incidents');
+  return <DriftIncidentsContent key={scopeKey} actorId={user?.id} />;
+}
+
+function DriftIncidentsContent({ actorId }: { actorId?: string }) {
+  const isCurrent = useCashoutScope(actorId, 'drift-incidents');
   const toast = useToast();
   useVisibilityRefresh(() => loadIncidents());
 
@@ -132,29 +131,40 @@ export default function DriftIncidentsPage() {
 
   const loadingRef = useRef(false);
 
-  const loadIncidents = useCallback(async (getIsMounted?: () => boolean) => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    try {
-      // Always load ALL statuses: the stat cards need the full picture and
-      // tab filtering happens client-side.
-      const [data, m] = await Promise.all([
-        DriftIncidentService.getDashboard(null, 500),
-        DriftIncidentService.getMetrics(),
-      ]);
-      if (getIsMounted && !getIsMounted()) return;
-      setIncidents(data);
-      setMetrics(m);
-    } catch (err) {
-      if (getIsMounted && !getIsMounted()) return;
-      reportError(err, 'DriftIncidentsPage.Failed_to_load_incidents');
-      toast.error('Failed to load drift incidents');
-    } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
-    }
-  }, []);
+  const loadIncidents = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      if (loadingRef.current) return;
+      if (!isCurrent()) {
+        setIncidents([]);
+        setMetrics({});
+        setLoading(false);
+        return;
+      }
+      loadingRef.current = true;
+      setLoading(true);
+      try {
+        // Always load ALL statuses: the stat cards need the full picture and
+        // tab filtering happens client-side.
+        const [data, m] = await Promise.all([
+          DriftIncidentService.getDashboard(null, 500),
+          DriftIncidentService.getMetrics(),
+        ]);
+        if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
+        setIncidents(data);
+        setMetrics(m);
+      } catch (err) {
+        if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
+        setIncidents([]);
+        setMetrics({});
+        reportError(err, 'DriftIncidentsPage.Failed_to_load_incidents');
+        toast.error('Failed to load drift incidents');
+      } finally {
+        loadingRef.current = false;
+        if (isCurrent() && (!getIsMounted || getIsMounted())) setLoading(false);
+      }
+    },
+    [isCurrent, toast]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -217,6 +227,7 @@ export default function DriftIncidentsPage() {
   };
 
   const handleAction = async (incident: DriftIncident, action: IncidentAction) => {
+    if (!isCurrent()) return;
     let note: string | null = null;
     let rootCause: string | null = null;
 
@@ -256,6 +267,7 @@ export default function DriftIncidentsPage() {
         note,
         rootCause,
       });
+      if (!isCurrent()) return;
       if (!result.ok) {
         toast.error(result.reason || 'Incident action was refused');
       } else {
@@ -276,13 +288,14 @@ export default function DriftIncidentsPage() {
         await loadIncidents();
       }
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'DriftIncidentsPage.Incident_action_failed', {
         incidentId: incident.id,
         action,
       });
       toast.error('Incident action failed');
     }
-    setActing(null);
+    if (isCurrent()) setActing(null);
   };
 
   /* SAME ACTIONS, SAME ORDER, SAME LABELS. Only the dress changed: each one
@@ -409,7 +422,7 @@ export default function DriftIncidentsPage() {
     },
     {
       label: 'Auto-Repairing',
-      value: String(metrics.auto_repairing ?? 0),
+      value: metrics.auto_repairing === undefined ? '--' : String(metrics.auto_repairing),
       ink: 'silver',
     },
     {
@@ -424,6 +437,7 @@ export default function DriftIncidentsPage() {
       <StandardContentLayout className="drift-incidents-page">
         <SpadeConsole
           className="di-console"
+          family="shark"
           aria-busy
           eyebrow="Club Arena Ops"
           title="Drift Incidents"
@@ -431,8 +445,9 @@ export default function DriftIncidentsPage() {
           pillInk="muted"
           foot="foot"
         >
-          <PageSkeleton variant="financial" />
-          <p className="sc-copy sc-copy--center">Loading Incidents...</p>
+          <p className="sc-copy sc-copy--center" role="status">
+            Loading Incidents...
+          </p>
         </SpadeConsole>
       </StandardContentLayout>
     );
@@ -443,6 +458,7 @@ export default function DriftIncidentsPage() {
       {/* ── The ops readout: six figures as rows on the glass ─────────── */}
       <SpadeConsole
         className="di-console"
+        family="riveted"
         aria-busy={loading || undefined}
         eyebrow="Club Arena Ops"
         title="Drift Incidents"
@@ -480,6 +496,7 @@ export default function DriftIncidentsPage() {
       {/* ── The queue ─────────────────────────────────────────────────── */}
       <SpadeConsole
         className="di-console"
+        family="spade"
         eyebrow={`${formatEnum(filter)} Queue`}
         title="Incidents"
         pill={String(filteredIncidents.length)}

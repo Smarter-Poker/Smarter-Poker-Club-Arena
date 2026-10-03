@@ -16,10 +16,20 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
+import {
+  currentTournamentDataAuthority,
+  runWithTournamentDataAuthority,
+} from '../services/supabase/dataActorContext.js';
 
 const TABLE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const USER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const source = readFileSync(new URL('./ServerTableEngineBase.ts', import.meta.url), 'utf8');
+const snapshotsSource = readFileSync(
+  new URL('../services/supabase/snapshots.ts', import.meta.url),
+  'utf8'
+);
+const TOURNAMENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const LOST_LEASE = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -52,11 +62,17 @@ describe('a time bank debit whose answer was lost', () => {
     const h = harness();
     h.use();
     await settle(h.engine);
-    const calls = rpc.mock.calls.filter((c: unknown[]) => String(c[0]).startsWith('fn_consume_time_bank'));
+    const calls = rpc.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).startsWith('fn_consume_time_bank')
+    );
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toBe('fn_consume_time_bank');
     expect(typeof calls[0][1].p_request_id).toBe('string');
-    expect(calls[0][1]).toEqual({ p_user_id: USER, p_seconds: 20, p_request_id: expect.any(String) });
+    expect(calls[0][1]).toEqual({
+      p_user_id: USER,
+      p_seconds: 20,
+      p_request_id: expect.any(String),
+    });
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(false);
     expect(h.engine.unresolvedTimeBankDebits.size).toBe(0);
   });
@@ -87,7 +103,9 @@ describe('a time bank debit whose answer was lost', () => {
     expect(h.engine.unresolvedTimeBankDebits.size).toBe(0);
     expect(h.engine.timeBankAccountingUnconfirmed).toBe(false);
     // Nothing else was sent: one debit, asked about three times, one id.
-    expect(new Set(rpc.mock.calls.map((c: any[]) => c[1].p_request_id))).toEqual(new Set([firstId]));
+    expect(new Set(rpc.mock.calls.map((c: any[]) => c[1].p_request_id))).toEqual(
+      new Set([firstId])
+    );
   });
 
   it('treats a refusal as an answer: nothing was charged, nothing is pending', async () => {
@@ -148,8 +166,52 @@ describe('the answer is asked for where it matters', () => {
   });
 
   it('no engine code sends the debit without its request id', () => {
-    const calls = [...source.matchAll(/rpc\(\s*'fn_consume_time_bank',\s*\{([^}]*)\}/g)];
+    const calls = [
+      ...source.matchAll(/rpc\(\s*'fn_consume_time_bank',\s*\{([^}]*)\}/g),
+      ...snapshotsSource.matchAll(/rpc\(\s*'fn_consume_time_bank',\s*\{([^}]*)\}/g),
+    ];
     expect(calls.length).toBeGreaterThanOrEqual(2);
     for (const [, args] of calls) expect(args).toContain('p_request_id');
+  });
+});
+
+/**
+ * THE RE-ASK GOES OUT AS THE PROCESS (2026-10-03). The 16:35Z Postgres
+ * restart lost the answer to debit 6b1de5d5 on spin 20a7de08 table 9aa37b13.
+ * The receipt had committed, but the engine re-asked under its manager's lost
+ * lease generation, the database fenced every re-ask
+ * (TOURNAMENT_MANAGER_FENCED), and the manager's stop failed "retained
+ * time-bank custody" once a minute for two hours with three players seated.
+ */
+describe('a re-ask from an engine whose tournament lease is gone', () => {
+  it('reaches the database without that lease authority, and the answer clears the flag', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc');
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'supabase_timeout' } } as any);
+    const h = harness();
+    h.use();
+    await settle(h.engine);
+    expect(h.engine.unresolvedTimeBankDebits.size).toBe(1);
+
+    const seen: unknown[] = [];
+    rpc.mockImplementationOnce(((name: string) => {
+      seen.push([name, currentTournamentDataAuthority()]);
+      return Promise.resolve({ data: { success: true, idempotent_replay: true }, error: null });
+    }) as any);
+    // The manager stop calls this inside the (now lost) lease authority.
+    await runWithTournamentDataAuthority(
+      { tournamentId: TOURNAMENT, leaseGeneration: LOST_LEASE },
+      () => h.engine.resolveUnconfirmedTimeBankDebits()
+    );
+    expect(seen).toEqual([['fn_consume_time_bank', null]]);
+    expect(h.engine.unresolvedTimeBankDebits.size).toBe(0);
+    expect(h.engine.timeBankAccountingUnconfirmed).toBe(false);
+  });
+
+  it('the engine re-asks only through the process-root helper', () => {
+    const start = source.indexOf('resolveUnconfirmedTimeBankDebits(): Promise<void> {');
+    const body = source.slice(start, source.indexOf('\n  }\n', start));
+    expect(body).toContain('await reaskTimeBankDebit({');
+    expect(body).not.toContain("supabase.rpc('fn_consume_time_bank'");
+    expect(snapshotsSource).toMatch(/export const reaskTimeBankDebit = bindToProcessRoot\(/);
   });
 });

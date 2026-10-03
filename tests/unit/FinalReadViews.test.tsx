@@ -103,7 +103,12 @@ vi.mock('../../src/components/layouts/StandardContentLayout', () => ({
   default: ({ children }: any) => <div>{children}</div>,
 }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
-  SpadeConsole: ({ children }: any) => <div>{children}</div>,
+  SpadeConsole: ({ children, title, titleAs: Title = 'h2', titleId }: any) => (
+    <div>
+      <Title id={titleId}>{title}</Title>
+      {children}
+    </div>
+  ),
 }));
 vi.mock('../../src/components/rewards/RewardsSurfaceHeader', () => ({
   default: ({ metrics }: any) => (
@@ -408,6 +413,9 @@ describe('visible scoped rate history', () => {
     });
     const view = render(<RateAuditPage />);
     await settle();
+    const headings = screen.getAllByRole('heading', { name: 'Rate Audit Trail' });
+    expect(headings).toHaveLength(1);
+    expect(headings[0].tagName).toBe('H1');
     expect(screen.getByText('10.0%')).toBeTruthy();
     expect(h.requests).toHaveLength(2);
     for (const q of h.requests) {
@@ -450,6 +458,9 @@ describe('visible scoped rate history', () => {
     h.user = { id: 'owner-b' };
     view.rerender(<RateAuditPage />);
     await settle();
+    const accessHeading = screen.getAllByRole('heading', { name: 'Rate Audit Trail' });
+    expect(accessHeading).toHaveLength(1);
+    expect(accessHeading[0].tagName).toBe('H1');
     expect(screen.getByText('Verify Club Access')).toBeTruthy();
     expect(h.requests).toHaveLength(2);
     expect(old.signal.aborted).toBe(true);

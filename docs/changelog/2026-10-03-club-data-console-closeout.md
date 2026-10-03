@@ -35,6 +35,12 @@ The release candidate requires focused Data-family tests, TypeScript, affected-f
 
 Signed-in production verification found that `union_to_club` describes a transfer direction, not a settlement-cycle category. Four newer rakeback transfer documents shared that direction with the genuine rake-split history row, and the immutable legacy split mirror contained harmless binary serialization dust even though its authoritative gross and net columns remained exact cents. The reader now filters for both rake-split mirror fields on the server before its limit, refuses direction-only transfer documents, and accepts only sub-millionth-of-a-cent legacy mirror dust that reconciles exactly to the authoritative columns.
 
+## Deployed Browser Certificate Corrections
+
+- Club Pulse now gives its reporting range a full console row at every width, with the previous and next controls centered beneath it. This removes the range row's intrinsic tablet/desktop overflow without clipping content, weakening the page overflow check, or changing the approved painted console.
+- Rate Audit now promotes the painted console title to the page's single `h1` in both access-check and ready states. The redundant visually hidden title was removed, so the page has one accessible `Rate Audit Trail` heading while retaining the same artwork and content.
+- Focused regressions bind the range layout to its wrap/order contract and preserve the console title element in the read-view harness so duplicate or missing headings fail locally.
+
 ## Policy Receipt
 
 - Policy version: `2.9`

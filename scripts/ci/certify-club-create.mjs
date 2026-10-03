@@ -192,6 +192,11 @@ async function certifyWelcomeResetInsideRollback({
     );
 
     await client.query('SET LOCAL ROLE service_role');
+    // The opening board materializes incrementally through this same global
+    // settlement lane. Acquire it before the independent preimage so the
+    // graph cannot change between observation and the authenticated reset.
+    // The transaction-scoped lock remains held through the existing ROLLBACK.
+    await client.query('SELECT pg_advisory_xact_lock(530090,1)');
     const expectedResponse = await client.query(
       `SELECT
         COALESCE((SELECT jsonb_agg(g.id ORDER BY g.id)

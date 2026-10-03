@@ -1,0 +1,9 @@
+# Welcome Reset Uses One Stable Complete Package Graph
+
+The production Create Club certificate exposed two independent reset defects. The certificate read its expected club graph before entering the same global settlement lane used by incremental Spin and Sit-N-Go materialization, so a legitimate new table could appear between the preimage and the reset receipt. Separately, the reset functions installed by `20261002152207` had dropped schedule-spawn backlinks from the preceding implementation and did not include opening `SATELLITE` rows. An unused part of the opening package could therefore remain outside both preview and reset receipts.
+
+The certificate now takes `pg_advisory_xact_lock(530090,1)` before its independent preimage and holds it through the authenticated reset, exact receipt comparison, financial readback, and existing rollback. Exact comparisons remain fail-closed and there is no retry of the mutation.
+
+Migration `20261003021809` rewrites both the reset preview and unwind authorities from their exact installed source digests. Their tournament graph now includes direct schedule links, `tournament_schedule_spawns` backlinks, and owner-scoped `SPIN`, `SNG`, and `SATELLITE` rows with deterministic UUID ordering. The migration is single-transaction, replay-safe, reverse-substitution checked, preserves catalog metadata and ACLs, and changes no club, game, player, wallet, chip, receipt, or consent row.
+
+The native PostgreSQL 17 harness now installs the actual production reset chain through the new migration. It covers direct schedule rows, backlink-only schedule rows, SNG, Spin, Satellite, exact receipt arrays, a receipt identical to the returned result, conserved 100,000 opening chips, same-operation replay, later-operation replay, and atomic refusal when an operation ID is reused for another club.

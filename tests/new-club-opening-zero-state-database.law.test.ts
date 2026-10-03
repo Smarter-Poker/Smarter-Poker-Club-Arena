@@ -24,6 +24,17 @@ const optionalBbjPromoHistory = readFileSync(
   ),
   'utf8'
 );
+const completeResetGraph = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261003021809_welcome_reset_complete_package_graph.sql'
+  ),
+  'utf8'
+);
+const nativeHarness = readFileSync(
+  resolve(__dirname, '../scripts/ci/test-club-welcome-package.py'),
+  'utf8'
+);
 
 describe('new club opening package and zero-state database law', () => {
   it('creates a canonical wallet prospectively without historical backfill', () => {
@@ -98,6 +109,7 @@ describe('new club opening package and zero-state database law', () => {
     expect(certificate).toContain('SET LOCAL ROLE authenticated');
     expect(certificate).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(certificate).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(certificate).toContain('SELECT pg_advisory_xact_lock(530090,1)');
     expect(certificate).toContain("await client.query('ROLLBACK')");
     expect(certificate).not.toContain("await client.query('COMMIT')");
     expect(certificate).toContain('AS tables');
@@ -106,9 +118,14 @@ describe('new club opening package and zero-state database law', () => {
     const authenticatedRole = certificate.indexOf('SET LOCAL ROLE authenticated');
     const mutation = certificate.indexOf('public.fn_remove_first_club_welcome_games');
     const preimageReadRole = certificate.indexOf('SET LOCAL ROLE service_role');
+    const laneLock = certificate.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const preimage = certificate.indexOf('AS cash_game_ids');
     const financialReadRole = certificate.indexOf('SET LOCAL ROLE service_role', mutation);
     const readback = certificate.indexOf('AS cash_games');
     const rollback = certificate.indexOf("await client.query('ROLLBACK')");
+    expect(preimageReadRole).toBeLessThan(laneLock);
+    expect(laneLock).toBeLessThan(preimage);
+    expect(preimage).toBeLessThan(authenticatedRole);
     expect(preimageReadRole).toBeLessThan(authenticatedRole);
     expect(authenticatedRole).toBeLessThan(mutation);
     expect(mutation).toBeLessThan(financialReadRole);
@@ -156,5 +173,47 @@ describe('new club opening package and zero-state database law', () => {
     expect(optionalBbjPromoHistory).toContain(
       'WELCOME_RESET_IMPACT_BBJ_PROMO_HISTORY_REVERSE_SUBSTITUTION_FAILED'
     );
+  });
+
+  it('restores the complete owner-scoped schedule and opening-board graph', () => {
+    for (const digest of [
+      '9cf532743321cafc703634efb08c3911',
+      'ddb572f8fa2818a746338d222cd58bfe',
+      '9dedf8944a2b8ea83653d6e9329362d7',
+      '14e783ded2c21a64a3dd2741e5fe47d5',
+    ]) {
+      expect(completeResetGraph).toContain(digest);
+    }
+    expect(completeResetGraph).toContain('tournament_schedule_spawns sp');
+    expect(completeResetGraph).toContain("IN('SPIN','SNG','SATELLITE')");
+    expect(completeResetGraph).toContain('t.club_id=p_club_id');
+    expect(completeResetGraph).toContain('WELCOME_RESET_COMPLETE_GRAPH_ROUNDTRIP_REFUSED');
+    expect(completeResetGraph).toContain('v_metadata_after IS DISTINCT FROM v_metadata_before');
+    expect(completeResetGraph).toContain('WELCOME_UNWIND_COMPLETE_GRAPH_AUTHORITY_REFUSED');
+    expect(completeResetGraph).toContain('WELCOME_RESET_IMPACT_COMPLETE_GRAPH_AUTHORITY_REFUSED');
+  });
+
+  it('qualifies the actual installed reset chain and exact replay behavior natively', () => {
+    const reset = nativeHarness.indexOf("run('install-current-reset'");
+    const indexedHands = nativeHarness.indexOf("run('install-indexed-reset-hand-checks'");
+    const bbjHistory = nativeHarness.indexOf("run('install-current-bbj-promo-history'");
+    const completeGraph = nativeHarness.indexOf("run('install-complete-reset-graph'");
+    const completeGraphReplay = nativeHarness.indexOf("run('reinstall-complete-reset-graph'");
+
+    expect(reset).toBeGreaterThan(0);
+    expect(reset).toBeLessThan(indexedHands);
+    expect(indexedHands).toBeLessThan(bbjHistory);
+    expect(bbjHistory).toBeLessThan(completeGraph);
+    expect(completeGraph).toBeLessThan(completeGraphReplay);
+    for (const testCase of [
+      'complete-reset-graph-fixture',
+      'complete-reset-graph-first-reset',
+      'complete-reset-graph-same-operation-replay',
+      'complete-reset-graph-later-operation-replay',
+      'complete-reset-graph-cross-club-operation-refused',
+      'complete-reset-graph-cross-club-refusal-is-atomic',
+    ]) {
+      expect(nativeHarness).toContain(testCase);
+    }
   });
 });

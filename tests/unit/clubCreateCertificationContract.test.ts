@@ -221,6 +221,7 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('SET LOCAL ROLE authenticated');
     expect(script).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(script).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(script).toContain('SELECT pg_advisory_xact_lock(530090,1)');
     expect(script).toContain("await client.query('ROLLBACK')");
     expect(script).not.toContain("await client.query('COMMIT')");
     expect(script).toContain('welcomeCash.length !== 9');
@@ -238,6 +239,19 @@ describe('Create Club production certification contract', () => {
 
   it('fails closed around independent reset preimages and exact residue cleanup', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
+
+    const serviceRole = script.indexOf('SET LOCAL ROLE service_role');
+    const laneLock = script.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const preimage = script.indexOf('AS cash_game_ids');
+    const authenticatedRole = script.indexOf('SET LOCAL ROLE authenticated');
+    const mutation = script.indexOf('public.fn_remove_first_club_welcome_games');
+    const rollback = script.indexOf("await client.query('ROLLBACK')");
+
+    expect(serviceRole).toBeLessThan(laneLock);
+    expect(laneLock).toBeLessThan(preimage);
+    expect(preimage).toBeLessThan(authenticatedRole);
+    expect(authenticatedRole).toBeLessThan(mutation);
+    expect(mutation).toBeLessThan(rollback);
 
     expect(script).toContain(
       'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'

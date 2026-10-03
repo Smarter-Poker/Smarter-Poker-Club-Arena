@@ -36,7 +36,12 @@
  *     are written, so the index ceiling stops moving for five minutes and the
  *     lag climbs to ~600 s. The threshold is 30 minutes, six times the break,
  *     and `paused()` (wired to MaintenanceBreak.isActive) suppresses the raise
- *     outright while a break is on (CLAUDE.md 13, rule 6).
+ *     outright while a break is on (CLAUDE.md 13, rule 6). The trigger-gap
+ *     check below carries the identical guard for the identical reason: a
+ *     hand written in the last few seconds before the freeze can still read
+ *     as "missing" on the very next tick, and the fix is on the money paths
+ *     that resume the freeze, not on this alert (found 2026-09-23: it never
+ *     had the guard from 2026-09-04 until now).
  */
 
 export interface StatsHealthSnapshot {
@@ -572,8 +577,12 @@ export class StatsHealthMonitor {
     // 2. Missing published stats. Accepted atomic hands deliberately bypass
     //    the inline stats trigger and publish through hand_projection_outbox.
     //    A gap proves publication is late; it does not identify a failed writer.
+    //    Suppressed during a break for the same reason as the index lag above:
+    //    hand volume drops to near zero for five minutes, so a hand written in
+    //    the last few seconds before the freeze can still show as "missing" on
+    //    the read right after it - not a failed writer, the scheduled stop.
     const gap = s.recentHandsWithoutStat;
-    if (gap !== null && gap > 0) {
+    if (gap !== null && gap > 0 && !this.deps.paused()) {
       if (
         !(await this.deliverAlert(generation, () =>
           this.deps.raise({

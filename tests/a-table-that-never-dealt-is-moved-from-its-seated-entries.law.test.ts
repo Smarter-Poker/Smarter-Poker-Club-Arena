@@ -47,6 +47,7 @@ const ASSERT_POST_DEF = '6fd0cf3d598211408d165117fd8c32fe';
 // the release contract pins carry its post-image.
 const LATE_ENTRY =
   '20261002134551_a_late_entry_seated_after_the_proven_hand_is_movement_eviden.sql';
+const BUSTED_ENTRY = '20261003163015_a_busted_chair_taken_by_a_late_entry_is_movement_evidence.sql';
 const ADD_ON = '20261002055945_an_add_on_bought_after_a_movement_proof_is_not_a_changed_ros.sql';
 const SUCCESSOR_POST = 'a0e369a33e735ba728b72228a3134b01';
 const SUCCESSOR_POST_DEF = 'e3355bb05eecda8aed293f155f1ddfef';
@@ -247,7 +248,7 @@ describe('a table that never dealt is moved from its seated entries', () => {
       });
     // 20261002134551 (a late entry) redefines f06_movement_prior only, and
     // refuses to run unless the installed body is exactly this post-image.
-    expect(later).toEqual([ADD_ON, LATE_ENTRY]);
+    expect(later).toEqual([ADD_ON, LATE_ENTRY, BUSTED_ENTRY]);
     expect(readFileSync(join(MIGRATIONS, ADD_ON), 'utf8')).toContain(
       `md5(p.prosrc) = '${ASSERT_POST}'`
     );

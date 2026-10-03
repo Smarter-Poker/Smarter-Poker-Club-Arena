@@ -156,6 +156,14 @@ describe('a late entry seated after the proven hand is movement evidence', () =>
           'FUNCTION smarter_private.f06_movement_prior('
         )
       );
-    expect(later).toEqual([]);
+    // 20261003163015 (a busted chair taken by a late entry) is the one
+    // successor, and it refuses to run unless the installed body is exactly
+    // this post-image.
+    expect(later).toEqual([
+      '20261003163015_a_busted_chair_taken_by_a_late_entry_is_movement_evidence.sql',
+    ]);
+    expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
+      `md5(p.prosrc) = '${POST_MD5}'`
+    );
   });
 });

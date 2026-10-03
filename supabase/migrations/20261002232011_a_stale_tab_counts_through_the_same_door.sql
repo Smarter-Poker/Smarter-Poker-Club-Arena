@@ -38,16 +38,21 @@
 -- md5 of pg_get_functiondef before it runs and aborts if the live function
 -- moved. Nothing is backfilled and nothing is repaired (CLAUDE.md 10.12).
 --
--- THE REEL BODIES ALSO CARRY 20261002225448'S CHECKS. That migration
--- (another agent's, #5878) reached the same two reel routines with a role
--- check of its own. Its explicit signed-in-viewer and kept-counter checks are
--- in the reel bodies below, word for word, beside this file's once-a-day
--- receipt and no browser decrement. That combined text is what production
--- runs: it was applied at 23:28 under that migration's name
--- (schema_migrations 20261002232859), and #5885 then deleted the file as a
--- never-applied duplicate. scripts/ci/applied-migration-aliases.json maps
--- 20261002232859 to this file, whose reel text is the text that ran. The
--- pins below are of the pre-image this file first replaced.
+-- THE REEL BODIES ARE 20261002225448'S, WORD FOR WORD. That migration
+-- (#5878, restored by #5886 as the text that ran) reached the same two reel
+-- routines with a signed-in-viewer and kept-counter check of its own. The
+-- reel bodies below carry those checks beside this file's once-a-day receipt
+-- and no browser decrement, and 225448's file holds the same two bodies.
+--
+-- PRODUCTION AND A REBUILD RUN THE TWO FILES IN OPPOSITE ORDERS. Production
+-- applied this file first (schema_migrations 20261002232315) and 225448 second
+-- (20261002232859). A rebuild runs them by file version: 225448 first, then
+-- this file. So the pin below accepts, per routine, either the pre-image this
+-- file first replaced or this file's own result (identical to what 225448
+-- leaves: pg_get_functiondef carries no COMMENT). Anything else still aborts.
+-- That is the only difference from the text recorded at 20261002232315, and
+-- it makes no difference to a database that ran it. Both orders end on the
+-- same four definitions; the harness runs both.
 --
 -- @live-proof: (SELECT has_function_privilege('authenticated', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND NOT has_function_privilege('anon', 'public.increment_reel_count(uuid,text)', 'EXECUTE') AND (SELECT prosrc LIKE '%fn_count_content_engagement%' FROM pg_proc WHERE oid = 'public.increment_post_count(uuid,text)'::regprocedure))
 
@@ -56,16 +61,18 @@ SET LOCAL lock_timeout = '2s';
 
 DO $pins$
 DECLARE
+  -- Each routine must be the pinned pre-image, or already exactly what this
+  -- file writes (the post-image, measured on production after the apply).
   v_expected CONSTANT jsonb := jsonb_build_object(
-    'public.increment_reel_count(uuid,text)', '23f843d6fb8c218559dfed7ad59f8421',
-    'public.decrement_reel_count(uuid,text)', '2f3f5d1cf59b0645aaee4951943dec6c',
-    'public.increment_post_count(uuid,text)', '4dab81e6b5c5eed82f71ab751a07a54e',
-    'public.decrement_post_count(uuid,text)', '6e8206b74bc797839782a9017bb94570');
+    'public.increment_reel_count(uuid,text)', jsonb_build_array('23f843d6fb8c218559dfed7ad59f8421', '320e296097947b7d2b8046de486eeefb'),
+    'public.decrement_reel_count(uuid,text)', jsonb_build_array('2f3f5d1cf59b0645aaee4951943dec6c', '134cd0b4b7ec6f3275541bf101869d57'),
+    'public.increment_post_count(uuid,text)', jsonb_build_array('4dab81e6b5c5eed82f71ab751a07a54e', '8c24e53c088acfa607cf9ffa3c636be2'),
+    'public.decrement_post_count(uuid,text)', jsonb_build_array('6e8206b74bc797839782a9017bb94570', '211f5a4ce3d048732300767d815bf661'));
   k text;
 BEGIN
   FOR k IN SELECT jsonb_object_keys(v_expected) LOOP
-    IF md5(pg_get_functiondef(k::regprocedure)) IS DISTINCT FROM v_expected ->> k THEN
-      RAISE EXCEPTION 'COUNTER_MOVED_UNDERNEATH: % is not the pinned pre-image', k;
+    IF NOT (v_expected -> k) ? md5(pg_get_functiondef(k::regprocedure)) THEN
+      RAISE EXCEPTION 'COUNTER_MOVED_UNDERNEATH: % is neither the pinned pre-image nor this file''s result', k;
     END IF;
   END LOOP;
 END

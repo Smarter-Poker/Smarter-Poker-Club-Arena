@@ -1551,6 +1551,13 @@ export class HorseDecisionWorkerRuntime {
         },
       };
     }
+    // P10.1: the PLO4 input binding names the same original read frame.
+    if (captured.value.plo4Policy?.inputs) {
+      captured.value = {
+        ...captured.value,
+        plo4Policy: { ...captured.value.plo4Policy, readFrameSha256: readFrame?.sha256 ?? null },
+      };
+    }
     const at = startedAt;
     for (const [key, entry] of this.secondLookReads) {
       if (at - entry.at > HorseDecisionWorkerRuntime.SECOND_LOOK_READ_TTL_MS)
@@ -1713,6 +1720,12 @@ export class HorseDecisionWorkerRuntime {
           ...decision.tournamentUtility,
           readFrameSha256: retained.frame.sha256,
         },
+      };
+    }
+    if (decision.plo4Policy?.inputs) {
+      decision = {
+        ...decision,
+        plo4Policy: { ...decision.plo4Policy, readFrameSha256: retained.frame.sha256 },
       };
     }
     try {

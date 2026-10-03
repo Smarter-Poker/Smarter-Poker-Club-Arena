@@ -48,6 +48,7 @@ export interface HorsePolicyOwnership {
 const OUTSIDE_DOMAIN = new Set([
   'variant_outside_pack',
   'depth_or_ante_outside_pack',
+  'seat_count_outside_pack',
   'pineapple_tournament_unapproved',
   'variant_spin_unavailable',
   'multiboard_owned_by_phase13',

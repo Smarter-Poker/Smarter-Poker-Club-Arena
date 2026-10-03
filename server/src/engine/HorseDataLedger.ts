@@ -1768,6 +1768,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase10_range_*',
+    'evaluatePlo4LivePolicy -> HorseLogic (P10.1 input binding)',
+    'range status of every bound PLO4 proposal (not_consumed_preflop, unavailable, rejected_malformed, rejected_population, consumed_unattributed, consumed); counts only, never calibration or solver evidence',
+    'Phase10',
+    'phase10_eligible',
+    0.99
+  ),
+  receipt(
     'phase10_street_*',
     'evaluatePlo4LivePolicy',
     'street coverage for completed policy evaluations',

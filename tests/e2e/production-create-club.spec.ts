@@ -162,7 +162,10 @@ test.describe('Production Create A Club Certificate', () => {
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await wizard.getByRole('button', { name: 'Continue Opening Setup', exact: true }).click();
     await expect(wizard.getByText(/Already Enabled And Funded BBJ/i)).toBeVisible();
-    await expect(wizard.getByRole('button', { name: 'Not Now', exact: true })).toBeDisabled();
+    // The choice includes explanatory child text, so its accessible name is
+    // "Not Now Record The Decision Without Funding". Target the stable
+    // decision prefix while preserving the semantic disabled-state proof.
+    await expect(wizard.getByRole('button', { name: /^Not Now\b/i })).toBeDisabled();
     await wizard.getByRole('button', { name: 'Close Opening Wizard', exact: true }).click();
     await page.screenshot({ path: 'test-results/create-club-opened-mobile.png', fullPage: true });
 

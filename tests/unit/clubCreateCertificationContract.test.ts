@@ -230,6 +230,13 @@ describe('Create Club production certification contract', () => {
     expect(spec).not.toContain("getByLabel('Club Tag Line', { exact: true })");
   });
 
+  it('proves the package-funded BBJ decision by its stable accessible-name prefix', () => {
+    const spec = read('tests/e2e/production-create-club.spec.ts');
+
+    expect(spec).toContain("getByRole('button', { name: /^Not Now\\b/i })");
+    expect(spec).not.toContain("wizard.getByRole('button', { name: 'Not Now', exact: true })");
+  });
+
   it('retires the created club through the published owner controls before cleanup', () => {
     const workflow = read('.github/workflows/club-create-certification.yml');
     const spec = read('tests/e2e/production-create-club.spec.ts');

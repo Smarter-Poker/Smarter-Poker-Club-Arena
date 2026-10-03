@@ -161,6 +161,16 @@ for (const route of ROUTES) {
     }
 
     if (skipped.length === 0) {
+      if (route === 'leaderboard') {
+        // The leaderboard's ranked rows and prize metadata arrive from
+        // independent reads. Do not measure its virtualized list while those
+        // reads are still changing the document height.
+        await expect(page.getByRole('region', { name: 'Leaderboards' })).toHaveAttribute(
+          'aria-busy',
+          'false',
+          { timeout: 15_000 }
+        );
+      }
       if (route.endsWith('/jackpot')) {
         // Parent data, mini first read, operator visibility, recent hits and
         // analytics all affect the initial height. Terminal errors/empty reads

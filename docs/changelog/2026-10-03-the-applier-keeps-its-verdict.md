@@ -84,18 +84,33 @@ unexplained 245.80, known_residue 45.80, moved_since_resolution 200.00,
 journalled_seeds_after_epoch 8400.00, journalled_burns_after_epoch 8200.00
 ```
 
-Its author probed it at 14:49 UTC on 2026-10-02 with seeds 5,400.00 / burns
-5,200.00 and `moved_since_resolution 0.00`. The board has moved since. The
-transaction rolled back after 78.8s and committed nothing.
+**These figures are POST-change.** The assert runs after `EXECUTE v_new`, so
+it is the migration's own new body that read 200.00 - the fix does not
+reconcile the current data, which is a stronger statement than "the board
+moved". The transaction rolled back after 78.8s and committed nothing.
+
+The live identity is also volatile. Read against the unchanged production body
+at 03:25Z it was **-100.00** - exactly the symptom this migration was written
+to remove - fifteen minutes after the refusal reported +200.00. There are
+currently five post-epoch `bbj_pools` rows with no meter baseline, created at
+03:18:52, 03:05:36, 03:00:40 and (2026-10-02) 21:04:16 and 20:49:30Z, because
+the welcome-certification and club-reset programme is creating and retiring
+clubs every few minutes tonight. Its author caught a quiet moment at 14:49 UTC
+on 2026-10-02 (seeds 5,400.00 / burns 5,200.00, `moved_since_resolution`
+0.00); there has not been one since.
 
 **This was left merged and unapplied deliberately.** The only way to install it
 as written is to widen a jackpot money tolerance from 1.00 past 200.00, which
 would be an agent deciding that an unexplained 200.00 in the bad-beat lifetime
-identity is acceptable. It is not this task's to decide and it is not a tooling
-problem: the refusal is the check reporting a real unexplained 200.00 in the
-BBJ books. Re-dispatching would fail identically, and section 2 rule 2 forbids
-the loop. `Every merged migration is live` therefore stays red on this one
-file until whoever owns the BBJ conservation work explains the 200.00.
+identity is acceptable. It is not this task's to decide, and it is not a
+tooling problem: with the fix installed the books still did not balance, so
+the assert is reporting a real gap the fix does not cover.
+
+Re-dispatching it would also be gambling on a transient rather than reading an
+error, which is what section 2 rule 2 is about. `Every merged migration is
+live` therefore stays red on this one file until whoever owns the BBJ
+conservation work either explains the residue or widens the migration's set to
+cover a pool whose club is retired before the meter ever opens it.
 
 ## The gap that let a refusal read as nothing
 

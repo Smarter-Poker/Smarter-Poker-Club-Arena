@@ -811,6 +811,165 @@ describe('certification-club retirement transport contract', () => {
       })
     );
   });
+
+  it('retries only after proving the package schedule has a fresh unmaterialized claim', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-03T06:00:00.000Z'));
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const result = { success: true, chips_retired: 100000 };
+    const refusal = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const client = (failure?: Error) => ({
+      connect: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+          if (failure) throw failure;
+          return { rows: [{ result }] };
+        }
+        return { rows: [] };
+      }),
+      end: vi.fn().mockResolvedValue(undefined),
+    });
+    const firstClient = client(refusal);
+    const secondClient = client();
+    const databaseClientFactory = vi
+      .fn()
+      .mockResolvedValueOnce(firstClient)
+      .mockResolvedValueOnce(secondClient);
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/club_welcome_package_items?')) {
+        expect(init?.method).toBeUndefined();
+        expect(init?.body).toBeUndefined();
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?')) {
+        expect(init?.method).toBeUndefined();
+        expect(init?.body).toBeUndefined();
+        return Response.json([{ id: 1, created_at: '2026-10-03T05:59:00.000Z' }]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).resolves.toEqual(result);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(2);
+    expect(firstClient.end).toHaveBeenCalledTimes(1);
+    expect(secondClient.end).toHaveBeenCalledTimes(1);
+    expect(wait.mock.calls).toEqual([[2_000]]);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes(
+          'retired_at=is.null&entity_kind=eq.tournament_schedule&select=entity_id'
+        )
+      )
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes(
+          'schedule_id=in.(schedule-1)&tournament_id=is.null&select=id,created_at'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ['55000', 'SOME_OTHER_55000'],
+    ['23514', 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'],
+  ])(
+    'does not retry a retirement refusal unless both code and message match (%s)',
+    async (code, message) => {
+      const failure = Object.assign(new Error(message), { code });
+      const query = vi.fn(async (sql: string) => {
+        if (sql.startsWith('SELECT')) throw failure;
+        return { rows: [] };
+      });
+      const client = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        query,
+        end: vi.fn().mockResolvedValue(undefined),
+      };
+      const databaseClientFactory = vi.fn().mockResolvedValue(client);
+      const fetchMock = vi.fn();
+      const wait = vi.fn();
+
+      await expect(
+        retireCertificationClubWithRetry({
+          configuration,
+          clubId,
+          reason,
+          environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+          databaseClientFactory,
+          fetchImpl: fetchMock,
+          wait,
+        })
+      ).rejects.toBe(failure);
+
+      expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+      expect(wait).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('diagnoses a direct PostgreSQL lineage refusal without retrying when no fresh claim exists', async () => {
+    const failure = Object.assign(new Error('WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'), {
+      code: '55000',
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.startsWith('SELECT')) throw failure;
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+    const databaseClientFactory = vi.fn().mockResolvedValue(client);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (
+        url.includes('/club_welcome_package_items?') &&
+        url.includes('entity_kind=eq.tournament_schedule')
+      ) {
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      }
+      if (url.includes('/tournament_schedule_spawns?') && url.includes('tournament_id=is.null')) {
+        return Response.json([]);
+      }
+      return Response.json([]);
+    });
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const wait = vi.fn();
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory,
+        fetchImpl: fetchMock,
+        wait,
+      })
+    ).rejects.toBe(failure);
+
+    expect(databaseClientFactory).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('reserved fixture graph diagnostic')
+    );
+  });
 });
 
 describe('a certification fixture that leaked must not wedge the next certificate (2026-09-28)', () => {
@@ -1083,7 +1242,11 @@ describe('a certification fixture that leaked must not wedge the next certificat
     expect(diagnostic).toHaveBeenCalledWith(
       expect.stringContaining('"id":"tournament-foreign","club_id":"foreign-club"')
     );
-    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('/rpc/fn_ca_retire_welcome_certification_club')
+      )
+    ).toHaveLength(1);
   });
 
   it('treats a replayed retirement as success (the door answers already_gone)', async () => {

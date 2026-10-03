@@ -88,6 +88,15 @@ jobs:
           RECOVER_TRANSIENT_OID: ${{ inputs.recover_transient_oid }}
         run: |
           set -uo pipefail
+          # The pipeline below is allowed to fail WITHOUT aborting this step.
+          # GitHub runs `run:` under `bash -e`, and `set -uo pipefail` does not
+          # clear -e, so an exit 1 (REFUSED) or 3 (UNKNOWN) used to abort here
+          # BEFORE the code reached $GITHUB_OUTPUT. The summary then read an
+          # empty code and called every refusal "UNEXPECTED exit" - the three
+          # outcomes this script is careful to separate, collapsed into one
+          # that names no cause (CLAUDE.md 10.86 rule 1). Record it, then exit
+          # with it.
+          set +e
           recovery_args=()
           if [[ -n "$RECOVER_INDEX" || -n "$RECOVER_OID" || -n "$RECOVER_BEFORE" || -n "$RECOVER_TRANSIENT_OID" ]]; then
             recovery_args=(--recover-index "$RECOVER_INDEX" --recover-oid "$RECOVER_OID" --recover-before "$RECOVER_BEFORE")
@@ -99,7 +108,10 @@ jobs:
             --migration "$MIGRATION_FILE" \
             "${recovery_args[@]}" \
             ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
-          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       - name: Say what happened
         if: always()
@@ -115,6 +127,7 @@ jobs:
               0) echo "- result: **APPLIED or ALREADY-APPLIED** (see the log line)";;
               1) echo "- result: **REFUSED** - nothing committed, or the reason is in the log";;
               3) echo "- result: **UNKNOWN** - inspect the log and durable outcome before another operation";;
+              "") echo "- result: **COULD NOT TELL** - the applier recorded no exit code, so whether anything was sent is UNREAD. Inspect the log and schema_migrations before any other operation; do not re-dispatch blind.";;
               *) echo "- result: **UNEXPECTED exit $code**";;
             esac
             echo ""

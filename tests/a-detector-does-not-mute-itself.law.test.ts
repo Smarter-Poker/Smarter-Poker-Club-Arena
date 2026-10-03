@@ -64,6 +64,41 @@
  *   4. The reader is unchanged and named: `production-integrity-audit.yml`,
  *      job `main_is_green`, which files and updates the durable issue and
  *      carries the detector's exit code into the job conclusion.
+ *
+ * ── AND THE OTHER DIRECTION: ITS OWN VERDICT IS NOT EVIDENCE (2026-10-03) ────
+ * The 2026-09-30 fix removed a detector muting OTHER workflows with its own
+ * output. It left the mirror image standing one level up, which is CLAUDE.md
+ * 10.86 rule 4: the detector reads EVERY active workflow, including the one it
+ * runs inside, so its exit code decided its own next input. Green was
+ * unreachable by arithmetic - with the entire estate green and every other job
+ * in this workflow green, the previous run's failure still put `Production
+ * Integrity Audit` in `red`, past the threshold, and alarmed. Measured on run
+ * 37098827354: "Production Integrity Audit - 112 consecutive failed verdict(s)
+ * over at least 21.5 days, no green run in the window", reported by a job
+ * inside that workflow.
+ *
+ * `SELF_ALARMING_WORKFLOWS` cannot reach it and must not be bent to: an entry
+ * names the label of the issue THAT workflow files and never
+ * MAIN_HEALTH_READER_LABEL, and the main-health issue is this workflow's only
+ * write path. Nor is the answer to skip the workflow - it has eleven jobs and
+ * nine of them read production, so a wholesale exemption would hide a red
+ * `Live chip and diamond supply still conserves` from everybody, which is 10.83
+ * in a fresh coat.
+ *
+ *   5. Only the circular part is removed. This detector's own workflow - the
+ *      one `GITHUB_WORKFLOW` names, never a hardcoded title - stops alarming
+ *      only when EVERY failing job in its latest verdict is the job that runs
+ *      this detector. Any other failing job alarms exactly as before.
+ *   6. It is read from the Actions jobs API, a structural fact about the run.
+ *      It is never inferred from an issue, a label, or a marker this detector
+ *      wrote - that was the 2026-09-30 bug and it stays fixed.
+ *   7. An unreadable or empty job list is not "nothing else failed". It alarms
+ *      (10.86 rule 2).
+ *   8. A self-referential red is still printed in the report, still carries its
+ *      marker into the durable issue, and still raises a run annotation naming
+ *      its age - and it can never close the durable alarm, because the close
+ *      step greps for the exact all-green sentence this detector prints only
+ *      when nothing at all is red.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -71,8 +106,11 @@ import { join } from 'node:path';
 
 import {
   classifyRedState,
+  classifyWorkflow,
   issueCarriesWorkflowAlarm,
+  MAIN_HEALTH_JOB_NAME,
   MAIN_HEALTH_READER_LABEL,
+  onlyFailingJobIs,
   RED_STATE,
   SELF_ALARMING_WORKFLOWS,
   workflowAlarmMarker,
@@ -286,5 +324,157 @@ describe('the reader is unchanged and still named', () => {
     // the issue, so the detector must keep printing that exact sentence.
     expect(yml).toContain("OK - every workflow's latest VERDICT on main is green.");
     expect(read(DETECTOR)).toContain("OK - every workflow's latest VERDICT on ${BRANCH} is green.");
+  });
+});
+
+describe("a detector's own verdict is not evidence about the estate", () => {
+  const SELF = 'Production Integrity Audit';
+  const OTHER_JOB = 'Live chip and diamond supply still conserves';
+
+  it('the self-referential state never alarms', () => {
+    // The exact 2026-10-03 fixed point: 21.5 days, no green run in the window,
+    // and the only thing red was this detector's own previous exit code.
+    const verdict = classifyRedState(redFor(SELF, 21.5 * 24), {
+      tracked: true,
+      selfReferential: true,
+      thresholdHours: 6,
+    });
+    expect(verdict.state).toBe(RED_STATE.SELF_REFERENTIAL);
+    expect(
+      verdict.alarms,
+      'Reporting this is the detector reading its own exit code back as a finding, ' +
+        'which makes green unreachable by arithmetic.'
+    ).toBe(false);
+  });
+
+  it('being tracked is still not a reason to go quiet when it is not circular', () => {
+    // Rule 1 is untouched: without the structural proof, the SAME workflow at
+    // the SAME age still alarms.
+    const verdict = classifyRedState(redFor(SELF, 21.5 * 24), {
+      tracked: true,
+      selfReferential: false,
+      thresholdHours: 6,
+    });
+    expect(verdict.state).toBe(RED_STATE.TRACKED);
+    expect(verdict.alarms).toBe(true);
+  });
+
+  it('any other failing job in the same run is a real finding and alarms', () => {
+    expect(
+      onlyFailingJobIs(
+        [
+          { name: MAIN_HEALTH_JOB_NAME, conclusion: 'failure' },
+          { name: OTHER_JOB, conclusion: 'failure' },
+        ],
+        MAIN_HEALTH_JOB_NAME
+      ),
+      "Nine of this workflow's jobs read production. Exempting the workflow " +
+        'wholesale would hide every one of them, which is CLAUDE.md 10.83 again.'
+    ).toBe(false);
+    expect(
+      onlyFailingJobIs([{ name: OTHER_JOB, conclusion: 'failure' }], MAIN_HEALTH_JOB_NAME)
+    ).toBe(false);
+  });
+
+  it("only the detector's own job failing is the circular case", () => {
+    expect(
+      onlyFailingJobIs(
+        [
+          { name: MAIN_HEALTH_JOB_NAME, conclusion: 'failure' },
+          { name: OTHER_JOB, conclusion: 'success' },
+          { name: 'Explicit tournament runtime observation', conclusion: 'skipped' },
+        ],
+        MAIN_HEALTH_JOB_NAME
+      )
+    ).toBe(true);
+  });
+
+  it('timed_out and startup_failure count as failing jobs too', () => {
+    expect(
+      onlyFailingJobIs(
+        [
+          { name: MAIN_HEALTH_JOB_NAME, conclusion: 'failure' },
+          { name: OTHER_JOB, conclusion: 'timed_out' },
+        ],
+        MAIN_HEALTH_JOB_NAME
+      )
+    ).toBe(false);
+    expect(
+      onlyFailingJobIs([{ name: OTHER_JOB, conclusion: 'startup_failure' }], MAIN_HEALTH_JOB_NAME)
+    ).toBe(false);
+  });
+
+  it('an unreadable or empty job list alarms rather than reading as clean', () => {
+    for (const jobs of [undefined, null, [], {}, 'nope']) {
+      expect(
+        onlyFailingJobIs(jobs as never, MAIN_HEALTH_JOB_NAME),
+        'COULD NOT TELL must not read as "nothing else failed" (10.86 rule 2).'
+      ).toBe(false);
+    }
+    // A run with no failing job at all is not the circular case either - the
+    // workflow's red came from somewhere this read cannot see, so it alarms.
+    expect(
+      onlyFailingJobIs([{ name: OTHER_JOB, conclusion: 'success' }], MAIN_HEALTH_JOB_NAME)
+    ).toBe(false);
+  });
+
+  it('the exemption is keyed on the running workflow, never a hardcoded title', () => {
+    const src = executable(DETECTOR);
+    expect(src).toContain('process.env.GITHUB_WORKFLOW');
+    expect(src).toContain('red?.name !== SELF_WORKFLOW');
+    expect(
+      /SELF_WORKFLOW\s*=\s*['"]/.test(src),
+      'A hardcoded workflow name is an allowlist, which this file refuses by design.'
+    ).toBe(false);
+  });
+
+  it('it is read from the Actions jobs API and from no issue, label or marker', () => {
+    const src = executable(DETECTOR);
+    const start = src.indexOf('async function isSelfReferential');
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, src.indexOf('\n}', start));
+    expect(body).toMatch(/\/actions\/runs\/.*\/jobs/);
+    expect(body).toContain('onlyFailingJobIs');
+    expect(body).not.toContain('MAIN_HEALTH_READER_LABEL');
+    expect(body).not.toContain('openIssues');
+    expect(body).not.toContain('workflowAlarmMarker');
+    // Every failure path returns false, which is the loud direction.
+    expect(body).toMatch(/catch\s*\{\s*return false;/);
+  });
+
+  it('the verdict carries the run id the job read belongs to', () => {
+    const run = (conclusion: string, hoursAgo: number) => ({
+      id: 37098827354,
+      conclusion,
+      created_at: new Date(NOW - hoursAgo * HOUR).toISOString(),
+      html_url: 'https://github.com/x/y/actions/runs/37098827354',
+    });
+    expect(classifyWorkflow(SELF, [run('failure', 1)], NOW)!.latestRunId).toBe(37098827354);
+  });
+
+  it('a self-referential red is still printed, annotated, and never closes the alarm', () => {
+    const src = read(DETECTOR);
+    // Printed in the oldest-first report with its own explanation.
+    expect(src).toContain('RED_STATE.SELF_REFERENTIAL');
+    // Announced on the run itself, with an age that moves (rule 3).
+    expect(src).toContain('::warning title=This audit is red only because of its own verdict::');
+    expect(src).toMatch(/for \$\{hrs\(r\.hours\)\}/);
+    // The all-green sentence is printed ONLY when nothing is red at all, and the
+    // close step greps for exactly that, so a self-referential red cannot close
+    // the durable issue.
+    const allGreen = "OK - every workflow's latest VERDICT on ${BRANCH} is green.";
+    const idx = src.indexOf(allGreen);
+    expect(idx).toBeGreaterThan(-1);
+    expect(src.slice(0, idx)).toContain('if (red.length === 0) {');
+    expect(read(HOST)).toContain("OK - every workflow's latest VERDICT on main is green.");
+  });
+
+  it('the job name it compares against is the one the workflow actually declares', () => {
+    const yml = read(HOST);
+    expect(yml).toContain(`name: ${MAIN_HEALTH_JOB_NAME}`);
+    // ...and that job is the one that runs this detector.
+    const job = yml.slice(yml.indexOf('\n  main_is_green:'), yml.indexOf('\n  ddl_reload_storms:'));
+    expect(job).toContain(`name: ${MAIN_HEALTH_JOB_NAME}`);
+    expect(job).toContain(DETECTOR);
   });
 });

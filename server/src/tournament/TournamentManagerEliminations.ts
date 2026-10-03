@@ -47,6 +47,7 @@ import {
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
+import { runInTerminalFinishGate } from './terminalFinishGate.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import type { VerifiedSatelliteQualifierReceipt } from './satelliteQualifierReceipt.js';
 import {
@@ -5550,7 +5551,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     let receipt: VerifiedTournamentCompletionReceipt;
     try {
-      receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId);
+      // THE FINISH LANE IS ONE SEAT, EVEN INSIDE ONE PROCESS (2026-09-27). See
+      // terminalFinishGate.ts: fn_complete_tournament_terminal serializes on a
+      // single platform-wide exclusive lock, so several sweeps in this same
+      // process entering it at once only ever let one proceed while the rest
+      // occupy a scheduler slot for up to the RPC's own 45s statement_timeout.
+      // This gate makes that same one-at-a-time rule cheap and in-process; a
+      // caller that cannot get a turn inside the gate's budget never reaches
+      // Postgres and is treated exactly like the transient 'timeout' proven
+      // refusal it already is (unaltered law: flat five-second retry, one
+      // alert). Never wraps the disagreement/adoption path, which reads a
+      // receipt rather than opening the lane.
+      receipt = await runInTerminalFinishGate(() =>
+        requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)
+      );
     } catch (settlementErr) {
       if (settlementErr instanceof TerminalSettlementDisagreementError) {
         // The database holds a receipt this request contradicts and the

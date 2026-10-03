@@ -34,8 +34,12 @@ describe('the live cash finish has one authoritative payer', () => {
 
   it('requires a complete terminal receipt and uses its winner amount', () => {
     const finish = code(sliceMethod(SOURCE, 'protected async finishTournament'));
+    // The in-process finish gate (terminalFinishGate.ts, 2026-09-27) wraps this
+    // call so concurrent sweeps in one process take a cheap in-memory turn
+    // instead of piling onto the database's own single exclusive finish-lane
+    // lock; the exact RPC identity and arguments are unchanged.
     expect(finish).toMatch(
-      /receipt = await requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'places',\s*winnerId/
+      /receipt = await (?:runInTerminalFinishGate\(\(\) =>\s*)?requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'places',\s*winnerId/
     );
     expect(finish).toMatch(/winnerPrize = receipt\.winnerAmount/);
   });

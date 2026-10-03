@@ -1,0 +1,18 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 425bf221..a89111dd 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -2112,6 +2112,13 @@ jobs:
+           retention-days: 7
+           if-no-files-found: warn
+ 
++      - name: The mint register keeps its supply in shards
++        if: matrix.shard == 1
++        timeout-minutes: 6
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: python3 -B scripts/ci/test-the-mint-register-keeps-its-supply-in-shards.py
++
+       - name: Spin expiry lock order and committed refund contracts
+         id: spin_expiry_postgres
+         if: matrix.shard == 1

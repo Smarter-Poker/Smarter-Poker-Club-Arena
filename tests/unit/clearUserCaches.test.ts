@@ -91,6 +91,15 @@ describe('clearUserCaches', () => {
     expect(leftovers).toEqual([]);
   });
 
+  it('purges the leaderboard rankings written by the live page on sign-out', () => {
+    sessionStorage.setItem('lb_cache_v2_club-a_profit_weekly_0', '{"private":true}');
+
+    clearUserCaches();
+
+    expect(sessionStorage.getItem('lb_cache_v2_club-a_profit_weekly_0')).toBeNull();
+    expect(SWR_CACHE_PREFIXES).toContain('lb_cache_v2_');
+  });
+
   it('keeps device preferences — a sign-out is not a factory reset', () => {
     const prefs: [string, string][] = [
       [STORAGE_KEYS.SOUNDS, 'false'],

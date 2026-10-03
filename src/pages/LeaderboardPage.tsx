@@ -56,7 +56,6 @@ const PROGRAM_HISTORY_COLLAPSED = 3;
 const PROGRAM_HISTORY_VISIBLE = 6;
 
 // ── SWR Cache helpers ──
-const LB_CACHE_KEY = 'lb_cache_v2_';
 const LB_CACHE_TTL_MS = 5 * 60 * 1000;
 const LB_CACHE_MAX_RECORDS = 20;
 
@@ -93,7 +92,7 @@ function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
 }
 
 function getCachedEntries(key: string): LeaderboardCacheRecord | null {
-  const storageKey = LB_CACHE_KEY + key;
+  const storageKey = LEADERBOARD_CACHE_PREFIX + key;
   try {
     const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
@@ -117,12 +116,12 @@ function getCachedEntries(key: string): LeaderboardCacheRecord | null {
 function setCachedEntries(key: string, entries: LeaderboardEntry[]) {
   try {
     const record: LeaderboardCacheRecord = { version: 2, storedAt: Date.now(), entries };
-    sessionStorage.setItem(LB_CACHE_KEY + key, JSON.stringify(record));
+    sessionStorage.setItem(LEADERBOARD_CACHE_PREFIX + key, JSON.stringify(record));
 
     const records: { key: string; storedAt: number }[] = [];
     for (let index = 0; index < sessionStorage.length; index += 1) {
       const storageKey = sessionStorage.key(index);
-      if (!storageKey?.startsWith(LB_CACHE_KEY)) continue;
+      if (!storageKey?.startsWith(LEADERBOARD_CACHE_PREFIX)) continue;
       try {
         const cached = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
         records.push({ key: storageKey, storedAt: Number(cached.storedAt) || 0 });
@@ -225,6 +224,7 @@ const METRIC_OPTIONS: {
 ];
 
 const PAGE_SIZE = 50;
+const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_';
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'daily', label: 'Today' },
@@ -454,8 +454,11 @@ export default function LeaderboardPage() {
         if (requestId !== settingsRequestRef.current) return;
         setSettings(data);
       })
-      .catch(() => {
+      .catch((error) => {
         if (requestId === settingsRequestRef.current) {
+          if (error instanceof Error && error.message === 'Prize Setup Returned No Data') {
+            reportError(error, 'LeaderboardPage.Reward_setup_invalid');
+          }
           setSettingsError('Prize Setup Could Not Be Loaded.');
         }
       })
@@ -1002,8 +1005,11 @@ export default function LeaderboardPage() {
       .then((rows) => {
         if (requestId === programHistoryRequestRef.current) setProgramHistory(rows);
       })
-      .catch(() => {
+      .catch((error) => {
         if (requestId === programHistoryRequestRef.current) {
+          if (error instanceof Error && error.message === 'Program History Returned Invalid Data') {
+            reportError(error, 'LeaderboardPage.Program_history_invalid');
+          }
           setProgramHistoryError('Program History Could Not Be Loaded.');
         }
       });

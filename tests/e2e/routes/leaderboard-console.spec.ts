@@ -163,6 +163,25 @@ for (const width of [393, 1440]) {
       'true'
     );
 
+    // Keyboard-only visitors can move and activate the same primary views.
+    const tabs = board.getByRole('tab');
+    await tabs.first().focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(1)).toBeFocused();
+    await expect(tabs.nth(1)).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('Enter');
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+
+    for (const label of ['Global', 'My Clubs', 'Hands Played']) {
+      const control = board.getByRole('button', { name: label, exact: true });
+      const size = await control.boundingBox();
+      expect(size?.width, `${label} target width`).toBeGreaterThanOrEqual(44);
+      expect(size?.height, `${label} target height`).toBeGreaterThanOrEqual(44);
+    }
+
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await expect(board.getByRole('button', { name: 'Global', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -233,5 +252,8 @@ for (const width of [393, 1440]) {
     expect(observed.pageErrors, 'uncaught exceptions on the leaderboard').toBe(0);
     expect(appConsoleErrors, 'the application logged errors on the leaderboard').toEqual([]);
     expect(observed.failedArenaFiles, 'Club Arena files that failed to load').toEqual([]);
+    expect(observed.otherBadResponses, 'failed non-Club Arena requests on the leaderboard').toEqual(
+      []
+    );
   });
 }

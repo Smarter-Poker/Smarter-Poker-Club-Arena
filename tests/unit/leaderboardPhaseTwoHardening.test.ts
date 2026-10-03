@@ -65,6 +65,10 @@ describe('leaderboard phase two operational hardening', () => {
   it('makes tabs and the prize wizard keyboard-operable and save-safe', () => {
     expect(page).toContain('role="tablist"');
     expect(page).toContain('onKeyDown={handleTabKeyDown}');
+    expect(page).toContain('document.getElementById(`leaderboard-${nextTab}-tab`)?.focus();');
+    expect(page).not.toContain(
+      'requestAnimationFrame(() => document.getElementById(`leaderboard-${nextTab}-tab`)?.focus())'
+    );
     expect(page).toContain('role="tabpanel"');
     expect(wizard).toContain('const dialogRef = useFocusTrap(isOpen)');
     expect(wizard).toContain("event.key === 'Escape' && !saving");

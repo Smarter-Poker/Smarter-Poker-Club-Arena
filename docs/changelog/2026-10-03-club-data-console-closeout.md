@@ -69,3 +69,20 @@ Signed-in production verification found that `union_to_club` describes a transfe
 - Hardening standard: `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
 - Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
 - Reader: `d5e6189878846064ac60269a41dfc4e6d9a7bda54610110ddc5813230198f36e`
+
+## Launch-Gate Browser Harness Correction
+
+- A superseded production certificate exposed a real harness gap at the required 320px viewport and 200 percent text scale: the page reflow could finish after the helper's one-time centered scroll, leaving a reroll control under the fixed Poker Arena footer while the helper only waited for geometry that could no longer repair itself.
+- The helper now remeasures the live control and footer, scrolls only by the measured overlap, and checks again. If the document has no remaining scroll range, the overlap remains and the certificate still fails, so an obstructed production control cannot be converted into a false pass.
+- A focused regression proves the overlap calculation, while the existing production and accessibility suites continue to own the real signed-in viewport certificate.
+
+### Final Resumption Receipt
+
+- Read at: `2026-10-03T21:36:20.105Z`
+- Policy version: `2.9`
+- Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
+- Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+- Operating law: `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+- Hardening standard: `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+- Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+- Reader: `d5e6189878846064ac60269a41dfc4e6d9a7bda54610110ddc5813230198f36e`

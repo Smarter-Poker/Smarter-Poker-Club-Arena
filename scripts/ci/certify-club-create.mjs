@@ -161,6 +161,10 @@ function jwtClaims(accessToken, expectedUserId) {
 const sortedIds = (values) => [...(Array.isArray(values) ? values : [])].map(String).sort();
 const sameIds = (left, right) =>
   JSON.stringify(sortedIds(left)) === JSON.stringify(sortedIds(right));
+const namesEveryId = (receipt, observed) => {
+  const named = new Set(sortedIds(receipt));
+  return sortedIds(observed).every((id) => named.has(id));
+};
 
 async function certifyWelcomeResetInsideRollback({
   claims,
@@ -267,11 +271,25 @@ async function certifyWelcomeResetInsideRollback({
       [clubId, operationId]
     );
     const resetResult = resetResponse.rows?.[0]?.result;
+    const removed = resetResult?.removed;
+    // The receipt must name every entity the independent preimage saw: an
+    // omission is a reset that leaves a live welcome game behind, which is the
+    // defect this certification exists to refuse.
+    //
+    // It may name MORE. The preimage and the reset are separate statements, and
+    // this transaction is READ COMMITTED, so each one takes its own snapshot.
+    // A welcome tournament_schedule spawns tournaments (and their tables) in
+    // the background, so a spawn that commits between the two statements is
+    // invisible to the preimage and correctly removed by the reset. Demanding
+    // set equality here asserted that nothing on the platform committed during
+    // the probe, which is not a property of the reset and failed at random.
+    // Nothing extra goes unchecked: every id the receipt names is proved below
+    // to belong to this club and to have landed in the zero state.
     if (
-      !sameIds(resetResult?.removed?.cash_game_ids, expected?.cash_game_ids) ||
-      !sameIds(resetResult?.removed?.table_ids, expected?.table_ids) ||
-      !sameIds(resetResult?.removed?.schedule_ids, expected?.schedule_ids) ||
-      !sameIds(resetResult?.removed?.tournament_ids, expected?.tournament_ids)
+      !namesEveryId(removed?.cash_game_ids, expected?.cash_game_ids) ||
+      !namesEveryId(removed?.table_ids, expected?.table_ids) ||
+      !namesEveryId(removed?.schedule_ids, expected?.schedule_ids) ||
+      !namesEveryId(removed?.tournament_ids, expected?.tournament_ids)
     ) {
       throw new Error('Welcome Reset Receipt Did Not Name The Complete Independent Package Graph.');
     }
@@ -307,8 +325,8 @@ async function certifyWelcomeResetInsideRollback({
         COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM (
           SELECT id,status FROM public.tournaments WHERE id=ANY($5::uuid[])
         ) t),'[]'::jsonb) AS tournaments,
-        COALESCE((SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id) FROM (
-          SELECT id,status FROM public.managed_game_schedules
+        COALESCE((SELECT jsonb_agg(to_jsonb(m) ORDER BY m.schedule_id) FROM (
+          SELECT schedule_id,status FROM public.managed_game_schedules
           WHERE status IN ('scheduled','executing') AND
             ((game_kind='tournament' AND game_id=ANY($5::uuid[])) OR
              (game_kind='table' AND game_id=ANY($3::uuid[])))
@@ -321,19 +339,38 @@ async function certifyWelcomeResetInsideRollback({
         ) w) AS wheel_config,
         COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM (
           SELECT host_id FROM public.diamond_spins_owner_consents WHERE host_id=$1::uuid
-        ) a),'[]'::jsonb) AS diamond_consents`,
+        ) a),'[]'::jsonb) AS diamond_consents,
+        COALESCE((SELECT jsonb_agg(g.id ORDER BY g.id)
+          FROM public.cash_games g WHERE g.club_id=$1::uuid),'[]'::jsonb) AS club_cash_game_ids,
+        COALESCE((SELECT jsonb_agg(t.id ORDER BY t.id)
+          FROM public.tables t WHERE t.club_id=$1::uuid),'[]'::jsonb) AS club_table_ids,
+        COALESCE((SELECT jsonb_agg(s.id ORDER BY s.id)
+          FROM public.tournament_schedules s WHERE s.club_id=$1::uuid),'[]'::jsonb) AS club_schedule_ids,
+        COALESCE((SELECT jsonb_agg(t.id ORDER BY t.id)
+          FROM public.tournaments t WHERE t.club_id=$1::uuid),'[]'::jsonb) AS club_tournament_ids`,
       [
         clubId,
-        expected.cash_game_ids,
-        expected.table_ids,
-        expected.schedule_ids,
-        expected.tournament_ids,
+        removed?.cash_game_ids ?? [],
+        removed?.table_ids ?? [],
+        removed?.schedule_ids ?? [],
+        removed?.tournament_ids ?? [],
       ]
     );
+    const readback = readbackResponse.rows?.[0];
+    // Nothing invented: every id the receipt named is a row of this club.
+    if (
+      !namesEveryId(readback?.club_cash_game_ids, removed?.cash_game_ids) ||
+      !namesEveryId(readback?.club_table_ids, removed?.table_ids) ||
+      !namesEveryId(readback?.club_schedule_ids, removed?.schedule_ids) ||
+      !namesEveryId(readback?.club_tournament_ids, removed?.tournament_ids)
+    ) {
+      throw new Error('Welcome Reset Receipt Named An Entity Outside The Certification Club.');
+    }
     result = {
       reset: resetResult,
-      readback: readbackResponse.rows?.[0],
+      readback,
       expected,
+      removed,
     };
   } catch (error) {
     operationError = error;
@@ -797,7 +834,7 @@ try {
   const {
     reset,
     readback: resetReadback,
-    expected: resetExpected,
+    removed: resetRemoved,
   } = await certifyWelcomeResetInsideRollback({
     claims: authenticatedClaims,
     clubId: club.id,
@@ -838,13 +875,13 @@ try {
     Number(resetBbjRead?.backup_balance) !== 0 ||
     Number(resetBbjRead?.promo_balance) !== 0 ||
     resetBbjRead?.status !== 'retired' ||
-    resetCashRead?.length !== resetExpected?.cash_game_ids?.length ||
+    resetCashRead?.length !== resetRemoved?.cash_game_ids?.length ||
     resetCashRead?.some((row) => row.enabled || row.state !== 'dormant') ||
-    resetTableRead?.length !== resetExpected?.table_ids?.length ||
+    resetTableRead?.length !== resetRemoved?.table_ids?.length ||
     resetTableRead?.some((row) => row.status !== 'closed' || Number(row.current_players) !== 0) ||
-    resetScheduleRead?.length !== resetExpected?.schedule_ids?.length ||
+    resetScheduleRead?.length !== resetRemoved?.schedule_ids?.length ||
     resetScheduleRead?.some((row) => row.active !== false) ||
-    resetTournamentRead?.length !== resetExpected?.tournament_ids?.length ||
+    resetTournamentRead?.length !== resetRemoved?.tournament_ids?.length ||
     resetTournamentRead?.some(
       (row) => !['CANCELLED', 'CANCELED'].includes(String(row.status || '').toUpperCase())
     ) ||

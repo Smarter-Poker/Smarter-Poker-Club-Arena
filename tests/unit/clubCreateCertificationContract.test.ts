@@ -297,6 +297,43 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('Still Exists After Cleanup.');
   });
 
+  it('compares the reset receipt against both snapshots instead of demanding a still platform', () => {
+    const script = read('scripts/ci/certify-club-create.mjs');
+
+    // The preimage and the reset are separate statements in a READ COMMITTED
+    // transaction, so a welcome schedule's background spawn can commit between
+    // them. Set equality asserted that nothing committed during the probe and
+    // went red at random; the receipt must instead name EVERY observed entity
+    // and nothing outside the club.
+    expect(script).toContain('const namesEveryId = (receipt, observed) =>');
+    expect(script).toContain('!namesEveryId(removed?.cash_game_ids, expected?.cash_game_ids)');
+    expect(script).toContain('!namesEveryId(removed?.table_ids, expected?.table_ids)');
+    expect(script).toContain('!namesEveryId(removed?.schedule_ids, expected?.schedule_ids)');
+    expect(script).toContain('!namesEveryId(removed?.tournament_ids, expected?.tournament_ids)');
+    expect(script).not.toMatch(/sameIds\(\s*resetResult\?\.removed/);
+    expect(script).toContain(
+      'Welcome Reset Receipt Named An Entity Outside The Certification Club.'
+    );
+    expect(script).toContain('!namesEveryId(readback?.club_cash_game_ids, removed?.cash_game_ids)');
+    expect(script).toContain('!namesEveryId(readback?.club_table_ids, removed?.table_ids)');
+
+    // Every entity the receipt names is read back in the zero state, which is
+    // what keeps the subset comparison from going slack.
+    expect(script).toContain('removed?.cash_game_ids ?? []');
+    expect(script).toContain('removed?.table_ids ?? []');
+    expect(script).toContain('resetCashRead?.length !== resetRemoved?.cash_game_ids?.length');
+    expect(script).toContain('resetTableRead?.length !== resetRemoved?.table_ids?.length');
+    expect(script).toContain('resetScheduleRead?.length !== resetRemoved?.schedule_ids?.length');
+    expect(script).toContain(
+      'resetTournamentRead?.length !== resetRemoved?.tournament_ids?.length'
+    );
+
+    // managed_game_schedules is keyed on schedule_id. Selecting "id" raised
+    // 42703 and killed the whole certification at the readback.
+    expect(script).toContain('SELECT schedule_id,status FROM public.managed_game_schedules');
+    expect(script).not.toMatch(/SELECT id,status FROM public\.managed_game_schedules/);
+  });
+
   it('bakes replayed cards from the authoritative server club and reports a failed URL write', () => {
     const service = read('src/services/ClubsService.ts');
     expect(service).toMatch(

@@ -430,7 +430,10 @@
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
-  overflow: hidden;
+  /* The painted face keeps its measured box so its label stays centred on the
+     art. The transparent ::after target below reaches 44px beyond that box,
+     so this element must not clip it. The well still clips fitted text. */
+  overflow: visible;
 }
 
 /* A plate that navigates is an anchor over the same art (see PlateLink).

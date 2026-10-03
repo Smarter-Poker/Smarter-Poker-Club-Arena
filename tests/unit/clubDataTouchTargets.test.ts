@@ -6,6 +6,10 @@ const css = readFileSync(
   resolve(__dirname, '../../src/components/club/RakeSnapshotPanel.module.css'),
   'utf8'
 );
+const pageCss = readFileSync(
+  resolve(__dirname, '../../src/pages/club/ClubDataPage.module.css'),
+  'utf8'
+);
 
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -60,5 +64,14 @@ describe('Club Data touch targets', () => {
     expect(rule('.toolSearch input')).toMatch(/min-height:\s*44px/);
     expect(rule('.toolSearch input')).toMatch(/font-size:\s*16px/);
     expect(rule('.toolSort select')).toMatch(/min-height:\s*44px/);
+    expect(rule('.toolSort select')).toMatch(/font-size:\s*max\(16px,\s*3\.2cqw\)/);
+  });
+
+  it('wraps completed exports and narrow reporting windows inside their consoles', () => {
+    expect(rule('.exportStatus')).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(rule('.exportStatus')).toMatch(/white-space:\s*normal/);
+    expect(pageCss).toMatch(
+      /@media \(max-width:\s*430px\)[\s\S]*?\.rangeBar\s*\{[^}]*flex-wrap:\s*wrap/
+    );
   });
 });

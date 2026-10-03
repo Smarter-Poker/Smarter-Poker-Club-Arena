@@ -100,6 +100,7 @@
 }
 
 .arrow {
+  flex: 0 0 auto;
   font-size: 5cqw;
   padding-inline: 2.4cqw;
 }
@@ -540,5 +541,18 @@
   .skeletonRow,
   .integrityAttention .statusLight {
     animation: none;
+  }
+}
+
+@media (max-width: 430px) {
+  .rangeBar {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .rangeChip {
+    order: -1;
+    flex: 1 0 100%;
+    justify-content: center;
   }
 }

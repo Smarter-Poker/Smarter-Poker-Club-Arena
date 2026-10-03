@@ -284,3 +284,39 @@ if the source moved. An already-rewritten source is a no-op rather than a
 failure. Three agents edited this function on 2026-10-02; a blind
 `CREATE OR REPLACE` would have discarded whichever of their changes landed last,
 which is the mistake the first correction above is about.
+
+## 00:57Z: #5890 took the seed-return key first, and took it the other way
+
+`20261003001046` is deleted unapplied. #5890 `fix(cert): follow canonical Spin
+seed return lineage` landed and was applied while #5888 was in its check run, and
+it fixed the same predicate by changing the literal:
+
+```
+                 was  ...||p_club_id::text||':200'
+#5890 installed      ...||p_club_id::text||':200.00'
+```
+
+The live routine now matches the key, the source digest is
+`8ea4b2b5f9a80c4b8abbc620bd989c19`, and `20261003001046`'s preimage guard
+correctly refuses it: `v_old_hits=0` and `v_new_hits=0` raise
+`SEED_RETURN_KEY_PREIMAGE_REFUSED` rather than overwrite somebody else's live
+fix. That is the guard doing its job, and it is why this file was written in the
+guarded idiom rather than as a `CREATE OR REPLACE`.
+
+One observation, recorded rather than re-litigated in a competing migration:
+`':200.00'` is a rendering of a numeric, so it holds only while the writer's
+scale stays at 2. `split_part(l.idempotency_key,':',3)::numeric=200` would not
+have cared. If that key ever moves again, this is the line and this is why.
+
+### Where Club Create Certification stands
+
+Five distinct causes have been found in it today and four are fixed and live:
+55006 PLATFORM_FROZEN (mine, shipped in #5878), 42883 `min(uuid)` (#5875), the
+hard twelve-game board (#5884, applied 00:03Z), and the seed-return key (#5890).
+Run 37083837407 refuses on the fifth,
+`WELCOME_CERTIFICATION_BOARD_LEASE_LINEAGE_REFUSED`, in
+`fn_ca_prepare_unused_welcome_certification_board_leases` on the one residual club
+that never reset (`2ef3c802`, which takes the pristine branch). That is the same
+owner's active work: four migrations to this retirement family landed between
+20:55Z and 00:50Z. It is not fixed here, and saying so is the point of
+CLAUDE.md 10.11's ordering clause.

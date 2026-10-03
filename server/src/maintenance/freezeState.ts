@@ -26,6 +26,25 @@
 let frozen = false;
 
 /**
+ * THE LAST-HAND SETTLEMENT WINDOW (2026-10-03).
+ *
+ * The engine flag above goes up at the :53 announcement, but the database
+ * freeze (fn_platform_frozen) only arms at :55, and :53-:55 is exactly the
+ * window in which every table is told to FINISH the hand in front of it. A
+ * tournament whose last hand ends in that window is decided, and paying it is
+ * the same "finish what is in front of you" the tables are doing. Holding the
+ * payout behind the engine flag made every event decided after :53 wait for
+ * the thaw (up to ~8 minutes) with its winner unpaid.
+ *
+ * So the announcement opens a bounded window for TERMINAL settlement only,
+ * closing a reserve before :55 so a settlement is never in flight at the
+ * cutover. Nothing else reads it: every sweep, entry, seat move and rebuy
+ * still answers to isMaintenanceFrozen(). Any other freeze (countdown,
+ * adoption, recovery hold, release boundary) closes it, and the thaw clears it.
+ */
+let terminalSettlementOpenUntilMs = 0;
+
+/**
  * THAW SUBSCRIBERS (2026-09-21).
  *
  * The flag above answers "may I move money right now?". It could not answer
@@ -53,6 +72,9 @@ const thawListeners = new Set<MaintenanceThawListener>();
 export function setMaintenanceFrozen(value: boolean): void {
   const wasFrozen = frozen;
   frozen = value;
+  // Every freeze edge closes the last-hand settlement window; only the
+  // announcement reopens it, after this call (setLastHandSettlementWindow).
+  terminalSettlementOpenUntilMs = 0;
   if (!wasFrozen || value) return;
   // Snapshot: a listener may unsubscribe itself from inside its own callback.
   for (const listener of [...thawListeners]) {
@@ -81,4 +103,21 @@ export function onMaintenanceThaw(listener: MaintenanceThawListener): () => void
 /** True from the :53 announcement until the :00 resume. */
 export function isMaintenanceFrozen(): boolean {
   return frozen;
+}
+
+/**
+ * Open (untilMs > now) or close (0) the last-hand terminal settlement window.
+ * Only MaintenanceBreak.announceBreak opens it, and only while frozen.
+ */
+export function setLastHandSettlementWindow(untilMs: number): void {
+  terminalSettlementOpenUntilMs = frozen && Number.isFinite(untilMs) && untilMs > 0 ? untilMs : 0;
+}
+
+/**
+ * May an already-DECIDED tournament commit its terminal settlement now?
+ * Frozen except inside the last-hand window opened by the announcement.
+ */
+export function isTerminalSettlementFrozen(now: number = Date.now()): boolean {
+  if (!frozen) return false;
+  return !(terminalSettlementOpenUntilMs > 0 && now < terminalSettlementOpenUntilMs);
 }

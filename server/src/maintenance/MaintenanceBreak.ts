@@ -100,7 +100,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
-import { setMaintenanceFrozen } from './freezeState.js';
+import { setLastHandSettlementWindow, setMaintenanceFrozen } from './freezeState.js';
 import {
   assertMaintenanceThawRelease,
   MaintenanceThawError,
@@ -317,6 +317,11 @@ export class MaintenanceBreak {
   /** The countdown starts at :55, so the announcement lands at :53. */
   static readonly BREAK_START_MINUTE = 55;
   static readonly LAST_HAND_LEAD_MS = 2 * 60 * 1000;
+  /**
+   * The last-hand terminal settlement window closes this long before :55, so
+   * no tournament payout is in flight when readyForRestart opens.
+   */
+  static readonly TERMINAL_SETTLEMENT_RESERVE_MS = 30 * 1000;
 
   /**
    * How old a persisted break row may be and still be adopted by a booting
@@ -1014,6 +1019,18 @@ export class MaintenanceBreak {
    * accumulated: a slow event loop delays one break instead of skewing all of
    * them from then on.
    */
+  /**
+   * Milliseconds until the next :53 announcement (public for the tournament
+   * start gate: a launch that cannot finish seating before it is held until
+   * after the break instead of being cut in half by the entry freeze).
+   */
+  msUntilNextLastHand(): number {
+    // No armed hourly schedule (not started, stopped, or a process whose
+    // engine is not running) means there is no announcement to plan around.
+    if (!this.started || !this.announceTimer) return Number.POSITIVE_INFINITY;
+    return this.msUntilNextAnnouncement();
+  }
+
   private msUntilNextAnnouncement(): number {
     const announceMinute =
       MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
@@ -1155,6 +1172,14 @@ export class MaintenanceBreak {
     // a horse standing up at :54 under a "Last Hand" banner is the same tell
     // as one standing up at :56, and nothing these sweeps do cannot wait.
     setMaintenanceFrozen(true);
+    // A tournament DECIDED by the hand its table is finishing pays now, not at
+    // the thaw. Terminal settlement only, closed with a reserve before :55
+    // (and closed again by beginCountdown). See freezeState.
+    setLastHandSettlementWindow(
+      announcedAt +
+        MaintenanceBreak.LAST_HAND_LEAD_MS -
+        MaintenanceBreak.TERMINAL_SETTLEMENT_RESERVE_MS
+    );
 
     const tables = this.parkEveryEngine();
     console.log(
@@ -1225,6 +1250,7 @@ export class MaintenanceBreak {
     // Close the deploy gate before changing any of its semantic fields.
     this.durableConfirmed = false;
     this.phase = 'counting_down';
+    setLastHandSettlementWindow(0);
     this.unparkedAtCountdown = 0;
     this.peakUnparked = 0;
     /* beginCountdown is also the explicit/manual entry point. An intentional

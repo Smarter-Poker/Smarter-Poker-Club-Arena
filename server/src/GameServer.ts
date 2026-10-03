@@ -281,6 +281,7 @@ import {
   leaseDiagnostics,
   TABLE_LEASE_PROOF_WINDOW_MS,
 } from './services/tableLease.js';
+import { launchSeatingBudgetMs, launchWouldCrossLastHand } from './tournament/launchBreakHold.js';
 
 export { TournamentManager };
 
@@ -3235,6 +3236,8 @@ export class GameServer {
    * and each distinct refusal is reported once. Pruned with lastMttRampAt.
    */
   private finalizedFinishAttempt: Map<string, number> = new Map();
+  /** Starts held for the coming :53, keyed by id, valued by the hold's :53 instant (logged once). */
+  private launchHeldForBreak: Map<string, number> = new Map();
   /**
    * When each seat-first game was FIRST seen holding every seat it sells.
    *
@@ -7553,6 +7556,26 @@ export class GameServer {
                 ...this.tournamentManagerAdmissionRetryTimers.keys(),
               ]);
               if (ownedAdmissions.size >= this.engineStartBudget) continue;
+            }
+            if (!finishingADealtGame) {
+              const msUntilLastHand =
+                this.maintenanceBreak?.msUntilNextLastHand?.() ?? Number.POSITIVE_INFINITY;
+              if (launchWouldCrossLastHand(fieldCount, msUntilLastHand)) {
+                const lastHandAt = Math.round((now + msUntilLastHand) / 60_000);
+                this.launchHeldForBreak ??= new Map();
+                if (this.launchHeldForBreak.get(tournament.id) !== lastHandAt) {
+                  this.launchHeldForBreak.set(tournament.id, lastHandAt);
+                  console.log(
+                    `[GameServer] Start held for the maintenance break: ${tournament.name} ` +
+                      `(${String(tournament.id).slice(0, 8)}) needs ~${Math.round(
+                        launchSeatingBudgetMs(fieldCount) / 1000
+                      )}s to seat ${fieldCount} and the break announces in ` +
+                      `${Math.round(msUntilLastHand / 1000)}s; it starts after the thaw`
+                  );
+                }
+                continue;
+              }
+              this.launchHeldForBreak?.delete(tournament.id);
             }
             if (finishingADealtGame) this.finalizedFinishAttempt.set(tournament.id, now);
             /* Report the number the decision was actually made on. A Spin is

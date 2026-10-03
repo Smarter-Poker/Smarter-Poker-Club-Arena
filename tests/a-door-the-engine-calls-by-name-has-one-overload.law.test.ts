@@ -147,12 +147,21 @@ const sig = (types: string[]) => types.join(',');
  * has neither parameter, so no named-argument set is accepted by both. The
  * engine calls only the v3 door (GameServer: runMaintenanceThawV3).
  * 20261002165326 replaces the v3 body in place.
+ * fn_ca_lock_settlement_lane_for_satellite_finish: the answer-only lane
+ * (p_satellite_id, p_answer_only) was added beside the one-argument payer lane
+ * by 20261003164157_a_finish_waits_only_for_what_it_shares. It must keep the
+ * same name (the lane doctrine's rule 2 allows only the three finish helpers
+ * to name F). p_answer_only has no default, so a named call with only
+ * p_satellite_id matches the one-argument door alone, and the two-argument
+ * door is executable by postgres only (the SECURITY DEFINER qualifier ask), so
+ * PostgREST never sees it. No engine call names either helper.
  */
 const DELIBERATE_OVERLOADS: Record<string, string[]> = {
   fn_thaw_platform: [
     'timestamp with time zone,numeric,text',
     'timestamp with time zone,timestamp with time zone,numeric,uuid,text',
   ],
+  fn_ca_lock_settlement_lane_for_satellite_finish: ['uuid', 'uuid,boolean'],
 };
 const deliberatePair = (name: string, a: string, b: string): boolean =>
   (DELIBERATE_OVERLOADS[name] ?? []).includes(a) && (DELIBERATE_OVERLOADS[name] ?? []).includes(b);

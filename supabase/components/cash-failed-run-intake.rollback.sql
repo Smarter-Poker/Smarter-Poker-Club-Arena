@@ -4,7 +4,7 @@ DO $component$
 DECLARE
  v_remove constant boolean := true;
  v_body constant text := $handler$DECLARE
-  v_command constant text := 'SET statement_timeout = ''600s''; SELECT CASE WHEN pg_try_advisory_lock(hashtext(''ca-cash-pot-conservation'')) THEN (SELECT count(*)::int FROM public.fn_cash_pot_conservation_check()) ELSE -1 END;';
+  v_command constant text := 'SET statement_timeout = ''600s''; SELECT CASE WHEN pg_try_advisory_lock(hashtext(''ca-cash-pot-conservation'')) THEN (SELECT count(*)::int FROM public.fn_cash_pot_conservation_check(8)) ELSE -1 END;';
   v_cutoff constant timestamptz := '2026-09-06T14:34:00.384087Z';
   v_source constant text := 'cash-pot-conservation-cron-failure';
   v_updates constant text := 'cash-pot-conservation-cron-failure-updates';
@@ -177,7 +177,7 @@ $immutable$;
     AND receipt_payload IS NULL AND intake_sqlstate ~ '^[0-9A-Z]{5}$' AND intake_message IS NOT NULL))
 )$shape$;
  v_handler_ddl constant text := $ddl$CREATE OR REPLACE FUNCTION public.fn_ca_cash_failed_run_intake() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='pg_catalog','public' SET TimeZone='UTC' SET lock_timeout='1s' AS $body$DECLARE
-  v_command constant text := 'SET statement_timeout = ''600s''; SELECT CASE WHEN pg_try_advisory_lock(hashtext(''ca-cash-pot-conservation'')) THEN (SELECT count(*)::int FROM public.fn_cash_pot_conservation_check()) ELSE -1 END;';
+  v_command constant text := 'SET statement_timeout = ''600s''; SELECT CASE WHEN pg_try_advisory_lock(hashtext(''ca-cash-pot-conservation'')) THEN (SELECT count(*)::int FROM public.fn_cash_pot_conservation_check(8)) ELSE -1 END;';
   v_cutoff constant timestamptz := '2026-09-06T14:34:00.384087Z';
   v_source constant text := 'cash-pot-conservation-cron-failure';
   v_updates constant text := 'cash-pot-conservation-cron-failure-updates';
@@ -340,7 +340,7 @@ BEGIN
    RAISE EXCEPTION 'cash intake: exact existing PG17/pg_cron1.6.4 libpq authority required';
  END IF;
  IF NOT EXISTS(SELECT 1 FROM cron.job WHERE jobid=259 AND jobname='ca-cash-pot-conservation-hourly'
-  AND md5(command)='72b3dc33b68f7354a0282c676315bc84' AND database='postgres' AND username='postgres'
+  AND md5(command)='574ffca254298b8638eb4f4ff048894e' AND database='postgres' AND username='postgres'
   AND active AND schedule='34 */6 * * *' AND nodename='localhost' AND nodeport=5432) THEN
    RAISE EXCEPTION 'cash intake: exact existing job259 required'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.fn_record_operational_alert(text,text,text,text,text,jsonb)')

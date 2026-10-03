@@ -84,6 +84,8 @@ import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
+import { captureRitEvent } from '../services/supabase/handFacts.js';
+import { supabase } from '../services/supabase/client.js';
 import { waitFor } from '../testing/waitBudget.js';
 import type { Card, HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
@@ -279,7 +281,13 @@ interface Played {
   broadcast: Record<string, any>;
 }
 
-async function playToOffer(variant: OmahaVariant, river: Card): Promise<Played> {
+async function playToOffer(
+  variant: OmahaVariant,
+  river: Card,
+  // Route each hub event through the audit capture first, as
+  // TableStateHub.emitEvent does in production.
+  opts: { auditCapture?: boolean } = {}
+): Promise<Played> {
   const seats = maxSeatsForVariant(variant);
   expect(seats).toBe({ plo4: 8, plo5: 7, plo6: 6, plo8: 8, flo8: 8 }[variant]);
   const book = BOOK[variant];
@@ -321,7 +329,12 @@ async function playToOffer(variant: OmahaVariant, river: Card): Promise<Played> 
       // Humans: nothing auto-answers the offer; the test answers it.
       is_horse: false,
     })),
-    hub: { emitEvent: (_t: string, e: Record<string, any>) => emitted.push(structuredClone(e)) },
+    hub: {
+      emitEvent: (t: string, e: Record<string, any>) => {
+        if (opts.auditCapture) captureRitEvent(t, e);
+        emitted.push(structuredClone(e));
+      },
+    },
     allInFirstPauseMs: 1,
     allInStreetPauseMs: 1,
     allInStreetRevealMs: 1,
@@ -719,6 +732,125 @@ describe('Phase 9 P9.2 chip-cash insurance, PLO8/FLO8: high-half price, a split 
       const played = await playToOffer(variant, river);
       await buyAndSettle(played);
       expectSettlement(variant, played, river, 'push');
+    });
+  }
+});
+
+/* ── Phase 9 close-out: the offer's audit row re-checks its own premium ───── */
+
+describe('Phase 9 close-out: the engine_insurance_offers audit row carries the pricing inputs', () => {
+  for (const variant of ['plo4', 'plo5', 'plo6', 'plo8', 'flo8'] as const) {
+    it(`${variant}: details.pricing alone reproduces the offered premium by the formula, with no cards`, async () => {
+      const book = BOOK[variant];
+      const rows: Record<string, any>[] = [];
+      const original = supabase.from.bind(supabase);
+      vi.spyOn(supabase, 'from').mockImplementation(((table: string) =>
+        table === 'action_audit_logs'
+          ? {
+              insert: (row: Record<string, any>) => {
+                rows.push(structuredClone(row));
+                return Promise.resolve({ data: null, error: null });
+              },
+            }
+          : original(table)) as never);
+
+      const played = await playToOffer(variant, parse('Qs')[0], { auditCapture: true });
+      const audit = rows.filter((r) => r.action_type === 'engine_insurance_offers');
+      expect(audit).toHaveLength(1);
+      const row = audit[0];
+      // Private-safe: no cards, no board, and no user a client policy could match.
+      expect(row.user_id).toBeNull();
+      expect(JSON.stringify(row)).not.toMatch(/"(rank|suit|cards|holeCards|board|outs)"/);
+      // The existing audit fields are unchanged.
+      expect(row.details).toMatchObject({
+        table_id: played.engine.tableId,
+        hand_number: 1,
+        offers: 1,
+      });
+      expect(cents(row.details.pot)).toBe(book.insuredCents);
+
+      expect(row.details.pricing).toHaveLength(1);
+      const p = row.details.pricing[0];
+      expect(p).toMatchObject({
+        schema: 'insurance_offer_pricing.v1',
+        player_id: played.ids[LEADER_SEAT - 1],
+        seat: LEADER_SEAT,
+        variant,
+        street: 'turn',
+        board_length: 4,
+        insurable_pot_source: 'net_of_rake_bbj',
+        push_pct: 0,
+        runouts: UNSEEN[variant],
+        exact: true,
+        out_count: LOSING_RIVERS.length,
+        house_margin: 1.2,
+        max_insurable_percent: 100,
+        coverage_percent: 100,
+      });
+
+      // 1. The insurable pot from the recorded pot and deductions (hand book).
+      expect(cents(p.gross_pot)).toBe(book.potCents);
+      expect(cents(p.live_pot_total)).toBe(book.potCents);
+      expect(cents(p.eligible_pot)).toBe(book.potCents);
+      expect([p.rake, p.bbj_fee]).toEqual([book.rake, book.bbj]);
+      const netFrac = Math.max(0, (p.live_pot_total - p.rake - p.bbj_fee) / p.live_pot_total);
+      expect(Math.round(p.eligible_pot * netFrac * 100) / 100).toBe(p.insurable_pot);
+      expect(cents(p.insurable_pot)).toBe(book.insuredCents);
+
+      // 2. The worker's percentages as used, one decimal (reference counts).
+      expect(Math.round(p.strict_loss_pct * 10)).toBe(book.lossTenths);
+      expect(Math.round(p.equity_pct * 10)).toBe(book.equityTenths);
+      expect(Math.round(p.strict_win_pct * 10)).toBe(1000 - book.lossTenths);
+      expect(p.loss_given_no_push).toBe(
+        Math.min(1, p.strict_loss_pct / 100 / (1 - p.push_pct / 100))
+      );
+      expect(p.win_given_no_push).toBe(1 - p.loss_given_no_push);
+
+      // 3. The premium, recomputed from the row alone by the stated formula,
+      //    in the engine's operation order...
+      const insured = Math.round(p.insurable_pot * (p.max_insurable_percent / 100) * 100) / 100;
+      const lossGivenNoPush = Math.min(1, p.strict_loss_pct / 100 / (1 - p.push_pct / 100));
+      const recomputed =
+        Math.round(((insured * lossGivenNoPush * p.house_margin) / (1 - lossGivenNoPush)) * 100) /
+        100;
+      expect(insured).toBe(p.full_insured_amount);
+      expect(recomputed).toBe(p.full_premium);
+      // ...and in exact integer arithmetic: insured x margin x L / (1000 - P - L).
+      expect(
+        premiumCentsFor(
+          cents(p.full_insured_amount),
+          Math.round(p.strict_loss_pct * 10),
+          Math.round(p.push_pct * 10)
+        )
+      ).toBe(cents(p.full_premium));
+      expect(cents(p.full_premium)).toBe(book.premiumCents);
+
+      // 4. It is the premium that was actually offered: the engine's offer,
+      //    the popup, and the insurance_offer_events 'offered' row.
+      expect(p.full_premium).toBe(played.offer.fullPremium);
+      expect(p.premium).toBe(played.offer.premium);
+      expect(p.insured_amount).toBe(played.offer.insuredAmount);
+      expect(played.broadcast.offers[0].fullPremium).toBe(p.full_premium);
+      expect(played.broadcast.offers[0].pricing).toBeUndefined();
+      expect(played.broadcast.pricing).toBeUndefined();
+      const offered = vi.mocked(logInsuranceOfferEvent).mock.calls.map(([r]) => r);
+      expect(offered).toEqual([
+        expect.objectContaining({
+          event: 'offered',
+          playerId: p.player_id,
+          street: p.street,
+          premium: p.full_premium,
+          insuredAmount: p.full_insured_amount,
+          pot: p.insurable_pot,
+          equityPercent: p.equity_pct,
+        }),
+      ]);
+
+      played.engine.respondToInsurance(played.ids[LEADER_SEAT - 1], 'decline');
+      await waitFor(
+        () => played.events.some((e) => e.type === 'HAND_COMPLETE'),
+        'the hand to complete'
+      );
     });
   }
 });

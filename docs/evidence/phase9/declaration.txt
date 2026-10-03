@@ -1,0 +1,131 @@
+Horse Brain Phase 9 natural evidence: predeclaration
+====================================================
+
+Declared at: 2026-10-03T03:13:34Z (UTC), before any new production hand,
+audit, insurance or journal record was read for this evidence. Only schema
+(information_schema column lists), source code, the engine container label,
+the engine /health report and the Horse journal's file layout and catalog
+schema had been read. The 10-hand sample in
+docs/horse-brain-phase9-economics-2026-10-02.md was read earlier by another
+agent; it is re-counted inside the population below like any other hand.
+
+1. Serving release
+------------------
+club-arena-engine label sp.release.sha on engine.smarter.poker, read
+2026-10-03T03:08:06Z: f5322827e41832f2023ca3f9e52b77d1be7e735b
+(container started 2026-10-02T23:56:01Z, image
+sha256:25100bcaea5f6fda8039be3a3c3a324ba5ca7e7eab7b1285a49228eb00892c2b).
+f5322827 is an ancestor of origin/main 9e40f709c. The label is re-read after
+the observation and reported; a change of serving release inside the offer
+window is reported, never hidden.
+
+2. Population S1: settlement over the whole population
+------------------------------------------------------
+Rows of production public.hand_history with
+  created_at >= 2026-09-03T00:00:00Z and created_at < 2026-10-03T03:00:00Z
+  effective variant = coalesce(bomb_pot->>'variant', game_variant) in the
+    Omaha family (plo4, plo5, plo6, plo8, flo8; any other Omaha-family label
+    found is counted and excluded as variant_not_in_reference)
+  and multi-board: rit_boards holds at least one extra board (RIT 2 or 3 runs),
+    or community_cards2 is non-empty (a multi-board bomb pot).
+Every row is counted. Nothing is sampled. has_human, tournament_id, the
+captured mode/asset and table are kept as split columns, not filters.
+The time basis is hand_history.created_at. The range is [start, end).
+2026-09-01..2026-09-03T00:00Z is not in scope (no Omaha row is known before
+2026-09-03T05:37Z); it is reported as outside, not as zero.
+
+Split by: variant x mode (cash/tournament, chips/diamonds from the captured
+public node, else tournament_id/club asset) x feature (bomb N boards / RIT N
+runs) x has_human.
+
+3. Comparison (independent re-settlement)
+-----------------------------------------
+Reference: server/src/benchmark/OmahaReference.ts (offline, not the
+production settlement path), driven by the reused comparison script
+p92-natural-compare.mts generalized to the whole population.
+Inputs, all as recorded: boards (community_cards/2/3 or community_cards +
+rit_boards), recorded hole cards, contributions replayed from actions (call,
+bet, blinds, straddle and antes are chips added; raise and all_in are
+resolved against the next captured publicNode invested totals, else
+unambiguous with no street bet, else a single unresolved one by recorded
+pot_size; a shared big blind ante is pooled dead money), the button seat, and
+chip unit from the captured public node (0.01 if absent on chips).
+Checks per hand:
+  (a) pots: reference pots (amount to the cent and eligible seat set, in
+      order) equal recorded pots exactly;
+  (b) conservation: recorded winners sum equals pot_size - rake_amount -
+      bbj_amount exactly, to the cent;
+  (c) per player: recorded payout within strictly less than one cent of the
+      exact pro-rata share  reference pre-deduction award x net / gross;
+  (d) per board and half: recorded winners_by_board entry within strictly
+      less than one cent of reference board share x net / gross; an absent
+      entry for a positive reference share is a mismatch; for an
+      uncontested hand (one non-folded contributor) halves are summed per
+      board, because no hand is scored;
+  (e) deductions, reported separately from (a)-(d): expected rake =
+      min(round(pot x pct), cap tier by players dealt), pct capped at 5 when
+      two are dealt; expected BBJ = feeBB x big blind when enabled and dealt
+      >= minPlayersDealt; from the deductions configuration captured on the
+      hand's own public node. No captured configuration -> deduction unknown.
+Verdicts:
+  MATCH            (a)-(d) all hold and every input was recorded.
+  MATCH_PARTIAL    (a)-(c) hold; (d) unknown because winners_by_board is not
+                   recorded. Never counted as a full match.
+  MISMATCH         any of (a)-(d) fails. Exact numbers reported per hand
+                   (hashed hand id only).
+  EXCLUDED/UNKNOWN by reason, never zero-filled:
+    live_eligible_cards_not_recorded (a mucked/unrevealed live contributor),
+    replay_disagrees_with_capture, replay_pot_size_disagrees,
+    unresolved_raise_amount, unhandled_action, pots_not_recorded,
+    winners_not_recorded, board_incomplete, board_count_disagrees,
+    variant_not_in_reference, reference_threw.
+A mismatch is a finding; money is never changed.
+
+4. Population S2/S3: offers, consents, outcomes (recent window)
+---------------------------------------------------------------
+Window: action_audit_logs.created_at in [2026-10-03T00:00:00Z,
+2026-10-03T03:00:00Z), on serving release f5322827 (engine started
+2026-10-02T23:56:01Z).
+Records: action_audit_logs rows with action_type in engine_rit_offer,
+engine_rit_chooser_decided, engine_rit_response_update,
+engine_rit_all_accepted, engine_rit_single_run, engine_rit_result,
+engine_rit_resolved, engine_rit_mandatory (captureRitEvent in
+server/src/services/supabase/handFacts.ts), keyed by details.table_id and
+details.hand_number, joined to hand_history (table_id, hand_number) and to the
+Horse private journal accepted_hand record carrying committedHandId =
+hand_history.id (journal on engine.smarter.poker, read-only, nice 19, ionice
+idle, detached).
+Outcomes: agreed 2 or 3 (rit_all_accepted chosen runs / chooser_decided
+runs); once by chooser (rit_single_run with user = chooser); declined by a
+responder (rit_single_run with user = a non-chooser); timeout/other
+(rit_single_run with no user: no_agreement, no_consent_recorded or
+deck_too_short are indistinguishable in this record and are reported
+together); open (offer without an outcome record).
+Reconcile: offers; agreed runs; once/declined/timeout; completed hands whose
+recorded run count equals the agreed count; the S1 settlement verdict of
+those hands; journal private replay present with the same board count.
+Horse verdicts: on horse-only hands (has_human = false), each recorded
+chooser pick and responder answer is compared with the engine's stated
+deterministic rule horseRitVerdict(playerId, handCount) and the chooser run
+rule (1 if once, else 3 when hand_number % 3 = 0 else 2, clamped to max_runs).
+Unreconciled and unknown records are reported by reason. If the journal ring
+does not cover the window, the covered interval is reported exactly.
+
+5. Insurance (natural)
+----------------------
+insurance_offer_events and insurance_transactions with created_at in
+[2026-09-03T00:00:00Z, 2026-10-03T03:00:00Z) at Omaha tables (table variant
+in the Omaha family), counted by event/kind. Any purchase or settlement is
+re-checked: premium against fee = insured x pLoss/pWin x houseMargin where
+the inputs are recorded, else unknown; payout = insured amount on a strict
+loss, 0 on a win, premium refunded on a push. Zero is recorded with its query.
+
+6. Data route and privacy
+-------------------------
+Counts and small reads through the Supabase MCP execute_sql (SELECT only).
+The whole-population export cannot pass through a tool response, so it is
+read with psql on the operator Mac in sessions forced read-only
+(default_transaction_read_only=on, statement_timeout bounded), SELECT only,
+in bounded created_at chunks. The export stays on the operator SSD; only
+aggregates, hashed hand ids (sha256 prefix) and script hashes are committed.
+No hole cards, no user ids.

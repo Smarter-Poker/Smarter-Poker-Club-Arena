@@ -22,7 +22,33 @@ import {
 import { reportError } from '../services/errorReporter.js';
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 
-export const DEFAULT_MAX_CONCURRENT_SWEEPS = 4;
+/**
+ * A SWEEP THAT WAITS ON THE WIRE IS NOT RATIONED LIKE ONE THAT BURNS THE CORE
+ * (2026-10-03).
+ *
+ * Four general slots were set on 2026-09-08, when the engine was one core and
+ * the sweeps' own JavaScript was what saturated it. Neither is true now. Read
+ * on production 2026-10-03, engine on 8 cores, main loop p99 ~25 ms:
+ *
+ *   - a sweep averaged 3.1-3.6 s (12 h), p50 ~2 s, p95 above 5 s, and the
+ *     scheduler dispatched 1.0-2.2 sweeps a second in every half hour, which
+ *     is slots / mean sweep: the slots, not the work, set the rate;
+ *   - the queue averaged 20-95 managers and the oldest waiter exceeded 120 s
+ *     in nearly every half hour (max 532 s), so Sit & Go and Spin winners were
+ *     paid a p95 of 107-110 s after their last hand overnight;
+ *   - a sweep is a chain of awaited PostgREST round trips from Ashburn to the
+ *     us-west-2 database: ~100-300 ms each at the client, of which Postgres
+ *     itself spent 5-40 ms (x-envoy-upstream-service-time), with 35 idle
+ *     PostgREST connections. "bust preparation spent the whole 5000ms budget
+ *     with 1 player(s) to record" is that chain, not CPU.
+ *
+ * A slot spends almost all of its life waiting on the network, so the cap is
+ * raised to twelve. It stays a hard ceiling (stall compensation still bounds
+ * real concurrency at twice the cap) and it adds no database work: the same
+ * busts and finishes run, sooner, instead of queueing.
+ * anIoBoundSweepIsNotRationedLikeACpuBoundOne.law.test.ts.
+ */
+export const DEFAULT_MAX_CONCURRENT_SWEEPS = 12;
 // The engine signals only after its awaited stack-sync step now. A zero-delay
 // process timer keeps the callback fire-and-forget without guessing how long
 // settlement will take under load.
@@ -104,7 +130,16 @@ export const DECIDED_LANE_LEAVES_LIVE_SLOTS = 1;
  * (TournamentManagerEliminations completedStage), so one admission per game
  * is the normal case and the pool is sized for that.
  */
-export const DEFAULT_DECIDED_SLOTS = 2;
+/**
+ * Raised from two to four on 2026-10-03 with the general cap (see
+ * DEFAULT_MAX_CONCURRENT_SWEEPS): the decided lane was up to 104 deep at
+ * 10:00-11:30 UTC on 2026-10-03, every admission waiting on round trips, not
+ * on the core. A decided admission runs its last busts and its finish, whose
+ * money is still serialized per bank scope inside Postgres
+ * (fn_ca_lock_settlement_lane_for_finish), so more of them in flight only
+ * removes the queue in front of that lock.
+ */
+export const DEFAULT_DECIDED_SLOTS = 4;
 
 const registeredGauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_scheduler_registered',

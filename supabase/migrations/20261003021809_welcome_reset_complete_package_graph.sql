@@ -27,7 +27,13 @@
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
 
--- @live-proof: (SELECT bool_and(p.prosrc LIKE '%tournament_schedule_spawns sp%') AND bool_and(p.prosrc LIKE '%1 Chip Deep Stack Spin PLO6%') AND bool_and(p.prosrc LIKE '%target.id=t.satellite_target_id OR target.id::text=t.satellite_target%') AND bool_and(p.prosrc LIKE '%t.club_id=p_club_id%') AND bool_and(p.prosrc LIKE '%WELCOME_PACKAGE_BOARD_LINEAGE_AMBIGUOUS%' OR p.provolatile='s') FROM pg_proc p WHERE p.oid=ANY(ARRAY['public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure,'public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure]))
+-- PIN MOVED 2026-10-03 by 20261003035741_satellite_target_is_a_uuid_not_text_in_the_welcome_reset_gra.sql.
+-- public.tournaments.satellite_target is uuid, so the fragment this migration
+-- installed asked for `text = uuid` and raised 42883 on every plan. The live
+-- proof below now pins the repaired, uncast comparison. The DO blocks beneath
+-- are left exactly as applied: they are the record of what this migration did,
+-- and their preimage digests describe the body it found, not the body now live.
+-- @live-proof: (SELECT bool_and(p.prosrc LIKE '%tournament_schedule_spawns sp%') AND bool_and(p.prosrc LIKE '%1 Chip Deep Stack Spin PLO6%') AND bool_and(p.prosrc LIKE '%target.id=t.satellite_target_id OR target.id=t.satellite_target%') AND bool_and(p.prosrc LIKE '%t.club_id=p_club_id%') AND bool_and(p.prosrc LIKE '%WELCOME_PACKAGE_BOARD_LINEAGE_AMBIGUOUS%' OR p.provolatile='s') FROM pg_proc p WHERE p.oid=ANY(ARRAY['public.fn_unwind_unused_first_club_welcome_package(uuid,uuid)'::regprocedure,'public.fn_get_club_welcome_package_reset_impact(uuid)'::regprocedure]))
 
 BEGIN;
 SET LOCAL lock_timeout = '15s';

@@ -1941,7 +1941,14 @@ test.describe('production Daily Missions certification', () => {
           const subscription = await registration?.pushManager.getSubscription();
           if (subscription) await subscription.unsubscribe();
         });
-        await page.reload({ waitUntil: 'domcontentloaded' });
+        // Remount the panel through the loaded SPA. A full document reload is
+        // unrelated to this contract and can be held indefinitely by a
+        // service-worker shell update when production advances mid-run.
+        await missions.navigateWithinArena('notifications');
+        await expect(page.getByRole('heading', { name: 'Daily Challenges', level: 1 })).toHaveCount(
+          0
+        );
+        await missions.navigateWithinArena('challenges');
         await expect(page.getByText('Preference On, Device Disconnected')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });

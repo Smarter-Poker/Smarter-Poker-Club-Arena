@@ -97,7 +97,13 @@ test.describe('Visible catalog production reads', () => {
     expect(Array.isArray(await first.json())).toBe(true);
     const draft = page.getByPlaceholder('Enter Table Name Here...');
     await draft.fill('Unsubmitted Catalog Check');
-    const next = await read(page, 'table_templates', match);
+    const nextRead = read(page, 'table_templates', match);
+    // A visible lifecycle signal is one of useVisibleRead's production refresh
+    // contracts. Trigger it directly instead of spending a minute waiting for
+    // the fallback interval; this still exercises a real authorized read and
+    // proves that the in-progress draft survives it.
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    const next = await nextRead;
     expect(next.ok()).toBe(true);
     expect(Array.isArray(await next.json())).toBe(true);
     await expect(draft).toHaveValue('Unsubmitted Catalog Check');

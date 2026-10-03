@@ -893,7 +893,7 @@ function FullApp() {
                     <AuthGuard>
                       <GameCreationGuard>
                         <PageErrorBoundary pageName="Table Config">
-                          <TableConfigPage />
+                          <TableConfigPage accessPrevalidated />
                         </PageErrorBoundary>
                       </GameCreationGuard>
                     </AuthGuard>

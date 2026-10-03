@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { createClient } from '@supabase/supabase-js';
-import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
+import {
+  cleanupProductionE2EAccount,
+  retireCertificationClubWithRetry,
+} from './production-e2e-account.mjs';
 import { retryTransient } from './transient-retry.mjs';
 import {
   awaitPlatformThaw,
@@ -30,6 +33,10 @@ const admin = createClient(url, serviceKey, {
     },
   },
 });
+const certificationConfiguration = {
+  supabaseUrl: url.replace(/\/$/, ''),
+  serviceRoleKey: serviceKey,
+};
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 // Reuse the guarded, deletion-capable certification namespace. The older
 // smarter-poker.invalid identity could retire its clubs but could not pass the
@@ -420,24 +427,18 @@ async function cleanupResidualDirectCertificates() {
       .eq('owner_id', fixture.id);
     if (clubError) throw new Error(`Residual Certificate Club Check Failed: ${clubError.message}`);
 
+    // Use the same guarded, direct-database retirement path as the UI fixture
+    // cleanup. The service-role HTTP role is capped at eight seconds and can
+    // time out while retiring a complete welcome board; the sanctioned helper
+    // applies the bounded 120-second budget while retaining the exact 100,000
+    // chip conservation assertion and post-retirement ownership readback.
     for (const ownedClub of ownedClubs || []) {
-      const { data: retired, error: retirementError } = await retryTransient(
-        () =>
-          admin.rpc('fn_ca_retire_welcome_certification_club', {
-            p_club_id: ownedClub.id,
-            p_reason: 'cert-residue-recovery',
-          }),
-        {
-          failureOf: (result) => result?.error,
-          label: `residual certification club retirement ${ownedClub.id}`,
-        }
-      );
-      if (retirementError || retired?.success === false) {
-        throw (
-          retirementError ||
-          new Error(`Residual Certification Club ${ownedClub.id} Refused Retirement.`)
-        );
-      }
+      const retired = await retireCertificationClubWithRetry({
+        configuration: certificationConfiguration,
+        clubId: ownedClub.id,
+        reason: 'cert-residue-recovery',
+        environment: process.env,
+      });
       if (retired?.already_gone || Number(retired?.chips_retired) !== 100000) {
         throw new Error(
           `Residual Certification Club ${ownedClub.id} Retired ${retired?.chips_retired ?? 'Unknown'} Chips Instead Of 100000.`
@@ -996,22 +997,21 @@ try {
       // fixture owned by the reserved identity and wedged every post-deploy
       // certificate for ten hours. A `success: false` refusal is definitive and
       // is never retried.
-      const { data, error } = await retryTransient(
-        () =>
-          admin.rpc('fn_ca_retire_welcome_certification_club', {
-            p_club_id: clubId,
-            p_reason: 'cert-cleanup',
-          }),
-        {
-          failureOf: (result) => result?.error,
-          label: `retirement of certification club ${clubId}`,
-        }
-      );
-      if (error) {
-        cleanupFailures.push(new Error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`));
-      } else if (data && data.success === false) {
-        cleanupFailures.push(new Error(`Fixture Cleanup Refused For ${clubId}: ${data.error}`));
-      } else if (data?.already_gone || Number(data?.chips_retired) !== 100000) {
+      let data;
+      try {
+        data = await retireCertificationClubWithRetry({
+          configuration: certificationConfiguration,
+          clubId,
+          reason: 'cert-cleanup',
+          environment: process.env,
+        });
+      } catch (error) {
+        cleanupFailures.push(
+          new Error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`)
+        );
+        continue;
+      }
+      if (data?.already_gone || Number(data?.chips_retired) !== 100000) {
         cleanupFailures.push(
           new Error(
             `Fixture ${clubId} Retired ${data?.chips_retired ?? 'Unknown'} Chips Instead Of 100000.`

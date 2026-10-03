@@ -99,11 +99,17 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('record: { id: userId, email }');
     expect(script).not.toContain('Fixture User Delete Skipped');
     expect(script).toContain('await cleanupResidualDirectCertificates()');
+    expect(script).toContain('retireCertificationClubWithRetry({');
+    expect(script).toContain('environment: process.env');
     expect(script).toContain('cert-residue-recovery');
     expect(script).toContain('Still Owns A Club After Recovery.');
     expect(script).toContain(
       "Retired ${retired?.chips_retired ?? 'Unknown'} Chips Instead Of 100000"
     );
+    expect(script).not.toContain("admin.rpc('fn_ca_retire_welcome_certification_club'");
+    expect(account).toContain("SET LOCAL statement_timeout = '120s'");
+    expect(account).toContain("SET LOCAL request.jwt.claim.role = 'service_role'");
+    expect(account).toContain("SET LOCAL app.club_retirement_maintenance = 'on'");
     expect(account).toContain("const LEGACY_DIRECT_PREFIX = 'club-create-cert-'");
     expect(migration).toContain("md5(v_old) <> '5097fd85191359890d70eb84c4ce507c'");
     expect(migration).toContain("LIKE 'club-create-cert-%@smarter-poker.invalid'");
@@ -292,7 +298,6 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('Certification Owner Has Unexpected Club State:');
     expect(script).toContain('data?.already_gone || Number(data?.chips_retired) !== 100000');
     expect(script).toContain('Fixture Cleanup Failed For ${clubId}: ${error.message}');
-    expect(script).toContain('Fixture Cleanup Refused For ${clubId}: ${data.error}');
     expect(script).toContain('Still Owns Club Logo Assets.');
     expect(script).toContain('Still Exists After Cleanup.');
   });

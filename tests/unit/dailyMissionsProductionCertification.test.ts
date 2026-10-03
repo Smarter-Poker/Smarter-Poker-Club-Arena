@@ -109,6 +109,23 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain("is_active: 'eq.true'");
     expect(spec).toContain('installHistoricalBoostedMilestone');
     expect(spec).toContain('HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    const historicalFixture = spec.slice(
+      spec.indexOf('async function installHistoricalBoostedMilestone('),
+      spec.indexOf(
+        '\nasync function authenticatedClaim(',
+        spec.indexOf('async function installHistoricalBoostedMilestone(')
+      )
+    );
+    expect(historicalFixture).toContain("'add_diamonds_to_balance'");
+    expect(historicalFixture).toContain('p_amount: HISTORICAL_MILESTONE_RAW_DIAMONDS');
+    expect(historicalFixture).toContain(
+      'daily-missions-historical-multiplier:${account.id}:${historicalRunId}'
+    );
+    expect(historicalFixture).toContain('new_balance: boostedBalance');
+    expect(historicalFixture).toContain('amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    expect(historicalFixture).toContain("source: 'the_mint'");
+    expect(historicalFixture).not.toContain("'fn_ca_mint'");
+    expect(historicalFixture).not.toContain('registered_by_op_id');
     expect(spec).toContain('for (const [index, assignedDate]');
     expect(spec).toContain('milestoneDiamonds: 0');
     expect(spec).toContain('exact_value: true');

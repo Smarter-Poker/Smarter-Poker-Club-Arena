@@ -96,6 +96,48 @@ const EXECUTE_PRIVILEGE_SQL: Record<LeaseHeartbeatScope, string> = {
 };
 const STATEMENT_TIMEOUT_SQL = `SET statement_timeout = ${LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS}`;
 
+/* ─── A RENEWAL DOES NOT WAIT FOR THE DISK (2026-10-03) ──────────────────────
+ *
+ * The dedicated session shipped at 23:57 on 2026-10-02 and was answering
+ * (1,885 table statements, mean 27.5 ms, max 404 ms). At 00:53:39-41 the
+ * fleet fenced itself anyway: 182 cash_lease_proof_expired, 144
+ * tournament_lease_proof_expired, 39 tournament_lease_lost. What happened:
+ *
+ *   - the checkpoint running since 00:44 was in its I/O-saturated tail
+ *     (sync=104.7 s, longest single fsync 10.7 s), and sp_prune_hand_history
+ *     ran 00:53:01-00:54:07; hand_atomic_commits recorded NOTHING from
+ *     00:53:22 to 00:53:36: every COMMIT was waiting for its WAL flush;
+ *   - the heartbeat UPDATE itself finished in milliseconds (no statement was
+ *     cancelled, pg_stat_statements never saw one slower than 1.6 s), but its
+ *     COMMIT waited on that same flush. statement_timeout is disarmed before
+ *     COMMIT, so nothing cut it short: the session went silent for the full
+ *     10 s local bound and was dropped (disconnects_total 1 per scope, the new
+ *     backends started 00:53:33/34);
+ *   - all the while that COMMIT still held the row lock of every lease it
+ *     renewed, and the heartbeat function skips locked rows, so a hedge sent
+ *     on the shared client (edge log: 00:53:28.58, 758 ms) could only answer
+ *     `busy`, which renews nothing (the process counts 186 table and 570
+ *     tournament `busy` rows since its 23:57 boot). 20 s after the last
+ *     renewal every proof ran out.
+ *
+ * This session commits asynchronously: COMMIT returns once the commit record
+ * is in the WAL buffers, without waiting for the flush. That does not change
+ * what a `kept` row proves to any LIVE session: the new heartbeat_at is
+ * visible to every other transaction the moment COMMIT returns, exactly as
+ * before, so a claim by another instance still sees it and still fails, and
+ * hand commits stay fenced by the database on the exact generation. The only
+ * thing given up is durability across a Postgres crash: an unflushed
+ * heartbeat_at can be lost in recovery and the row look older than the engine
+ * believes. A crash ends every engine statement in flight and the next
+ * heartbeat on the new server answers `taken`/`stale`/`missing` (fail-stop);
+ * every hand submission still checks instance, generation and heartbeat_at in
+ * the database (fn_ca_retain_hand_submission, FOR KEY SHARE) and keeps
+ * synchronous commit, and WAL is flushed in order, so a hand that is durable
+ * makes every heartbeat before it durable too. A lost heartbeat can never let
+ * two generations commit the same table.
+ */
+const SYNCHRONOUS_COMMIT_SQL = 'SET synchronous_commit = off';
+
 export interface LeaseHeartbeatArgs {
   p_instance_id: string;
   p_claims: unknown[];
@@ -317,6 +359,7 @@ class LeaseHeartbeatSession {
           (async () => {
             await client.connect();
             await client.query(STATEMENT_TIMEOUT_SQL);
+            await client.query(SYNCHRONOUS_COMMIT_SQL);
             return await client.query(EXECUTE_PRIVILEGE_SQL[this.scope]);
           })(),
           silent,

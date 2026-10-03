@@ -1,0 +1,48 @@
+Horse Brain Phase 10 natural evidence: blind seats and dead button (predeclaration)
+====================================================================================
+
+Declared at: 2026-10-03T18:33:26Z (UTC), before any record produced by the release below existed
+or was read. Only source code on origin/main (795e6e45bc), the merged P10.1
+record and the earlier P10.1 natural artifact (46bb9cf6, already published)
+had been read.
+
+1. Serving release
+------------------
+R = the first club-arena-engine release (label sp.release.sha) whose commit
+contains 795e6e45bc (PR #5999, blind seats; with #5992 dead button and #5998
+runtime policy digest) and that starts serving after this declaration. Its
+label and container start time T0 are read and reported; only records whose
+sourceRelease equals R count (release_other otherwise).
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Every Horse decision record in the journal archive (read-only, nice 19 /
+ionice idle) with decision time in [T0 + 5 min, T0 + 50 min) and variant plo4
+(single board), cash and tournament. The scanner is the committed
+docs/evidence/phase10/p10-1-journal-observe.py, extended only to read the v2
+binding's census.blindSeats; extensions are listed in the artifact.
+
+3. Checks (a single failure is reported as a defect)
+----------------------------------------------------
+B1 The P10.1 checks C1-C6 as declared in declaration-p10-1.txt, applied to
+   the v2 binding.
+B2 Dead button: no refusal named canonical_state_unavailable on a decision
+   whose dealer seat is not dealt in a tournament with three or more dealt
+   seats; such decisions are eligible with a binding, or refused by another
+   accurate name (counted by name).
+B3 Positions versus posted blinds: on every eligible decision with
+   census.blindSeats, the seat labelled small_blind (if any) is
+   blindSeats.smallBlind, the seat labelled big_blind is blindSeats.bigBlind,
+   and hero/aggressor positions are consistent with the clockwise order from
+   the button recorded in the binding.
+B4 Authority: no PLO4 proposal applied; PHASE10 selection refused/unselected
+   on every record that carries a selection outcome.
+B5 blind_seats_unavailable refusals are counted; any on a live engine
+   decision is reported as a wiring defect.
+
+4. Reported, not gated
+----------------------
+Counts of dead-button decisions, dead-small-blind decisions, by street and
+cash/tournament; refusal names and counts; comparison of the dead-button
+refusal count with the 465 of the 46bb9cf6 window (different windows, so
+reported only as context).

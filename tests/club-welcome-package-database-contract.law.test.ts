@@ -100,6 +100,13 @@ const freshBoardCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const ceilingBoardCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261003012950_welcome_certification_board_discovery_keeps_a_ceiling_not_an.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -769,7 +776,6 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(freshBoardCleanupSql).toContain('FRESH_BOARD_COMPLETE_ALLOWLIST_PREIMAGE_REFUSED');
     expect(freshBoardCleanupSql).toContain('FRESH_BOARD_DISCOVERY_POSTIMAGE_REFUSED');
     expect(freshBoardCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
-    expect(freshBoardCleanupSql).toContain('cardinality(v_board_tournaments) NOT IN (0,12)');
     expect(freshBoardCleanupSql).toContain(
       'v_expected_count IS DISTINCT FROM cardinality(v_board_tournaments)'
     );
@@ -778,5 +784,49 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(freshBoardCleanupSql).toContain("origin_kind IS DISTINCT FROM ''prelaunch''");
     expect(freshBoardCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
     expect(freshBoardCleanupSql).not.toMatch(/DELETE FROM public\.(clubs|players|wallets)/);
+  });
+
+  it('admits a partly provisioned board by a ceiling and still refuses more than twelve', () => {
+    expect(ceilingBoardCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(ceilingBoardCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(ceilingBoardCleanupSql).toContain("SET LOCAL lock_timeout = '15s';");
+    expect(ceilingBoardCleanupSql).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(ceilingBoardCleanupSql).toContain('BOARD_CEILING_ADMISSION_PREIMAGE_REFUSED');
+    expect(ceilingBoardCleanupSql).toContain('BOARD_CEILING_ADMISSION_SUBSTITUTION_REFUSED');
+    expect(ceilingBoardCleanupSql).toContain('BOARD_CEILING_ADMISSION_POSTIMAGE_REFUSED');
+    expect(ceilingBoardCleanupSql).toContain('BOARD_CEILING_ACTIVITY_OR_CUSTODY_GUARD_REFUSED');
+    // The engine provisions the twelve board rows asynchronously, so any count
+    // from zero to twelve is a state the certification can legitimately read.
+    // A ceiling is the refusal that survives that; an exact twelve is not.
+    expect(ceilingBoardCleanupSql).toContain('cardinality(v_board_tournaments)>12');
+    expect(ceilingBoardCleanupSql).toContain(
+      'v_expected_count IS DISTINCT FROM cardinality(v_board_tournaments)'
+    );
+    for (const proc of [
+      'fn_ca_prepare_unused_welcome_certification_board_leases(uuid)',
+      'fn_ca_prepare_unused_welcome_certification_board_origins(uuid)',
+      'fn_ca_prepare_unused_welcome_certification_board_games(uuid)',
+    ])
+      expect(ceilingBoardCleanupSql).toContain(`public.${proc}'::regprocedure`);
+    // Every refusal the rewrite is not about has to survive it, read back off
+    // pg_proc and pg_roles rather than assumed.
+    expect(ceilingBoardCleanupSql).toContain('pg_advisory_xact_lock(530090,1)');
+    expect(ceilingBoardCleanupSql).toContain('current_players=0');
+    expect(ceilingBoardCleanupSql).toContain('t.schedule_id IS NULL');
+    expect(ceilingBoardCleanupSql).toContain('WELCOME_CERTIFICATION_FIXTURE_IDENTITY_REFUSED');
+    expect(ceilingBoardCleanupSql).toContain('l.acquired_at>=v_cutoff OR l.heartbeat_at>=v_cutoff');
+    expect(ceilingBoardCleanupSql).toContain('smarter_private.f06_lease_has_pending_custody');
+    expect(ceilingBoardCleanupSql).toContain("origin_kind IS DISTINCT FROM ''prelaunch''");
+    expect(ceilingBoardCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
+    expect(ceilingBoardCleanupSql).toContain("has_function_privilege('anon'");
+    expect(ceilingBoardCleanupSql).toContain("has_function_privilege('authenticated'");
+    expect(ceilingBoardCleanupSql).toContain("has_function_privilege('service_role'");
+    expect(ceilingBoardCleanupSql).toContain("r.rolname='postgres'");
+    // A guarded source rewrite: the preimage appears exactly once or nothing is
+    // executed, so a sibling agent's live edit is never overwritten.
+    expect(ceilingBoardCleanupSql).toContain('v_hits<>1');
+    expect(ceilingBoardCleanupSql).toContain('pg_get_functiondef(v_proc)');
+    expect(ceilingBoardCleanupSql).not.toMatch(/DELETE FROM public\.(clubs|players|wallets)/);
+    expect(ceilingBoardCleanupSql).not.toMatch(/\bUPDATE public\.(clubs|players|wallets)\b/);
   });
 });

@@ -39,7 +39,16 @@
  * a head / sourceSha256 / sourceFiles / serverLockSha256 / contract digest /
  * pack version that differs between runs or from this checkout's contract, a
  * source that changed during a run, a cancelled result counted as complete,
- * a nondeterministic replay, or an existing output.
+ * a nondeterministic replay, a PLO4 policy source file that differs between
+ * the runs' head and this checkout (`policy_source_changed`), or an existing
+ * output.
+ *
+ * Policy digest (P10 authority audit F1): `policyDigest` is
+ * `horsePhase10PolicyDigest()`, imported from
+ * server/src/engine/HorsePhase10Authority.ts and computed here from this
+ * checkout, which must match the runs' head for every hashed file. Phase 10
+ * admission recomputes the same function from the running code and refuses a
+ * file whose digest or `policyDigestDefinition` differs.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -54,24 +63,29 @@ process.env.EQUITY_GOVERNOR = 'off';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(here, '..');
+/** Git finds this checkout from the script's own location. An inherited GIT_DIR
+ * (a git hook exports one) would make the working directory the work tree, so
+ * root-relative paths such as server/src/... would name files that do not exist. */
+const gitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+);
 const sourceRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   cwd: serverRoot,
+  env: gitEnv,
   encoding: 'utf8',
 }).trim();
 
 const contract = await import('../src/benchmark/Plo4StrengthContract.ts');
+const authority = await import('../src/engine/HorsePhase10Authority.ts');
 
 export const STRENGTH_SCHEMA = 'horse-phase10-strength-v1';
 export const QUALIFICATION_SCHEMA = 'horse-phase10-qualification-v1';
 export const EVIDENCE_DIRECTORY = 'docs/evidence/phase10/';
 const ATTEMPT_DIR = /^p102-(.+-\d+-s\d+)-a(\d+)$/;
-/** The PLO4 candidate's policy source: hashed at the runs' head for the record. */
-export const POLICY_SOURCE_FILES = [
-  'server/src/engine/plo4/Plo4PolicyPack.ts',
-  'server/src/engine/plo4/Plo4LivePolicy.ts',
-  'server/src/benchmark/Plo4PolicyLeague.ts',
-  'server/src/benchmark/Plo4StrengthContract.ts',
-];
+/** Every file horsePhase10PolicyDigest() hashes, repository-relative. */
+export const POLICY_SOURCE_FILES = authority.HORSE_PHASE10_POLICY_SOURCE_FILES.map(
+  (file) => `server/${file}`
+);
 const IDENTITY_FIELDS = ['head', 'sourceSha256', 'sourceFiles', 'serverLockSha256'];
 
 function args(argv) {
@@ -121,15 +135,22 @@ async function formatted(prettier, file, value) {
   return prettier.format(JSON.stringify(value), { ...config, parser: 'json', filepath: file });
 }
 
-/** sha256 over the PLO4 policy source files as committed at `head`. */
-export function policyDigestAt(head) {
-  const hash = createHash('sha256');
-  for (const file of POLICY_SOURCE_FILES) {
-    hash.update(file + '\0');
-    hash.update(execFileSync('git', ['show', `${head}:${file}`], { cwd: sourceRepo }));
-    hash.update('\0');
+/**
+ * Null when every policy source file in the working tree of `repo` is
+ * identical to `head`, so the digest computed here is the digest of the code
+ * the runs measured; otherwise the refusal reason.
+ */
+export function policySourceRefusal(head, repo = sourceRepo) {
+  try {
+    execFileSync('git', ['diff', '--quiet', head, '--', ...POLICY_SOURCE_FILES], {
+      cwd: repo,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    return null;
+  } catch (error) {
+    return error.status === 1 ? 'policy_source_changed' : `policy_source_unverifiable:${head}`;
   }
-  return hash.digest('hex');
 }
 
 /** Read and check every attempt. Returns { reasons } or the assembly. */
@@ -268,6 +289,7 @@ export function inspectAttempts({ runsDir, development = false, defective = {} }
     try {
       execFileSync('git', ['cat-file', '-e', `${head}^{commit}`], {
         cwd: sourceRepo,
+        env: gitEnv,
         stdio: 'ignore',
       });
     } catch {
@@ -303,10 +325,11 @@ export async function assemble(options) {
   if (!options['no-format'] && !prettier) inspected.reasons.push('prettier_unavailable');
   let policyDigest = null;
   if (!inspected.reasons.length) {
-    try {
-      policyDigest = policyDigestAt(inspected.head);
-    } catch {
-      inspected.reasons.push(`policy_source_unreadable:${inspected.head}`);
+    const changed = policySourceRefusal(inspected.head);
+    if (changed) inspected.reasons.push(changed);
+    else {
+      policyDigest = authority.horsePhase10PolicyDigest();
+      if (!policyDigest) inspected.reasons.push('policy_source_unreadable');
     }
   }
   if (inspected.reasons.length) return { refused: true, reasons: inspected.reasons };
@@ -358,7 +381,9 @@ export async function assemble(options) {
       serverLockSha256: first.serverLockSha256,
       packVersion: first.packVersion,
       policyDigest,
+      policyDigestDefinition: authority.HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
       policyDigestFiles: POLICY_SOURCE_FILES,
+      policyDigestCheck: `computed by horsePhase10PolicyDigest(); every policyDigestFiles entry is identical at ${head} and the assembling checkout`,
     },
     attemptRule:
       'earliest complete attempt counts; other complete attempts must replay it exactly; incomplete attempts are recorded, never counted',
@@ -408,6 +433,7 @@ export async function assemble(options) {
     contractDigest: strength.contractDigest,
     domain: contract.PLO4_STRENGTH_DOMAIN,
     policyDigest,
+    policyDigestDefinition: authority.HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
     objectives: {
       cash: { qualified, status: 'measured' },
       tournament: verdict.tournament,

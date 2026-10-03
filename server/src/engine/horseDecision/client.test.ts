@@ -16,6 +16,9 @@ import { settleHorseExecutionWitness } from '../HorseExecutionWitness.js';
 import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
+import { drainFires, enableBrainTelemetry } from '../BrainTelemetry.js';
+import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
+import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { horseDecisionJournalHealth } from '../../services/HorseDecisionJournal.js';
@@ -2435,4 +2438,97 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
       expect(client.status().phase).toBe('failed');
     }
   );
+});
+
+describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', () => {
+  /** A real PLO4 cash decision from the brain, with its frozen input binding. */
+  const plo4Decision = (spot: 'non_nut_flush' | 'premium_open', mode: 'shadow' | 'candidate') => {
+    const input = plo4ReferenceSpot(spot);
+    seedFastRandom(100101);
+    return structuredClone(
+      HorseLogic.decide(
+        input.hero,
+        input.state,
+        'balanced',
+        {},
+        { telemetry: false, mind: false, decisionTimeMs: 0, phase10Plo4: mode }
+      )
+    );
+  };
+  const corruptBinding = (decision: ReturnType<typeof plo4Decision>) => {
+    (decision.plo4Policy!.inputs!.approximation as { solverInput: unknown }).solverInput = true;
+    return decision;
+  };
+  const send = (decision: ReturnType<typeof plo4Decision>, fence: string) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'plo4';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, fence);
+    reply.decision = decision;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    return { worker, client, pending };
+  };
+
+  it('drops a shadow-only receipt, keeps the actual action and the worker, and counts it by name', async () => {
+    const valid = plo4Decision('non_nut_flush', 'shadow');
+    expect(valid.plo4Policy).toMatchObject({ mode: 'shadow', applied: false, eligible: true });
+    expect(valid.policyOwnership).toMatchObject({ owner: 'phase10', mode: 'shadow' });
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'plo4')).toBe(true);
+    const forged = corruptBinding(structuredClone(valid));
+    expect(horseDecisionReceiptIsValid(structuredClone(forged), 'plo4')).toBe(false);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(forged, 'p10-f8-shadow');
+    const result = await pending;
+    expect({ action: result.decision.action, amount: result.decision.amount }).toEqual({
+      action: valid.action,
+      amount: valid.amount,
+    });
+    expect(result.decision.plo4Policy).toBeUndefined();
+    expect(result.decision.policyOwnership).toBeUndefined();
+    expect(result.decision.executionWitness).toMatchObject({
+      phase10Inputs: null,
+      policyOwnership: null,
+    });
+    expect(client.status().phase).not.toBe('failed');
+    expect(worker.terminateCalls).toBe(0);
+    expect(drainFires()).toContainEqual({
+      feature: 'phase10_shadow_receipt_binding_dropped',
+      fires: 1,
+    });
+  });
+
+  it('still fails closed for an applied receipt', async () => {
+    const applied = plo4Decision('premium_open', 'candidate');
+    expect(applied.plo4Policy).toMatchObject({ applied: true, selection: 'selected' });
+    // Usable worker authority, so only the binding below makes it invalid.
+    applied.plo4Policy!.authority = {
+      version: 'horse-qualified-authority-receipt-v1',
+      epoch: 'p10-f8-epoch',
+      generation: 1,
+      state: 'usable',
+      reason: 'admitted',
+      continuationVersion: applied.plo4Policy!.version,
+      approvalGeneration: 1,
+      authorityKey: 'k'.repeat(64),
+      evidenceSha256: null,
+      sourceSha: null,
+      expiresAt: null,
+      mainGeneration: null,
+    };
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(true);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(corruptBinding(applied), 'p10-f8-applied');
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+    expect(worker.terminateCalls).toBe(1);
+    expect(drainFires().map((row) => row.feature)).not.toContain(
+      'phase10_shadow_receipt_binding_dropped'
+    );
+  });
 });

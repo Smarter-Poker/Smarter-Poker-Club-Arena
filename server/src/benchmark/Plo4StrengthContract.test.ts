@@ -106,6 +106,14 @@ describe('P10.2 PLO4 strength contract object', () => {
     expect(C.candidate.calibratedConfidence).toBeNull();
   });
 
+  it('P10 audit F9: the contract digest is pinned, so a silent contract edit fails CI', () => {
+    // The digest the 2026-10-03 strength evidence and its qualification record.
+    // A deliberate contract change must update this pin and say why.
+    expect(plo4StrengthContractDigest()).toBe(
+      'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384'
+    );
+  });
+
   it('separates the cash objective from the tournament objective, which refuses by name', () => {
     expect(C.objectives.cash.status).toBe('measured');
     expect(C.objectives.tournament.status).toBe('unavailable dependency');

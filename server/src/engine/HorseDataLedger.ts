@@ -1816,6 +1816,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase10'
   ),
   receipt(
+    'phase10_shadow_receipt_binding_dropped',
+    'horseDecision/client (P10 audit F8)',
+    'a shadow-only PLO4 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase10'
+  ),
+  receipt(
     'phase11_seen',
     'HorseLogic -> evaluateOmahaVariantPolicy',
     'natural PLO5/PLO6/PLO8 decisions entering the versioned policy',

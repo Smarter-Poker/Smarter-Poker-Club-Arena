@@ -8,7 +8,15 @@
  * contract it imports.
  */
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -23,7 +31,10 @@ import {
   admitHorsePhase10QualifiedAuthority,
   HORSE_PHASE10_DOMAIN,
   HORSE_PHASE10_EVIDENCE_DIRECTORY,
+  HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
+  HORSE_PHASE10_POLICY_SOURCE_FILES,
   HORSE_PHASE10_QUALIFICATION_SCHEMA,
+  horsePhase10PolicyDigest,
   type HorsePhase10AuthoritySelection,
 } from '../engine/HorsePhase10Authority.js';
 
@@ -248,7 +259,15 @@ describe('phase10-strength-assemble', () => {
       expect(strength.contractDigest).toBe(plo4StrengthContractDigest());
       expect(strength.shards).toHaveLength(111);
       expect(strength.attempts).toHaveLength(111);
-      expect(strength.source.policyDigest).toMatch(/^[0-9a-f]{64}$/);
+      // P10 audit F1: the record carries the running-code digest, computed by
+      // the same imported function admission uses, under its versioned definition.
+      expect(strength.source.policyDigest).toBe(horsePhase10PolicyDigest());
+      expect(strength.source.policyDigestDefinition).toBe(HORSE_PHASE10_POLICY_DIGEST_DEFINITION);
+      expect(strength.source.policyDigestFiles).toEqual(
+        HORSE_PHASE10_POLICY_SOURCE_FILES.map((file) => `server/${file}`)
+      );
+      expect(qualification.policyDigest).toBe(horsePhase10PolicyDigest());
+      expect(qualification.policyDigestDefinition).toBe(HORSE_PHASE10_POLICY_DIGEST_DEFINITION);
       expect(strength.verdict.qualified).toBe(false);
       expect(strength.verdict.reasons).toContain(`${required[0].key}:not_contract_mode`);
       expect(qualification).toMatchObject({
@@ -400,5 +419,59 @@ describe('phase10-strength-assemble', () => {
       expect(outside.reasons).toEqual(['evidence_outside_docs/evidence/phase10/']);
     },
     RUN_TIMEOUT_MS * 3
+  );
+
+  it(
+    "P10 audit F1: refuses to record a digest when a policy source differs from the runs' head",
+    async () => {
+      // A throwaway repository holding every hashed path; the real checkout is never touched.
+      // Git hooks export GIT_DIR (and friends): inherited, they would point
+      // `git init` and every command below at the checkout running the hook,
+      // so every git process here gets an environment without them.
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+      );
+      const git = (...args: string[]) =>
+        execFileSync('git', args, { cwd: repo, env, encoding: 'utf8', stdio: 'pipe' }).trim();
+      mkdirSync(repo, { recursive: true });
+      git('init', '-q');
+      expect(realpathSync(git('rev-parse', '--show-toplevel'))).toBe(realpathSync(repo));
+      for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES) {
+        mkdirSync(path.dirname(path.join(repo, 'server', file)), { recursive: true });
+        writeFileSync(path.join(repo, 'server', file), `// ${file}\n`);
+      }
+      git('add', '-A');
+      git(
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-q',
+        '--no-verify',
+        '-m',
+        'policy'
+      );
+      const head = git('rev-parse', 'HEAD');
+      const refusal = async () => {
+        const { stdout } = await exec(
+          process.execPath,
+          [
+            '--import',
+            'tsx',
+            '-e',
+            `import('./scripts/phase10-strength-assemble.mjs').then((m) => console.log(JSON.stringify(m.policySourceRefusal(${JSON.stringify(head)}, ${JSON.stringify(repo)}))))`,
+          ],
+          { cwd: process.cwd(), env, timeout: RUN_TIMEOUT_MS }
+        );
+        return JSON.parse(stdout.trim().split('\n').pop()!);
+      };
+      expect(await refusal()).toBeNull();
+      writeFileSync(path.join(repo, 'server/src/engine/HorseLogic.ts'), '// edited\n');
+      expect(await refusal()).toBe('policy_source_changed');
+    },
+    RUN_TIMEOUT_MS * 2
   );
 });

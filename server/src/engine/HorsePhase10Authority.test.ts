@@ -6,7 +6,12 @@ import {
   admitHorsePhase10QualifiedAuthority,
   admitHorsePhase10ReleaseAuthority,
   HORSE_PHASE10_DOMAIN,
+  HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
+  HORSE_PHASE10_POLICY_SOURCE_FILES,
   horsePhase10AdmittedMode,
+  horsePhase10PolicyDigest,
+  horsePhase10PolicyDigestOf,
+  runningPolicySourceReader,
   liveHorsePhase10Authority,
   PHASE10_PROTECTED_RELEASE_SELECTION,
   PHASE10_RUNNING_CONTRACT_DIGEST,
@@ -23,6 +28,7 @@ import { memoryReader } from './HorseQualifiedAuthority.test-support.js';
 import {
   P10_TEST_CONTRACT_DIGEST,
   P10_TEST_NOW,
+  P10_TEST_POLICY_DIGEST,
   P10_TEST_QUALIFICATION_PATH,
   P10_TEST_SOURCE_SHA,
   P10_TEST_STRENGTH_PATH,
@@ -271,7 +277,7 @@ describe('P10.3 selection is null unless the P10.2 file qualifies for the exact 
       phase: 'phase10',
       sourceSha: P10_TEST_SOURCE_SHA,
       continuationVersion: 'plo4-policy-round1-v3',
-      policyDigest: 'd'.repeat(64),
+      policyDigest: P10_TEST_POLICY_DIGEST,
       packId: 'plo4-policy-round1-v3',
       domain: HORSE_PHASE10_DOMAIN,
       evidencePath: P10_TEST_QUALIFICATION_PATH,
@@ -361,4 +367,124 @@ describe('P10.3 reuses the Phase 8 holder, gate and verdicts', () => {
       expect(horsePhase10AdmittedMode({ gameMode, verdict, callerMode })).toBe(expected);
     }
   );
+});
+
+describe('P10 audit F1: Phase 10 authority is bound to the running code', () => {
+  const serverFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
+
+  it('the running policy digest is the versioned hash of exactly the PLO4 candidate code', () => {
+    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v2');
+    expect(HORSE_PHASE10_POLICY_SOURCE_FILES).toEqual([
+      'src/engine/plo4/Plo4PolicyPack.ts',
+      'src/engine/plo4/Plo4LivePolicy.ts',
+      'src/engine/HorseLogic.ts',
+      'src/engine/HorsePolicyRegistry.ts',
+      'src/engine/HorseEval.ts',
+      'src/engine/omaha/OmahaCardFacts.ts',
+      'src/engine/PokerEngine.ts',
+      'src/engine/multiway/DealtSeatCensus.ts',
+      'src/engine/HorseObservationWindow.ts',
+      'src/engine/HorseTournamentUtilityEvidence.ts',
+      'src/engine/HorseMind.ts',
+    ]);
+    // Independent recomputation from the files on disk.
+    const hash = createHash('sha256').update(
+      `horse-phase10-policy-digest-v2\0${PLO4_POLICY_PACK.version}\0`
+    );
+    for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES)
+      hash
+        .update(`${file}\0`)
+        .update(readFileSync(serverFile(file)))
+        .update('\0');
+    expect(horsePhase10PolicyDigest()).toBe(hash.digest('hex'));
+    expect(horsePhase10PolicyDigestOf(runningPolicySourceReader)).toBe(horsePhase10PolicyDigest());
+  });
+
+  it('any byte change in any hashed file is another digest; an unreadable file is none', () => {
+    const running = horsePhase10PolicyDigest();
+    const seen = new Set([running]);
+    for (const changed of HORSE_PHASE10_POLICY_SOURCE_FILES) {
+      const digest = horsePhase10PolicyDigestOf((path) =>
+        path === changed
+          ? Buffer.concat([runningPolicySourceReader(path), Buffer.from(' ')])
+          : runningPolicySourceReader(path)
+      );
+      expect(digest, changed).toMatch(/^[0-9a-f]{64}$/);
+      seen.add(digest);
+    }
+    expect(seen.size).toBe(HORSE_PHASE10_POLICY_SOURCE_FILES.length + 1);
+    expect(
+      horsePhase10PolicyDigestOf((path) => {
+        if (path.endsWith('HorseLogic.ts')) throw Object.assign(Error('gone'), { code: 'ENOENT' });
+        return runningPolicySourceReader(path);
+      })
+    ).toBeNull();
+  });
+
+  it('the release path admits a qualified file only for the running policy digest, refusing others by name', () => {
+    const q = p10QualificationBytes();
+    const release = (bytes: Buffer, runningPolicyDigest?: string | null): HorseAuthorityAdmission =>
+      admitHorsePhase10ReleaseAuthority(
+        P10_TEST_NOW,
+        p10Selection(bytes),
+        p10Reader(bytes),
+        P10_TEST_CONTRACT_DIGEST,
+        runningPolicyDigest
+      );
+    const admitted = selectedHorsePhase10Authority(release(q));
+    expect(admitted?.policyDigest).toBe(horsePhase10PolicyDigest());
+    for (const [label, bytes] of [
+      ['another policy digest', p10QualificationBytes({ policyDigest: 'd'.repeat(64) })],
+      ['no digest definition', p10QualificationBytes({ policyDigestDefinition: undefined })],
+      [
+        'the v1 digest definition',
+        p10QualificationBytes({ policyDigestDefinition: 'horse-phase10-policy-digest-v1' }),
+      ],
+    ] as const)
+      expect(release(bytes), label).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
+    // Running code that differs from the measured code: refused, not admitted.
+    expect(release(q, 'e'.repeat(64))).toMatchObject({ reason: 'policy_digest_mismatch' });
+    expect(release(q, null)).toMatchObject({ reason: 'policy_digest_unavailable' });
+    expect(release(q, 'not-a-digest')).toMatchObject({ reason: 'policy_digest_unavailable' });
+  });
+
+  it('the 2026-10-03 strength qualification stays historical: refused as committed and refused by digest if relabelled', () => {
+    const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
+    const qualificationPath = 'docs/evidence/phase10/phase10-qualification-2026-10-03.json';
+    const committed = readFileSync(repo(qualificationPath));
+    const file = JSON.parse(committed.toString('utf8'));
+    expect(file).toMatchObject({ qualified: false, contractDigest: P10_TEST_CONTRACT_DIGEST });
+    expect(file).not.toHaveProperty('policyDigestDefinition');
+    const strength = readFileSync(repo(file.evidencePath));
+    const selectionFor = (bytes: Buffer) =>
+      p10Selection(bytes, {
+        sourceSha: file.sourceSha,
+        qualificationPath,
+        issuedAt: '2026-10-03T12:00:00.000Z',
+      });
+    const admitOver = (bytes: Buffer) =>
+      admitHorsePhase10ReleaseAuthority(
+        P10_TEST_NOW,
+        selectionFor(bytes),
+        memoryReader({ [qualificationPath]: bytes, [file.evidencePath]: strength })
+      );
+    expect(admitOver(committed)).toMatchObject({ status: 'refused', reason: 'not_qualified' });
+    // Shape-only relabel, in memory: its v1 digest is not the running code's.
+    const relabelled = Buffer.from(
+      JSON.stringify({
+        ...file,
+        qualified: true,
+        objectives: { ...file.objectives, cash: { qualified: true, status: 'measured' } },
+      })
+    );
+    expect(admitOver(relabelled)).toEqual({
+      status: 'refused',
+      reason: 'policy_digest_mismatch',
+      transient: false,
+    });
+  });
 });

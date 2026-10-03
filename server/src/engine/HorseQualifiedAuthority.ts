@@ -95,6 +95,8 @@ export type HorseAuthorityRefusal =
   | 'not_qualified'
   | 'contract_unavailable'
   | 'contract_digest_mismatch'
+  | 'policy_digest_unavailable'
+  | 'policy_digest_mismatch'
   | 'source_mismatch';
 
 export type HorseAuthorityAdmission =

@@ -30,6 +30,7 @@ import {
 } from '../HorseExecutionWitness.js';
 import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from '../HorsePhase10Authority.js';
+import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -1239,6 +1240,26 @@ export class LiveHorseDecisionWorkerClient {
       ) {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
+      }
+      // P10 audit F8: a shadow-only PLO4 receipt (shadow mode, not applied,
+      // not selected) never owned the action, so a strict input-binding
+      // rejection drops it instead of taking the worker down. The ownership
+      // record reconciled from that receipt goes with it; the decision keeps
+      // its actual action and every other check below still applies. Any other
+      // PLO4 receipt that fails the binding still fails closed below.
+      const plo4Shadow = message.decision.plo4Policy;
+      if (
+        plo4Shadow &&
+        typeof plo4Shadow === 'object' &&
+        plo4Shadow.mode === 'shadow' &&
+        plo4Shadow.applied === false &&
+        plo4Shadow.selection !== 'selected' &&
+        !plo4LiveReceiptBindingIsValid(plo4Shadow)
+      ) {
+        delete message.decision.plo4Policy;
+        if (message.decision.policyOwnership?.owner === 'phase10')
+          delete message.decision.policyOwnership;
+        noteFire('phase10_shadow_receipt_binding_dropped');
       }
       if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));

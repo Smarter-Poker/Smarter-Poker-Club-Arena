@@ -12,7 +12,9 @@
  * to `PHASE10_PROTECTED_RELEASE_SELECTION`, which names the committed P10.2
  * qualification file and its exact sha256. It is admitted only when that file
  * says `qualified: true` for the exact contract digest and source revision the
- * selection names, and the contract digest equals the running contract's.
+ * selection names, the contract digest equals the running contract's, and the
+ * file's policy digest equals `horsePhase10PolicyDigest()` computed from the
+ * running code (Phase 8 binds `horsePhase8PolicyDigest()` the same way).
  * Every other case is refused by name and the pack stays in shadow, exactly as
  * before this change. Nothing reads a request, an IPC message, an environment
  * variable or a database row, so a caller can never supply candidate control.
@@ -25,7 +27,10 @@
  * heuristic (`calibratedConfidence: null`); a qualification is a paired
  * after-rake comparison against the deployed reference, not a solver claim.
  */
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   canonical,
   HorsePhase8AuthorityGate,
@@ -61,6 +66,84 @@ export const HORSE_PHASE10_CONTRACT_VERSION = PLO4_STRENGTH_CONTRACT.version;
  * under any other contract can never select the pack in this code.
  */
 export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDigest();
+
+/**
+ * The Phase 10 policy digest definition (P10 authority audit F1). Version 1 was
+ * the P10.2 assembler's `git show` hash of four files at the runs' head, which
+ * the engine image cannot recompute; a qualification recorded under it (the
+ * 2026-10-03 strength evidence) carries no `policyDigestDefinition` and is
+ * refused as `policy_digest_mismatch`. Bump this whenever the file list or the
+ * hashing below changes.
+ */
+export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v2';
+
+/**
+ * The code that determines PLO4 candidate behaviour, as server-relative source
+ * paths: the pack and its live policy; the HorseLogic owner that computes the
+ * equity sample and range provenance the policy consumes, invokes it and
+ * legalizes its proposal; the registry that routes PLO4 to it; and every
+ * module the policy calls at run time (card facts, Omaha nut status, pot and
+ * rake arithmetic, the dealt-seat census, observation windows and capture) and
+ * the HorseMind reads behind the sampled ranges.
+ *
+ * Deliberately not hashed: this file (it holds the protected release
+ * selection, which must change to select, and the admission law, bound by the
+ * definition version above) and the strength contract (bound by its own
+ * contract digest). The engine image keeps `src/` beside `dist/` (see
+ * server/Dockerfile), so the running code can recompute this digest.
+ */
+export const HORSE_PHASE10_POLICY_SOURCE_FILES: readonly string[] = Object.freeze([
+  'src/engine/plo4/Plo4PolicyPack.ts',
+  'src/engine/plo4/Plo4LivePolicy.ts',
+  'src/engine/HorseLogic.ts',
+  'src/engine/HorsePolicyRegistry.ts',
+  'src/engine/HorseEval.ts',
+  'src/engine/omaha/OmahaCardFacts.ts',
+  'src/engine/PokerEngine.ts',
+  'src/engine/multiway/DealtSeatCensus.ts',
+  'src/engine/HorseObservationWindow.ts',
+  'src/engine/HorseTournamentUtilityEvidence.ts',
+  'src/engine/HorseMind.ts',
+]);
+
+/** Reads a server-relative source path. Throws on failure. */
+export type HorsePhase10PolicySourceReader = (serverRelativePath: string) => Buffer;
+
+/** The server root in source and test runs (src/engine/../../) and in the
+ * engine image (dist/engine/../../ is /app, which holds src/). */
+export const runningPolicySourceReader: HorsePhase10PolicySourceReader = (path) =>
+  readFileSync(fileURLToPath(new URL(`../../${path}`, import.meta.url)));
+
+/** sha256 over the definition, the pack version and every policy source file
+ * (path and exact bytes, in list order). Null when any file is unreadable. */
+export function horsePhase10PolicyDigestOf(read: HorsePhase10PolicySourceReader): string | null {
+  const hash = createHash('sha256');
+  hash.update(`${HORSE_PHASE10_POLICY_DIGEST_DEFINITION}\0${PLO4_POLICY_PACK.version}\0`);
+  try {
+    for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES) {
+      const bytes = read(file);
+      hash.update(`${file}\0`);
+      hash.update(bytes);
+      hash.update('\0');
+    }
+  } catch {
+    return null;
+  }
+  return hash.digest('hex');
+}
+
+let runningPolicyDigest: string | null | undefined;
+/**
+ * The running code's Phase 10 policy digest. The P10.2 assembler records this
+ * same function's value (it imports it), so evidence binds exactly the code
+ * that admission later recomputes. Computed on first use and kept for the
+ * process: an unselected engine never reads the sources.
+ */
+export function horsePhase10PolicyDigest(): string | null {
+  if (runningPolicyDigest === undefined)
+    runningPolicyDigest = horsePhase10PolicyDigestOf(runningPolicySourceReader);
+  return runningPolicyDigest;
+}
 
 /** Committed at a protected release. Never constructed from runtime input. */
 export interface HorsePhase10AuthoritySelection {
@@ -152,16 +235,23 @@ function readJsonObject(
  * `unselected`, `invalid_selection`, `continuation_mismatch` (pack version or
  * domain is not the running cash PLO4 domain), `contract_unavailable` (no
  * running contract digest), `contract_digest_mismatch` (selection or file
- * digest differs from the running contract), `expired`, `missing_evidence`,
+ * digest differs from the running contract), `policy_digest_unavailable` (the
+ * running policy digest cannot be computed), `expired`, `missing_evidence`,
  * `unreadable_evidence` (transient), `hash_mismatch`, `evidence_mismatch`
  * (schema, mode, contract version or shape), `not_qualified` (the file or its
- * cash objective is not `qualified: true`), `source_mismatch`.
+ * cash objective is not `qualified: true`), `policy_digest_mismatch` (the
+ * file's digest definition or policy digest is not the running code's),
+ * `source_mismatch`.
+ *
+ * `runningPolicyDigest` defaults to `horsePhase10PolicyDigest()`, read only
+ * once a well-formed, unwithdrawn selection reaches that check.
  */
 export function admitHorsePhase10QualifiedAuthority(
   selection: HorsePhase10AuthoritySelection | null,
   reader: HorseAuthorityEvidenceReader,
   nowMs: number,
-  runningContractDigest: string | null
+  runningContractDigest: string | null,
+  runningPolicyDigest?: string | null
 ): HorseAuthorityAdmission {
   const refuse = (reason: HorseAuthorityRefusal, transient = false): HorseAuthorityAdmission => ({
     status: 'refused',
@@ -184,6 +274,10 @@ export function admitHorsePhase10QualifiedAuthority(
   if (runningContractDigest === null || !HEX64.test(runningContractDigest))
     return refuse('contract_unavailable');
   if (selection.contractDigest !== runningContractDigest) return refuse('contract_digest_mismatch');
+  const policyDigest =
+    runningPolicyDigest === undefined ? horsePhase10PolicyDigest() : runningPolicyDigest;
+  if (policyDigest === null || !HEX64.test(policyDigest))
+    return refuse('policy_digest_unavailable');
   if (selection.expiresAt !== null && nowMs >= (isoMs(selection.expiresAt) ?? -Infinity))
     return refuse('expired');
   const read = readJsonObject(reader, selection.qualificationPath);
@@ -218,13 +312,17 @@ export function admitHorsePhase10QualifiedAuthority(
     file.contractDigest !== selection.contractDigest
   )
     return refuse('contract_digest_mismatch');
+  // The evidence must have measured the code that is running now.
+  if (
+    file.policyDigestDefinition !== HORSE_PHASE10_POLICY_DIGEST_DEFINITION ||
+    file.policyDigest !== policyDigest
+  )
+    return refuse('policy_digest_mismatch');
   if (file.sourceSha !== selection.sourceSha) return refuse('source_mismatch');
   if (file.packVersion !== PLO4_POLICY_PACK.version || file.domain !== HORSE_PHASE10_DOMAIN)
     return refuse('continuation_mismatch');
   if (
     file.contractVersion !== selection.contractVersion ||
-    typeof file.policyDigest !== 'string' ||
-    !HEX64.test(file.policyDigest) ||
     !evidencePathIsSafe(file.evidencePath) ||
     typeof file.evidenceSha256 !== 'string' ||
     !HEX64.test(file.evidenceSha256)
@@ -239,7 +337,7 @@ export function admitHorsePhase10QualifiedAuthority(
     phase: 'phase10' as const,
     sourceSha: selection.sourceSha,
     continuationVersion: PLO4_POLICY_PACK.version,
-    policyDigest: file.policyDigest,
+    policyDigest,
     packId: PLO4_POLICY_PACK.version,
     domain: selection.domain,
     evidencePath: selection.qualificationPath,
@@ -263,10 +361,17 @@ export function admitHorsePhase10ReleaseAuthority(
   nowMs = Date.now(),
   selection: HorsePhase10AuthoritySelection | null = PHASE10_PROTECTED_RELEASE_SELECTION,
   reader: HorseAuthorityEvidenceReader = repositoryEvidenceReader,
-  runningContractDigest: string | null = PHASE10_RUNNING_CONTRACT_DIGEST
+  runningContractDigest: string | null = PHASE10_RUNNING_CONTRACT_DIGEST,
+  runningPolicyDigest?: string | null
 ): HorseAuthorityAdmission {
   try {
-    return admitHorsePhase10QualifiedAuthority(selection, reader, nowMs, runningContractDigest);
+    return admitHorsePhase10QualifiedAuthority(
+      selection,
+      reader,
+      nowMs,
+      runningContractDigest,
+      runningPolicyDigest
+    );
   } catch {
     return { status: 'refused', reason: 'unreadable_evidence', transient: true };
   }

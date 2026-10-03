@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/cowork-hto/fix/bbj-facts-hourly-cache",
+  "tables": ["bbj_pool_contribution_hours"],
+  "functions": ["fn_bbj_contribution_drops_cached_hours"]
+}

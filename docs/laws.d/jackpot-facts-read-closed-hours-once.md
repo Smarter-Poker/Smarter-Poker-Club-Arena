@@ -1,0 +1,3 @@
+# tests/jackpot-facts-read-closed-hours-once.law.test.ts
+
+`fn_bbj_pool_facts` sums cached closed UTC hours (`bbj_pool_contribution_hours`) plus a live read of the open tail, instead of scanning every contribution the pool ever received. That full scan was 1,171,516 rows and 5.6 s per call, on every hand, for every jackpot-page viewer (2026-10-03); the new read is 3.5 ms with identical totals. The law keeps the UTC bucketing and the 15-minute cut, and keeps the fill before the trigger lock in one transaction. It keeps the per-pool key shared by reader and invalidator and the backdated-insert, UPDATE, DELETE and TRUNCATE invalidation triggers. It refuses a later redefinition that drops the cache.

@@ -292,7 +292,15 @@ async function fixture(openTables: string[], withdrawRefusal: string | null = nu
   await permit.reserve().catch(() => undefined);
   engine.f06CurrentPermit = permit;
   engine.running = true;
-  return { manager, engine, server, calls, state: clone, original: () => original };
+  return {
+    manager,
+    engine,
+    server,
+    calls,
+    state: clone,
+    original: () => original,
+    raw: () => durable,
+  };
 }
 
 const openField = [source, ...others];
@@ -358,5 +366,41 @@ it('the last table whose continuation cannot read its witness is withdrawn inste
   expect(f.calls).toContain('fn_f06_withdraw_unplaceable_park');
   expect(f.state().state).toBe('withdrawn_before_manifest');
   expect(f.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(source, f.engine);
+  expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(true);
+});
+
+it('a successor admitting the last table over a sealed hand claims and withdraws its park instead of failing every admission (657e45b2)', async () => {
+  lastTableWitnessUnreadable = true;
+  const f = await fixture([source]);
+  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
+    'F06 original placement remains pending'
+  );
+  // An engine release: the park names the dead generation and a fresh dealer
+  // is being admitted by the successor's own custody.
+  Object.assign(f.raw(), { custody_generation: id(4), custody_id: id(5), revision: '3' });
+  f.server.tournamentRetirementCustody = new TournamentRetirementCustody();
+  const fresh: any = new ServerTableEngine(source);
+  vi.spyOn(fresh, 'stop').mockImplementation(async () => {
+    fresh.running = false;
+  });
+  vi.spyOn(fresh, 'hasReleasedProcessOwnership').mockReturnValue(true);
+  f.manager.tableEngines.set(source, fresh);
+  f.server.tableEngines.set(source, fresh);
+  f.calls.length = 0;
+
+  await expect(f.manager.continueExcludedNoStartTable(source, fresh, () => true)).resolves.toBe(
+    true
+  );
+
+  expect(
+    f.calls.filter(
+      (n) => n.startsWith('fn_f06_') && n !== 'fn_f06_break_state' && n !== 'fn_f06_table_state'
+    )
+  ).toEqual([
+    'fn_f06_continue_no_start_last_table',
+    'fn_f06_claim_custody',
+    'fn_f06_withdraw_unplaceable_park',
+  ]);
+  expect(f.state().state).toBe('withdrawn_before_manifest');
   expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(true);
 });

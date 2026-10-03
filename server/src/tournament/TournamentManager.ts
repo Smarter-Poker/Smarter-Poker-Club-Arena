@@ -1820,7 +1820,40 @@ export class TournamentManager extends TournamentManagerEliminations {
           throw new Error('F06 continuation candidate not drained');
         const continued = await rpc.continueNoStartLastTable(state);
         assertCurrent();
-        return continued;
+        if (continued) return true;
+        /*
+         * THE LAST TABLE OVER A SEALED HAND (2026-10-03).
+         *
+         * SNG 657e45b2 "PLO4 Heads-Up 5", table bba21601: its park's witness
+         * is the accepted, sealed previous hand (the timed-out BEGIN rolled
+         * back), which the continuation cannot read. After the 03:55Z release
+         * every admission of the table stopped the new dealer, met
+         * POSITIVE_ORIGINAL_REQUIRED here and failed "never ready" - the
+         * heads-up match stayed frozen. The withdrawal door reads that witness
+         * on the last table (20261003021958); it admits only the park's
+         * custodian, so a park an earlier generation left is claimed first.
+         */
+        const generation = this.getTournamentLeaseGeneration();
+        let park = state;
+        if (park.custody_generation !== generation) {
+          park = await rpc.claimCustody(state.break_id, randomUUID(), state.revision);
+          assertCurrent();
+          this.rememberTournamentBreak(park);
+          if (
+            !park.ok ||
+            park.state !== 'park_requested' ||
+            park.members.length !== 0 ||
+            park.custody_generation !== generation
+          )
+            return false;
+        }
+        const withdrawn = await this.takeNoStartExit('withdraw', park);
+        assertCurrent();
+        if (withdrawn)
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Break ${park.break_id.slice(0, 8)} withdrawn: the last table's park stood over a sealed hand; table ${tableId.slice(0, 8)} deals again`
+          );
+        return withdrawn;
       }
     );
     // The scope may change while stopping. A terminal candidate cannot fall

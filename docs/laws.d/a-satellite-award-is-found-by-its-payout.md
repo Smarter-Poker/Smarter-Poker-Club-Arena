@@ -1,0 +1,3 @@
+# tests/a-satellite-award-is-found-by-its-payout.law.test.ts
+
+Every function that joins `tournament_satellite_awards` to `tournament_payouts` (the conservation delta, the backed-payout payer and the satellite conservation audit) finds the award by its unique key `a.payout_id`, never by `place = position`: a version-3 multi-qualifier satellite leaves the payout position NULL for every unranked co-qualifier, and the place join then read issued tickets as arrived seats (592 NULL-position satellite payouts, 2026-09-18 to 2026-10-01). No migration after `20261001151646` may join by place again, and that migration refuses to commit while any installed function does.

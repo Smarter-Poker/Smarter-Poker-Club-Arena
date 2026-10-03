@@ -34,6 +34,13 @@ const successorPins = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
 );
 const fixture = JSON.parse(read('scripts/ci/fixtures/backed-payout-scan/baseline.json'));
+const awardPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/seat-award-expectations.json')
+);
+const awardPath = awardPins.migration;
+const awardMigration = read(awardPath);
+// The maintained scalar: the latest reviewed definition the batch is qualified against.
+const maintainedScalar = read('scripts/ci/fixtures/backed-payout-scan/seat-award-scalar.sql');
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
 beforeAll(async () => {
@@ -61,6 +68,12 @@ describe('backed payout discovery is the same accounting question in a batch', (
     'scripts/ci/fixtures/backed-payout-scan/seat-income-cases.sql',
     'scripts/ci/fixtures/backed-payout-scan/wallet-inline-native.py',
     'scripts/ci/fixtures/backed-payout-scan/wallet-inline-expectations.json',
+    awardPath,
+    'scripts/ci/fixtures/backed-payout-scan/seat-award-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/seat-award-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/seat-award-scalar.sql',
+    'scripts/ci/fixtures/backed-payout-scan/seat-award-audit-preimage.sql',
+    'scripts/ci/fixtures/backed-payout-scan/seat-award-expectations.json',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-native.py',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-cases.sql',
     'scripts/ci/fixtures/backed-payout-scan/reviewed-return-scalar.sql',
@@ -316,6 +329,61 @@ describe('backed payout discovery is the same accounting question in a batch', (
       expect(native).toContain(proof);
   });
 
+  it('renews batch qualification for the payout-keyed award and the bubble term', () => {
+    // The chain is unbroken: this change starts from exactly the scalar and
+    // payer the previous qualifications left installed.
+    expect(awardPins.scalarBeforeDefinitionMD5).toBe(successorPins.scalarDefinitionMD5);
+    expect(awardPins.scalarBeforeDefinitionMD5).toBe(incomePins.scalarDefinitionMD5);
+    expect(awardPins.payerBeforeDefinitionMD5).toBe(incomePins.afterDefinitionMD5);
+    expect(createHash('md5').update(successorScalar).digest('hex')).toBe(
+      awardPins.scalarBeforeDefinitionMD5
+    );
+    expect(createHash('md5').update(maintainedScalar).digest('hex')).toBe(
+      awardPins.scalarDefinitionMD5
+    );
+    expect(
+      createHash('md5')
+        .update(read('scripts/ci/fixtures/backed-payout-scan/seat-award-audit-preimage.sql'))
+        .digest('hex')
+    ).toBe(awardPins.auditBeforeDefinitionMD5);
+    for (const key of [
+      'scalarBeforeDefinitionMD5',
+      'scalarBodyMD5',
+      'payerBeforeDefinitionMD5',
+      'payerAfterDefinitionMD5',
+      'auditBeforeDefinitionMD5',
+      'auditAfterDefinitionMD5',
+    ])
+      expect(awardMigration).toContain(awardPins[key]);
+    const restated = declaredFunctions(awardMigration).filter((fn) => fn.name === name);
+    expect(restated).toHaveLength(1);
+    const normalize = (body: string) => stripComments(body).replace(/\s+/g, ' ').trim();
+    expect(normalize(restated[0].body)).toBe(
+      normalize(declaredFunctions(maintainedScalar)[0].body)
+    );
+    expect(stripComments(maintainedScalar)).not.toMatch(/a\.place\s*=\s*sp\.position/);
+    expect(maintainedScalar.match(/ON a\.payout_id = sp\.id/g)).toHaveLength(2);
+    expect(awardMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(awardMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'seat-award-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/seat-award-native.py');
+    for (const proof of [
+      'seat-award-original-formula-red-reproduced',
+      'independent award/bubble oracle',
+      'payer batch award/bubble oracle',
+      'ranked awards changed',
+      'batch differs from scalar beyond the bubble term',
+      'payer is not conservative where it omits the bubble term',
+      'whole award caller differs',
+      'more than the two payer award joins changed',
+      'award rollback',
+      'award fresh statement misses the committed award',
+    ])
+      expect(native).toContain(proof);
+  });
+
   it('requires renewed batch qualification when the maintained scalar formula changes', () => {
     const declarations = migrationCorpus().flatMap(({ name: file, sql }) =>
       declaredFunctions(sql)
@@ -323,7 +391,7 @@ describe('backed payout discovery is the same accounting question in a batch', (
         .map((fn) => ({ file, ...fn }))
     );
     const latest = declarations.at(-1)!;
-    const baseline = declaredFunctions(successorScalar)[0];
+    const baseline = declaredFunctions(maintainedScalar)[0];
     const normalize = (body: string) => stripComments(body).replace(/\s+/g, ' ').trim();
     expect(normalize(latest.body), latest.file).toBe(normalize(baseline.body));
     // A dynamic patch is also a formula change: future pg_get_functiondef

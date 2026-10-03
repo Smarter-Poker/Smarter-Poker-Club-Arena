@@ -36,7 +36,6 @@ import {
   plo4SelectionOf,
   type Plo4EquityEvidence,
   type Plo4LiveMode,
-  type Plo4RangeProvenance,
 } from './plo4/Plo4LivePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -6769,30 +6768,29 @@ export class HorseLogic {
       // P10.1: attribute the sample to the ranges that produced it - the same
       // live opponents, bands and HorseMind read view used above. Attribution
       // is best-effort; without it the policy records the sample unattributed.
-      let range: Plo4RangeProvenance | undefined;
-      try {
-        range = capturePlo4RangeProvenance({
-          opponents,
-          bands,
-          mindEnabled: useMind,
-          publicLine: useHR ? 'full_hand' : 'preflop_only',
-          actions: (useHR
-            ? (gs.actionHistory ?? [])
-            : (gs.actionHistory ?? []).filter((a) => a.stage === 'preflop')
-          ).length,
-          sizeReads: useSizeReads,
-          boardContact: oppReads?.some((read) => read !== null) ?? false,
-          structuralCapApplied: eq15 < equity,
-          adaptiveSamples: useAdaptiveMC,
-        });
-      } catch {
-        range = undefined;
-      }
+      // The capture is the proposal's own work, so it is deferred into the
+      // policy's timed region and counts against its work budget (P10 audit
+      // F7). Its inputs are fixed here; the decision is synchronous and the
+      // read scope set by decide() still holds when the policy consumes it.
+      const rangeInput: Parameters<typeof capturePlo4RangeProvenance>[0] = {
+        opponents,
+        bands,
+        mindEnabled: useMind,
+        publicLine: useHR ? 'full_hand' : 'preflop_only',
+        actions: (useHR
+          ? (gs.actionHistory ?? [])
+          : (gs.actionHistory ?? []).filter((a) => a.stage === 'preflop')
+        ).length,
+        sizeReads: useSizeReads,
+        boardContact: oppReads?.some((read) => read !== null) ?? false,
+        structuralCapApplied: eq15 < equity,
+        adaptiveSamples: useAdaptiveMC,
+      };
       phase10EquityEvidence = {
         equity: value,
         samples: sampleCount,
         standardError: Math.sqrt((value * (1 - value)) / sampleCount),
-        ...(range ? { range } : {}),
+        captureRange: () => capturePlo4RangeProvenance(rangeInput),
       };
     }
 

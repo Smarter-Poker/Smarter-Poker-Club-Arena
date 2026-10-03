@@ -78,8 +78,13 @@ export interface Plo4EquityEvidence {
   equity: number;
   samples: number;
   standardError: number;
-  /** Present on the live HorseLogic path; offline callers may omit it. */
+  /** Already captured provenance (offline callers and tests); may be omitted. */
   range?: Plo4RangeProvenance;
+  /** The live HorseLogic path: the provenance capture itself, run only when
+   * the proposal consumes it, inside this policy's timed region, so it counts
+   * against `liveBudgetMs` (P10 audit F7). A throw leaves the sample
+   * unattributed, as an eager capture failure did. Ignored when `range` is set. */
+  captureRange?: () => Plo4RangeProvenance;
 }
 
 export type Plo4RangeStatus =
@@ -857,6 +862,16 @@ export function plo4LiveReceiptBindingIsValid(value: unknown): boolean {
   return value.eligible === true && plo4InputBindingIsValid(value.inputs);
 }
 
+/** The provenance an equity sample carries, capturing it now when deferred. */
+function plo4EvidenceRange(evidence: Plo4EquityEvidence): Plo4RangeProvenance | undefined {
+  if (evidence.range !== undefined || !evidence.captureRange) return evidence.range;
+  try {
+    return evidence.captureRange();
+  } catch {
+    return undefined;
+  }
+}
+
 /** The worker-time selection a receipt's applied/changed facts imply. */
 export function plo4SelectionOf(
   receipt: Pick<Plo4LiveReceipt, 'applied' | 'changed'>
@@ -1314,7 +1329,7 @@ export function evaluatePlo4LivePolicy(
     evidence.standardError <= 1;
   // An equity sampled against any population other than this decision's
   // contesting opponents, or relabeled as calibrated/solver input, is refused.
-  const provenance = numbersValid ? evidence!.range : undefined;
+  const provenance = numbersValid ? plo4EvidenceRange(evidence!) : undefined;
   const populationValid =
     provenance === undefined || plo4RangeProvenanceIsValid(provenance, contestingIds);
   const e =

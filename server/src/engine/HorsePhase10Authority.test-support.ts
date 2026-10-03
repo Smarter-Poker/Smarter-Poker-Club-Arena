@@ -15,7 +15,9 @@ import {
   admitHorsePhase10QualifiedAuthority,
   HORSE_PHASE10_CONTRACT_VERSION,
   HORSE_PHASE10_DOMAIN,
+  HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
   HORSE_PHASE10_QUALIFICATION_SCHEMA,
+  horsePhase10PolicyDigest,
   type HorsePhase10AuthoritySelection,
 } from './HorsePhase10Authority.js';
 import type { HorseAuthorityAdmission } from './HorseQualifiedAuthority.js';
@@ -23,6 +25,8 @@ import { memoryReader } from './HorseQualifiedAuthority.test-support.js';
 
 /** The running P10.2 contract digest. */
 export const P10_TEST_CONTRACT_DIGEST = plo4StrengthContractDigest();
+/** The running code's Phase 10 policy digest (the assembler records the same). */
+export const P10_TEST_POLICY_DIGEST = horsePhase10PolicyDigest() as string;
 export const P10_TEST_SOURCE_SHA = 'b'.repeat(40);
 export const P10_TEST_QUALIFICATION_PATH = 'docs/evidence/phase10/phase10-qualification-test.json';
 export const P10_TEST_STRENGTH_PATH = 'docs/evidence/phase10/strength-test/strength.json';
@@ -46,7 +50,8 @@ export function p10QualificationObject(overrides: Record<string, unknown> = {}) 
     contractVersion: HORSE_PHASE10_CONTRACT_VERSION,
     contractDigest: P10_TEST_CONTRACT_DIGEST,
     domain: HORSE_PHASE10_DOMAIN,
-    policyDigest: 'd'.repeat(64),
+    policyDigest: P10_TEST_POLICY_DIGEST,
+    policyDigestDefinition: HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
     objectives: {
       cash: { qualified, status: 'measured' },
       tournament: {

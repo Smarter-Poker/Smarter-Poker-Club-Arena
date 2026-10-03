@@ -1,0 +1,760 @@
+{
+ "version": "p10-blindseats-journal-observe-v1",
+ "declarationSha256": "b26f17ad773124138a24cea5cc01c07b5b7473159dc41c5d6902712edc0f13bc",
+ "baseScanner": {
+  "path": "docs/evidence/phase10/p10-1-journal-observe.py",
+  "sha256": "9a5c6d7f29366483d3efbd76b1ae982ae516793fed5c237b6a04a88f5107cda1"
+ },
+ "bindingVersionRequired": "plo4-input-binding-v2",
+ "window": {
+  "start": "2026-10-03T21:00:00Z",
+  "end": "2026-10-03T21:40:00Z",
+  "basis": "snapshot.decisionTimeMs, half-open"
+ },
+ "servingRelease": "62e79380b0b5b91f94b4d31d521be6b03ab6006f",
+ "scannedAt": "2026-10-03T22:02:32Z",
+ "segmentCoverage": {
+  "/var/lib/club-arena/horse-decisions/archive/segments": {
+   "segments": 792736,
+   "oldestMtime": "2026-09-25T15:47:23Z",
+   "newestMtime": "2026-10-03T21:46:41Z",
+   "scannedSegments": 70258,
+   "oldestBeforeWindowStart": true
+  },
+  "/var/lib/club-arena/horse-decisions/archive-shard-1/segments": {
+   "segments": 882639,
+   "oldestMtime": "2026-10-03T12:43:11Z",
+   "newestMtime": "2026-10-03T21:46:46Z",
+   "scannedSegments": 87410,
+   "oldestBeforeWindowStart": true
+  }
+ },
+ "segmentSelection": "every *.ndjson.gz with mtime >= window start - 120s, up to the scan time (later segments hold executions and late flushes)",
+ "segmentsRetiredDuringScan": {},
+ "decisionTimeRangeRead": [
+  "2026-10-03T21:01:51Z",
+  "2026-10-03T21:46:45Z"
+ ],
+ "decisionRecordsRead": 218741,
+ "executionRecordsRead": 45969,
+ "recordsInWindowByKind": {
+  "request_lifecycle": 374232,
+  "decision": 186150,
+  "accepted_hand": 41390,
+  "discard_decision": 594,
+  "discard_execution": 594
+ },
+ "population": 38419,
+ "populationRecordsInSegmentsClosedAfterWindowPlus30m": 0,
+ "eligible": 37779,
+ "refused": 640,
+ "exclusions": {
+  "not_plo4": 147731,
+  "outside_window": 32591,
+  "release_other": 0,
+  "unreadable_record": 0,
+  "no_variant_policy_step": 0
+ },
+ "exclusionDetail": {
+  "release_other": {},
+  "not_plo4": {
+   "variant:short_deck": 3510,
+   "variant:plo5": 26762,
+   "variant:nlh": 88379,
+   "variant:plo8": 5784,
+   "variant:plo6": 12855,
+   "variant:flh": 2540,
+   "variant:flo8": 3598,
+   "plo4_multiboard": 600,
+   "variant:pineapple": 3703
+  }
+ },
+ "unreadableByName": {},
+ "unreadableIds": [],
+ "B1": {
+  "components": {
+   "C1": "pass",
+   "C2": "pass",
+   "C3": "pass",
+   "C4": "pass",
+   "C5": "pass",
+   "C6": "pass"
+  },
+  "verdict": "pass"
+ },
+ "checks": {
+  "C1": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "C2": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "C3": {
+   "evaluated": 37779,
+   "passed": 37779,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "C4": {
+   "evaluated": 4055,
+   "passed": 4055,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "C5": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "C6": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "B2": {
+   "evaluated": 17,
+   "passed": 17,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "B3": {
+   "evaluated": 37779,
+   "passed": 37779,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "B4": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  },
+  "B5": {
+   "evaluated": 38419,
+   "passed": 38419,
+   "failed": 0,
+   "failures": {},
+   "failureIds": [],
+   "verdict": "pass"
+  }
+ },
+ "reported": {
+  "deadButtonDecisions": {
+   "total": 17,
+   "byGameMode": {
+    "tournament": 17
+   },
+   "byStreet": {
+    "preflop": 8,
+    "flop": 4,
+    "turn": 3,
+    "river": 2
+   },
+   "byOutcome": {
+    "eligible": 17
+   },
+   "byModeStreetOutcome": {
+    "tournament/flop/eligible": 4,
+    "tournament/preflop/eligible": 8,
+    "tournament/river/eligible": 2,
+    "tournament/turn/eligible": 3
+   }
+  },
+  "deadSmallBlindDecisions": {
+   "total": 10,
+   "byGameMode": {
+    "tournament": 10
+   },
+   "byStreet": {
+    "preflop": 6,
+    "flop": 2,
+    "turn": 2
+   },
+   "byOutcome": {
+    "eligible": 10
+   },
+   "byModeStreetOutcome": {
+    "tournament/flop/eligible": 2,
+    "tournament/preflop/eligible": 6,
+    "tournament/turn/eligible": 2
+   }
+  },
+  "refusalNames": {
+   "depth_or_ante_outside_pack": 640
+  },
+  "deadButtonCanonicalStateUnavailable": 0,
+  "deadButtonCanonicalStateUnavailableIn46bb9cf6Window": 465,
+  "comparisonNote": "different windows and releases, context only"
+ },
+ "supplementary": {
+  "C3_awayAllInContesting": 0,
+  "C3_censusVsSnapshotMismatch": 0,
+  "C5_proposalAboveWagerCap": 0,
+  "C5_depthAboveMaxByReason": {
+   "depth_or_ante_outside_pack": 640
+  },
+  "C6_executionMissing": 0,
+  "C6_executionDuplicate": 0,
+  "C7_acceptedDiffersFromBaselineBy": {},
+  "C7_acceptedEqualsProposalNotBaseline": 0,
+  "C5_uncappedRaiseToDiffersWhereCallIsShort": 607,
+  "C5_uncappedRaiseToDiffersWhereCallIsShortIds": [
+   {
+    "eventId": "54195da68ea611b109c38ef53692a6e83909da489c3d0d0c3d9560475fdba4b9",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 935,
+    "handKey": "8688bbfaf0b8acc8a605426cb8f6fb4c0d035b48a9b15e7c592f204aefdd38d8",
+    "turnKey": "65b410d1300f56b77839bc681c997640634770131f779c32c325b66247fcacd7",
+    "segment": "d62384ecba306b363e29d37ae869b740c42bae0e5a8eac1fa3a4e8463af4ee95",
+    "recordedPotLimitRaiseTo": 544,
+    "declaredRaiseTo": 515,
+    "stackRaiseTo": 82,
+    "currentBet": 111,
+    "heroBet": 0,
+    "callCost": 82,
+    "wagerCap": null
+   },
+   {
+    "eventId": "550b5388604adbcad9878a69ed7a103a039a84c61debe6c12c7194a85faf1d02",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 1575,
+    "handKey": "1dd1df5273ded915b97f44d5b85301829859a483d61db682adfed64d7a8e1fa2",
+    "turnKey": "0d65258085e517fc77d4bac4b9556cea087d2bf21ab9a3db972627744f70134e",
+    "segment": "277ea54ab5f0990b38a6d704fe553442f7c9976c94dd77a98b660388410884b2",
+    "recordedPotLimitRaiseTo": 365,
+    "declaredRaiseTo": 290,
+    "stackRaiseTo": 65,
+    "currentBet": 140,
+    "heroBet": 40,
+    "callCost": 25,
+    "wagerCap": null
+   },
+   {
+    "eventId": "bf4010d37d96e82ca7c4bd7ad307fafbe9cb15a5ff0b966f538d9b238e0bb178",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 1954,
+    "handKey": "d1f681570ed11d2dedc2d31fd719ed9b76ff8c8635eb00394af86d9add48bd56",
+    "turnKey": "c9b579f45d540f155ea24082962a9104fc5f14012486f9a53585662ac3f65494",
+    "segment": "8077e168fc0defbac02775f88623de4db8026a71bee2de6f390546dec9c1be28",
+    "recordedPotLimitRaiseTo": 1843,
+    "declaredRaiseTo": 1526,
+    "stackRaiseTo": 403,
+    "currentBet": 720,
+    "heroBet": 240,
+    "callCost": 163,
+    "wagerCap": null
+   },
+   {
+    "eventId": "7af28b119362bcd4c0efc87bc9198d86861ab906f4ca31eec4e71dc769873148",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 3272,
+    "handKey": "1e036d13af1fb177a56ec1d310d34a7ffb806509c38e8a52c1c892de660fd5b0",
+    "turnKey": "63460f930b02bca00e15a43d1a466f90209fdfbf8f2e82a4ff04995b4da97320",
+    "segment": "a1a63bea0bbc48ac9af1d8f2469a9c958b211cbced5e142d4ad95aab4bd87a6f",
+    "recordedPotLimitRaiseTo": 806,
+    "declaredRaiseTo": 778,
+    "stackRaiseTo": 130,
+    "currentBet": 158,
+    "heroBet": 0,
+    "callCost": 130,
+    "wagerCap": null
+   },
+   {
+    "eventId": "dc643fac7ab420d4a26a7175cbd99826dd34df4a9616e27510159845c26f7d0a",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 2771,
+    "handKey": "43314e89474c05e490d14131fadd67af0224837e3faff5e7f198b5367000b283",
+    "turnKey": "cc7a616114be3b6afacb3bbb3896480561c191d27df7cd3e17535b312298e9e6",
+    "segment": "14924bf7f01b76ee644d56167cbcbd917167fd581d4623a0912041e1d8d87020",
+    "recordedPotLimitRaiseTo": 584,
+    "declaredRaiseTo": 553,
+    "stackRaiseTo": 94,
+    "currentBet": 125,
+    "heroBet": 0,
+    "callCost": 94,
+    "wagerCap": null
+   },
+   {
+    "eventId": "81a3e4ae3476f01f8dfce10a22e25213441a22144732e02639c0f68fb2401345",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 3670,
+    "handKey": "4a34bd580a778dc617238002c6be0389d985df3fa7a3a5aae41df916fb554d7f",
+    "turnKey": "e6f545d87be1ab7c3bf9dc95d1a786838d1a311c5d7c3558efbf63b0e27a3879",
+    "segment": "27287ba96164af7fed5b2f59f59766f2a123e9c665457c426d5f6c13db3201db",
+    "recordedPotLimitRaiseTo": 915,
+    "declaredRaiseTo": 690,
+    "stackRaiseTo": 120,
+    "currentBet": 345,
+    "heroBet": 30,
+    "callCost": 90,
+    "wagerCap": null
+   },
+   {
+    "eventId": "9c26cd9c4b1181ca1a5b17de1b7fc8b629a1d61bb0ec615694848660ce82fe07",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 6185,
+    "handKey": "3a89eb466b1b0acb5f5b9c04ad9ec17559f49654d147a3bb41397e82802706c0",
+    "turnKey": "248d6c15458058967d98f4e760a0cf45fdb4dedf9a68e271ea8fe31fa9ce0d44",
+    "segment": "cd1ab63b77f6337a437516fd32cacf309eed16207c17abecf5b161d3ce5d439f",
+    "recordedPotLimitRaiseTo": 715,
+    "declaredRaiseTo": 620,
+    "stackRaiseTo": 175,
+    "currentBet": 270,
+    "heroBet": 90,
+    "callCost": 85,
+    "wagerCap": null
+   },
+   {
+    "eventId": "553b5111c8860ec153ff416fbc566fd5e2c94b78950ce70e2bebc03832a2df87",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 6020,
+    "handKey": "43ee555866c97bcdfd150739ef2b6ac4f7a83ad7ea2734f597a3886139f4f007",
+    "turnKey": "83ceb20cb2e3cb38a3f5ad9196da8ef05687e569f88c2c97b6489f92cb6eeb58",
+    "segment": "222648fae0bcfe10d95da6876d658d958e17eded69384925af62124b1ebfd5cb",
+    "recordedPotLimitRaiseTo": 730,
+    "declaredRaiseTo": 650,
+    "stackRaiseTo": 190,
+    "currentBet": 270,
+    "heroBet": 90,
+    "callCost": 100,
+    "wagerCap": null
+   },
+   {
+    "eventId": "2c6198a53b40f09dd97c8dd12e3889f1e8b8138891c8d4f04562e4105cc266fe",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 8359,
+    "handKey": "009ddfcb2ce3bf93a9ee0f0b4aed786ef0da6c2eb55c803aaae0e84ddc91ba9b",
+    "turnKey": "a080513a1b8fd8b0cc49400618250e3ce3ae5437b6039a5b8fdbd6c5013494f0",
+    "segment": "25af8be7293d94f9b9a9aa360cf8727afe5a83ccf9388dbd488cab728c7b1034",
+    "recordedPotLimitRaiseTo": 1448,
+    "declaredRaiseTo": 1306,
+    "stackRaiseTo": 208,
+    "currentBet": 350,
+    "heroBet": 0,
+    "callCost": 208,
+    "wagerCap": null
+   },
+   {
+    "eventId": "5b3cb536b027b7f67f47e6f56c1284ba860001f8901308ce6977f21bc206797d",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 6700,
+    "handKey": "4bb7fdfa822eb770106bf988d287ea07fc9fa408945a2d1826f20a12139385b9",
+    "turnKey": "371b568a429125889b10e2afe662b2fc82fa50eccff38ed5d9afd262e1b2c951",
+    "segment": "e28034cb65305493364d87afba48009bc24f7184f6b61d17d629f744791d7376",
+    "recordedPotLimitRaiseTo": 2945,
+    "declaredRaiseTo": 2650,
+    "stackRaiseTo": 785,
+    "currentBet": 1080,
+    "heroBet": 360,
+    "callCost": 425,
+    "wagerCap": null
+   },
+   {
+    "eventId": "25280a8cae606f93a8d8b1dda76f3f4bd0de7e4e0c08bc4681c1f8d6fc4384b1",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 6803,
+    "handKey": "4bb7fdfa822eb770106bf988d287ea07fc9fa408945a2d1826f20a12139385b9",
+    "turnKey": "0ccefc4f4a75271f9a1ae7298008170564289f99bf9534615aeab1ddd6375245",
+    "segment": "2f10579b20683efe2bb07f5b6a6a749770543ae095a2a8764fed294cb36f6885",
+    "recordedPotLimitRaiseTo": 2945,
+    "declaredRaiseTo": 2650,
+    "stackRaiseTo": 785,
+    "currentBet": 1080,
+    "heroBet": 360,
+    "callCost": 425,
+    "wagerCap": null
+   },
+   {
+    "eventId": "e21587201b54a4e900a2e9244a3b8a042f3814dc30ba6de2e9b7ccefdf8a63a1",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 9908,
+    "handKey": "2436e6af7eaa42b9324f3ba28978c3c87f80c4ec29de43f5d477a99c3ccffb59",
+    "turnKey": "8d1f745e91beea7109349e820738383817de64e5965c1c71bd4a01cfd0d646d8",
+    "segment": "52395652d0daa0485578ca489e9b4635307d43111c22e550ab8b5617f661f40f",
+    "recordedPotLimitRaiseTo": 334,
+    "declaredRaiseTo": 332,
+    "stackRaiseTo": 50,
+    "currentBet": 52,
+    "heroBet": 0,
+    "callCost": 50,
+    "wagerCap": null
+   },
+   {
+    "eventId": "42ca81eab73cd11618c6e1e23ec795fbd2d8170f17471cdaea0fbb97b20e24c3",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 9991,
+    "handKey": "fd292cb0ca1f641718e938ed042b2547f29fda8d952468d608a36d3537939bcf",
+    "turnKey": "c609cf4a4cad6a0b6101079dbb14af5d7f71105afe6d150c2790e575f10dda36",
+    "segment": "fa7bdb8c6201a0edc73d24e40c69dd09d21fc23b46d6448d9cf40c64d0fd4d47",
+    "recordedPotLimitRaiseTo": 684,
+    "declaredRaiseTo": 672,
+    "stackRaiseTo": 100,
+    "currentBet": 112,
+    "heroBet": 0,
+    "callCost": 100,
+    "wagerCap": null
+   },
+   {
+    "eventId": "84c84be63ac03b5f775848d610028d8dc71a0a8a24d62359ffb2e1aa2020613d",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 9550,
+    "handKey": "149ae8501e2282296f1a85fa29aeefee0d0130d6fa6ee2c3f46aa30f8b76db59",
+    "turnKey": "8ba121f9e630ce313de1103f2b6c67417a77dcf032466589c75fa1daf6218dd3",
+    "segment": "78c11d3927416143c10848ad7c29489eef16ede62a3aa4fce71c3063ad2035a5",
+    "recordedPotLimitRaiseTo": 676,
+    "declaredRaiseTo": 612,
+    "stackRaiseTo": 160,
+    "currentBet": 224,
+    "heroBet": 20,
+    "callCost": 140,
+    "wagerCap": null
+   },
+   {
+    "eventId": "02caf3d4e57c677e1e02ab05bf35f5b0cb18edf4458b114592f5480c359e2223",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 9669,
+    "handKey": "508503d59e99d60abfa09a3d9a49286c51f956087393b8ad3e29062345de56de",
+    "turnKey": "0edf328b1ceb84cb99e6fe5acf3a6bf2f4e931bb1b075554a80aeac8badcca0a",
+    "segment": "a80c2a30850442de740ae2ecd5415d5439575330a75ea0fe2844180bef98682f",
+    "recordedPotLimitRaiseTo": 535,
+    "declaredRaiseTo": 470,
+    "stackRaiseTo": 75,
+    "currentBet": 140,
+    "heroBet": 0,
+    "callCost": 75,
+    "wagerCap": null
+   },
+   {
+    "eventId": "e3d8ee06403f11261a27c204e83d1f24f223c135e19c9d35598a0019b1ce0691",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 9700,
+    "handKey": "9854d4124893f61b8d4bd0c4b130fbd82b28b84dbfdb778e3ca7c883eb91571c",
+    "turnKey": "86fc49aa6c4d50920bb29ff3ea5791151d28aa05cb46582af2b0a743ba4241c6",
+    "segment": "9b886a3bc9c7d9bec51d1076be740bbb71e9c0353c31adfa42feb70d5cae6b24",
+    "recordedPotLimitRaiseTo": 2404,
+    "declaredRaiseTo": 2169,
+    "stackRaiseTo": 340,
+    "currentBet": 575,
+    "heroBet": 0,
+    "callCost": 340,
+    "wagerCap": null
+   },
+   {
+    "eventId": "13541d5d776908e4e332e586f2d7f1f46f8888696c9ff7af144368259e064e3e",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 9792,
+    "handKey": "9854d4124893f61b8d4bd0c4b130fbd82b28b84dbfdb778e3ca7c883eb91571c",
+    "turnKey": "27d867f6cd6f7d48e7f30623e746afe76fffb7ab0befd31bfe162bd2f10a5bd1",
+    "segment": "de47d557bdc0f99545da88a0ee209e4e78919f8c143fafc4135cdc03e4ae8d9f",
+    "recordedPotLimitRaiseTo": 2404,
+    "declaredRaiseTo": 2169,
+    "stackRaiseTo": 340,
+    "currentBet": 575,
+    "heroBet": 0,
+    "callCost": 340,
+    "wagerCap": null
+   },
+   {
+    "eventId": "8a88777eb95eff158068aba815ba65d37b238fb28c75f677012fe62e5c2d18f1",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 10164,
+    "handKey": "51d1b4113c48f9288819aae020b55ef8d01312b51f0dc280e0ea8f70533e6cb2",
+    "turnKey": "129a59b95b20d80276ff68ef75a4554eb1bebc3632170e06597207ed21ff192d",
+    "segment": "46482c0a874c89c8c56ff3d078aa9fd2154fc155f71885f8438e3e764d5a78af",
+    "recordedPotLimitRaiseTo": 970,
+    "declaredRaiseTo": 830,
+    "stackRaiseTo": 230,
+    "currentBet": 370,
+    "heroBet": 180,
+    "callCost": 50,
+    "wagerCap": null
+   },
+   {
+    "eventId": "e98baf74042f0feab2f3afb6db458a83b4fd78b1c24d232a86cf82a9b1c023a8",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 10270,
+    "handKey": "51d1b4113c48f9288819aae020b55ef8d01312b51f0dc280e0ea8f70533e6cb2",
+    "turnKey": "b79e250dfb6a6db82b6545bd9a206028ec195601518914662f886c322fd23129",
+    "segment": "aea113cf92f2145794829b20bdbd1d929229be3abf0acf9caed76392508650a2",
+    "recordedPotLimitRaiseTo": 970,
+    "declaredRaiseTo": 830,
+    "stackRaiseTo": 230,
+    "currentBet": 370,
+    "heroBet": 180,
+    "callCost": 50,
+    "wagerCap": null
+   },
+   {
+    "eventId": "6ec14dd331d30a2f52956f0601119b632c203292d0a8bb0a5bebbccedc1d88d5",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 13591,
+    "handKey": "3e9dec39ffccec85e0e1297396d7d953b2f11f607d1ac2e7b5ebffaa69f8a734",
+    "turnKey": "786682ba7431c4e147f9a6059cfa68d5d20f5f3c20433c862c708bb4672fbcc6",
+    "segment": "43ba423fb66059206f2ca0a5789ea59700c7758641595249691467c15e128992",
+    "recordedPotLimitRaiseTo": 940,
+    "declaredRaiseTo": 920,
+    "stackRaiseTo": 79,
+    "currentBet": 99,
+    "heroBet": 0,
+    "callCost": 79,
+    "wagerCap": null
+   },
+   {
+    "eventId": "9598242fb011dcd459cd49e32d14624047a7a5cce659cee8a178e7c7d5960bf9",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 13914,
+    "handKey": "3e9dec39ffccec85e0e1297396d7d953b2f11f607d1ac2e7b5ebffaa69f8a734",
+    "turnKey": "2595f9ceb93e8b9bd206700fe94e7f92dae3c0eb6777db8455b67b1d540dd5dd",
+    "segment": "e975e883022a7763d390a612f7fa6d763604608399395099577542332446b717",
+    "recordedPotLimitRaiseTo": 920,
+    "declaredRaiseTo": 880,
+    "stackRaiseTo": 59,
+    "currentBet": 99,
+    "heroBet": 0,
+    "callCost": 59,
+    "wagerCap": null
+   },
+   {
+    "eventId": "c4fd89e963b02fb66c66e0ed2b89645b45e3a41a339c2fb6ec9bbea6856feda3",
+    "producerId": "cbb75375-f1fd-46e5-b20c-3c310315e329",
+    "sequence": 11847,
+    "handKey": "f300793322dcc698a67291b58883323db7bf41cf029ca28a2b3a4071ef08716e",
+    "turnKey": "b9193cb4728317851d16f91936d30a290fcba9664c59df9c39cf2f4247d51c21",
+    "segment": "23e12dcdab0955d0ce7c6125f0f1e395708438a2e762f46e558748e5d80cea71",
+    "recordedPotLimitRaiseTo": 607,
+    "declaredRaiseTo": 572,
+    "stackRaiseTo": 99,
+    "currentBet": 134,
+    "heroBet": 0,
+    "callCost": 99,
+    "wagerCap": null
+   },
+   {
+    "eventId": "5d1d3a00a108c3f7872a7b99977da3ce12deb90fba9d6c32f863054d1315e306",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 15322,
+    "handKey": "66f2abfb814d70b5965d4893f855e1c9470f962bf759abd49fcfc5e65a19829a",
+    "turnKey": "1c8dcaa4cc4ba0fc4a9cbff9204391a462b9729416e218b6b8eac4cd337cb0cf",
+    "segment": "bf24564f6056ce94a46795172943332a2b8af98506b75409f14acde2eb1ffb13",
+    "recordedPotLimitRaiseTo": 555,
+    "declaredRaiseTo": 510,
+    "stackRaiseTo": 55,
+    "currentBet": 100,
+    "heroBet": 0,
+    "callCost": 55,
+    "wagerCap": null
+   },
+   {
+    "eventId": "ec5312a65ab3fa4f06dcd1c20a0c1b4a217237608b1ca082a238d99e3f0553ed",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 16206,
+    "handKey": "6df9247d0bad07f18b8dc46703e880e7d1b09fa25b3d9d381a1873894a4cd939",
+    "turnKey": "cf5c560894c4a4856a1dd8442ed049c87eeb252ec6a74ae074cf5c60b52ddcf6",
+    "segment": "f21def968920ba85fe9413c9bb72b24bd07be9f0a4c76f364097ff58837dee6f",
+    "recordedPotLimitRaiseTo": 250,
+    "declaredRaiseTo": 215,
+    "stackRaiseTo": 20,
+    "currentBet": 55,
+    "heroBet": 0,
+    "callCost": 20,
+    "wagerCap": null
+   },
+   {
+    "eventId": "0ccad62f3d0b143c7aba9cf4ff8611ae756f624397894bcdacb1d0ae10ff8ad1",
+    "producerId": "52e3ab0a-3cad-4b37-916f-3dfb9601f804",
+    "sequence": 16351,
+    "handKey": "188378fc847ec164647e3042c0b6d71e992767282deed68c8875c34a680320fb",
+    "turnKey": "fc298dcf93e63195ee463cd6284dc8437363bdb89a3fd044737f63c801fc30b7",
+    "segment": "01534f6fe5215fe7e15a19ac739566adae3d880cd26bc54508ad5b5237a91a08",
+    "recordedPotLimitRaiseTo": 852,
+    "declaredRaiseTo": 624,
+    "stackRaiseTo": 132,
+    "currentBet": 360,
+    "heroBet": 120,
+    "callCost": 12,
+    "wagerCap": null
+   }
+  ],
+  "B3_eligibleWithoutCensusBlindSeats": 0
+ },
+ "breakdowns": {
+  "gameMode": {
+   "tournament": 27896,
+   "cash": 10523
+  },
+  "street": {
+   "preflop": 26513,
+   "flop": 6067,
+   "turn": 3645,
+   "river": 2194
+  },
+  "position": {
+   "button": 18097,
+   "early": 1062,
+   "middle": 1200,
+   "big_blind": 11799,
+   "cutoff": 1483,
+   "small_blind": 4138,
+   "refused:None": 640
+  },
+  "depthBand": {
+   "<=40": 23097,
+   "100-250": 6683,
+   "40-100": 7999,
+   "refused:>250": 640
+  },
+  "rangeStatus": {
+   "not_consumed_preflop": 26037,
+   "refused_no_binding": 640,
+   "unavailable": 7687,
+   "consumed": 4055
+  },
+  "acceptedAction": {
+   "fold": 17958,
+   "raise": 6602,
+   "all_in": 1124,
+   "call": 4266,
+   "check": 5149,
+   "bet": 2679,
+   "none": 641
+  },
+  "refusalReason": {
+   "depth_or_ante_outside_pack": 640
+  },
+  "eligibleReason": {
+   "preflop_entry_declined": 16135,
+   "preflop_defense": 8435,
+   "preflop_entry": 990,
+   "postflop_protected_check": 6701,
+   "postflop_value": 776,
+   "postflop_price_call": 2361,
+   "preflop_call_off": 210,
+   "preflop_reshove": 112,
+   "postflop_nut_draw_pressure": 183,
+   "postflop_bluff_catcher_fold": 548,
+   "postflop_dominated_draw_fold": 170,
+   "postflop_price_fold": 657,
+   "preflop_reraise": 122,
+   "preflop_complete": 28,
+   "work_budget": 46,
+   "postflop_value_raise": 259,
+   "postflop_nut_raise": 46
+  },
+  "executionStatus": {
+   "intended": 37778,
+   "not_executed": 641
+  },
+  "lane": {
+   "DECIDE_FAST": 37783,
+   "DECIDE_DEEP": 636
+  },
+  "deadButton": {
+   "tournament/preflop/eligible": 8,
+   "tournament/flop/eligible": 4,
+   "tournament/turn/eligible": 3,
+   "tournament/river/eligible": 2
+  },
+  "deadSmallBlind": {
+   "tournament/preflop/eligible": 6,
+   "tournament/flop/eligible": 2,
+   "tournament/turn/eligible": 2
+  },
+  "blindSeatsPresence": {
+   "object": 38419
+  },
+  "B2Outcome": {
+   "eligible": 17
+  },
+  "B5Detail": {},
+  "selection": {
+   "none": 24744,
+   "shadow_change": 13675
+  },
+  "authorityState": {
+   "unselected": 38419
+  },
+  "authorityVerdict": {
+   "None": 38419
+  },
+  "witnessSelection": {
+   "none": 24744,
+   "shadow_change": 13675
+  },
+  "witnessAuthorityState": {
+   "unselected": 38419
+  },
+  "witnessVerdict": {
+   "None": 38419
+  },
+  "censusBlindSeats": {
+   "live_small_blind": 37769,
+   "dead_small_blind": 10
+  }
+ },
+ "eligibleByModeAndStreet": {
+  "cash/flop": 2062,
+  "cash/preflop": 5582,
+  "cash/river": 934,
+  "cash/turn": 1503,
+  "tournament/flop": 3922,
+  "tournament/preflop": 20455,
+  "tournament/river": 1229,
+  "tournament/turn": 2092
+ },
+ "fieldMap": {
+  "population": "journal records with kind == \"decision\"; decision time = body.snapshot.decisionTimeMs (the decision instant, not the journal atMs); variant = body.snapshot.gameState.gameVariant == \"plo4\" and single board = gameState.boardCount in (absent, 1) with no communityCards2/3; cash/tournament = gameState.gameMode; release = record.sourceRelease",
+  "variant_policy_step": "body.decision.policyGraph.transitions[].node == \"variant_policy\"",
+  "C1": "body.decision.plo4Policy present; eligible == (inputs != null); refused (eligible false) => inputs null and reason a non-empty name matching ^[a-z][a-z0-9_]{0,127}$; \"applied to the v2 binding\": an eligible binding has inputs.version == plo4-input-binding-v2 (failure binding_version_not_v2). A decision whose receipt the client dropped (#5998 F8, phase10_shadow_receipt_binding_dropped, which deletes plo4Policy and the phase10 policyOwnership) has a variant_policy step and no plo4Policy, so it fails C1 as plo4Policy_missing and is listed by identifier, never dropped",
+  "C2": "plo4Policy.version and inputs.pack.version == plo4-policy-round1-v3 (and policyOwnership.packVersion); shape score label = inputs.approximation.handShape {kind: heuristic_entry_score, probability: false}; inputs.approximation.solverInput false and pack.calibratedConfidence null; range provenance = inputs.range.provenance {calibration: uncalibrated, solverInput: false} when present. Any other calibration label or a true solverInput anywhere in the binding is a defect",
+  "C3": "inputs.census: contestingOpponentSeats subset of dealtSeats, disjoint from foldedSeats and awaySeats; heroSeat in dealtSeats and not in foldedSeats; len(dealtSeats) in 2..8",
+  "C4": "set(inputs.range.provenance.opponents[].userId) == user ids of census.contestingOpponentSeats, the seat -> user id map taken from body.snapshot.gameState.players (when provenance is non-null)",
+  "C5": "from the recorded snapshot (gameState.pot, currentBet, bigBlind, maxRaiseTo; player.stack, bet; the contesting players stack+bet): call = min(heroStack, max(0, currentBet - heroBet)) [the declared \"call price\" is the chip call cost, inputs.geometry.callCost, not the postflop callPrice ratio]; pot-limit raise-to = (heroBet + call) + (pot + call), i.e. the street total after calling plus the pot after calling; gated: min(raise-to, heroBet + heroStack) == min(geometry.potLimitRaiseTo, geometry.stackRaiseTo) on every eligible record, the uncapped geometry.potLimitRaiseTo == raise-to wherever the hero can complete the call, and min(raise-to, heroBet + heroStack, engine maxRaiseTo) == geometry.wagerCap. Where the hero cannot complete the call no raise exists; an uncapped difference there is counted and listed under supplementary, not gated; effective depth = min(hero stack+bet, deepest contesting opponent stack+bet) / BB == inputs.depth.effectiveBB and <= 250 on every eligible proposal; every decision with recomputed depth > 250 is not eligible and, when it reached the depth check, is named depth_or_ante_outside_pack",
+  "C6": "plo4Policy.readFrameSha256 is 64 hex on every eligible decision and equals body.readFrame.sha256 (the frame the decision record retains); the witness is the execution record joined on (producerId, turnKey): phase10Inputs {version horse-phase10-input-binding-v1, inputSha256 == recomputed sha256 of canonical inputs, readFrameSha256 == plo4Policy.readFrameSha256, rangeStatus == inputs.range.status}; phase10Inputs null for a refused proposal",
+  "C7": "plo4Policy.mode == shadow and applied == false; the variant_policy transition is unchanged (after == before == {baselineAction, baselineAmount}); the accepted action = the controller-accepted record in the joined execution witness (acceptedActions[0].record.action). Compared literally with the baseline; any difference is attributed to the later policy node that changed it (policyGraph transitions after variant_policy) or to controller coercion/fallback, never silently",
+  "B1": "C1-C6 above, each counted and gated separately; B1 passes only if all six pass. The P10.1 C7 (authority) is not part of B1; the declaration restates it as B4",
+  "B2": "dead button = body.snapshot.gameState.dealerSeat not in the dealt seats (gameState.dealtSeatIds, or the snapshot player seats when dealtSeatIds is absent, as in C5); population for the gate = gameMode == tournament and 3 or more dealt seats. Gated: plo4Policy.reason != canonical_state_unavailable; the decision is eligible with a binding (eligible true, inputs an object) or refused with another name (counted by name). A dead-button decision with no plo4Policy at all (F8 drop) fails B2 as no_receipt",
+  "B3": "every eligible decision whose inputs.census carries blindSeats. The posted blinds are the engine's snapshot.gameState.blindSeats (HandController.getBlindSeatsSnapshot); gated: census.blindSeats equals them exactly and census.dealerSeat == gameState.dealerSeat. The binding labels two seats, the hero (positions.hero at census.heroSeat) and the aggressor (positions.aggressor at positions.aggressorSeat, when non-null); for each labelled seat: label small_blind => seat == blindSeats.smallBlind, label big_blind => seat == blindSeats.bigBlind. \"Consistent with the clockwise order from the button\", recomputed here from census.dealerSeat and census.dealtSeats alone: cw = dealt seats clockwise starting after the dealer seat (the dealer seat itself last when dealt); heroOffset == (index of hero in cw + 1) mod n; the posted blinds are the first seats of cw excluding an occupied button (smallBlind then bigBlind, or bigBlind alone when smallBlind is null, which needs a tournament table of 3 or more), heads-up smallBlind is the button and bigBlind the other seat; the expected label of a seat is button for the last seat of cw (the seat that acts last), big_blind / small_blind for the posted seats, and for the seats strictly between the big blind and that last seat: cutoff for the last of them, early for the first, middle otherwise; hero and aggressor labels must equal the expected labels; an empty dealer seat is accepted only at a tournament table of 3 or more (empty_button_outside_tournament_3plus)",
+  "B4": "every population record that carries plo4Policy: plo4Policy.mode == shadow, applied == false, the variant_policy transition unchanged (P10.1 C7 clauses), and the accepted action is never the proposal where no later node or controller explains it (C7 failure accepted_proposal_not_baseline). Selection outcome records: plo4Policy.selection and the execution witness phase10Authority.selection must be none or shadow_change (never selected, controller_accepted or withdrawn_before_acceptance, which follow a selection); plo4Policy.authority.state and phase10Authority.authority.state must be unselected or refused, and a non-null authorityVerdict / phase10Authority.verdict must be unselected or refused. Any other value fails the literal reading and is listed",
+  "B5": "plo4Policy.reason == blind_seats_unavailable counted on the population; every journal decision record is a live engine decision (snapshot.type DECIDE_FAST or DECIDE_DEEP), so each one fails B5 and is listed as a wiring defect with gameState.blindSeats (absent / null) and gameState.bombPot",
+  "reported": "dead-button decisions (dealer seat not dealt, any mode and seat count) and dead-small-blind decisions (gameState.blindSeats.smallBlind null) by gameMode, street and outcome (eligible or the refusal name); refusal names and counts; dead-button canonical_state_unavailable count beside the 465 of the 46bb9cf6 window, context only",
+  "exclusions": "each decision record takes the first matching name, in this order: unreadable_record, outside_window, release_other, not_plo4 (other variant, or multi-board plo4 under plo4_multiboard), no_variant_policy_step. unreadable_record counts every line or segment in the scanned set that failed to decode or failed the journal schema, whatever its kind or time, because an unreadable record has no trustworthy kind or time"
+ },
+ "extensions": [
+  "docstring, version label p10-blindseats-journal-observe-v1 and declarationSha256 point at declaration-p10-blindseats.txt",
+  "optional fifth argument: the expected binding version (default plo4-input-binding-v2; a dry run on a v1 release passes plo4-input-binding-v1)",
+  "C1: an eligible binding must carry inputs.version == the expected binding version (binding_version_not_v2)",
+  "REFUSED_BEFORE_DEPTH (used by C5 for refusals taken before the depth check) follows the Plo4LivePolicy order at 795e6e45: adds blind_seats_unavailable (taken after seat_count_outside_pack and before private_state_rejected); dead_button_blinds_unproven (#5992) no longer exists",
+  "execution witness join also keeps phase10Authority (selection, authority, verdict) for B4",
+  "B2, B3, B4 and B5 checks; the P10.1 C7 is evaluated inside B4 (its failures keep their C7 names)",
+  "reported breakdowns: dead-button and dead-small-blind decisions by mode, street and outcome; gameState.blindSeats presence; dead-button canonical_state_unavailable beside 465",
+  "B1 verdict aggregated from C1-C6",
+  "window bounds accept fractional seconds (T0 is the container start to the nanosecond): the half-open window on the integer decisionTimeMs uses ceil(bound in ms) at both ends, which is exactly [T0+5min, T0+50min)"
+ ],
+ "wallSeconds": 955.2
+}

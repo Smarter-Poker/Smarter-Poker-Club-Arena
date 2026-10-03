@@ -1,0 +1,36 @@
+{
+ "window": [
+  "2026-10-03T18:20:00Z",
+  "2026-10-03T18:30:00Z"
+ ],
+ "byFormatSeats": {
+  "('hu_sng', 2)": 4368,
+  "('spin', 3)": 2735,
+  "('mtt', 8)": 334,
+  "dead_button ('mtt', 8)": 61,
+  "('mtt', 3)": 1
+ },
+ "tournamentsWithMaxDealtAtLeast4": {
+  "1f4fc8fc-d998-4e12-81e8-4937bd333151": {
+   "decisions": 334,
+   "dead_button": 61,
+   "maxDealt": 7,
+   "tables": 30,
+   "format": "mtt",
+   "seatsPerTable": 8,
+   "status": {
+    "RUNNING": 334
+   },
+   "playersLeftRange": [
+    8,
+    112
+   ]
+  }
+ },
+ "tournaments": 154,
+ "tournamentsByMaxDealt": {
+  "2": 106,
+  "3": 47,
+  "7": 1
+ }
+}

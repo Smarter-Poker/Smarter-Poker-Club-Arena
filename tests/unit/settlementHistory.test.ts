@@ -29,9 +29,41 @@ describe('parseSettlementHistory', () => {
     ]);
   });
 
-  it('preserves the historical fallback when duplicated split fields are absent', () => {
-    const parsed = parseSettlementHistory([row({ breakdown: {} })]);
-    expect(parsed?.[0]).toMatchObject({ unionTax: 10.05, netSettlement: 90.2 });
+  it('accepts binary serialization dust in a duplicated historical split', () => {
+    const parsed = parseSettlementHistory([
+      row({
+        gross_amount: '4719.32',
+        net_amount: '471.93',
+        breakdown: {
+          union_hold_amount: '471.93',
+          club_retained: 4247.389999999999,
+        },
+      }),
+    ]);
+    expect(parsed?.[0]).toMatchObject({
+      totalRake: 4719.32,
+      unionTax: 471.93,
+      netSettlement: 4247.39,
+    });
+  });
+
+  it('refuses a direction-only transfer document without rake-split mirrors', () => {
+    expect(
+      parseSettlementHistory([
+        row({
+          gross_amount: '485808.88',
+          net_amount: '485808.88',
+          breakdown: { category: 'rakeback' },
+        }),
+      ])
+    ).toBeNull();
+  });
+
+  it.each([
+    ['union hold', { club_retained: '90.20' }],
+    ['club retained', { union_hold_amount: '10.05' }],
+  ])('refuses a settlement missing its duplicated %s mirror', (_label, breakdown) => {
+    expect(parseSettlementHistory([row({ breakdown })])).toBeNull();
   });
 
   it.each([

@@ -19,10 +19,9 @@ strict-mode ambiguity.
 
 - Product: the tag-line input is named `Club Tag Line`; the counter is its
   accessible description (`aria-describedby`). Layout is unchanged.
-- Certificate (the tag-line locator itself was already moved to a name prefix
-  by #5920): the disabled `Not Now` card is matched by its title prefix, and
-  the retirement dialog proves the opening-grant line and the wallet-total line
-  separately.
+- Certificate (the tag-line and `Not Now` locators were moved to name
+  prefixes by #5920 and #5930): the retirement dialog proves the opening-grant
+  line and the wallet-total line separately.
 - The component behaviour test pins the exact field name and the live
   description.
 

@@ -70,13 +70,34 @@ describe('a board opens only for an owner whose club is live', () => {
     expect(body).toMatch(/liveBoardOwners\(owners, active, this\.boardOwnerGoneUntil\)/);
   });
 
-  it('the atomic creator backs an owner off on the club foreign key and reports it once', () => {
+  // 2026-10-03: a deleted owner club is information, not a fault. It is said
+  // once per back-off (console), never as a reported error, and the board
+  // loop stops asking for that owner while it is held.
+  it('the atomic creator backs an owner off on the club foreign key and says it once', () => {
     const body = methodSource('createSeatFirstGameAtomic');
     expect(body).toMatch(/isBoardOwnerGoneRefusal\(error\?\.message\)/);
     expect(body).toMatch(
       /boardOwnerGoneUntil\.set\(ownerClubId, Date\.now\(\) \+ BOARD_OWNER_GONE_BACKOFF_MS\)/
     );
-    expect(body).toMatch(/if \(alreadyHeld\) return null;/);
+    const gone = body.slice(body.indexOf('isBoardOwnerGoneRefusal(error?.message)'));
+    const branch = gone.slice(0, gone.indexOf('return null;') + 'return null;'.length);
+    expect(branch).toMatch(/if \(!alreadyHeld\)/);
+    expect(branch).not.toMatch(/reportError\(/);
+    expect(methodSource('ensureBoardOpen')).toMatch(
+      /boardOwnerGoneUntil\.get\(owner\.clubId\) \?\? 0\) > Date\.now\(\)\) return;/
+    );
+  });
+
+  it('a frozen tick stands down without reporting, and the caller never reports "null"', () => {
+    const body = methodSource('createSeatFirstGameAtomic');
+    expect(body).toMatch(/if \(\/platform_frozen\/\.test\(reason\)\) return null;/);
+    expect(body.indexOf('platform_frozen')).toBeLessThan(body.indexOf('reportError('));
+    const sng = methodSource('createSNG');
+    expect(sng).not.toContain('JSON.stringify(creationError)');
+    expect(sng).toMatch(/if \(!seatFirstSng\) \{\s*reportError\(/);
+    expect(methodSource('ensureBoardOpen')).toMatch(
+      /if \(isMaintenanceFrozen\(\)\) return;\s*[\s\S]{0,200}const result = await create\(config, owner\);/
+    );
   });
 });
 

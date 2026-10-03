@@ -3666,12 +3666,30 @@ export class TournamentRecurringService {
     } | null;
     if (error || result?.ok !== true || !result.tournament || !result.table_id) {
       const ownerClubId = typeof row.club_id === 'string' ? row.club_id : null;
+      /* TWO ANSWERS THAT ARE NOT FAULTS (2026-10-03). Measured over the six
+         hours to 05:10 UTC: 54 of 72 atomic creation reports were
+         platform_frozen - a board tick that began before :53 and kept
+         creating after the announcement, refused by the entry freeze exactly
+         as designed - and 9 were tournaments_club_id_fkey, an owner club
+         deleted (club deletion, certification reset) between the owner read
+         and the insert. Each was reported again by its caller as
+         "creation failed: null". Neither created anything, neither needs
+         anyone; they buried the lock timeouts that do. The frozen tick stands
+         down; the gone owner is held out for the back-off and said once, as
+         information. Everything else is still reported with its real reason. */
+      const reason = String(error?.message ?? result?.reason ?? '');
+      if (/platform_frozen/.test(reason)) return null;
       if (ownerClubId && isBoardOwnerGoneRefusal(error?.message)) {
         // The owner's club row is gone: hold its board out for the back-off
         // and say so once, instead of refusing on every tick.
         const alreadyHeld = (this.boardOwnerGoneUntil.get(ownerClubId) ?? 0) > Date.now();
         this.boardOwnerGoneUntil.set(ownerClubId, Date.now() + BOARD_OWNER_GONE_BACKOFF_MS);
-        if (alreadyHeld) return null;
+        if (!alreadyHeld) {
+          console.log(
+            `[TournamentRecurring] ${context} board for club ${ownerClubId.slice(0, 8)} stands down: the club was deleted`
+          );
+        }
+        return null;
       }
       reportError(
         new Error(
@@ -3882,6 +3900,10 @@ export class TournamentRecurringService {
          over a few ticks instead. */
       let launched = 0;
       for (const config of missing.slice(0, budget.left)) {
+        // The tick may have started before :53; every creation is an entry
+        // door that the announcement closes, so stop at the freeze.
+        if (isMaintenanceFrozen()) return;
+        if ((this.boardOwnerGoneUntil.get(owner.clubId) ?? 0) > Date.now()) return;
         const result = await create(config, owner);
         if (result.tournamentId) {
           launched++;
@@ -4489,12 +4511,19 @@ export class TournamentRecurringService {
       }
 
       if (creationError || !sng) {
-        reportError(
-          new Error(
-            `[TournamentRecurring] SNG creation failed: ${creationError?.message || JSON.stringify(creationError) || 'Unknown error'}`
-          ),
-          'TournamentRecurring.SNG_creation_failed'
-        );
+        // The seat-first door has already reported its own refusal with the
+        // real reason (or stood down on a non-fault). Only the plain insert
+        // path is reported here, and never as "null".
+        if (!seatFirstSng) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] SNG creation failed: ${
+                creationError?.message ?? 'the insert returned no row and no error'
+              }`
+            ),
+            'TournamentRecurring.SNG_creation_failed'
+          );
+        }
         return { tournamentId: null, registered: 0 };
       }
 

@@ -225,3 +225,62 @@ the bytes and both halves of the reconciliation.
 `20261002225231` stays deleted: it was never applied, and #5875's
 `20261002223819` already took the same operation id as
 `(array_agg(reset_operation_id ORDER BY reset_operation_id))[1]`.
+
+## 00:10Z: the fourth cause, and the one the aggregate was hiding
+
+With `min(uuid)` fixed (#5875) and the hard twelve-game board relaxed (#5884,
+applied from `main` at 00:03Z through `Apply Merged Migration` run 37080417296),
+the certification reached the next predicate and refused with
+`POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED` (run 37080553539).
+
+Eight predicates stand in that block. Read from rows rather than guessed, for
+both stranded clubs, exactly one fails:
+
+| predicate                                | wanted | got   |
+| ---------------------------------------- | ------ | ----- |
+| `spin_bonus_pools` row, exact zero state | 1      | 1     |
+| `spin_reserve_ledger` rows               | 4      | 4     |
+| `seed` / `activation` legs               | 1 / 1  | 1 / 1 |
+| `seed_return` / `deactivation` legs      | 1 / 1  | 1 / 1 |
+| `bbj_promo_sweep` receipt                | 1      | 1     |
+| **`chip_ledger` reversal leg**           | **1**  | **0** |
+
+The reversal leg exists and is right. What does not match is the key it is looked
+up by. The live row is
+
+```
+from_type spin_reserve  from_entity_id <the club's spin_bonus_pools row>
+to_type   club_treasury to_entity_id   <the club>
+amount    200.00        category       reversal
+idempotency_key  spin-deactivation-seed-return:<club>:200.00
+```
+
+and `20261002210559` asks for
+`'spin-deactivation-seed-return:'||p_club_id::text||':200'`. The writer builds
+that key from a numeric, and numeric 200 renders `200.00`, so the two strings
+have never been equal and this predicate has never once passed. It is the same
+class of defect as the `min(uuid)` in the same routine: a type's text form assumed
+instead of read, and the aggregate was aborting before anything could reach it.
+
+`20261003001046_the_seed_return_lineage_matches_the_key_the_reversal_actuall.sql`
+does not swap one literal for another, because hard-coding `:200.00` breaks again
+the next time the writer's scale or type moves. The predicate now says what it
+means:
+
+```sql
+AND l.idempotency_key LIKE 'spin-deactivation-seed-return:'||p_club_id::text||':%'
+AND split_part(l.idempotency_key,':',3)::numeric=200
+```
+
+The key has three colon-separated parts and a uuid contains no colon, so part 3
+is the amount. `from_type`, `from_entity_id`, `to_type`, `to_entity_id`, `amount`,
+`category` and the required count of one are untouched: the admission is exactly
+as strict as it was meant to be, and no weaker.
+
+It is a guarded rewrite in the idiom `20261002223819` and `20261002231724`
+established on this same routine: assert the preimage digest, substitute once,
+assert the postimage and the routine's own catalog contract and grants, and abort
+if the source moved. An already-rewritten source is a no-op rather than a
+failure. Three agents edited this function on 2026-10-02; a blind
+`CREATE OR REPLACE` would have discarded whichever of their changes landed last,
+which is the mistake the first correction above is about.

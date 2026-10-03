@@ -24,6 +24,7 @@ FRESH_BOARD_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002205511_welco
 POST_RESET_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002210559_post_reset_welcome_certification_cleanup.sql'
 POST_RESET_UUID_ORDER_MIGRATION = ROOT / 'supabase/migrations/20261002223819_post_reset_cleanup_orders_uuid_values.sql'
 POST_RESET_ATOMIC_BOARD_MIGRATION = ROOT / 'supabase/migrations/20261002231724_post_reset_cleanup_accepts_atomic_board_absence.sql'
+POST_RESET_SPIN_RETURN_MIGRATION = ROOT / 'supabase/migrations/20261003001112_post_reset_cleanup_follows_the_real_spin_return_lineage.sql'
 TERMINAL_TABLE_GUARD_MIGRATION = ROOT / 'supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 _terminal_guard_source = TERMINAL_TABLE_GUARD_MIGRATION.read_text()
 TERMINAL_TABLE_GUARD_FIXTURE = _terminal_guard_source[
@@ -41,7 +42,7 @@ socket = cluster / 'socket'; socket.mkdir(mode=0o700)
 port = '55479'
 env = {k:v for k,v in os.environ.items() if not k.startswith('PG')}; env['LC_ALL']='C'
 psql = [str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','-d','postgres']
-results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name], 'cases': [], 'passed': False}
+results = {'migrations': [MIGRATION.name, CLEANUP_MIGRATION.name, HOT_TRIGGER_MIGRATION.name, CLUB_HISTORY_MIGRATION.name, REQUEST_ACTIVATION_MIGRATION.name, LEDGER_COUNTERPARTY_REPAIR_MIGRATION.name, LEDGER_CATEGORY_REPAIR_MIGRATION.name, DERIVED_TABLE_CLEANUP_MIGRATION.name, AUTHORITATIVE_LEASE_REPAIR_MIGRATION.name, CONTROLLER_PROVENANCE_REPAIR_MIGRATION.name, SCHEDULE_SPAWN_CLEANUP_MIGRATION.name, UNMATERIALIZED_SPAWN_CLEANUP_MIGRATION.name, BOARD_GAME_CLEANUP_MIGRATION.name, BOARD_LEASE_CLEANUP_MIGRATION.name, BOARD_ORIGIN_CLEANUP_MIGRATION.name, BOARD_DELETE_PERMIT_MIGRATION.name, FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name, POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name, POST_RESET_SPIN_RETURN_MIGRATION.name], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
     return subprocess.run([str(x) for x in argv], input=sql, text=True, capture_output=True, env=env, timeout=120)
@@ -438,6 +439,59 @@ $restore$;
     run('restore-post-reset-atomic-board-config',
         "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
     run('verify-restored-post-reset-atomic-board-config',POST_RESET_ATOMIC_BOARD_MIGRATION.read_text())
+    run('install-post-reset-spin-return-lineage',POST_RESET_SPIN_RETURN_MIGRATION.read_text())
+    run('reinstall-post-reset-spin-return-lineage',POST_RESET_SPIN_RETURN_MIGRATION.read_text())
+    run('post-reset-spin-return-catalog-contract',r"""
+SELECT md5(p.prosrc),p.prosecdef,r.rolname,p.proconfig,
+       NOT p.proleakproof,p.proparallel='u',
+       has_function_privilege('anon',p.oid,'EXECUTE'),
+       has_function_privilege('authenticated',p.oid,'EXECUTE'),
+       has_function_privilege('service_role',p.oid,'EXECUTE'),
+       EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+               WHERE a.privilege_type='EXECUTE' AND a.grantee<>p.proowner),
+       p.prosrc LIKE '%spin-deactivation-seed-return:''||p_club_id::text||'':200.00''%'
+  FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+ WHERE p.oid='fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure;
+""",'8ea4b2b5f9a80c4b8abbc620bd989c19|t|postgres|{"search_path=public, pg_temp"}|t|t|f|f|f|f|t')
+    run('tamper-post-reset-spin-return-source',r"""
+DO $tamper$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  IF strpos(v_definition,E'BEGIN\n  IF COALESCE')=0 THEN
+    RAISE EXCEPTION 'fixture source preimage missing';
+  END IF;
+  EXECUTE replace(v_definition,E'BEGIN\n  IF COALESCE',
+                  E'BEGIN\n  -- Spin return digest drift\n  IF COALESCE');
+END
+$tamper$;
+""")
+    run_refusal('refuse-tampered-post-reset-spin-return-source',
+                POST_RESET_SPIN_RETURN_MIGRATION.read_text(),
+                'POST_RESET_SPIN_RETURN_SOURCE_DIGEST_REFUSED')
+    run('restore-post-reset-spin-return-source',r"""
+DO $restore$
+DECLARE v_definition text;
+BEGIN
+  v_definition:=pg_get_functiondef(
+    'fn_ca_prepare_post_reset_welcome_certification_fixture(uuid)'::regprocedure
+  );
+  EXECUTE replace(v_definition,E'BEGIN\n  -- Spin return digest drift\n  IF COALESCE',
+                  E'BEGIN\n  IF COALESCE');
+END
+$restore$;
+""")
+    run('verify-restored-post-reset-spin-return-source',POST_RESET_SPIN_RETURN_MIGRATION.read_text())
+    run('tamper-post-reset-spin-return-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public;")
+    run_refusal('refuse-tampered-post-reset-spin-return-config',
+                POST_RESET_SPIN_RETURN_MIGRATION.read_text(),
+                'POST_RESET_SPIN_RETURN_POSTIMAGE_REFUSED')
+    run('restore-post-reset-spin-return-config',
+        "ALTER FUNCTION fn_ca_prepare_post_reset_welcome_certification_fixture(uuid) SET search_path TO public,pg_temp;")
+    run('verify-restored-post-reset-spin-return-config',POST_RESET_SPIN_RETURN_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
 CREATE FUNCTION test_shape_post_reset_welcome_fixture(
   p_club uuid,p_owner uuid,p_board_count integer DEFAULT 12,
@@ -528,7 +582,7 @@ BEGIN
   UPDATE bbj_pools SET main_balance=0,backup_balance=0,promo_balance=0,pool_amount=0,
     hands_contributed=0,total_contributed=0,total_paid_out=0,hit_count=0,status='retired'
    WHERE club_id=p_club RETURNING id INTO v_bbj;
-  UPDATE spin_bonus_pools SET balance=0,seeded_amount=0,seed_returned_amount=200,
+  UPDATE spin_bonus_pools SET balance=0,seeded_amount=0,seed_returned_amount=200.00::numeric,
     total_deposited=0,total_drawn=0,spin_count=0,bonus_count=0,surplus_returned=0,
     is_active=false,deactivated_at=now() WHERE club_id=p_club RETURNING id INTO v_spin;
   INSERT INTO spin_reserve_ledger(club_id,kind,amount,balance_after,note)
@@ -538,8 +592,9 @@ BEGIN
     to_label,amount,category,club_id,description,idempotency_key,pre_from_balance,
     post_from_balance,pre_to_balance,post_to_balance,metadata)
   VALUES(p_owner,'spin_reserve',v_spin,'Spin Reserve','club_treasury',p_club,'Club Treasury',
-    200,'reversal',p_club,'Welcome reset Spin seed return',
-    'spin-deactivation-seed-return:'||p_club::text||':200',200,0,99800,100000,
+    200.00::numeric,'reversal',p_club,'Welcome reset Spin seed return',
+    format('spin-deactivation-seed-return:%s:%s',p_club,200.00::numeric),
+    200.00::numeric,0,99800,100000,
     jsonb_build_object('reason','welcome_package_reset','operation_id',v_operation));
   INSERT INTO chip_transactions(club_id,amount,transaction_type,notes,balance_after,metadata)
   VALUES(p_club,100,'bbj_promo_sweep','Welcome reset BBJ return',100000,
@@ -683,6 +738,11 @@ COMMIT;
     owner22='00000000-0000-4000-8000-000000000022'; c23='00000000-0000-4000-9000-000000000023'
     owner23='00000000-0000-4000-8000-000000000023'; c24='00000000-0000-4000-9000-000000000024'
     owner24='00000000-0000-4000-8000-000000000024'; c25='00000000-0000-4000-9000-000000000025'
+    owner25='00000000-0000-4000-8000-000000000025'; c26='00000000-0000-4000-9000-000000000026'
+    owner26='00000000-0000-4000-8000-000000000026'; c27='00000000-0000-4000-9000-000000000027'
+    owner27='00000000-0000-4000-8000-000000000027'; c28='00000000-0000-4000-9000-000000000028'
+    owner28='00000000-0000-4000-8000-000000000028'; c29='00000000-0000-4000-9000-000000000029'
+    owner29='00000000-0000-4000-8000-000000000029'; c30='00000000-0000-4000-9000-000000000030'
     def shape_post_reset_fixture(case,owner,club,board_count=12,materialize_schedule=True):
         tournament_count=board_count+(1 if materialize_schedule else 0)
         table_count=9+tournament_count
@@ -923,6 +983,53 @@ DELETE FROM spin_reserve_ledger WHERE club_id='{c18}' AND kind='seed_return';
 SELECT fn_ca_retire_welcome_certification_club('{c18}','financial-cert');
 """,'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
     run('post-reset-financial-refusal-preserves-fixture',f"SELECT count(*),(SELECT count(*) FROM spin_reserve_ledger WHERE club_id='{c18}'),(SELECT chip_treasury FROM clubs WHERE id='{c18}') FROM tables WHERE club_id='{c18}';",'22|3|100000')
+
+    shape_post_reset_fixture('post-reset-normalized-spin-key-refusal-setup',owner25,c26)
+    run_refusal('post-reset-refuses-normalized-spin-return-key-atomically',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE chip_ledger
+   SET idempotency_key='spin-deactivation-seed-return:'||'{c26}'::uuid::text||':200'
+ WHERE club_id='{c26}' AND category='reversal';
+SELECT fn_ca_retire_welcome_certification_club('{c26}','normalized-spin-key-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
+    run('post-reset-normalized-spin-key-refusal-preserves-fixture',f"""
+SELECT count(*),(SELECT count(*) FROM tournaments WHERE club_id='{c26}'),
+       (SELECT count(*) FROM tables WHERE club_id='{c26}'),
+       (SELECT chip_treasury FROM clubs WHERE id='{c26}'),
+       (SELECT count(*) FROM chip_ledger WHERE club_id='{c26}'
+         AND idempotency_key='spin-deactivation-seed-return:'||'{c26}'::uuid::text||':200')
+  FROM club_welcome_package_items WHERE club_id='{c26}';
+""",'10|13|22|100000|1')
+
+    shape_post_reset_fixture('post-reset-one-decimal-spin-key-refusal-setup',owner26,c27)
+    run_refusal('post-reset-refuses-one-decimal-spin-return-key',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE chip_ledger SET idempotency_key='spin-deactivation-seed-return:'||'{c27}'::uuid::text||':200.0'
+ WHERE club_id='{c27}' AND category='reversal';
+SELECT fn_ca_retire_welcome_certification_club('{c27}','one-decimal-spin-key-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
+
+    shape_post_reset_fixture('post-reset-malformed-spin-key-refusal-setup',owner27,c28)
+    run_refusal('post-reset-refuses-malformed-spin-return-key',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE chip_ledger SET idempotency_key='spin-deactivation-seed-return:malformed'
+ WHERE club_id='{c28}' AND category='reversal';
+SELECT fn_ca_retire_welcome_certification_club('{c28}','malformed-spin-key-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
+
+    shape_post_reset_fixture('post-reset-wrong-spin-amount-refusal-setup',owner28,c29)
+    run_refusal('post-reset-refuses-wrong-spin-return-amount',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE chip_ledger SET amount=201 WHERE club_id='{c29}' AND category='reversal';
+SELECT fn_ca_retire_welcome_certification_club('{c29}','wrong-spin-amount-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
+
+    shape_post_reset_fixture('post-reset-wrong-spin-source-refusal-setup',owner29,c30)
+    run_refusal('post-reset-refuses-wrong-spin-return-source',f"""
+SET request.jwt.claim.role='service_role';
+UPDATE chip_ledger SET from_entity_id='{c30}' WHERE club_id='{c30}' AND category='reversal';
+SELECT fn_ca_retire_welcome_certification_club('{c30}','wrong-spin-source-cert');
+""",'POST_RESET_CERTIFICATION_SEED_RETURN_LINEAGE_REFUSED')
 
     shape_post_reset_fixture('post-reset-managed-command-refusal-setup',owner18,c19)
     run_refusal('post-reset-refuses-nonterminal-managed-command-atomically',f"""

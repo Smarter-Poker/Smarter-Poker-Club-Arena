@@ -15,6 +15,7 @@ CURRENT_RESET_MIGRATION = ROOT / 'supabase/migrations/20261002152207_new_clubs_o
 INDEXED_RESET_HAND_CHECKS_MIGRATION = ROOT / 'supabase/migrations/20261002165000_welcome_reset_indexed_hand_checks.sql'
 CURRENT_BBJ_PROMO_HISTORY_MIGRATION = ROOT / 'supabase/migrations/20261002172627_welcome_reset_optional_bbj_promo_history.sql'
 COMPLETE_RESET_GRAPH_MIGRATION = ROOT / 'supabase/migrations/20261003021809_welcome_reset_complete_package_graph.sql'
+SATELLITE_TARGET_UUID_MIGRATION = ROOT / 'supabase/migrations/20261003035741_satellite_target_is_a_uuid_not_text_in_the_welcome_reset_gra.sql'
 DERIVED_TABLE_CLEANUP_MIGRATION = ROOT / 'supabase/migrations/20261002021610_welcome_certification_retires_package_derived_cash_tables.sql'
 AUTHORITATIVE_LEASE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002030900_welcome_certification_reads_the_authoritative_engine_lease.sql'
 CONTROLLER_PROVENANCE_REPAIR_MIGRATION = ROOT / 'supabase/migrations/20261002051400_welcome_certification_accepts_its_controller_created_tables.sql'
@@ -60,7 +61,7 @@ results = {'migrations': [
     FRESH_BOARD_CLEANUP_MIGRATION.name, POST_RESET_CLEANUP_MIGRATION.name,
     POST_RESET_UUID_ORDER_MIGRATION.name, POST_RESET_ATOMIC_BOARD_MIGRATION.name,
     POST_RESET_SPIN_RETURN_MIGRATION.name, INCREMENTAL_BOARD_CLEANUP_MIGRATION.name,
-    COMPLETE_RESET_GRAPH_MIGRATION.name,
+    COMPLETE_RESET_GRAPH_MIGRATION.name, SATELLITE_TARGET_UUID_MIGRATION.name,
 ], 'cases': [], 'passed': False}
 
 def command(argv, sql=None):
@@ -195,7 +196,7 @@ CREATE TABLE tournaments(id uuid PRIMARY KEY,club_id uuid,union_id uuid,schedule
  game_type text,variant text,tournament_type text,buy_in_amount numeric,buy_in_fee numeric,
  max_players integer,min_players integer,table_size integer,starting_chips integer,current_players integer DEFAULT 0,
  status text,started_at timestamptz,ended_at timestamptz,created_at timestamptz DEFAULT now(),
- updated_at timestamptz DEFAULT now(),restart_source_id uuid,satellite_target_id uuid,satellite_target text);
+ updated_at timestamptz DEFAULT now(),restart_source_id uuid,satellite_target_id uuid,satellite_target uuid);
 CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,union_id uuid,cluster_id uuid,tournament_id uuid,
  name text,game_type text DEFAULT 'cash',created_by uuid,role text DEFAULT 'main',main_index integer DEFAULT 1,
  lifecycle text DEFAULT 'opening',status text,current_players integer,
@@ -580,6 +581,8 @@ $restore$;
     run('reinstall-incremental-board-cleanup',INCREMENTAL_BOARD_CLEANUP_MIGRATION.read_text())
     run('install-complete-reset-graph',COMPLETE_RESET_GRAPH_MIGRATION.read_text())
     run('reinstall-complete-reset-graph',COMPLETE_RESET_GRAPH_MIGRATION.read_text())
+    run('install-satellite-target-uuid',SATELLITE_TARGET_UUID_MIGRATION.read_text())
+    run('reinstall-satellite-target-uuid',SATELLITE_TARGET_UUID_MIGRATION.read_text())
     run('install-post-reset-fixture-builder',r"""
 CREATE FUNCTION test_shape_post_reset_welcome_fixture(
   p_club uuid,p_owner uuid,p_board_count integer DEFAULT 12,

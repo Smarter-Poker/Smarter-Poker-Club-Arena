@@ -35,6 +35,13 @@ const nativeHarness = readFileSync(
   resolve(__dirname, '../scripts/ci/test-club-welcome-package.py'),
   'utf8'
 );
+const satelliteTargetIsAUuid = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261003035741_satellite_target_is_a_uuid_not_text_in_the_welcome_reset_gra.sql'
+  ),
+  'utf8'
+);
 
 describe('new club opening package and zero-state database law', () => {
   it('creates a canonical wallet prospectively without historical backfill', () => {
@@ -235,6 +242,10 @@ describe('new club opening package and zero-state database law', () => {
     expect(canonicalGraph).toContain('t.satellite_target_id IS NULL');
     expect(canonicalGraph).toContain('t.satellite_target IS NULL');
     expect(canonicalGraph).toContain("upper(COALESCE(t.tournament_type::text,''))='SATELLITE'");
+    // The fragment this migration installed cast the LEFT side to text against a
+    // uuid column and raised 42883 on every plan. It stays quoted here because
+    // this file is the record of what was applied; the shape that must be LIVE is
+    // pinned on 20261003035741 below.
     expect(canonicalGraph).toContain(
       'target.id=t.satellite_target_id OR target.id::text=t.satellite_target'
     );
@@ -245,6 +256,49 @@ describe('new club opening package and zero-state database law', () => {
     expect(completeResetGraph).toContain('v_metadata_after IS DISTINCT FROM v_metadata_before');
     expect(completeResetGraph).toContain('WELCOME_UNWIND_COMPLETE_GRAPH_AUTHORITY_REFUSED');
     expect(completeResetGraph).toContain('WELCOME_RESET_IMPACT_COMPLETE_GRAPH_AUTHORITY_REFUSED');
+  });
+
+  it('compares a satellite target as the uuid it is, and refuses any other type', () => {
+    // public.tournaments.satellite_target is uuid. `target.id::text=t.satellite_target`
+    // asks for `text = uuid`, which does not exist, so both welcome-package
+    // authorities raised 42883 the first time the branch was planned and every
+    // Club Create Certification run died in the impact read (run 37094163115).
+    expect(satelliteTargetIsAUuid).toContain(
+      'target.id=t.satellite_target_id OR target.id=t.satellite_target'
+    );
+    expect(satelliteTargetIsAUuid).toContain(
+      'v_old text := $old$target.id=t.satellite_target_id OR target.id::text=t.satellite_target$old$'
+    );
+    expect(satelliteTargetIsAUuid).toContain('SATELLITE_TARGET_IS_NOT_UUID_REFUSED');
+    expect(satelliteTargetIsAUuid).toContain('SATELLITE_TARGET_UUID_ROUNDTRIP_REFUSED');
+    expect(satelliteTargetIsAUuid).toContain('SATELLITE_TARGET_UUID_PREIMAGE_REFUSED');
+    expect(satelliteTargetIsAUuid).toContain('SATELLITE_TARGET_UUID_POSTIMAGE_REFUSED');
+    expect(satelliteTargetIsAUuid).toContain('v_metadata_after IS DISTINCT FROM v_metadata_before');
+    // the repaired comparison is planned inside the migration, so the migration
+    // fails rather than production if the operator still cannot be resolved
+    expect(satelliteTargetIsAUuid).toMatch(
+      /PERFORM 1 FROM public\.tournaments t[\s\S]{0,200}WHERE false;/
+    );
+    // and the live proof pinned by the migration that installed the cast now
+    // names the uncast comparison
+    expect(completeResetGraph).toContain(
+      "-- @live-proof: (SELECT bool_and(p.prosrc LIKE '%tournament_schedule_spawns sp%')"
+    );
+    const liveProof = completeResetGraph
+      .split('\n')
+      .find((line) => line.startsWith('-- @live-proof:'));
+    expect(liveProof).toBeDefined();
+    expect(liveProof).toContain('target.id=t.satellite_target_id OR target.id=t.satellite_target');
+    expect(liveProof).not.toContain('target.id::text=t.satellite_target');
+  });
+
+  it('rehearses the reset graph against production column types', () => {
+    // The cast shipped because the rehearsal fixture declared the column text,
+    // so the local run resolved `text = text` and went green while production
+    // could only raise. A fixture that does not carry production's type cannot
+    // refuse a type error.
+    expect(nativeHarness).toContain('satellite_target_id uuid,satellite_target uuid);');
+    expect(nativeHarness).not.toContain('satellite_target text');
   });
 
   it('qualifies the actual installed reset chain and exact replay behavior natively', () => {

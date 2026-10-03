@@ -31,6 +31,13 @@ const completeResetGraph = readFileSync(
   ),
   'utf8'
 );
+const satelliteTargetTypeRepair = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261003040449_welcome_graph_compares_satellite_target_types_explicitly.sql'
+  ),
+  'utf8'
+);
 const nativeHarness = readFileSync(
   resolve(__dirname, '../scripts/ci/test-club-welcome-package.py'),
   'utf8'
@@ -245,6 +252,26 @@ describe('new club opening package and zero-state database law', () => {
     expect(completeResetGraph).toContain('v_metadata_after IS DISTINCT FROM v_metadata_before');
     expect(completeResetGraph).toContain('WELCOME_UNWIND_COMPLETE_GRAPH_AUTHORITY_REFUSED');
     expect(completeResetGraph).toContain('WELCOME_RESET_IMPACT_COMPLETE_GRAPH_AUTHORITY_REFUSED');
+    expect(satelliteTargetTypeRepair).toContain(
+      "a.attname IN('satellite_target','satellite_target_id')"
+    );
+    expect(satelliteTargetTypeRepair).toContain(
+      "count(*)=2 AND bool_and(a.atttypid='uuid'::regtype)"
+    );
+    expect(satelliteTargetTypeRepair).toContain(
+      'target.id=t.satellite_target_id OR target.id=t.satellite_target'
+    );
+    expect(satelliteTargetTypeRepair).toContain(
+      "v_old text := 'target.id=t.satellite_target_id OR target.id::text=t.satellite_target'"
+    );
+    expect(satelliteTargetTypeRepair).toContain(
+      'WELCOME_GRAPH_SATELLITE_TARGET_TYPE_ROUNDTRIP_REFUSED'
+    );
+    expect(satelliteTargetTypeRepair).toContain(
+      'WELCOME_RESET_IMPACT_SATELLITE_TARGET_TYPE_AUTHORITY_REFUSED'
+    );
+    expect(nativeHarness).toContain('satellite_target_id uuid,satellite_target uuid');
+    expect(nativeHarness).not.toContain('satellite_target_id uuid,satellite_target text');
   });
 
   it('qualifies the actual installed reset chain and exact replay behavior natively', () => {
@@ -253,12 +280,18 @@ describe('new club opening package and zero-state database law', () => {
     const bbjHistory = nativeHarness.indexOf("run('install-current-bbj-promo-history'");
     const completeGraph = nativeHarness.indexOf("run('install-complete-reset-graph'");
     const completeGraphReplay = nativeHarness.indexOf("run('reinstall-complete-reset-graph'");
+    const targetTypeRepair = nativeHarness.indexOf("run('install-satellite-target-type-repair'");
+    const targetTypeRepairReplay = nativeHarness.indexOf(
+      "run('reinstall-satellite-target-type-repair'"
+    );
 
     expect(reset).toBeGreaterThan(0);
     expect(reset).toBeLessThan(indexedHands);
     expect(indexedHands).toBeLessThan(bbjHistory);
     expect(bbjHistory).toBeLessThan(completeGraph);
     expect(completeGraph).toBeLessThan(completeGraphReplay);
+    expect(completeGraphReplay).toBeLessThan(targetTypeRepair);
+    expect(targetTypeRepair).toBeLessThan(targetTypeRepairReplay);
     for (const testCase of [
       'complete-reset-graph-fixture',
       'complete-reset-graph-identical-lookalike-refused',

@@ -38,11 +38,18 @@
 --    unrelated tournaments, which share nothing with it. Two asks into one
 --    target serialize on T(target); every holder of two T keys takes them in
 --    uuid order, so no new cycle exists. No proof-of-authority guard reads F:
---    they read T(id) or G held exclusively, which are unchanged. The helper
---    is an overload of the same name, so the lane doctrine's rule 2 (F is
---    named only by the three finish helpers) still holds, and the doctrine
---    is asked again below. The satellite payer and every other caller keep
---    the one-argument helper and F exclusive.
+--    they read T(id) or G held exclusively, which are unchanged. The new
+--    helper, fn_ca_lock_satellite_answer_lane, never names F itself: it takes
+--    G shared, F shared and the first T key through the finish helper's
+--    re-entry path, so the lane doctrine's rule 2 (F is named only by the
+--    three finish helpers) still holds, and the doctrine is asked below. The
+--    satellite payer and every other caller keep
+--    fn_ca_lock_settlement_lane_for_satellite_finish and F exclusive.
+--
+--    FIRST DISPATCH (17:10 UTC) WAS REFUSED AND ROLLED BACK by that doctrine
+--    check: the first version added an overload of the satellite helper, and
+--    rule 2 lists one name per overload. Nothing but the CONCURRENTLY-built
+--    index (IF NOT EXISTS, below) remained; this file was never installed.
 --
 -- 2. EVERY FINISH SCANS EVERY TABLE ITS CLUB EVER HAD, THEN WRITES THE CLUB
 --    ROW. Closing the tournament table fires fn_on_table_status_change ->
@@ -70,7 +77,7 @@
 -- from their exact 2026-10-03 preimages by one anchor each, verifies each
 -- postimage, and asks the lane doctrine.
 --
--- @live-proof: (SELECT bool_and(x) FROM (VALUES ((SELECT indisvalid AND indisready FROM pg_index WHERE indexrelid = to_regclass('public.idx_tables_club_activity_live'))), (to_regprocedure('public.fn_ca_lock_settlement_lane_for_satellite_finish(uuid,boolean)') IS NOT NULL), (strpos(pg_get_functiondef('public.fn_get_satellite_qualifier_state(uuid)'::regprocedure), 'fn_ca_lock_settlement_lane_for_satellite_finish(p_tournament_id, true)') > 0), (strpos(pg_get_functiondef('public.fn_refresh_club_activity_counts(uuid)'::regprocedure), 'c.active_tables IS DISTINCT FROM coalesce(t.n, 0)') > 0)) v(x))
+-- @live-proof: (SELECT bool_and(x) FROM (VALUES ((SELECT indisvalid AND indisready FROM pg_index WHERE indexrelid = to_regclass('public.idx_tables_club_activity_live'))), (to_regprocedure('public.fn_ca_lock_satellite_answer_lane(uuid)') IS NOT NULL), (strpos(pg_get_functiondef('public.fn_get_satellite_qualifier_state(uuid)'::regprocedure), 'fn_ca_lock_satellite_answer_lane(p_tournament_id)') > 0), (strpos(pg_get_functiondef('public.fn_refresh_club_activity_counts(uuid)'::regprocedure), 'c.active_tables IS DISTINCT FROM coalesce(t.n, 0)') > 0)) v(x))
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tables_club_activity_live
   ON public.tables USING btree (club_id)
@@ -99,10 +106,13 @@ END
 $idx$;
 
 -- ---------------------------------------------------------------------------
--- The answer-only satellite lane: G shared, F SHARED, T keys exclusive.
+-- The answer-only satellite lane: G shared, F shared, both T keys exclusive.
+-- It does not name F itself (the lane doctrine's rule 2: only the three
+-- finish helpers name F). It takes G shared, F shared and T(first) through
+-- fn_ca_lock_settlement_lane_for_finish's own re-entry path, which is exactly
+-- those three keys for the tournament this transaction names as its lane.
 -- ---------------------------------------------------------------------------
-CREATE FUNCTION public.fn_ca_lock_settlement_lane_for_satellite_finish(
-  p_satellite_id uuid, p_answer_only boolean)
+CREATE FUNCTION public.fn_ca_lock_satellite_answer_lane(p_satellite_id uuid)
  RETURNS void
  LANGUAGE plpgsql
  SET search_path TO 'public', 'pg_temp'
@@ -113,12 +123,6 @@ DECLARE
   v_first uuid;
   v_second uuid;
 BEGIN
-  -- A payer, or any caller that is not only answering: the one-argument
-  -- lane, F exclusive, exactly as before.
-  IF NOT COALESCE(p_answer_only, false) THEN
-    PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_satellite_id);
-    RETURN;
-  END IF;
   IF v_held <> '' THEN
     -- Re-entry inside a finish transaction: everything below is held.
     PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);
@@ -131,40 +135,39 @@ BEGIN
      WHERE t.id = p_satellite_id;
   END IF;
   IF p_satellite_id IS NULL OR v_target_id IS NULL OR v_target_id = p_satellite_id THEN
-    -- No target to scope to: the one-argument lane decides, as it always did.
+    -- No target to scope to: the satellite finish lane decides, as it always did.
     PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_satellite_id);
     RETURN;
   END IF;
-  -- AN ANSWER WAITS ONLY FOR WHAT IT SHARES (2026-10-03). G shared, then F
-  -- SHARED: the satellite's payer and every sweep hold F exclusively and are
-  -- still waited for and excluded; ordinary finishes of other tournaments
-  -- (F shared) no longer drain before an answer and queue behind it. Then
-  -- both T keys exclusively in uuid order, the payer's order: the payer, both
-  -- tournaments' hands and rolling authorities, and a finish of the target
-  -- are excluded exactly as before.
-  PERFORM pg_advisory_xact_lock_shared(
-    hashtextextended('ca:tournament-terminal-settlement:v1', 0));
-  PERFORM pg_advisory_xact_lock_shared(
-    hashtextextended('ca:tournament-finish-lane:v1', 0));
+  -- AN ANSWER WAITS ONLY FOR WHAT IT SHARES (2026-10-03). Both T keys in uuid
+  -- order, the payer's order. The first comes with G shared and F shared from
+  -- the finish helper's re-entry path (no bank scope is named, so no scope
+  -- key): the satellite's payer and every sweep hold F exclusively and are
+  -- still waited for and excluded, while ordinary finishes of other
+  -- tournaments (F shared) no longer drain before an answer and queue behind
+  -- it. Then the second T key exclusively. The payer, both tournaments'
+  -- hands and rolling authorities, and a finish of the target are excluded
+  -- exactly as before.
   IF p_satellite_id::text < v_target_id::text THEN
     v_first := p_satellite_id; v_second := v_target_id;
   ELSE
     v_first := v_target_id; v_second := p_satellite_id;
   END IF;
-  PERFORM pg_advisory_xact_lock(
-    hashtextextended('ca:tournament-terminal-settlement:v1:' || v_first::text, 0));
+  PERFORM set_config('ca.finish_lane_scope', '', true);
+  PERFORM set_config('ca.finish_lane_tournament', v_first::text, true);
+  PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);
   PERFORM pg_advisory_xact_lock(
     hashtextextended('ca:tournament-terminal-settlement:v1:' || v_second::text, 0));
-  -- Re-entry names the satellite (the receipt readers re-enter through
-  -- fn_ca_lock_settlement_lane_for_finish(NULL), which asks F shared and
-  -- the held T key, both already held here).
+  -- Re-entry names the satellite, as the satellite finish lane does (the
+  -- receipt readers re-enter through fn_ca_lock_settlement_lane_for_finish(NULL),
+  -- which asks F shared and the held T key, both already held here).
   PERFORM set_config('ca.finish_lane_tournament', p_satellite_id::text, true);
 END;
 $function$;
 
 -- Executable by its owner only: the qualifier ask is SECURITY DEFINER owned
--- by postgres, and no PostgREST role can see a second overload of this name.
-REVOKE ALL ON FUNCTION public.fn_ca_lock_settlement_lane_for_satellite_finish(uuid, boolean)
+-- by postgres, and no PostgREST role needs this helper.
+REVOKE ALL ON FUNCTION public.fn_ca_lock_satellite_answer_lane(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
@@ -187,7 +190,7 @@ BEGIN
     || E' -- lost response cannot release a replacement dealer while its payer runs.\n'
     || E' -- Answer-only (2026-10-03): F shared, both T keys exclusive. The payer\n'
     || E' -- (F exclusive, both T keys) is still waited for; unrelated finishes are not.\n'
-    || E' PERFORM public.fn_ca_lock_settlement_lane_for_satellite_finish(p_tournament_id, true);\n';
+    || E' PERFORM public.fn_ca_lock_satellite_answer_lane(p_tournament_id);\n';
   IF (length(d) - length(replace(d, a, ''))) / length(a) <> 1 THEN
     RAISE EXCEPTION 'qualifier ask anchor count';
   END IF;
@@ -229,7 +232,7 @@ DO $doctrine$
 DECLARE v jsonb := public.fn_ca_settlement_lane_doctrine();
 BEGIN
   IF (SELECT p.proacl::text FROM pg_proc p
-       WHERE p.oid = 'public.fn_ca_lock_settlement_lane_for_satellite_finish(uuid,boolean)'::regprocedure)
+       WHERE p.oid = 'public.fn_ca_lock_satellite_answer_lane(uuid)'::regprocedure)
      IS DISTINCT FROM '{postgres=X/postgres}' THEN
     RAISE EXCEPTION 'answer-only lane is executable beyond its owner' USING ERRCODE = '55000';
   END IF;

@@ -38,6 +38,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import StatsDataTable from './StatsDataTable';
 
 const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
 
@@ -143,6 +144,19 @@ export default function StatsCharts({
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        <StatsDataTable
+          caption={`Cash Profit Over Time, ${rangeLabel}`}
+          rows={dailySeries}
+          rowKey={(row) => row.date}
+          columns={[
+            { key: 'date', label: 'Date', render: (row) => row.date },
+            {
+              key: 'cumulative',
+              label: 'Cumulative Profit',
+              render: (row) => row.cumulative.toLocaleString(),
+            },
+          ]}
+        />
       </div>
 
       {/* Session Results Bar Chart */}
@@ -174,6 +188,16 @@ export default function StatsCharts({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <StatsDataTable
+          caption={`Daily Cash Results, ${rangeLabel}`}
+          rows={dailySeries}
+          rowKey={(row) => row.date}
+          columns={[
+            { key: 'date', label: 'Date', render: (row) => row.date },
+            { key: 'profit', label: 'Profit', render: (row) => row.profit.toLocaleString() },
+            { key: 'hands', label: 'Hands', render: (row) => row.hands.toLocaleString() },
+          ]}
+        />
       </div>
 
       {/* Position Breakdown Pie Chart */}
@@ -213,6 +237,15 @@ export default function StatsCharts({
               </PieChart>
             </ResponsiveContainer>
           </div>
+          <StatsDataTable
+            caption="Hands Won By Position"
+            rows={positionPie}
+            rowKey={(row) => row.name}
+            columns={[
+              { key: 'position', label: 'Position', render: (row) => row.name },
+              { key: 'hands_won', label: 'Hands Won', render: (row) => row.value.toLocaleString() },
+            ]}
+          />
         </div>
       )}
     </div>

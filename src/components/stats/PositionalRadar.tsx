@@ -390,6 +390,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
           </div>
 
           <table className="pos-radar-table">
+            <caption className="sr-only">Positional Shape Data</caption>
             <thead>
               <tr>
                 <th scope="col">Pos</th>

@@ -10,12 +10,13 @@
  */
 import { lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
-import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 import type { playerStyleFromStats } from '../../components/stats/playerStyleFromStats';
 import { StatRow } from './StatRow';
-import { SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
+import { NOT_YET_MEASURED, SCOPE_ALL_GAMES, SCOPE_CASH, ratioOrUnmeasured } from './format';
 import { RANGES, type FullStats, type OverallStats, type HandEvidenceFilter } from './types';
+import type { StatsMetricAvailabilityContract } from '../../services/statsContract';
 
 const NemesisPanel = lazy(() => import('../../components/stats/NemesisPanel'));
 const BenchmarkPanel = lazy(() => import('../../components/stats/BenchmarkPanel'));
@@ -24,6 +25,9 @@ const StatsShareCard = lazy(() => import('../../components/stats/StatsShareCard'
 export interface OverviewTabProps {
   /** The asset the page reads: chips, or Diamonds in the Diamond Arena. */
   scope?: StatsScope;
+  clubId?: StatsClubId;
+  clubLabel: string;
+  metricAvailability: StatsMetricAvailabilityContract;
   overall: OverallStats;
   full: FullStats | null;
   rangeKey: string;
@@ -40,10 +44,14 @@ export interface OverviewTabProps {
   printing: boolean;
   printDossier: () => void;
   openHandEvidence: (filter?: HandEvidenceFilter) => void;
+  privacyPresentationMode?: boolean;
 }
 
 export default function OverviewTab({
   scope = CHIP_STATS,
+  clubId = null,
+  clubLabel,
+  metricAvailability,
   overall,
   full,
   rangeKey,
@@ -59,6 +67,7 @@ export default function OverviewTab({
   printing,
   printDossier,
   openHandEvidence,
+  privacyPresentationMode = false,
 }: OverviewTabProps) {
   return (
     <>
@@ -94,15 +103,23 @@ export default function OverviewTab({
             number here. */}
         <StatRow
           label="Aggression Factor"
-          value={ratioOrUnmeasured(overall.aggression_factor, overall.total_hands, (v) =>
-            v.toFixed(2)
-          )}
+          value={
+            clubId && !metricAvailability.aggression_factor
+              ? NOT_YET_MEASURED
+              : ratioOrUnmeasured(overall.aggression_factor, overall.total_hands, (v) =>
+                  v.toFixed(2)
+                )
+          }
           color="#f59e0b"
           scope={SCOPE_ALL_GAMES}
         />
         <StatRow
           label="Hours Played"
-          value={`${overall.hours_played.toFixed(1)}h`}
+          value={
+            clubId && !metricAvailability.hours_played
+              ? NOT_YET_MEASURED
+              : `${overall.hours_played.toFixed(1)}h`
+          }
           color="#06b6d4"
           scope={SCOPE_ALL_GAMES}
         />
@@ -205,7 +222,7 @@ export default function OverviewTab({
           is private, and ca_player_nemesis refuses a cross-user read. */}
       {isOwnProfile && (
         <PanelBoundary name="Rivals" resetKey={panelResetKey}>
-          <NemesisPanel userId={targetUserId} days={windowDays} scope={scope} />
+          <NemesisPanel userId={targetUserId} days={windowDays} scope={scope} clubId={clubId} />
         </PanelBoundary>
       )}
 
@@ -246,9 +263,11 @@ export default function OverviewTab({
               profit: overall.total_profit,
               vpip: overall.vpip * 100,
               pfr: overall.pfr * 100,
-              hoursPlayed: overall.hours_played,
+              hoursPlayed: clubId && !metricAvailability.hours_played ? null : overall.hours_played,
             }}
             rangeLabel={rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`}
+            scopeLabel={clubLabel}
+            privacyPresentationMode={privacyPresentationMode}
           />
         </PanelBoundary>
       )}

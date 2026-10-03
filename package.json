@@ -47,6 +47,7 @@
     "fix:painted-text": "node scripts/ci/check-painted-text-case.mjs --fix",
     "fix:title-case": "node scripts/ci/check-title-case.mjs --fix",
     "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs",
+    "check:stats-budgets": "node scripts/ci/check-stats-performance-budgets.mjs",
     "probe:cluster": "bash scripts/dev/probe-cluster-boards.sh"
   },
   "dependencies": {

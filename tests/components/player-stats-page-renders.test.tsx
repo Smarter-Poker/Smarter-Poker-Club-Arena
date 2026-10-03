@@ -116,11 +116,16 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 vi.mock('react-router-dom', () => ({
   useParams: () => (routeUserId ? { userId: routeUserId } : {}),
   useNavigate: () => vi.fn(),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
   useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
   // JSX (automatic runtime) rather than React.createElement: a vi.mock factory
   // is hoisted above the imports, so referencing an imported React binding
   // inside it would blow up before initialisation.
   Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
+}));
+
+vi.mock('../../src/services/ClubsService', () => ({
+  getUserMemberships: vi.fn().mockResolvedValue([]),
 }));
 
 // Read status since 2026-09-20 (Stats contract truth): { roles, error? }, so
@@ -160,6 +165,12 @@ vi.mock('../../src/services/StatsFactsService', () => {
       generated_at: '',
     }),
     getDistribution: vi.fn().mockResolvedValue([]),
+    getCashOpportunityStats: vi.fn().mockResolvedValue({
+      contract_version: 2,
+      metrics: {},
+      splits: {},
+      coverage: { exact_hands: 0, returned_hands: 0 },
+    }),
   };
   // POLISH 1 (2026-08-30): the page reads its own weighted rake. Mocked here
   // so the mock cannot lag the service it stands in for.
@@ -232,14 +243,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('PlayerStatsPage mounts', () => {
-  it('renders the private boundary without requesting another player stats', async () => {
+  it('uses the authorized shared-club boundary without requesting private owner stats', async () => {
     routeUserId = 'user-2';
 
     render(<PlayerStatsPage />);
 
-    expect(await screen.findByText('Player Stats Are Private')).toBeInTheDocument();
-    expect(screen.getByText(/No All-Club Financial Data Is Exposed/i)).toBeInTheDocument();
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(await screen.findByText('Shared Readout Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Authorized Shared-Club Readout')).toBeInTheDocument();
+    expect(rpcMock).toHaveBeenCalledWith('ca_player_stats_shared_clubs', {
+      p_target_user: 'user-2',
+      p_asset: 'chips',
+    });
+    expect(rpcMock).not.toHaveBeenCalledWith('ca_player_stats_overview_v2', expect.anything());
   });
 
   it('renders for an account with NO hands without hitting the error boundary', async () => {

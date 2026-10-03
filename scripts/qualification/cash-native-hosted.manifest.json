@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 185281,
-      "sha256": "9edd744c427c839855345784d17f22ec7d02ace77f0aa88e20daeee4b0ff0a8d"
+      "bytes": 185394,
+      "sha256": "e771d441b2620c91be94ba8dd1bcb377da40d3473f654bf2c05d1deb756f72de"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -1473,6 +1473,23 @@
         "current": {
           "bytes": 185281,
           "sha256": "9edd744c427c839855345784d17f22ec7d02ace77f0aa88e20daeee4b0ff0a8d"
+        }
+      }
+    ]
+  },
+  "statsBudgetWorkflowIntegration20261003": {
+    "reason": "Add the root check:stats-budgets source budget to the client_build job immediately after the existing bundle-size gate. Four workflow lines; no cash qualification runner, fixture, financial input or assertion changes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 185281,
+          "sha256": "9edd744c427c839855345784d17f22ec7d02ace77f0aa88e20daeee4b0ff0a8d"
+        },
+        "current": {
+          "bytes": 185394,
+          "sha256": "e771d441b2620c91be94ba8dd1bcb377da40d3473f654bf2c05d1deb756f72de"
         }
       }
     ]

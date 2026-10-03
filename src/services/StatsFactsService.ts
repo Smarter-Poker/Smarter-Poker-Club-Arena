@@ -26,6 +26,7 @@ import {
   statsScopeArgs,
   statsScopeIsReadable,
   type StatsScope,
+  type StatsClubId,
 } from './statsScope';
 
 // ── EV vs actual ───────────────────────────────────────────────────────────
@@ -208,6 +209,106 @@ export interface DistributionRow {
   sample_size: number;
 }
 
+export interface CashOpportunityCount {
+  opportunities: number;
+  actions: number;
+}
+
+export interface CashOpportunityStats {
+  contract_version: 2;
+  coverage: {
+    source: 'ca_hand_facts';
+    from: string;
+    club_id: string | null;
+    exact_hands: number;
+    unavailable_hands: number;
+  };
+  opportunities: Record<
+    | 'three_bet'
+    | 'four_bet'
+    | 'steal'
+    | 'squeeze'
+    | 'blind_defense'
+    | 'cbet_flop'
+    | 'barrel_turn'
+    | 'barrel_river'
+    | 'check_raise'
+    | 'donk'
+    | 'probe',
+    CashOpportunityCount
+  >;
+  actions_by_street: Record<
+    'preflop' | 'flop' | 'turn' | 'river',
+    { aggressive: number; passive: number }
+  >;
+  context: {
+    in_position_hands: number;
+    position_measured_hands: number;
+    average_effective_stack_bb: number | null;
+  };
+}
+
+const CASH_OPPORTUNITY_KEYS = [
+  'three_bet',
+  'four_bet',
+  'steal',
+  'squeeze',
+  'blind_defense',
+  'cbet_flop',
+  'barrel_turn',
+  'barrel_river',
+  'check_raise',
+  'donk',
+  'probe',
+] as const;
+
+export function normalizeCashOpportunityStats(value: unknown): CashOpportunityStats | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, any>;
+  if (raw.contract_version !== 2) return null;
+  const n = (input: unknown): number =>
+    Number.isFinite(Number(input)) ? Math.max(0, Number(input)) : 0;
+  const opportunities = Object.fromEntries(
+    CASH_OPPORTUNITY_KEYS.map((key) => [
+      key,
+      {
+        opportunities: n(raw.opportunities?.[key]?.opportunities),
+        actions: n(raw.opportunities?.[key]?.actions),
+      },
+    ])
+  ) as CashOpportunityStats['opportunities'];
+  const street = (key: string) => ({
+    aggressive: n(raw.actions_by_street?.[key]?.aggressive),
+    passive: n(raw.actions_by_street?.[key]?.passive),
+  });
+  return {
+    contract_version: 2,
+    coverage: {
+      source: 'ca_hand_facts',
+      from: typeof raw.coverage?.from === 'string' ? raw.coverage.from : '',
+      club_id: typeof raw.coverage?.club_id === 'string' ? raw.coverage.club_id : null,
+      exact_hands: n(raw.coverage?.exact_hands),
+      unavailable_hands: n(raw.coverage?.unavailable_hands),
+    },
+    opportunities,
+    actions_by_street: {
+      preflop: street('preflop'),
+      flop: street('flop'),
+      turn: street('turn'),
+      river: street('river'),
+    },
+    context: {
+      in_position_hands: n(raw.context?.in_position_hands),
+      position_measured_hands: n(raw.context?.position_measured_hands),
+      average_effective_stack_bb:
+        raw.context?.average_effective_stack_bb == null ||
+        !Number.isFinite(Number(raw.context.average_effective_stack_bb))
+          ? null
+          : Math.max(0, Number(raw.context.average_effective_stack_bb)),
+    },
+  };
+}
+
 const EMPTY_EV: EVCurvePayload = {
   points: [],
   summary: {
@@ -246,6 +347,7 @@ async function callRpc<T>(
   args: Record<string, unknown>,
   fallback: T,
   scope: StatsScope,
+  clubId: StatsClubId,
   /* A read of ONE hand (its rake share) is already in that hand's asset: its
      RPC takes no p_asset, and sending one would be a PGRST202. */
   sendsScope = true
@@ -259,8 +361,8 @@ async function callRpc<T>(
   }
   try {
     const { data, error } = await supabase.rpc(
-      fn,
-      sendsScope ? { ...args, ...statsScopeArgs(scope) } : args
+      clubId ? `${fn}_by_club` : fn,
+      sendsScope ? { ...args, ...statsScopeArgs(scope, clubId) } : args
     );
     if (error) {
       // 42501 is the identity gate refusing a cross-user read. That is the
@@ -276,17 +378,49 @@ async function callRpc<T>(
 }
 
 export const StatsFactsService = {
+  /** Exact settlement-time cash opportunities; historical unavailable rows stay explicit. */
+  async getCashOpportunityStats(
+    userId: string,
+    scope: StatsScope,
+    days: number | null = 30,
+    clubId: StatsClubId = null,
+    timeZone = 'UTC'
+  ): Promise<ScopedRead<CashOpportunityStats> | { scope: StatsScope; error: string }> {
+    if (!statsScopeIsReadable(scope)) return { scope, error: STATS_SCOPE_UNREADABLE };
+    try {
+      const { data, error } = await supabase.rpc('ca_player_cash_opportunity_stats', {
+        p_user: userId,
+        p_days: days == null ? null : Math.max(1, Math.min(3650, Math.trunc(days))),
+        p_tz: timeZone,
+        p_asset: scope,
+        p_club: clubId,
+      });
+      if (error) {
+        if (error.code !== '42501') reportError(error, 'StatsFactsService.cashOpportunities');
+        return { scope, error: error.message || error.code || 'read_failed' };
+      }
+      const normalized = normalizeCashOpportunityStats(data);
+      return normalized
+        ? { ...normalized, scope }
+        : { scope, error: 'invalid_cash_opportunity_contract' };
+    } catch (err) {
+      reportError(err, 'StatsFactsService.cashOpportunities.threw');
+      return { scope, error: err instanceof Error ? err.message : 'read_threw' };
+    }
+  },
   /** Cumulative actual vs all-in-adjusted EV. Cash hands only. */
   async getEVCurve(
     userId: string,
     scope: StatsScope,
-    days: number | null = null
+    days: number | null = null,
+    clubId: StatsClubId = null
   ): Promise<ScopedRead<EVCurvePayload>> {
     return callRpc<EVCurvePayload>(
       'ca_player_ev_curve',
       { p_user: userId, p_days: days, p_limit: 5000 },
       EMPTY_EV,
-      scope
+      scope,
+      clubId
     );
   },
 
@@ -294,7 +428,8 @@ export const StatsFactsService = {
   async getHandGrid(
     userId: string,
     scope: StatsScope,
-    opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
+    opts: { position?: string | null; variant?: string | null; days?: number | null } = {},
+    clubId: StatsClubId = null
   ): Promise<ScopedRead<HandGridPayload>> {
     return callRpc<HandGridPayload>(
       'ca_player_hand_grid',
@@ -310,7 +445,8 @@ export const StatsFactsService = {
         filters: { position: null, variant: null, days: null },
         generated_at: '',
       },
-      scope
+      scope,
+      clubId
     );
   },
 
@@ -324,7 +460,8 @@ export const StatsFactsService = {
     userId: string,
     scope: StatsScope,
     handClass: string,
-    opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
+    opts: { position?: string | null; variant?: string | null; days?: number | null } = {},
+    clubId: StatsClubId = null
   ): Promise<ScopedRead<ClassHandsPayload>> {
     return callRpc<ClassHandsPayload>(
       'ca_player_class_hands',
@@ -337,7 +474,8 @@ export const StatsFactsService = {
         p_limit: 20,
       },
       { hand_class: handClass, hands: [] },
-      scope
+      scope,
+      clubId
     );
   },
 
@@ -345,7 +483,8 @@ export const StatsFactsService = {
   async getNemesis(
     userId: string,
     scope: StatsScope,
-    opts: { days?: number | null; minHands?: number } = {}
+    opts: { days?: number | null; minHands?: number } = {},
+    clubId: StatsClubId = null
   ): Promise<ScopedRead<NemesisPayload>> {
     return callRpc<NemesisPayload>(
       'ca_player_nemesis',
@@ -364,7 +503,8 @@ export const StatsFactsService = {
         opponents_qualified: 0,
         generated_at: '',
       },
-      scope
+      scope,
+      clubId
     );
   },
 
@@ -400,13 +540,15 @@ export const StatsFactsService = {
    */
   async getRakeStats(
     scope: StatsScope,
-    days: number | null = null
+    days: number | null = null,
+    clubId: StatsClubId = null
   ): Promise<ScopedRead<PlayerRakeStats>> {
     const raw = await callRpc<PlayerRakeStats>(
       'ca_player_rake_stats',
       { p_user: null, p_days: days },
       EMPTY_RAKE_STATS,
-      scope
+      scope,
+      clubId
     );
     /* THE SHAPE IS PROMISED HERE, NOT ASSUMED IN THE TAB (2026-09-10). The
        Rake tab calls toFixed / toLocaleString on six of these fields, and a
@@ -433,6 +575,7 @@ export const StatsFactsService = {
       { p_hand_id: handId },
       { found: false },
       scope,
+      null,
       false
     );
   },

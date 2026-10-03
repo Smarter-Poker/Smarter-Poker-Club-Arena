@@ -34,7 +34,9 @@ import StatsFactsService, {
   type HandGridCell,
   type ClassHand,
 } from '../../services/StatsFactsService';
-import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
+import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
+import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
+import StatsEvidenceLink from './StatsEvidenceLink';
 import './HoleCardHeatmap.css';
 
 interface Props {
@@ -42,6 +44,8 @@ interface Props {
   days?: number | null;
   /** The asset the figures are in: chips by default, Diamonds in the Diamond Arena. */
   scope?: StatsScope;
+  /** Null reads All Clubs; a UUID reads the selected authorized club. */
+  clubId?: StatsClubId;
 }
 
 const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
@@ -91,7 +95,12 @@ function signedColor(value: number, scale: number, confidence: number): string {
     : `rgba(239, 68, 68, ${alpha.toFixed(3)})`;
 }
 
-export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STATS }: Props) {
+export default function HoleCardHeatmap({
+  userId,
+  days = null,
+  scope = CHIP_STATS,
+  clubId = null,
+}: Props) {
   const [cells, setCells] = useState<HandGridCell[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
@@ -114,7 +123,7 @@ export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STAT
     setLoading(true);
     setHovered(null); // a key from the previous filter would read "never dealt"
     setSelected(null);
-    StatsFactsService.getHandGrid(userId, scope, { position, variant, days })
+    StatsFactsService.getHandGrid(userId, scope, { position, variant, days }, clubId)
       .then((payload) => {
         if (cancelled) return;
         // Cells with no hands are noise for "classes seen" and for the scale.
@@ -127,7 +136,7 @@ export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STAT
     return () => {
       cancelled = true;
     };
-  }, [userId, position, variant, days, attempt, scope]);
+  }, [userId, position, variant, days, attempt, scope, clubId]);
 
   useEffect(() => {
     if (!userId || !selected) {
@@ -141,7 +150,7 @@ export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STAT
     let cancelled = false;
     setHandsLoading(true);
     setDrillError(null);
-    StatsFactsService.getClassHands(userId, scope, selected, { position, variant, days })
+    StatsFactsService.getClassHands(userId, scope, selected, { position, variant, days }, clubId)
       .then((p) => {
         if (cancelled) return;
         setClassHands(p.hands ?? []);
@@ -153,7 +162,7 @@ export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STAT
     return () => {
       cancelled = true;
     };
-  }, [userId, selected, position, variant, days, scope]);
+  }, [userId, selected, position, variant, days, scope, clubId]);
 
   const byClass = useMemo(() => {
     const m = new Map<string, HandGridCell>();
@@ -417,6 +426,13 @@ export default function HoleCardHeatmap({ userId, days = null, scope = CHIP_STAT
                     {h.net_bb >= 0 ? '+' : ''}
                     {n(h.net_bb).toFixed(1)} BB
                   </span>
+                  <StatsEvidenceLink
+                    className="stats-evidence-action"
+                    to={buildStatsHandEvidencePath(h.hand_id, clubId)}
+                    aria-label={`Open ${selected} Hand Evidence`}
+                  >
+                    Open Hand
+                  </StatsEvidenceLink>
                 </li>
               ))}
             </ul>

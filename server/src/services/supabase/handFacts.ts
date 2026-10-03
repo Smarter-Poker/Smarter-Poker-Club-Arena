@@ -143,6 +143,15 @@ function takeEquity(tableId: string, handNumber: number): CapturedEquity | null 
   return hit ?? null;
 }
 
+function peekEquity(tableId: string, handNumber: number): CapturedEquity | null {
+  return equityByHand.get(equityKey(tableId, String(handNumber))) ?? null;
+}
+
+/** Release private in-memory capture only after the accepted hand commits. */
+export function releaseHandFactsCapture(tableId: string, handNumber: number): void {
+  equityByHand.delete(equityKey(tableId, String(handNumber)));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 1b. RUN-IT-TWICE LIFECYCLE TELEMETRY
 // ═══════════════════════════════════════════════════════════════════════════
@@ -443,6 +452,9 @@ export interface HandAction {
   amount?: number;
   timestamp?: number;
   stage: string;
+  origin?: string;
+  isFullRaise?: boolean;
+  dead?: boolean;
 }
 
 export interface FlowFlags {
@@ -459,12 +471,41 @@ export interface FlowFlags {
   won_at_showdown: boolean;
   aggressive_actions: number;
   passive_actions: number;
+  aggressive_actions_preflop: number;
+  passive_actions_preflop: number;
+  aggressive_actions_flop: number;
+  passive_actions_flop: number;
+  aggressive_actions_turn: number;
+  passive_actions_turn: number;
+  aggressive_actions_river: number;
+  passive_actions_river: number;
+  three_bet_opportunity: boolean | null;
+  four_bet_opportunity: boolean | null;
+  steal_opportunity: boolean | null;
+  stole: boolean | null;
+  squeeze_opportunity: boolean | null;
+  squeezed: boolean | null;
+  blind_defense_opportunity: boolean | null;
+  defended_blind: boolean | null;
+  cbet_flop_opportunity: boolean | null;
+  barrel_turn_opportunity: boolean | null;
+  barreled_turn: boolean | null;
+  barrel_river_opportunity: boolean | null;
+  barreled_river: boolean | null;
+  check_raise_opportunity: boolean | null;
+  check_raised: boolean | null;
+  donk_opportunity: boolean | null;
+  donk_bet: boolean | null;
+  probe_opportunity: boolean | null;
+  probe_bet: boolean | null;
   was_all_in: boolean;
   all_in_street: string | null;
 }
 
 const AGGRESSIVE = new Set(['bet', 'raise', 'all_in']);
 const PASSIVE = new Set(['call', 'check']);
+const isExactAggressive = (a: HandAction): boolean =>
+  a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
 
 /**
  * Derive every flow flag for one player from the hand's action log.
@@ -483,6 +524,10 @@ export function deriveFlowFlags(
     returned: number;
     /** userIds who never folded — 2+ means a showdown happened. */
     nonFoldedCount: number;
+    position?: string;
+    contextAvailable?: boolean;
+    buttonSeat?: number | null;
+    dealtSeats?: number[];
   }
 ): FlowFlags {
   const mine = actions.filter((a) => a.userId === userId);
@@ -490,11 +535,23 @@ export function deriveFlowFlags(
 
   let aggressive = 0;
   let passive = 0;
+  const byStreet = Object.fromEntries(
+    ['preflop', 'flop', 'turn', 'river'].map((street) => [street, { aggressive: 0, passive: 0 }])
+  ) as Record<string, { aggressive: number; passive: number }>;
   let wasAllIn = false;
   let allInStreet: string | null = null;
   for (const a of mine) {
-    if (AGGRESSIVE.has(a.action)) aggressive++;
-    else if (PASSIVE.has(a.action)) passive++;
+    if (AGGRESSIVE.has(a.action)) {
+      aggressive++;
+    } else if (PASSIVE.has(a.action)) {
+      passive++;
+    }
+    if (byStreet[a.stage]) {
+      if (isExactAggressive(a)) byStreet[a.stage].aggressive++;
+      else if (PASSIVE.has(a.action) || (a.action === 'all_in' && a.isFullRaise !== true)) {
+        byStreet[a.stage].passive++;
+      }
+    }
     if (a.action === 'all_in' && !wasAllIn) {
       wasAllIn = true;
       allInStreet = a.stage || null;
@@ -513,6 +570,17 @@ export function deriveFlowFlags(
   let lastAggressorPreflop: string | null = null;
   let facedThreeBet = false;
   let foldedToThreeBet = false;
+  const contextAvailable = opts.contextAvailable === true;
+  let threeBetOpportunity: boolean | null = contextAvailable ? false : null;
+  let fourBetOpportunity: boolean | null = contextAvailable ? false : null;
+  let stealOpportunity: boolean | null = contextAvailable ? false : null;
+  let stole: boolean | null = contextAvailable ? false : null;
+  let squeezeOpportunity: boolean | null = contextAvailable ? false : null;
+  let squeezed: boolean | null = contextAvailable ? false : null;
+  let blindDefenseOpportunity: boolean | null = contextAvailable ? false : null;
+  let defendedBlind: boolean | null = contextAvailable ? false : null;
+  let callsAfterRaise = 0;
+  let firstRaiserPosition: string | null = null;
   /** Set once we make an aggressive action AFTER being 3-bet. */
   let respondedToThreeBet = false;
   /**
@@ -524,6 +592,23 @@ export function deriveFlowFlags(
   for (const a of preflop) {
     const isMine = a.userId === userId;
     const amt = a.amount ?? 0;
+    const voluntary = a.origin !== 'forced' && !a.dead;
+
+    if (isMine && voluntary && contextAvailable) {
+      if (raiseCount === 1) threeBetOpportunity = true;
+      if (raiseCount === 2) fourBetOpportunity = true;
+      if (raiseCount === 0 && ['CO', 'BTN', 'SB'].includes(opts.position ?? '')) {
+        stealOpportunity = true;
+      }
+      if (raiseCount === 1 && callsAfterRaise > 0) squeezeOpportunity = true;
+      if (
+        raiseCount === 1 &&
+        ['SB', 'BB'].includes(opts.position ?? '') &&
+        ['CO', 'BTN', 'SB'].includes(firstRaiserPosition ?? '')
+      ) {
+        blindDefenseOpportunity = true;
+      }
+    }
 
     if (a.action === 'fold') {
       // Only a fold that is still ANSWERING the 3-bet counts. Once we have
@@ -557,6 +642,11 @@ export function deriveFlowFlags(
         // the 3-bet is index 1 and the 4-bet is index 2.
         if (raiseCount === 1) threeBet = true;
         if (raiseCount === 2) fourBet = true;
+        if (isExactAggressive(a)) {
+          if (stealOpportunity) stole = true;
+          if (squeezeOpportunity) squeezed = true;
+          if (blindDefenseOpportunity) defendedBlind = true;
+        }
       } else if (myRaiseIndex === 0 && raiseCount === 1) {
         // FIX 2026-08-21: this used to be `myRaiseIndex >= 0 && raiseCount >
         // myRaiseIndex`, i.e. "someone re-raised after me" — which also fired
@@ -576,6 +666,13 @@ export function deriveFlowFlags(
       raiseCount++;
       level = amt;
       lastAggressorPreflop = a.userId ?? null;
+      if (raiseCount === 1 && typeof opts.buttonSeat === 'number' && opts.dealtSeats?.length) {
+        firstRaiserPosition = derivePosition(a.seat, opts.buttonSeat, opts.dealtSeats);
+      }
+      callsAfterRaise = 0;
+    } else if (voluntary && a.action === 'call' && raiseCount > 0) {
+      callsAfterRaise++;
+      if (isMine && blindDefenseOpportunity) defendedBlind = true;
     }
   }
 
@@ -600,6 +697,90 @@ export function deriveFlowFlags(
     cbetFlop = !!firstAggro && firstAggro.userId === userId;
   }
 
+  const exactOpportunityBeforeAggression = (street: string): HandAction | null => {
+    const xs = actions.filter((a) => a.stage === street);
+    const heroIndex = xs.findIndex((a) => a.userId === userId);
+    if (heroIndex < 0 || xs.slice(0, heroIndex).some(isExactAggressive)) return null;
+    return xs[heroIndex];
+  };
+  const flopDecision = exactOpportunityBeforeAggression('flop');
+  const cbetOpportunity: boolean | null = contextAvailable
+    ? hadCbetOpp && flopDecision !== null
+    : null;
+  const turnBarrelOpportunity: boolean | null = contextAvailable
+    ? cbetFlop && opts.boardLength >= 4 && exactOpportunityBeforeAggression('turn') !== null
+    : null;
+  const barreledTurn = turnBarrelOpportunity
+    ? isExactAggressive(exactOpportunityBeforeAggression('turn')!)
+    : contextAvailable
+      ? false
+      : null;
+  const riverBarrelOpportunity: boolean | null = contextAvailable
+    ? barreledTurn === true &&
+      opts.boardLength >= 5 &&
+      exactOpportunityBeforeAggression('river') !== null
+    : null;
+  const barreledRiver = riverBarrelOpportunity
+    ? isExactAggressive(exactOpportunityBeforeAggression('river')!)
+    : contextAvailable
+      ? false
+      : null;
+
+  let checkRaiseOpportunity: boolean | null = contextAvailable ? false : null;
+  let checkRaised: boolean | null = contextAvailable ? false : null;
+  for (const street of ['flop', 'turn', 'river']) {
+    const xs = actions.filter((a) => a.stage === street);
+    const myCheck = xs.findIndex((a) => a.userId === userId && a.action === 'check');
+    if (myCheck < 0) continue;
+    const villainBet = xs.findIndex(
+      (a, i) => i > myCheck && a.userId !== userId && isExactAggressive(a)
+    );
+    if (villainBet < 0) continue;
+    const response = xs.find((a, i) => i > villainBet && a.userId === userId);
+    if (!response) continue;
+    checkRaiseOpportunity = true;
+    if (isExactAggressive(response)) checkRaised = true;
+  }
+
+  // Donk/probe require an authoritative prior-street aggressor and an actual
+  // hero decision. Missing action context remains NULL rather than guessed.
+  let donkOpportunity: boolean | null = contextAvailable ? false : null;
+  let donkBet: boolean | null = contextAvailable ? false : null;
+  let probeOpportunity: boolean | null = contextAvailable ? false : null;
+  let probeBet: boolean | null = contextAvailable ? false : null;
+  let initiative = lastAggressorPreflop;
+  let priorStreet = 'preflop';
+  for (const street of ['flop', 'turn', 'river']) {
+    const priorAggressor = initiative;
+    const xs = actions.filter((a) => a.stage === street);
+    const mineIndex = xs.findIndex((a) => a.userId === userId);
+    const aggressorIndex = xs.findIndex((a) => a.userId === priorAggressor);
+    const noAggressionBeforeHero =
+      mineIndex >= 0 && !xs.slice(0, mineIndex).some(isExactAggressive);
+    if (
+      priorAggressor &&
+      priorAggressor !== userId &&
+      noAggressionBeforeHero &&
+      (aggressorIndex < 0 || mineIndex < aggressorIndex)
+    ) {
+      donkOpportunity = true;
+      if (isExactAggressive(xs[mineIndex])) donkBet = true;
+    }
+    const prior = actions.filter((a) => a.stage === priorStreet);
+    const checkedBack =
+      Boolean(priorAggressor) &&
+      prior.some((a) => a.userId === priorAggressor && a.action === 'check') &&
+      !prior.some((a) => a.userId === priorAggressor && isExactAggressive(a));
+    if (street !== 'flop' && priorAggressor !== userId && checkedBack && noAggressionBeforeHero) {
+      probeOpportunity = true;
+      if (isExactAggressive(xs[mineIndex])) probeBet = true;
+    }
+    const streetAggressors = xs.filter(isExactAggressive);
+    if (streetAggressors.length)
+      initiative = streetAggressors[streetAggressors.length - 1].userId ?? initiative;
+    priorStreet = street;
+  }
+
   // A showdown happened iff two or more players were still live at the end.
   // This is exact, and unlike hand_history.hole_cards it does not conflate
   // "reached showdown" with "had their cards revealed". Here `iFolded` across
@@ -621,6 +802,33 @@ export function deriveFlowFlags(
     won_at_showdown: wentToShowdown && opts.returned > 0,
     aggressive_actions: aggressive,
     passive_actions: passive,
+    aggressive_actions_preflop: byStreet.preflop.aggressive,
+    passive_actions_preflop: byStreet.preflop.passive,
+    aggressive_actions_flop: byStreet.flop.aggressive,
+    passive_actions_flop: byStreet.flop.passive,
+    aggressive_actions_turn: byStreet.turn.aggressive,
+    passive_actions_turn: byStreet.turn.passive,
+    aggressive_actions_river: byStreet.river.aggressive,
+    passive_actions_river: byStreet.river.passive,
+    three_bet_opportunity: threeBetOpportunity,
+    four_bet_opportunity: fourBetOpportunity,
+    steal_opportunity: stealOpportunity,
+    stole,
+    squeeze_opportunity: squeezeOpportunity,
+    squeezed,
+    blind_defense_opportunity: blindDefenseOpportunity,
+    defended_blind: defendedBlind,
+    cbet_flop_opportunity: cbetOpportunity,
+    barrel_turn_opportunity: turnBarrelOpportunity,
+    barreled_turn: barreledTurn,
+    barrel_river_opportunity: riverBarrelOpportunity,
+    barreled_river: barreledRiver,
+    check_raise_opportunity: checkRaiseOpportunity,
+    check_raised: checkRaised,
+    donk_opportunity: donkOpportunity,
+    donk_bet: donkBet,
+    probe_opportunity: probeOpportunity,
+    probe_bet: probeBet,
     was_all_in: wasAllIn,
     all_in_street: allInStreet,
   };
@@ -738,6 +946,8 @@ export interface HandFactsInput {
   holeCardsAll: Map<string, { seat: number; cards: unknown }>;
   /** userId -> totalInvested, INCLUDING blinds/antes, net of uncalled refund. */
   contributions: Map<string, number>;
+  /** Authoritative stacks frozen when cards were dealt, before any forced money. */
+  dealtStacksAtDeal?: Map<string, number>;
   winners: Array<{ userId: string; amount: number }>;
   actions: HandAction[];
   /**
@@ -760,6 +970,18 @@ export interface HandFactsInput {
    * having put money in. In a bomb hand every player dealt in did.
    */
   isBombPot?: boolean;
+  /**
+   * Build the immutable, private accepted-hand payload without performing the
+   * legacy best-effort writes. The durable hand outbox owns persistence for
+   * protocol-2 commits; legacy callers continue through the direct writer.
+   */
+  collectOnly?: boolean;
+}
+
+export interface DurableStatsFactPayload {
+  version: 2;
+  facts: Record<string, unknown>[];
+  transfers: Record<string, unknown>[];
 }
 
 /**
@@ -770,9 +992,11 @@ export interface HandFactsInput {
  * throw there raises a CRITICAL financial alert, and a stats row failing to
  * write is emphatically not a financial incident.
  */
-export async function writeHandFacts(input: HandFactsInput): Promise<void> {
+export async function writeHandFacts(
+  input: HandFactsInput
+): Promise<DurableStatsFactPayload | null> {
   try {
-    if (!input.handId) return;
+    if (!input.handId) return null;
 
     /**
      * ── HORSES ARE PLAYERS, AND A RULE NEEDS EVIDENCE (Dan 2026-08-27) ──
@@ -808,7 +1032,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
      * state is ~9 GB rather than growing without limit.
      */
     const factIds = new Set(input.roster.map((p) => p.userId).filter(Boolean));
-    if (factIds.size === 0) return; // nobody to store
+    if (factIds.size === 0) return null; // nobody to store
 
     const dealtSeats: number[] = [];
     for (const v of input.holeCardsAll.values()) {
@@ -863,7 +1087,12 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     for (const v of investedList) totalInvested += v;
     const rakeFactor = totalInvested > 0 ? totalAwarded / totalInvested : 0;
 
-    const equity = takeEquity(input.tableId, input.handNumber);
+    // A protocol-2 payload is built before the accepted-hand transaction. Do
+    // not consume its exact equity until that transaction succeeds, otherwise
+    // a refused/transport-unknown attempt could make a safe retry less exact.
+    const equity = input.collectOnly
+      ? peekEquity(input.tableId, input.handNumber)
+      : takeEquity(input.tableId, input.handNumber);
 
     // Without a real big blind every bb-normalised column would be written as
     // RAW CHIPS - a plausible-looking number 10x out at a 5/10 table, which
@@ -879,7 +1108,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
           bigBlind: input.bigBlind,
         }
       );
-      return;
+      return null;
     }
 
     // Everyone actually DEALT IN, which is the honest basis for "hands played
@@ -916,6 +1145,16 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         boardLength: input.boardLength,
         returned,
         nonFoldedCount,
+        position:
+          typeof seatInfo?.seat === 'number' && typeof input.buttonSeat === 'number'
+            ? derivePosition(seatInfo.seat, input.buttonSeat, dealtSeats)
+            : 'UNKNOWN',
+        contextAvailable:
+          typeof seatInfo?.seat === 'number' &&
+          typeof input.buttonSeat === 'number' &&
+          dealtSeats.length >= 2,
+        buttonSeat: input.buttonSeat,
+        dealtSeats,
       });
       // A bomb pot is a voluntary pot for everyone dealt into it (Dan
       // 2026-09-05). The hand row was always written; the flag was not.
@@ -974,6 +1213,36 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
             ? derivePosition(seatInfo.seat, input.buttonSeat, dealtSeats)
             : 'UNKNOWN',
         players_dealt: playersDealt,
+        effective_stack_bb_at_deal: (() => {
+          const hero = input.dealtStacksAtDeal?.get(uid);
+          if (typeof hero !== 'number' || !Number.isFinite(hero)) return null;
+          const opponents = dealtIds
+            .filter((id) => id !== uid)
+            .map((id) => input.dealtStacksAtDeal?.get(id))
+            .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+          if (opponents.length === 0) return null;
+          return r2(Math.min(hero, Math.max(...opponents)) / bb);
+        })(),
+        hero_in_position: (() => {
+          if (
+            typeof seatInfo?.seat !== 'number' ||
+            typeof input.buttonSeat !== 'number' ||
+            dealtSeats.length < 2
+          )
+            return null;
+          const foldedPre = new Set(
+            input.actions
+              .filter((a) => a.stage === 'preflop' && a.action === 'fold')
+              .map((a) => a.seat)
+          );
+          const live = dealtSeats.filter((seat) => !foldedPre.has(seat));
+          if (live.length < 2 || !live.includes(seatInfo.seat)) return null;
+          const ordered = [...live].sort((a, b) => a - b);
+          const firstAfterButton = ordered.findIndex((seat) => seat > input.buttonSeat!);
+          const first = firstAfterButton >= 0 ? firstAfterButton : 0;
+          const lastToAct = ordered[(first - 1 + ordered.length) % ordered.length];
+          return seatInfo.seat === lastToAct;
+        })(),
         opponent_ids: dealtIds.filter((id) => id !== uid),
         /* ═══ A HAND NOBODY PAID INTO IS NOT RECORDED (Dan 2026-09-01) ══
            Dan, verbatim: "MUCKED HANDS SHOULDN'T BE RECORDED AND TRACKED,
@@ -1028,6 +1297,33 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         won_at_showdown: flags.won_at_showdown,
         aggressive_actions: flags.aggressive_actions,
         passive_actions: flags.passive_actions,
+        aggressive_actions_preflop: flags.aggressive_actions_preflop,
+        passive_actions_preflop: flags.passive_actions_preflop,
+        aggressive_actions_flop: flags.aggressive_actions_flop,
+        passive_actions_flop: flags.passive_actions_flop,
+        aggressive_actions_turn: flags.aggressive_actions_turn,
+        passive_actions_turn: flags.passive_actions_turn,
+        aggressive_actions_river: flags.aggressive_actions_river,
+        passive_actions_river: flags.passive_actions_river,
+        three_bet_opportunity: flags.three_bet_opportunity,
+        four_bet_opportunity: flags.four_bet_opportunity,
+        steal_opportunity: flags.steal_opportunity,
+        stole: flags.stole,
+        squeeze_opportunity: flags.squeeze_opportunity,
+        squeezed: flags.squeezed,
+        blind_defense_opportunity: flags.blind_defense_opportunity,
+        defended_blind: flags.defended_blind,
+        cbet_flop_opportunity: flags.cbet_flop_opportunity,
+        barrel_turn_opportunity: flags.barrel_turn_opportunity,
+        barreled_turn: flags.barreled_turn,
+        barrel_river_opportunity: flags.barrel_river_opportunity,
+        barreled_river: flags.barreled_river,
+        check_raise_opportunity: flags.check_raise_opportunity,
+        check_raised: flags.check_raised,
+        donk_opportunity: flags.donk_opportunity,
+        donk_bet: flags.donk_bet,
+        probe_opportunity: flags.probe_opportunity,
+        probe_bet: flags.probe_bet,
         was_all_in: wasAllIn,
         // The player's OWN commit street wins over the runout street. equity
         // .street is the board length when the runout broadcast fired, so a
@@ -1044,12 +1340,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
       });
     }
 
-    if (factRows.length === 0) return;
-
-    const { error: factErr } = await supabase
-      .from('ca_hand_facts')
-      .upsert(factRows, { onConflict: 'hand_id,user_id', ignoreDuplicates: true });
-    if (factErr) reportError(factErr, 'writeHandFacts.facts', { handId: input.handId });
+    if (factRows.length === 0) return null;
 
     // Head-to-head transfers. Only rows touching a human are stored — a horse
     // beating another horse is not a rivalry anybody will read about.
@@ -1065,12 +1356,25 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         table_id: input.tableId,
       }));
 
+    const payload: DurableStatsFactPayload = {
+      version: 2,
+      facts: factRows,
+      transfers,
+    };
+    if (input.collectOnly) return payload;
+
+    const { error: factErr } = await supabase
+      .from('ca_hand_facts')
+      .upsert(factRows, { onConflict: 'hand_id,user_id', ignoreDuplicates: true });
+    if (factErr) reportError(factErr, 'writeHandFacts.facts', { handId: input.handId });
+
     if (transfers.length > 0) {
       const { error: xferErr } = await supabase
         .from('ca_hand_transfers')
         .upsert(transfers, { onConflict: 'hand_id,winner_id,loser_id', ignoreDuplicates: true });
       if (xferErr) reportError(xferErr, 'writeHandFacts.transfers', { handId: input.handId });
     }
+    return payload;
   } catch (err) {
     // Swallow. See the doc comment: this runs inside a money-critical step.
     try {
@@ -1078,5 +1382,6 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     } catch {
       /* reporting must not throw either */
     }
+    return null;
   }
 }

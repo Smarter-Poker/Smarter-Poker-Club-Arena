@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C LANG=C
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"
+phase2="$repo/supabase/migrations/20261003134650_stats_facts_outbox_and_corrections.sql"
+phase6="$repo/supabase/migrations/20261003140344_stats_cash_opportunity_facts.sql"
+fixture="$repo/tests/fixtures/stats-cash-opportunities"
+"$pgbin/postgres" --version | grep -Eq ' 17\.' || { echo 'PostgreSQL 17 required' >&2; exit 2; }
+work="$(mktemp -d /Volumes/SmarterWork/agent-work/stats-cash-opportunities.XXXXXX)"
+data="$work/data"; socket="$work/socket"; port="$((57000 + ($$ % 7000)))"; mkdir -p "$socket"
+cleanup(){ "$pgbin/pg_ctl" -D "$data" -m immediate stop >/dev/null 2>&1 || true; find "$work" -depth -delete; }
+trap cleanup EXIT
+"$pgbin/initdb" -D "$data" -U postgres --auth-local=trust --auth-host=reject --no-locale -E UTF8 \
+  -c shared_memory_type=mmap >/dev/null
+"$pgbin/pg_ctl" -D "$data" -o "-h '' -k '$socket' -p $port" -w start >/dev/null
+"$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres -d postgres \
+  -f "$repo/tests/fixtures/stats-facts-phase2/bootstrap.sql" \
+  -f "$phase2" -f "$phase6" -f "$fixture/assertions.sql"

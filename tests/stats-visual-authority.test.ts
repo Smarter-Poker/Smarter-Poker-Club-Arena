@@ -10,7 +10,15 @@ const CLUB_PAGE = read('src/pages/PlayerStatisticsPage.tsx');
 const ACTIVE_STATS_VIEWS = [
   'src/pages/PlayerStatsPage.tsx',
   'src/pages/PlayerStatisticsPage.tsx',
+  'src/pages/stats/AnalysisTab.tsx',
+  'src/pages/stats/HandsTab.tsx',
+  'src/pages/stats/OverviewTab.tsx',
+  'src/pages/stats/PerformanceTab.tsx',
+  'src/pages/stats/PositionsTab.tsx',
   'src/pages/stats/RakeTab.tsx',
+  'src/pages/stats/StatRow.tsx',
+  'src/pages/stats/TournamentsTab.tsx',
+  'src/pages/stats/TrophiesTab.tsx',
   'src/components/stats/AdvancedStatsSummary.tsx',
   'src/components/stats/BankrollTracker.tsx',
   'src/components/stats/BenchmarkPanel.tsx',
@@ -18,6 +26,7 @@ const ACTIVE_STATS_VIEWS = [
   'src/components/stats/HoleCardHeatmap.tsx',
   'src/components/stats/LeakPanel.tsx',
   'src/components/stats/NemesisPanel.tsx',
+  'src/components/stats/PanelBoundary.tsx',
   'src/components/stats/PositionalRadar.tsx',
   'src/components/stats/PositionWinRates.tsx',
   'src/components/stats/SessionHistory.tsx',
@@ -49,8 +58,11 @@ describe('Stats visual authority', () => {
     expect(OWNER_PAGE).toContain(ownerAsset);
     expect(CLUB_PAGE).toContain(clubAsset);
     expect(ownerAsset).not.toBe(clubAsset);
-    expect(statSync(resolve(__dirname, '../public', ownerAsset)).size).toBeGreaterThan(50_000);
-    expect(statSync(resolve(__dirname, '../public', clubAsset)).size).toBeGreaterThan(50_000);
+    const ownerPath = resolve(__dirname, '../public', ownerAsset);
+    const clubPath = resolve(__dirname, '../public', clubAsset);
+    expect(statSync(ownerPath).size).toBeGreaterThan(50_000);
+    expect(statSync(clubPath).size).toBeGreaterThan(50_000);
+    expect(readFileSync(ownerPath).equals(readFileSync(clubPath))).toBe(false);
   });
 
   it('does not use primitive glyphs as decorative Stats controls or status art', () => {

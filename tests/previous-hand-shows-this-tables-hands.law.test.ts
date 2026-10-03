@@ -157,7 +157,9 @@ describe('the correct data', () => {
     const handReads = [...svc.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
       m[1].trim()
     );
-    expect(handReads.length).toBe(2);
+    // getHand, the bounded Stats evidence resolver, and the table-history list
+    // all share the same canonical projection.
+    expect(handReads.length).toBe(3);
     for (const read of handReads) expect(read).toContain('HAND_HISTORY_COLUMNS');
     // Behaviour: with winners_by_board, a player who took only board 2 is a
     // winner on board 2 and not on board 1, under board 2's own hand name.

@@ -141,6 +141,8 @@ export interface RecentTournament {
   tournament_id: string | null;
   name: string;
   start_time: string | null;
+  /** Final event timestamp when supplied by the scoped Stats contract. */
+  ended_at?: string | null;
   variant: string | null;
   is_mystery_bounty: boolean;
   finish_rank: number | null;

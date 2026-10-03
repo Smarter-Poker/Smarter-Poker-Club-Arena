@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.tsx'), 'utf8');
+const HEADLINE_DECK = readFileSync(
+  resolve(__dirname, '../src/pages/stats/StatsHeadlineDeck.tsx'),
+  'utf8'
+);
 const CSS = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.css'), 'utf8');
 const POST_DEPLOY_WORKFLOW = readFileSync(
   resolve(__dirname, '../.github/workflows/post-deploy-e2e.yml'),
@@ -18,7 +22,7 @@ describe('Stats operational transparency', () => {
   });
 
   it('shows when the readout was loaded and whether it came from cache', () => {
-    expect(PAGE).toContain('stats-last-updated');
+    expect(HEADLINE_DECK).toContain('stats-last-updated');
     expect(PAGE).toContain('lastUpdatedAt');
     expect(PAGE).toContain('statsDataSource');
   });

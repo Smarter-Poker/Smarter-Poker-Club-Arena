@@ -36,3 +36,12 @@ own exact unused fixture.
 
 No real club, union, player, horse, wallet, game, or chip balance is selected
 for mutation by this correction.
+
+## Delivery Ledger Repair
+
+Migration `20261003001046` merged after its competing correction had already
+been installed as `20261003001112`. Its guarded preimage correctly refused the
+new live function body, so it must never be applied. Protected main removed
+that unapplied, superseded migration in PR #5893, allowing the migration ledger
+to distinguish the installed correction from obsolete source. No database
+statement from `20261003001046` is executed.

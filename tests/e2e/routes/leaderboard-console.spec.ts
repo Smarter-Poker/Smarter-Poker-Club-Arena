@@ -21,6 +21,7 @@ interface Observed {
   pageErrors: number;
   failedArenaFiles: string[];
   otherBadResponses: string[];
+  failedOtherRequests: string[];
 }
 
 function observe(page: Page): Observed {
@@ -29,6 +30,7 @@ function observe(page: Page): Observed {
     pageErrors: 0,
     failedArenaFiles: [],
     otherBadResponses: [],
+    failedOtherRequests: [],
   };
   page.on('console', (message) => {
     if (message.type() === 'error') observed.consoleErrors.push(message.text());
@@ -49,6 +51,8 @@ function observe(page: Page): Observed {
     const url = new URL(request.url());
     if (url.pathname.startsWith(CLUB_ARENA_FILES)) {
       observed.failedArenaFiles.push(`failed ${url.host}${url.pathname}`);
+    } else {
+      observed.failedOtherRequests.push(`failed ${url.host}${url.pathname}`);
     }
   });
   return observed;
@@ -247,6 +251,7 @@ for (const width of [393, 1440]) {
           pageErrors: observed.pageErrors,
           failedArenaFiles: observed.failedArenaFiles.length,
           otherBadResponses: observed.otherBadResponses,
+          failedOtherRequests: observed.failedOtherRequests,
         })
     );
 
@@ -258,5 +263,9 @@ for (const width of [393, 1440]) {
     expect(observed.otherBadResponses, 'failed non-Club Arena requests on the leaderboard').toEqual(
       []
     );
+    expect(
+      observed.failedOtherRequests,
+      'non-Club Arena requests that failed on the leaderboard'
+    ).toEqual([]);
   });
 }

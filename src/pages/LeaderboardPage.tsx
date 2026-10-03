@@ -49,21 +49,15 @@ import {
 } from '../utils/leaderboardPrizePlans';
 import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { describeProgramChanges } from '../utils/leaderboardProgramHistory';
+import {
+  getCachedLeaderboardEntries,
+  setCachedLeaderboardEntries,
+} from '../utils/leaderboardCache';
 
 /* Owner program history: the newest versions are shown, and one extra is read
    so the oldest shown version can still say what it changed. */
 const PROGRAM_HISTORY_COLLAPSED = 3;
 const PROGRAM_HISTORY_VISIBLE = 6;
-
-// ── SWR Cache helpers ──
-const LB_CACHE_TTL_MS = 5 * 60 * 1000;
-const LB_CACHE_MAX_RECORDS = 20;
-
-interface LeaderboardCacheRecord {
-  version: 2;
-  storedAt: number;
-  entries: LeaderboardEntry[];
-}
 
 // Program history is stated in the calendar the rules run on (UTC), so the
 // published moment reads the same for every member wherever they sit.
@@ -78,64 +72,6 @@ function formatUtcTimestamp(value: string): string {
     minute: '2-digit',
     timeZone: 'UTC',
   }).format(parsed)} UTC`;
-}
-
-function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
-  if (!value || typeof value !== 'object') return false;
-  const entry = value as Partial<LeaderboardEntry>;
-  return (
-    Number.isFinite(entry.rank) &&
-    typeof entry.userId === 'string' &&
-    typeof entry.username === 'string' &&
-    Number.isFinite(entry.value)
-  );
-}
-
-function getCachedEntries(key: string): LeaderboardCacheRecord | null {
-  const storageKey = LEADERBOARD_CACHE_PREFIX + key;
-  try {
-    const raw = sessionStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LeaderboardCacheRecord>;
-    if (
-      parsed.version !== 2 ||
-      !Number.isFinite(parsed.storedAt) ||
-      Date.now() - (parsed.storedAt as number) > LB_CACHE_TTL_MS ||
-      !Array.isArray(parsed.entries) ||
-      !parsed.entries.every(isLeaderboardEntry)
-    ) {
-      sessionStorage.removeItem(storageKey);
-      return null;
-    }
-    return parsed as LeaderboardCacheRecord;
-  } catch {
-    sessionStorage.removeItem(storageKey);
-    return null;
-  }
-}
-function setCachedEntries(key: string, entries: LeaderboardEntry[]) {
-  try {
-    const record: LeaderboardCacheRecord = { version: 2, storedAt: Date.now(), entries };
-    sessionStorage.setItem(LEADERBOARD_CACHE_PREFIX + key, JSON.stringify(record));
-
-    const records: { key: string; storedAt: number }[] = [];
-    for (let index = 0; index < sessionStorage.length; index += 1) {
-      const storageKey = sessionStorage.key(index);
-      if (!storageKey?.startsWith(LEADERBOARD_CACHE_PREFIX)) continue;
-      try {
-        const cached = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
-        records.push({ key: storageKey, storedAt: Number(cached.storedAt) || 0 });
-      } catch {
-        sessionStorage.removeItem(storageKey);
-      }
-    }
-    records
-      .sort((a, b) => b.storedAt - a.storedAt)
-      .slice(LB_CACHE_MAX_RECORDS)
-      .forEach((recordToRemove) => sessionStorage.removeItem(recordToRemove.key));
-  } catch {
-    /* quota */
-  }
 }
 
 const podiumAnimationStyle = {
@@ -224,7 +160,6 @@ const METRIC_OPTIONS: {
 ];
 
 const PAGE_SIZE = 50;
-const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_';
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'daily', label: 'Today' },
@@ -752,7 +687,7 @@ export default function LeaderboardPage() {
         !isGlobal && Boolean(selectedClubId) && (period === 'weekly' || period === 'monthly')
       );
       setUserRank(null);
-      const cached = getCachedEntries(cacheKey);
+      const cached = getCachedLeaderboardEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
         setEntries(cached.entries);
         setTotalRanked(cached.entries[0]?.totalRanked ?? null);
@@ -795,7 +730,7 @@ export default function LeaderboardPage() {
       setEntries(data);
       setTotalRanked(data[0]?.totalRanked ?? null);
       setBaselineDate(data[0]?.baselineDate ?? null);
-      setCachedEntries(cacheKey, data);
+      setCachedLeaderboardEntries(cacheKey, data);
       setLastUpdated(new Date());
       setLoadError(null);
 
@@ -918,7 +853,7 @@ export default function LeaderboardPage() {
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
           const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
-          setCachedEntries(cacheKey, next);
+          setCachedLeaderboardEntries(cacheKey, next);
           return next;
         });
       }

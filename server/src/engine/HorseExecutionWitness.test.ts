@@ -170,6 +170,79 @@ describe('private execution witness', () => {
     expect(make({ action: 'check', thinkTime: 1 }).phase10Inputs).toBeNull();
   });
 
+  it('P10.3 binds the PLO4 selection: selected proposal, shadow baseline and the accepted action', () => {
+    const { hero, state } = jointPolicyFixture('plo4', 1, 'cash', 'preflop');
+    const rng = saveFastRandom();
+    let decision: HorseDecision;
+    try {
+      seedFastRandom(7300930);
+      decision = HorseLogic.decide(
+        hero,
+        state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 1000,
+          phase10EvidenceMode: true,
+          phase8Postflop: 'off',
+          phase13Joint: 'off',
+        }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    const receipt = decision.plo4Policy!;
+    expect(receipt.mode).toBe('shadow');
+    expect(receipt.selection).toBe(receipt.changed ? 'shadow_change' : 'none');
+    const witness = createHorseExecutionWitness(
+      { ...input, player: hero, gameState: state },
+      decision,
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    const expected = {
+      continuationVersion: 'plo4-policy-round1-v3',
+      mode: 'shadow',
+      selection: receipt.selection,
+      authority: null,
+      verdict: null,
+      candidate: { action: receipt.proposalAction, amount: receipt.proposalAmount },
+      reference: { action: receipt.baselineAction, amount: receipt.baselineAmount },
+    };
+    expect(witness.phase10Authority).toEqual(expected);
+    expect(Object.isFrozen(witness.phase10Authority!.candidate)).toBe(true);
+    expect(Object.isFrozen(witness.phase10Authority!.reference)).toBe(true);
+    // Later changes to the returned receipt never reach the witness.
+    receipt.proposalAction = 'all_in';
+    receipt.baselineAction = 'fold';
+    expect(witness.phase10Authority).toEqual(expected);
+    // The accepted action is the witness's own controller record.
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: [
+        {
+          record: {
+            seat: hero.seat,
+            action: decision.action,
+            amount: decision.amount ?? 0,
+            stage: 'preflop',
+          },
+          intended: true,
+        },
+      ],
+    });
+    expect(witness.acceptedActions[0].record.action).toBe(decision.action);
+    expect(witness.phase10Authority!.selection).toBe(expected.selection);
+    // A receipt retained before P10.3 (no selection) claims no binding.
+    const legacy = { ...receipt } as Partial<typeof receipt>;
+    delete legacy.selection;
+    expect(
+      make({ ...decision, plo4Policy: legacy as typeof receipt }).phase10Authority
+    ).toBeUndefined();
+    expect(make({ action: 'check', thinkTime: 1 }).phase10Authority).toBeUndefined();
+  });
+
   it.each([10, 20])(
     'reconciles a sized call against its selected amount, not just its name (%s)',
     (amount) => {

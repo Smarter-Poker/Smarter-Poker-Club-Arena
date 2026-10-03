@@ -27,6 +27,19 @@ import {
 
 export type Plo4LiveMode = 'off' | 'shadow' | 'candidate';
 
+/**
+ * P10.3 selection outcome, the same vocabulary as Phase 8's: `none`,
+ * `shadow_change` (a counterfactual, never applied), `selected` (worker
+ * selection under usable Phase 10 authority), and the acceptance-time
+ * `controller_accepted` or `withdrawn_before_acceptance` set by the table.
+ */
+export type Plo4Selection =
+  | 'none'
+  | 'shadow_change'
+  | 'selected'
+  | 'controller_accepted'
+  | 'withdrawn_before_acceptance';
+
 /** Where the opponent ranges behind a postflop equity sample came from. The
  * bands are HorseMind's public-action-line heuristic, optionally adjusted by
  * its observed statistics. Nothing here is calibrated or solver input. */
@@ -210,6 +223,16 @@ export interface Plo4LiveReceipt {
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
   executedAction: HorseDecision['action'] | null;
   executedAmount: number | null;
+  /** P10.3 selection outcome. Absent on receipts retained before P10.3. */
+  selection?: Plo4Selection;
+  /** P10.3: why an authority-backed candidate was not selected (the
+   * reference was retained); null otherwise. */
+  selectionRefusal?: 'illegal_candidate' | null;
+  /** P10.3: the worker's Phase 10 authority receipt for this decision;
+   * null outside the live worker; absent on retained receipts. */
+  authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt | null;
+  /** P10.3: main-scheduler verdict immediately before acceptance; null in the worker. */
+  authorityVerdict?: import('../HorseQualifiedAuthority.js').HorseAuthorityVerdict | null;
 }
 export function plo4Position(seat: number, state: HorseGameStateV2): Plo4Position {
   const seats = horsePolicyDealtPlayers(state.players, seat, state.dealtSeatIds)
@@ -761,6 +784,13 @@ export function plo4LiveReceiptBindingIsValid(value: unknown): boolean {
   return value.eligible === true && plo4InputBindingIsValid(value.inputs);
 }
 
+/** The worker-time selection a receipt's applied/changed facts imply. */
+export function plo4SelectionOf(
+  receipt: Pick<Plo4LiveReceipt, 'applied' | 'changed'>
+): Plo4Selection {
+  return receipt.applied ? 'selected' : receipt.changed ? 'shadow_change' : 'none';
+}
+
 /** Canonical private commitment carried by the execution witness. */
 export function plo4InputBindingSha256(binding: Plo4InputBinding): string {
   return horseCanonicalMaterialSha256(binding);
@@ -807,6 +837,10 @@ export function evaluatePlo4LivePolicy(
     executionStatus: 'pending',
     executedAction: null,
     executedAmount: null,
+    selection: 'none',
+    selectionRefusal: null,
+    authority: null,
+    authorityVerdict: null,
   };
   /** Assembled only once every canonical check has passed. */
   let bind: (() => Plo4InputBinding) | null = null;
@@ -831,6 +865,7 @@ export function evaluatePlo4LivePolicy(
     receipt.changed = !same(proposal, baseline);
     const decision = mode === 'candidate' && receipt.fired ? proposal : baseline;
     receipt.applied = !same(decision, baseline);
+    receipt.selection = plo4SelectionOf(receipt);
     return { decision, proposal, receipt };
   };
   if (mode === 'off') return finish('off');

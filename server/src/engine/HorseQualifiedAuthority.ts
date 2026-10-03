@@ -50,10 +50,13 @@ export interface HorseQualifiedAuthoritySelection {
   readonly withdrawn: Readonly<{ at: string; reason: string }> | null;
 }
 
-/** Immutable admitted record. `authorityKey` digests every identity field. */
+/** Immutable admitted record. `authorityKey` digests every identity field.
+ * Phase 10 (P10.3) admits the same record shape through
+ * `HorsePhase10Authority.ts`; it adds the P10.2 contract digest, which a
+ * Phase 8 record never carries (its identity and key are unchanged). */
 export interface HorseQualifiedAuthority {
   readonly schema: 'horse-qualified-authority-v1';
-  readonly phase: 'phase8';
+  readonly phase: 'phase8' | 'phase10';
   readonly sourceSha: string;
   readonly continuationVersion: string;
   readonly policyDigest: string;
@@ -64,6 +67,8 @@ export interface HorseQualifiedAuthority {
   readonly approvalGeneration: number;
   readonly issuedAt: string;
   readonly expiresAt: string | null;
+  /** Phase 10 only: the P10.2 strength contract digest the qualification binds. */
+  readonly contractDigest?: string;
   readonly authorityKey: string;
 }
 
@@ -85,7 +90,12 @@ export type HorseAuthorityRefusal =
   | 'hash_mismatch'
   | 'evidence_mismatch'
   | 'continuation_mismatch'
-  | 'expired';
+  | 'expired'
+  // Phase 10 (P10.3) qualification-file refusals, named by what failed.
+  | 'not_qualified'
+  | 'contract_unavailable'
+  | 'contract_digest_mismatch'
+  | 'source_mismatch';
 
 export type HorseAuthorityAdmission =
   | { readonly status: 'admitted'; readonly authority: HorseQualifiedAuthority }
@@ -115,7 +125,8 @@ export interface HorseAuthorityReceipt {
   readonly generation: number;
   readonly state: HorseAuthorityState;
   readonly reason: string | null;
-  /** The running code's continuation, always bound even without authority. */
+  /** The running code's continuation (Phase 8) or pack version (Phase 10),
+   * always bound even without authority. */
   readonly continuationVersion: string;
   readonly approvalGeneration: number | null;
   readonly authorityKey: string | null;
@@ -141,7 +152,7 @@ export type HorseAuthorityVerdict =
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 
-function canonical(value: unknown): unknown {
+export function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
@@ -151,7 +162,8 @@ function canonical(value: unknown): unknown {
   }
   return value;
 }
-const sha256 = (text: string | Buffer): string => createHash('sha256').update(text).digest('hex');
+export const sha256 = (text: string | Buffer): string =>
+  createHash('sha256').update(text).digest('hex');
 
 /** Digest of the running continuation's declared boundaries. A boundary edit
  * without a version bump still changes this, so old evidence cannot cover it. */
@@ -161,7 +173,7 @@ export function horsePhase8PolicyDigest(): string {
   );
 }
 
-function isoMs(value: unknown): number | null {
+export function isoMs(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   const ms = Date.parse(value);
   return Number.isFinite(ms) && new Date(ms).toISOString() === value ? ms : null;
@@ -315,14 +327,18 @@ export function admitHorsePhase8ReleaseAuthority(
  */
 export class HorseQualifiedAuthorityHolder {
   readonly epoch: string;
+  /** The version the running code admits: Phase 8 continuation by default;
+   * the Phase 10 holders pass the running PLO4 pack version. */
+  readonly runningVersion: string;
   private generation = 0;
   private state: HorseAuthorityState = 'unselected';
   private reason: string | null = 'unselected';
   private authority: HorseQualifiedAuthority | null = null;
   private withdrawnApproval: number | null = null;
 
-  constructor(epoch: string = randomUUID()) {
+  constructor(epoch: string = randomUUID(), runningVersion: string = PHASE8_POLICY.version) {
     this.epoch = epoch;
+    this.runningVersion = runningVersion;
   }
 
   apply(admission: HorseAuthorityAdmission): void {
@@ -393,7 +409,7 @@ export class HorseQualifiedAuthorityHolder {
       generation: this.generation,
       state: this.state,
       reason: this.reason,
-      continuationVersion: PHASE8_POLICY.version,
+      continuationVersion: this.runningVersion,
       approvalGeneration: a?.approvalGeneration ?? null,
       authorityKey: a?.authorityKey ?? null,
       evidenceSha256: a?.evidenceSha256 ?? null,
@@ -426,8 +442,8 @@ export class HorseQualifiedAuthorityHolder {
     if (generation !== this.generation) return 'stale_generation';
     if (
       authorityKey !== this.authority.authorityKey ||
-      continuationVersion !== PHASE8_POLICY.version ||
-      this.authority.continuationVersion !== PHASE8_POLICY.version
+      continuationVersion !== this.runningVersion ||
+      this.authority.continuationVersion !== this.runningVersion
     )
       return 'mismatched';
     if (this.authority.expiresAt !== null && nowMs >= Date.parse(this.authority.expiresAt))
@@ -469,6 +485,8 @@ export { receiptIsWellFormed as horseAuthorityReceiptIsWellFormed };
  * the worker, mirrors each worker's reported receipt (FIFO order makes those
  * monotonic), and answers the acceptance-time question for a returned ledger.
  * A worker it has not heard from, or one that exited, is `restarted`.
+ * Phase 10 reuses this class with its own admission and running pack version
+ * (`liveHorsePhase10Authority` in `HorsePhase10Authority.ts`).
  */
 export class HorsePhase8AuthorityGate {
   private readonly main: HorseQualifiedAuthorityHolder;
@@ -478,9 +496,10 @@ export class HorsePhase8AuthorityGate {
   constructor(
     private readonly admit: () => HorseAuthorityAdmission = () =>
       admitHorsePhase8ReleaseAuthority(),
-    epoch?: string
+    epoch?: string,
+    runningVersion?: string
   ) {
-    this.main = new HorseQualifiedAuthorityHolder(epoch);
+    this.main = new HorseQualifiedAuthorityHolder(epoch, runningVersion);
   }
 
   /** First call admits; later calls are refreshes (a worker lane start). */

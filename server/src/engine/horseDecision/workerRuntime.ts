@@ -78,6 +78,12 @@ import {
 } from '../HorseQualifiedAuthority.js';
 import { liveHorsePhase8Safety } from '../HorsePhase8Safety.js';
 import type { Phase8Mode } from '../HorseTournamentPostflop.js';
+import {
+  admitHorsePhase10ReleaseAuthority,
+  horsePhase10AdmittedMode,
+} from '../HorsePhase10Authority.js';
+import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
+import type { Plo4LiveMode } from '../plo4/Plo4LivePolicy.js';
 import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
@@ -164,6 +170,11 @@ export interface HorseDecisionWorkerDependencies {
   admitPhase8Authority?(): HorseAuthorityAdmission;
   /** The worker's live Phase 8 safety sentinel; a reason withdraws authority. */
   phase8SafetyDisabledReason?(): string | null;
+  /**
+   * P10.3: admit the committed protected-release Phase 10 (PLO4) selection.
+   * Absent in an injected test runtime means no selection: PLO4 stays shadow.
+   */
+  admitPhase10Authority?(): HorseAuthorityAdmission;
 }
 
 let ownedServicesStarted = false;
@@ -268,6 +279,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   stopServices: stopOwnedServices,
   admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
+  admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
   decide: HorseLogic.decide.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
@@ -432,6 +444,13 @@ export class HorseDecisionWorkerRuntime {
    * selection; never from a request. A new worker is a new epoch. */
   private readonly phase8Authority = new HorseQualifiedAuthorityHolder();
   private phase8AuthorityAdmitted = false;
+  /** P10.3: worker-owned Phase 10 authority, the same holder class and laws,
+   * bound to the running PLO4 pack version. Never obtained from a request. */
+  private readonly phase10Authority = new HorseQualifiedAuthorityHolder(
+    undefined,
+    PLO4_POLICY_PACK.version
+  );
+  private phase10AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -443,6 +462,7 @@ export class HorseDecisionWorkerRuntime {
     if (this.readyPromise) return this.readyPromise;
     this.started = true;
     this.admitPhase8Authority();
+    this.admitPhase10Authority();
     this.readyPromise = this.deps.startServices();
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -1458,6 +1478,50 @@ export class HorseDecisionWorkerRuntime {
     };
   }
 
+  private admitPhase10Authority(): void {
+    if (this.phase10AuthorityAdmitted) return;
+    this.phase10AuthorityAdmitted = true;
+    let admission: HorseAuthorityAdmission;
+    try {
+      admission = this.deps.admitPhase10Authority?.() ?? {
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      };
+    } catch {
+      admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+    }
+    this.phase10Authority.apply(admission);
+    noteFire(`phase10_authority_worker_${this.phase10Authority.currentState()}`);
+  }
+
+  /**
+   * P10.3 worker-owned PLO4 admission, the Phase 8 law: candidate mode comes
+   * from this worker's usable Phase 10 authority when the request RUNS, never
+   * from the caller, and only for a cash decision; a tournament decision stays
+   * shadow so Phase 7 keeps its objective. The caller may only turn it off.
+   */
+  private phase10Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: Plo4LiveMode;
+    receipt: HorseAuthorityReceipt;
+  } {
+    this.admitPhase10Authority();
+    const receipt = this.phase10Authority.receipt();
+    return {
+      mode: horsePhase10AdmittedMode({
+        callerMode: request.opts?.phase10Plo4,
+        gameMode: request.gameState.gameMode,
+        verdict: this.phase10Authority.verdict(receipt, Date.now()),
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 10 admission receipt to the returned PLO4 receipt. */
+  private bindPhase10Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
+    if (decision.plo4Policy) decision.plo4Policy.authority = receipt;
+  }
+
   /** Bind the admission receipt to the returned Phase 8 ledger. */
   private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
     if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
@@ -1484,6 +1548,7 @@ export class HorseDecisionWorkerRuntime {
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     const phase8 = this.phase8Admission(request);
+    const phase10 = this.phase10Admission(request);
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1496,6 +1561,7 @@ export class HorseDecisionWorkerRuntime {
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
             phase8Postflop: phase8.mode,
+            phase10Plo4: phase10.mode,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
             observeMind: true,
@@ -1511,6 +1577,7 @@ export class HorseDecisionWorkerRuntime {
       this.deps.restoreRng(canonicalRng);
     }
     this.bindPhase8Authority(captured.value, phase8.receipt);
+    this.bindPhase10Authority(captured.value, phase10.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -1609,6 +1676,7 @@ export class HorseDecisionWorkerRuntime {
         computeMs,
         governorScale,
         phase8Authority: this.phase8Authority.receipt(),
+        phase10Authority: this.phase10Authority.receipt(),
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -1675,6 +1743,7 @@ export class HorseDecisionWorkerRuntime {
     // Deep work admits authority afresh when it runs: a withdrawal while it
     // waited behind think time turns it back to shadow.
     const phase8 = this.phase8Admission(request);
+    const phase10 = this.phase10Admission(request);
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -1694,6 +1763,7 @@ export class HorseDecisionWorkerRuntime {
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
                 phase8Postflop: phase8.mode,
+                phase10Plo4: phase10.mode,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -1710,6 +1780,7 @@ export class HorseDecisionWorkerRuntime {
       this.deps.restoreRng(canonicalRng);
     }
     this.bindPhase8Authority(decision, phase8.receipt);
+    this.bindPhase10Authority(decision, phase10.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -1756,6 +1827,7 @@ export class HorseDecisionWorkerRuntime {
       computeMs,
       governorScale,
       phase8Authority: this.phase8Authority.receipt(),
+      phase10Authority: this.phase10Authority.receipt(),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

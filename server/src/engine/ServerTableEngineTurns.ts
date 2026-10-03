@@ -55,13 +55,16 @@ import { noteFire } from './BrainTelemetry.js';
 import {
   createHorseExecutionWitness,
   recordHorsePhase8Verdict,
+  recordHorsePhase10Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
   withdrawHorsePhase8Selection,
+  withdrawHorsePhase10Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
 import { liveHorsePhase8Authority } from './HorseQualifiedAuthority.js';
+import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -3589,6 +3592,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('phase8_selection_withdrawn_before_acceptance');
             }
           }
+          // P10.3: the same acceptance law for a selected PLO4 candidate. Only
+          // usable Phase 10 authority NOW lets it act; otherwise the shadow
+          // baseline (the reference the pack received) is executed.
+          if (plo4Ledger?.applied) {
+            const verdict = liveHorsePhase10Authority.check(plo4Ledger.authority);
+            plo4Ledger.authorityVerdict = verdict;
+            noteFire(`phase10_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase10Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase10Selection(decision.executionWitness, decisionSnapshot, verdict);
+              plo4Ledger.applied = false;
+              plo4Ledger.selection = 'withdrawn_before_acceptance';
+              plo4Ledger.finalAction = plo4Ledger.baselineAction;
+              plo4Ledger.finalAmount = plo4Ledger.baselineAmount;
+              decision = {
+                ...decision,
+                action: plo4Ledger.baselineAction,
+                amount: plo4Ledger.baselineAmount ?? undefined,
+              };
+              noteFire('phase10_selection_withdrawn_before_acceptance');
+            }
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
@@ -3864,6 +3890,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     ? 'intended'
                     : 'coerced';
               noteFire(`phase10_execution_${plo4Ledger.executionStatus}`);
+              if (plo4Ledger.selection === 'selected') {
+                if (plo4Ledger.executionStatus === 'intended') {
+                  plo4Ledger.selection = 'controller_accepted';
+                  noteFire('phase10_selection_controller_accepted');
+                } else if (
+                  plo4Ledger.executionStatus === 'fallback' ||
+                  plo4Ledger.executionStatus === 'coerced'
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable, local to this process (Phase 8 law).
+                  liveHorsePhase10Authority.withdraw(
+                    `controller_${plo4Ledger.executionStatus}_candidate`
+                  );
+                  noteFire('phase10_authority_controller_withdrawn');
+                }
+              }
             }
             if (omahaLedger) {
               omahaLedger.executedAction = executedAction;

@@ -34,6 +34,21 @@ import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import type { HorseAuthorityAdmission } from '../HorseQualifiedAuthority.js';
 import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
+import { memoryReader } from '../HorseQualifiedAuthority.test-support.js';
+import {
+  admitHorsePhase10QualifiedAuthority,
+  admitHorsePhase10ReleaseAuthority,
+} from '../HorsePhase10Authority.js';
+import {
+  P10_TEST_CONTRACT_DIGEST,
+  P10_TEST_NOW,
+  p10QualificationBytes,
+  p10Reader,
+  p10Selection,
+  qualifiedPhase10TestAdmission,
+} from '../HorsePhase10Authority.test-support.js';
+import { plo4Cards } from '../../benchmark/Plo4PolicyEvidence.js';
+import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../HorseEval.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -2926,5 +2941,331 @@ describe('Phase 8.3 worker-owned qualified authority', () => {
       expect(h.decisionOpts[0].phase8Postflop).toBe('shadow');
       expect(h.results()[0].phase8Authority?.state).not.toBe('usable');
     }
+  });
+});
+
+describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
+  const plo4Cash = (requestId: number, cards: string): FastHorseDecisionRequest =>
+    rekey({
+      ...fastRequest(requestId),
+      player: { ...snapshot.player, cards: plo4Cards(cards) },
+      gameState: { ...structuredClone(snapshot.gameState), dealerSeat: 2 },
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  const plo4Tournament = (requestId: number, cards: string): FastHorseDecisionRequest => {
+    const base = phase6TournamentRequest(requestId);
+    return rekey({
+      ...base,
+      player: { ...snapshot.player, cards: plo4Cards(cards) },
+      gameState: {
+        ...base.gameState,
+        gameVariant: 'plo4',
+        bettingStructure: 'pot_limit',
+        variantRules: snapshot.gameState.variantRules,
+        legalActions: snapshot.gameState.legalActions,
+        minRaiseTo: snapshot.gameState.minRaiseTo,
+        maxRaiseTo: snapshot.gameState.maxRaiseTo,
+        tournament: { ...base.gameState.tournament!, gameVariant: 'plo4' },
+      },
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  };
+  /** One real worker decision. The HorseLogic RNG is seeded identically for
+   * every run, so two runs differ only by what the worker admitted. */
+  async function decideThrough(
+    request: FastHorseDecisionRequest,
+    admission?: () => HorseAuthorityAdmission,
+    packOff = false
+  ) {
+    const h = harness(true);
+    h.deps.admitPhase10Authority = admission;
+    const decide = h.deps.decide;
+    h.deps.decide = (player, gameState, style, mods, opts) => {
+      const rng = saveFastRandom();
+      seedFastRandom(10_300_003);
+      try {
+        return decide(
+          player,
+          gameState,
+          style,
+          mods,
+          packOff ? { ...opts, phase10Plo4: 'off' } : opts
+        );
+      } finally {
+        restoreFastRandom(rng);
+      }
+    };
+    // Wiring, not latency: the 4 ms budget is tested by Plo4LivePolicy.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      h.runtime.receive(request);
+      await h.runtime.drain();
+    } finally {
+      clock.mockRestore();
+    }
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    return { h, result, decision: result.decision };
+  }
+  const act = (d: { action: string; amount?: number }) => ({
+    action: d.action,
+    amount: d.amount ?? null,
+  });
+
+  // Actions pinned from the unmodified P10.1 base (current main's policy):
+  // the pack is shadow there, so these are the reference actions it executes.
+  // Run through this same harness on the unmodified P10.1 base before the
+  // change (before-tests-with-admission-module-only.log, the PIN run).
+  const LIVE_STATES = [
+    [
+      'cash AsKsQhJh preflop (the pack proposes raise 10)',
+      'cash',
+      'As Ks Qh Jh',
+      true,
+      { action: 'call', amount: 2 },
+    ],
+    [
+      'cash QsQh4c4d preflop (the pack proposes fold)',
+      'cash',
+      'Qs Qh 4c 4d',
+      true,
+      { action: 'call', amount: 2 },
+    ],
+    [
+      'cash Ah7c2s3d preflop (the pack agrees)',
+      'cash',
+      'Ah 7c 2s 3d',
+      false,
+      { action: 'fold', amount: null },
+    ],
+    [
+      'tournament AsKsQhJh preflop (the pack proposes raise 10)',
+      'tournament',
+      'As Ks Qh Jh',
+      true,
+      { action: 'call', amount: 2 },
+    ],
+  ] as const;
+
+  it.each(LIVE_STATES)(
+    'live behaviour is unchanged today: %s executes the same action as current main',
+    async (_name, format, cards, changed, mainAction) => {
+      const request = format === 'cash' ? plo4Cash(601, cards) : plo4Tournament(601, cards);
+      const live = await decideThrough(request, () => admitHorsePhase10ReleaseAuthority());
+      const reference = await decideThrough(request, undefined, true);
+      expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+      expect(act(live.decision)).toEqual(mainAction);
+      expect(act(reference.decision)).toEqual(mainAction);
+      expect(reference.decision.plo4Policy).toBeUndefined();
+      const receipt = live.decision.plo4Policy!;
+      expect(receipt).toMatchObject({
+        mode: 'shadow',
+        applied: false,
+        authorityVerdict: null,
+        selectionRefusal: null,
+        authority: { state: 'unselected', reason: 'unselected', authorityKey: null },
+      });
+      expect(receipt.changed).toBe(changed);
+      expect(receipt.selection).toBe(receipt.changed ? 'shadow_change' : 'none');
+      expect(receipt.finalAction).toBe(live.decision.action);
+      expect(live.result.phase10Authority).toMatchObject({
+        state: 'unselected',
+        continuationVersion: 'plo4-policy-round1-v3',
+      });
+      expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+    }
+  );
+
+  it.each([
+    [
+      'missing',
+      () =>
+        admitHorsePhase10QualifiedAuthority(
+          p10Selection(),
+          memoryReader({}),
+          P10_TEST_NOW,
+          P10_TEST_CONTRACT_DIGEST
+        ),
+      'missing_evidence',
+    ],
+    [
+      'qualified:false',
+      () => {
+        const q = p10QualificationBytes({ qualified: false });
+        return admitHorsePhase10QualifiedAuthority(
+          p10Selection(q),
+          p10Reader(q),
+          P10_TEST_NOW,
+          P10_TEST_CONTRACT_DIGEST
+        );
+      },
+      'not_qualified',
+    ],
+    [
+      'wrong-digest',
+      () => {
+        const q = p10QualificationBytes({ contractDigest: 'e'.repeat(64) });
+        return admitHorsePhase10QualifiedAuthority(
+          p10Selection(q),
+          p10Reader(q),
+          P10_TEST_NOW,
+          P10_TEST_CONTRACT_DIGEST
+        );
+      },
+      'contract_digest_mismatch',
+    ],
+    [
+      'wrong-source',
+      () => {
+        const q = p10QualificationBytes({ sourceSha: 'c'.repeat(40) });
+        return admitHorsePhase10QualifiedAuthority(
+          p10Selection(q),
+          p10Reader(q),
+          P10_TEST_NOW,
+          P10_TEST_CONTRACT_DIGEST
+        );
+      },
+      'source_mismatch',
+    ],
+  ] as const)(
+    'a %s qualification file keeps the pack in shadow and the reference action',
+    async (_name, admission, reason) => {
+      const request = plo4Cash(602, 'As Ks Qh Jh');
+      const refused = await decideThrough(request, admission);
+      const reference = await decideThrough(request, undefined, true);
+      expect(refused.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+      expect(act(refused.decision)).toEqual(act(reference.decision));
+      expect(refused.decision.plo4Policy).toMatchObject({
+        mode: 'shadow',
+        changed: true,
+        applied: false,
+        selection: 'shadow_change',
+        authority: { state: 'refused', reason },
+      });
+    }
+  );
+
+  it('a valid qualified file (test fixture only) selects the cash proposal and records selected and baseline actions', async () => {
+    const request = plo4Cash(603, 'As Ks Qh Jh');
+    const selected = await decideThrough(request, () => qualifiedPhase10TestAdmission(1));
+    const reference = await decideThrough(request, undefined, true);
+    expect(selected.h.decisionOpts[0].phase10Plo4).toBe('candidate');
+    const receipt = selected.decision.plo4Policy!;
+    expect(receipt).toMatchObject({
+      mode: 'candidate',
+      fired: true,
+      changed: true,
+      applied: true,
+      selection: 'selected',
+      utilityOwner: 'cash',
+      authority: { state: 'usable', generation: 1, approvalGeneration: 1, mainGeneration: null },
+    });
+    // Selected = the proposal; shadow baseline = the reference the worker
+    // would have executed without authority.
+    expect(act(selected.decision)).toEqual({
+      action: receipt.proposalAction,
+      amount: receipt.proposalAmount,
+    });
+    expect({ action: receipt.baselineAction, amount: receipt.baselineAmount }).toEqual(
+      act(reference.decision)
+    );
+    expect(act(selected.decision)).not.toEqual(act(reference.decision));
+    expect(selected.result.phase10Authority).toEqual(receipt.authority);
+    expect(horseDecisionReceiptIsValid(structuredClone(selected.decision), 'plo4')).toBe(true);
+    // The worker boundary refuses the same selection without usable authority,
+    // labelled as a tournament objective decision, or claiming acceptance.
+    for (const forge of [
+      (r: any) => (r.authority = { ...r.authority, state: 'refused' }),
+      (r: any) => (r.authority = null),
+      (r: any) => (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round1-v2' }),
+      (r: any) => (r.utilityOwner = 'phase7_evaluated'),
+      (r: any) => (r.selection = 'controller_accepted'),
+      (r: any) => (r.authorityVerdict = 'usable'),
+      (r: any) => (r.proposalAmount = 999),
+      (r: any) => delete r.selection,
+    ]) {
+      const forged = structuredClone(selected.decision) as any;
+      forge(forged.plo4Policy);
+      expect(horseDecisionReceiptIsValid(forged, 'plo4')).toBe(false);
+    }
+  });
+
+  it('tournament decisions keep Phase 7 ownership even when the pack would be selected', async () => {
+    const admission = () => qualifiedPhase10TestAdmission(1);
+    const cash = await decideThrough(plo4Cash(604, 'As Ks Qh Jh'), admission);
+    expect(cash.h.decisionOpts[0].phase10Plo4).toBe('candidate');
+    expect(cash.decision.plo4Policy?.selection).toBe('selected');
+
+    const request = plo4Tournament(605, 'As Ks Qh Jh');
+    const withAuthority = await decideThrough(request, admission);
+    const withoutAuthority = await decideThrough(request);
+    expect(withAuthority.result.phase10Authority?.state).toBe('usable');
+    expect(withAuthority.h.decisionOpts[0].phase10Plo4).toBe('shadow');
+    const receipt = withAuthority.decision.plo4Policy!;
+    expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+    expect(receipt.selection).not.toBe('selected');
+    expect(receipt.utilityOwner).not.toBe('cash');
+    // Identical to the decision made with no authority at all.
+    expect(act(withAuthority.decision)).toEqual(act(withoutAuthority.decision));
+    expect(withAuthority.decision.tournamentUtility ?? null).toEqual(
+      withoutAuthority.decision.tournamentUtility ?? null
+    );
+    expect(withAuthority.decision.tournamentPreflopAttribution ?? null).toEqual(
+      withoutAuthority.decision.tournamentPreflopAttribution ?? null
+    );
+    // A tournament receipt can never cross the boundary as a selection.
+    const forged = structuredClone(withAuthority.decision) as any;
+    Object.assign(forged.plo4Policy, {
+      mode: 'candidate',
+      applied: true,
+      changed: true,
+      selection: 'selected',
+      finalAction: forged.plo4Policy.proposalAction,
+      finalAmount: forged.plo4Policy.proposalAmount,
+    });
+    forged.action = forged.plo4Policy.proposalAction;
+    forged.amount = forged.plo4Policy.proposalAmount ?? undefined;
+    expect(horseDecisionReceiptIsValid(forged, 'plo4')).toBe(false);
+  });
+
+  it('a caller still cannot supply PLO4 candidate control when authority is usable', async () => {
+    const h = harness(true);
+    h.deps.admitPhase10Authority = () => qualifiedPhase10TestAdmission(1);
+    h.runtime.receive({
+      ...plo4Cash(606, 'As Ks Qh Jh'),
+      opts: { phase10Plo4: 'candidate' },
+    } as unknown as FastHorseDecisionRequest);
+    await h.runtime.drain();
+    expect(h.decisionOpts).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'offline candidate controls are forbidden in live decision requests',
+    });
+  });
+
+  it('the caller may turn the pack off; deep think-time work admits afresh', async () => {
+    const h = harness();
+    h.deps.admitPhase10Authority = () => qualifiedPhase10TestAdmission(1);
+    h.runtime.receive(rekey({ ...fastRequest(1), opts: { phase10Plo4: 'off' } }));
+    const request = fastRequest(2);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.filter((m) => m.type === 'FAST_RESULT').at(-1);
+    if (fast?.type !== 'FAST_RESULT') throw Error('expected FAST_RESULT');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 3,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase10Plo4)).toEqual(['off', 'candidate', 'candidate']);
+    const deep = h.messages.find((m) => m.type === 'DEEP_RESULT');
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase10Authority?.state).toBe('usable');
   });
 });

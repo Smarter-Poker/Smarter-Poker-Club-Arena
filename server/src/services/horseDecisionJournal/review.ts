@@ -137,7 +137,9 @@ const same = (a: unknown, b: unknown) => horseJournalJson(a) === horseJournalJso
 
 /**
  * The executed witness may differ from one rebuilt from the decision record in
- * exactly one owned way: the main scheduler's acceptance-time Phase 8 verdict.
+ * exactly one owned way: the main scheduler's acceptance-time Phase 8 verdict
+ * (and, by the same law, the P10.3 Phase 10 verdict: `phase10Authority` has the
+ * same shape, with the PLO4 pack version, proposal and shadow baseline).
  * The worker-bound authority (less the main stamp), continuation version,
  * candidate and reference must match; a selected candidate may only end
  * selected, controller-accepted or withdrawn before acceptance.
@@ -161,6 +163,23 @@ function phase8BindingMatches(
         )
       : actual.selection === expected.selection)
   );
+}
+/**
+ * P10.3: the final PLO4 selection must agree with the acceptance facts the
+ * witness itself records: controller acceptance only after a usable verdict
+ * and an intended execution, a withdrawal only with an unusable verdict, and a
+ * selection still open only when it never reached a usable, intended action.
+ */
+function phase10OutcomeIsCoherent(w: HorseExecutionWitness): boolean {
+  const binding = w.phase10Authority;
+  if (!binding) return true;
+  if (binding.selection === 'controller_accepted')
+    return binding.verdict === 'usable' && w.executionStatus === 'intended';
+  if (binding.selection === 'withdrawn_before_acceptance')
+    return binding.verdict !== null && binding.verdict !== 'usable';
+  if (binding.selection === 'selected')
+    return !(binding.verdict === 'usable' && w.executionStatus === 'intended');
+  return binding.verdict === null;
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uint = (x: unknown): x is number => Number.isSafeInteger(x) && Number(x) >= 0;
@@ -569,14 +588,17 @@ export function reconcileHorseJournalHand(
           computeMs: d.computeMs,
           governorScale: d.governorScale,
         });
-        // A Phase 8 authority withdrawal re-selected the reference before
-        // acceptance; the executed intent and its amount follow that reference.
+        // A Phase 8 or Phase 10 authority withdrawal re-selected the reference
+        // before acceptance; the executed intent and its amount follow it.
         const phase8Withdrawn = w.phase8Authority?.selection === 'withdrawn_before_acceptance';
+        const phase10Withdrawn = w.phase10Authority?.selection === 'withdrawn_before_acceptance';
         const expectedSelected = phase8Withdrawn
           ? expectedWitness.phase8Authority?.reference
-          : expectedWitness.selected;
+          : phase10Withdrawn
+            ? expectedWitness.phase10Authority?.reference
+            : expectedWitness.selected;
         const expectedAmount =
-          phase8Withdrawn && expectedSelected
+          (phase8Withdrawn || phase10Withdrawn) && expectedSelected
             ? expectedHorseExecutionAmount(s, {
                 action: expectedSelected.action,
                 amount: expectedSelected.amount ?? undefined,
@@ -589,6 +611,8 @@ export function reconcileHorseJournalHand(
           !same(w.identity, expectedWitness.identity) ||
           !same(w.selected, expectedSelected) ||
           !phase8BindingMatches(w.phase8Authority, expectedWitness.phase8Authority) ||
+          !phase8BindingMatches(w.phase10Authority, expectedWitness.phase10Authority) ||
+          !phase10OutcomeIsCoherent(w) ||
           !same(w.policyOwnership, expectedWitness.policyOwnership) ||
           !same(w.policyGraph, expectedWitness.policyGraph) ||
           !same(w.phase6Attribution ?? null, expectedWitness.phase6Attribution ?? null) ||

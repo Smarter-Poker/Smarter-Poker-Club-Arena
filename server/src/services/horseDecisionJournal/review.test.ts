@@ -7,7 +7,10 @@ import {
   settleHorseExecutionWitness,
   retireHorseExecutionWitness,
   withdrawHorsePhase8Selection,
+  withdrawHorsePhase10Selection,
+  recordHorsePhase10Verdict,
 } from '../../engine/HorseExecutionWitness.js';
+import { qualifiedPhase10TestAdmission } from '../../engine/HorsePhase10Authority.test-support.js';
 import {
   captureHorseHandJournalContext,
   horsePriorActionsDigest,
@@ -869,6 +872,183 @@ describe('private retained-hand journal consumer', () => {
       );
     }
   );
+  describe('P10.3 PLO4 selection reconciliation', () => {
+    /** A P10.3 cash receipt as the worker returns it, bound to its authority. */
+    const plo4Receipt = (authority: unknown, selected: boolean) => ({
+      version: 'plo4-policy-round1-v3',
+      mode: selected ? 'candidate' : 'shadow',
+      eligible: true,
+      fired: true,
+      changed: true,
+      applied: selected,
+      selection: selected ? 'selected' : 'shadow_change',
+      selectionRefusal: null,
+      authority,
+      authorityVerdict: null,
+      reason: 'preflop_entry',
+      street: 'preflop',
+      baselineAction: 'call',
+      baselineAmount: null,
+      proposalAction: 'raise',
+      proposalAmount: 4,
+      finalAction: selected ? 'raise' : 'call',
+      finalAmount: selected ? 4 : null,
+      utilityOwner: 'cash',
+      executionStatus: 'pending',
+      executedAction: null,
+      executedAmount: null,
+    });
+    function selectedCase(selected = true) {
+      const f = fixture('plo4');
+      const s = f.d.snapshot;
+      const worker = new HorseQualifiedAuthorityHolder(
+        'review-p10-worker',
+        'plo4-policy-round1-v3'
+      );
+      worker.apply(qualifiedPhase10TestAdmission(1));
+      const gate = new HorsePhase8AuthorityGate(
+        () => qualifiedPhase10TestAdmission(1),
+        'review-p10-main',
+        'plo4-policy-round1-v3'
+      );
+      gate.refresh();
+      const journaled = selected ? worker.receipt() : null;
+      const act = selected ? { action: 'raise' as const, amount: 4 } : { action: 'call' as const };
+      // The worker journals its unstamped receipt; the client stamps it.
+      f.d.decision = {
+        ...act,
+        thinkTime: 50,
+        plo4Policy: plo4Receipt(journaled, selected),
+      } as unknown as HorseDecision;
+      const delivered = {
+        ...f.d.decision,
+        plo4Policy: plo4Receipt(journaled ? gate.stamp(worker.receipt()) : null, selected),
+      } as unknown as HorseDecision;
+      const w = createHorseExecutionWitness(s, delivered, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      return { f, s, w, gate, worker };
+    }
+    const accept = (f: ReturnType<typeof fixture>, action: 'raise' | 'call', amount: number) => {
+      const last = f.a.actions.at(-1) as Record<string, unknown>;
+      f.a.actions[f.a.actions.length - 1] = { ...last, action, amount } as never;
+      return [
+        {
+          record: { ...f.w.acceptedActions[0]!.record, action, amount },
+          intended: true,
+        },
+      ];
+    };
+
+    it('reconciles an accepted selection: the reviewer recomputes the selected and baseline actions', () => {
+      const { f, w } = selectedCase();
+      recordHorsePhase10Verdict(w, 'usable');
+      settleHorseExecutionWitness(w, { applied: true, acceptedActions: accept(f, 'raise', 4) });
+      f.w = w;
+      expect(w.executionStatus).toBe('intended');
+      expect(w.phase10Authority).toMatchObject({
+        selection: 'controller_accepted',
+        verdict: 'usable',
+        candidate: { action: 'raise', amount: 4 },
+        reference: { action: 'call', amount: null },
+      });
+      expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+        status: 'reconciled',
+        matchedActions: 1,
+        gaps: [],
+      });
+    });
+
+    it.each([
+      [
+        'a changed shadow baseline',
+        (w: any): void => {
+          w.phase10Authority.reference = { action: 'fold', amount: null };
+        },
+      ],
+      [
+        'a changed selected proposal',
+        (w: any): void => {
+          w.phase10Authority.candidate = { action: 'raise', amount: 6 };
+        },
+      ],
+      [
+        'acceptance without a usable verdict',
+        (w: any): void => {
+          w.phase10Authority.verdict = 'withdrawn';
+        },
+      ],
+      [
+        'a forged worker authority',
+        (w: any): void => {
+          w.phase10Authority.authority = { ...w.phase10Authority.authority, generation: 9 };
+        },
+      ],
+      [
+        'a dropped binding',
+        (w: any): void => {
+          delete w.phase10Authority;
+        },
+      ],
+    ] as const)('rejects %s even when the accepted action matches', (_name, tamper) => {
+      const { f, w } = selectedCase();
+      recordHorsePhase10Verdict(w, 'usable');
+      settleHorseExecutionWitness(w, { applied: true, acceptedActions: accept(f, 'raise', 4) });
+      tamper(w);
+      f.w = w;
+      const report = reconcileHorseJournalHand(f.rows(), handKey);
+      expect(report.status).toBe('incomplete');
+      expect(report.matchedActions).toBe(0);
+    });
+
+    it.each(['honest', 'tampered_reference', 'claims_acceptance'] as const)(
+      'reconciles a PLO4 selection withdrawn before acceptance (%s)',
+      (mode) => {
+        const { f, s, w } = selectedCase();
+        withdrawHorsePhase10Selection(w, s, 'withdrawn');
+        if (mode === 'tampered_reference')
+          (w as { selected: unknown }).selected = { action: 'raise', amount: 4 };
+        settleHorseExecutionWitness(w, { applied: true, acceptedActions: f.w.acceptedActions });
+        if (mode === 'claims_acceptance') w.phase10Authority!.selection = 'controller_accepted';
+        f.w = w;
+        expect(w.selected).toEqual(
+          mode === 'tampered_reference'
+            ? { action: 'raise', amount: 4 }
+            : { action: 'call', amount: null }
+        );
+        expect(reconcileHorseJournalHand(f.rows(), handKey).status).toBe(
+          mode === 'honest' ? 'reconciled' : 'incomplete'
+        );
+      }
+    );
+
+    it('reconciles a shadow change and rejects one relabelled as selected', () => {
+      const honest = selectedCase(false);
+      settleHorseExecutionWitness(honest.w, {
+        applied: true,
+        acceptedActions: honest.f.w.acceptedActions,
+      });
+      honest.f.w = honest.w;
+      expect(honest.w.phase10Authority).toMatchObject({
+        mode: 'shadow',
+        selection: 'shadow_change',
+        authority: null,
+      });
+      expect(reconcileHorseJournalHand(honest.f.rows(), handKey).status).toBe('reconciled');
+      const relabelled = selectedCase(false);
+      settleHorseExecutionWitness(relabelled.w, {
+        applied: true,
+        acceptedActions: relabelled.f.w.acceptedActions,
+      });
+      relabelled.w.phase10Authority!.selection = 'selected';
+      relabelled.f.w = relabelled.w;
+      expect(reconcileHorseJournalHand(relabelled.f.rows(), handKey).status).toBe('incomplete');
+    });
+  });
+
   it('reconciles a coerced controller amount without calling it the intended wager', () => {
     const f = fixture();
     f.w.executionStatus = 'pending';

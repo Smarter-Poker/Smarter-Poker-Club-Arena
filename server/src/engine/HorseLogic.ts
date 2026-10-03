@@ -33,6 +33,7 @@ import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import {
   capturePlo4RangeProvenance,
   evaluatePlo4LivePolicy,
+  plo4SelectionOf,
   type Plo4EquityEvidence,
   type Plo4LiveMode,
   type Plo4RangeProvenance,
@@ -2725,7 +2726,19 @@ export class HorseLogic {
               opts.phase10EvidenceMode && !tele ? () => 0 : undefined
             )
           : null;
-      if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
+      if (phase10) {
+        const legal = this.legalize(phase10.decision, player, gs, vi);
+        // P10.3: an applied candidate the legalizer would rewrite is illegal as
+        // proposed. It never reaches the table: the reference is retained.
+        if (
+          phase10.receipt.applied &&
+          (legal.action !== phase10.decision.action ||
+            (legal.amount ?? null) !== (phase10.decision.amount ?? null))
+        ) {
+          phase10.receipt.applied = false;
+          phase10.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       const phase11 =
         registration.owner === 'phase11' && opts.phase11Omaha !== 'off'
           ? evaluateOmahaVariantPolicy(
@@ -3003,6 +3016,15 @@ export class HorseLogic {
         }
         phase10.receipt.finalAction = decision.action;
         phase10.receipt.finalAmount = decision.amount ?? null;
+        // P10.3: `selected` only when the applied candidate is the action
+        // leaving this guard. In an offline tournament run Phase 7 may replace
+        // it; the pack then did not own the decision and is not selected.
+        phase10.receipt.selection =
+          phase10.receipt.applied &&
+          (decision.action !== phase10.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase10.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase10.receipt);
         decision = { ...decision, plo4Policy: phase10.receipt };
         if (tele) {
           noteFire('phase10_seen');
@@ -3018,6 +3040,7 @@ export class HorseLogic {
           if (phase10.receipt.changed) noteFire('phase10_shadow_changed');
           if (phase10.receipt.applied) noteFire('phase10_applied');
           else noteFire('phase10_baseline_retained');
+          noteFire(`phase10_selection_${phase10.receipt.selection}`);
           noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
           if (phase10.receipt.utilityUnavailableReason)
             noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);

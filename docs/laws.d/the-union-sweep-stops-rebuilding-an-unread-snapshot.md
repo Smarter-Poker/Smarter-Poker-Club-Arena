@@ -1,14 +1,13 @@
 # tests/the-union-sweep-stops-rebuilding-an-unread-snapshot.law.test.ts
 
-The hourly union integrity sweep runs its money controls and does not rebuild
-`union_rake_basis_snapshot`. That rebuild recomputed the whole open week each
-hour; from 2026-09-29 it no longer finished inside the job's 300 s, so every
-run lasted exactly 300 s, was cancelled in the rebuild and kept the 2026-09-28
-snapshot, spending about 250 s of a backend an hour on a table nothing reads.
-The law pins that the sweep in force calls the integrity sweep, invoice ageing,
-stop-loss, lock expiry and hygiene, and period closes, and never
-`fn_union_rake_basis_refresh`; that no application source under `src`,
-`server/src` or `supabase/functions` reads the snapshot table; and that the
-migration is one md5-pinned transaction that adds no schedule. The older law
-`the-union-sweep-commits-its-money-controls-before-the-snapshot` accepts a sweep
-with no rebuild, since a rebuild that is not there cannot roll a control back.
+The hourly union integrity sweep only rebuilds a bounded open-week snapshot.
+The one-read rebuild of `union_rake_basis_snapshot` stopped finishing inside job
+123's 300 s on 2026-09-29, so `20261003225101` took it out of
+`fn_union_integrity_sweep_all`; the accounting coordinator's `20261003224956`
+then made the refresh incremental (`fn_union_rake_basis_windowed`), and
+`20261003235228` restores the call, refusing to apply unless the refresh in
+force is the windowed one. The law pins that the sweep in force runs the
+integrity sweep, invoice ageing, stop-loss, lock expiry and hygiene and period
+closes, and calls the refresh, if at all, only after every one of them; that the
+windowed refresh exists in the migration chain and the restoration checks for
+it; and that neither change adds a schedule.

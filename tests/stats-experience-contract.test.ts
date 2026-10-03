@@ -38,6 +38,12 @@ describe('Stats mobile fold budget', () => {
       /\.stats-brief-actions\s*\{[\s\S]{0,100}grid-template-columns:\s*minmax\(0,\s*1fr\)/
     );
   });
+
+  it('keeps every club-scope control on the 44px touch floor', () => {
+    expect(CSS).toMatch(
+      /\.stats-club-selector button,\s*\.stats-club-sort button,\s*\.stats-club-actions button,\s*\.stats-club-table th button\s*\{[^}]*min-height:\s*44px/
+    );
+  });
 });
 
 describe('Stats evidence links to real hand history', () => {

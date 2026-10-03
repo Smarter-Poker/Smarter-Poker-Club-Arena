@@ -68,6 +68,8 @@ describe('Phase 10 basic PLO4 policy', () => {
       bet: 0,
       totalInvested: 20,
     });
+    // Three-handed from the occupied button 1: the walk posts from seats 2 and 3.
+    input.state.blindSeats = { smallBlind: 2, bigBlind: 3 };
     input.state.pot += 20;
     input.opponentRanges!.third = {
       combos: [{ cards: plo4Cards('2c 4c 6d 7d'), weight: 1 }],
@@ -124,6 +126,8 @@ describe('Phase 10 basic PLO4 policy', () => {
       Object.assign(input.state, {
         heroSeat: seat,
         currentPlayerSeat: seat,
+        // Button 1: seats 2 and 3 posted the blinds.
+        blindSeats: { smallBlind: 2, bigBlind: 3 },
         toCall: 2,
         maxRaiseTo: 7,
       });

@@ -61,6 +61,8 @@ function fixture(
       : v
   );
   state.toCall = phase7 || phase10 ? 0 : 1;
+  // The fixture's button is seat 4: the walk posts the blinds from seats 1 and 2.
+  if (phase10) state.blindSeats = { smallBlind: 1, bigBlind: 2 };
   if (phase7) {
     state.legalActions = ['check'];
     state.minRaiseTo = null;

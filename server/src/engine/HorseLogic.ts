@@ -942,6 +942,14 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** Public deal census captured before stripping private cards. Connectivity
    * and folding never return a dealt hand to the physical deck. */
   dealtSeatIds?: number[];
+  /**
+   * The seats that posted the blinds this hand, as HandController posted them
+   * (getBlindSeatsSnapshot). `smallBlind` is null when the small blind is DEAD
+   * under the tournament dead-button rule (deadButton.ts): nobody posts it.
+   * Null when the hand posted no blinds (a bomb pot); absent on older
+   * snapshots and fixtures. The PLO4 pack derives positions from it.
+   */
+  blindSeats?: { smallBlind: number | null; bigBlind: number } | null;
   /** Settlement units from the active controller, including whole Diamonds. */
   chipUnit?: 0.01 | 1;
   asset?: 'chips' | 'diamonds';

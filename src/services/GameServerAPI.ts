@@ -14,7 +14,7 @@
 
 import { supabase } from '../lib/supabase';
 import { AUTH_STORAGE_KEY, parseJwtPayload, readLocalSession } from '../lib/authUtils';
-import { reportError } from '../utils/errorReporter';
+import { captureClientError, isClientErrorSinkEnabled, reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -138,8 +138,64 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
  * asks auth-js for a refreshed session and re-sends with the new token; if
  * there is no session to refresh, the original 401 is returned and the caller
  * surfaces it as before. Every engine call in this file goes through it.
+ * (The retry is engineFetchWithAuthRetry; this wrapper adds the refusal note.)
  */
 async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const resp = await engineFetchWithAuthRetry(url, init);
+  if (!resp.ok && resp.status !== 429) noteEngineRefusal(url, resp);
+  return resp;
+}
+
+/**
+ * Every engine refusal reaches the first-party error sink (2026-10-03), with
+ * the engine's own code: ACTION_CONTEXT_REQUIRED, SEAT_OCCUPANCY_REQUIRED,
+ * STALE_ACTION, or HTTP_<status> when the body names none. This is the one
+ * door every engine call walks through, so the "Server error (NNN)" results
+ * below and the leave/buy-in/action refusals are all counted here without
+ * editing each of them.
+ *
+ * 429 is left out on purpose: it means "not processed, retry", submitAction
+ * retries it, and the exhausted case reaches the player (and the sink) as the
+ * toast it becomes.
+ *
+ * The caller's response is never touched: the body is read from a clone, in
+ * the background, and nothing here can throw or delay the request.
+ */
+function noteEngineRefusal(url: string, resp: Response): void {
+  try {
+    if (!isClientErrorSinkEnabled()) return;
+    let path = url;
+    try {
+      path = new URL(url).pathname;
+    } catch {
+      /* keep the raw string */
+    }
+    const status = resp.status;
+    const record = (body?: unknown) => {
+      const b = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+      const code = typeof b.code === 'string' && b.code ? b.code : `HTTP_${status}`;
+      const message =
+        typeof b.error === 'string' && b.error ? b.error : `Engine refused ${path} (${status})`;
+      captureClientError(new Error(message), 'GameServerAPI.engine_refusal', {
+        code,
+        status,
+        path,
+      });
+    };
+    let copy: Response | null = null;
+    try {
+      copy = resp.clone();
+    } catch {
+      copy = null;
+    }
+    if (!copy) return record();
+    void copy.json().then(record, () => record());
+  } catch {
+    /* telemetry never changes a request's outcome */
+  }
+}
+
+async function engineFetchWithAuthRetry(url: string, init: RequestInit = {}): Promise<Response> {
   const suppliedToken = new Headers(init.headers).get('Authorization')?.replace(/^Bearer\s+/i, '');
   if (
     suppliedToken &&

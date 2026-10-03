@@ -53,7 +53,7 @@ import { initIdentityDNA } from './core/IdentityDNA';
 import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
-import { reportError, reportWarning } from './utils/errorReporter';
+import { captureClientError, reportError, reportWarning } from './utils/errorReporter';
 import { hasLocalSession } from './lib/authUtils';
 // One source of truth for where this bundle lives (web sub-path or native
 // root). A basename that does not match the URL is a white screen, not a 404.
@@ -103,6 +103,21 @@ window.addEventListener('unhandledrejection', (event) => {
   event.preventDefault();
   // Log but don't crash — the page's error state should handle degraded display
   reportError(event.reason, 'main.Unhandled_promise_rejection_caught');
+});
+
+// Uncaught exceptions reach the first-party sink too (2026-10-03). Sink only,
+// no console.error: the browser has already printed the error, and on the
+// table HorseBugReporter files it from its own `error` listener, so a console
+// line here would file it a second time. Not a capture-phase listener, so a
+// failed <img>/<script> load (which does not bubble) is not reported as a
+// script error.
+window.addEventListener('error', (event) => {
+  captureClientError(event.error ?? event.message, 'window.onerror', {
+    code: event.error ? undefined : 'UNCAUGHT_ERROR',
+    file: event.filename,
+    line: event.lineno,
+    column: event.colno,
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

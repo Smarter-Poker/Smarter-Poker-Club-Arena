@@ -3,9 +3,19 @@
  *  ERROR REPORTER — Centralized Error Capture Utility
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Writes normalized errors to the existing console reporting path.
+ * Writes normalized errors to the console AND, in production, to the
+ * first-party sink (clientErrorSink.ts -> public.fn_report_client_errors).
  * Use this in service-level and page-level catch blocks for production
  * visibility into errors that would otherwise be silently swallowed.
+ *
+ * Pass the player-facing error code as `extra.code` when there is one
+ * (ACTION_CONTEXT_REQUIRED, SEAT_OCCUPANCY_REQUIRED, BUY_IN_NOT_CONFIRMED...):
+ * it is what the error summary groups by. Without one the error's own `code`
+ * (a Supabase/Postgres code) or its `name` is used.
+ *
+ * There is no third-party error service here and there never will be again:
+ * Sentry is retired by the owner's standing rule
+ * (tests/sentry-never-comes-back.law.test.ts).
  *
  * Usage:
  *   import { reportError } from '../utils/errorReporter';
@@ -199,6 +209,7 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
     const reported = buildReport(error, context);
     if (extra === undefined) console.error(`[${context}]`, reported);
     else console.error(`[${context}]`, reported, extra);
+    forwardToSink(reported, error, context, extra);
   } catch (reporterFailure) {
     /**
      * THE BACKSTOP. Nothing above is expected to throw any more, and if
@@ -216,6 +227,120 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
     } catch {
       /* there is nothing left to try */
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  FIRST-PARTY SINK (2026-10-03)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The sink module is imported lazily on the first error, so the entry chunk
+// carries only this forwarding code. It is enabled in production builds only:
+// unit tests, dev servers and preview builds without a Supabase URL send
+// nothing. Everything here is best-effort and may not throw (see the contract
+// at the top of this file); the sink module itself batches, samples repeats,
+// rate-limits and scrubs before anything leaves the browser.
+
+type SinkModule = typeof import('./clientErrorSink');
+type Capture = import('./clientErrorSink').ClientErrorCapture;
+
+let sinkLoad: Promise<SinkModule['clientErrorSink'] | null> | null = null;
+
+/** True when this build sends errors to the first-party sink. */
+export function isClientErrorSinkEnabled(): boolean {
+  try {
+    return (
+      import.meta.env.PROD === true &&
+      !!import.meta.env.VITE_SUPABASE_URL &&
+      typeof window !== 'undefined'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The grouping code: the caller's `extra.code`, else the error's `code`, else a specific `name`. */
+function pickCode(error: unknown, extra: unknown): string {
+  for (const value of [safeRead(extra, 'code'), safeRead(error, 'code')]) {
+    if ((typeof value === 'string' && value !== '') || typeof value === 'number')
+      return String(value);
+  }
+  const name = safeReadString(error, 'name');
+  return name && name !== 'Error' ? name : 'ERROR';
+}
+
+function currentRoute(): string {
+  try {
+    return window.location.pathname;
+  } catch {
+    return '';
+  }
+}
+
+function deliver(capture: Capture): void {
+  if (!sinkLoad) {
+    // One attempt per page. A chunk that will not load (a publish mid-session)
+    // must not turn every later error into another failing import.
+    sinkLoad = import('./clientErrorSink').then(
+      (m) => m.clientErrorSink,
+      () => null
+    );
+  }
+  void sinkLoad.then((sink) => {
+    try {
+      sink?.enqueue(capture);
+    } catch {
+      /* best effort */
+    }
+  });
+}
+
+function forwardToSink(
+  reported: Error,
+  original: unknown,
+  context: string,
+  extra: Record<string, any> | undefined
+): void {
+  try {
+    if (!isClientErrorSinkEnabled()) return;
+    const prefix = `[${context}] `;
+    const message = reported.message.startsWith(prefix)
+      ? reported.message.slice(prefix.length)
+      : reported.message;
+    deliver({
+      at: Date.now(),
+      route: currentRoute(),
+      code: pickCode(original, extra),
+      name: safeReadString(reported, 'name'),
+      message,
+      stack: safeReadString(reported, 'stack'),
+      source: context,
+      extra,
+    });
+  } catch {
+    /* telemetry may never replace the caller's error */
+  }
+}
+
+/**
+ * Send an error to the first-party sink WITHOUT writing console.error.
+ *
+ * For the places where the console line would be a duplicate or a hazard:
+ * `window.onerror` (the browser has already printed the uncaught error, and
+ * HorseBugReporter already files it from its own listener), engine refusals
+ * that the caller handles, and player-facing toasts. Same contract as
+ * reportError: never throws.
+ */
+export function captureClientError(
+  error: unknown,
+  context: string,
+  extra?: Record<string, any>
+): void {
+  try {
+    if (!isClientErrorSinkEnabled()) return;
+    forwardToSink(buildReport(error, context), error, context, extra);
+  } catch {
+    /* telemetry may never replace the caller's error */
   }
 }
 

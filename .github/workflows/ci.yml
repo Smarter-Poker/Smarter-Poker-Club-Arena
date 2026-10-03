@@ -1773,6 +1773,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-capability-registry.py --output "$GITHUB_WORKSPACE/artifacts/capability-registry"
+      - name: 'Client error sink: own identity, caps, scrubbing and retention'
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-client-error-sink.py --output "$GITHUB_WORKSPACE/artifacts/client-error-sink"
       - name: Kill pot table settings refuse what the engine cannot honour
         if: matrix.shard == 1
         env:

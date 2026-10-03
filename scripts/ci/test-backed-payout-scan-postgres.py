@@ -183,6 +183,7 @@ try:
     runpy.run_path(str(FIXTURE/'seat-income-native.py'))['qualify'](globals())
     runpy.run_path(str(FIXTURE/'wallet-cover-native.py'))['qualify'](globals())
     runpy.run_path(str(FIXTURE/'ticket-funding-native.py'))['qualify'](globals())
+    runpy.run_path(str(FIXTURE/'conservation-set-native.py'))['qualify'](globals())
 finally:
     if started and (data/'postmaster.pid').exists():run([pg/'pg_ctl','-D',data,'-m','fast','-w','stop'])
     shutil.rmtree(cluster)

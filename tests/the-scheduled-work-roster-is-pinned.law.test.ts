@@ -79,9 +79,29 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  * with active = false, stood down while 20260928164258 reworked the weekly
  * close, which is why RETAINED_INACTIVE moves with ACTIVE_JOBS here. Each move
  * is named in docs/attestation/cron-roster.tsv's header beside this one.
+ *
+ * 124 -> 125 active and 3 -> 2 retained inactive on 2026-10-03, read live from
+ * fn_ca_cron_health('24 hours'). TOTAL_JOBS is 127 on both sides of this move,
+ * and that is a coincidence of three separate rows, not one row standing still:
+ *   - client-error-events-prune APPEARED, scheduled by applied migration
+ *     20261003080431 players_errors_reach_a_first_party_sink. It prunes
+ *     public.client_error_events on a 14-day retention, which is the kind of
+ *     timer CLAUDE.md 10.12 explicitly allows: its schedule is the work.
+ *   - union-weekly-rakeback-close RETURNED to the active set. Applied migration
+ *     20261003101805 the_weekly_close_commits_one_round_at_a_time re-armed
+ *     jobid 272 with cron.alter_job(..., active := true), so it leaves
+ *     retained-inactive (3 -> 2) and enters the body (124 -> 125). The two
+ *     remaining inactive rows are the bust sweeps 20260910073355 restored.
+ *   - midway-close-once-20260929d VANISHED from cron.job entirely. The
+ *     2026-09-30 note above recorded it as a hand-made spent one-shot and said
+ *     unscheduling it was its owner's call; it has been unscheduled, also by
+ *     hand (no applied migration's statements name it). It is therefore NOT
+ *     20260831112020 recurring: no migration is recorded as applied whose job
+ *     went missing underneath it. The argument for all three is in
+ *     docs/attestation/cron-roster.tsv's header beside this one.
  */
-const ACTIVE_JOBS = 124;
-const RETAINED_INACTIVE = 3;
+const ACTIVE_JOBS = 125;
+const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
 const raw = readFileSync(ROSTER, 'utf8');
@@ -106,12 +126,13 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('127 total is 124 active plus the three rows cron.job keeps inactive', () => {
+  it('127 total is 125 active plus the two rows cron.job keeps inactive', () => {
     expect(TOTAL_JOBS).toBe(127);
-    // The two bust sweeps 20260910073355 restored disabled are still two of
-    // the three; the third is union-weekly-rakeback-close, named in the file.
+    // The two bust sweeps 20260910073355 restored disabled are both of them
+    // again: union-weekly-rakeback-close was the third until 20261003101805
+    // re-armed jobid 272, and it is now an ACTIVE row of the body instead.
     expect(raw).toContain('20260910073355');
-    expect(raw).toContain('union-weekly-rakeback-close');
+    expect(body.some((l) => l.startsWith('union-weekly-rakeback-close\t'))).toBe(true);
   });
 
   it('every row is one job name and one schedule, and no name repeats', () => {

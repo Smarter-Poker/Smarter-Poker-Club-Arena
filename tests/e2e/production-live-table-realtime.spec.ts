@@ -61,6 +61,8 @@ const PROJECT_NAME = 'webkit-live-table-realtime';
 const ENGINE_HEALTH_URL = process.env.ENGINE_HEALTH_URL || 'https://engine.smarter.poker/health';
 const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
+/** A second, cold browser context hydrating its first table state; not a realtime deadline. */
+const PEER_COLD_START_MS = 45_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
 /** Cash only: named failures must fire before the case's own timeout can. */
@@ -1013,6 +1015,19 @@ async function observeTournamentBoard(
       await expect(peerPage.getByTestId('table-connection-banner')).toBeHidden({
         timeout: CONNECT_DEADLINE_MS,
       });
+      // A hidden banner is not a hydrated table. Run 37093983125: the second
+      // WebKit context passed the banner check while its header still read
+      // "Loading..." with blinds "?/?", then spent ~20s of cold start on the
+      // shared runner (a 10s auth-lock timeout, a 5s getUser timeout, 6.5s to
+      // deliver one small chunk) before its first tournament read. The 15s
+      // agreement window below then measured that cold start instead of two
+      // live HUDs disagreeing, while the primary HUD was live on Level 3.
+      // Wait for the peer's own HUD to exist first; the agreement window and
+      // every realtime deadline after it are unchanged.
+      await expect(
+        hudLevelBadge(peerPage),
+        'the second HUD context never received its tournament state'
+      ).toBeVisible({ timeout: PEER_COLD_START_MS });
       await expect
         .poll(
           async () => {

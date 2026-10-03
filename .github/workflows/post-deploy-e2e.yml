@@ -985,12 +985,29 @@ jobs:
 
       - name: Wait for the same engine to resume gameplay
         if: steps.live.outputs.ready == 'true'
+        id: gameplay
         env:
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
-        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
+        # Exit 3 is UNKNOWN: a later protected-main engine release cut over
+        # inside the break, and that release dispatches its own certificate.
+        # Stand the live-table certificate down instead of certifying (or
+        # failing) an engine production no longer serves. Any other failure
+        # remains a red.
+        run: |
+          set -uo pipefail
+          STATUS=0
+          node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA" || STATUS=$?
+          case "$STATUS" in
+            0) echo 'resumed=true' >> "$GITHUB_OUTPUT" ;;
+            3)
+              echo 'resumed=false' >> "$GITHUB_OUTPUT"
+              echo "NON-VERDICT: engine \`$EXPECTED_ENGINE_SHA\` was superseded by a later release during its maintenance break; that release's own certificate covers live tables." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *) exit "$STATUS" ;;
+          esac
 
       - name: Provision an isolated production E2E account
-        if: steps.live.outputs.ready == 'true'
+        if: steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed == 'true'
         id: account
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -1016,7 +1033,7 @@ jobs:
           --output=test-results/live-table-realtime
 
       - name: Did the live-table certificate actually execute?
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
         run: node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/live-table-realtime.json
 
       - name: Hard-delete the isolated production E2E account

@@ -82,8 +82,16 @@ test.describe('Visible catalog production reads', () => {
       page.goto(`clubs/${CLUB_ID}/create-table/nlh`, { waitUntil: 'domcontentloaded' }),
     ]);
     await expect(page.getByRole('button', { name: 'MTT', exact: true })).toBeVisible();
+    const mtt = page.getByRole('button', { name: 'MTT', exact: true });
     const firstRead = read(page, 'table_templates', match);
-    await page.getByRole('button', { name: 'MTT', exact: true }).click();
+    // Run 37091537727: the click resolved but the form still showed Regular
+    // pressed, so the MTT-only catalog read never started and this waited out
+    // its whole 90s budget. The read is caused by the selected format, so
+    // prove the selection took before waiting on the read it causes.
+    await expect(async () => {
+      if ((await mtt.getAttribute('aria-pressed')) !== 'true') await mtt.click();
+      await expect(mtt).toHaveAttribute('aria-pressed', 'true', { timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     const first = await firstRead;
     expect(first.ok()).toBe(true);
     expect(Array.isArray(await first.json())).toBe(true);

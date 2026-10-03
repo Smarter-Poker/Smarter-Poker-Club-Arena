@@ -110,6 +110,13 @@ describe('new club opening package and zero-state database law', () => {
     expect(certificate).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(certificate).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
     expect(certificate).toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(certificate).toContain('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    expect(certificate).toContain('ORDER BY slot_key FOR UPDATE');
+    expect(certificate).toContain('SELECT 1 FROM public.tournament_schedules');
+    expect(certificate).toContain('SELECT 1 FROM public.tournament_schedule_spawns');
+    expect(certificate).toContain(') ORDER BY id FOR UPDATE');
+    expect(certificate).toContain('SELECT 1 FROM public.tournaments t');
+    expect(certificate).toContain(') ORDER BY t.id FOR UPDATE');
     expect(certificate).toContain("await client.query('ROLLBACK')");
     expect(certificate).not.toContain("await client.query('COMMIT')");
     expect(certificate).toContain('AS tables');
@@ -119,12 +126,37 @@ describe('new club opening package and zero-state database law', () => {
     const mutation = certificate.indexOf('public.fn_remove_first_club_welcome_games');
     const preimageReadRole = certificate.indexOf('SET LOCAL ROLE service_role');
     const laneLock = certificate.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const clubLock = certificate.indexOf('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    const packageItemLocks = certificate.indexOf('ORDER BY slot_key FOR UPDATE');
+    const scheduleLocks = certificate.indexOf(
+      'SELECT 1 FROM public.tournament_schedules',
+      packageItemLocks
+    );
+    const scheduleLockOrder = certificate.indexOf(') ORDER BY id FOR UPDATE', scheduleLocks);
+    const spawnLocks = certificate.indexOf(
+      'SELECT 1 FROM public.tournament_schedule_spawns',
+      scheduleLockOrder
+    );
+    const spawnLockOrder = certificate.indexOf(') ORDER BY id FOR UPDATE', spawnLocks);
+    const tournamentLocks = certificate.indexOf(
+      'SELECT 1 FROM public.tournaments t',
+      spawnLockOrder
+    );
+    const tournamentLockOrder = certificate.indexOf(') ORDER BY t.id FOR UPDATE', tournamentLocks);
     const preimage = certificate.indexOf('AS cash_game_ids');
     const financialReadRole = certificate.indexOf('SET LOCAL ROLE service_role', mutation);
     const readback = certificate.indexOf('AS cash_games');
     const rollback = certificate.indexOf("await client.query('ROLLBACK')");
     expect(preimageReadRole).toBeLessThan(laneLock);
-    expect(laneLock).toBeLessThan(preimage);
+    expect(laneLock).toBeLessThan(clubLock);
+    expect(clubLock).toBeLessThan(packageItemLocks);
+    expect(packageItemLocks).toBeLessThan(scheduleLocks);
+    expect(scheduleLocks).toBeLessThan(scheduleLockOrder);
+    expect(scheduleLockOrder).toBeLessThan(spawnLocks);
+    expect(spawnLocks).toBeLessThan(spawnLockOrder);
+    expect(spawnLockOrder).toBeLessThan(tournamentLocks);
+    expect(tournamentLocks).toBeLessThan(tournamentLockOrder);
+    expect(tournamentLockOrder).toBeLessThan(preimage);
     expect(preimage).toBeLessThan(authenticatedRole);
     expect(preimageReadRole).toBeLessThan(authenticatedRole);
     expect(authenticatedRole).toBeLessThan(mutation);
@@ -178,15 +210,37 @@ describe('new club opening package and zero-state database law', () => {
   it('restores the complete owner-scoped schedule and opening-board graph', () => {
     for (const digest of [
       '9cf532743321cafc703634efb08c3911',
-      'ddb572f8fa2818a746338d222cd58bfe',
+      'baf9d702c714d90a697f0a1850c44389',
       '9dedf8944a2b8ea83653d6e9329362d7',
-      '14e783ded2c21a64a3dd2741e5fe47d5',
+      '74d99b51f3757c9f43d797eb6b7f95da',
     ]) {
       expect(completeResetGraph).toContain(digest);
     }
-    expect(completeResetGraph).toContain('tournament_schedule_spawns sp');
-    expect(completeResetGraph).toContain("IN('SPIN','SNG','SATELLITE')");
-    expect(completeResetGraph).toContain('t.club_id=p_club_id');
+    const canonicalGraphStart = completeResetGraph.indexOf(
+      'v_new text := $new$WITH package_schedule_tournaments AS ('
+    );
+    const canonicalGraphEnd = completeResetGraph.indexOf('  ) q;$new$;', canonicalGraphStart);
+    expect(canonicalGraphStart).toBeGreaterThan(-1);
+    expect(canonicalGraphEnd).toBeGreaterThan(canonicalGraphStart);
+    const canonicalGraph = completeResetGraph.slice(canonicalGraphStart, canonicalGraphEnd);
+    expect(canonicalGraph).toContain(
+      'expected(name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,seats,stack) AS ('
+    );
+    expect(canonicalGraph).toContain(
+      "('1 Chip Deep Stack Spin PLO6','PLO6','spin','SPIN',1::numeric,0::numeric,3,1000)"
+    );
+    expect(canonicalGraph).toContain('FROM public.tournament_schedule_spawns sp');
+    expect(canonicalGraph).toContain('JOIN public.tournaments t ON t.id=sp.tournament_id');
+    expect(canonicalGraph).toContain('sp.schedule_id=ANY(v_schedules) AND t.club_id=p_club_id');
+    expect(canonicalGraph).toContain('t.satellite_target_id IS NULL');
+    expect(canonicalGraph).toContain('t.satellite_target IS NULL');
+    expect(canonicalGraph).toContain("upper(COALESCE(t.tournament_type::text,''))='SATELLITE'");
+    expect(canonicalGraph).toContain(
+      'target.id=t.satellite_target_id OR target.id::text=t.satellite_target'
+    );
+    expect(canonicalGraph).not.toContain("IN('SPIN','SNG','SATELLITE')");
+    expect(canonicalGraph).not.toContain("IN('SPIN','SNG')");
+    expect(completeResetGraph).toContain('WELCOME_PACKAGE_BOARD_LINEAGE_AMBIGUOUS');
     expect(completeResetGraph).toContain('WELCOME_RESET_COMPLETE_GRAPH_ROUNDTRIP_REFUSED');
     expect(completeResetGraph).toContain('v_metadata_after IS DISTINCT FROM v_metadata_before');
     expect(completeResetGraph).toContain('WELCOME_UNWIND_COMPLETE_GRAPH_AUTHORITY_REFUSED');
@@ -207,6 +261,9 @@ describe('new club opening package and zero-state database law', () => {
     expect(completeGraph).toBeLessThan(completeGraphReplay);
     for (const testCase of [
       'complete-reset-graph-fixture',
+      'complete-reset-graph-identical-lookalike-refused',
+      'complete-reset-graph-satellite-materialization-lock-race',
+      'complete-reset-graph-selected-row-update-lock-race',
       'complete-reset-graph-first-reset',
       'complete-reset-graph-same-operation-replay',
       'complete-reset-graph-later-operation-replay',

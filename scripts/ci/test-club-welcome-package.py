@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Install and exercise the welcome-package migration in isolated PostgreSQL."""
-import argparse, json, os, shutil, subprocess, tempfile
+import argparse, json, os, shutil, subprocess, tempfile, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +76,32 @@ def run_refusal(name, sql, expected_error):
     (out/f'{name}.log').write_text('-- SQL\n'+sql+'\n-- OUT\n'+r.stdout+'\n-- ERR\n'+r.stderr)
     results['cases'].append({'name':name,'passed':ok,'expected':expected_error,'observed':r.stderr.rstrip('\n')[-2000:]})
     if not ok: raise RuntimeError(name+': '+r.stderr[-2000:]+r.stdout[-1000:])
+
+def run_lock_race(name, holder_sql, contender_sql, minimum_wait=1.0):
+    holder = subprocess.Popen(
+        [str(x) for x in psql], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, env=env
+    )
+    assert holder.stdin is not None
+    holder.stdin.write(holder_sql)
+    holder.stdin.close()
+    time.sleep(0.35)
+    started = time.monotonic()
+    contender = command(psql, contender_sql)
+    elapsed = time.monotonic() - started
+    holder.wait(timeout=120)
+    holder_stdout = holder.stdout.read() if holder.stdout else ''
+    holder_stderr = holder.stderr.read() if holder.stderr else ''
+    ok = holder.returncode == 0 and contender.returncode == 0 and elapsed >= minimum_wait
+    (out/f'{name}.log').write_text(
+        '-- HOLDER SQL\n'+holder_sql+'\n-- HOLDER OUT\n'+holder_stdout+'\n-- HOLDER ERR\n'+holder_stderr+
+        '\n-- CONTENDER SQL\n'+contender_sql+'\n-- CONTENDER OUT\n'+contender.stdout+
+        '\n-- CONTENDER ERR\n'+contender.stderr+f'\n-- CONTENDER WAIT\n{elapsed:.3f}s\n'
+    )
+    results['cases'].append({'name':name,'passed':ok,'expected':f'wait >= {minimum_wait:.1f}s',
+                             'observed':f'{elapsed:.3f}s'})
+    if not ok:
+        raise RuntimeError(name+': '+holder_stderr[-1000:]+contender.stderr[-1000:])
 
 SETUP = r"""
 CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;
@@ -837,10 +863,32 @@ SELECT '00000000-0000-4000-a032-000000000001','{c32}',entity_id,'Direct Schedule
   FROM club_welcome_package_items
  WHERE club_id='{c32}' AND entity_kind='tournament_schedule';
 INSERT INTO tournaments(id,club_id,name,tournament_type,status) VALUES
- ('00000000-0000-4000-a032-000000000002','{c32}','Backlink Schedule','MTT','REGISTERING'),
- ('00000000-0000-4000-a032-000000000003','{c32}','Opening SNG','SNG','REGISTERING'),
- ('00000000-0000-4000-a032-000000000004','{c32}','Opening Spin','SPIN','REGISTERING'),
- ('00000000-0000-4000-a032-000000000005','{c32}','Opening Satellite','SATELLITE','REGISTERING');
+ ('00000000-0000-4000-a032-000000000002','{c32}','Backlink Schedule','MTT','REGISTERING');
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+ max_players,min_players,table_size,starting_chips,current_players,status) VALUES
+ ('00000000-0000-4000-a032-000000000003','{c32}','NLH Heads-Up 1','NLH','sng','SNG',0.95,0.05,2,2,2,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000004','{c32}','PLO4 Heads-Up 1','PLO4','sng','SNG',0.95,0.05,2,2,2,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000005','{c32}','NLH Heads-Up 1 Turbo','NLH','sng','SNG',0.95,0.05,2,2,2,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000006','{c32}','PLO4 Heads-Up 1 Turbo','PLO4','sng','SNG',0.95,0.05,2,2,2,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000007','{c32}','1 Chip Spin NLH','NLH','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000008','{c32}','1 Chip Spin PLO4','PLO4','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000009','{c32}','1 Chip Spin PLO5','PLO5','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000010','{c32}','1 Chip Spin PLO6','PLO6','spin','SPIN',1,0,3,3,3,300,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000011','{c32}','1 Chip Deep Stack Spin NLH','NLH','spin','SPIN',1,0,3,3,3,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000012','{c32}','1 Chip Deep Stack Spin PLO4','PLO4','spin','SPIN',1,0,3,3,3,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000013','{c32}','1 Chip Deep Stack Spin PLO5','PLO5','spin','SPIN',1,0,3,3,3,1000,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000014','{c32}','1 Chip Deep Stack Spin PLO6','PLO6','spin','SPIN',1,0,3,3,3,1000,0,'REGISTERING');
+INSERT INTO tournaments(id,club_id,name,tournament_type,satellite_target_id,status) VALUES
+ ('00000000-0000-4000-a032-000000000015','{c32}','Opening Current Feeder','SATELLITE','00000000-0000-4000-a032-000000000001','REGISTERING');
+INSERT INTO tournaments(id,club_id,name,tournament_type,satellite_target,status) VALUES
+ ('00000000-0000-4000-a032-000000000016','{c32}','Opening Legacy Feeder','SATELLITE','00000000-0000-4000-a032-000000000002','REGISTERING'),
+ ('00000000-0000-4000-a032-000000000020','{c32}','Owner Custom MTT','MTT',NULL,'REGISTERING');
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+ max_players,min_players,table_size,starting_chips,current_players,status) VALUES
+ ('00000000-0000-4000-a032-000000000021','{c32}','Owner Custom SNG','NLH','sng','SNG',5,0.50,6,6,6,1500,0,'REGISTERING'),
+ ('00000000-0000-4000-a032-000000000022','{c32}','Owner Custom Spin','PLO4','spin','SPIN',10,0,3,3,3,500,0,'REGISTERING');
+INSERT INTO tournaments(id,club_id,name,tournament_type,satellite_target_id,status) VALUES
+ ('00000000-0000-4000-a032-000000000023','{c32}','Owner Custom Satellite','SATELLITE','00000000-0000-4000-a032-000000000020','REGISTERING');
 INSERT INTO tournament_schedule_spawns(schedule_id,tournament_id,spawn_key)
 SELECT entity_id,'00000000-0000-4000-a032-000000000002','backlink-only'
   FROM club_welcome_package_items
@@ -853,12 +901,31 @@ SELECT ('00000000-0000-4000-b032-'||lpad(ord::text,12,'0'))::uuid,'{c32}',tourna
     (2,'00000000-0000-4000-a032-000000000002'::uuid),
     (3,'00000000-0000-4000-a032-000000000003'::uuid),
     (4,'00000000-0000-4000-a032-000000000004'::uuid),
-    (5,'00000000-0000-4000-a032-000000000005'::uuid)
+    (5,'00000000-0000-4000-a032-000000000005'::uuid),
+    (6,'00000000-0000-4000-a032-000000000006'::uuid),
+    (7,'00000000-0000-4000-a032-000000000007'::uuid),
+    (8,'00000000-0000-4000-a032-000000000008'::uuid),
+    (9,'00000000-0000-4000-a032-000000000009'::uuid),
+    (10,'00000000-0000-4000-a032-000000000010'::uuid),
+    (11,'00000000-0000-4000-a032-000000000011'::uuid),
+    (12,'00000000-0000-4000-a032-000000000012'::uuid),
+    (13,'00000000-0000-4000-a032-000000000013'::uuid),
+    (14,'00000000-0000-4000-a032-000000000014'::uuid),
+    (15,'00000000-0000-4000-a032-000000000015'::uuid),
+    (16,'00000000-0000-4000-a032-000000000016'::uuid),
+    (17,'00000000-0000-4000-a032-000000000020'::uuid),
+    (18,'00000000-0000-4000-a032-000000000021'::uuid),
+    (19,'00000000-0000-4000-a032-000000000022'::uuid),
+    (20,'00000000-0000-4000-a032-000000000023'::uuid)
   ) expected(ord,tournament_id);
+INSERT INTO managed_game_schedules(game_kind,game_id,status)
+VALUES('tournament','00000000-0000-4000-a032-000000000021','scheduled');
 WITH impact AS (
   SELECT fn_get_club_welcome_package_reset_impact('{c32}') AS result
 ), expected_tournaments AS (
-  SELECT jsonb_agg(id ORDER BY id) AS ids FROM tournaments WHERE club_id='{c32}'
+  SELECT jsonb_agg(id ORDER BY id) AS ids FROM tournaments
+   WHERE id BETWEEN '00000000-0000-4000-a032-000000000001'::uuid
+                AND '00000000-0000-4000-a032-000000000016'::uuid
 ), expected_cash AS (
   SELECT jsonb_agg(id ORDER BY id) AS ids FROM cash_games WHERE club_id='{c32}'
 ), expected_schedules AS (
@@ -877,7 +944,54 @@ SELECT (SELECT count(*) FROM tournaments WHERE club_id='{c32}'),
             FROM jsonb_array_elements_text((SELECT ids FROM expected_schedules))),
        result->>'can_reset'
   FROM impact;
-""",'5|14|t|t|t|true')
+""",'20|29|t|t|t|true')
+    run('complete-reset-graph-identical-lookalike-refused',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner31}';
+INSERT INTO tournaments(id,club_id,name,game_type,variant,tournament_type,buy_in_amount,buy_in_fee,
+ max_players,min_players,table_size,starting_chips,current_players,status)
+VALUES('00000000-0000-4000-a032-000000000018','{c32}','NLH Heads-Up 1','NLH','sng','SNG',
+       0.95,0.05,2,2,2,1000,0,'REGISTERING');
+SELECT fn_get_club_welcome_package_reset_impact('{c32}')->>'can_reset',
+       fn_remove_first_club_welcome_games(
+         '{c32}','00000000-0000-4000-f032-000000000097')->>'reason';
+ROLLBACK;
+""",'false|WELCOME_PACKAGE_BOARD_LINEAGE_AMBIGUOUS')
+    run_lock_race('complete-reset-graph-satellite-materialization-lock-race',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner31}';
+SELECT fn_remove_first_club_welcome_games(
+  '{c32}','00000000-0000-4000-f032-000000000099');
+SELECT pg_sleep(2);
+ROLLBACK;
+""",f"""
+BEGIN;
+SELECT 1 FROM tournaments
+ WHERE id='00000000-0000-4000-a032-000000000001' FOR UPDATE;
+INSERT INTO tournaments(id,club_id,name,tournament_type,satellite_target_id,status)
+VALUES('00000000-0000-4000-a032-000000000017','{c32}','Concurrent Opening Feeder',
+       'SATELLITE','00000000-0000-4000-a032-000000000001','REGISTERING');
+COMMIT;
+""")
+    run('complete-reset-graph-concurrent-feeder-is-in-snapshot',f"""
+SET request.jwt.claim.sub='{owner31}';
+SELECT jsonb_array_length(fn_get_club_welcome_package_reset_impact('{c32}')->'tournament_ids'),
+       fn_get_club_welcome_package_reset_impact('{c32}')->'tournament_ids' @>
+         '["00000000-0000-4000-a032-000000000017"]'::jsonb;
+""",'17|t')
+    run_lock_race('complete-reset-graph-selected-row-update-lock-race',f"""
+BEGIN;
+SET request.jwt.claim.sub='{owner31}';
+SELECT fn_remove_first_club_welcome_games(
+  '{c32}','00000000-0000-4000-f032-000000000098');
+SELECT pg_sleep(2);
+ROLLBACK;
+""",f"""
+BEGIN;
+UPDATE tournaments SET name='Owner Rename During Reset'
+ WHERE id='00000000-0000-4000-a032-000000000003';
+ROLLBACK;
+""")
     run('complete-reset-graph-first-reset',f"""
 SET request.jwt.claim.sub='{owner31}';
 CREATE TEMP TABLE first_reset_return AS
@@ -893,15 +1007,32 @@ SELECT first_reset_return.result=stored.result,
        stored.result#>'{{removed,schedule_ids}}'=
          (SELECT jsonb_agg(id ORDER BY id) FROM tournament_schedules WHERE club_id='{c32}'),
        stored.result#>'{{removed,tournament_ids}}'=
-         (SELECT jsonb_agg(id ORDER BY id) FROM tournaments WHERE club_id='{c32}'),
+         (SELECT jsonb_agg(id ORDER BY id) FROM tournaments
+           WHERE id BETWEEN '00000000-0000-4000-a032-000000000001'::uuid
+                        AND '00000000-0000-4000-a032-000000000017'::uuid),
        stored.result#>'{{removed,table_ids}}'=
-         (SELECT jsonb_agg(id ORDER BY id) FROM tables WHERE club_id='{c32}'),
+         (SELECT jsonb_agg(id ORDER BY id) FROM tables
+           WHERE cluster_id IN (SELECT id FROM cash_games WHERE club_id='{c32}')
+              OR tournament_id BETWEEN '00000000-0000-4000-a032-000000000001'::uuid
+                                   AND '00000000-0000-4000-a032-000000000016'::uuid),
+       (SELECT count(*) FROM tournaments WHERE
+          (id BETWEEN '00000000-0000-4000-a032-000000000001'::uuid AND
+                      '00000000-0000-4000-a032-000000000017'::uuid)
+          AND status='CANCELLED'),
+       (SELECT count(*) FROM tournaments WHERE id BETWEEN
+          '00000000-0000-4000-a032-000000000020'::uuid AND
+          '00000000-0000-4000-a032-000000000023'::uuid AND status='REGISTERING'),
+       (SELECT count(*) FROM tables WHERE tournament_id BETWEEN
+          '00000000-0000-4000-a032-000000000020'::uuid AND
+          '00000000-0000-4000-a032-000000000023'::uuid AND status='waiting'),
+       (SELECT count(*) FROM managed_game_schedules
+         WHERE game_id='00000000-0000-4000-a032-000000000021' AND status='scheduled'),
        (SELECT chip_treasury FROM clubs WHERE id='{c32}'),
        (SELECT balance FROM spin_bonus_pools WHERE club_id='{c32}'),
        (SELECT main_balance FROM bbj_pools WHERE club_id='{c32}' AND union_id IS NULL),
        (SELECT count(*) FROM club_welcome_reset_receipts WHERE club_id='{c32}')
   FROM first_reset_return,stored;
-""",'t|t|t|t|t|100000.00|0|0|1')
+""",'t|t|t|t|t|17|4|4|1|100000.00|0|0|1')
     run('complete-reset-graph-same-operation-replay',f"""
 SET request.jwt.claim.sub='{owner31}';
 WITH replay AS (

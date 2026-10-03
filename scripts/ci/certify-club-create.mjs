@@ -193,10 +193,51 @@ async function certifyWelcomeResetInsideRollback({
 
     await client.query('SET LOCAL ROLE service_role');
     // The opening board materializes incrementally through this same global
-    // settlement lane. Acquire it before the independent preimage so the
-    // graph cannot change between observation and the authenticated reset.
-    // The transaction-scoped lock remains held through the existing ROLLBACK.
+    // settlement lane. Scheduled materialization instead serializes on the
+    // package item and schedule rows. Acquire both authorities in the reset
+    // function's order before the independent preimage so neither graph can
+    // change between observation and the authenticated reset. Every lock is
+    // transaction-scoped and remains held through the existing ROLLBACK.
     await client.query('SELECT pg_advisory_xact_lock(530090,1)');
+    await client.query('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE', [clubId]);
+    await client.query(
+      `SELECT 1 FROM public.club_welcome_package_items
+        WHERE club_id=$1::uuid ORDER BY slot_key FOR UPDATE`,
+      [clubId]
+    );
+    await client.query(
+      `SELECT 1 FROM public.tournament_schedules
+        WHERE id IN (
+          SELECT entity_id FROM public.club_welcome_package_items
+           WHERE club_id=$1::uuid AND entity_kind='tournament_schedule' AND retired_at IS NULL
+        ) ORDER BY id FOR UPDATE`,
+      [clubId]
+    );
+    await client.query(
+      `SELECT 1 FROM public.tournament_schedule_spawns
+        WHERE schedule_id IN (
+          SELECT entity_id FROM public.club_welcome_package_items
+           WHERE club_id=$1::uuid AND entity_kind='tournament_schedule' AND retired_at IS NULL
+        ) ORDER BY id FOR UPDATE`,
+      [clubId]
+    );
+    await client.query(
+      `SELECT 1 FROM public.tournaments t
+        WHERE t.club_id=$1::uuid AND (
+          upper(COALESCE(t.tournament_type::text,'')) IN ('SPIN','SNG','SATELLITE') OR
+          t.schedule_id IN (
+            SELECT entity_id FROM public.club_welcome_package_items
+             WHERE club_id=$1::uuid AND entity_kind='tournament_schedule' AND retired_at IS NULL
+          ) OR EXISTS (
+            SELECT 1 FROM public.tournament_schedule_spawns sp
+             WHERE sp.tournament_id=t.id AND sp.schedule_id IN (
+               SELECT entity_id FROM public.club_welcome_package_items
+                WHERE club_id=$1::uuid AND entity_kind='tournament_schedule' AND retired_at IS NULL
+             )
+          )
+        ) ORDER BY t.id FOR UPDATE`,
+      [clubId]
+    );
     const expectedResponse = await client.query(
       `SELECT
         COALESCE((SELECT jsonb_agg(g.id ORDER BY g.id)

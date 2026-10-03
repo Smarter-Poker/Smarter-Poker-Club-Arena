@@ -15,10 +15,7 @@ import {
   setLastHandSettlementWindow,
   setMaintenanceFrozen,
 } from './freezeState.js';
-import {
-  launchSeatingBudgetMs,
-  launchWouldCrossLastHand,
-} from '../tournament/launchBreakHold.js';
+import { launchSeatingBudgetMs, launchWouldCrossLastHand } from '../tournament/launchBreakHold.js';
 
 afterEach(() => setMaintenanceFrozen(false));
 

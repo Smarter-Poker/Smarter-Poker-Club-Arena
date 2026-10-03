@@ -71,8 +71,9 @@ describe('the weekly close commits one round at a time', () => {
   });
 
   it('commits round 2 only without shortfall and round 3 only after conservation', () => {
-    const r2 = sql.slice(sql.indexOf("IF v_chunked AND v_r2->>'duplicate'"));
-    expect(r2.slice(0, 400)).toContain("IF (v_r2->>'shortfalls')::numeric <> 0 THEN");
+    expect(sql).toContain(
+      "IF v_chunked AND v_r2->>'duplicate' IS DISTINCT FROM 'true' THEN\n    IF (v_r2->>'shortfalls')::numeric <> 0 THEN"
+    );
     const conservation = sql.indexOf(
       '  PERFORM public.fn_union_settlement_conservation_assert(\n            p_union_id, v_from, v_to, v_r1, v_r2, v_r3);\n\n  -- CHUNKED CLOSE (20261003): round 3'
     );

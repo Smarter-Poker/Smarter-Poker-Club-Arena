@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-a5/seal-wiring. Migration 20261003183034_the_weekly_close_seals_its_inventory_six_hours_at_a_time: job 272's test for a split inventory seal in progress.",
+  "tables": [],
+  "functions": ["fn_union_pnl_inventory_seal_in_progress"]
+}

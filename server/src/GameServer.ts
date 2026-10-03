@@ -4568,13 +4568,30 @@ export class GameServer {
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
-    const stalledTables = tableLiveness
+    const liveStalledTables = tableLiveness
       .filter((t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000)
       .map((t) => ({
         tableId: t.tableId,
         dealable: t.dealable,
         secsIdle: Math.round(t.msSinceProgress / 1000),
       }));
+    /* A tournament table its manager has been failing to admit for over two
+       minutes is stalled too, though it has no engine to sample between
+       retries (2026-10-03, b290375a: 6.5 hours RUNNING, 0 hands,
+       stalledTableCount 0). Counted here and named in the list, kept out of
+       the liveness verdict below: identification only, it restarts nothing. */
+    const liveStalledIds = new Set(liveStalledTables.map((t) => t.tableId));
+    const stalledTables = [
+      ...liveStalledTables,
+      ...this.tournamentTablesFailingAdmission(now)
+        .filter((t) => !liveStalledIds.has(t.tableId))
+        .map((t) => ({
+          tableId: t.tableId,
+          dealable: 0,
+          secsIdle: Math.round(t.msFailing / 1000),
+          admission: 'failing' as const,
+        })),
+    ];
     // LIVENESS RACE FIX (2026-08-22): the per-table recovery chain (watchdog
     // Tier 1-3 -> killForRestart -> 180s zombie reaper -> discovery rebuild)
     // needs up to ~3 minutes end to end. Flipping the whole process 'dead' at
@@ -5139,6 +5156,7 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
     const pausedCount = liveness.filter((t) => t.paused).length;
+    const failingAdmission = this.tournamentTablesFailingAdmission(now);
     /**
      * ── THE TABLES NOBODY WAS COUNTING (2026-09-18) ───────────────────────
      *
@@ -5246,6 +5264,15 @@ export class GameServer {
       '# HELP poker_tournament_table_never_started_oldest_seconds Age of the oldest never-started tournament table engine',
       '# TYPE poker_tournament_table_never_started_oldest_seconds gauge',
       `poker_tournament_table_never_started_oldest_seconds ${neverStartedOldestSeconds}`,
+      /* A tournament table its manager has failed to admit for over 120 s.
+         Between retries it has no engine, so none of the gauges above can see
+         it (2026-10-03, b290375a). Identification only. */
+      '# HELP poker_tournament_tables_failing_admission Tournament tables their manager has failed to admit for over 2 minutes',
+      '# TYPE poker_tournament_tables_failing_admission gauge',
+      `poker_tournament_tables_failing_admission ${failingAdmission.length}`,
+      '# HELP poker_tournament_table_failing_admission_oldest_seconds How long the oldest such table has been failing admission',
+      '# TYPE poker_tournament_table_failing_admission_oldest_seconds gauge',
+      `poker_tournament_table_failing_admission_oldest_seconds ${Math.round((failingAdmission[0]?.msFailing ?? 0) / 1000)}`,
       // The maintenance break, as numbers an alert rule can silence itself
       // with. `active` exists first and foremost so every fleet-level alarm
       // (deal rate, hands/min, fleet floor) can carry `unless
@@ -5696,6 +5723,23 @@ export class GameServer {
         (timedOut ? ' - budget expired, stopping anyway' : '')
     );
     return { drained, total, timedOut };
+  }
+
+  /**
+   * Tournament tables a manager has been failing to admit for longer than the
+   * 120 s stall threshold, oldest first. Between retries such a table has no
+   * engine, so tableLivenessSnapshot() cannot see it.
+   */
+  private tournamentTablesFailingAdmission(
+    now: number
+  ): Array<{ tableId: string; msFailing: number }> {
+    const failing: Array<{ tableId: string; msFailing: number }> = [];
+    for (const manager of this.tournamentEngines.values()) {
+      for (const table of manager.getTablesFailingAdmission?.(now) ?? []) {
+        if (table.msFailing > 120_000) failing.push(table);
+      }
+    }
+    return failing.sort((x, y) => y.msFailing - x.msFailing);
   }
 
   private tableLivenessSnapshot() {

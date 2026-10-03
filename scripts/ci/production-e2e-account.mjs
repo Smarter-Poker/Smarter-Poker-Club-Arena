@@ -18,6 +18,16 @@ export const DEFAULT_E2E_TEMPLATE_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
+const FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS = Object.freeze([
+  2_000,
+  4_000,
+  8_000,
+  16_000,
+  30_000,
+  60_000,
+  120_000,
+  90_000,
+]);
 // The exact names the guarded certification-retirement coordinator accepts.
 // re-checks them, but this side refuses first so an unrecognized club is never
 // even offered to it.
@@ -533,19 +543,77 @@ export async function retireCertificationClubWithRetry({
       await client.end();
     }
   };
+  const retirementFailureMessage = (error) =>
+    String(error?.body?.message || error?.message || '');
+  const hasFreshUnmaterializedScheduleClaim = async () => {
+    const items = await serviceRequest(
+      configuration,
+      `/rest/v1/club_welcome_package_items?club_id=eq.${encodeURIComponent(clubId)}` +
+        '&retired_at=is.null&entity_kind=eq.tournament_schedule&select=entity_id&limit=10',
+      {},
+      fetchImpl
+    );
+    const scheduleIds = Array.isArray(items)
+      ? items.map((item) => item.entity_id).filter(Boolean)
+      : [];
+    if (scheduleIds.length !== 1) return false;
+    const scheduleFilter = scheduleIds.map((id) => encodeURIComponent(id)).join(',');
+    const claims = await serviceRequest(
+      configuration,
+      `/rest/v1/tournament_schedule_spawns?schedule_id=in.(${scheduleFilter})` +
+        '&tournament_id=is.null&select=id,created_at&order=created_at&limit=10',
+      {},
+      fetchImpl
+    );
+    const freshAfter = Date.now() - 5 * 60_000;
+    return (
+      Array.isArray(claims) &&
+      claims.some(
+        (claim) =>
+          claim?.created_at &&
+          Number.isFinite(Date.parse(claim.created_at)) &&
+          Date.parse(claim.created_at) > freshAfter
+      )
+    );
+  };
   let result;
+  let freshClaimAttempt = 0;
   try {
-    result = await retryTransient(retire, {
-      wait,
-      label: `retirement of certification club ${clubId}`,
-    });
+    for (;;) {
+      try {
+        result = await retryTransient(retire, {
+          wait,
+          label: `retirement of certification club ${clubId}`,
+        });
+        break;
+      } catch (error) {
+        const freshClaimRefusal =
+          error?.code === '55000' &&
+          retirementFailureMessage(error) === 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED';
+        const retryDelay = FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS[freshClaimAttempt];
+        if (
+          !freshClaimRefusal ||
+          retryDelay === undefined ||
+          !(await hasFreshUnmaterializedScheduleClaim())
+        ) {
+          throw error;
+        }
+        freshClaimAttempt += 1;
+        console.warn(
+          `[production-e2e-account] certification club ${clubId} has a fresh ` +
+            `unmaterialized schedule claim; retry ${freshClaimAttempt} of ` +
+            `${FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS.length} in ${retryDelay} ms.`
+        );
+        await wait(retryDelay);
+      }
+    }
   } catch (error) {
     if (
       error?.code === '55000' &&
       [
         'WELCOME_CERTIFICATION_HAS_NONPACKAGE_GAMES',
         'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED',
-      ].includes(error?.body?.message)
+      ].includes(retirementFailureMessage(error))
     ) {
       try {
         const items = await serviceRequest(

@@ -104,6 +104,41 @@ The audit is still read-only: it writes nothing, commits nothing, pushes
 nothing. `tests/unit/theSchemaManifestIsNotAMergeQueue.test.ts` moves its pin
 from the removed command to the new one.
 
+## What the new check found on its first run
+
+Run [37112180181](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/37112180181),
+dispatched on this branch before merge so the check was measured against live
+production rather than hoped at:
+
+```
+live production: 1,548 tables/views, 4,335 functions
+the contract:    base 1,321 / 3,572, plus 469 fragments declaring 390 tables
+                 and 1,679 functions and retiring 14 tables and 37 functions
+BEHIND:  280  (78 tables/views, 202 functions)   - reported
+PHANTOM:   2  functions                          - failed
+```
+
+The two phantoms are `increment_club_table_count` and
+`decrement_club_table_count`. Migration
+`20260920070402_three_watchers_whose_defects_were_fixed_stop_running.sql`
+dropped both on **2026-09-20** - they wrote `clubs.table_count` by blind `+1` and
+`GREATEST(0, x - 1)` instead of recomputing, and were the one surviving way that
+count could drift. Production has had neither since, in any schema. The base
+snapshot still listed both, so the phantom-reference gate had blessed two dead
+names for thirteen days and no check in this repository could see it. Nothing in
+`src/` or `server/src/` calls either, so no caller was broken - the contract was
+simply lying, quietly, which is the whole class of defect this check exists for.
+
+Retired through the sanctioned path - a tombstone fragment,
+`scripts/ci/schema-manifest.d/claude-sia-the-blind-club-table-count-writers-are-gone.json`,
+not an edit to the base, so no branch conflicts over the shared snapshot and
+`loadSchemaManifest` stops blessing them immediately.
+
+The 280 BEHIND names and the 469 fragments are real debt and now carry a number
+on every run. They are not repaired here: a base regeneration needs the
+service-role key and committing one from inside this audit is the thing its own
+header forbids.
+
 ## What this did NOT touch
 
 Both security jobs - `No unaccounted DEFINER writer is reachable from a browser`

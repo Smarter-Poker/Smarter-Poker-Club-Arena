@@ -1189,7 +1189,7 @@ export default function LeaderboardPage() {
     if (!nextTab) return;
     event.preventDefault();
     setActiveTab(nextTab);
-    requestAnimationFrame(() => document.getElementById(`leaderboard-${nextTab}-tab`)?.focus());
+    document.getElementById(`leaderboard-${nextTab}-tab`)?.focus();
   };
 
   const retryCurrentView = () => {

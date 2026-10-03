@@ -14,6 +14,7 @@ import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { leaderOuts } from './InsuranceEquity.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
+import { attachInsuranceOfferPricing } from '../services/supabase/handFacts.js';
 import {
   evaluateHand,
   evaluateOmahaHand,
@@ -36,6 +37,66 @@ import type {
   PineappleDiscardResult,
   PineappleDiscardSnapshot,
 } from './horseDecision/protocol.js';
+
+/**
+ * PHASE 9 CLOSE-OUT 2026-10-03: how the leader's insurable pot was reached,
+ * so the offer's audit row can show the rake and BBJ deductions it priced on.
+ * `source` is 'gross_fallback' when the controller could not answer and the
+ * gross pot was insured unchanged (computeInsurablePot's documented fallback).
+ */
+export interface InsurablePotBreakdown {
+  grossPot: number;
+  livePotTotal: number | null;
+  eligiblePot: number | null;
+  rake: number | null;
+  bbjFee: number | null;
+  insurablePot: number;
+  source: 'net_of_rake_bbj' | 'gross_fallback';
+}
+
+/** The arithmetic of computeInsurablePot, with its inputs kept. */
+export function insurablePotBreakdown(
+  controller: Pick<HandController, 'computeLivePots' | 'computeRakeAndBBJ'> | null | undefined,
+  leaderId: string,
+  grossPot: number
+): InsurablePotBreakdown {
+  const fallback: InsurablePotBreakdown = {
+    grossPot,
+    livePotTotal: null,
+    eligiblePot: null,
+    rake: null,
+    bbjFee: null,
+    insurablePot: grossPot,
+    source: 'gross_fallback',
+  };
+  try {
+    if (!controller || grossPot <= 0) return fallback;
+    const pots = controller.computeLivePots();
+    let total = 0;
+    let eligible = 0;
+    for (const p of pots) {
+      total += p.amount;
+      if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
+    }
+    if (!(total > 0) || !(eligible > 0)) return fallback;
+    // PREFLOP INSURANCE FIX 2026-08-28: an all-in runout always reaches the
+    // flop, so price the deductions as if it is already seen — a preflop
+    // offer on sawFlop=false claimed zero rake and overstated the winnings.
+    const { rake, bbjFee } = controller.computeRakeAndBBJ(true);
+    const netFrac = Math.max(0, (total - rake - bbjFee) / total);
+    return {
+      grossPot,
+      livePotTotal: total,
+      eligiblePot: eligible,
+      rake,
+      bbjFee,
+      insurablePot: Math.round(eligible * netFrac * 100) / 100,
+      source: 'net_of_rake_bbj',
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
@@ -2583,25 +2644,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * refuse an offer over a display refinement).
    */
   public computeInsurablePot(leaderId: string, grossPot: number): number {
-    try {
-      if (!this.handController || grossPot <= 0) return grossPot;
-      const pots = this.handController.computeLivePots();
-      let total = 0;
-      let eligible = 0;
-      for (const p of pots) {
-        total += p.amount;
-        if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
-      }
-      if (!(total > 0) || !(eligible > 0)) return grossPot;
-      // PREFLOP INSURANCE FIX 2026-08-28: an all-in runout always reaches the
-      // flop, so price the deductions as if it is already seen — a preflop
-      // offer on sawFlop=false claimed zero rake and overstated the winnings.
-      const { rake, bbjFee } = this.handController.computeRakeAndBBJ(true);
-      const netFrac = Math.max(0, (total - rake - bbjFee) / total);
-      return Math.round(eligible * netFrac * 100) / 100;
-    } catch {
-      return grossPot;
-    }
+    return insurablePotBreakdown(this.handController, leaderId, grossPot).insurablePot;
   }
 
   /**
@@ -3062,9 +3105,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // INSURABLE POT 2026-08-28: the offer prices what the leader can actually
     // COLLECT — their eligible side-pot share, net of rake + BBJ drop — not
     // the gross contested pot. "For Winning: pot − fee" is now literal.
-    const insurablePot = bestHandPlayer
-      ? this.computeInsurablePot(bestHandPlayer.playerId, pot)
-      : pot;
+    const potBreakdown = bestHandPlayer
+      ? insurablePotBreakdown(this.handController, bestHandPlayer.playerId, pot)
+      : null;
+    const insurablePot = potBreakdown ? potBreakdown.insurablePot : pot;
 
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
@@ -3088,6 +3132,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
             board: result.board,
             allInPlayers,
+            potBreakdown,
             outs: leaderOuts(
               bestHandPlayer.holeCards,
               allInForOffer
@@ -3135,6 +3180,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
               board: result.board,
               allInPlayers,
+              potBreakdown,
               outs: leaderOuts(
                 bestHandPlayer.holeCards,
                 allInForOffer
@@ -3273,6 +3319,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       board: import('../types.js').Card[];
       allInPlayers: import('../types.js').SeatPlayer[];
       outs: import('../types.js').Card[];
+      /** How `pot` (the insurable pot) was derived, for the audit record. */
+      potBreakdown?: InsurablePotBreakdown | null;
     }
   ): void {
     const nameOf = (playerId: string): string =>
@@ -3309,7 +3357,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // (the recording opened at 23s of a 25s window). An absolute deadline
     // survives transit and reconnects; timeoutSeconds stays for old clients.
     const deadlineAt = Date.now() + timeoutSeconds * 1000;
-    this.hub?.emitEvent(this.tableId, {
+    const payload: Record<string, unknown> = {
       type: 'insurance_offers',
       table_id: this.tableId,
       hand_number: this.handCount,
@@ -3348,7 +3396,65 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         // EV CASHOUT 2026-08-28: the third choice, server-priced.
         evCashoutAmount: o.evCashoutAmount,
       })),
-    });
+    };
+    // PHASE 9 CLOSE-OUT 2026-10-03: the pricing inputs ride the
+    // engine_insurance_offers audit row (action_audit_logs.details.pricing),
+    // NOT the wire - attachInsuranceOfferPricing keeps them beside this
+    // payload object, where only the audit capture reads them. One record per
+    // offer, holding no cards: everything needed to recompute the premium
+    // from the row alone (InsuranceOfferPricing documents the formula).
+    try {
+      const variant = this.activeHandVariant();
+      const breakdown = context?.potBreakdown ?? null;
+      attachInsuranceOfferPricing(
+        payload,
+        offers.map((o) => ({
+          schema: 'insurance_offer_pricing.v1',
+          player_id: o.playerId,
+          seat:
+            this.seatedPlayers.find((p) => p.user_id === o.playerId)?.seat_number ??
+            context?.allInPlayers.find((p) => p.user_id === o.playerId)?.seat ??
+            null,
+          variant,
+          street: street || null,
+          board_length: o.boardLength,
+          gross_pot: breakdown?.grossPot ?? null,
+          live_pot_total: breakdown?.livePotTotal ?? null,
+          eligible_pot: breakdown?.eligiblePot ?? null,
+          rake: breakdown?.rake ?? null,
+          bbj_fee: breakdown?.bbjFee ?? null,
+          insurable_pot_source: breakdown?.source ?? null,
+          insurable_pot: o.pricing.insurablePot,
+          equity_pct: o.pricing.equityPct,
+          strict_loss_pct: o.pricing.strictLossPct,
+          push_pct: o.pricing.pushPct,
+          strict_win_pct: o.pricing.strictWinPct,
+          pct_rounding: 'worker: round(1000 * count / runouts) / 10',
+          loss_given_no_push: o.pricing.lossGivenNoPush,
+          win_given_no_push: o.pricing.winGivenNoPush,
+          runouts: o.pricing.runouts,
+          exact: o.pricing.exact,
+          // The worker reports no outs; this is the popup's leaderOuts count,
+          // shown to the player and not a pricing input.
+          out_count: context ? context.outs.length : null,
+          house_margin: o.pricing.houseMargin,
+          max_insurable_percent: o.pricing.maxInsurablePercent,
+          full_insured_amount: o.pricing.fullInsuredAmount,
+          full_premium: o.pricing.fullPremium,
+          coverage_percent: o.coveragePercent,
+          insured_amount: o.insuredAmount,
+          premium: o.premium,
+          formula:
+            'full_insured_amount = round2(insurable_pot * max_insurable_percent / 100); ' +
+            'full_premium = round2(full_insured_amount * loss_given_no_push * house_margin / ' +
+            'win_given_no_push), loss_given_no_push = min(1, (strict_loss_pct/100) / ' +
+            '(1 - push_pct/100)), win_given_no_push = 1 - loss_given_no_push',
+        }))
+      );
+    } catch {
+      /* audit enrichment must never block the offer */
+    }
+    this.hub?.emitEvent(this.tableId, payload);
 
     // OBSERVABILITY 2026-08-28: record the offer itself. Accept/decline/
     // timeout/cashout/settle are logged from the engine event forwarder in

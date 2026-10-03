@@ -97,7 +97,7 @@ describe('new club opening package and zero-state database law', () => {
     expect(migration).toContain("'requested_operation_id',p_operation_id");
   });
 
-  it('certifies create readback and a conserved true-zero reset without retrying writes', () => {
+  it('certifies create readback and a conserved rollback-only true-zero reset', () => {
     for (const table of [
       'club_wallets',
       'cash_games',
@@ -116,7 +116,8 @@ describe('new club opening package and zero-state database law', () => {
     expect(certificate).toContain('SET LOCAL ROLE authenticated');
     expect(certificate).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(certificate).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
-    expect(certificate).toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(certificate).toContain('SELECT public.fn_ca_lock_settlement_lane_global()');
+    expect(certificate).not.toContain('SELECT pg_advisory_xact_lock(530090,1)');
     expect(certificate).toContain('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
     expect(certificate).toContain('ORDER BY slot_key FOR UPDATE');
     expect(certificate).toContain('SELECT 1 FROM public.tournament_schedules');
@@ -131,8 +132,8 @@ describe('new club opening package and zero-state database law', () => {
     expect(certificate).toContain('AS active_managed_commands');
     const authenticatedRole = certificate.indexOf('SET LOCAL ROLE authenticated');
     const mutation = certificate.indexOf('public.fn_remove_first_club_welcome_games');
-    const preimageReadRole = certificate.indexOf('SET LOCAL ROLE service_role');
-    const laneLock = certificate.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const globalLane = certificate.indexOf('SELECT public.fn_ca_lock_settlement_lane_global()');
+    const preimageReadRole = certificate.indexOf('SET LOCAL ROLE service_role', globalLane);
     const clubLock = certificate.indexOf('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
     const packageItemLocks = certificate.indexOf('ORDER BY slot_key FOR UPDATE');
     const scheduleLocks = certificate.indexOf(
@@ -154,8 +155,9 @@ describe('new club opening package and zero-state database law', () => {
     const financialReadRole = certificate.indexOf('SET LOCAL ROLE service_role', mutation);
     const readback = certificate.indexOf('AS cash_games');
     const rollback = certificate.indexOf("await client.query('ROLLBACK')");
-    expect(preimageReadRole).toBeLessThan(laneLock);
-    expect(laneLock).toBeLessThan(clubLock);
+    expect(globalLane).toBeGreaterThan(-1);
+    expect(globalLane).toBeLessThan(preimageReadRole);
+    expect(preimageReadRole).toBeLessThan(clubLock);
     expect(clubLock).toBeLessThan(packageItemLocks);
     expect(packageItemLocks).toBeLessThan(scheduleLocks);
     expect(scheduleLocks).toBeLessThan(scheduleLockOrder);
@@ -170,9 +172,13 @@ describe('new club opening package and zero-state database law', () => {
     expect(mutation).toBeLessThan(financialReadRole);
     expect(financialReadRole).toBeLessThan(readback);
     expect(readback).toBeLessThan(rollback);
-    expect(certificate).not.toMatch(
-      /retryTransient\([\s\S]{0,300}fn_remove_first_club_welcome_games/
+    const retry = certificate.indexOf(
+      'await retryTransient(',
+      certificate.indexOf('const resetOperationId')
     );
+    const freshRollbackProbe = certificate.indexOf('certifyWelcomeResetInsideRollback({', retry);
+    expect(retry).toBeGreaterThan(-1);
+    expect(retry).toBeLessThan(freshRollbackProbe);
   });
 
   it('keeps both pristine-history gates on the existing hand-history indexes', () => {

@@ -202,14 +202,23 @@ async function certifyWelcomeResetInsideRollback({
       [JSON.stringify(claims), claims.sub]
     );
 
-    await client.query('SET LOCAL ROLE service_role');
     // The opening board materializes incrementally through this same global
     // settlement lane. Scheduled materialization instead serializes on the
-    // package item and schedule rows. Acquire both authorities in the reset
-    // function's order before the independent preimage so neither graph can
-    // change between observation and the authenticated reset. Every lock is
+    // package item and schedule rows. Acquire the settlement authority and
+    // those ordered rows in the reset function's order before the independent
+    // preimage so neither graph can change between observation and the
+    // authenticated reset. Every lock is
     // transaction-scoped and remains held through the existing ROLLBACK.
-    await client.query('SELECT pg_advisory_xact_lock(530090,1)');
+    //
+    // The reset authority takes the global settlement lane before any club or
+    // package lock. Keep that exact order here. The 530090 advisory lane is a
+    // maintenance/entry boundary, not part of this reset authority; taking it
+    // here can deadlock with a settlement worker that already owns the global
+    // lane. DATABASE_URL connects through the privileged certification session,
+    // so acquire the private global authority before narrowing the transaction
+    // to service_role.
+    await client.query('SELECT public.fn_ca_lock_settlement_lane_global()');
+    await client.query('SET LOCAL ROLE service_role');
     await client.query('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE', [clubId]);
     await client.query(
       `SELECT 1 FROM public.club_welcome_package_items
@@ -836,14 +845,18 @@ try {
     reset,
     readback: resetReadback,
     removed: resetRemoved,
-  } = await certifyWelcomeResetInsideRollback({
-    claims: authenticatedClaims,
-    clubId: club.id,
-    operationId: resetOperationId,
-    cashIds,
-    tableIds: initialTableIds,
-    scheduleId: schedule.id,
-  });
+  } = await retryTransient(
+    () =>
+      certifyWelcomeResetInsideRollback({
+        claims: authenticatedClaims,
+        clubId: club.id,
+        operationId: resetOperationId,
+        cashIds,
+        tableIds: initialTableIds,
+        scheduleId: schedule.id,
+      }),
+    { label: `rollback-only welcome reset certification for club ${club.id}` }
+  );
   if (
     reset?.ok !== true ||
     Number(reset?.returned_to_treasury?.bbj) !== 100 ||

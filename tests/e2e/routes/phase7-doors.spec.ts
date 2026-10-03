@@ -19,7 +19,17 @@
 import { expect, test } from '@playwright/test';
 import { expectRoute } from './utils';
 
-const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const DEFAULT_E2E_CLUB_SLUG = 'shark-club';
+const CLUB_ID = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const clubDataIdentifiers =
+  CLUB_ID === DEFAULT_E2E_CLUB_ID ? [CLUB_ID, DEFAULT_E2E_CLUB_SLUG] : [CLUB_ID];
+const CLUB_DATA_LANDING = new RegExp(
+  `/clubs/(?:${clubDataIdentifiers.map(escapeRegExp).join('|')})/data/?(?:[?#]|$)`
+);
 
 test.describe('Phase 7 - the pages that were given a door', () => {
   test('the agent dashboard renders, and it is the one with 1.49M commission rows behind it', async ({
@@ -131,9 +141,11 @@ test.describe('Phase 7 - the doors that were retired', () => {
   });
 
   test('the duplicate club dashboard lands on club data, carrying its club', async ({ page }) => {
-    // `relative="path"` resolves ../data against the current URL, so the club
-    // id has to survive the redirect. That is the part worth checking.
-    await landsOn(page, `clubs/${CLUB_ID}/dashboard`, new RegExp(`/clubs/${CLUB_ID}/data`));
+    // `relative="path"` resolves ../data against the current URL. SlugEnforcer
+    // can then replace the UUID with this club's exact canonical slug before
+    // Playwright samples the address bar; either spelling must still name this
+    // one club and must still end at its Data page.
+    await landsOn(page, `clubs/${CLUB_ID}/dashboard`, CLUB_DATA_LANDING);
   });
 
   test('waitlist lands on the arena, where the tables and their queues are', async ({ page }) => {

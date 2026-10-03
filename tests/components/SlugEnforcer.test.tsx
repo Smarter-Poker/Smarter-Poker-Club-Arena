@@ -42,9 +42,9 @@ describe('SlugEnforcer', () => {
     });
   };
 
-  it('rewrites non-union club UUID to slug', async () => {
+  it('rewrites non-union club UUID to slug without dropping the nested Data path', async () => {
     (useLocation as any).mockReturnValue({
-      pathname: '/clubs/12345678-1234-1234-1234-123456789012',
+      pathname: '/clubs/12345678-1234-1234-1234-123456789012/data',
       search: '',
       hash: '',
     });
@@ -59,7 +59,7 @@ describe('SlugEnforcer', () => {
     // flush promises
     await new Promise(process.nextTick);
 
-    expect(navigateMock).toHaveBeenCalledWith('/clubs/test-club', { replace: true });
+    expect(navigateMock).toHaveBeenCalledWith('/clubs/test-club/data', { replace: true });
   });
 
   it('rewrites union hub club UUID to union route preserving UUID', async () => {

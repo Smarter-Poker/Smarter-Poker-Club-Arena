@@ -42,6 +42,12 @@ Signed-in production verification found that `union_to_club` describes a transfe
 - Rate Audit restores the visible `N Changes` label in the painted count pill, including the exact `0 Changes` state after two successful empty scoped reads; an empty history stays distinct from a failed read and never offers a false retry.
 - Focused regressions bind the range layout to its wrap/order contract and preserve the console title element in the read-view harness so duplicate or missing headings fail locally.
 
+## Canonical Club Data Door Certificate
+
+- The retired `clubs/:clubId/dashboard` door continues to carry its club into the Data route. Production correctly canonicalizes the certification club UUID to its exact `shark-club` slug before the address bar is sampled.
+- The Phase 7 browser certificate now accepts only that exact UUID or that exact canonical slug and still requires the `/data` destination; it does not accept an arbitrary club or a different subpage.
+- The Slug Enforcer regression now proves that UUID-to-slug canonicalization preserves the nested Data path instead of testing only the club root.
+
 ## Policy Receipt
 
 - Policy version: `2.9`

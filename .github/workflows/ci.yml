@@ -2614,6 +2614,10 @@ jobs:
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
 
+      - name: Stats Route And Lazy Chunk Budgets
+        if: success()
+        run: npm run check:stats-budgets
+
       # ── Who Pays For First Paint ─────────────────────────────────────────
       - name: Entry Chunk Is A Reviewed List
         # `always()` rather than `success()` on purpose: the step above gates a

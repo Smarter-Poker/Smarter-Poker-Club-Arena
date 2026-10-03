@@ -121,12 +121,12 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
     return (
       <div className="bankroll-tracker">
         <div className="bankroll-header">
-          <h3>Bankroll Tracker</h3>
-          <p className="bankroll-subtitle">No Cash Sessions To Chart ({windowLabel})</p>
+          <h3>Cumulative Session P/L</h3>
+          <p className="bankroll-subtitle">No Hand-Derived Sessions To Chart ({windowLabel})</p>
         </div>
         <div className="bankroll-empty">
-          <span className="bankroll-empty-label">Awaiting Session Ledger</span>
-          <p>Play Some Cash Sessions And Your Bankroll Progression Will Appear Here.</p>
+          <span className="bankroll-empty-label">Awaiting Hand-Derived Sessions</span>
+          <p>Cash Hand Groups Will Appear Here After They Are Recorded.</p>
         </div>
       </div>
     );
@@ -135,9 +135,10 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
   return (
     <div className="bankroll-tracker">
       <div className="bankroll-header">
-        <h3>Bankroll Tracker</h3>
+        <h3>Cumulative Session P/L</h3>
         <p className="bankroll-subtitle">
-          Cumulative Cash Result Across {chartData.length.toLocaleString()} Sessions, {windowLabel}
+          Cumulative Cash Result Across {chartData.length.toLocaleString()} Hand-Derived Sessions,{' '}
+          {windowLabel}
         </p>
       </div>
 
@@ -188,7 +189,8 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               }}
               labelStyle={{ color: '#fff' }}
               formatter={(value, name) => {
-                if (name === 'Bankroll') return [Number(value).toLocaleString(), 'Cumulative P/L'];
+                if (name === 'Cumulative Session P/L')
+                  return [Number(value).toLocaleString(), 'Cumulative Session P/L'];
                 if (name === '7 Session Average')
                   return [Number(value).toLocaleString(), '7 Session Avg'];
                 return [String(value), String(name)];
@@ -207,7 +209,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               stroke="#00d4ff"
               strokeWidth={2}
               dot={false}
-              name="Bankroll"
+              name="Cumulative Session P/L"
               isAnimationActive={!still}
             />
             <Line

@@ -569,6 +569,7 @@
 
 .ps-controls,
 .ps-cards,
+.ps-stale,
 .ps-empty,
 .player-stats-page > .page-skeleton {
   width: min(1180px, calc(100vw - 24px));
@@ -716,6 +717,36 @@
   background: radial-gradient(circle at center, rgba(0, 212, 255, 0.08), transparent 42%), #080d12;
 }
 
+.ps-stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--ca-red);
+  background: #080d12;
+  box-shadow:
+    inset 3px 0 0 var(--ca-red),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ps-stale .ps-empty__status {
+  margin-bottom: 4px;
+  color: var(--ca-red);
+}
+
+.ps-stale__body {
+  margin: 0;
+  color: var(--ca-text-dim);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ps-stale .ps-range__pill {
+  flex: 0 0 auto;
+}
+
 .ps-back:focus-visible,
 .ps-range__tabs button:focus-visible,
 .ps-range__confirm:focus-visible,
@@ -745,6 +776,7 @@
   .ps-hero,
   .ps-controls,
   .ps-cards,
+  .ps-stale,
   .ps-empty,
   .player-stats-page > .page-skeleton {
     width: min(100% - 16px, 1180px);
@@ -765,6 +797,11 @@
 
   .ps-controls {
     padding: 16px;
+  }
+
+  .ps-stale {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .ps-controls__heading {

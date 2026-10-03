@@ -41,7 +41,12 @@ import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
-import { filterHandsByStatsDrilldown, readStatsDrilldown } from '../lib/handHistoryDrilldown';
+import {
+  filterHandsByStatsDrilldown,
+  readStatsDrilldown,
+  statsEvidenceQueryFromDrilldown,
+} from '../lib/handHistoryDrilldown';
+import { StatsEvidenceService, type StatsEvidenceCursor } from '../services/StatsEvidenceService';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
 import { gameTypeLabel, money } from '../utils/handFormat';
 import { filterBySubjects, handSearchSubject, type HandQuery } from '../lib/handSearch';
@@ -143,11 +148,14 @@ export default function HandHistoryPage() {
      asset and the service names the one open club behind it. */
   const arenaAssetScope = arenaScoped ? ('diamonds' as const) : null;
   const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
+  const cameFromStats = searchParams.get('source') === 'stats';
   /* DEEP LINK (Phase 1, 2026-09-05): `/hand-history?hand=<id>` opens ON that
      hand - expanded and scrolled to - fetching it by id when it is not on the
      first page. The id is the hand_history row id the modal's Copy Link and a
      dispute carry; RLS decides whether the viewer may read it. */
   const linkedHandId = searchParams.get('hand');
+  const useStatsEvidence = cameFromStats && hasStatsDrilldown && !linkedHandId;
+  const statsAssetScope = searchParams.get('statsAsset') === 'diamonds' ? 'diamonds' : 'chips';
   const toast = useToast();
   const isMounted = useIsMounted();
 
@@ -179,7 +187,10 @@ export default function HandHistoryPage() {
   const [replayId, setReplayId] = useState<string | null>(null);
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
-  const loadingRef = useRef(false);
+  const firstPageSequenceRef = useRef(0);
+  const evidenceCursorRef = useRef<StatsEvidenceCursor | null>(null);
+  const requestKeyRef = useRef(drilldownKey);
+  requestKeyRef.current = drilldownKey;
   /* A linked hand not on the loaded page, fetched by id and shown first. */
   const [linkedRow, setLinkedRow] = useState<ServiceHandRecord | null>(null);
   const [linkedState, setLinkedState] = useState<'idle' | 'loading' | 'missing'>('idle');
@@ -187,57 +198,146 @@ export default function HandHistoryPage() {
 
   const loadFirstPage = useCallback(async () => {
     if (!userId) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    const requestSequence = ++firstPageSequenceRef.current;
     setLoading(true);
     setLoadFailed(false);
+    const requestKey = drilldownKey;
     try {
-      const data = await retryFetch(
-        () => handHistoryService.getPlayerHands(userId, PAGE_SIZE, { asset: arenaAssetScope }),
-        {
-          maxRetries: 2,
-          isMountedRef: isMounted,
-        }
-      );
-      if (!isMounted.current) return;
+      const page = useStatsEvidence
+        ? await retryFetch(
+            async () => {
+              const result = statsDrilldown.statsSession
+                ? await StatsEvidenceService.listCashSession(
+                    userId,
+                    statsDrilldown.statsSession,
+                    null,
+                    PAGE_SIZE
+                  )
+                : await StatsEvidenceService.list(
+                    userId,
+                    statsAssetScope,
+                    statsDrilldown.clubId ?? null,
+                    statsEvidenceQueryFromDrilldown(statsDrilldown),
+                    null,
+                    PAGE_SIZE
+                  );
+              if (result.error) throw new Error(result.error);
+              return result;
+            },
+            { maxRetries: 2, isMountedRef: isMounted }
+          )
+        : null;
+      const data = page
+        ? await retryFetch(
+            () => handHistoryService.getHandsByIds(page.hands.map((hand) => hand.hand_id)),
+            { maxRetries: 2, isMountedRef: isMounted }
+          )
+        : await retryFetch(
+            () =>
+              handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
+                asset: arenaAssetScope,
+                clubId: statsDrilldown.clubId,
+              }),
+            { maxRetries: 2, isMountedRef: isMounted }
+          );
+      if (
+        !isMounted.current ||
+        requestKeyRef.current !== requestKey ||
+        firstPageSequenceRef.current !== requestSequence
+      )
+        return;
       setRows(data);
-      setHasMore(data.length === PAGE_SIZE);
+      evidenceCursorRef.current = page?.next_cursor ?? null;
+      setHasMore(page ? page.has_more : data.length === PAGE_SIZE);
     } catch (error) {
       reportError(error, 'HandHistoryPage.Failed_to_load_hands');
       if (!isMounted.current) return;
       toast.error('Could Not Load Hand History');
       setLoadFailed(true);
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (firstPageSequenceRef.current === requestSequence) {
+        if (isMounted.current) setLoading(false);
+      }
     }
-  }, [userId, arenaAssetScope, isMounted, toast]);
+  }, [
+    userId,
+    arenaAssetScope,
+    statsAssetScope,
+    statsDrilldown,
+    useStatsEvidence,
+    drilldownKey,
+    isMounted,
+    toast,
+  ]);
 
   const loadMore = useCallback(async () => {
     if (!userId || loadingMore) return;
     setLoadingMore(true);
+    const requestKey = drilldownKey;
     try {
-      const data = await retryFetch(
-        () =>
-          handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
-            offset: rows.length,
-            asset: arenaAssetScope,
-          }),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-      if (!isMounted.current) return;
+      const page = useStatsEvidence
+        ? await retryFetch(
+            async () => {
+              const result = statsDrilldown.statsSession
+                ? await StatsEvidenceService.listCashSession(
+                    userId,
+                    statsDrilldown.statsSession,
+                    evidenceCursorRef.current,
+                    PAGE_SIZE
+                  )
+                : await StatsEvidenceService.list(
+                    userId,
+                    statsAssetScope,
+                    statsDrilldown.clubId ?? null,
+                    statsEvidenceQueryFromDrilldown(statsDrilldown),
+                    evidenceCursorRef.current,
+                    PAGE_SIZE
+                  );
+              if (result.error) throw new Error(result.error);
+              return result;
+            },
+            { maxRetries: 2, isMountedRef: isMounted }
+          )
+        : null;
+      const data = page
+        ? await retryFetch(
+            () => handHistoryService.getHandsByIds(page.hands.map((hand) => hand.hand_id)),
+            { maxRetries: 2, isMountedRef: isMounted }
+          )
+        : await retryFetch(
+            () =>
+              handHistoryService.getPlayerHands(userId, PAGE_SIZE, {
+                offset: rows.length,
+                asset: arenaAssetScope,
+                clubId: statsDrilldown.clubId,
+              }),
+            { maxRetries: 2, isMountedRef: isMounted }
+          );
+      if (!isMounted.current || requestKeyRef.current !== requestKey) return;
       setRows((prev) => {
         const seen = new Set(prev.map((h) => h.id));
         return [...prev, ...data.filter((h) => !seen.has(h.id))];
       });
-      setHasMore(data.length === PAGE_SIZE);
+      evidenceCursorRef.current = page?.next_cursor ?? evidenceCursorRef.current;
+      setHasMore(page ? page.has_more : data.length === PAGE_SIZE);
     } catch (error) {
       reportError(error, 'HandHistoryPage.Failed_to_load_more');
       if (isMounted.current) toast.error('Could Not Load More Hands');
     } finally {
       if (isMounted.current) setLoadingMore(false);
     }
-  }, [userId, arenaAssetScope, rows.length, loadingMore, isMounted, toast]);
+  }, [
+    userId,
+    arenaAssetScope,
+    statsAssetScope,
+    statsDrilldown,
+    useStatsEvidence,
+    drilldownKey,
+    rows.length,
+    loadingMore,
+    isMounted,
+    toast,
+  ]);
 
   const loadFirstPageRef = useRef(loadFirstPage);
   loadFirstPageRef.current = loadFirstPage;
@@ -305,7 +405,7 @@ export default function HandHistoryPage() {
      fetched by id leads the list regardless of the filter, so the link lands. */
   const hands: HandRecord[] = useMemo(() => {
     if (!userId) return [];
-    let list = filterHandsByStatsDrilldown(rows, statsDrilldown, userId);
+    let list = useStatsEvidence ? rows : filterHandsByStatsDrilldown(rows, statsDrilldown, userId);
     /* ONE predicate for the chip and the search box, over a subject built from
        the model - so "showdown", "all in" and "won" mean here exactly what
        they mean in the table's panel. */
@@ -348,6 +448,7 @@ export default function HandHistoryPage() {
     userId,
     linkedHandId,
     linkedRow,
+    useStatsEvidence,
   ]);
 
   /* Only the variants the loaded hands actually contain: a menu that offers a
@@ -730,12 +831,26 @@ export default function HandHistoryPage() {
         <div className="hh-stats-drilldown" role="status">
           <span>
             Showing Stats Evidence
+            {statsDrilldown.clubId ? ' · Selected Club' : ''}
             {statsDrilldown.variant ? ` · ${statsDrilldown.variant.toUpperCase()}` : ''}
             {statsDrilldown.position ? ` · ${statsDrilldown.position}` : ''}
             {statsDrilldown.bigBlind ? ` · ${statsDrilldown.bigBlind} BB` : ''}
+            {statsDrilldown.statsMetric
+              ? ` · ${statsDrilldown.statsMetric.replace(/_/g, ' ')}`
+              : ''}
+            {statsDrilldown.statsSession ? ' · Exact Cash Session' : ''}
           </span>
           <button type="button" onClick={() => navigate('/hand-history', { replace: true })}>
             Clear Evidence Filter
+          </button>
+        </div>
+      )}
+
+      {cameFromStats && (
+        <div className="hh-stats-drilldown" role="navigation" aria-label="Stats Evidence Return">
+          <span>Opened From Player Stats</span>
+          <button type="button" onClick={() => navigate(-1)}>
+            Back To Stats
           </button>
         </div>
       )}

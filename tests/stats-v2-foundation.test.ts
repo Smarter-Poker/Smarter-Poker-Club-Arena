@@ -22,6 +22,12 @@ const ADVANCED_SUMMARY = readFileSync(
 const PRODUCTION_SPEC = readFileSync(resolve(ROOT, 'tests/e2e/stats-deep.spec.ts'), 'utf8');
 const PROFILE = readFileSync(resolve(ROOT, 'src/pages/ProfilePage.tsx'), 'utf8');
 const NEMESIS = readFileSync(resolve(ROOT, 'src/components/stats/NemesisPanel.tsx'), 'utf8');
+const SHARED = readFileSync(resolve(ROOT, 'src/pages/stats/SharedClubStatsView.tsx'), 'utf8');
+const SHARED_SERVICE = readFileSync(
+  resolve(ROOT, 'src/services/SharedClubStatsService.ts'),
+  'utf8'
+);
+const HEADLINE = readFileSync(resolve(ROOT, 'src/pages/stats/StatsHeadlineDeck.tsx'), 'utf8');
 
 function sqlFunctionBody(sql: string, signature: string): string {
   const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${signature}`);
@@ -33,8 +39,8 @@ function sqlFunctionBody(sql: string, signature: string): string {
 
 describe('Stats contract v2 security boundary', () => {
   it('makes the browser use only owner-asserting versioned RPCs', () => {
-    expect(PAGE).toContain("rpc('ca_player_stats_overview_v2'");
-    expect(PAGE).toContain("rpc('ca_player_hands_v2'");
+    expect(PAGE).toContain("statsRpcName('ca_player_stats_overview_v2', selectedClubId)");
+    expect(PAGE).toContain("statsRpcName('ca_player_hands_v2', selectedClubId)");
     expect(PAGE).not.toContain("rpc('ca_player_stats_full'");
     expect(PAGE).not.toContain("rpc('ca_player_hands'");
 
@@ -56,10 +62,14 @@ describe('Stats contract v2 security boundary', () => {
     expect(MIGRATION).toContain('legacy arbitrary-target Stats RPC remains reachable');
   });
 
-  it('does not hydrate or request cross-profile statistics', () => {
+  it('permits only the later least-privilege shared-club cross-profile aggregate', () => {
     expect(PAGE).toContain('if (!targetUserId || !isOwnProfile) return;');
-    expect(PAGE).toContain('Player Stats Are Private');
-    expect(PAGE).toContain('No All-Club Financial');
+    expect(PAGE).toContain('<SharedClubStatsView');
+    expect(SHARED).toContain(
+      'No All-Clubs, Private Financial, Hand, Note, Or Opponent Data Is Exposed.'
+    );
+    expect(SHARED_SERVICE).toContain("supabase.rpc('ca_player_stats_shared_overview_v1'");
+    expect(SHARED_SERVICE).not.toMatch(/hand_history|hole_cards|notes|opponents/);
     expect(PUBLIC_PROFILE).not.toContain('profileService.getStats');
     expect(PUBLIC_PROFILE).not.toContain('ProfileStats');
     expect(PROFILE_SERVICE).not.toContain("rpc('ca_player_stats_overview_v2'");
@@ -113,23 +123,24 @@ describe('Stats truth and reproducibility boundary', () => {
     expect(MIGRATION).toContain("'historical_club_breakdown_available', false");
     // Since 2026-09-03 the money source is measured per payload: the page
     // says how many hands are exact and warns only when NONE are.
-    expect(PAGE).toContain("Cash Hands Use The Engine's Exact Settlement");
-    expect(PAGE).toContain('Cash Result And BB/100 Are Reconstructed From Recorded Actions');
+    expect(HEADLINE).toContain("Cash Hands Use The Engine's Exact Settlement");
+    expect(HEADLINE).toContain('Cash Result And BB/100 Are Reconstructed From Recorded Actions');
     expect(BOUNDED_MIGRATION).toContain("'advanced_facts_source', 'ca_hand_player_stat'");
     expect(BOUNDED_MIGRATION).toContain("'live_tail_included', false");
     expect(BOUNDED_MIGRATION).toContain("'rollup_covered_through', to_jsonb(v_rollup_ceil)");
-    expect(PAGE).toContain('Newer Hands Appear After The Next Stats Rollup');
+    expect(HEADLINE).toContain('Newer Hands Appear After The Next Stats Rollup');
   });
 
   it('never substitutes legacy player_stats rows under a scoped range label', () => {
     expect(PAGE).not.toContain('loadLegacyStats');
     expect(PAGE).not.toContain('legacy_fallback');
-    expect(PAGE).toContain('loadedRangeKeyRef.current === rangeKey');
-    expect(PAGE).toContain('onClick={() => changeRange(r.key)}');
+    expect(PAGE).toContain('loadedRangeKeyRef.current === loadScopeKey');
+    expect(PAGE).toContain('activeClubIdRef.current !== selectedClubId');
+    expect(HEADLINE).toContain('onClick={() => changeRange(r.key)}');
     /* The scope argument joined this call on 2026-09-20 and became the page's
        own asset on 2026-09-29 (Diamonds in the Diamond Arena); the window is
        still the page's own selected range, which is what this pins. */
-    expect(PAGE).toContain('.call(StatsFactsService, statsScope, windowDays)');
+    expect(PAGE).toContain('.call(StatsFactsService, statsScope, windowDays, selectedClubId)');
   });
 });
 

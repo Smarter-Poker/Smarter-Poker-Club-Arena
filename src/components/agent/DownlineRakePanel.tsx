@@ -26,12 +26,15 @@ import {
   type RakeWindowKey,
 } from '../../services/AgentRakeService';
 import { reportError } from '../../utils/errorReporter';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
+import './DownlineRakePanel.css';
 
 const money = (n: unknown) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(n) || 0);
 const count = (n: unknown) => new Intl.NumberFormat('en-US').format(Number(n) || 0);
 
 const AGENT_ROLES = new Set(['super_agent', 'agent', 'sub_agent']);
+const PAGE_SIZE = 500;
 
 type Crumb = { userId: string; name: string };
 
@@ -46,13 +49,19 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
   const [error, setError] = useState<string | null>(null);
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
   const [liveAt, setLiveAt] = useState<Date | null>(null);
+  const [rowLimit, setRowLimit] = useState(PAGE_SIZE);
+  const [hasMore, setHasMore] = useState(false);
 
   const inFlight = useRef(false);
   const pending = useRef(false);
+  const latestLoad = useRef<(quiet?: boolean) => Promise<void>>(async () => undefined);
 
   // Debounce the search box so typing does not fire a query per keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(search), 300);
+    const t = setTimeout(() => {
+      setRowLimit(PAGE_SIZE);
+      setDebounced(search);
+    }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -77,10 +86,15 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           until,
         };
         const [r, s] = await Promise.all([
-          AgentRakeService.getDownlineRake({ ...args, search: debounced, limit: 500 }),
+          AgentRakeService.getDownlineRake({
+            ...args,
+            search: debounced,
+            limit: rowLimit + 1,
+          }),
           AgentRakeService.getDownlineRakeSummary(args),
         ]);
-        setRows(r);
+        setRows(r.slice(0, rowLimit));
+        setHasMore(r.length > rowLimit);
         setSummary(s);
         setLiveAt(new Date());
       } catch (e) {
@@ -91,12 +105,13 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
         setLoading(false);
         if (pending.current) {
           pending.current = false;
-          void load(true);
+          void latestLoad.current(true);
         }
       }
     },
-    [clubId, win, debounced, focusUserId]
+    [clubId, win, debounced, focusUserId, rowLimit]
   );
+  latestLoad.current = load;
 
   useEffect(() => {
     void load();
@@ -130,158 +145,94 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
 
   const drillInto = (r: DownlineRakeRow) => {
     if (!AGENT_ROLES.has(r.role)) return;
-    setCrumbs((c) => [...c, { userId: r.player_id, name: r.username ?? 'agent' }]);
+    setRowLimit(PAGE_SIZE);
+    setCrumbs((c) => [...c, { userId: r.player_id, name: r.username ?? 'Agent' }]);
     setSearch('');
   };
 
-  const popTo = (i: number) => setCrumbs((c) => c.slice(0, i));
-
-  const pill = (active: boolean) => ({
-    padding: '6px 12px',
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    border: active ? '1px solid #37e7c7' : '1px solid #2a3a44',
-    background: active ? 'rgba(55,231,199,0.12)' : 'transparent',
-    color: active ? '#37e7c7' : '#8fa3ad',
-  });
+  const popTo = (i: number) => {
+    setRowLimit(PAGE_SIZE);
+    setCrumbs((c) => c.slice(0, i));
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0 20px' }}>
-      {/* CONTROLS */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+    <section className="dlr-panel" aria-label="Downline Rake Ledger">
+      <div className="dlr-controls">
         {roles.length > 1 && (
           <select
+            aria-label="Club"
             value={clubId}
             onChange={(e) => {
+              setRowLimit(PAGE_SIZE);
               setClubId(e.target.value);
               setCrumbs([]);
-            }}
-            style={{
-              padding: '7px 10px',
-              borderRadius: 8,
-              border: '1px solid #2a3a44',
-              background: 'rgba(255,255,255,0.04)',
-              color: '#e6f1f5',
-              fontSize: '0.82rem',
             }}
           >
             {roles.map((r) => (
               <option key={r.club_id} value={r.club_id}>
-                {r.club_name} · {r.role.replace('_', ' ')}
+                {r.club_name ?? 'Club'} / {enumToTitleCase(r.role)}
               </option>
             ))}
           </select>
         )}
-        {RAKE_WINDOWS.map((w) => (
-          <button key={w.key} onClick={() => setWin(w.key)} style={pill(win === w.key)}>
-            {w.label}
-          </button>
-        ))}
+        <div className="dlr-window-controls" role="group" aria-label="Rake Window">
+          {RAKE_WINDOWS.map((w) => (
+            <button
+              key={w.key}
+              type="button"
+              className={win === w.key ? 'dlr-control dlr-control--active' : 'dlr-control'}
+              aria-pressed={win === w.key}
+              onClick={() => {
+                setRowLimit(PAGE_SIZE);
+                setWin(w.key);
+              }}
+            >
+              {titleCase(w.label)}
+            </button>
+          ))}
+        </div>
         <input
+          aria-label="Search Downline Players"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search A Player…"
-          style={{
-            flex: '1 1 180px',
-            minWidth: 140,
-            padding: '7px 12px',
-            borderRadius: 8,
-            border: '1px solid #2a3a44',
-            background: 'rgba(255,255,255,0.04)',
-            color: '#e6f1f5',
-            fontSize: '0.82rem',
-          }}
+          placeholder="Search A Player..."
         />
       </div>
 
-      {/* BREADCRUMB */}
       {crumbs.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            fontSize: '0.82rem',
-          }}
-        >
-          <button
-            onClick={() => popTo(0)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#37e7c7',
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
+        <nav className="dlr-breadcrumbs" aria-label="Downline Path">
+          <button type="button" onClick={() => popTo(0)}>
             My Downline
           </button>
           {crumbs.map((c, i) => (
-            <span key={c.userId} style={{ color: '#66787f' }}>
-              {' › '}
+            <span key={c.userId}>
               <button
+                type="button"
+                aria-current={i === crumbs.length - 1 ? 'page' : undefined}
                 onClick={() => popTo(i + 1)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: 0,
-                  color: i === crumbs.length - 1 ? '#e6f1f5' : '#37e7c7',
-                  fontWeight: i === crumbs.length - 1 ? 700 : 400,
-                }}
               >
                 {c.name}
               </button>
             </span>
           ))}
-        </div>
+        </nav>
       )}
 
       {error ? (
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 10,
-            border: '1px solid #5a2020',
-            background: 'rgba(255,118,118,0.08)',
-            color: '#ff9c9c',
-            display: 'flex',
-            gap: 12,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-          }}
-        >
-          <span>{error}</span>
-          <button
-            onClick={() => void load()}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              border: '1px solid #5a2020',
-              background: 'transparent',
-              color: '#ff9c9c',
-              cursor: 'pointer',
-            }}
-          >
+        <div className="dlr-error" role="alert">
+          <span>{titleCase(error)}</span>
+          <button type="button" onClick={() => void load()}>
             Retry
           </button>
         </div>
       ) : loading && rows.length === 0 ? (
-        <div style={{ color: '#8aa', padding: 12 }}>Loading Downline Rake…</div>
+        <div className="dlr-loading" role="status">
+          Loading Downline Rake...
+        </div>
       ) : (
         <>
-          {/* SUMMARY */}
           {summary && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
-                gap: 10,
-              }}
-            >
+            <dl className="dlr-summary">
               <Stat
                 label={debounced ? 'Downline Rake (All Members)' : 'Downline Rake'}
                 value={money(summary.rake_generated)}
@@ -292,14 +243,14 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                 value={money(summary.estimated_commission)}
                 sub={
                   Number.isFinite(Number(summary.commission_rate))
-                    ? `at ${Math.round(Number(summary.commission_rate) * 100)}%`
-                    : 'rate unavailable'
+                    ? `At ${Math.round(Number(summary.commission_rate) * 100)}%`
+                    : 'Rate Unavailable'
                 }
               />
               <Stat
                 label="Members"
                 value={count(summary.members)}
-                sub={`${count(summary.active)} active`}
+                sub={`${count(summary.active)} Active`}
               />
               <Stat label="Hands" value={count(summary.hands)} />
               {summary.top_earner?.username && (
@@ -310,113 +261,64 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                   small
                 />
               )}
-            </div>
+            </dl>
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 8,
-            }}
-          >
-            <span style={{ color: '#66787f', fontSize: '0.75rem' }}>
-              {liveAt && (
-                <>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      background: '#37e7c7',
-                      marginRight: 6,
-                    }}
-                  />
-                  Live · Updated {liveAt.toLocaleTimeString()}
-                </>
-              )}
+          <div className="dlr-read-status">
+            <span>
+              {liveAt && <>Verified 30-Second Poll / Last Checked {liveAt.toLocaleTimeString()}</>}
             </span>
             {debounced && (
-              <span style={{ color: '#8fa3ad', fontSize: '0.78rem' }}>
-                {rows.length} Match{rows.length === 1 ? '' : 'es'} · {money(totals.shown)} Rake
+              <span>
+                {rows.length} Match{rows.length === 1 ? '' : 'es'} / {money(totals.shown)} Rake
               </span>
             )}
           </div>
 
-          {/* TABLE */}
-          {rows.length >= 500 && (
-            <p style={{ color: '#f59e0b', fontSize: '0.78rem', margin: '0 0 8px' }}>
-              Showing The First 500 Members. The Totals Above Cover Everyone; Search To Find A
-              Member Not Listed.
-            </p>
-          )}
           {rows.length === 0 ? (
-            <p style={{ color: '#8aa' }}>
+            <p className="dlr-empty">
               {debounced
                 ? 'No One In Your Downline Matches That Name.'
                 : 'No Downline Activity In This Window.'}
             </p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+            <div className="dlr-table-wrap">
+              <table>
                 <thead>
-                  <tr style={{ color: '#7d919b', textAlign: 'left' }}>
-                    <th style={{ padding: 8 }}>Member</th>
-                    <th style={{ padding: 8 }}>Upline</th>
-                    <th style={{ padding: 8, textAlign: 'right' }}>Hands</th>
-                    <th style={{ padding: 8, textAlign: 'right' }}>Rake</th>
-                    <th style={{ padding: 8, textAlign: 'right' }}>Their Downline</th>
+                  <tr>
+                    <th>Member</th>
+                    <th>Upline</th>
+                    <th className="dlr-number">Hands</th>
+                    <th className="dlr-number">Rake</th>
+                    <th className="dlr-number">Their Downline</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => {
                     const isAgent = AGENT_ROLES.has(r.role);
                     return (
-                      <tr
-                        key={r.player_id + r.club_id}
-                        onClick={() => drillInto(r)}
-                        style={{
-                          borderTop: '1px solid #1e2a31',
-                          cursor: isAgent ? 'pointer' : 'default',
-                        }}
-                      >
-                        <td style={{ padding: 8, color: '#e6f1f5' }}>
-                          {r.username}
-                          {isAgent && (
-                            <span
-                              style={{
-                                marginLeft: 8,
-                                fontSize: '0.68rem',
-                                color: '#37e7c7',
-                                border: '1px solid #1f5245',
-                                borderRadius: 5,
-                                padding: '1px 5px',
-                              }}
+                      <tr key={r.player_id + r.club_id}>
+                        <td>
+                          {isAgent ? (
+                            <button
+                              type="button"
+                              className="dlr-member-action"
+                              onClick={() => drillInto(r)}
+                              aria-label={`Open ${r.username ?? 'Agent'} Downline`}
                             >
-                              {r.role.replace('_', ' ')}
-                            </span>
+                              <span>{r.username ?? 'Agent'}</span>
+                              <small>{enumToTitleCase(r.role)}</small>
+                            </button>
+                          ) : (
+                            <span className="dlr-member-name">{r.username ?? 'Player'}</span>
                           )}
                         </td>
-                        <td style={{ padding: 8, color: '#8fa3ad' }}>{r.upline_name ?? '-'}</td>
-                        <td style={{ padding: 8, textAlign: 'right', color: '#8fa3ad' }}>
-                          {count(r.hands)}
-                        </td>
-                        <td
-                          style={{
-                            padding: 8,
-                            textAlign: 'right',
-                            color: '#e6f1f5',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {money(r.rake_generated)}
-                        </td>
-                        <td style={{ padding: 8, textAlign: 'right', color: '#8fa3ad' }}>
+                        <td>{r.upline_name ?? '-'}</td>
+                        <td className="dlr-number">{count(r.hands)}</td>
+                        <td className="dlr-number dlr-rake">{money(r.rake_generated)}</td>
+                        <td className="dlr-number">
                           {r.downline_players > 0
-                            ? `${count(r.downline_players)} · ${money(r.downline_rake)}`
+                            ? `${count(r.downline_players)} / ${money(r.downline_rake)}`
                             : '-'}
                         </td>
                       </tr>
@@ -426,15 +328,28 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
               </table>
             </div>
           )}
-          <p style={{ color: '#66787f', fontSize: '0.75rem', margin: 0 }}>
+
+          {hasMore && (
+            <div className="dlr-pagination" role="status">
+              <p>
+                Showing {count(rows.length)} Members. The Totals Above Cover The Full Authorized
+                Downline.
+              </p>
+              <button type="button" onClick={() => setRowLimit((limit) => limit + PAGE_SIZE)}>
+                Show 500 More Members
+              </button>
+            </div>
+          )}
+
+          <p className="dlr-method-note">
             A Hand's Rake Is Attributed By Weighted Contribution - Each Player's Share Follows What
             They Put Into The Pot - The Same Rule The Weekly Payout Uses, So These Figures Match
             Your Statement. Older Hands Recorded Under The Equal Split Are Reported As They Were
-            Paid. Tap An Agent To Open Their Downline.
+            Paid. Open An Agent To Read Their Downline.
           </p>
         </>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -452,37 +367,12 @@ function Stat({
   small?: boolean;
 }) {
   return (
-    <div
-      style={{
-        padding: 12,
-        borderRadius: 10,
-        background: 'rgba(255,255,255,0.03)',
-        border: `1px solid ${accent ? '#1f5245' : '#1e2a31'}`,
-      }}
-    >
-      <div
-        style={{
-          color: '#7d919b',
-          fontSize: '0.7rem',
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          color: accent ? '#37e7c7' : '#e6f1f5',
-          fontSize: small ? '1rem' : '1.35rem',
-          fontWeight: 700,
-          marginTop: 4,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
+    <div className={accent ? 'dlr-stat dlr-stat--accent' : 'dlr-stat'}>
+      <dt>{label}</dt>
+      <dd className={small ? 'dlr-stat__value dlr-stat__value--small' : 'dlr-stat__value'}>
         {value}
-      </div>
-      {sub && <div style={{ color: '#66787f', fontSize: '0.72rem', marginTop: 2 }}>{sub}</div>}
+      </dd>
+      {sub && <dd className="dlr-stat__meta">{sub}</dd>}
     </div>
   );
 }

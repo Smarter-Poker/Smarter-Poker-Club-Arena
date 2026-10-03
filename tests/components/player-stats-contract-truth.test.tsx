@@ -153,8 +153,13 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 vi.mock('react-router-dom', () => ({
   useParams: () => ({}),
   useNavigate: () => vi.fn(),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
   useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
   Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
+}));
+
+vi.mock('../../src/services/ClubsService', () => ({
+  getUserMemberships: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../src/services/AgentRakeService', () => ({
@@ -196,6 +201,12 @@ vi.mock('../../src/services/StatsFactsService', () => {
       generated_at: '',
     }),
     getDistribution: vi.fn().mockResolvedValue({ rows: [] }),
+    getCashOpportunityStats: vi.fn().mockResolvedValue({
+      contract_version: 2,
+      metrics: {},
+      splits: {},
+      coverage: { exact_hands: 0, returned_hands: 0 },
+    }),
     getRakeStats,
     getHandRakeShare: vi.fn().mockResolvedValue({ found: false }),
   };
@@ -430,6 +441,20 @@ describe('the hero hand count says when it is lifetime (defect 5)', () => {
     expect(await within(h).findByText('2,000')).toBeInTheDocument();
     expect(within(h).getByText('Total Hands')).toBeInTheDocument();
     expect(within(h).queryByText('Lifetime Hands')).not.toBeInTheDocument();
+  }, 12_000);
+});
+
+describe('the hero names capped figures as an analysis sample', () => {
+  it('does not label a capped 750-hand cash result as authoritative Cash Profit', async () => {
+    rpcPayload = payload(
+      { ...PLAYED_OVERALL, total_hands: 750, cash_hands: 750, hand_cap: 750, hands_capped: true },
+      50_000
+    );
+    render(<PlayerStatsPage />);
+    const h = await hero();
+    expect(await within(h).findByText('Analysis Cash Result')).toBeInTheDocument();
+    expect(within(h).queryByText('Cash Profit')).not.toBeInTheDocument();
+    expect(screen.getByText('Based On Your Most Recent 750 Hands.')).toBeInTheDocument();
   }, 12_000);
 });
 

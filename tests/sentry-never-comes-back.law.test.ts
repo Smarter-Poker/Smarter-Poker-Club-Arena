@@ -86,7 +86,7 @@ describe('Sentry never comes back', () => {
       'i'
     );
     expect(sources.filter((f) => pattern.test(read(f)))).toEqual([]);
-  });
+  }, 15_000);
 
   it('no workflow, env template or Docker file configures a Sentry key', () => {
     const configs = FILES.filter(

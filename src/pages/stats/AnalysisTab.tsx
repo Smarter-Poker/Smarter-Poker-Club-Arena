@@ -8,11 +8,13 @@
  * conditions that gate the tab (`showTab`, `hasData`, `isOwnProfile`) stay in
  * the page, where `printing` can override them for the dossier.
  */
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, type ReactNode } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import LeakPanel from '../../components/stats/LeakPanel';
 import type { AdvancedStatsInput } from '../../components/stats/AdvancedStatsSummary';
 import { formatCard, handDate } from './format';
+import StatsEvidenceLink from '../../components/stats/StatsEvidenceLink';
+import { buildStatsHandEvidencePath } from '../../lib/statsEvidenceNavigation';
 import {
   RANGES,
   type FullStats,
@@ -50,6 +52,8 @@ export interface AnalysisTabProps {
   dailyChartSummary: string;
   positionChartSummary: string;
   sessionRows: SessionRow[];
+  sessionsAvailable: boolean;
+  sessionsReason: string | null;
   exportSessionsCSV: () => void;
   exportOverviewCSV: () => void;
   handMode: HandMode;
@@ -59,6 +63,8 @@ export interface AnalysisTabProps {
   handsError: boolean;
   setHandsReload: (fn: (n: number) => number) => void;
   openHandEvidence: (filter?: HandEvidenceFilter) => void;
+  clubId?: string | null;
+  exactSessionPanel?: ReactNode;
 }
 
 export default function AnalysisTab({
@@ -76,6 +82,8 @@ export default function AnalysisTab({
   dailyChartSummary,
   positionChartSummary,
   sessionRows,
+  sessionsAvailable,
+  sessionsReason,
   exportSessionsCSV,
   exportOverviewCSV,
   handMode,
@@ -85,9 +93,12 @@ export default function AnalysisTab({
   handsError,
   setHandsReload,
   openHandEvidence,
+  clubId = null,
+  exactSessionPanel,
 }: AnalysisTabProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {exactSessionPanel}
       {/* The coach first (phase 2, 2026-09-04). findLeaks was built, tested
               and exported on 2026-08-25 and then rendered nowhere. It is a pure
               function over the overall rates and the per-position counts this
@@ -215,6 +226,17 @@ export default function AnalysisTab({
                       {h.profit.toLocaleString()}
                     </span>
                     <span className="hand-row-pot">Pot {h.pot_size.toLocaleString()}</span>
+                    {h.id ? (
+                      <StatsEvidenceLink
+                        className="stats-evidence-action"
+                        to={buildStatsHandEvidencePath(h.id, clubId)}
+                        aria-label={`Open Hand From ${handDate(h.played_at)}`}
+                      >
+                        Open Hand
+                      </StatsEvidenceLink>
+                    ) : (
+                      <span className="stats-evidence-unavailable">Evidence Unavailable</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -232,11 +254,19 @@ export default function AnalysisTab({
           <h3>Cash Sessions</h3>
         </div>
         <PanelBoundary name="Session History" resetKey={panelResetKey}>
-          <SessionHistory
-            userId={targetUserId}
-            initialSessions={sessionRows}
-            rangeLabel={rangeLabel}
-          />
+          {sessionsAvailable ? (
+            <SessionHistory
+              userId={targetUserId}
+              initialSessions={sessionRows}
+              rangeLabel={rangeLabel}
+            />
+          ) : (
+            <div className="stats-notice" role="status">
+              Session History Is Unavailable For This Club Because Historical Session Boundaries Are
+              Not Captured In The Club Facts Yet.
+              {sessionsReason ? ` Coverage Code: ${sessionsReason}.` : ''}
+            </div>
+          )}
         </PanelBoundary>
         {overall.tourney_hands > 0 && (
           <div className="stats-notice">
@@ -249,17 +279,23 @@ export default function AnalysisTab({
       {/* Bankroll */}
       <div>
         <div className="stats-section-header">
-          <h3>Cash Bankroll</h3>
+          <h3>Cumulative Session P/L</h3>
         </div>
         <PanelBoundary name="Bankroll" resetKey={panelResetKey}>
-          <Suspense fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}>
-            <BankrollTracker
-              userId={targetUserId}
-              initialSessions={sessionRows}
-              rangeLabel={rangeLabel}
-              still={printing}
-            />
-          </Suspense>
+          {sessionsAvailable ? (
+            <Suspense fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}>
+              <BankrollTracker
+                userId={targetUserId}
+                initialSessions={sessionRows}
+                rangeLabel={rangeLabel}
+                still={printing}
+              />
+            </Suspense>
+          ) : (
+            <div className="stats-notice" role="status">
+              Cumulative Session P/L Is Unavailable Until Club Session Coverage Exists.
+            </div>
+          )}
         </PanelBoundary>
       </div>
     </div>

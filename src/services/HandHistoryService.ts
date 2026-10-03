@@ -55,26 +55,13 @@ export const HAND_HISTORY_COLUMNS = [
 ].join(', ');
 
 /**
- * THE ARENA A HAND WAS PLAYED IN, FOR THE ARENA-SCOPED ARCHIVE (2026-09-19).
- *
- * `hand_history` carries no club column and no foreign key to `tables`, so
- * the club cannot be filtered through the `tables -> clubs` join that labels
- * each row's asset (that join is `fetchTableNames`, a second query keyed by
- * table id, and PostgREST cannot filter the first query through it). What
- * `hand_history` DOES have is `ca_hand_facts`, the per-human-per-hand fact
- * row the engine writes at settlement with the table's `club_id` on it,
- * under a foreign key to `hand_history.id` and an RLS policy that shows each
- * viewer their own row only. Embedding it `!inner` and filtering on its
- * `club_id` is a server-side filter on exactly the hands THIS player played
- * in THAT club, one row per hand by the facts table's primary key, so the
- * page, the order and the offset are all still the database's.
- *
- * Named constraint, for the same reason `TournamentService` names its arena
- * embed: `clubs(...)` alone resolves today and errors the day a second path
- * appears, at runtime, on a player's page.
+ * Server-side arena scope without a retention-breaking foreign key.
+ * `hand_history` is pruned while `ca_hand_facts` is retained indefinitely, so
+ * the old PostgREST embed either cascaded away canonical facts or blocked the
+ * supported prune. This self-only RPC joins by immutable hand UUID and applies
+ * club/table/order/page in PostgreSQL before returning replay rows.
  */
-export const HAND_HISTORY_ARENA_EMBED = 'ca_hand_facts!ca_hand_facts_hand_id_fkey!inner(club_id)';
-export const HAND_HISTORY_ARENA_FILTER_COLUMN = 'ca_hand_facts.club_id';
+export const HAND_HISTORY_ARENA_RPC = 'ca_own_hand_history_by_club';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -340,6 +327,31 @@ class HandHistoryServiceClass {
   }
 
   /**
+   * Resolve an already-authorized evidence page to renderable hand records.
+   * `hand_history` RLS remains the authorization door; callers cannot widen
+   * the evidence page because this method accepts only the exact ids returned
+   * by the evidence RPC. Result order follows the requested keyset page.
+   */
+  async getHandsByIds(handIds: string[]): Promise<HandRecord[]> {
+    const ids = [...new Set(handIds.map((id) => id.trim()).filter(Boolean))].slice(0, 100);
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase
+      .from('hand_history')
+      .select(HAND_HISTORY_COLUMNS)
+      .in('id', ids);
+    if (error || !data) {
+      if (error) reportError(error, 'HandHistoryService.getHandsByIds_query');
+      throw new Error(error?.message || 'Could not resolve Stats evidence hands');
+    }
+    const mapped = await this.mapPlayerHandRows(data as any[]);
+    const byId = new Map(mapped.map((hand) => [hand.id, hand]));
+    return ids.flatMap((id) => {
+      const hand = byId.get(id);
+      return hand ? [hand] : [];
+    });
+  }
+
+  /**
    * Get hands for a player.
    *
    * BUG 021 FIX (2026-04-15): previously queried `hand_players` table (EMPTY — 0 rows) with a
@@ -369,7 +381,7 @@ class HandHistoryServiceClass {
       /**
        * THE ARENA (2026-09-19). The Diamond footer's Hand History door opens
        * the archive scoped to the arena club, and the scope is the SERVER's:
-       * see HAND_HISTORY_ARENA_EMBED. Null or absent is the cross-club view
+       * see HAND_HISTORY_ARENA_RPC. Null or absent is the cross-club view
        * the page has always shown. A UUID, never a slug: the facts row stores
        * the club id.
        */
@@ -388,7 +400,7 @@ class HandHistoryServiceClass {
        * ONLY `'diamonds'` IS EXPRESSIBLE, and the type says so rather than
        * accepting `'chips'` and quietly ignoring it. `hand_history` has no
        * reachable asset column (no foreign key to `tables`; see
-       * HAND_HISTORY_ARENA_EMBED) and there are hundreds of chip clubs, so
+       * HAND_HISTORY_ARENA_RPC) and there are hundreds of chip clubs, so
        * "every chip hand" is not one club id and cannot be expressed as one.
        * CLAUDE.md 10.86 rule 1: an answer we cannot give must not be given a
        * well-formed shape. Making it unrepresentable is the strongest form of
@@ -407,21 +419,34 @@ class HandHistoryServiceClass {
     const containmentJson = JSON.stringify([{ userId }]);
     const clubId =
       opts.clubId?.trim() || (opts.asset === 'diamonds' ? DIAMOND_ARENA_CLUB_ID : null);
+    const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+    if (clubId) {
+      const { data, error } = await supabase.rpc(HAND_HISTORY_ARENA_RPC, {
+        p_club_id: clubId,
+        p_table_id: opts.tableId || null,
+        p_limit: Math.max(1, Math.min(200, Math.floor(limit))),
+        p_offset: offset,
+      });
+      if (error || !data) {
+        if (error) reportError(error, 'HandHistoryService.getPlayerHands_club_query');
+        return [];
+      }
+      return this.mapPlayerHandRows(
+        (data as Array<{ hand?: unknown }>).map((row) => row?.hand).filter(Boolean) as any[]
+      );
+    }
+
     let query = supabase
       .from('hand_history')
-      .select(
-        clubId ? `${HAND_HISTORY_COLUMNS}, ${HAND_HISTORY_ARENA_EMBED}` : HAND_HISTORY_COLUMNS
-      )
+      .select(HAND_HISTORY_COLUMNS)
       .contains('players', containmentJson);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
-    if (clubId) query = query.eq(HAND_HISTORY_ARENA_FILTER_COLUMN, clubId);
     /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
        sorted by created_at, which is when the ROW landed: the writer's retry
        queue drains failed inserts minutes later, so during any database
        blip hands landed out of order and stayed that way. hand_number is
        globally monotonic (GLOBAL_HAND_NUMBER_FLOOR) and is the play order. */
     query = query.order('hand_number', { ascending: false });
-    const offset = Math.max(0, Math.floor(opts.offset ?? 0));
     const { data, error } = await (offset > 0
       ? query.range(offset, offset + limit - 1)
       : query.limit(limit));
@@ -431,6 +456,10 @@ class HandHistoryServiceClass {
       return [];
     }
 
+    return this.mapPlayerHandRows(data as any[]);
+  }
+
+  private async mapPlayerHandRows(data: any[]): Promise<HandRecord[]> {
     // Collect all user ids across all hands, including winners — needed to resolve display names
     const allUserIds: string[] = [];
     for (const row of data as any[]) {

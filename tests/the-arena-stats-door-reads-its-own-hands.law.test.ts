@@ -16,7 +16,6 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';
-import { sliceCall } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -42,30 +41,33 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
     expect(statsScopeForSearch('?club=deep-stack-society')).toBe('chips');
     expect(statsScopeForSearch('')).toBe('chips');
     expect(PAGE).toContain(
-      'const { scope: statsScope, scopedKey, eyebrow: statsEyebrow } = useArenaStatsScope();'
+      'const { scope: statsScope, eyebrow: statsEyebrow } = useArenaStatsScope();'
     );
   });
 
   it('every read on the page names that asset, and none names chips by hand', () => {
     expect(PAGE).not.toMatch(/statsScopeArgs\(\s*CHIP_STATS\s*\)/);
     expect(PAGE).not.toMatch(/\.call\(\s*StatsFactsService\s*,\s*CHIP_STATS/);
-    expect(PAGE.split('...statsScopeArgs(statsScope)').length - 1).toBe(3); // windowed, all-time, hands
-    expect(PAGE).toContain('.call(StatsFactsService, statsScope, windowDays)');
+    expect(PAGE.split('...statsScopeArgs(statsScope, selectedClubId)').length - 1).toBe(3); // windowed, all-time, hands
+    expect(PAGE).toContain('.call(StatsFactsService, statsScope, windowDays, selectedClubId)');
     expect(PAGE).toMatch(/useStatsPulse\(\{[\s\S]*?scope: statsScope,[\s\S]*?\}\);/);
     for (const tab of ['OverviewTab', 'PerformanceTab', 'HandsTab']) {
       expect(PAGE, `${tab} is handed the asset`).toMatch(
         new RegExp(`<${tab}\\s+scope=\\{statsScope\\}`)
       );
     }
-    expect(sliceCall(PAGE, ".rpc('ca_player_hands_v2'")).toContain('...statsScopeArgs(statsScope)');
+    expect(PAGE).toMatch(
+      /statsRpcName\('ca_player_hands_v2', selectedClubId\)[\s\S]*?\.\.\.statsScopeArgs\(statsScope, selectedClubId\)/
+    );
   });
 
   it('neither asset can be served from the other one’s cache', () => {
-    expect(PAGE).toContain('getCachedFull(scopedKey(targetUserId))');
-    expect(PAGE).toContain('setCachedFull(scopedKey(targetUserId), resolved)');
-    expect(PAGE).toContain('readStatsRangeMemo(targetUserId, scopedKey(rangeKey))');
-    expect(PAGE).toContain("readStatsRangeMemo(targetUserId, scopedKey('all'))");
-    expect(PAGE).not.toMatch(/readStatsRangeMemo\(targetUserId, (rangeKey|'all')\)/);
+    expect(PAGE).toContain("getCachedFull(cacheIdentityFor('all', null))");
+    expect(PAGE).toContain('setCachedFull(cacheIdentityFor(rangeKey, windowDays), data)');
+    expect(PAGE).toContain('readStatsRangeMemo(cacheIdentityFor(rangeKey, windowDays))');
+    expect(PAGE).toContain("readStatsRangeMemo(cacheIdentityFor('all', null))");
+    expect(PAGE).toContain('asset: statsScope');
+    expect(PAGE).toContain('timezone: statsTimezone');
   });
 
   it('the arena page shows no agent downline', () => {
@@ -77,8 +79,8 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
       ['src/components/stats/NemesisPanel.tsx', /getNemesis\(userId, scope,/],
       ['src/components/stats/EVLuckChart.tsx', /getEVCurve\(userId, scope,/],
       ['src/components/stats/HoleCardHeatmap.tsx', /getHandGrid\(userId, scope,/],
-      ['src/components/stats/HoleCardHeatmap.tsx', /getClassHands\(userId, scope,/],
-      ['src/hooks/useStatsPulse.ts', /\.\.\.statsScopeArgs\(scope\)/],
+      ['src/components/stats/HoleCardHeatmap.tsx', /getClassHands\(\s*userId,\s*scope,/],
+      ['src/hooks/useStatsPulse.ts', /\.\.\.statsScopeArgs\(scope, clubId\)/],
     ];
     for (const [file, re] of panels) expect(code(read(file)), file).toMatch(re);
     for (const file of [

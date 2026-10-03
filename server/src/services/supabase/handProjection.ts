@@ -44,6 +44,56 @@ type ProjectionResult = {
   hand_id?: string;
 };
 
+type StatsProjectionFailureCode =
+  | 'source_hash_conflict'
+  | 'existing_fact_conflict'
+  | 'existing_transfer_conflict'
+  | 'invalid_stats_payload'
+  | 'projection_semantic_refusal'
+  | 'projection_rpc_failure';
+
+function statsProjectionFailureCode(
+  evidence: string,
+  fallback: 'projection_semantic_refusal' | 'projection_rpc_failure'
+): StatsProjectionFailureCode {
+  if (evidence.includes('source_hash_conflict')) return 'source_hash_conflict';
+  if (evidence.includes('existing_fact_conflict')) return 'existing_fact_conflict';
+  if (evidence.includes('existing_transfer_conflict')) return 'existing_transfer_conflict';
+  if (
+    /invalid_payload_shape|payload_bounds|scope_or_duplicate_player|transfer_scope/.test(evidence)
+  ) {
+    return 'invalid_stats_payload';
+  }
+  return fallback;
+}
+
+/**
+ * Persist only a bounded failure category. The durable row deliberately has
+ * no player, club, table, cards, payload or raw error text. A recording error
+ * never replaces the original projection outcome or removes its outbox row.
+ */
+async function recordStatsProjectionFailure(
+  row: ProjectionRow,
+  evidence: string,
+  fallback: 'projection_semantic_refusal' | 'projection_rpc_failure'
+): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('ca_record_stats_projection_failure', {
+      p_hand_id: row.hand_id,
+      p_hand_number: row.hand_number,
+      p_failure_code: statsProjectionFailureCode(evidence, fallback),
+    });
+    if (error) {
+      reportError(
+        new Error(`Stats projection failure receipt write failed: ${describeError(error)}`),
+        'HandProjection.failure_receipt_failed'
+      );
+    }
+  } catch (error) {
+    reportError(error, 'HandProjection.failure_receipt_failed');
+  }
+}
+
 export type HandProjectionDrainSummary = {
   projected: number;
   alreadyCompleted: number;
@@ -378,6 +428,7 @@ async function projectChain(
        to test `stopping` and nothing else, so a chain that started before the
        deadline ran every one of its up-to-DRAIN_PAGE rows after it. */
     if (budget.aborted || Date.now() >= deadlineAt) return deferRest(i);
+    let failureReceiptRecorded = false;
     try {
       const { data: projected, error: projectError } = await supabase
         .rpc('fn_project_hand_side_effects', { p_hand_id: row.hand_id })
@@ -388,8 +439,15 @@ async function projectChain(
          already abandons any call at SUPABASE_TIMEOUT_MS (15 s) exactly this
          way, so cancelling mid-RPC is a path this worker has always taken. */
       if (budget.aborted) return deferRest(i);
-      if (projectError)
+      if (projectError) {
+        await recordStatsProjectionFailure(
+          row,
+          describeError(projectError),
+          'projection_rpc_failure'
+        );
+        failureReceiptRecorded = true;
         throw new Error(`fn_project_hand_side_effects failed: ${describeError(projectError)}`);
+      }
       const result = (projected ?? {}) as ProjectionResult;
       if (result.ok === true) {
         summary.projected++;
@@ -409,6 +467,11 @@ async function projectChain(
         summary.failed++;
         drainResultCounts.failed++;
         blockedTables.add(key);
+        await recordStatsProjectionFailure(
+          row,
+          String(result.reason ?? ''),
+          'projection_semantic_refusal'
+        );
         reportError(
           new Error(`[HandProjection] hand ${row.hand_number} refused: ${JSON.stringify(result)}`),
           'HandProjection.semantic_refusal'
@@ -422,6 +485,9 @@ async function projectChain(
       summary.failed++;
       drainResultCounts.failed++;
       blockedTables.add(key);
+      if (!failureReceiptRecorded) {
+        await recordStatsProjectionFailure(row, describeError(err), 'projection_rpc_failure');
+      }
       reportError(err, 'HandProjection.rpc_failed', {
         handId: row.hand_id,
         handNumber: row.hand_number,

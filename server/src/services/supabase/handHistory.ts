@@ -11,7 +11,12 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
-import { writeHandFacts } from './handFacts.js';
+import {
+  releaseHandFactsCapture,
+  writeHandFacts,
+  type DurableStatsFactPayload,
+  type HandFactsInput,
+} from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
@@ -179,6 +184,11 @@ export interface AtomicHandCommitInput {
     contributions: Record<string, number>;
     returned_uncalled: Record<string, number>;
     insurance: Array<Record<string, unknown>>;
+    /**
+     * Private per-seat facts. Stored only in the service-owned atomic receipt,
+     * never in participant-readable hand_history.
+     */
+    stats_facts?: DurableStatsFactPayload;
   };
   /**
    * Local distributed-lease fence, invoked immediately before every retry of
@@ -187,6 +197,18 @@ export interface AtomicHandCommitInput {
    * UNKNOWN local retry and a stale continuation running after DB takeover.
    */
   assertLeaseAuthority?: () => void;
+}
+
+/** Exact deal stacks carried by the accepted atomic envelope. Never infer them
+ * from final stacks: insurance, BBJ and other side flows break that arithmetic. */
+export function dealtStacksFromAtomicCommit(
+  atomicCommit: Pick<AtomicHandCommitInput, 'stacks'>
+): Map<string, number> {
+  return new Map(
+    atomicCommit.stacks
+      .filter((row) => row.user_id && Number.isFinite(row.stack_before))
+      .map((row) => [row.user_id, row.stack_before] as const)
+  );
 }
 
 export interface TournamentStackProof {
@@ -495,6 +517,8 @@ export async function logHandHistory(params: {
   clubId?: string | null;
   /** userId -> totalInvested (includes blinds/antes). */
   contributions?: Map<string, number>;
+  /** Stacks frozen at deal time; source for exact effective-stack buckets. */
+  dealtStacksAtDeal?: Map<string, number>;
   /** Every seat dealt in: userId -> { seat, cards }. Includes folded players. */
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
@@ -658,6 +682,43 @@ export async function logHandHistory(params: {
     ...(params.roster ? { has_human: params.roster.some((p) => !p.isHorse) } : {}),
   };
 
+  const factsInput: HandFactsInput | null =
+    params.handId && params.contributions && params.holeCardsAll && params.roster
+      ? {
+          handId: params.handId,
+          tableId: params.tableId,
+          clubId: params.clubId ?? null,
+          tournamentId: params.tournamentId ?? null,
+          handNumber: params.handNumber,
+          gameVariant: params.gameVariant,
+          bigBlind: params.bigBlind,
+          playedAt: endedAtIso,
+          buttonSeat: params.buttonSeat ?? null,
+          rakeAmount: params.rakeAmount,
+          boardLength: params.communityCards?.length ?? 0,
+          holeCardsAll: params.holeCardsAll!,
+          contributions: params.contributions!,
+          dealtStacksAtDeal:
+            params.dealtStacksAtDeal ?? dealtStacksFromAtomicCommit(params.atomicCommit),
+          winners: params.winners,
+          actions: params.actions,
+          roster: params.roster!,
+          nitGame: params.nitGame,
+          isBombPot: Boolean(params.bombPot),
+        }
+      : null;
+
+  // Protocol-2 commits carry the complete private fact rows in their immutable
+  // receipt. The projector persists them before deleting the durable outbox
+  // claim. Folded holdings never enter `row`/hand_history.
+  if (factsInput && params.atomicCommit.acceptedPostCommitFacts) {
+    const statsFacts = await writeHandFacts({ ...factsInput, collectOnly: true });
+    if (!statsFacts) {
+      throw new Error('atomic hand commit refused (stats_facts_unavailable)');
+    }
+    params.atomicCommit.acceptedPostCommitFacts.stats_facts = statsFacts;
+  }
+
   const bombUnits = (params.bombAwardUnits ?? []).map((u) => ({
     table_id: params.tableId,
     hand_number: params.handNumber,
@@ -670,6 +731,9 @@ export async function logHandHistory(params: {
   }));
   const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
+  if (params.atomicCommit.acceptedPostCommitFacts?.stats_facts) {
+    releaseHandFactsCapture(params.tableId, params.handNumber);
+  }
 
   // Observe only after the authoritative transaction accepts the hand above.
   // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
@@ -708,34 +772,12 @@ export async function logHandHistory(params: {
     /* observation must never endanger settlement */
   }
 
-  // STATS FACT LAYER 2026-08-21. Durable per-human-per-hand row for the stats
-  // page: exact net, own hole cards on every hand (not just showdowns),
-  // all-in EV, and head-to-head chip flow. Deliberately NOT awaited — this is
-  // a stats write inside a money-critical settlement step, and writeHandFacts
-  // never throws, so the hand must not wait on it or be endangered by it.
-  if (handId && params.contributions && params.holeCardsAll && params.roster) {
-    void writeHandFacts({
-      handId,
-      tableId: params.tableId,
-      clubId: params.clubId ?? null,
-      tournamentId: params.tournamentId ?? null,
-      handNumber: params.handNumber,
-      gameVariant: params.gameVariant,
-      bigBlind: params.bigBlind,
-      playedAt: endedAtIso,
-      buttonSeat: params.buttonSeat ?? null,
-      rakeAmount: params.rakeAmount,
-      boardLength: params.communityCards?.length ?? 0,
-      holeCardsAll: params.holeCardsAll,
-      contributions: params.contributions,
-      winners: params.winners,
-      actions: params.actions,
-      roster: params.roster,
-      // The rule and its evidence must cover the same seats. See writeHandFacts.
-      nitGame: params.nitGame,
-      // Bomb pots count as VPIP for everyone dealt in (Dan 2026-09-05).
-      isBombPot: Boolean(params.bombPot),
-    });
+  // Rolling protocol-1 engines do not carry the immutable private facts. Keep
+  // their legacy non-blocking writer until the protocol is fully retired.
+  if (handId && factsInput) {
+    if (!params.atomicCommit.acceptedPostCommitFacts?.stats_facts) {
+      void writeHandFacts({ ...factsInput, handId });
+    }
     // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
 
     // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
@@ -759,11 +801,11 @@ export async function logHandHistory(params: {
         params.communityCards3,
         ...(params.ritBoards ?? []),
       ].filter((b): b is string[] => Array.isArray(b) && b.length > 0),
-      holeCardsAll: params.holeCardsAll,
-      contributions: params.contributions,
+      holeCardsAll: factsInput.holeCardsAll,
+      contributions: factsInput.contributions,
       winners: params.winners,
       actions: params.actions,
-      roster: params.roster,
+      roster: factsInput.roster,
       // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
       // and the button places the blinds for horse_daily_play.
       rakeAmount: params.rakeAmount,

@@ -174,6 +174,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+.trophy-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  box-shadow: inset 0 1px 0 rgb(0 0 0 / 55%);
+  color: #9aa5b3;
+  font-size: 0.68rem;
+}
+
+.trophy-evidence-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 32px;
+  color: #e4e7ec;
+  text-decoration: none;
+  border-top: 1px solid rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(0 0 0 / 55%);
+}
+
+.trophy-evidence-row:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
 .trophy-note {
   margin: 0.85rem 0 0;
   padding-top: 0.6rem;

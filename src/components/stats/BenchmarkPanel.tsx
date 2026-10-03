@@ -211,8 +211,8 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
         </p>
       )}
       <p className="bench-note">
-        The Comparison Group Is Every Player In The Club Above The Hands Threshold, Which Is The
-        Field You Actually Sit Down Against. It Is Not A Sample Of Human Players Only.
+        The Comparison Group Includes Every Qualifying Player In The Field Above The Hands
+        Threshold. It Is Not A Sample Of Human Players Only.
       </p>
       {results.some((r) => r.barPosition === null) && (
         <p className="bench-note">

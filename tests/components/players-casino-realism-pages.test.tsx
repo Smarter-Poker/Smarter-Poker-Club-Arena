@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     userId: '11111111-1111-4111-8111-111111111111',
   } as Record<string, string>,
   navigate: vi.fn(),
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
   getDownline: vi.fn(),
   getMemberStatistics: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 }));
 
 vi.mock('../../src/components/common/Toast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => state.toast,
 }));
 
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
@@ -142,6 +143,9 @@ beforeEach(() => {
     userId: '11111111-1111-4111-8111-111111111111',
   };
   state.navigate.mockReset();
+  state.toast.success.mockReset();
+  state.toast.error.mockReset();
+  state.toast.info.mockReset();
   state.getMemberDetail.mockReset();
   state.getDownline.mockReset();
   state.getMemberStatistics.mockReset();
@@ -203,6 +207,40 @@ describe('Players detail surfaces', () => {
     expect(document.querySelector<HTMLImageElement>('.ps-hero__art')?.src).toContain(
       'player-instrument-felt-v1.webp'
     );
+    expect(screen.getAllByText('120')).toHaveLength(2);
+    expect(screen.getByText('18')).toBeVisible();
+    expect(screen.queryByText('120.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+  });
+
+  it('keeps the last verified figures visible and names a failed range refresh', async () => {
+    render(<PlayerStatisticsPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    state.getMemberStatistics.mockRejectedValueOnce(new Error('range refresh failed'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+
+    const warning = await screen.findByRole('alert');
+    expect(warning).toHaveTextContent('Statistics Connection Interrupted');
+    expect(warning).toHaveTextContent('The Figures Below Are From The Previous Successful Read.');
+    expect(screen.getByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    expect(screen.queryByText('!')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(state.getMemberStatistics).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the integrated connection status instead of a floating error glyph', async () => {
+    state.getMemberStatistics.mockRejectedValueOnce(new Error('initial read failed'));
+    render(<PlayerStatisticsPage />);
+
+    const errorState = await screen.findByRole('alert');
+    expect(errorState).toHaveTextContent('Statistics Connection Interrupted');
+    expect(errorState).toHaveTextContent('Could Not Load Statistics');
+    expect(errorState).not.toHaveTextContent('!');
+    expect(screen.getByRole('button', { name: 'Try Again' })).toBeVisible();
   });
 
   it('settles malformed route states instead of leaving either page in a skeleton', async () => {

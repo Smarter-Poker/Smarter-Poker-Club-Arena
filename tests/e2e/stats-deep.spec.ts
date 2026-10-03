@@ -52,26 +52,47 @@ test.describe('Player Stats production experience', () => {
     }
   });
 
-  test('fits a 390px phone and keeps all interactive targets usable', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.reload();
-    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible();
+  for (const width of [375, 393]) {
+    test(`fits a ${width}px phone and keeps all interactive targets usable`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.reload();
+      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible();
 
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      );
+      expect(overflow).toBeLessThanOrEqual(1);
+
+      const shortTargets = await page
+        .locator('.stats-page button:visible, .stats-page summary:visible')
+        .evaluateAll((targets) =>
+          targets
+            .map((target) => ({
+              label: (target.textContent || '').trim(),
+              height: target.getBoundingClientRect().height,
+            }))
+            .filter((target) => target.height < 44)
+        );
+      expect(shortTargets).toEqual([]);
+    });
+  }
+
+  test('stays operable at 200 percent zoom without page overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = '2';
+    });
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
     );
     expect(overflow).toBeLessThanOrEqual(1);
 
-    const shortTargets = await page.locator('.stats-page button:visible').evaluateAll((buttons) =>
-      buttons
-        .map((button) => ({
-          label: (button.textContent || '').trim(),
-          height: button.getBoundingClientRect().height,
-        }))
-        .filter((button) => button.height < 44)
-    );
-    expect(shortTargets).toEqual([]);
+    await page.getByRole('tab', { name: 'Overview' }).focus();
+    await page.keyboard.press('ArrowRight');
+    const selectedTab = page.getByRole('tab', { selected: true });
+    await expect(selectedTab).toBeFocused();
+    await expect(selectedTab).toBeVisible();
   });
 
   test('has no serious or critical automated accessibility violations', async ({ page }) => {

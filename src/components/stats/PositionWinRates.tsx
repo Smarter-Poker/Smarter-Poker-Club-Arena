@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import StatsDataTable from './StatsDataTable';
 import './PositionWinRates.css';
 
 interface PositionStats {
@@ -375,6 +376,21 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
           })}
         </div>
       )}
+
+      <StatsDataTable
+        caption="Win Rate By Position"
+        rows={statsData}
+        rowKey={(row) => row.position}
+        columns={[
+          { key: 'position', label: 'Position', render: (row) => row.positionLabel },
+          { key: 'hands', label: 'Hands', render: (row) => row.handsPlayed.toLocaleString() },
+          { key: 'vpip', label: 'VPIP', render: (row) => `${row.vpip.toFixed(1)}%` },
+          { key: 'pfr', label: 'PFR', render: (row) => `${row.pfr.toFixed(1)}%` },
+          { key: 'three_bet', label: '3-Bet', render: (row) => `${row.threeBet.toFixed(1)}%` },
+          { key: 'bb100', label: 'BB/100', render: (row) => row.winRate.toFixed(1) },
+          { key: 'profit', label: 'Profit', render: (row) => row.totalProfit.toLocaleString() },
+        ]}
+      />
 
       {statsData.length > 0 && (
         <p className="position-subtitle" style={{ marginTop: 8 }}>

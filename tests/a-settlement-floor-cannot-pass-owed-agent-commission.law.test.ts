@@ -49,8 +49,9 @@ describe('a settlement floor cannot pass owed agent commission', () => {
   it('refuses, reading only the weeks the move skips, by the same coverage test the rollup uses', () => {
     const body = sqlOnly(GUARD);
     expect(body).toMatch(/RAISE EXCEPTION 'settlement_floor_would_strand_agent_commission'/);
-    expect(body).toMatch(/a\.created_at >= v_from AND a\.created_at < NEW\.earliest_period_start/);
-    expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM public\.agent_commission_settlements s/);
+    expect(body).toMatch(/x\.period_end > v_from AND x\.period_start < v_to/);
+    expect(body).toMatch(/a\.created_at >= v_cursor AND a\.created_at < v_to/);
+    expect(body).toMatch(/FROM public\.agent_commission_settlements x/);
     expect(body).not.toMatch(/RAISE WARNING/);
   });
 });

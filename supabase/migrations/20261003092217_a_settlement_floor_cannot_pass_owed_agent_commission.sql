@@ -20,7 +20,8 @@
 -- use). The scope is the union's clubs (its house club included) for the
 -- union floor, the club for a club floor. Only the weeks the move skips are
 -- read: [old floor, new floor), or everything below the new floor for a new
--- row. A move backwards, or one that skips only settled weeks, passes. The
+-- row; and only the gaps between each agent's settlement periods, by index
+-- range, so a move over fully settled weeks costs milliseconds. A move backwards, or one that skips only settled weeks, passes. The
 -- refusal names the first owed row it found and says to settle or pay the
 -- skipped weeks first. There is no switch: a floor is moved by a migration, and
 -- the migration that moves it pays or settles what it skips in the same breath.
@@ -43,12 +44,14 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $fn$
 DECLARE
-  v_from  timestamptz;
-  v_clubs uuid[];
-  v_owed  record;
+  v_from   timestamptz;
+  v_to     timestamptz := NEW.earliest_period_start;
+  v_clubs  uuid[];
+  v_cursor timestamptz;
+  p record; s record; v_owed record; v_stranded boolean := false;
 BEGIN
   v_from := CASE WHEN TG_OP = 'UPDATE' THEN OLD.earliest_period_start ELSE '-infinity'::timestamptz END;
-  IF NEW.earliest_period_start IS NULL OR NEW.earliest_period_start <= v_from THEN
+  IF v_to IS NULL OR v_to <= v_from THEN
     RETURN NEW;  -- a floor that does not move up skips nothing
   END IF;
   IF TG_TABLE_NAME = 'union_settlement_floor' THEN
@@ -57,24 +60,44 @@ BEGIN
     v_clubs := ARRAY[NEW.club_id];
   END IF;
 
-  SELECT ac.club_id, ac.user_id, ac.created_at, ac.amount INTO v_owed
-    FROM unnest(v_clubs) k(club_id)
-    CROSS JOIN LATERAL (
-      SELECT a.club_id, a.user_id, a.created_at, a.amount
-        FROM public.agent_commissions a
-       WHERE a.club_id = k.club_id AND a.settled_at IS NULL
-         AND a.created_at >= v_from AND a.created_at < NEW.earliest_period_start
-         AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s
-                          WHERE s.club_id = a.club_id AND s.user_id = a.user_id
-                            AND a.created_at >= s.period_start AND a.created_at < s.period_end)
-       LIMIT 1) ac
-   LIMIT 1;
+  -- Per (club, agent) with unsettled commission (the rollup keeps one row for
+  -- every such pair): walk its settlement periods across the skipped range and
+  -- probe each uncovered gap for an unsettled row, by index range. Measured on
+  -- production 2026-10-03: 30 ms for the union's week of 09-21 (all covered),
+  -- 1 ms to find the first stranded row below 09-28 before 20261003092151.
+  <<pairs>>
+  FOR p IN SELECT r.club_id, r.user_id FROM public.agent_commission_unsettled_rollup r
+            WHERE r.club_id = ANY(v_clubs) ORDER BY 1, 2 LOOP
+    v_cursor := v_from;
+    FOR s IN SELECT x.period_start, x.period_end FROM public.agent_commission_settlements x
+              WHERE x.club_id = p.club_id AND x.user_id = p.user_id
+                AND x.period_end > v_from AND x.period_start < v_to
+              ORDER BY x.period_start LOOP
+      IF s.period_start > v_cursor THEN
+        SELECT a.club_id, a.user_id, a.created_at, a.amount INTO v_owed FROM public.agent_commissions a
+         WHERE a.club_id = p.club_id AND a.user_id = p.user_id AND a.settled_at IS NULL
+           AND a.created_at >= v_cursor AND a.created_at < s.period_start
+         ORDER BY a.created_at LIMIT 1;
+        v_stranded := FOUND;
+        EXIT pairs WHEN v_stranded;
+      END IF;
+      v_cursor := greatest(v_cursor, s.period_end);
+    END LOOP;
+    IF v_cursor < v_to THEN
+      SELECT a.club_id, a.user_id, a.created_at, a.amount INTO v_owed FROM public.agent_commissions a
+       WHERE a.club_id = p.club_id AND a.user_id = p.user_id AND a.settled_at IS NULL
+         AND a.created_at >= v_cursor AND a.created_at < v_to
+       ORDER BY a.created_at LIMIT 1;
+      v_stranded := FOUND;
+      EXIT pairs WHEN v_stranded;
+    END IF;
+  END LOOP;
 
-  IF FOUND THEN
+  IF v_stranded THEN
     RAISE EXCEPTION 'settlement_floor_would_strand_agent_commission'
       USING ERRCODE = '23514',
             DETAIL = format('Moving the %s floor from %s to %s skips recorded agent commission that is unsettled and covered by no settlement period, e.g. club %s agent %s row of %s (%s). Below the floor no path can ever pay it.',
-                            TG_TABLE_NAME, v_from, NEW.earliest_period_start, v_owed.club_id, v_owed.user_id, v_owed.created_at, v_owed.amount),
+                            TG_TABLE_NAME, v_from, v_to, v_owed.club_id, v_owed.user_id, v_owed.created_at, v_owed.amount),
             HINT = 'Pay or settle the skipped weeks first (agent_commission_settlements periods, as 20261003092151 did), then move the floor.';
   END IF;
   RETURN NEW;

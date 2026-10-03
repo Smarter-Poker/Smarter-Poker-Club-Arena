@@ -221,6 +221,14 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('SET LOCAL ROLE authenticated');
     expect(script).toContain("set_config('request.jwt.claims',$1::text,true)");
     expect(script).toContain("set_config('request.jwt.claim.sub',$2::text,true)");
+    expect(script).toContain('SELECT pg_advisory_xact_lock(530090,1)');
+    expect(script).toContain('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    expect(script).toContain('ORDER BY slot_key FOR UPDATE');
+    expect(script).toContain('SELECT 1 FROM public.tournament_schedules');
+    expect(script).toContain('SELECT 1 FROM public.tournament_schedule_spawns');
+    expect(script).toContain(') ORDER BY id FOR UPDATE');
+    expect(script).toContain('SELECT 1 FROM public.tournaments t');
+    expect(script).toContain(') ORDER BY t.id FOR UPDATE');
     expect(script).toContain("await client.query('ROLLBACK')");
     expect(script).not.toContain("await client.query('COMMIT')");
     expect(script).toContain('welcomeCash.length !== 9');
@@ -238,6 +246,41 @@ describe('Create Club production certification contract', () => {
 
   it('fails closed around independent reset preimages and exact residue cleanup', () => {
     const script = read('scripts/ci/certify-club-create.mjs');
+
+    const serviceRole = script.indexOf('SET LOCAL ROLE service_role');
+    const laneLock = script.indexOf('SELECT pg_advisory_xact_lock(530090,1)');
+    const clubLock = script.indexOf('SELECT 1 FROM public.clubs WHERE id=$1::uuid FOR UPDATE');
+    const packageItemLocks = script.indexOf('ORDER BY slot_key FOR UPDATE');
+    const scheduleLocks = script.indexOf(
+      'SELECT 1 FROM public.tournament_schedules',
+      packageItemLocks
+    );
+    const scheduleLockOrder = script.indexOf(') ORDER BY id FOR UPDATE', scheduleLocks);
+    const spawnLocks = script.indexOf(
+      'SELECT 1 FROM public.tournament_schedule_spawns',
+      scheduleLockOrder
+    );
+    const spawnLockOrder = script.indexOf(') ORDER BY id FOR UPDATE', spawnLocks);
+    const tournamentLocks = script.indexOf('SELECT 1 FROM public.tournaments t', spawnLockOrder);
+    const tournamentLockOrder = script.indexOf(') ORDER BY t.id FOR UPDATE', tournamentLocks);
+    const preimage = script.indexOf('AS cash_game_ids');
+    const authenticatedRole = script.indexOf('SET LOCAL ROLE authenticated');
+    const mutation = script.indexOf('public.fn_remove_first_club_welcome_games');
+    const rollback = script.indexOf("await client.query('ROLLBACK')");
+
+    expect(serviceRole).toBeLessThan(laneLock);
+    expect(laneLock).toBeLessThan(clubLock);
+    expect(clubLock).toBeLessThan(packageItemLocks);
+    expect(packageItemLocks).toBeLessThan(scheduleLocks);
+    expect(scheduleLocks).toBeLessThan(scheduleLockOrder);
+    expect(scheduleLockOrder).toBeLessThan(spawnLocks);
+    expect(spawnLocks).toBeLessThan(spawnLockOrder);
+    expect(spawnLockOrder).toBeLessThan(tournamentLocks);
+    expect(tournamentLocks).toBeLessThan(tournamentLockOrder);
+    expect(tournamentLockOrder).toBeLessThan(preimage);
+    expect(preimage).toBeLessThan(authenticatedRole);
+    expect(authenticatedRole).toBeLessThan(mutation);
+    expect(mutation).toBeLessThan(rollback);
 
     expect(script).toContain(
       'Welcome Reset Preimage Did Not Match The Independently Observed Package Graph.'

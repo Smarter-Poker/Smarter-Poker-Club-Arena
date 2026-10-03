@@ -27,6 +27,7 @@
 
 import { ROSTER_CACHE_PREFIX, ROSTER_CACHE_TTL_MS, ROSTER_SEARCH_PREFIX } from '../lib/rosterCache';
 import { CLUB_DATA_CACHE_PREFIX } from '../lib/clubDataCache';
+import { LEADERBOARD_CACHE_PREFIX } from './leaderboardCache';
 
 /**
  * The canonical list of sessionStorage SWR cache prefixes.
@@ -41,7 +42,7 @@ export const SWR_CACHE_PREFIXES = [
   'sh_cache_',
   'notif_cache_',
   'fr_cache_',
-  'leaderboard_',
+  LEADERBOARD_CACHE_PREFIX,
   'achievements_',
   'hh_cache_',
   'psr_cache_',

@@ -50,6 +50,30 @@ describe('Leaderboard Painted Console Contract', () => {
     const css = readFileSync('src/components/table/LeaderboardPanel.css', 'utf8');
     expect(css).toMatch(/\.leaderboard-row__amount--positive\s*\{\s*color:\s*#c8ffd2;/);
   });
+
+  it('reports malformed owner setup and history responses through first-party diagnostics', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    const setupStart = page.indexOf('LeaderboardService.getLeaderboardRewardSetup(selectedClubId)');
+    const setupCatch = page.slice(
+      setupStart,
+      page.indexOf('}, [selectedClubId, userClubs, settingsReloadKey])', setupStart)
+    );
+    const historyStart = page.indexOf(
+      'LeaderboardService.getRewardProgramHistory(programHistoryClubId'
+    );
+    const historyCatch = page.slice(
+      historyStart,
+      page.indexOf(
+        '}, [programHistoryClubId, programHistoryVersion, programHistoryReloadKey])',
+        historyStart
+      )
+    );
+
+    expect(setupCatch).toContain("error.message === 'Prize Setup Returned No Data'");
+    expect(setupCatch).toContain("reportError(error, 'LeaderboardPage.Reward_setup_invalid')");
+    expect(historyCatch).toContain("error.message === 'Program History Returned Invalid Data'");
+    expect(historyCatch).toContain("reportError(error, 'LeaderboardPage.Program_history_invalid')");
+  });
   it('keeps promotion row feedback when reduced motion is requested', () => {
     const css = readFileSync('src/components/leaderboard/LeaderboardCard.module.css', 'utf8');
     expect(css).not.toMatch(/(?:animation|transition):\s*none/);

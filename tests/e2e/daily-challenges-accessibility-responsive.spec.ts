@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { DailyMissionsPage } from './support/DailyMissionsPage';
 
 type ChallengeTier = 'daily' | 'weekly' | 'monthly';
 
@@ -455,6 +456,8 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
         .getByRole('button', { name: /^(?:Reroll|Need) 1 Diamond (?:For|To Reroll) .+$/ })
         .first();
       if ((await reroll.count()) > 0 && (await reroll.isEnabled())) {
+        const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
+        await new DailyMissionsPage(page, configuredBase).placeControlInSafeViewport(reroll);
         await reroll.click();
         const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
         await expect(confirmation).toBeVisible();

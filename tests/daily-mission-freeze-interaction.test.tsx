@@ -132,7 +132,7 @@ describe('Daily Missions freeze purchase interaction ownership', () => {
     const purchase = deferred<{ success: boolean }>();
     const refresh = deferred<DailyChallengeDashboard>();
     mocks.buyFreeze.mockReturnValue(purchase.promise);
-    const { shell, confirm } = await openPurchase();
+    const { shell, confirm, dialog } = await openPurchase();
     mocks.dashboard.mockReturnValue(refresh.promise);
 
     fireEvent.click(confirm);
@@ -141,6 +141,9 @@ describe('Daily Missions freeze purchase interaction ownership', () => {
     expect(screen.queryByRole('dialog', { name: 'Secure A Streak Freeze?' })).not.toBeNull();
     expect(shell.hasAttribute('inert')).toBe(true);
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    const keepDiamonds = within(dialog).getByRole('button', { name: 'Keep My Diamonds' });
+    expect((keepDiamonds as HTMLButtonElement).disabled).toBe(true);
+    expect(keepDiamonds.querySelector('[data-state]')).toHaveAttribute('data-state', 'disabled');
 
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('dialog'));

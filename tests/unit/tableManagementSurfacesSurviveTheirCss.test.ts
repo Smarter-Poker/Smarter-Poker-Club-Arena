@@ -47,7 +47,10 @@ describe('a painted plate is still a 44px target', () => {
   const css = read('src/components/console/SpadeConsole.css');
 
   it('reaches out to 44px without resizing the art', () => {
+    const plate = css.match(/\.sc-plate \{[^}]*\}/s)?.[0] ?? '';
     const rule = css.match(/\.sc-plate::after \{[^}]*\}/s)?.[0] ?? '';
+    expect(plate).toContain('overflow: visible');
+    expect(plate).not.toContain('min-height: 44px');
     expect(rule).toContain('height: max(100%, 44px)');
     expect(rule).toContain("content: ''");
   });

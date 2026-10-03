@@ -134,6 +134,11 @@ test.describe('Club Data production experience', () => {
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth
         )
       ).toBeLessThanOrEqual(1);
+      expect(
+        await page
+          .locator('[data-page="club-data"]')
+          .evaluate((root) => root.scrollWidth - root.clientWidth)
+      ).toBeLessThanOrEqual(1);
     }
 
     await page.evaluate(() => document.documentElement.style.setProperty('font-size', '200%'));
@@ -158,10 +163,13 @@ test.describe('Club Data production experience', () => {
         buttons
           .map((button) => {
             const rect = button.getBoundingClientRect();
+            const target = getComputedStyle(button, '::after');
+            const targetWidth = Number.parseFloat(target.width);
+            const targetHeight = Number.parseFloat(target.height);
             return {
               label: button.getAttribute('aria-label') || (button.textContent || '').trim(),
-              width: rect.width,
-              height: rect.height,
+              width: Math.max(rect.width, Number.isFinite(targetWidth) ? targetWidth : 0),
+              height: Math.max(rect.height, Number.isFinite(targetHeight) ? targetHeight : 0),
             };
           })
           .filter((button) => button.width < 44 || button.height < 44)
@@ -169,14 +177,14 @@ test.describe('Club Data production experience', () => {
     expect(shortTargets).toEqual([]);
 
     const undersizedInputs = await page
-      .locator('[data-page="club-data"] input:visible')
-      .evaluateAll((inputs) =>
-        inputs
-          .map((input) => ({
-            label: input.getAttribute('aria-label') || input.getAttribute('placeholder') || '',
-            fontSize: Number.parseFloat(getComputedStyle(input).fontSize),
+      .locator('[data-page="club-data"] input:visible, [data-page="club-data"] select:visible')
+      .evaluateAll((controls) =>
+        controls
+          .map((control) => ({
+            label: control.getAttribute('aria-label') || control.getAttribute('placeholder') || '',
+            fontSize: Number.parseFloat(getComputedStyle(control).fontSize),
           }))
-          .filter((input) => input.fontSize < 16)
+          .filter((control) => control.fontSize < 16)
       );
     expect(undersizedInputs).toEqual([]);
   });

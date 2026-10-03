@@ -952,7 +952,7 @@ export default function RakeSnapshotPanel({
       </div>
 
       <p
-        className={`sc-label sc-ink--blue ${styles.exportStatus}`}
+        className={`sc-ink--blue ${styles.exportStatus}`}
         role="status"
         aria-live="polite"
         aria-atomic="true"

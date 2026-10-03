@@ -408,6 +408,22 @@ export abstract class TournamentManagerBase {
   /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
   private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
+  /**
+   * A TABLE THE MANAGER CANNOT ADMIT IS A STALLED TABLE (2026-10-03).
+   *
+   * When each table whose engine this manager is still trying to bring back
+   * first failed. Set by the first recovery a table needs, cleared only when
+   * an engine for it reports ready (or the manager retires).
+   *
+   * /health counted stalls only from registered table engines. A table whose
+   * F06 admission is refused gets an engine for about one second every 15 s
+   * - created, refused, stopped, "Dealt 0 hands" - so between retries it has
+   * no engine at all and is in no stall list, gauge or verdict. Heads-up SNG
+   * b290375a sat RUNNING with two real players and 0 hands for 6.5 hours
+   * (refused F06_ABANDONED_CARDS_WITHOUT_SNAPSHOT at every ask) while /health
+   * reported stalledTableCount 0. GameServer reads this to count it.
+   */
+  private readonly tableAdmissionFailingSince = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
   private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
@@ -1466,7 +1482,10 @@ export abstract class TournamentManagerBase {
     if (timer) this.clearLifecycleTimeout(timer);
     this.tableEngineRecoveryTimers.delete(tableId);
     this.tableEngineRecoveryExpected.delete(tableId);
-    if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
+    if (resetAttempts) {
+      this.tableEngineRecoveryAttempts.delete(tableId);
+      this.tableAdmissionFailingSince.delete(tableId);
+    }
   }
 
   private clearManagedTableEngineRecoveries(): void {
@@ -1476,6 +1495,19 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryTimers.clear();
     this.tableEngineRecoveryExpected.clear();
     this.tableEngineRecoveryAttempts.clear();
+    this.tableAdmissionFailingSince.clear();
+  }
+
+  /**
+   * Tables this manager has been failing to bring back into play, and for how
+   * long. Identification only: GameServer publishes it as a stall, and nothing
+   * is restarted, retried or rebuilt because of it.
+   */
+  getTablesFailingAdmission(now = Date.now()): Array<{ tableId: string; msFailing: number }> {
+    return [...this.tableAdmissionFailingSince].map(([tableId, since]) => ({
+      tableId,
+      msFailing: Math.max(0, now - since),
+    }));
   }
 
   /** Only the recorded new format can complete with an unranked qualifier cohort. */
@@ -1634,6 +1666,9 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle)) {
       this.clearManagedTableEngineRecovery(tableId);
       return;
+    }
+    if (!this.tableAdmissionFailingSince.has(tableId)) {
+      this.tableAdmissionFailingSince.set(tableId, Date.now());
     }
     if (this.tableEngineRecoveryTimers.has(tableId)) return;
 

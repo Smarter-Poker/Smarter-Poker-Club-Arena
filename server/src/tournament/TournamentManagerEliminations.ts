@@ -4376,6 +4376,40 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return cleaned;
   }
 
+  /**
+   * A SATELLITE THAT HAS BUSTED NOBODY IS NOT ASKED AGAIN UNDER THE WHOLE
+   * FINISH LANE (2026-10-03).
+   *
+   * fn_get_satellite_qualifier_state is answered under the satellite finish
+   * lane, which takes ca:tournament-finish-lane:v1 EXCLUSIVELY: every ordinary
+   * Spin, Sit & Go and MTT finish on the platform (which holds that key
+   * shared) drains before it and queues behind it. Every sweep of a cohort
+   * satellite asked it at its finish stage, whatever woke the sweep. Read on
+   * production 13:03-13:33 UTC on 2026-10-03: four running cohort satellites
+   * with three eliminations between them in ten minutes asked ~6.7 times a
+   * minute, each waiting a mean 3.3 s for the exclusive lane, and 96 finishes
+   * waited a mean 3.6 s behind those asks (12 and 17 in the half hour before
+   * the elimination scheduler stopped rationing sweeps).
+   *
+   * Only a bust can bring the field to its qualifier boundary: qualifying
+   * needs the live field (playing, chips > 0) at or under the full-ticket
+   * count, the ticket count is frozen with the prize pool, and nothing but a
+   * hand that leaves a zero stack shrinks the field. Every such hand holds
+   * the boundary first (onHandComplete -> holdSatelliteQualifierBoundary),
+   * which advances the boundary generation. So an authoritative 'continuing'
+   * answer, read while no boundary was held, with the field more than one
+   * player above the ticket count, stays true for its generation: the sweep
+   * reuses it instead of taking the lane again. Any held boundary, any other
+   * state, a field within one player of the tickets, or five minutes, and
+   * the serialized read runs exactly as before.
+   */
+  private satelliteContinuation: {
+    generation: number;
+    readAt: number;
+    answer: 'legacy' | 'continue';
+  } | null = null;
+  static readonly SATELLITE_CONTINUATION_REUSE_MS = 5 * 60_000;
+
   /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
   private async checkSatelliteQualifierCompletion(): Promise<
     'legacy' | 'continue' | 'pending' | 'complete'
@@ -4383,8 +4417,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (!this.isCohortSatellite()) return 'legacy';
     if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
       return 'pending';
+    const known = this.satelliteContinuation;
+    this.satelliteContinuation = null;
+    if (
+      known &&
+      !this.satelliteQualifierBoundaryPending &&
+      known.generation === this.satelliteQualifierBoundaryGeneration &&
+      Date.now() - known.readAt < TournamentManagerEliminations.SATELLITE_CONTINUATION_REUSE_MS
+    ) {
+      this.satelliteContinuation = known;
+      return known.answer;
+    }
+    let readGeneration = this.satelliteQualifierBoundaryGeneration;
+    let readAt = Date.now();
+    const readState = (): ReturnType<typeof readSatelliteQualifierState> => {
+      readGeneration = this.satelliteQualifierBoundaryGeneration;
+      readAt = Date.now();
+      return readSatelliteQualifierState(this.tournamentId);
+    };
     try {
-      let state = await readSatelliteQualifierState(this.tournamentId);
+      let state = await readState();
       const cleanCommitted = async (): Promise<boolean> => {
         if (state.state === 'completed') {
           await this.cleanupCommittedSatelliteQualifiers(state.receipt);
@@ -4427,7 +4479,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
         // All accepted writers and in-flight hands are drained now. The
         // second serialized read owns cohort membership for this boundary.
-        state = await readSatelliteQualifierState(this.tournamentId);
+        state = await readState();
         if (await cleanCommitted()) return 'complete';
         if (
           !this.isRunning() ||
@@ -4521,7 +4573,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.holdSatelliteQualifierBoundary();
         return 'pending';
       }
-      return state.state === 'continuing' && state.fullTicketCount < 2 ? 'legacy' : 'continue';
+      const answer =
+        state.state === 'continuing' && state.fullTicketCount < 2 ? 'legacy' : 'continue';
+      if (
+        state.state === 'continuing' &&
+        state.qualifierIds.length > state.fullTicketCount + 1 &&
+        !this.satelliteQualifierBoundaryPending &&
+        readGeneration === this.satelliteQualifierBoundaryGeneration
+      )
+        this.satelliteContinuation = { generation: readGeneration, readAt, answer };
+      return answer;
     } catch (error) {
       // An unreadable state can neither select winners nor release a bust
       // boundary. The existing manager continuation retains its work.

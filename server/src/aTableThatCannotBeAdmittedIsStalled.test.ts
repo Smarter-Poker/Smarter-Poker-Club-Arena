@@ -50,6 +50,7 @@ const proto = TournamentManagerBase.prototype as unknown as {
   }>;
   clearManagedTableEngineRecovery(this: FailingProbe, tableId: string, reset?: boolean): void;
   clearManagedTableEngineRecoveries(this: FailingProbe): void;
+  forgetAdmissionFailureUnlessRetrying(this: FailingProbe, tableId: string): void;
 };
 
 describe('the manager remembers when a table started failing admission', () => {
@@ -72,6 +73,33 @@ describe('the manager remembers when a table started failing admission', () => {
     expect(m.tableAdmissionFailingSince.has('t1')).toBe(false);
     proto.clearManagedTableEngineRecoveries.call(m);
     expect(m.tableAdmissionFailingSince.size).toBe(0);
+  });
+
+  it('forgets a table whose recovery ended with no retry pending (2026-10-03, 73834884)', () => {
+    const m = probe();
+    m.tableAdmissionFailingSince.set('broken', 1_000);
+    m.tableAdmissionFailingSince.set('retrying', 1_000);
+    m.tableEngineRecoveryTimers.set('retrying', {});
+    proto.forgetAdmissionFailureUnlessRetrying.call(m, 'broken');
+    proto.forgetAdmissionFailureUnlessRetrying.call(m, 'retrying');
+    expect([...m.tableAdmissionFailingSince.keys()]).toEqual(['retrying']);
+  });
+
+  it('every retry exit that schedules nothing forgets the failure', () => {
+    const schedule = BASE.slice(
+      BASE.indexOf('private scheduleManagedTableEngineRecovery('),
+      BASE.indexOf('/** Admit a table retired after a failed start')
+    );
+    const exits = [...schedule.matchAll(/\n\s*return;\n/g)].length;
+    const forgets =
+      schedule.split('this.forgetAdmissionFailureUnlessRetrying(tableId);').length - 1;
+    // Each early return in the retry callback and its catch forgets; the two
+    // returns before a timer exists (not current, already scheduled) do not.
+    expect(forgets).toBe(5);
+    expect(exits).toBeGreaterThanOrEqual(forgets);
+    expect(schedule).toMatch(
+      /if \(expected && incumbent !== expected\) \{\s*this\.forgetAdmissionFailureUnlessRetrying\(tableId\);\s*return;/
+    );
   });
 
   it('stamps the first failure, not the latest retry', () => {

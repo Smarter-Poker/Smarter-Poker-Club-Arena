@@ -125,6 +125,7 @@ import {
   RetainedHandSubmissionRefusedError,
   savePresenceAtPark,
   parkStoppedTimeBankCustody,
+  reaskTimeBankDebit,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
   type ParkedTimeBank,
@@ -8184,7 +8185,9 @@ export abstract class ServerTableEngineBase {
    * once, so this is the debit completing, not a second charge. Callers are
    * the two places the answer matters: the restart gate's census
    * (maintenanceDurabilityReason) and the owning manager's stop
-   * (persistStoppedTimeBankCustody). One resolution runs at a time.
+   * (persistStoppedTimeBankCustody). One resolution runs at a time. It is
+   * asked at the process root (reaskTimeBankDebit), because the engines that
+   * need the answer are the ones whose tournament lease is already gone.
    */
   resolveUnconfirmedTimeBankDebits(): Promise<void> {
     if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
@@ -8192,10 +8195,13 @@ export abstract class ServerTableEngineBase {
     const run = (async () => {
       for (const [debitId, debit] of [...this.unresolvedTimeBankDebits]) {
         try {
-          const { data, error } = await supabase.rpc('fn_consume_time_bank', {
-            p_user_id: debit.userId,
-            p_seconds: debit.seconds,
-            p_request_id: debitId,
+          // As the process, not as this engine's lease: a terminal engine's
+          // lease is gone, and the database fences every request sent with it
+          // (reaskTimeBankDebit). Same id, so this is never a second charge.
+          const { data, error } = await reaskTimeBankDebit({
+            userId: debit.userId,
+            seconds: debit.seconds,
+            debitId,
           });
           if (error || !ServerTableEngineBase.timeBankDebitAnswered(data)) continue;
           this.unresolvedTimeBankDebits.delete(debitId);

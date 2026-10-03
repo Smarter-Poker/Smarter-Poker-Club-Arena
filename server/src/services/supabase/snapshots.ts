@@ -316,6 +316,44 @@ export interface UnstartedPermitAttestation {
  * `handNumber`, no newer park, no F06 mixed transfer holding the row as its
  * evidence - and otherwise refuses by name.
  */
+/**
+ * ASK ABOUT A LOST TIME BANK DEBIT AS THE PROCESS (2026-10-03).
+ *
+ * A debit whose answer was lost is asked again by its own request id, and
+ * fn_consume_time_bank answers from the receipt it wrote in the debit's own
+ * transaction (or applies the debit exactly once if it never committed). The
+ * re-ask used to go out under the caller's data authority: for a terminal
+ * tournament engine that is its manager's lease generation, and the engines
+ * holding a lost answer are exactly the ones whose manager has just lost that
+ * lease. `fn_smarter_data_api_pre_request` fenced every re-ask
+ * (`TOURNAMENT_MANAGER_FENCED`), so the answer could never arrive.
+ *
+ * 2026-10-03: the 16:35Z Postgres restart lost the answer to debit 6b1de5d5
+ * on spin 20a7de08 table 9aa37b13. Its receipt had committed at 16:34:18, but
+ * every manager stop for the next two hours re-asked it fenced, the flag never
+ * cleared, the stopped custody could never be written, the stop failed
+ * "retained time-bank custody" once a minute and the table never dealt again.
+ *
+ * Which player's seconds a request id debits was fixed when the id was issued;
+ * answering that question is not the manager's data to exercise authority
+ * over, so it runs at the process root, like the stopped-custody park below.
+ * The function is idempotent by request id, so this never charges twice.
+ */
+export const reaskTimeBankDebit = bindToProcessRoot(
+  async (params: {
+    userId: string;
+    seconds: number;
+    debitId: string;
+  }): Promise<{ data: unknown; error: { message?: string } | null }> => {
+    const { data, error } = await supabase.rpc('fn_consume_time_bank', {
+      p_user_id: params.userId,
+      p_seconds: params.seconds,
+      p_request_id: params.debitId,
+    });
+    return { data, error };
+  }
+);
+
 export const parkStoppedTimeBankCustody = bindToProcessRoot(
   async (params: {
     tableId: string;

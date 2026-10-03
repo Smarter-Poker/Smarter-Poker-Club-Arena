@@ -28,6 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
+import { compactChips } from '../../utils/format';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
@@ -275,10 +276,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                   <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
                   {visibleBalances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {(visibleBalances.get(club.id) as number).toLocaleString(undefined, {
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      Chips
+                      {compactChips(visibleBalances.get(club.id))} Chips
                     </span>
                   )}
                 </span>

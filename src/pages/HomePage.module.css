@@ -2220,34 +2220,6 @@
   text-overflow: ellipsis;
 }
 
-.cashierSwitchBtn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 212, 255, 0.5);
-  background: rgba(6, 12, 24, 0.85);
-  color: rgba(0, 212, 255, 0.95);
-  font-size: 14px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease;
-}
-
-.cashierSwitchBtn:focus-visible {
-  outline: 2px solid rgba(0, 212, 255, 0.7);
-  outline-offset: 2px;
-}
-
 .cashierSwitchOverlay {
   position: fixed;
   inset: 0;
@@ -2256,33 +2228,22 @@
 }
 
 .cashierSwitchMenu {
+  --cashier-directory-body-max: min(42vh, 300px);
   position: fixed;
   bottom: var(--quick-link-anchor-bottom);
   left: var(--quick-link-anchor-x);
   transform: translateX(-50%);
   z-index: 960;
-  min-width: 160px;
-  max-width: 230px;
-  max-height: 240px;
-  overflow-y: auto;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: rgba(10, 16, 28, 0.97);
-  border: 1px solid rgba(0, 212, 255, 0.35);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  width: min(360px, calc(100vw - 16px));
 }
 
-.cashierSwitchTitle {
-  padding: 6px 10px 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+.cashierSwitchConsole {
+  --sc-max: 360px;
+}
+
+.cashierSwitchConsole :global(.sc__body) {
+  max-height: var(--cashier-directory-body-max);
+  overflow-y: auto;
 }
 
 .cashierSwitchStatus {
@@ -2298,12 +2259,14 @@
 }
 
 .cashierSwitchStatus button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid rgba(0, 212, 255, 0.55);
-  border-radius: 5px;
-  color: #dff8ff;
-  background: rgba(8, 33, 49, 0.96);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #45adff;
+  background: none;
+  box-shadow: none;
+  transform: none;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -2317,7 +2280,6 @@
 .cashierSwitchItems {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .cashierSwitchItem {
@@ -2332,10 +2294,14 @@
   font-weight: 600;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 6px;
   cursor: pointer;
   min-width: 0;
   min-height: 44px;
+}
+
+.cashierSwitchItem + .cashierSwitchItem {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cashierSwitchItem:focus-visible {
@@ -2368,28 +2334,13 @@
 .cashierSwitchLogo {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
-.cashierSwitchLogoFallback {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .cashierSwitchItemActive {
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.1);
+  color: #45adff;
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
 }
 
 /* The Cashier tile is the fourth card in a five-wide phone footer. An
@@ -2398,6 +2349,7 @@
    insets, so its geometry is independent of which tile opened it. */
 @media (max-width: 480px) {
   .cashierSwitchMenu {
+    --cashier-directory-body-max: min(52vh, 420px);
     position: fixed;
     right: max(8px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -2405,8 +2357,6 @@
     width: auto;
     min-width: 0;
     max-width: none;
-    max-height: min(70vh, 480px);
-    max-height: min(70dvh, 480px);
     transform: none;
   }
 }

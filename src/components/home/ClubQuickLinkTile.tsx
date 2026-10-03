@@ -20,10 +20,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { SpadeConsole } from '../console/SpadeConsole';
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { preloadRoute } from '../../utils/ChunkPreloader';
+import { compactChips } from '../../utils/format';
 import type { LobbyTile } from '../../config/lobbyTiles.config';
 import {
   fetchClubChipBalances,
@@ -186,7 +188,13 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
 
     const placeMenu = () => {
       const rect = trigger.getBoundingClientRect();
-      menu.style.setProperty('--quick-link-anchor-x', `${rect.left + rect.width / 2}px`);
+      const menuHalfWidth = menu.getBoundingClientRect().width / 2;
+      const unclampedCenter = rect.left + rect.width / 2;
+      const safeCenter = Math.min(
+        window.innerWidth - menuHalfWidth - 8,
+        Math.max(menuHalfWidth + 8, unclampedCenter)
+      );
+      menu.style.setProperty('--quick-link-anchor-x', `${safeCenter}px`);
       menu.style.setProperty(
         '--quick-link-anchor-bottom',
         `${window.innerHeight - rect.top + 8}px`
@@ -334,82 +342,86 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
           <>
             <div className={styles.cashierSwitchOverlay} onClick={() => closeMenu(true)} />
             <div ref={menuRef} className={styles.cashierSwitchMenu} onKeyDown={handleMenuKeyDown}>
-              <div className={styles.cashierSwitchTitle}>{menuTitle}</div>
-              {balancesLoading && (
-                <div className={styles.cashierSwitchStatus} role="status" aria-live="polite">
-                  Reading Wallet Balances...
-                </div>
-              )}
-              {!balancesLoading && balancesError && (
-                <div className={styles.cashierSwitchStatus} role="alert">
-                  Wallet Balances Unavailable.
-                  <button
-                    ref={retryRef}
-                    type="button"
-                    onClick={retryBalances}
-                    onKeyDown={(event) => {
-                      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const index =
-                        event.key === 'ArrowUp' || event.key === 'End' ? clubs.length - 1 : 0;
-                      setActiveIndex(index);
-                      itemRefs.current[index]?.focus();
-                    }}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              <div className={styles.cashierSwitchItems} role="menu" aria-label={menuTitle}>
-                {clubs.map((club, idx) => (
-                  <button
-                    key={club.id}
-                    ref={(el) => {
-                      itemRefs.current[idx] = el;
-                    }}
-                    role="menuitem"
-                    tabIndex={idx === activeIndex ? 0 : -1}
-                    className={`${styles.cashierSwitchItem} ${
-                      club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
-                    }`}
-                    title={club.name || undefined}
-                    onClick={() => {
-                      closeMenu(false);
-                      onSelect(club);
-                    }}
-                  >
-                    {club.logo_url ? (
-                      <img
-                        src={club.logo_url}
-                        alt=""
-                        className={styles.cashierSwitchLogo}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className={styles.cashierSwitchLogoFallback} aria-hidden="true">
-                        {(club.name || '?').charAt(0).toUpperCase()}
-                      </span>
-                    )}
-                    <span className={styles.cashierSwitchItemText}>
-                      <span className={styles.cashierSwitchItemName}>
-                        {club.name || 'Unnamed Club'}
-                      </span>
-                      {isUnionEntity(club) && (
-                        <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
+              <SpadeConsole
+                family="shark"
+                title={menuTitle}
+                onClose={() => closeMenu(true)}
+                className={styles.cashierSwitchConsole}
+              >
+                {balancesLoading && (
+                  <div className={styles.cashierSwitchStatus} role="status" aria-live="polite">
+                    Reading Wallet Balances...
+                  </div>
+                )}
+                {!balancesLoading && balancesError && (
+                  <div className={styles.cashierSwitchStatus} role="alert">
+                    Wallet Balances Unavailable.
+                    <button
+                      ref={retryRef}
+                      type="button"
+                      onClick={retryBalances}
+                      onKeyDown={(event) => {
+                        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const index =
+                          event.key === 'ArrowUp' || event.key === 'End' ? clubs.length - 1 : 0;
+                        setActiveIndex(index);
+                        itemRefs.current[index]?.focus();
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                <div className={styles.cashierSwitchItems} role="menu" aria-label={menuTitle}>
+                  {clubs.map((club, idx) => (
+                    <button
+                      key={club.id}
+                      ref={(el) => {
+                        itemRefs.current[idx] = el;
+                      }}
+                      role="menuitem"
+                      tabIndex={idx === activeIndex ? 0 : -1}
+                      className={`${styles.cashierSwitchItem} ${
+                        club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
+                      }`}
+                      title={club.name || undefined}
+                      onClick={() => {
+                        closeMenu(false);
+                        onSelect(club);
+                      }}
+                    >
+                      {club.logo_url && (
+                        <img
+                          src={club.logo_url}
+                          alt=""
+                          className={styles.cashierSwitchLogo}
+                          loading="lazy"
+                        />
                       )}
-                      {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
-                        <span className={styles.cashierSwitchItemBalance}>
-                          {(visibleBalances.get(club.id) as number).toLocaleString()} Chips
+                      <span className={styles.cashierSwitchItemText}>
+                        <span className={styles.cashierSwitchItemName}>
+                          {club.name || 'Unnamed Club'}
                         </span>
-                      )}
-                      {!isUnionEntity(club) && !balancesLoading && balancesError && (
-                        <span className={styles.cashierSwitchItemBalance}>Balance Unavailable</span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
+                        {isUnionEntity(club) && (
+                          <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
+                        )}
+                        {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
+                          <span className={styles.cashierSwitchItemBalance}>
+                            {compactChips(visibleBalances.get(club.id))} Chips
+                          </span>
+                        )}
+                        {!isUnionEntity(club) && !balancesLoading && balancesError && (
+                          <span className={styles.cashierSwitchItemBalance}>
+                            Balance Unavailable
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </SpadeConsole>
             </div>
           </>,
           document.body

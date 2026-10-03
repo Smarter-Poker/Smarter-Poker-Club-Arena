@@ -1,0 +1,57 @@
+{
+  "promoted": false,
+  "reasons": [
+    "mtt:missing_or_duplicate_seed",
+    "sng:missing_or_duplicate_seed",
+    "spin:missing_or_duplicate_seed",
+    "satellite:missing_or_duplicate_seed",
+    "pko:missing_or_duplicate_seed",
+    "pko:8101101:not_promotable",
+    "mystery:missing_or_duplicate_seed",
+    "incomplete_run_matrix"
+  ],
+  "buckets": [
+    {
+      "objective": "mtt",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "sng",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "spin",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "satellite",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    },
+    {
+      "objective": "pko",
+      "pairs": 1024,
+      "meanDifference": -0.0002329508463541666,
+      "standardError": 0.0007431632688504558,
+      "confidence99": [-0.002157743712676847, 0.0016918420199685139]
+    },
+    {
+      "objective": "mystery",
+      "pairs": 0,
+      "meanDifference": 0,
+      "standardError": 0,
+      "confidence99": [-1, 1]
+    }
+  ]
+}

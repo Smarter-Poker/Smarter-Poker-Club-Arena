@@ -66,18 +66,18 @@ Already returned work cannot evade withdrawal: queued requests admit authority w
 
 ## Gate Ledger for P8.3
 
-| Gate               | Status                                                                                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| G1 Domain          | implemented but unverified: authority is admitted only for `nlh-single-board-tournament-postflop`; natural coverage requires activation                                                                       |
-| G2 Inputs          | verified now (local): selection, evidence bytes and running policy digest are bound; no caller, IPC or environment input reaches admission (worker, client and authority suites)                              |
-| G3 Calculation     | not applicable with reason: P8.3 adds no strategy computation; the continuation is unchanged                                                                                                                  |
-| G4 Authority       | verified now (local): immutable record, distinct unselected, refused, refresh_failed, withdrawn, stale, restarted, mismatched and expired states; worker-owned admission; acceptance and effect rechecks      |
-| G5 Actual use      | implemented but unverified: the producer to worker to controller to journal chain is exercised locally with real receipts; natural selected and accepted use needs P8.2 qualification and a selecting release |
-| G6 Outcomes        | verified now (local): shadow change, selected, controller-accepted and withdrawn-before-acceptance are distinct on ledger, witness and journal record                                                         |
-| G7 Correctness     | verified now (local): suites listed below, including negative cases for caller candidate control, stale generation, hash mismatch and withdrawal after return                                                 |
-| G8 Work and replay | not applicable with reason: no change to work budgets, seeds or deterministic outputs; admission I/O happens at worker start, not on the action clock                                                         |
-| G9 Promotion       | unavailable external input: P8.2 qualification evidence does not exist yet; the consumer refuses everything until it does                                                                                     |
-| G10 Publication    | implemented but unverified: protected merge and engine release of this change pending; it is behaviorally inert while the selection is null                                                                   |
+| Gate               | Status                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G1 Domain          | implemented but unverified: authority is admitted only for `nlh-single-board-tournament-postflop`; natural coverage requires activation                                                                                  |
+| G2 Inputs          | verified now (local): selection, evidence bytes and running policy digest are bound; no caller, IPC or environment input reaches admission (worker, client and authority suites)                                         |
+| G3 Calculation     | not applicable with reason: P8.3 adds no strategy computation; the continuation is unchanged                                                                                                                             |
+| G4 Authority       | verified now (local): immutable record, distinct unselected, refused, refresh_failed, withdrawn, stale, restarted, mismatched and expired states; worker-owned admission; acceptance and effect rechecks                 |
+| G5 Actual use      | implemented but unverified: the producer to worker to controller to journal chain is exercised locally with real receipts; natural selected and accepted use needs P8.2 qualification and a selecting release            |
+| G6 Outcomes        | verified now (local): shadow change, selected, controller-accepted and withdrawn-before-acceptance are distinct on ledger, witness and journal record                                                                    |
+| G7 Correctness     | verified now (local): suites listed below, including negative cases for caller candidate control, stale generation, hash mismatch and withdrawal after return                                                            |
+| G8 Work and replay | not applicable with reason: no change to work budgets, seeds or deterministic outputs; admission I/O happens at worker start, not on the action clock                                                                    |
+| G9 Promotion       | verified now: the P8.2 qualification file says `qualified: false`, so no selection can be made and the consumer refuses everything                                                                                       |
+| G10 Publication    | verified now: published in engine `a56f8f92` (exact-engine certificate run 36929482461, 4/4) and serving unchanged in `c0b56ffc` and `1c155771`; behaviorally inert while `PHASE8_PROTECTED_RELEASE_SELECTION` is `null` |
 
 ## Tests
 

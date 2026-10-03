@@ -1,0 +1,46 @@
+{
+  "schema": "horse-phase8-strength-context-v1",
+  "productionTelemetry": {
+    "date": "2026-10-01",
+    "dayScope": "UTC day 2026-10-01 counters as read (rows last updated by 2026-10-01T23:21Z), not a closed day",
+    "source": "read-only SELECT day, feature, fires FROM horse_brain_telemetry, Supabase project kuklfnapbkmacvwxktbh",
+    "host": "production engine host (ccx23), saturated",
+    "counters": {
+      "phase8_eligible": 3185,
+      "phase8_fired": 416,
+      "phase8_completed": 412,
+      "phase8_reason_continuation_operation_budget": 2325,
+      "phase8_reason_budget_exhausted": 427,
+      "phase8_reason_context_incomplete": 1312
+    }
+  },
+  "macColdCompletion": {
+    "date": "2026-10-01",
+    "source": "docs/evidence/phase8/phase8-useful-completion-cold.json and phase8-useful-completion.md (P8.1)",
+    "machine": "Apple M3 Ultra development Mac",
+    "eligible": 181,
+    "completedRange": [137, 141],
+    "note": "cold completion across the P8.1 final-source repetitions"
+  },
+  "linuxFixtureSmoke": {
+    "date": "2026-10-01",
+    "command": "horseTournamentEvaluate.ts --hydrate, mtt, seed 8101101, 4 pairs (fixture mode)",
+    "hostA": {
+      "eligible": 14,
+      "completed": 0,
+      "continuation_operation_budget": 14,
+      "fired": 0,
+      "p99Ms": 4.19,
+      "durationMs": 56307
+    },
+    "hostC": {
+      "eligible": 14,
+      "completed": 0,
+      "continuation_operation_budget": 14,
+      "fired": 0,
+      "p99Ms": 4.44,
+      "durationMs": 36751
+    }
+  },
+  "limits": "Unchanged: PHASE8_POLICY workBudgetMs 4, budgetMs 5, policyBudgetMs 2. No budget, gate, seed, pair count or objective was changed for this matrix."
+}

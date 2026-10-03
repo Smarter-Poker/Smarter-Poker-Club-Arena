@@ -1,0 +1,3 @@
+# tests/a-missed-snapshot-is-retried-not-paged.law.test.ts
+
+A missed snapshot is retried, not paged (2026-10-03): fn_ca_diamond_health measures the trial balance from the newest stored Diamond snapshot when none falls inside the 75-minute window, so a snapshot skipped by a database restart still yields a known comparison (a real break still reads critical, no snapshot at all still reads unknown); fn_ca_diamond_health_watch files a critical area at once, files an area that reads unknown for the first time at warning (recorded, auto-resolved, not paged) and files it critical when the next hourly tick still cannot tell

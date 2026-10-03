@@ -1,18 +1,25 @@
-diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 425bf221..a89111dd 100644
---- a/.github/workflows/ci.yml
-+++ b/.github/workflows/ci.yml
-@@ -2112,6 +2112,13 @@ jobs:
-           retention-days: 7
-           if-no-files-found: warn
- 
+diff --git a/docs/changelog/2026-10-03-the-mint-register-keeps-its-supply-in-shards.md b/docs/changelog/2026-10-03-the-mint-register-keeps-its-supply-in-shards.md
+index d5b6cdae..ad296069 100644
+--- a/docs/changelog/2026-10-03-the-mint-register-keeps-its-supply-in-shards.md
++++ b/docs/changelog/2026-10-03-the-mint-register-keeps-its-supply-in-shards.md
+@@ -49,3 +49,20 @@ The migration body contains `ON CONFLICT ... DO UPDATE`, so it is applied by
+ the owner with **Apply Merged Migration**, outside the :50-:03 break window.
+ It briefly holds `SHARE ROW EXCLUSIVE` on `ca_mint_ledger` while seeding, which
+ pauses register inserts for the length of one full sum (well under a second).
++
++## CI wiring
++
++The harness runs locally with `PG_BIN=/usr/lib/postgresql/17/bin python3 -B
++scripts/ci/test-the-mint-register-keeps-its-supply-in-shards.py`. Adding it as a
++step in `.github/workflows/ci.yml` needs a push with the `workflows` scope (the
++patch bot's token cannot change workflow files), so it is listed in the phase 7
++report for a workflow-scoped push:
++
++```yaml
 +      - name: The mint register keeps its supply in shards
 +        if: matrix.shard == 1
 +        timeout-minutes: 6
 +        env:
 +          PG_BIN: /usr/lib/postgresql/17/bin
 +        run: python3 -B scripts/ci/test-the-mint-register-keeps-its-supply-in-shards.py
-+
-       - name: Spin expiry lock order and committed refund contracts
-         id: spin_expiry_postgres
-         if: matrix.shard == 1
++```

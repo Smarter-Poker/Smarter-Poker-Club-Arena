@@ -56,3 +56,20 @@ privileges did not change. Its NOTICE prints the post-image md5.
 
 The migration text contains `FOR UPDATE`, so the owner applies it with
 **Apply Merged Migration**, outside the :50-:03 break window.
+
+## CI wiring
+
+The harness runs locally with `PG_BIN=/usr/lib/postgresql/17/bin python3 -B
+scripts/ci/test-a-cluster-wake-does-not-queue-behind-the-pass.py`. Adding it as a
+step in `.github/workflows/ci.yml` needs a push with the `workflows` scope (the
+patch bot's token cannot change workflow files), so it is listed in the phase 7
+report for a workflow-scoped push:
+
+```yaml
+      - name: A cluster wake does not queue behind the pass
+        if: matrix.shard == 1
+        timeout-minutes: 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-a-cluster-wake-does-not-queue-behind-the-pass.py
+```

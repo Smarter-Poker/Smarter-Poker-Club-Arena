@@ -34,6 +34,12 @@ const successorPins = JSON.parse(
   read('scripts/ci/fixtures/backed-payout-scan/reviewed-return-expectations.json')
 );
 const fixture = JSON.parse(read('scripts/ci/fixtures/backed-payout-scan/baseline.json'));
+const ticketPins = JSON.parse(
+  read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-expectations.json')
+);
+const ticketPath = ticketPins.migration;
+const ticketMigration = read(ticketPath);
+const ticketScalar = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-scalar.sql');
 let declaredFunctions: (sql: string) => { name: string; header: string; body: string }[];
 let stripComments: (sql: string) => string;
 beforeAll(async () => {
@@ -77,6 +83,11 @@ describe('backed payout discovery is the same accounting question in a batch', (
     'scripts/ci/fixtures/backed-payout-scan/setup.sql',
     'scripts/ci/fixtures/backed-payout-scan/cases.sql',
     'tests/backedPayoutScanRegression.test.ts',
+    ticketPath,
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-scalar.sql',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-cases.sql',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-native.py',
+    'scripts/ci/fixtures/backed-payout-scan/ticket-funding-expectations.json',
   ])('enforces native and source checks for %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
@@ -323,7 +334,9 @@ describe('backed payout discovery is the same accounting question in a batch', (
         .map((fn) => ({ file, ...fn }))
     );
     const latest = declarations.at(-1)!;
-    const baseline = declaredFunctions(successorScalar)[0];
+    // The ticket and house-funding successor (2026-10-03) is the maintained
+    // scalar; its native qualification is ticket-funding-native.py.
+    const baseline = declaredFunctions(ticketScalar)[0];
     const normalize = (body: string) => stripComments(body).replace(/\s+/g, ' ').trim();
     expect(normalize(latest.body), latest.file).toBe(normalize(baseline.body));
     // A dynamic patch is also a formula change: future pg_get_functiondef
@@ -331,12 +344,59 @@ describe('backed payout discovery is the same accounting question in a batch', (
     const laterDynamic = migrationCorpus().filter(
       ({ name: file, sql }) =>
         file > latest.file &&
-        ![migrationPath, successorPath, inlinePath, incomePath].some(
+        ![migrationPath, successorPath, inlinePath, incomePath, ticketPath].some(
           (path) => file === path.split('/').at(-1)
         ) &&
         /pg_get_functiondef[\s\S]{0,180}fn_tournament_conservation_delta/.test(sql) &&
         /\bEXECUTE\b/i.test(stripComments(sql))
     );
     expect(laterDynamic.map(({ name: file }) => file)).toEqual([]);
+  });
+
+  it('reads a ticket from its payout row and a house correction as funding, on both paths', () => {
+    expect(createHash('md5').update(ticketScalar).digest('hex')).toBe(
+      ticketPins.scalarDefinitionMD5
+    );
+    expect(ticketMigration).toContain(ticketScalar.trimEnd() + ';');
+    for (const key of ['scalarBeforeMD5', 'scalarDefinitionMD5', 'batchBeforeMD5', 'batchAfterMD5'])
+      expect(ticketMigration).toContain(ticketPins[key]);
+    // The predecessors are the qualified ones, nothing else.
+    expect(ticketPins.scalarBeforeMD5).toBe(successorPins.scalarDefinitionMD5);
+    expect(ticketPins.batchBeforeMD5).toBe(incomePins.afterDefinitionMD5);
+    // The ticket resolves from the award row, else from a well-formed payout
+    // ticket id; a malformed one is never cast.
+    expect(
+      ticketScalar.match(/COALESCE\(a\.ticket_id, CASE WHEN sp\.metadata->>'ticket_id' ~\* /g)
+    ).toHaveLength(2);
+    expect(ticketScalar).toMatch(
+      /c\.category = 'correction'\s+AND c\.to_type = 'prize_liability'\s+AND c\.from_type IN \('union_bank','club_treasury'\)\), 0\) AS house_correction/
+    );
+    expect(ticketScalar).toMatch(/\+ m\.funded_overlay\n\s+\+ m\.house_correction\n/);
+    expect(ticketScalar).not.toMatch(/settlement_suspense|from_type IN \([^)]*player_wallet/);
+    const replacements = ticketPins.replacements as { old: string; new: string; count: number }[];
+    expect(replacements.map((r) => r.count)).toEqual([2, 1, 1, 1]);
+    expect(replacements[1].new).toContain('house_corrections AS MATERIALIZED (');
+    expect(replacements[3].new).toContain('LEFT JOIN house_corrections hc ON hc.id = e.id');
+    for (const code of ['PREIMAGE_CHANGED', 'AUTHORITY_CHANGED', 'BATCH_CHANGED', 'RESULT_CHANGED'])
+      expect(ticketMigration).toContain('TICKET_FUNDING_' + code);
+    expect(stripComments(ticketMigration)).not.toMatch(
+      /\b(?:GRANT|REVOKE|CREATE INDEX|DROP|cron\.(?:schedule|alter_job|unschedule))\b/i
+    );
+    expect(ticketMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(ticketMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(read('scripts/ci/test-backed-payout-scan-postgres.py')).toContain(
+      "runpy.run_path(str(FIXTURE/'ticket-funding-native.py'))['qualify'](globals())"
+    );
+    const native = read('scripts/ci/fixtures/backed-payout-scan/ticket-funding-native.py');
+    for (const proof of [
+      'original formula',
+      'predecessor batch must pay the phantom backing',
+      'successor oracle must not pay the phantom backing',
+      'ticket transaction rollback',
+      'whole successor caller differs',
+      'ticket whole-population scalar parity',
+      'ticket successor changed authority or function identity',
+    ])
+      expect(native).toContain(proof);
   });
 });

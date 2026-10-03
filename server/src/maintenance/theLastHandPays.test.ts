@@ -60,7 +60,9 @@ describe('the last-hand terminal settlement window', () => {
     );
     expect(body).toContain('MaintenanceBreak.TERMINAL_SETTLEMENT_RESERVE_MS');
     const countdown = src.slice(src.indexOf('async beginCountdown()'));
-    expect(countdown.slice(0, 2500)).toContain('setLastHandSettlementWindow(0)');
+    expect(countdown.slice(0, countdown.indexOf('\n  }\n'))).toContain(
+      'setLastHandSettlementWindow(0)'
+    );
   });
 
   it('is read only by the non-satellite terminal settlement guard', () => {

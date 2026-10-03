@@ -1,0 +1,3 @@
+# tests/a-close-attempt-stops-after-one-long-step.law.test.ts
+
+A close attempt stops after one long step (2026-10-03): inside a chunked union close attempt, fn_accounting_close_warm_stop is true once the attempt has proved and kept a P&L step and either 60 seconds have passed since the attempt began (its deadline minus its scope budget) or less than 6 minutes of its budget are left, so the short steps are proved together, every long step such as the earned plan is proved alone in its own transaction on the small and the large job 272 budget alike, and outside a chunked close attempt the function stays false.

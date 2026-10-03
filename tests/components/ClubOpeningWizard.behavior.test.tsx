@@ -115,7 +115,14 @@ describe('no silent chip movement', () => {
     );
     mount({ clubBank: 99700, welcomePackage });
     next();
-    fireEvent.change(screen.getByLabelText(/Club Tag Line/), { target: { value: 'A Real Line' } });
+    // The production certificate addresses this field by its exact name; the
+    // live character counter is its description, never part of that name.
+    const tagLine = screen.getByRole('textbox', { name: 'Club Tag Line' });
+    expect(tagLine).toHaveAccessibleDescription('0 Of 72 Characters');
+    fireEvent.change(tagLine, { target: { value: 'A Real Line' } });
+    expect(screen.getByRole('textbox', { name: 'Club Tag Line' })).toHaveAccessibleDescription(
+      '11 Of 72 Characters'
+    );
     next();
     next();
 

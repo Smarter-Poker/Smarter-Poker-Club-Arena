@@ -244,8 +244,12 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('`./clubs/${createdClubRef}/settings`');
     expect(spec).toContain("getByRole('dialog', { name: 'Retire Club', exact: true })");
     expect(spec).toContain("getByLabel('Type The Club Name To Confirm:', { exact: true })");
-    expect(spec).toContain("endsWith('/rest/v1/rpc/fn_retire_settled_club')");
     expect(spec).toContain('expect(confirmRetirement).toBeEnabled');
+    // The UI stops at the enabled confirmation: a committed owner retirement
+    // writes immutable cancellation receipts, so the fixture could never be
+    // erased. The commit path is proved by the rollback probe instead.
+    expect(spec).not.toContain('fn_retire_settled_club');
+    expect(spec).not.toContain('confirmRetirement.click()');
     expect(workflow).toContain('test-results/create-club-retire-ready-mobile.png');
     expect(workflow.indexOf('Create A Club Through The Published User Interface')).toBeLessThan(
       workflow.indexOf('Retire The Created Club')
@@ -334,6 +338,11 @@ describe('Create Club production certification contract', () => {
     expect(preimage).toBeLessThan(authenticatedRole);
     expect(authenticatedRole).toBeLessThan(mutation);
     expect(mutation).toBeLessThan(rollback);
+    // Deferred constraint triggers (tournaments_cancel_must_refund) are fired
+    // inside the probe, so a reset that could not COMMIT fails here instead.
+    const deferredChecks = script.indexOf("await client.query('SET CONSTRAINTS ALL IMMEDIATE')");
+    expect(mutation).toBeLessThan(deferredChecks);
+    expect(deferredChecks).toBeLessThan(rollback);
 
     const retry = script.indexOf('await retryTransient(', script.indexOf('const resetOperationId'));
     const rollbackOnlyReset = script.indexOf('certifyWelcomeResetInsideRollback({', retry);

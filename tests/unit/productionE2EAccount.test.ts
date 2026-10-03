@@ -719,6 +719,72 @@ describe('certification-club retirement transport contract', () => {
     expect(client.end).toHaveBeenCalledTimes(1);
   });
 
+  it('closes an empty leased opening table through the owner door, then retries the cleanup door once', async () => {
+    const result = { success: true, chips_retired: 100000 };
+    const tableId = '22222222-2222-4222-8222-222222222222';
+    const ownerId = '33333333-3333-4333-8333-333333333333';
+    const activity = Object.assign(new Error('WELCOME_CERTIFICATION_FIXTURE_HAS_ACTIVITY'), {
+      code: '55000',
+    });
+    let doorCalls = 0;
+    let leaseReads = 0;
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('fn_ca_retire_welcome_certification_club')) {
+        doorCalls += 1;
+        if (doorCalls === 1) throw activity;
+        return { rows: [{ result }] };
+      }
+      if (sql.includes('FROM public.engine_table_leases')) {
+        leaseReads += 1;
+        return { rows: leaseReads === 1 ? [{ table_id: tableId, status: 'waiting' }] : [] };
+      }
+      if (sql.includes('SELECT owner_id::text')) return { rows: [{ owner_id: ownerId }] };
+      if (sql.includes('fn_close_managed_game')) return { rows: [{ result: { ok: true } }] };
+      return { rows: [] };
+    });
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      retireCertificationClubWithRetry({
+        configuration,
+        clubId,
+        reason,
+        environment: { DATABASE_URL: 'postgresql://certification.invalid/club_arena' },
+        databaseClientFactory: vi.fn().mockResolvedValue(client),
+        fetchImpl: vi.fn(),
+        wait: vi.fn().mockResolvedValue(undefined),
+      })
+    ).resolves.toEqual(result);
+
+    const statements = query.mock.calls.map(([sql]) => String(sql));
+    const firstDoor = statements.findIndex((sql) =>
+      sql.includes('fn_ca_retire_welcome_certification_club')
+    );
+    const rollback = statements.indexOf('ROLLBACK', firstDoor);
+    const close = statements.findIndex((sql) => sql.includes('fn_close_managed_game'));
+    const claims = statements.findIndex((sql) => sql.includes("set_config('request.jwt.claims'"));
+    const secondDoor = statements.findIndex(
+      (sql, index) => index > close && sql.includes('fn_ca_retire_welcome_certification_club')
+    );
+    expect(firstDoor).toBeGreaterThan(-1);
+    expect(rollback).toBeGreaterThan(firstDoor);
+    expect(claims).toBeGreaterThan(rollback);
+    expect(close).toBeGreaterThan(claims);
+    expect(secondDoor).toBeGreaterThan(close);
+    expect(
+      query.mock.calls.find(([sql]) => String(sql).includes('fn_close_managed_game'))?.[1]
+    ).toEqual([tableId]);
+    expect(
+      query.mock.calls.find(([sql]) => String(sql).includes("set_config('request.jwt.claims'"))?.[1]
+    ).toEqual([JSON.stringify({ sub: ownerId, role: 'authenticated' }), ownerId]);
+    expect(doorCalls).toBe(2);
+    expect(client.end).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the PostgREST retirement path when DATABASE_URL is absent', async () => {
     const result = { success: true, already_gone: true };
     const fetchMock = vi.fn().mockResolvedValue(Response.json(result));

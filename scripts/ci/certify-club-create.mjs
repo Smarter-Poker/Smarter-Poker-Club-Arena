@@ -6,11 +6,7 @@ import {
   retireCertificationClubWithRetry,
 } from './production-e2e-account.mjs';
 import { retryTransient } from './transient-retry.mjs';
-import {
-  awaitPlatformThaw,
-  describeThaw,
-  freezeBudgetMs,
-} from './platform-freeze-window.mjs';
+import { awaitPlatformThaw, describeThaw, freezeBudgetMs } from './platform-freeze-window.mjs';
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -373,6 +369,13 @@ async function certifyWelcomeResetInsideRollback({
       ]
     );
     const readback = readbackResponse.rows?.[0];
+    // A deferred constraint trigger never fires in a transaction that rolls
+    // back, so without this the probe could pass a reset that cannot commit
+    // (2026-10-03: the unwind cancelled the opening board without the
+    // receipts tournaments_cancel_must_refund requires, and every owner
+    // Retire / Remove Welcome Games raised P0404 at COMMIT). Fire every
+    // deferred check now, still inside the never-committed transaction.
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
     // Nothing invented: every id the receipt named is a row of this club.
     if (
       !namesEveryId(readback?.club_cash_game_ids, removed?.cash_game_ids) ||
@@ -1019,9 +1022,7 @@ try {
           environment: process.env,
         });
       } catch (error) {
-        cleanupFailures.push(
-          new Error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`)
-        );
+        cleanupFailures.push(new Error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`));
         continue;
       }
       if (data?.already_gone || Number(data?.chips_retired) !== 100000) {

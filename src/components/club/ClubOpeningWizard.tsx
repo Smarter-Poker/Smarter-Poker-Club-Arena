@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { requiredSeedForStake, SPIN_BOARD_STAKES } from '../../services/SpinActivationService';
 import {
@@ -257,6 +257,7 @@ export default function ClubOpeningWizard({
   });
   const leaderboardPrizeSplit = openingLeaderboardPrizeSplit(leaderboardPrizeBudget);
   const normalizedTagline = tagline.trim().replace(/\s+/g, ' ');
+  const taglineCountId = useId();
 
   const stepError = useMemo(() => {
     const errorForStep = (index: number) => {
@@ -545,15 +546,21 @@ export default function ClubOpeningWizard({
                 <div className="club-setup-wizard__fields">
                   <label>
                     Club Tag Line
+                    {/* The live counter is a description, not part of the
+                       field's name: a screen reader announces "Club Tag Line"
+                       and then the count, instead of a name that changes on
+                       every keystroke. */}
                     <input
                       type="text"
                       maxLength={72}
                       value={tagline}
                       onChange={(event) => setTagline(event.target.value)}
                       placeholder="Write A Short, Original Club Tag Line"
+                      aria-label="Club Tag Line"
+                      aria-describedby={taglineCountId}
                       autoFocus
                     />
-                    <small>{tagline.length} Of 72 Characters</small>
+                    <small id={taglineCountId}>{tagline.length} Of 72 Characters</small>
                   </label>
                 </div>
               </section>

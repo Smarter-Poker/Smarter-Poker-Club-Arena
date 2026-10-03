@@ -1666,6 +1666,9 @@ test.describe('production Daily Missions certification', () => {
           // did not request, and the close is forwarded to the page.
           const socketsBeforeInterruption = interceptedRealtimeSockets;
           const cursorReadsBeforeInterruption = cursorReads;
+          const realtimeDegraded = expect(page.getByText('Reconnecting')).toBeVisible({
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
           for (const server of routedRealtimeServers.splice(0)) {
             try {
               await server.close({ code: 4000, reason: 'Certification Realtime Interruption' });
@@ -1674,6 +1677,7 @@ test.describe('production Daily Missions certification', () => {
               // The reconnect proof below is what decides that.
             }
           }
+          await realtimeDegraded;
           // Observe the live recovery while the replacement socket is being
           // established. The dashboard read below may finish after a valid
           // transient SUBSCRIBED state, and starting this assertion only after

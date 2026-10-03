@@ -28,3 +28,9 @@ union close attempt:
   set path; the evidence report stops `warming` while any window is missing.
 
 Outside a chunked close nothing changes.
+
+## Proof (2026-10-03, Midway, week 2026-09-21..28)
+
+The 84 windows (502,680 cash and 45,340 tournament sources) were proved in two committed cron probes
+of 122 s and 20 s and combined in 2.4 s. The combined plan's md5 is
+`dab1e5a65a3084c4c0dffb8ca18f7a45`, identical to the plan the set path and v3 returned for that week.

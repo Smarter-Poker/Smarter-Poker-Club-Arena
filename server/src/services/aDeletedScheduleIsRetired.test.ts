@@ -33,6 +33,8 @@ describe('a schedule deleted mid-pass', () => {
     expect(method('processTimedSchedule')).toMatch(
       /if \(this\.retiredScheduleIds\.has\(schedule\.id\)\) return;/
     );
-    expect(SRC).toMatch(/this\.fundingBankReads = new Map\(\);\s*this\.retiredScheduleIds = new Set\(\);/);
+    expect(SRC).toMatch(
+      /this\.fundingBankReads = new Map\(\);\s*this\.retiredScheduleIds = new Set\(\);/
+    );
   });
 });

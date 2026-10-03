@@ -8,7 +8,15 @@
  * contract it imports.
  */
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -417,16 +425,35 @@ describe('phase10-strength-assemble', () => {
     "P10 audit F1: refuses to record a digest when a policy source differs from the runs' head",
     async () => {
       // A throwaway repository holding every hashed path; the real checkout is never touched.
+      // Git hooks export GIT_DIR (and friends): inherited, they would point
+      // `git init` and every command below at the checkout running the hook,
+      // so every git process here gets an environment without them.
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+      );
       const git = (...args: string[]) =>
-        execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim();
+        execFileSync('git', args, { cwd: repo, env, encoding: 'utf8', stdio: 'pipe' }).trim();
       mkdirSync(repo, { recursive: true });
       git('init', '-q');
+      expect(realpathSync(git('rev-parse', '--show-toplevel'))).toBe(realpathSync(repo));
       for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES) {
         mkdirSync(path.dirname(path.join(repo, 'server', file)), { recursive: true });
         writeFileSync(path.join(repo, 'server', file), `// ${file}\n`);
       }
       git('add', '-A');
-      git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'policy');
+      git(
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-q',
+        '--no-verify',
+        '-m',
+        'policy'
+      );
       const head = git('rev-parse', 'HEAD');
       const refusal = async () => {
         const { stdout } = await exec(
@@ -437,7 +464,7 @@ describe('phase10-strength-assemble', () => {
             '-e',
             `import('./scripts/phase10-strength-assemble.mjs').then((m) => console.log(JSON.stringify(m.policySourceRefusal(${JSON.stringify(head)}, ${JSON.stringify(repo)}))))`,
           ],
-          { cwd: process.cwd(), timeout: RUN_TIMEOUT_MS }
+          { cwd: process.cwd(), env, timeout: RUN_TIMEOUT_MS }
         );
         return JSON.parse(stdout.trim().split('\n').pop()!);
       };

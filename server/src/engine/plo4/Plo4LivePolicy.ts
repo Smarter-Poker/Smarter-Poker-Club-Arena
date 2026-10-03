@@ -234,12 +234,74 @@ export interface Plo4LiveReceipt {
   /** P10.3: main-scheduler verdict immediately before acceptance; null in the worker. */
   authorityVerdict?: import('../HorseQualifiedAuthority.js').HorseAuthorityVerdict | null;
 }
+/**
+ * P10.1 DEFECT 3: THE TOURNAMENT DEAD BUTTON (natural evidence, engine 46bb9cf6).
+ *
+ * A tournament table of three or more plays TDA Rule 30 (deadButton.ts): the
+ * button is the seat that held the small blind last hand, whether or not
+ * anyone still sits there. When that player has busted the dealer seat is an
+ * empty physical seat and never one of the dealt seats. Positions then count
+ * clockwise from that empty seat, as the engine deals and acts: the first
+ * dealt seat after it is offset 1, and the last dealt seat before it acts
+ * last on every street, the button's action slot, offset 0. With an occupied
+ * button this is exactly the dealer-relative offset it always was.
+ */
+export function plo4ButtonOffset(
+  seat: number,
+  dealerSeat: number,
+  dealtSeats: readonly number[]
+): number {
+  const sorted = [...dealtSeats].sort((a, b) => a - b);
+  const clockwise = [
+    ...sorted.filter((s) => s > dealerSeat),
+    ...sorted.filter((s) => s <= dealerSeat),
+  ];
+  return (clockwise.indexOf(seat) + 1) % sorted.length;
+}
+
+/**
+ * Whether the dealer seat is one the pack can count positions from.
+ *
+ * `occupied`: the button is a dealt seat (every cash hand, every heads-up
+ * hand, every tournament hand whose button did not bust).
+ *
+ * `proven` / `unproven`: an empty physical seat on a tournament table of
+ * three or more, the only place the engine leaves a dead button
+ * (tournamentDeadButtonSeats is null on a cash table and heads-up). Under the
+ * engine's rule, with the button empty the seats between it and the small
+ * blind seat are empty, and the first dealt seat after it is either the live
+ * small blind or, when the small blind is DEAD (that seat busted too), the big
+ * blind. The census does not say which seats posted, so only a first dealt
+ * seat physically next to the empty button proves a live small blind: a dead
+ * small blind always leaves its own empty seat in between. Anything else is
+ * `unproven`, never guessed.
+ *
+ * `invalid`: no seat the engine could have dealt the button to.
+ */
+export function plo4ButtonStatus(
+  dealerSeat: unknown,
+  dealtSeats: readonly number[],
+  tournament: boolean
+): 'occupied' | 'proven' | 'unproven' | 'invalid' {
+  if (dealtSeats.includes(dealerSeat as number)) return 'occupied';
+  if (
+    !tournament ||
+    dealtSeats.length < 3 ||
+    !Number.isSafeInteger(dealerSeat) ||
+    (dealerSeat as number) < 1 ||
+    (dealerSeat as number) > 10
+  )
+    return 'invalid';
+  const dealer = dealerSeat as number;
+  const first = dealtSeats.find((s) => s > dealer) ?? Math.min(...dealtSeats);
+  return first === dealer + 1 || (dealer === 10 && first === 1) ? 'proven' : 'unproven';
+}
+
 export function plo4Position(seat: number, state: HorseGameStateV2): Plo4Position {
   const seats = horsePolicyDealtPlayers(state.players, seat, state.dealtSeatIds)
     .map((p) => p.seat)
     .sort((a, b) => a - b);
-  const offset =
-    (seats.indexOf(seat) - seats.indexOf(state.dealerSeat!) + seats.length) % seats.length;
+  const offset = plo4ButtonOffset(seat, state.dealerSeat!, seats);
   if (offset === 0) return 'button';
   if (seats.length === 2 || offset === 2) return 'big_blind';
   if (offset === 1) return 'small_blind';
@@ -617,9 +679,14 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
     !['dealt_seat_ids', 'legacy_player_list'].includes(census.source as string) ||
     !seatList(census.dealtSeats, PLO4_POLICY_PACK.domain.maxSeats) ||
     census.dealtSeats.length < PLO4_POLICY_PACK.domain.minSeats ||
-    ![census.dealerSeat, census.heroSeat].every((seat) =>
-      (census.dealtSeats as number[]).includes(seat as number)
+    !(census.dealtSeats as number[]).includes(census.heroSeat as number) ||
+    // An empty dealer seat only as the engine's tournament dead button, with
+    // the live small blind proven (P10.1 defect 3); tournament chips are whole.
+    !['occupied', 'proven'].includes(
+      plo4ButtonStatus(census.dealerSeat, census.dealtSeats as number[], true)
     ) ||
+    (!(census.dealtSeats as number[]).includes(census.dealerSeat as number) &&
+      !(object(geometry) && geometry.chipUnit === 1)) ||
     [
       'contestingOpponentSeats',
       'actingOpponentSeats',
@@ -650,6 +717,12 @@ export function plo4InputBindingIsValid(value: unknown): value is Plo4InputBindi
     !Number.isSafeInteger(positions.heroOffset) ||
     (positions.heroOffset as number) < 0 ||
     (positions.heroOffset as number) >= (census.dealtSeats as number[]).length ||
+    positions.heroOffset !==
+      plo4ButtonOffset(
+        census.heroSeat as number,
+        census.dealerSeat as number,
+        census.dealtSeats as number[]
+      ) ||
     !roles.includes(positions.role as string) ||
     (positions.aggressor === null) !== (positions.aggressorSeat === null) ||
     (positions.aggressor !== null &&
@@ -885,6 +958,11 @@ export function evaluatePlo4LivePolicy(
   } catch {
     return finish('canonical_state_unavailable');
   }
+  const button = plo4ButtonStatus(
+    s.dealerSeat,
+    seats.map((p) => p.seat),
+    s.gameMode === 'tournament'
+  );
   if (
     s.stateSchemaVersion !== 1 ||
     s.bettingStructure !== 'pot_limit' ||
@@ -898,7 +976,7 @@ export function evaluatePlo4LivePolicy(
         p.bet === hero.bet &&
         p.totalInvested === hero.totalInvested
     ) ||
-    !seats.some((p) => p.seat === s.dealerSeat) ||
+    button === 'invalid' ||
     new Set(seats.map((p) => p.seat)).size !== seats.length ||
     new Set(seats.map((p) => p.user_id)).size !== seats.length ||
     !s.legalActions?.includes(baseline.action)
@@ -907,6 +985,9 @@ export function evaluatePlo4LivePolicy(
   // A valid census larger than the pack (a nine-handed PLO4 tournament table)
   // is outside the declared domain, not an unavailable canonical state.
   if (seats.length > PLO4_POLICY_PACK.domain.maxSeats) return finish('seat_count_outside_pack');
+  // A dead button whose small blind the census cannot establish: refused by
+  // name, never labeled from a guess (P10.1 defect 3).
+  if (button === 'unproven') return finish('dead_button_blinds_unproven');
   if (
     s.players.some((p) => !Array.isArray(p.cards) || p.cards.length > 0 || p.knownDeadCards?.length)
   )
@@ -1019,9 +1100,7 @@ export function evaluatePlo4LivePolicy(
   } as const);
   const positions = Object.freeze({
     hero: receipt.position,
-    heroOffset:
-      (dealtSeats.indexOf(hero.seat) - dealtSeats.indexOf(s.dealerSeat!) + dealtSeats.length) %
-      dealtSeats.length,
+    heroOffset: plo4ButtonOffset(hero.seat, s.dealerSeat!, dealtSeats),
     role: receipt.role,
     aggressor: receipt.aggressorPosition,
     aggressorSeat: aggressor ? aggressor.seat : null,

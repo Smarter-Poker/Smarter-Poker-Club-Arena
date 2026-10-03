@@ -62,6 +62,24 @@
 -- the single-sample branch never applies to it and a real silent failure is
 -- still critical on its first window, exactly as in 20260831193608.
 --
+-- THE FIRST VERSION OF THIS FILE DID NOT APPLY, AND THE REASON IS WORTH
+-- KEEPING (CLAUDE.md 10.86 rule 4: a fix that leaves the same trap one level
+-- up has not landed). It asked for the last three runs with a correlated
+-- `order by start_time desc limit 3` per sparse job. cron.job_run_details has
+-- NO INDEX AT ALL, so each of those is a sequential scan of 280,684 rows, and
+-- the function went from 546 ms to 27,665 ms - a 50x regression in the health
+-- check itself, shipped to repair a health check. Apply run 37108462464 was
+-- cancelled at 62,105 ms and rolled the whole transaction back; nothing
+-- committed. Two things were wrong, and both are fixed here:
+--
+--   * the look-back is now ONE ranked pass over the log (698 ms, same
+--     verdicts), not one scan per job;
+--   * the read-back now TIMES the function instead of only checking that it
+--     answers. "It returns the right rows" was asserted and passed, at 27.7s.
+--
+-- The honest version of the mistake: the verdicts were verified against
+-- production before applying, and the COST was not.
+--
 -- The verdict is also computed ONCE now, in `decided`, instead of being
 -- written twice (select list and ORDER BY) as two copies that could drift.
 -- `distinct on (w.jobid)` and the single-row evidence columns are unchanged:
@@ -165,7 +183,14 @@
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';
-SET LOCAL statement_timeout = '60s';
+-- 180s, NOT 60s. scripts/ci/apply-recorded-migration.mjs sends the whole file
+-- in ONE client.query(), so statement_timeout governs the ENTIRE migration
+-- rather than each statement in it. At 60s this file was cancelled at 62,105 ms
+-- with the 27.7s correlated look-back above inside it, and rolled back whole.
+-- The statements now measure ~2.4s in total (271ms for the function replace,
+-- 1,608ms for the GRANT, 47ms for the re-budget, ~700ms for the read-back), so
+-- this is 75x the measured cost and well inside the applier's own 600s deadline.
+SET LOCAL statement_timeout = '180s';
 
 -- ---------------------------------------------------------------------------
 -- 1. The verdict stops asserting "never succeeded" off a sample of one
@@ -206,23 +231,36 @@ AS $function$
   -- A SAMPLE OF ONE CANNOT SAY "NEVER SUCCEEDED" (2026-10-03). A job whose
   -- period is as long as p_window puts exactly one run in it, so a single
   -- failure would otherwise be reported as 'critical', the verdict the
-  -- reader prints as "broken, not flaky". Only for that case, look at the
-  -- job's last three FINISHED runs - evidence the window could not hold.
-  -- Three is the smallest sample that separates "always fails" from
-  -- "failed"; it keeps a genuinely dead daily job critical within three
-  -- days, and it is not widened to clear any particular job.
-  sparse as (
-    select a.jobid,
-           (select count(*) filter (where d.status = 'succeeded')
-              from (select r2.status
-                      from cron.job_run_details r2
-                     where r2.jobid = a.jobid
-                       and r2.status in ('succeeded', 'failed')
-                     order by r2.start_time desc
-                     limit 3) d) as successes_in_last_3
-      from agg a
-     where a.successes = 0
-       and a.failures + a.successes = 1
+  -- reader prints as "broken, not flaky". So the last three FINISHED runs of
+  -- every job are ranked here - evidence the window could not hold - and the
+  -- verdict below consults them for that one case.
+  --
+  -- Three is the smallest sample that separates "always fails" from "failed";
+  -- it keeps a genuinely dead daily job critical within three days, and it is
+  -- not widened to clear any particular job.
+  --
+  -- ONE RANKED PASS, NOT A SUBQUERY PER JOB. The first version of this asked
+  -- `order by start_time desc limit 3` inside a correlated subquery over
+  -- cron.job_run_details, once per sparse job. cron's run log carries NO
+  -- INDEX AT ALL - every read of it is a sequential scan of 280,684 rows -
+  -- so the correlated form re-scanned the whole log per job and took
+  -- 27,665 ms against this function's previous 546 ms. It was measured only
+  -- after it had already failed to apply. Ranking once and grouping is
+  -- 698 ms total, +152 ms on the old function, and Postgres pushes the
+  -- rn <= 3 filter into the window as a Run Condition so it stops early.
+  -- Same verdicts either way: 65 ok, 55 warn, 1 critical, 3 idle both times.
+  recent as (
+    select d.jobid, d.status,
+           row_number() over (partition by d.jobid order by d.start_time desc) as rn
+      from cron.job_run_details d
+     where d.status in ('succeeded', 'failed')
+  ),
+  lookback as (
+    select k.jobid,
+           count(*) filter (where k.status = 'succeeded') as successes_in_last_3
+      from recent k
+     where k.rn <= 3
+     group by k.jobid
   ),
   -- The verdict is computed ONCE. It used to be written twice, in the select
   -- list and again in the ORDER BY, which is two copies free to drift.
@@ -235,13 +273,13 @@ AS $function$
              when a.failures + a.successes = 0 then 'idle'
              when a.successes = 0
                   and a.failures + a.successes = 1
-                  and coalesce(s.successes_in_last_3, 0) > 0 then 'warn'
+                  and coalesce(b.successes_in_last_3, 0) > 0 then 'warn'
              when a.successes = 0              then 'critical'
              when a.failures  > 0              then 'warn'
              else 'ok'
            end as verdict
       from agg a
-      left join sparse s on s.jobid = a.jobid
+      left join lookback b on b.jobid = a.jobid
   )
   select d.jobname, d.schedule, d.verdict,
          d.runs, d.failures, d.successes, d.last_run_at,
@@ -326,7 +364,9 @@ $deep_budget$;
 
 DO $readback$
 DECLARE
-  v_rows integer;
+  v_rows       integer;
+  v_started    timestamptz;
+  v_elapsed_ms numeric;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -337,10 +377,22 @@ BEGIN
     RAISE EXCEPTION 'fn_ca_cron_health did not read back with the single-sample branch and its one-row evidence';
   END IF;
 
+  -- IT MUST ANSWER, AND IT MUST ANSWER QUICKLY. The correlated first draft
+  -- returned the right verdicts in 27.7s; nothing in this migration noticed,
+  -- because "it answers" was the only thing asserted. The reader is a CI job
+  -- under a statement timeout, so slow is a failure mode, not a detail.
+  v_started := clock_timestamp();
   SELECT count(*) INTO v_rows FROM public.fn_ca_cron_health('24 hours');
+  v_elapsed_ms := extract(epoch FROM clock_timestamp() - v_started) * 1000;
+
   IF v_rows < 1 THEN
     RAISE EXCEPTION 'fn_ca_cron_health returned no rows after replacement';
   END IF;
+
+  IF v_elapsed_ms > 10000 THEN
+    RAISE EXCEPTION 'fn_ca_cron_health answered in % ms; it measured 698 ms, and anything near a CI statement timeout is the 27.7s correlated look-back coming back', round(v_elapsed_ms);
+  END IF;
+  RAISE NOTICE 'fn_ca_cron_health answered % row(s) in % ms', v_rows, round(v_elapsed_ms);
 
   -- The grants read back the way 20260919173446 left them.
   IF NOT (

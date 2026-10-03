@@ -39,6 +39,11 @@ import {
   type HorseQualifiedAuthority,
 } from './HorseQualifiedAuthority.js';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
+import {
+  PLO4_STRENGTH_CONTRACT,
+  PLO4_STRENGTH_DOMAIN,
+  plo4StrengthContractDigest,
+} from '../benchmark/Plo4StrengthContract.js';
 import type { Plo4LiveMode } from './plo4/Plo4LivePolicy.js';
 
 /** P10.2 assembler output directory (`EVIDENCE_DIRECTORY` in phase10-strength-assemble.mjs). */
@@ -46,20 +51,16 @@ export const HORSE_PHASE10_EVIDENCE_DIRECTORY = 'docs/evidence/phase10/';
 /** P10.2 assembler `QUALIFICATION_SCHEMA`. */
 export const HORSE_PHASE10_QUALIFICATION_SCHEMA = 'horse-phase10-qualification-v1';
 /** P10.2 `PLO4_STRENGTH_DOMAIN`: the only domain a Phase 10 qualification can grant. */
-export const HORSE_PHASE10_DOMAIN = 'plo4-cash-single-board-after-rake-horse-population';
+export const HORSE_PHASE10_DOMAIN = PLO4_STRENGTH_DOMAIN;
 /** P10.2 `PLO4_STRENGTH_CONTRACT.version`. */
-export const HORSE_PHASE10_CONTRACT_VERSION = 'plo4-strength-contract-v1';
+export const HORSE_PHASE10_CONTRACT_VERSION = PLO4_STRENGTH_CONTRACT.version;
 
 /**
- * The running P10.2 contract digest (`plo4StrengthContractDigest()`).
- * Null until #5969 merges: this branch does not contain the contract source,
- * so it cannot compute the digest, and a null running digest refuses every
- * selection as `contract_unavailable`. After #5969 merges this becomes
- * `plo4StrengthContractDigest()` imported from
- * `../benchmark/Plo4StrengthContract.js`, so a qualification for any other
- * contract can never be admitted by the running code.
+ * The running P10.2 contract digest (`plo4StrengthContractDigest()`, #5969).
+ * A qualification is admitted only for this exact digest, so evidence made
+ * under any other contract can never select the pack in this code.
  */
-export const PHASE10_RUNNING_CONTRACT_DIGEST: string | null = null;
+export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDigest();
 
 /** Committed at a protected release. Never constructed from runtime input. */
 export interface HorsePhase10AuthoritySelection {

@@ -1,8 +1,8 @@
 /**
  * Test-only Phase 10 qualification. The bytes live in memory and reach
  * admission through an injected reader. Nothing here is committed evidence:
- * the protected release selection stays null, no qualified:true file exists in
- * the repository, and the running contract digest stays null until #5969.
+ * the protected release selection stays null and no qualified:true file exists
+ * in the repository.
  *
  * The qualification object has exactly the keys the P10.2 assembler
  * (`server/scripts/phase10-strength-assemble.mjs`, #5969) writes for a
@@ -10,6 +10,7 @@
  */
 import { createHash } from 'node:crypto';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
+import { plo4StrengthContractDigest } from '../benchmark/Plo4StrengthContract.js';
 import {
   admitHorsePhase10QualifiedAuthority,
   HORSE_PHASE10_CONTRACT_VERSION,
@@ -20,9 +21,8 @@ import {
 import type { HorseAuthorityAdmission } from './HorseQualifiedAuthority.js';
 import { memoryReader } from './HorseQualifiedAuthority.test-support.js';
 
-/** The digest the P10.2 record states for plo4-strength-contract-v1. */
-export const P10_TEST_CONTRACT_DIGEST =
-  'ebdbdbb48336c0425df735fa073a4a28ef4884c199a69006e27909a6bc2b6384';
+/** The running P10.2 contract digest. */
+export const P10_TEST_CONTRACT_DIGEST = plo4StrengthContractDigest();
 export const P10_TEST_SOURCE_SHA = 'b'.repeat(40);
 export const P10_TEST_QUALIFICATION_PATH = 'docs/evidence/phase10/phase10-qualification-test.json';
 export const P10_TEST_STRENGTH_PATH = 'docs/evidence/phase10/strength-test/strength.json';

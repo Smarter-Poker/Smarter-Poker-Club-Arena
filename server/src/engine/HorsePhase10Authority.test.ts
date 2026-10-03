@@ -33,6 +33,7 @@ import {
   qualifiedPhase10TestAdmission,
 } from './HorsePhase10Authority.test-support.js';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
+import { plo4StrengthContractDigest } from '../benchmark/Plo4StrengthContract.js';
 
 const admit = (
   selection: HorsePhase10AuthoritySelection | null,
@@ -57,27 +58,37 @@ function expectedKey(identity: Record<string, unknown>): string {
 }
 
 describe('P10.3 null proof: no Phase 10 authority is selected today', () => {
-  it('the committed release selection and the running contract digest are null', () => {
+  it('the committed release selection is null and the running digest is the P10.2 contract digest', () => {
     expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
-    expect(PHASE10_RUNNING_CONTRACT_DIGEST).toBeNull();
+    expect(PHASE10_RUNNING_CONTRACT_DIGEST).toBe(plo4StrengthContractDigest());
+    expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     const release = admitHorsePhase10ReleaseAuthority();
     expect(release).toEqual({ status: 'refused', reason: 'unselected', transient: false });
     expect(selectedHorsePhase10Authority(release)).toBeNull();
   });
 
-  it('even a well-formed qualified selection is refused by the running code until the contract digest is wired', () => {
-    const qualification = p10QualificationBytes();
+  it('the running code refuses a well-formed qualified selection made under another contract', () => {
+    const other = 'e'.repeat(64);
+    const qualification = p10QualificationBytes({ contractDigest: other });
     const release = admitHorsePhase10ReleaseAuthority(
       P10_TEST_NOW,
-      p10Selection(qualification),
+      p10Selection(qualification, { contractDigest: other }),
       p10Reader(qualification)
     );
     expect(release).toEqual({
       status: 'refused',
-      reason: 'contract_unavailable',
+      reason: 'contract_digest_mismatch',
       transient: false,
     });
     expect(selectedHorsePhase10Authority(release)).toBeNull();
+    // Without a running digest nothing can be admitted at all.
+    const unwired = admitHorsePhase10ReleaseAuthority(
+      P10_TEST_NOW,
+      p10Selection(),
+      p10Reader(),
+      null
+    );
+    expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
   it('the live main-scheduler gate is unselected and accepts no receipt', () => {

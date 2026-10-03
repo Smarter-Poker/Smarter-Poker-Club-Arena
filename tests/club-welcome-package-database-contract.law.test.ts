@@ -100,6 +100,13 @@ const freshBoardCleanupSql = readFileSync(
   ),
   'utf8'
 );
+const incrementalBoardCleanupSql = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20261003005742_welcome_cleanup_accepts_incremental_exact_board.sql'
+  ),
+  'utf8'
+);
 const hotTriggerSql = readFileSync(
   resolve(
     __dirname,
@@ -778,5 +785,68 @@ describe('prospective lifetime-first club welcome package database contract', ()
     expect(freshBoardCleanupSql).toContain("origin_kind IS DISTINCT FROM ''prelaunch''");
     expect(freshBoardCleanupSql).toContain('WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY');
     expect(freshBoardCleanupSql).not.toMatch(/DELETE FROM public\.(clubs|players|wallets)/);
+
+    expect(incrementalBoardCleanupSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(incrementalBoardCleanupSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(incrementalBoardCleanupSql).toContain("SET LOCAL lock_timeout = '15s'");
+    expect(incrementalBoardCleanupSql).toContain("SET LOCAL statement_timeout = '120s'");
+    expect(incrementalBoardCleanupSql).toContain('INCREMENTAL_BOARD_STATE_A_SOURCE_DIGEST_REFUSED');
+    expect(incrementalBoardCleanupSql).toContain('INCREMENTAL_BOARD_STATE_A_ROUNDTRIP_REFUSED');
+    expect(incrementalBoardCleanupSql).toContain('INCREMENTAL_BOARD_STATE_A_POSTIMAGE_REFUSED');
+    expect(incrementalBoardCleanupSql).toContain('INCREMENTAL_BOARD_STATE_B_CONTRACT_REFUSED');
+    expect(incrementalBoardCleanupSql).toContain('INCREMENTAL_BOARD_STATE_A_SAFETY_GUARD_REFUSED');
+    expect(incrementalBoardCleanupSql).toContain(
+      'cardinality(v_board_tournaments)<>v_expected_count'
+    );
+    expect(incrementalBoardCleanupSql).toContain('cardinality(v_board_tournaments)>12');
+    expect(incrementalBoardCleanupSql).toContain(
+      'md5(v_source)=v_preimage_md5 AND v_old_hits=1 AND v_new_hits=0'
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      'md5(v_source)=v_postimage_md5 AND v_old_hits=0 AND v_new_hits=1'
+    );
+    for (const signature of [
+      'fn_ca_prepare_unused_welcome_certification_board_leases(uuid)',
+      'fn_ca_prepare_unused_welcome_certification_board_origins(uuid)',
+      'fn_ca_prepare_unused_welcome_certification_board_games(uuid)',
+    ])
+      expect(incrementalBoardCleanupSql).toContain(signature);
+    for (const digest of [
+      '542740725160fef5e9996f126cf5f341',
+      'fe40eec4c3842bf12a571479ce819360',
+      'd93c02d438442e6300259df977e7142f',
+      '6c50d99991bdb58cc6ffb92b8b3b7de1',
+      '2c0961c59fd19edb20825696da0b8514',
+      'ca0adbbe2bc007887a924da455dcad13',
+    ])
+      expect(incrementalBoardCleanupSql).toContain(digest);
+    expect(incrementalBoardCleanupSql).toContain(
+      "v_post_reset NOT LIKE '%cardinality(v_board_tournaments) NOT IN(0,12)%'"
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      "NOT LIKE '%smarter_private.f06_lease_has_pending_custody%'"
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      "NOT LIKE '%origin_kind IS DISTINCT FROM ''prelaunch''%'"
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      "NOT LIKE '%WELCOME_CERTIFICATION_BOARD_FIXTURE_HAS_ACTIVITY%'"
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      "NOT LIKE '%ca_welcome_certification_table_delete_permits%'"
+    );
+    expect(incrementalBoardCleanupSql).toContain('p.prosecdef');
+    expect(incrementalBoardCleanupSql).toContain("r.rolname='postgres'");
+    expect(incrementalBoardCleanupSql).toContain('NOT p.proleakproof');
+    expect(incrementalBoardCleanupSql).toContain("p.proparallel='u'");
+    expect(incrementalBoardCleanupSql).toContain(
+      "p.proconfig IS NOT DISTINCT FROM ARRAY['search_path=public, pg_temp']"
+    );
+    expect(incrementalBoardCleanupSql).toContain(
+      "has_function_privilege('service_role',v_proc,'EXECUTE')"
+    );
+    expect(incrementalBoardCleanupSql).not.toMatch(
+      /(INSERT INTO|UPDATE|DELETE FROM) public\.(clubs|club_members|players|wallets|chip_ledger|chip_transactions|spin_bonus_pools|spin_reserve_ledger|bbj_pools)/
+    );
   });
 });

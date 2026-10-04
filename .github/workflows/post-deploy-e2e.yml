@@ -664,6 +664,28 @@ jobs:
       # they land on /auth or find no live fixture. `always()` so this reports
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
+      # NAME THE FAILED TEST WHERE THE API CAN READ IT (2026-10-04). A red run
+      # used to say only "Process completed with exit code 1" to anyone reading
+      # check-run annotations; the failing test and its error lived in the job
+      # log and the uploaded report, both behind blob storage. Report-only:
+      # it never changes the verdict.
+      - name: Name every failed test as an annotation
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/annotate-e2e-failures.mjs
+          e2e-report/cashier.json
+          e2e-report/cashier-statements.json
+          e2e-report/stats.json
+          e2e-report/lobby.json
+          e2e-report/club-members.json
+          e2e-report/table-management.json
+          e2e-report/customization-realtime.json
+          e2e-report/customization-commerce.json
+          e2e-report/daily-missions.json
+          e2e-report/daily-missions-accessibility.json
+          e2e-report/daily-missions-settlement.json
+          e2e-report/sweep.json
+
       - name: Did the suite actually verify production?
         if: always() && steps.live.outputs.ready == 'true'
         run: >-

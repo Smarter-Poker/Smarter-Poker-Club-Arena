@@ -39,7 +39,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  padding: 0;
   animation: hdmFadeIn calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
@@ -74,7 +74,15 @@
 .hdm-panel {
   display: flex;
   flex-direction: column;
-  width: min(440px, 100%);
+  /* FULL SCREEN (Dan 2026-10-04, asked directly: "Should the Previous Hands
+     popup also become full screen?" - "Yes, make it full screen"). This
+     reverses the 3/4 sheet of 2026-08-27. The picture runs the full height of
+     the viewport. Its type and its plates are sized in cqw off this box, so
+     on a wide screen the column stays a readable 560px, centred on an opaque
+     overlay, instead of scaling the type to the width of a monitor. */
+  width: min(560px, 100%);
+  height: 100vh;
+  height: 100dvh;
   max-height: 100%;
   padding: 0 !important;
   border: 0 !important;
@@ -961,18 +969,32 @@
   outline-offset: -1cqw;
 }
 
-/* ── The phone sheet: three quarters, on the bottom, backdrop above it ── */
+/* THE OVERLAY IS THE SCREEN. metallic-popups.css paints this backdrop a
+   translucent blur with !important at zero specificity; a full-screen popup
+   has nothing behind it worth seeing through, so it is opaque here. */
+.hdm-overlay.hdm-overlay {
+  background: #03060b !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── The phone: the whole screen ───────────────────────────────────────
+   Was a 75dvh sheet on the bottom with a backdrop above it (2026-08-27).
+   Dan 2026-10-04: full screen. There is no backdrop left to tap on a phone,
+   so the ways out are the X in the head, the Close plate in the foot, the
+   drag on the top strip and Escape. */
 
 @media (max-width: 640px) {
   .hdm-overlay {
-    align-items: flex-end;
+    align-items: stretch;
     padding: 0;
   }
 
   .hdm-panel {
     width: 100vw;
-    height: 75dvh;
-    max-height: 75dvh;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     padding: 0 12px 12px !important;
     animation: hdmSlideUp calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
   }

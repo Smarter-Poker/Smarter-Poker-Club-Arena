@@ -120,12 +120,22 @@ describe('both sheets pay the top inset, in both places it can vanish', () => {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 describe('at 375px the sheet leaves a backdrop instead of covering the overlay', () => {
-  it('Hand Detail anchors a three-quarter-height sheet to the bottom', () => {
+  /* REVERSED BY DAN, 2026-10-04. Asked directly "Should the Previous Hands
+     popup also become full screen?", he answered "Yes, make it full screen".
+     This case pinned his 2026-08-27 ruling (a 75dvh sheet with a backdrop
+     above it); it now pins the new one, in the commit that changes the
+     behaviour. What the old ruling was really protecting still holds and is
+     still pinned in this file: the top of the sheet pays the safe-area inset,
+     so the X is reachable, and on a desktop the overlay around the column
+     still closes it. Hand History (the list) is a different surface and
+     keeps its three-quarter drawer below. */
+  it('Hand Detail fills the screen on a phone', () => {
     const phone = mediaBlock(HDM_CSS, '(max-width: 640px)');
-    expect(phone).toContain('align-items: flex-end');
-    expect(phone).toMatch(/height:\s*75dvh/);
-    // `height: 100%` from top:0 is the shape that left no backdrop at all.
-    expect(phone).not.toMatch(/height:\s*100%/);
+    expect(phone).toMatch(/width:\s*100vw/);
+    expect(phone).toMatch(/height:\s*100vh;\s*height:\s*100dvh/);
+    expect(phone).not.toMatch(/75dvh/);
+    // The inset that makes the X reachable at full height.
+    expect(phone).toMatch(/\.hdm-header\s*\{[^}]*env\(safe-area-inset-top/);
   });
 
   it('Hand History stops being a 340px right-hand drawer on a phone', () => {

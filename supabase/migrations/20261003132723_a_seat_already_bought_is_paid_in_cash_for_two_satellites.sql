@@ -1,3 +1,44 @@
+-- SUPERSEDED BY 20261004151352 (the_house_pays_wasp_the_two_seats_it_could_not_deliver)
+-- THIS FILE MUST NEVER RUN, IN EITHER OF ITS TWO FORMS.
+--
+-- AS FIRST MERGED it refused itself on apply (run 37209895373): "ERROR 55000:
+-- completed satellite transfer journal is immutable", raised by
+-- fn_satellite_transfer_ledger_is_immutable() at line 74. The reason is
+-- structural, not transient. It paid each 30.00 out of a COMPLETED satellite's
+-- own prize_liability and wrote the leg with tournament_id NULL, believing that
+-- kept the terminal tournament unnamed. That guard deliberately resolves the
+-- source satellite from from_entity_id whenever from_type is prize_liability,
+-- precisely so a NULL tournament_id routes around nothing, and refuses any
+-- INSERT whose source satellite is terminal. Its post-image ("each satellite's
+-- prize_liability reads 0.00") is therefore unreachable while the guard stands.
+--
+-- AS AMENDED BY #6067 (merged 2026-10-04 15:19) it reaches that post-image by
+-- taking the guard's own source with pg_get_functiondef, injecting a
+-- WASP-and-those-two-satellites exemption after its BEGIN, EXECUTEing the
+-- modified function inside this transaction, and restoring the byte-exact
+-- original before COMMIT. However carefully it is restored, that is replacing a
+-- money guard in order to let one write through, which the owner's standing
+-- instruction for this settlement forbids outright, and it could not have
+-- applied anyway: it admits only guard md5 b2affe52... or 5de9ef6b..., and the
+-- installed guard reads f8311ad66092ee2c9c6c807fb9868d58, so its own pre-image
+-- would have refused it. Verified on production 2026-10-04 15:40: this file is
+-- absent from schema_migrations and the installed guard carries no reference to
+-- WASP, to either satellite, or to the satellite-seat-cash key. Nothing was
+-- applied and nothing was restored, because nothing ran.
+--
+-- WASP IS PAID THE SAME 60.00 by 20261004151352, through the door the estate
+-- already blessed for an event whose books are sealed (20260926085132,
+-- 20261002082429, 20260926131530) and with no guard touched: Midway Union,
+-- which hosted both satellites and took their 2.00 fee each, pays it from its
+-- bank, and each sealed satellite keeps the 30.00 it never disbursed. Applied
+-- 2026-10-04 15:39 (run 37213769489). Both of this file's pre-images now refuse
+-- it on their own terms as well, because the four alerts are resolved and both
+-- idempotency keys are spent, so it cannot pay anyone twice.
+--
+-- History is never deleted. Both forms of this file stay exactly as they were
+-- below this notice, and #6067's reasoning is left for its own author and Dan
+-- to settle; nothing of it is removed here.
+-- docs/changelog/2026-10-04-the-house-pays-wasp-the-two-seats-it-could-not-deliver.md
 -- 20261003132723_a_seat_already_bought_is_paid_in_cash_for_two_satellites.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

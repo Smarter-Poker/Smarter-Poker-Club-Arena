@@ -811,7 +811,9 @@ jobs:
     # 12m prerequisite + 3 x 6.5m tournament cases + 6.5m cash case leaves
     # 22m for checkout/setup, fixture lifecycle, provenance and reports.
     # Preserve the existing job envelope; MTT shares the original case limit.
-    timeout-minutes: 60
+    # +16m (2026-10-04): a certificate that would start within 15 minutes of
+    # the :53 announcement first waits for that break (await-engine-gameplay).
+    timeout-minutes: 76
     permissions:
       contents: read
     concurrency:

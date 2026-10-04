@@ -2454,13 +2454,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   throw new Error('atomic hand commit refused (lease_proof_expired)');
                 }
               },
+              /* A FINISHED HAND OUTLIVES ITS DEALER'S PROOF (2026-10-04). This
+                 hand was dealt, played and shown under a valid lease. If the
+                 proof lapses before it is retained (a database stall longer
+                 than the stale window: 55 such cash hands were disposed at
+                 2026-10-03 23:43), the writer still retains the exact
+                 original under this generation, then refuses. The successor
+                 settles it through fn_ca_resume_hand_submission. Cash only:
+                 a tournament retention keeps the fresh-heartbeat rule. */
+              retainWhenLeaseLapses:
+                leaseAuthority?.verified === true && leaseAuthority.scope === 'cash',
             },
           });
         let result: Awaited<ReturnType<typeof commitAuthoritativeHand>>;
         try {
-          if (!this.hasCurrentEngineLeaseAuthority()) {
-            throw new Error('atomic hand commit refused (lease_proof_expired)');
-          }
+          // The writer proves authority before its first request and, for a
+          // lapsed cash proof, retains the original before refusing.
           result = await commitAuthoritativeHand();
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');

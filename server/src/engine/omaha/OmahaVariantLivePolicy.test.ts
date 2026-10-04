@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HorseLogic } from '../HorseLogic.js';
 import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
-import { omahaVariantSpot, variantCards } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import {
+  occupiedButtonBlinds,
+  omahaVariantSpot,
+  variantCards,
+} from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { evaluateOmahaVariantPolicy } from './OmahaVariantLivePolicy.js';
 import { omahaVariantSeatCap } from './OmahaVariantPolicyPack.js';
 import { sampleOmahaVariantEquity } from './OmahaVariantSampler.js';
@@ -42,6 +46,7 @@ describe('Phase 11 real variant policy', () => {
   it.each(variants)('%s keeps a sitting-out dealer in the dealt ring', (variant) => {
     const s = omahaVariantSpot(variant, 'preflop', 3, 'tournament');
     s.state.dealerSeat = 3;
+    s.state.blindSeats = occupiedButtonBlinds(3, [1, 2, 3]);
     s.state.players[2].is_sitting_out = true;
     s.state.players[2].is_folded = true;
     const r = evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);

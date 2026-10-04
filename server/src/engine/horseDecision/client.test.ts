@@ -18,6 +18,7 @@ import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { drainFires, enableBrainTelemetry } from '../BrainTelemetry.js';
 import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
+import { omahaVariantSpot } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -2438,6 +2439,93 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
       expect(client.status().phase).toBe('failed');
     }
   );
+});
+
+describe('P11.1: a PLO5/PLO6/PLO8 receipt whose input binding fails validation', () => {
+  /** A real Phase 11 cash decision from the brain, with its frozen input binding. */
+  const variantDecision = (mode: 'shadow' | 'candidate') => {
+    // A premium PLO8 open: the candidate raises where the reference calls.
+    const spot = omahaVariantSpot('plo8', 'preflop', 2);
+    seedFastRandom(100104);
+    return structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase11Omaha: mode,
+          phase11EvidenceMode: true,
+        }
+      )
+    );
+  };
+  const corruptBinding = (decision: ReturnType<typeof variantDecision>) => {
+    (decision.omahaVariantPolicy!.inputs!.approximation as { solverInput: unknown }).solverInput =
+      true;
+    return decision;
+  };
+  const send = (decision: ReturnType<typeof variantDecision>, fence: string) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'plo8';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, fence);
+    reply.decision = decision;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    return { worker, client, pending };
+  };
+
+  it('drops a shadow-only receipt, keeps the actual action and the worker, and counts it by name', async () => {
+    const valid = variantDecision('shadow');
+    expect(valid.omahaVariantPolicy).toMatchObject({
+      mode: 'shadow',
+      applied: false,
+      eligible: true,
+    });
+    expect(valid.policyOwnership).toMatchObject({ owner: 'phase11', mode: 'shadow' });
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'plo8')).toBe(true);
+    const forged = corruptBinding(structuredClone(valid));
+    expect(horseDecisionReceiptIsValid(structuredClone(forged), 'plo8')).toBe(false);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(forged, 'p11-1-shadow');
+    const result = await pending;
+    expect({ action: result.decision.action, amount: result.decision.amount }).toEqual({
+      action: valid.action,
+      amount: valid.amount,
+    });
+    expect(result.decision.omahaVariantPolicy).toBeUndefined();
+    expect(result.decision.policyOwnership).toBeUndefined();
+    expect(result.decision.executionWitness).not.toHaveProperty('phase11Inputs');
+    expect(result.decision.executionWitness).toMatchObject({ policyOwnership: null });
+    expect(client.status().phase).not.toBe('failed');
+    expect(worker.terminateCalls).toBe(0);
+    expect(drainFires()).toContainEqual({
+      feature: 'phase11_shadow_receipt_binding_dropped',
+      fires: 1,
+    });
+  });
+
+  it('still fails closed for an applied receipt', async () => {
+    const applied = variantDecision('candidate');
+    expect(applied.omahaVariantPolicy).toMatchObject({ mode: 'candidate', applied: true });
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(corruptBinding(applied), 'p11-1-applied');
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+    expect(worker.terminateCalls).toBe(1);
+    expect(drainFires().map((row) => row.feature)).not.toContain(
+      'phase11_shadow_receipt_binding_dropped'
+    );
+  });
 });
 
 describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', () => {

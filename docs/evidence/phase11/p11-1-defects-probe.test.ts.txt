@@ -1,0 +1,43 @@
+import { it } from 'vitest';
+import { HandController } from '../HandController.js';
+import { deadButtonPositions } from '../deadButton.js';
+import { calculateContestablePot } from '../PokerEngine.js';
+import { seedFastRandom } from '../HorseEval.js';
+import { omahaVariantSpot, occupiedButtonBlinds } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import { evaluateOmahaVariantPolicy } from './OmahaVariantLivePolicy.js';
+import { sampleOmahaVariantEquity } from './OmahaVariantSampler.js';
+function firstDecision(variant: any, seatsNow: number[], last: any) {
+  const blinds = deadButtonPositions(seatsNow, last)!;
+  const players = seatsNow.map((seat) => ({ seat, user_id: `p${seat}`, username: 'x', stack: 2000, bet: 0, totalInvested: 0, cards: [], is_folded: false, is_all_in: false, is_sitting_out: false, is_horse: true }));
+  const rakeConfig = { percent: 0, cap: 0, noFlopNoDrop: true };
+  const c = new HandController({ tableId: 't', handNumber: 7, gameVariant: variant, smallBlind: 10, bigBlind: 20, ante: 0, isTournament: true, rakeConfig, blindSeats: { smallBlind: blinds.smallBlind, bigBlind: blinds.bigBlind } } as any, players as any, blinds.button);
+  c.start();
+  const out: string[] = [];
+  for (let i = 0; i < seatsNow.length; i++) {
+    const state = c.getState(); const actor = state.players.find((p) => p.seat === state.currentPlayerSeat)!; const menu = c.getAuthoritativeActionState(actor.user_id)!;
+    const s: any = { stateSchemaVersion: 1, dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat).sort((a, b) => a - b), blindSeats: c.getBlindSeatsSnapshot(), ...c.getChipRulesSnapshot(), heroSeat: actor.seat, currentPlayerSeat: actor.seat, legalActions: [...menu.legalActions], toCall: menu.toCall, minRaiseTo: menu.minRaiseTo, maxRaiseTo: menu.maxRaiseTo, bettingStructure: menu.structure, pots: c.computeLivePots(), contestablePot: calculateContestablePot(state.players, actor.user_id, menu.toCall), rakeConfig, players: state.players.map((p) => ({ ...p, cards: [] })), communityCards: [], communityCards2: [], communityCards3: [], bombPot: false, boardCount: 1, pot: state.pot, currentBet: state.currentBet, minRaise: state.minRaise, stage: state.stage, gameVariant: variant, bigBlind: 20, dealerSeat: state.dealerSeat, lastRaise: state.lastRaise, actionHistory: state.actionHistory.map((a) => ({ ...a })), gameMode: 'tournament', format: 'mtt', ante: 0, straddleActive: false };
+    const baseline: any = menu.toCall > 0 ? { action: 'call', amount: menu.toCall, thinkTime: 0 } : { action: 'check', thinkTime: 0 };
+    const r = evaluateOmahaVariantPolicy({ ...actor, cards: [...actor.cards] } as any, s, baseline, null, 'shadow', () => 0);
+    out.push(`seat ${actor.seat}: ${r.receipt.reason} position=${r.receipt.position}`);
+    c.performAction(state.currentPlayerSeat, menu.toCall > 0 ? 'call' : 'check');
+  }
+  return out;
+}
+it('probe', () => {
+  for (const v of ['plo5', 'plo6', 'plo8']) {
+    console.log(`DEFECT dead button ${v} (dealer 5 empty; engine blinds 6/7): ` + firstDecision(v, [1, 2, 4, 6, 7, 8], { smallBlind: 5, bigBlind: 6 }).join(' | '));
+    console.log(`DEFECT dead small blind ${v} (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): ` + firstDecision(v, [1, 2, 4, 5], { smallBlind: 2, bigBlind: 3 }).join(' | '));
+  }
+  for (const [v, mode, n] of [['plo6', 'cash', 7], ['plo6', 'tournament', 8], ['plo5', 'cash', 8]] as const) {
+    const s = omahaVariantSpot(v, 'preflop', n, mode);
+    const r = evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+    console.log(`DEFECT census above ceiling ${v} ${mode} ${n} dealt: ${r.receipt.reason}`);
+  }
+  for (const v of ['plo5', 'plo6', 'plo8'] as const) {
+    const river = omahaVariantSpot(v, 'river', 3); seedFastRandom(17);
+    const evidence = sampleOmahaVariantEquity(v, river.hero, river.state, () => true)!;
+    const pre = omahaVariantSpot(v, 'preflop', 3);
+    const r = evaluateOmahaVariantPolicy(pre.hero, pre.state, pre.baseline, evidence, 'shadow', () => 0, 1, false);
+    console.log(`DEFECT preflop receipt echoes caller evidence ${v}: ${r.receipt.equity === evidence}`);
+  }
+});

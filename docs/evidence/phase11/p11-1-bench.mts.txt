@@ -1,0 +1,22 @@
+import { omahaVariantSpot } from './src/benchmark/OmahaVariantPolicyEvidence.js';
+import { evaluateOmahaVariantPolicy } from './src/engine/omaha/OmahaVariantLivePolicy.js';
+import { seedFastRandom } from './src/engine/HorseEval.js';
+const rows: string[] = [];
+for (const variant of ['plo5', 'plo6', 'plo8'] as const) {
+  for (const street of ['preflop', 'river'] as const) {
+    const spot = omahaVariantSpot(variant, street, 3);
+    if (!(spot.state as any).blindSeats) (spot.state as any).blindSeats = { smallBlind: 2, bigBlind: 3 };
+    const calls = street === 'preflop' ? 5000 : 1000;
+    const medians: number[] = [];
+    for (let round = 0; round < 7; round++) {
+      seedFastRandom(42);
+      const t0 = performance.now();
+      for (let i = 0; i < calls; i++)
+        evaluateOmahaVariantPolicy(spot.hero, spot.state, spot.baseline, null, 'shadow', () => 0);
+      medians.push(((performance.now() - t0) / calls) * 1000);
+    }
+    medians.sort((a, b) => a - b);
+    rows.push(`${variant} ${street} median_us=${medians[3].toFixed(1)} rounds=7 calls=${calls}`);
+  }
+}
+console.log(rows.join('\n'));

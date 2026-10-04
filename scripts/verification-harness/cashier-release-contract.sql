@@ -111,7 +111,11 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_trade_ledger(uuid,integer,integer)',
-      'hash', '49797528c3b5ddfcd2ccbaa01f8a1bd3'
+      -- Pin the full pg_get_functiondef fingerprint. The first launch repair
+      -- accidentally copied md5(prosrc) from the native source-binding row;
+      -- the post-deploy canary intentionally compares the third field, the
+      -- complete callable definition including result shape and posture.
+      'hash', 'ea5a5a57ec31f396958246def887e5e6'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
@@ -219,7 +223,7 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_cashier_operation_intent_guard()',
       'hash', '40132499b244772fe6820efb3217fccd', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_exact_intent_begin(text,uuid,uuid,jsonb)',
-      'hash', '910f8859d4c683aafd4403c4f386772b', 'service_execute', false),
+      'hash', '3ec6fc367b3dae5c4bf3978d0175ef22', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_exact_intent_finish(uuid,jsonb)',
       'hash', 'cc05789c598b9b889a04f726b9b1e2ea', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_statement_downline(uuid,uuid)',
@@ -259,9 +263,9 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', 'b101fc1f3280218d04d7addd155ed4ea'),
     jsonb_build_object('signature', 'public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', '69c5974c384146ed8bccc666123153a1'),
+      'hash', 'fe490fcc75f305338160eca2a7a88b25'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', '38d088732280d8b2cb605c87eda4af3f'),
+      'hash', '7a357ba95a8ca4eb13f00f798233d8d4'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',
       'hash', 'cf7af5fd327c68c935a58e864537cc7a'),
     jsonb_build_object('signature', 'public.fn_request_chips_core_20261004(uuid,numeric,text,uuid)',

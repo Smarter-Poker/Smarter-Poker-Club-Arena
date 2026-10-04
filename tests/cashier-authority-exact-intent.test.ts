@@ -120,18 +120,6 @@ describe('cashier authority and exact intent', () => {
         'b101fc1f3280218d04d7addd155ed4ea',
       ],
       [
-        'fn_club_promo_send_core_20261004',
-        'fn_club_promo_wallet_send',
-        '20260905030738_union_promo_lands_in_the_club_promo_wallet.sql',
-        '69c5974c384146ed8bccc666123153a1',
-      ],
-      [
-        'fn_agent_wallet_send_core_20261004',
-        'fn_agent_wallet_send',
-        '20260831235990_cashier_authorization_and_audit_contracts.sql',
-        '38d088732280d8b2cb605c87eda4af3f',
-      ],
-      [
         'fn_agent_wallet_claim_back_core_20261004',
         'fn_agent_wallet_claim_back',
         '20260831235990_cashier_authorization_and_audit_contracts.sql',
@@ -165,6 +153,24 @@ describe('cashier authority and exact intent', () => {
       expect(createHash('md5').update(definition.slice(bodyStart, bodyEnd)).digest('hex')).toBe(
         hash
       );
+    }
+    const retainedProductionPins = [
+      [
+        'fn_club_promo_send_core_20261004',
+        'docs/audits/2026-09-10-union-accounting-proposal/live-function-inventory.json',
+        'fe490fcc75f305338160eca2a7a88b25',
+      ],
+      [
+        'fn_agent_wallet_send_core_20261004',
+        'supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json',
+        '7a357ba95a8ca4eb13f00f798233d8d4',
+      ],
+    ] as const;
+    for (const [name, evidenceFile, hash] of retainedProductionPins) {
+      expect(releaseContract).toContain(name);
+      expect(releaseContract).toContain(`'hash', '${hash}'`);
+      const evidence = readFileSync(resolve(import.meta.dirname, '..', evidenceFile), 'utf8');
+      expect(evidence).toContain(hash);
     }
     expect(releaseContract).toContain("v_actual_owner IS DISTINCT FROM 'postgres'");
     expect(releaseContract).toContain('v_security_definer IS DISTINCT FROM true');

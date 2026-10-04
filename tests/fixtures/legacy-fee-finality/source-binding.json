@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "e3cf054daaa8be83dde402a7f414fab597710e456f224336a64a88abe4567e37",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -607,6 +607,17 @@
         "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
         "previous": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
         "current": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e"
+      }
+    ]
+  },
+  "clubCreateCapacityRouting20261004": {
+    "reason": "Route the read-only Club Create capacity preflight, its focused unit test, and the certification workflow through the maintained test lane. The classifier change is additive; no financial source, fixture, assertion, or existing route changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "e3cf054daaa8be83dde402a7f414fab597710e456f224336a64a88abe4567e37"
       }
     ]
   }

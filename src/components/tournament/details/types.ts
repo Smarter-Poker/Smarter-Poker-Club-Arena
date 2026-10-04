@@ -30,6 +30,7 @@ import {
   type TournamentUnitClubRow,
 } from '../../../../server/src/tournament/tournamentUnit';
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
 export { resolvePayoutStructure } from '../../../lib/payoutStructure';
@@ -227,6 +228,38 @@ export function isPlayerOut(entry: Pick<TournamentEntry, 'status'>): boolean {
 /** True while this player still holds a stack in the event. */
 export function isPlayerLive(entry: Pick<TournamentEntry, 'status'>): boolean {
   return !isPlayerOut(entry);
+}
+
+/**
+ * WHAT A FINISHED EVENT CAN TRUTHFULLY SAY ABOUT ITS FIELD (2026-10-04).
+ *
+ * Dan sent three tabs of one finished satellite open at once: Tables said
+ * "Players Left 7, Average Stack 25.7K", Ranking said "Remaining 0, Average
+ * Stack 0, Total Chips 0", and Detail said the results were "Being Finalised"
+ * eight hours after the event ended. Each tab was answering "who is still
+ * playing" about an event where nobody is, with its own definition of still.
+ *
+ * A finished event has no remaining players, no average stack and no chips in
+ * play. What it has is how many entered, how many won a seat (a satellite's
+ * co-qualifiers are recorded unranked, see isRecordedSatelliteQualifier) and
+ * how many were paid. Detail and Ranking both print these, from here, so the
+ * two cannot drift apart again.
+ *
+ * `paid` counts RECORDED prizes only. An event settled before prizes were
+ * written per player reports zero, and the caller prints the advertised paid
+ * places instead of claiming nobody was paid.
+ */
+export function finishedFieldSummary(
+  tournament: Parameters<typeof isRecordedSatelliteQualifier>[0],
+  entries: readonly TournamentEntry[]
+): { entries: number; qualified: number; paid: number } {
+  let qualified = 0;
+  let paid = 0;
+  for (const entry of entries) {
+    if (isRecordedSatelliteQualifier(tournament, entry)) qualified += 1;
+    if (Number(entry.prize) > 0) paid += 1;
+  }
+  return { entries: entries.length, qualified, paid };
 }
 
 /** Chips, always whole, always grouped. Never `padStart`. */

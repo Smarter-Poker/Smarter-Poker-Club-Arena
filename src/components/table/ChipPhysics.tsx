@@ -49,12 +49,9 @@ import { formatTableChips } from '../../utils/format';
  *
  * ═══ maxStacks IS NOT A CLAMP, IT IS A SLICE (2026-09-23) ══════════════════
  *
- * The line above this one used to read "Neither cap ever changes the VALUE
- * drawn - a clamped stack reports `truncated` and prints its real count beside
- * itself". That is true of `maxPerStack` and of `maxTotal`. It was never true
- * of `maxStacks`, which is `chips.slice(0, maxStacks)` in chipDenominations.ts:
- * a group it slices off takes its value with it, reports nothing, and prints no
- * badge. The seat drew chips that did not add up to the bet, silently.
+ * `maxStacks` is `chips.slice(0, maxStacks)` in chipDenominations.ts: a group
+ * it slices off disappears from the felt entirely, so a whole COLOUR the bet
+ * holds was never drawn.
  *
  * Dan's ladder has eleven denominations. These layouts asked for four and five.
  * Swept through the shipped functions over every integer amount:
@@ -69,9 +66,22 @@ import { formatTableChips } from '../../utils/format';
  * a player, with no indication anything was missing.
  *
  * So `maxStacks` now gets the WHOLE ladder and stops being a cap at all.
- * `maxTotal` is the cap, and it is the honest one: it clamps the DISCS and the
- * group it shortens keeps its true `count` with `truncated` set, so the tower
- * still adds up. Measured cost at 393px against the shipped stylesheet: the
+ * `maxTotal` is the cap: it clamps the DISCS, and every denomination the bet
+ * holds keeps at least one disc, so the tower shows every colour.
+ *
+ * ═══ NO "x2 x3 x4" COUNT BADGES, EVER (owner ruling 2026-10-04) ════════════
+ *
+ * "POT STACKING AND BET SIZING NEVER EVER EVER NEEDS THE X3 X2 ETC. CHIPS
+ * INSIDE THE POT ARE JUST AN ANIMATION AND DOESN'T NEED TO BE 100% ACCURATE AS
+ * LONG AS THE ANIMATION ITS SELF IS CLOSE. REMOVE ANY AND ALL X2 X3 X4 ETC
+ * MULTIPLIERS FROM POT OR BET SIZING CHIP STACKS."
+ *
+ * A clamped group used to print its true count beside itself so the tower
+ * "added up". That badge is gone and must not come back: the chips are an
+ * illustration that only has to be close, and the NUMBER printed beside the
+ * stack (`.cp-amount`) is the truth. Pinned by tests/chips-on-the-felt.test.tsx.
+ *
+ * Measured cost at 393px against the shipped stylesheet: the
  * compact tower goes 55.9px -> 62.9px at mid stakes and 69.9px at deep stakes,
  * and the full tower does not move at all below 200,000. `.seat__bet-chips` is
  * absolutely positioned and centred on its anchor with no height and no
@@ -83,7 +93,7 @@ import { formatTableChips } from '../../utils/format';
  * offset stack rather than a row of columns, and a single tower needs a single
  * height budget - six groups of ten would be sixty discs tall. See maxTotal in
  * chipDenominations.ts for how the budget is spent (bottom-up, largest chips
- * first) and why it never changes the value drawn.
+ * first).
  */
 const COMPACT_LAYOUT = {
   maxStacks: CHIP_DENOMINATIONS.length,
@@ -140,8 +150,6 @@ export function ChipPhysics({
       denom: ChipStackVisual['denom'];
       partial: boolean;
       isTopInDenom: boolean;
-      truncated: boolean;
-      count: number;
     }[] = [];
     stacks.forEach((stack) => {
       for (let i = 0; i < stack.drawn; i++) {
@@ -149,8 +157,6 @@ export function ChipPhysics({
           denom: stack.denom,
           partial: stack.partial,
           isTopInDenom: i === stack.drawn - 1,
-          truncated: stack.truncated,
-          count: stack.count,
         });
       }
     });
@@ -187,11 +193,6 @@ export function ChipPhysics({
                 } as React.CSSProperties
               }
             >
-              {/* Clamped stacks print their real count */}
-              {chip.truncated && chip.isTopInDenom && (
-                <span className="cp-stack__multi">×{chip.count.toLocaleString()}</span>
-              )}
-
               <div className="cp-chip__face">
                 {!chip.partial && chip.isTopInDenom && (
                   <span className="cp-chip__label">{chip.denom.label}</span>

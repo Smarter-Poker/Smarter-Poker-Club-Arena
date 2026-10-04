@@ -19,6 +19,8 @@ import { TileViewIcon } from './TableMenuIcons';
 import { masterBus } from '../../core/MasterBus';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { useButtonImage } from '../../hooks/useButtonImage';
+import { isTournamentGameCode } from '../../utils/gameCode';
+import { tournamentTabBuyInLabel } from '../../lib/tournamentTabLabel';
 import './TableTabBar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +108,20 @@ export interface TabInfo {
    * to decide whether the tab is allowed to move.
    */
   seated?: boolean;
+  /**
+   * This tab is a TOURNAMENT table (MTT / SNG / Spin), as its table page
+   * reports it. Dan 2026-10-04: "THE ACTION BOX SHOULDN'T SAY MTT 200/400 OR
+   * MTT 25/50 IT SHOULD BE DISPLAYING THE HOLE CARDS WHEN THEY ARE PRESENT, OR
+   * MTT AND BUY IN AMOUNT UNDER IT FOR QUICK REFERENCE." A tournament pill
+   * therefore never prints `stakes` (its blind level) or `pot`.
+   */
+  isTournament?: boolean;
+  /**
+   * What it costs to enter this tournament: buy-in plus fee, the total the
+   * tournament lobby prints. 0 is a freeroll. Undefined means not known yet,
+   * and the pill then shows its code alone rather than fall back to blinds.
+   */
+  tournamentBuyIn?: number;
 }
 
 /** What a pending decision is called on the pill. Short: it shares ~100px. */
@@ -826,6 +842,22 @@ export function TableTabBar({
              only one that has to be silenced explicitly. Stakes take its place,
              which is what tells two NLH tabs apart anyway. */
           const potToShow = !observing && tab.pot !== undefined && tab.pot > 0 ? tab.pot : null;
+          /* ── A TOURNAMENT PILL SAYS ITS BUY-IN (Dan 2026-10-04) ─────────────
+             "THE ACTION BOX SHOULDN'T SAY MTT 200/400 OR MTT 25/50 IT SHOULD BE
+             DISPLAYING THE HOLE CARDS WHEN THEY ARE PRESENT, OR MTT AND BUY IN
+             AMOUNT UNDER IT FOR QUICK REFERENCE."
+
+             Both sub-lines below were written for cash. On a tournament
+             `stakes` is the current BLIND LEVEL, so the pill read "MTT 200/400"
+             and changed every level, and a deep-stacked pot or level outgrew
+             the pill and was cut mid-number ("51115/..."). Neither one says
+             WHICH tournament this is; the buy-in does, it never changes, and
+             its compact form cannot outgrow the pill (tournamentTabLabel.ts).
+
+             The page's own `isTournament` is the authority; the code covers the
+             moments before that page has reported anything. */
+          const isTournamentTab = tab.isTournament === true || isTournamentGameCode(tab.gameCode);
+          const tournamentSub = isTournamentTab ? tournamentTabBuyInLabel(tab.tournamentBuyIn) : '';
           const isDragging = dragState?.id === tab.id;
 
           return (
@@ -942,7 +974,11 @@ export function TableTabBar({
                   {/* Sub-line: the live pot while a hand runs without the
                       hero, otherwise the stakes - which is what tells two
                       NLH tabs apart. */}
-                  {potToShow !== null ? (
+                  {/* A TOURNAMENT never takes either of those: its sub-line
+                      is its buy-in, or nothing at all until that is known. */}
+                  {isTournamentTab ? (
+                    tournamentSub && <span className="table-tab-bar__tab-sub">{tournamentSub}</span>
+                  ) : potToShow !== null ? (
                     <span className="table-tab-bar__tab-sub">
                       Pot {potToShow.toLocaleString('en-US')}
                     </span>

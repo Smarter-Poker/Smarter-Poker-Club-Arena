@@ -1,0 +1,248 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE TOURNAMENT INFO DOCK  (Dan 2026-10-04, binding)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   "THE TOURNAMENT INFO BOX MUST NEVER BE DISPLAYED OVER THE TOP LIKE IT
+    CURRENTLY IS. IT SHOULD BE A COLLAPSABLE BOX, UNDER THE 'ACTION BAR' ON THE
+    BOTTOM OF THE PAGE (UNDER FOLD CHECK BET)."
+
+   The box used to be a bar in the felt's upper-right corner, scaled to 0.74 on
+   a phone and still lying across the top seats. It is now the last thing on
+   the page: a strip pinned to the foot of the viewport, beneath the action
+   bar, that the player can collapse to a single line.
+
+   ─── THE TWO NUMBERS, AND WHY THERE ARE TWO ───────────────────────────────
+
+     --sp-tdock-reserve   what the FELT reserves for the dock. A constant: the
+                          open dock's height, on every tournament table, open or
+                          collapsed. It is added to --sp-action-reserve, which
+                          is the felt's size (see the long note at the top of
+                          TablePage.css), so it must never follow the toggle -
+                          "a table that changes size is a glitch whatever
+                          triggered it" (Dan 2026-08-28).
+
+     --sp-tdock-now       how tall the dock is drawn right now. This one does
+                          follow the toggle. Only the bottom bars read it: they
+                          stand on top of the dock, so collapsing it lowers the
+                          action bar and leaves the felt, the seats and the HUD
+                          corners exactly where they were.
+
+   The reserve hangs on `.table-page--tournament`, the class TablePage already
+   puts on its root for a tournament table: WHAT KIND of table this is, which
+   is settled when the table loads and never changes under a player. It must
+   not hang on a `[data-...]` attribute or any other play-state selector -
+   tests/unit/feltReserveIsStatic.test.ts refuses exactly that, because a felt
+   size keyed to a state is a table that resizes mid-hand. `data-tdock`, which
+   TablePage writes on the same root, carries only the collapse toggle, and
+   only --sp-tdock-now reads it. A cash table has neither and is byte-for-byte
+   what it was.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.table-page--tournament {
+  --sp-tdock-line-h: 20px;
+  --sp-tdock-row-h: 30px;
+  --sp-tdock-reserve: calc(var(--sp-tdock-line-h) + var(--sp-tdock-row-h));
+  --sp-tdock-now: var(--sp-tdock-reserve);
+  /* The same sum TablePage.css declares, plus the dock. Restated here rather
+     than patched there so a cash table never evaluates a dock term at all. */
+  --sp-action-reserve: calc(
+    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-reserve)
+  );
+}
+
+.table-page--tournament[data-tdock='collapsed'] {
+  --sp-tdock-now: var(--sp-tdock-line-h);
+}
+
+/* ─── THE BARS STAND ON THE DOCK ────────────────────────────────────────────
+   Every bottom row on this page is `position: fixed; bottom: 0` and pads
+   itself by the home-indicator inset. The dock sits in that same band, just
+   above the inset, so each row's bottom padding grows by the dock's current
+   height. `!important` because both rows restate `padding-bottom` inside
+   their own breakpoints (deliberately - see the "Flush" notes in
+   ActionPanel.css and PreActionBar.css) and this has to hold at all of them. */
+.table-page--tournament .action-panel,
+.table-page--tournament .pre-action-bar,
+.table-page--tournament .action-panel-wrapper {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)) !important;
+}
+
+.table-page--tournament .action-panel-wrapper {
+  min-height: calc(
+    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)
+  );
+}
+
+.table-page--tournament.ca-raising .action-panel-wrapper {
+  height: calc(
+    var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px) + var(--sp-tdock-now)
+  );
+}
+
+/* A spectator's wrapper has no floor of its own (ActionPanel.css); it still
+   has to clear the dock, which the padding above already does. */
+.table-page--tournament[data-hero='false'] .action-panel-wrapper {
+  min-height: 0;
+}
+
+/* ─── THE DOCK ──────────────────────────────────────────────────────────── */
+
+.tournament-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: env(safe-area-inset-bottom, 0px);
+  /* Above the two bottom rows (--z-action-panel, 100) it sits beneath, below
+     every sheet and modal on the page. */
+  z-index: 101;
+  height: var(--sp-tdock-now, 50px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: #e8f0f4;
+  background: linear-gradient(180deg, #16232b 0%, #0e1a21 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1.1;
+}
+
+.tournament-dock[role='button'] {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tournament-dock__line {
+  flex: 0 0 var(--sp-tdock-line-h, 20px);
+  height: var(--sp-tdock-line-h, 20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  min-width: 0;
+}
+
+.tournament-dock__status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffd54f;
+  font-variant-numeric: tabular-nums;
+}
+
+.tournament-dock[data-collapsed='true'] .tournament-dock__status {
+  font-size: 11px;
+  color: #e8f0f4;
+}
+
+.tournament-dock__chevron {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.tournament-dock__row {
+  flex: 0 0 var(--sp-tdock-row-h, 30px);
+  height: var(--sp-tdock-row-h, 30px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-width: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tournament-dock__seg {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 4px;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tournament-dock__seg:first-child {
+  border-left: none;
+  background: rgba(79, 195, 247, 0.12);
+}
+
+.tournament-dock__seg--break:first-child {
+  background: rgba(255, 183, 77, 0.16);
+}
+
+.tournament-dock__seg--wide {
+  flex-grow: 1.7;
+}
+
+.tournament-dock__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.tournament-dock__value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── THE LOBBY BUTTON, IN THE CORNER THE BOX USED TO HOLD ──────────────────
+   "IN THE UPPER RIGHT HAND CORNER WHERE '36 LEFT' IS SHOULD BE THE LOBBY
+    BUTTON THAT OPENS UP TO THE TOURNAMENT LOBBY PAGE."
+
+   Dan's own LOBBY artwork (assets/lobby-button.webp, the plate he supplied on
+   2026-09-07 for the must-move lobby). One image and no chrome: the frame, the
+   bevel and the word are inside the picture. 44px is the tap floor. */
+.tournament-lobby-corner-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tournament-lobby-corner-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+.tournament-dock__sublabel {
+  opacity: 0.85;
+}

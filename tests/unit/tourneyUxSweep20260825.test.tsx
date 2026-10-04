@@ -312,7 +312,12 @@ describe('Item 6 - the action countdown stays neon blue', () => {
   });
 
   it('the urgent and critical states do not repaint the ring', () => {
-    const start = css.indexOf('.seat--timer-urgent .seat__info::before');
+    // 2026-10-04: the ring moved from `.seat__info::before` to a real element,
+    // `.seat__timer-ring-arc` (owner ruling 2026-10-04, "YOU NEED TO SLOW IT
+    // DOWN SO IT TAKES 15 SECONDS TO DISAPPEAR": the sweep is now linear
+    // along the border, which needs a size container). Same pin, new selector.
+    const start = css.indexOf('.seat--timer-urgent .seat__timer-ring-arc');
+    expect(start).toBeGreaterThan(-1);
     const block = css.slice(start, css.indexOf('}', start));
     expect(block).not.toMatch(/#ff6b35/);
     expect(block).not.toMatch(/#ef4444/);

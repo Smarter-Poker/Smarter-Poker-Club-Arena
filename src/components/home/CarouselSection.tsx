@@ -7,7 +7,7 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
@@ -20,13 +20,31 @@ import { Carousel } from '../carousel';
 import { preloadClubLobby } from '../../utils/ChunkPreloader';
 import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
-import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import type { CountFigure } from '../../lib/countFigure';
 
-// Lazy-load heavy component
+/* THE CARDS SHIP WITH THE PAGE, NEVER BEHIND THEIR OWN LAZY BOUNDARY
+   (2026-10-04, Dan on an iPhone: "THE IMAGES ARE DISPLAYED LIKE THIS AT FIRST,
+   AND EVENTUALLY GO BACK TO NORMAL ... IT MAKES US LOOK BROKEN").
 
-const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
-const DiamondArenaCard = lazyWithRetry(() => import('../club/DiamondArenaCard'));
+   Both cards used to be lazyWithRetry(() => import(...)), and both import
+   ClubCardPanel.css, so that one stylesheet was a dependency of two lazy
+   chunks requested in the same render pass (the Diamond Arena card and the
+   first club card mount together). Vite's preload helper only waits for a
+   stylesheet in the call that CREATES its <link>; the second call finds the
+   dependency already registered and resolves at once. So the second card
+   mounted while its stylesheet was still on the wire: the art well had no
+   aspect-ratio, no overflow clip and no width on its <img>, and an 896x1200
+   picture printed at natural size, cropped only by the carousel slot. When
+   the stylesheet landed the card snapped back.
+
+   A static import puts ClubCardPanel.css in this page's own stylesheet, which
+   is applied before HomePage renders at all, so the well is a clipped square
+   from the first paint and no image, chunk or font can move it. Neither card
+   is heavy (two small components and one sheet) and every visit to this page
+   renders them, so the lazy boundary bought nothing. Do not put it back.
+   Pinned by tests/components/clubCardGeometryFromFirstPaint.test.tsx. */
+import { ClubCardPanel } from '../club/ClubCardPanel';
+import { DiamondArenaCard } from '../club/DiamondArenaCard';
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
@@ -258,38 +276,36 @@ export default function CarouselSection({
             </span>
           )}
           <div className={styles.carouselFeaturedPedestal}></div>
-          <Suspense fallback={<div className={styles.cardSkeleton} />}>
-            <PageErrorBoundary pageName={club.name || 'Club Card'}>
-              {club.automatic_entry ? (
-                /* Dan 2026-09-09: the Diamond Arena rides the same card chassis
-                   as every club, not a poster - active players and the next
-                   freeroll countdown on the bottom rail. */
-                <DiamondArenaCard activePlayers={stats?.activePlayers ?? null} />
-              ) : (
-                <ClubCardPanel
-                  clubName={club.name?.toUpperCase() || 'MY CLUB'}
-                  totalMembers={stats?.totalMembers ?? null}
-                  clubLevel={stats?.clubLevel ?? null}
-                  /* A chip club's count is always a number or a pending null -
-                     only the entitlement arena can answer COUNT_UNKNOWN, and
-                     it is drawn by DiamondArenaCard above. */
-                  activePlayers={
-                    typeof stats?.activePlayers === 'number' ? stats.activePlayers : null
-                  }
-                  activeCash={stats?.activeCash ?? null}
-                  activeEvents={stats?.activeEvents ?? null}
-                  clubId={club.club_id}
-                  cardImageUrl={
-                    Number(club.club_id) === SHARK_CLUB_ID
-                      ? `${MEDIA_BASE}images/shark-club-card.jpg`
-                      : club.card_image_url
-                  }
-                  logoUrl={Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.logo_url}
-                  entityType={club.entity_type || 'club'}
-                />
-              )}
-            </PageErrorBoundary>
-          </Suspense>
+          <PageErrorBoundary pageName={club.name || 'Club Card'}>
+            {club.automatic_entry ? (
+              /* Dan 2026-09-09: the Diamond Arena rides the same card chassis
+                 as every club, not a poster - active players and the next
+                 freeroll countdown on the bottom rail. */
+              <DiamondArenaCard activePlayers={stats?.activePlayers ?? null} />
+            ) : (
+              <ClubCardPanel
+                clubName={club.name?.toUpperCase() || 'MY CLUB'}
+                totalMembers={stats?.totalMembers ?? null}
+                clubLevel={stats?.clubLevel ?? null}
+                /* A chip club's count is always a number or a pending null -
+                   only the entitlement arena can answer COUNT_UNKNOWN, and
+                   it is drawn by DiamondArenaCard above. */
+                activePlayers={
+                  typeof stats?.activePlayers === 'number' ? stats.activePlayers : null
+                }
+                activeCash={stats?.activeCash ?? null}
+                activeEvents={stats?.activeEvents ?? null}
+                clubId={club.club_id}
+                cardImageUrl={
+                  Number(club.club_id) === SHARK_CLUB_ID
+                    ? `${MEDIA_BASE}images/shark-club-card.jpg`
+                    : club.card_image_url
+                }
+                logoUrl={Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.logo_url}
+                entityType={club.entity_type || 'club'}
+              />
+            )}
+          </PageErrorBoundary>
         </div>
       );
     },

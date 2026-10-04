@@ -384,6 +384,15 @@ describe('ClubQuickLinkTile', () => {
     await act(async () => {});
   });
 
+  it('focuses the current wallet when keyboard opening a reordered directory', async () => {
+    renderTile({ targetClub: B });
+    const trigger = screen.getByRole('button', { name: /Cashier For Bravo Club/ });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(screen.getByRole('menuitem', { name: /Bravo Club/ })).toHaveFocus();
+    expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).not.toHaveFocus();
+    await act(async () => {});
+  });
+
   it('returns focus to the trigger when the outside overlay dismisses the directory', async () => {
     renderTile();
     const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });

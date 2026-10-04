@@ -10,8 +10,9 @@ const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const CASHIER_ROLES = ['Owner', 'Co Owner', 'Admin', 'Super Agent', 'Agent', 'Sub Agent'] as const;
 // Production account membership is intentionally mutable. Exact wallet names
 // are an optional environment contract; the maintained certificate below
-// always proves the durable behavior: an owned union, at least two club
-// wallets, alternate-club navigation, keyboard opening, right-click and hold.
+// always proves the durable behavior: all wallets this account is eligible to
+// see, at least two club wallets, alternate-club navigation, keyboard opening,
+// right-click and hold. Union navigation is exercised when it owns a union.
 const EXPECTED_WALLETS = (process.env.E2E_CASHIER_WALLETS || '')
   .split('|')
   .map((name) => name.trim())
@@ -184,7 +185,10 @@ test.describe('Production Cashier Certification', () => {
     await cashierTile.focus();
     await page.keyboard.press('ArrowDown');
     await expect(desktopMenu).toBeVisible();
-    await expect(desktopItems.first()).toBeFocused();
+    // Opening by keyboard focuses the current wallet, which is not required
+    // to be the first directory row. Prove focus entered exactly one wallet
+    // item instead of coupling the certificate to mutable list ordering.
+    await expect(desktopMenu.locator('[role="menuitem"]:focus')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(desktopMenu).toBeHidden();
     await page.setViewportSize({ width: 393, height: 852 });
@@ -291,6 +295,12 @@ test.describe('Production Cashier Certification', () => {
     await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     const access = page.getByLabel('Current Cashier Balances').locator('strong').last();
     await expect(access).toBeVisible({ timeout: 60_000 });
+    // The visible metric intentionally reads "Synchronizing" during
+    // authoritative hydration. Wait for the settled role instead of sampling
+    // that legitimate loading state and misreporting it as invalid access.
+    await expect(access).toHaveText(new RegExp(`^(${CASHIER_ROLES.join('|')})$`), {
+      timeout: 60_000,
+    });
     const observed = (await access.innerText()).trim();
     expect(CASHIER_ROLES).toContain(observed as (typeof CASHIER_ROLES)[number]);
     const missing = CASHIER_ROLES.filter((role) => role !== observed);

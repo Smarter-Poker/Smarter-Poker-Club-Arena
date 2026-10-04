@@ -27,6 +27,8 @@
  * never opened and nothing is priced.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { migrationNames, migrationText } from './helpers/migrationCorpus';
 import { sliceBetween } from './helpers/sourceWindow';
 
@@ -408,5 +410,55 @@ describe('LAW: a Diamond satellite seat is a whole ticket', () => {
     ]) {
       expect(FINAL).toContain(phrase);
     }
+  });
+
+  // Added 2026-10-04. Every assertion above reads the MIGRATION TEXT, which
+  // proves the migration said something and not that the installed door does
+  // it. The Diamond tournament lifecycle fixture now EXECUTES the seat door
+  // against its md5-pinned capture on isolated PostgreSQL 17, and this holds
+  // that open: the door must stay in the capture, and the cases must keep
+  // reaching each refusal by name. Deleting a case fails here.
+  it('the lifecycle fixture executes the seat door, and each refusal is reached by name', () => {
+    const SQL = join(__dirname, 'sql');
+    const capture = readFileSync(join(SQL, 'diamond-tournament-lifecycle-doors.sql'), 'utf8');
+    const cases = readFileSync(join(SQL, 'diamond-tournament-lifecycle-cases.sql'), 'utf8');
+
+    // The installed door is captured, md5-pinned, and owner-only.
+    expect(capture).toContain('-- @@DOOR fn_poker_diamond_tournament_seat_transfer(');
+    expect(capture).toMatch(
+      /-- @@DOOR fn_poker_diamond_tournament_seat_transfer\([^\n]*\n-- @@PIN md5=[0-9a-f]{32} len=\d+ owner=postgres\n/
+    );
+    expect(capture).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_seat_transfer(uuid, uuid, uuid, uuid, numeric, numeric, numeric, text) FROM PUBLIC, anon, authenticated, service_role;'
+    );
+
+    // The cases call the installed door, not a stand-in.
+    expect(cases).toContain('public.fn_poker_diamond_tournament_seat_transfer(');
+
+    // Every refusal the door carries is reached by name. The divider first.
+    for (const reason of [
+      'diamond_satellite_seat_requires_whole_parts',
+      'diamond_satellite_seat_requires_two_diamond_events',
+      'diamond_satellite_seat_names_another_target',
+      'diamond_satellite_seat_is_not_the_target_entry',
+      'diamond_satellite_seat_has_no_qualifier_registration',
+      'diamond_tournament_entry_already_held',
+      'poker_diamond_one_open_entry',
+    ]) {
+      expect(cases, `the fixture must reach ${reason}`).toContain(`'${reason}')`);
+    }
+
+    // The divider is exercised more than once: a fractional ticket, a
+    // fractional prize, a fractional fee, parts that do not add up, a seat for
+    // nothing and a movement with no key.
+    expect(
+      cases.split('diamond_satellite_seat_requires_whole_parts').length - 1
+    ).toBeGreaterThanOrEqual(6);
+
+    // And the refusals are proved to have moved nothing.
+    expect(cases).toContain('satellite seat: every refusal moved nothing');
+
+    // The fixture still opens no switch.
+    expect(cases).not.toMatch(/(cash_games_enabled|tournaments_enabled)\s*(?::?=)\s*(?:true|'t')/i);
   });
 });

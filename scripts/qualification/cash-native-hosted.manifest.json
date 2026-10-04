@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 29170,
-      "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
+      "bytes": 29559,
+      "sha256": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1507,6 +1507,24 @@
         "current": {
           "bytes": 185780,
           "sha256": "f512937ee0c90946fc41f8296849922c97c33c48098247bfe80a91043851a5d1"
+        }
+      }
+    ]
+  },
+  "diamondCrossFormatConservationRoute20261004": {
+    "integration": "2026-10-04 Diamond Phase 9 cross-format conservation runner (agent/cw-diamond-p9b/feat/diamond-destinations-and-conservation)",
+    "why": "Route the cross-format conservation runner's md5 pin list (tests/sql/diamond-cross-format-*.manifest.json) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* and diamond-concurrency-* files that lane already names: one alternation added to diamondSqlAcceptance, plus the comment saying why the runner's two .sql fixtures are named poker-diamond-* so they do not also select the eleven tests/sql/diamond-*.sql game probes. No route, native phase, fixture or assertion is removed or weakened.",
+    "files": [
+      {
+        "binding": "scripts/qualification/cash-native-hosted.manifest.json",
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 29170,
+          "sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056"
+        },
+        "after": {
+          "bytes": 29559,
+          "sha256": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
         }
       }
     ]

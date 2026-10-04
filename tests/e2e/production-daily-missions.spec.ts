@@ -539,7 +539,12 @@ test.describe('production Daily Missions certification', () => {
           ])
         );
         expect(vitals.missionArtBytes).toBeGreaterThan(0);
-        expect(vitals.missionArtBytes).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
+        // The assets are named in the message so a red run's annotation says
+        // which file was over budget, not only the total (2026-10-04).
+        expect(
+          vitals.missionArtBytes,
+          `initial mission art ${JSON.stringify(vitals.missionArt)}`
+        ).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
       });
 
       await test.step('warm in-app return restores the ledger inside its route budget', async () => {

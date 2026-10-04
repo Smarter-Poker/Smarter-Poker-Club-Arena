@@ -91,6 +91,100 @@ CREATE INDEX idx_agent_commissions_club_created
 CREATE INDEX agent_commissions_open_idx
   ON public.agent_commissions(club_id, user_id, created_at) INCLUDE(amount, id)
   WHERE settled_at IS NULL;
+CREATE TABLE public.ca_club_commission_daily(
+  club_id uuid NOT NULL,
+  stat_date date NOT NULL,
+  amount numeric NOT NULL DEFAULT 0,
+  rows_counted bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(club_id,stat_date));
+
+-- Production keeps this exact daily fact on the existing statement-level
+-- commission triggers. The focused fixture needs the same UTC-day contract so
+-- the distribution reader is tested against the fact it will use live.
+CREATE FUNCTION public.trg_agent_commission_rollup_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+  INSERT INTO public.ca_club_commission_daily AS c
+         (club_id, stat_date, amount, rows_counted, updated_at)
+  SELECT n.club_id, (n.created_at AT TIME ZONE 'UTC')::date,
+         SUM(n.amount), COUNT(*), now()
+    FROM new_rows n
+   WHERE n.club_id IS NOT NULL
+   GROUP BY n.club_id, (n.created_at AT TIME ZONE 'UTC')::date
+  ON CONFLICT (club_id, stat_date) DO UPDATE
+     SET amount = c.amount + EXCLUDED.amount,
+         rows_counted = c.rows_counted + EXCLUDED.rows_counted,
+         updated_at = now();
+  RETURN NULL;
+END
+$function$;
+
+CREATE FUNCTION public.trg_agent_commission_rollup_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    INSERT INTO public.ca_club_commission_daily AS c
+           (club_id, stat_date, amount, rows_counted, updated_at)
+    SELECT x.club_id, x.d, SUM(x.amount), SUM(x.n), now()
+      FROM (
+        SELECT o.club_id, (o.created_at AT TIME ZONE 'UTC')::date AS d,
+               -o.amount AS amount, -1 AS n
+          FROM old_rows o JOIN new_rows n ON n.id = o.id
+         WHERE o.amount IS DISTINCT FROM n.amount
+            OR o.club_id IS DISTINCT FROM n.club_id
+            OR o.created_at IS DISTINCT FROM n.created_at
+        UNION ALL
+        SELECT n.club_id, (n.created_at AT TIME ZONE 'UTC')::date,
+               n.amount, 1
+          FROM old_rows o JOIN new_rows n ON n.id = o.id
+         WHERE o.amount IS DISTINCT FROM n.amount
+            OR o.club_id IS DISTINCT FROM n.club_id
+            OR o.created_at IS DISTINCT FROM n.created_at
+      ) x
+     WHERE x.club_id IS NOT NULL
+     GROUP BY x.club_id, x.d
+    ON CONFLICT (club_id, stat_date) DO UPDATE
+       SET amount = c.amount + EXCLUDED.amount,
+           rows_counted = c.rows_counted + EXCLUDED.rows_counted,
+           updated_at = now();
+  ELSE
+    INSERT INTO public.ca_club_commission_daily AS c
+           (club_id, stat_date, amount, rows_counted, updated_at)
+    SELECT o.club_id, (o.created_at AT TIME ZONE 'UTC')::date,
+           -SUM(o.amount), -COUNT(*), now()
+      FROM old_rows o
+     WHERE o.club_id IS NOT NULL
+     GROUP BY o.club_id, (o.created_at AT TIME ZONE 'UTC')::date
+    ON CONFLICT (club_id, stat_date) DO UPDATE
+       SET amount = c.amount + EXCLUDED.amount,
+           rows_counted = c.rows_counted + EXCLUDED.rows_counted,
+           updated_at = now();
+  END IF;
+  RETURN NULL;
+END
+$function$;
+
+CREATE TRIGGER trg_agent_commission_rollup_ins
+  AFTER INSERT ON public.agent_commissions
+  REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION public.trg_agent_commission_rollup_insert();
+CREATE TRIGGER trg_agent_commission_rollup_upd
+  AFTER UPDATE ON public.agent_commissions
+  REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION public.trg_agent_commission_rollup_change();
+CREATE TRIGGER trg_agent_commission_rollup_del
+  AFTER DELETE ON public.agent_commissions
+  REFERENCING OLD TABLE AS old_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION public.trg_agent_commission_rollup_change();
 CREATE TABLE public.rake_records(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), hand_id uuid, club_id uuid, rake_amount numeric,
   player_contributions jsonb, is_tournament boolean NOT NULL DEFAULT false,
@@ -431,3 +525,10 @@ BEGIN
             || 'commissions + rakeback must not exceed the rake collected.'
   );
 END $function$;
+
+REVOKE ALL ON FUNCTION public.fn_union_distribution_check(uuid,timestamptz)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_union_distribution_check(uuid,timestamptz)
+  TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_union_distribution_check(uuid,timestamptz)
+  TO authenticated;

@@ -32,6 +32,7 @@ DECLARE
   r record;
   d jsonb;
   direct_rake numeric;
+  direct_comm numeric;
   plan json;
   fn_src text;
   s jsonb;
@@ -210,7 +211,13 @@ BEGIN
           WHERE p.oid =
             'public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)
        IS DISTINCT FROM
-         '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}' THEN
+         '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'
+     OR (SELECT p.proacl::text
+           FROM pg_proc p
+          WHERE p.oid =
+            'public.fn_union_distribution_check(uuid,timestamptz)'::regprocedure)
+       IS DISTINCT FROM
+         '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}' THEN
     RAISE EXCEPTION 'rewritten Union Ops reader grants are not least privilege';
   END IF;
 
@@ -316,9 +323,14 @@ BEGIN
     FROM public.rake_records rr
     JOIN public.clubs c ON c.id=rr.club_id AND (c.union_id=u OR c.id=u)
    WHERE rr.created_at>=since_at;
+  SELECT COALESCE(SUM(ac.amount),0) INTO direct_comm
+    FROM public.agent_commissions ac
+    JOIN public.clubs c ON c.id=ac.club_id AND (c.union_id=u OR c.id=u)
+   WHERE ac.created_at>=since_at;
   IF direct_rake IS DISTINCT FROM 10.00
      OR (d->>'rake_collected')::numeric IS DISTINCT FROM direct_rake
-     OR (d->>'agent_commissions')::numeric IS DISTINCT FROM 2.50
+     OR direct_comm IS DISTINCT FROM 2.50
+     OR (d->>'agent_commissions')::numeric IS DISTINCT FROM direct_comm
      OR (d->>'player_rakeback')::numeric IS DISTINCT FROM 1.00
      OR (d->>'total_distributed')::numeric IS DISTINCT FROM 3.50
      OR (d->>'over_distributed_by')::numeric IS DISTINCT FROM 0.00
@@ -329,6 +341,24 @@ BEGIN
   IF (d->>'rake_collected')::numeric IS DISTINCT FROM 3.50
      OR (d->>'agent_commissions')::numeric IS DISTINCT FROM 0.50 THEN
     RAISE EXCEPTION 'distribution changed the arbitrary lower-bound/open-ended contract: %', d;
+  END IF;
+  fn_src := pg_get_functiondef(
+    'public.fn_union_distribution_check(uuid,timestamptz)'::regprocedure);
+  IF position('ca_club_commission_daily' in fn_src) = 0
+     OR position('v_rollup_from_date' in fn_src) = 0
+     OR position('v_head_end' in fn_src) = 0
+     OR position('GREATEST(v_from, v_today_start)' in fn_src) = 0
+     OR (length(fn_src) - length(replace(
+           fn_src, 'FROM public.agent_commissions ac', '')))
+        / length('FROM public.agent_commissions ac') IS DISTINCT FROM 2
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid =
+          'public.fn_union_distribution_check(uuid,timestamptz)'::regprocedure
+          AND p.proconfig IS NOT DISTINCT FROM
+              ARRAY['search_path=public','jit=off']::text[]) THEN
+    RAISE EXCEPTION 'distribution check lost exact daily facts or UTC edge reads';
   END IF;
 
   d := public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
@@ -583,12 +613,17 @@ SELECT 'd0000000-0000-4000-8000-000000000001'::uuid,
 
 ANALYZE public.agent_commissions;
 
+-- Match the JIT-enabled hosted caller used by the Risk scale gate. The
+-- distribution function disables JIT only for its own statement and must
+-- restore the caller setting when it returns.
+SET jit = 'on';
 SET work_mem = '4MB';
 SET statement_timeout = '8s';
 DO $preview_scale$
 DECLARE
   v_started timestamptz := clock_timestamp();
   v_preview jsonb;
+  v_distribution jsonb;
   v_risk_rows integer;
   v_commission numeric;
 BEGIN
@@ -619,12 +654,25 @@ BEGIN
     RAISE EXCEPTION 'scaled preview changed exact paid-period accounting: %',
       v_preview;
   END IF;
+  PERFORM set_config('app.engine','on',false);
+  v_distribution := public.fn_union_distribution_check(
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+    '2026-09-28 12:30:00+00'::timestamptz);
+  PERFORM set_config('app.engine','off',false);
+  IF (v_distribution->>'agent_commissions')::numeric IS DISTINCT FROM 22080.25 THEN
+    RAISE EXCEPTION 'scaled distribution changed exact commission accounting: %',
+      v_distribution;
+  END IF;
+  IF current_setting('jit') IS DISTINCT FROM 'on' THEN
+    RAISE EXCEPTION 'distribution check leaked its function-local JIT setting';
+  END IF;
   RAISE NOTICE 'scaled Preview: 2,200,000 commission rows in % ms',
     round(extract(epoch FROM clock_timestamp() - v_started) * 1000);
 END
 $preview_scale$;
 RESET statement_timeout;
 RESET work_mem;
+RESET jit;
 
 TRUNCATE public.agent_commissions, public.rakeback_periods,
          public.agent_commission_settlements;

@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "9497c519b17d767f64b8d859d20ad0fa82b4e2077cc13e67ec5e71655e59ce61",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c",
+    "scripts/ci/classify-ci-changes.mjs": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "8d6afed5af4cf1a861a7eef17fe682083057e115ec29cc7c717e2296e5e977c5",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ef927bbf51e1dfad3a25715e457d663ca7dded21ca73ab7df9e0002fb01977f6",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "f44017293d766b4ba14d60669990d9f56640726e4e3888eb8152be5d0200de99",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "c60934152ec234276a64ab51b1c35e20ac86c43bd6550dd9c2eae1430fdb9c0d",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2613,6 +2613,34 @@
       "to": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
       "on": "2026-10-04",
       "why": "The Cashier weekly-statement test follows the console-wide Title Case status label Balances Synchronized; statement scope, exact cents, club isolation and player refusal assertions are unchanged."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c",
+      "to": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
+      "on": "2026-10-04",
+      "why": "The managed-game one-door migration, native fixture, runner and migration law now select the existing PostgreSQL accounting verdict. The change is one additive selector and one additive classifier branch; no existing financial route, fixture, source or assertion changed."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f",
+      "to": "9497c519b17d767f64b8d859d20ad0fa82b4e2077cc13e67ec5e71655e59ce61",
+      "on": "2026-10-04",
+      "why": "UnionService now binds and throws both union-admin lookup errors instead of silently converting failed reads into false authorization. Its allowance tightens from 11 to 9; no baseline is widened and no financial source or assertion changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "8d6afed5af4cf1a861a7eef17fe682083057e115ec29cc7c717e2296e5e977c5",
+      "to": "ef927bbf51e1dfad3a25715e457d663ca7dded21ca73ab7df9e0002fb01977f6",
+      "on": "2026-10-04",
+      "why": "Cascade of the additive managed-game one-door classifier restamp. The nested binding changes only that reviewed classifier pin and its audit row; every fee-finality fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "f44017293d766b4ba14d60669990d9f56640726e4e3888eb8152be5d0200de99",
+      "to": "c60934152ec234276a64ab51b1c35e20ac86c43bd6550dd9c2eae1430fdb9c0d",
+      "on": "2026-10-04",
+      "why": "Cascade of the additive managed-game one-door classifier restamp. The nested binding changes only that reviewed classifier pin and its audit row; every Spin custody fixture and assertion is unchanged."
     }
   ],
   "tournament_rake_club_successor_20260921": {

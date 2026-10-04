@@ -104,6 +104,7 @@ export default function UnionGamesPage() {
   const [unionId, setUnionId] = useState<string | null>(paramUnionId || null);
   const [unionName, setUnionName] = useState('');
   const [canManageGames, setCanManageGames] = useState(false);
+  const [authorityError, setAuthorityError] = useState<string | null>(null);
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
@@ -126,6 +127,7 @@ export default function UnionGamesPage() {
     setTab('tournaments');
     setTournFilter('all');
     setCanManageGames(false);
+    setAuthorityError(null);
     loadingRef.current = false;
   }, [paramUnionId]);
 
@@ -221,39 +223,50 @@ export default function UnionGamesPage() {
     if (!user) return;
     let isMounted = true;
     const init = async () => {
-      let targetUnion = paramUnionId || searchParams.get('union') || searchParams.get('unionId');
+      try {
+        setAuthorityError(null);
+        let targetUnion = paramUnionId || searchParams.get('union') || searchParams.get('unionId');
 
-      if (!targetUnion) {
-        // Find user's union through their club membership
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        if (mem?.club_id) {
-          const { data: uc } = await supabase
-            .from('union_clubs')
-            .select('union_id')
-            .eq('club_id', mem.club_id)
+        if (!targetUnion) {
+          // Find user's union through their club membership
+          const { data: mem, error: membershipError } = await supabase
+            .from('club_members')
+            .select('club_id')
+            .eq('user_id', user.id)
             .limit(1)
             .maybeSingle();
-          targetUnion = uc?.union_id || null;
+          if (membershipError) throw membershipError;
+          if (mem?.club_id) {
+            const { data: uc, error: unionClubError } = await supabase
+              .from('union_clubs')
+              .select('union_id')
+              .eq('club_id', mem.club_id)
+              .limit(1)
+              .maybeSingle();
+            if (unionClubError) throw unionClubError;
+            targetUnion = uc?.union_id || null;
+          }
         }
-      }
 
-      if (targetUnion && isMounted) {
-        setUnionId(targetUnion);
-        const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+        if (targetUnion && isMounted) {
+          setUnionId(targetUnion);
+          const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+          if (!isMounted) return;
+          setCanManageGames(operator);
+          await loadUnionData(targetUnion);
+        } else if (isMounted) {
+          toast.error('No Union Found');
+          setLoading(false);
+        }
+      } catch (error) {
+        reportError(error, 'UnionGamesPage.management_authority');
         if (!isMounted) return;
-        setCanManageGames(operator);
-        loadUnionData(targetUnion);
-      } else if (isMounted) {
-        toast.error('No union found.');
+        setCanManageGames(false);
+        setAuthorityError('Union Game Management Access Could Not Be Verified. Please Try Again.');
         setLoading(false);
       }
     };
-    init();
+    void init();
     return () => {
       isMounted = false;
     };
@@ -368,6 +381,14 @@ export default function UnionGamesPage() {
   };
 
   if (loading) return <PageSkeleton variant="dashboard" />;
+
+  if (authorityError) {
+    return (
+      <div className={styles.page}>
+        <div role="alert">{authorityError}</div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>

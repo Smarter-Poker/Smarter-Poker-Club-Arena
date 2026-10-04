@@ -105,6 +105,20 @@ function mustSeeBoard(outcome: Outcome, path: string) {
   ).toBe('board');
 }
 
+/** Certify the creator's composition without submitting, saving or mutating it. */
+async function expectRivetedCreator(page: Page, path: string, pill: string) {
+  mustSeeBoard(await open(page, path), path);
+
+  const dialog = page.getByRole('dialog', { name: 'Create Game' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  const frames = dialog.locator(FRAMES);
+  await expect(frames).toHaveCount(1);
+  await expect(frames).toHaveClass(/sc--family-riveted/);
+  await expect(dialog.getByText(pill, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create Tournament' })).toBeVisible();
+}
+
 test.describe('Table Management is its own page on its own frame, in production', () => {
   test('the board draws one frame, with the section strip outside it', async ({ page }) => {
     mustSeeBoard(await open(page, BOARD), BOARD);
@@ -163,6 +177,30 @@ test.describe('Table Management is its own page on its own frame, in production'
     });
     expect(await frameFamilies(page)).toEqual([]);
     await expect(page.getByRole('button', { name: 'Back To Table Management' })).toBeVisible();
+  });
+
+  test('Table Config replaces the board with its own spade creator frame', async ({ page }) => {
+    const path = `${BOARD}?create=table&game=nlh`;
+    mustSeeBoard(await open(page, path), path);
+
+    await expect(page.getByRole('heading', { name: 'NLH Setup' })).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await frameFamilies(page)).toEqual(['sc--family-spade']);
+    await expect(page.getByRole('button', { name: 'Back To Game Types' })).toBeVisible();
+    expect(await page.getByRole('heading', { name: 'Table Management' }).count()).toBe(0);
+  });
+
+  test('the Event creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=event`, 'Event');
+  });
+
+  test('the Spins creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=spin`, 'Spins');
+  });
+
+  test('the Sit N Go creator is its own riveted dialog and stays read-only', async ({ page }) => {
+    await expectRivetedCreator(page, `${BOARD}?create=sng`, 'Sit N Go');
   });
 
   test('a union member club is refused on the shark frame, with no section strip', async ({

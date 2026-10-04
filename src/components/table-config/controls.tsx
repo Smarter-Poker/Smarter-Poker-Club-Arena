@@ -3,8 +3,8 @@
  *
  * Moved out of TableConfigPage.tsx on 2026-09-04 (Operation Table Stakes,
  * Slice 1) so the New Cash Game flow and the tournament form draw the same
- * switch, the same slider and the same number row. Markup is unchanged: the
- * isolated conventional switch with a visible On / Off status
+ * switch, the same slider and the same number row. The shared switch uses the
+ * approved engraved tick well with a visible On / Off status
  * (tests/unit/createTableHelpAndSwitches.test.tsx) and the whole-number entry
  * row (Dan 2026-08-20: anything a player pays is never a decimal).
  */
@@ -35,9 +35,9 @@ export const Toggle = ({
       {label}
       {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
     </span>
-    <label className="table-config-switch">
+    <label className={`table-config-switch sc-check${value ? ' sc-check--on' : ''}`}>
       <input
-        className="table-config-switch__input"
+        className="table-config-switch__input sc-check__box"
         type="checkbox"
         role="switch"
         aria-label={label}
@@ -45,9 +45,6 @@ export const Toggle = ({
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="table-config-switch__track" aria-hidden="true">
-        <span className="table-config-switch__thumb" />
-      </span>
       <span className={`table-config-switch__status ${value ? 'is-on' : 'is-off'}`}>
         {value ? 'On' : 'Off'}
       </span>

@@ -230,7 +230,7 @@ export default function TickerManagementPanel({
       /* The club or union name alone: with the suffix the shark's narrow
          subtitle zone fitted a long name down to nine pixels. The heading
          below the head says what the rail is. */
-      subtitle={scopeName || 'Live Message Rail'}
+      subtitle={titleCase(scopeName || 'Live Message Rail')}
       pill={pill}
       pillInk={pillInk}
       aria-labelledby="ticker-management-title"

@@ -163,7 +163,9 @@ const BASELINE = new Map<string, number>([
      reports. See the note in that function - it was also asking a per-club
      table for a single row. */
   ['src/services/AchievementTriggerService.ts', 0],
-  ['src/pages/UnionGamesPage.tsx', 2],
+  // 2 -> 0 on 2026-10-04: union discovery now binds both membership reads and
+  // exits its loading state with a visible fail-closed authority error.
+  ['src/pages/UnionGamesPage.tsx', 0],
   ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 0],

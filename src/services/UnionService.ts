@@ -440,27 +440,19 @@ class UnionServiceClass {
    * Check if user is union admin
    */
   async isUnionAdmin(unionId: string, userId: string): Promise<boolean> {
-    // Check if owner
-    const { data: union, error: unionError } = await supabase
-      .from('unions')
-      .select('owner_id')
-      .eq('id', unionId)
-      .maybeSingle();
+    // `union_admins` is not generally readable by an appointed operator who
+    // has no membership in one of the union's clubs. Keep every client entry
+    // surface aligned with UnionOverseerGuard and the command gateway by using
+    // the SECURITY DEFINER authority predicate instead of reconstructing it
+    // through membership-scoped table reads.
+    const { data, error } = await supabase.rpc('fn_is_union_operator', {
+      p_union_id: unionId,
+      p_user_id: userId,
+    });
 
-    if (unionError) throw unionError;
+    if (error) throw error;
 
-    if (union?.owner_id === userId) return true;
-
-    // Check if admin
-    const { count, error: adminError } = await supabase
-      .from('union_admins')
-      .select('*', { count: 'exact', head: true })
-      .eq('union_id', unionId)
-      .eq('user_id', userId);
-
-    if (adminError) throw adminError;
-
-    return (count || 0) > 0;
+    return data === true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

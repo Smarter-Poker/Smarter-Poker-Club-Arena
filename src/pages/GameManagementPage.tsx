@@ -319,8 +319,8 @@ export function ScheduleCloseDialog({
           }}
         >
           <p className="sc-copy sc-copy--center">
-            {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
-            Registered When The Command Runs.
+            {titleCase(game.name)} Will Close Only If Its Contract Is Unchanged And No Players Are
+            Seated Or Registered When The Command Runs.
           </p>
           <label className={styles.dialogField}>
             Execute At
@@ -630,7 +630,7 @@ export function ContractHistoryDialog({
         <SpadeConsole
           onClose={onClose}
           eyebrow="Published Contract History"
-          title={game.name}
+          title={titleCase(game.name)}
           titleId="contract-title"
           subtitle="Hashed, Versioned, Append-Only"
           pill={`V${game.contract?.version || versions[0]?.version || 0}`}
@@ -1441,8 +1441,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const confirmed = await confirmDialog({
         message:
           game.kind === 'table'
-            ? `Close ${game.name}? Only an empty table can be closed.`
-            : `Cancel ${game.name}? This is allowed only before the first registration.`,
+            ? `Close ${titleCase(game.name)}? Only an empty table can be closed.`
+            : `Cancel ${titleCase(game.name)}? This is allowed only before the first registration.`,
         variant: 'danger',
       });
       if (!confirmed) return;
@@ -1605,7 +1605,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           titleId="table-management-title"
           /* The club or union name alone: with a suffix, a long union name
              fitted down to seven pixels. The line under it says the rest. */
-          subtitle={scopeName}
+          subtitle={titleCase(scopeName)}
           /* A board that has not read yet, or could not, does not claim to
              hold zero games. */
           pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
@@ -1701,7 +1701,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            to club." The host is the union itself, stated, not selectable. */
             <p className={styles.hostPicker} aria-label="Host">
               Host
-              <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
+              <strong>
+                {titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
+              </strong>
             </p>
           )}
 
@@ -1757,8 +1759,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       data={{
                         id: game.id,
                         family: managedGameFamily(game),
-                        title: game.name,
-                        subtitle: game.hostName,
+                        title: titleCase(game.name),
+                        subtitle: titleCase(game.hostName),
                         gameType: game.variant.toUpperCase(),
                         stakes:
                           game.kind === 'table' ? `${game.smallBlind}/${game.bigBlind}` : undefined,
@@ -2054,7 +2056,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <TickerManagementPanel
           scope={scope}
           scopeId={scopeId}
-          scopeName={scopeName}
+          scopeName={titleCase(scopeName)}
           onDirtyChange={setSurfaceDirty}
         />
       )}
@@ -2064,14 +2066,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         (hostClubId ? (
           <ClubMessageManagementPanel
             clubId={hostClubId}
-            clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+            clubName={titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
             onDirtyChange={setSurfaceDirty}
           />
         ) : (
           <SpadeConsole
             eyebrow={scope === 'union' ? 'Union Communications' : 'Club Communications'}
             title="Club Messages"
-            subtitle={scopeName}
+            subtitle={titleCase(scopeName)}
             pill={loading ? 'Loading' : 'Unavailable'}
             pillInk={loading ? 'blue' : 'gold'}
             family="riveted"

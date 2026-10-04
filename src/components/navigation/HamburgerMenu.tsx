@@ -337,18 +337,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return;
     }
     let cancelled = false;
-    void fetchGameCreationAccess(workspace.clubUUID).then(async (access) => {
-      if (cancelled) return;
-      setCanManageGames(access.allowed && !access.unionId);
-      if (!access.unionId || !user?.id) {
-        setUnionManageId(null);
-        return;
-      }
-      // Owner or union_admin - the same test the union board itself applies,
-      // so the menu never offers a door the page would refuse.
-      const operator = await unionService.isUnionAdmin(access.unionId, user.id);
-      if (!cancelled) setUnionManageId(operator ? access.unionId : null);
-    });
+    void fetchGameCreationAccess(workspace.clubUUID)
+      .then(async (access) => {
+        if (cancelled) return;
+        setCanManageGames(access.allowed && !access.unionId);
+        if (!access.unionId || !user?.id) {
+          setUnionManageId(null);
+          return;
+        }
+        // Owner or union_admin - the same test the union board itself applies,
+        // so the menu never offers a door the page would refuse.
+        const operator = await unionService.isUnionAdmin(access.unionId, user.id);
+        if (!cancelled) setUnionManageId(operator ? access.unionId : null);
+      })
+      .catch((error) => {
+        reportError(error, 'HamburgerMenu.game_management_authority');
+        if (!cancelled) {
+          setCanManageGames(false);
+          setUnionManageId(null);
+        }
+      });
     return () => {
       cancelled = true;
     };

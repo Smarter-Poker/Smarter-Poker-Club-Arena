@@ -36,6 +36,25 @@ This release hardens the existing Club and Union Table Management console while 
 - Verified 800 reviewed source pins and the cash-native manifest after the hosted workflow changed.
 - Re-ran the complete scoped Table Management and shared console-law suite before delivery.
 
+## Final appointed-operator and visual recertification
+
+- Route every appointed Union operator check through the same security-definer
+  `fn_is_union_operator` predicate used by the Union route guard and managed-game
+  command gateway, including operators who do not belong to a Union member club.
+- Fail the hamburger authority probe closed and replace the Union Games loading
+  dead end with a reported, accessible authority error.
+- Replace the generic Table Config help glyph with a clear Help control and use
+  the approved engraved Club Arena tick wells instead of a CSS-built switch.
+- Title-case operator-facing club, Union, host, and game names at their display
+  sites without altering stored values.
+- Expand the read-only production certificate to cover Table Config plus the
+  separate Event, Spins, and Sit N Go creator frames; the suite does not submit,
+  save, close, cancel, or modify a game.
+- Integrated local qualification passed 66 focused tests, all four copy and
+  Title Case gates, the no-hover and class-resolution laws, TypeScript, ESLint
+  with zero errors, production Playwright discovery for all 10 Table Management
+  cases, and the full production build.
+
 ## Agent Policy Receipt
 
 - Policy version: 2.9 (2026-09-17), including the 2026-09-29 external-storage amendment.

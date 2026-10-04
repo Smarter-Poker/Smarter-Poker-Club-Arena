@@ -845,15 +845,18 @@ CREATE OR REPLACE FUNCTION public.fn_club_trade_ledger(
   p_club_id uuid, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0
 ) RETURNS TABLE(id uuid, created_at timestamptz, transaction_type text,
   amount numeric, from_user_id uuid, to_user_id uuid, notes text,
-  from_name text, to_name text)
+  metadata jsonb, from_name text, to_name text)
 LANGUAGE plpgsql
 STABLE SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
+SET lock_timeout TO '5s'
 AS $function$
 DECLARE
   v_viewer uuid := auth.uid();
   v_role text;
-  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 200);
+  -- Cashier exposes 250 rows and requests one sentinel row to decide whether
+  -- another page exists. Preserve the established bounded RPC contract.
+  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 251);
   v_offset integer := greatest(coalesce(p_offset, 0), 0);
 BEGIN
   IF v_viewer IS NULL OR p_club_id IS NULL THEN RETURN; END IF;
@@ -863,14 +866,14 @@ BEGIN
   IF v_role IN ('owner', 'co_owner', 'admin', 'super_agent') THEN
     RETURN QUERY
     SELECT ct.id, ct.created_at, ct.transaction_type, ct.amount,
-           ct.from_user_id, ct.to_user_id, ct.notes,
+           ct.from_user_id, ct.to_user_id, ct.notes, ct.metadata,
            coalesce(pf.alias, pf.display_name, pf.username),
            coalesce(pt.alias, pt.display_name, pt.username)
       FROM public.chip_transactions ct
       LEFT JOIN public.profiles pf ON pf.id = ct.from_user_id
       LEFT JOIN public.profiles pt ON pt.id = ct.to_user_id
      WHERE ct.club_id = p_club_id
-     ORDER BY ct.created_at DESC LIMIT v_limit OFFSET v_offset;
+     ORDER BY ct.created_at DESC, ct.id DESC LIMIT v_limit OFFSET v_offset;
   ELSIF v_role IN ('agent', 'sub_agent') THEN
     RETURN QUERY
     WITH RECURSIVE dl AS (
@@ -881,7 +884,7 @@ BEGIN
         JOIN dl ON edge.parent = dl.user_id
     )
     SELECT ct.id, ct.created_at, ct.transaction_type, ct.amount,
-           ct.from_user_id, ct.to_user_id, ct.notes,
+           ct.from_user_id, ct.to_user_id, ct.notes, ct.metadata,
            coalesce(pf.alias, pf.display_name, pf.username),
            coalesce(pt.alias, pt.display_name, pt.username)
       FROM public.chip_transactions ct
@@ -890,11 +893,11 @@ BEGIN
      WHERE ct.club_id = p_club_id
        AND (ct.from_user_id IN (SELECT user_id FROM dl)
          OR ct.to_user_id IN (SELECT user_id FROM dl))
-     ORDER BY ct.created_at DESC LIMIT v_limit OFFSET v_offset;
+     ORDER BY ct.created_at DESC, ct.id DESC LIMIT v_limit OFFSET v_offset;
   ELSE
     RETURN QUERY
     SELECT ct.id, ct.created_at, ct.transaction_type, ct.amount,
-           ct.from_user_id, ct.to_user_id, ct.notes,
+           ct.from_user_id, ct.to_user_id, ct.notes, ct.metadata,
            coalesce(pf.alias, pf.display_name, pf.username),
            coalesce(pt.alias, pt.display_name, pt.username)
       FROM public.chip_transactions ct
@@ -902,7 +905,7 @@ BEGIN
       LEFT JOIN public.profiles pt ON pt.id = ct.to_user_id
      WHERE ct.club_id = p_club_id
        AND (ct.from_user_id = v_viewer OR ct.to_user_id = v_viewer)
-     ORDER BY ct.created_at DESC LIMIT v_limit OFFSET v_offset;
+     ORDER BY ct.created_at DESC, ct.id DESC LIMIT v_limit OFFSET v_offset;
   END IF;
 END
 $function$;

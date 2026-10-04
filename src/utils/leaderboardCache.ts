@@ -51,8 +51,9 @@ export function getCachedLeaderboardEntries(key: string): LeaderboardCacheRecord
 
 export function setCachedLeaderboardEntries(key: string, entries: LeaderboardEntry[]): void {
   try {
+    const writtenStorageKey = LEADERBOARD_CACHE_PREFIX + key;
     const record: LeaderboardCacheRecord = { version: 2, storedAt: Date.now(), entries };
-    sessionStorage.setItem(LEADERBOARD_CACHE_PREFIX + key, JSON.stringify(record));
+    sessionStorage.setItem(writtenStorageKey, JSON.stringify(record));
 
     const records: { key: string; storedAt: number }[] = [];
     const corruptKeys: string[] = [];
@@ -67,8 +68,10 @@ export function setCachedLeaderboardEntries(key: string, entries: LeaderboardEnt
       }
     }
     corruptKeys.forEach((storageKey) => sessionStorage.removeItem(storageKey));
+    records.sort((a, b) => b.storedAt - a.storedAt);
+    const writtenIndex = records.findIndex((record) => record.key === writtenStorageKey);
+    if (writtenIndex > 0) records.unshift(...records.splice(writtenIndex, 1));
     records
-      .sort((a, b) => b.storedAt - a.storedAt)
       .slice(LEADERBOARD_CACHE_MAX_RECORDS)
       .forEach((recordToRemove) => sessionStorage.removeItem(recordToRemove.key));
   } catch {

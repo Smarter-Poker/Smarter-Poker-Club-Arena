@@ -122,6 +122,24 @@ describe('leaderboard session cache', () => {
     expect(getCachedLeaderboardEntries('club-new_profit_weekly_0')?.entries).toEqual([entry(99)]);
   });
 
+  it('keeps the just-written board when more than twenty cache writes share one timestamp', () => {
+    for (let index = 0; index < LEADERBOARD_CACHE_MAX_RECORDS; index += 1) {
+      const key = `club-${index}_profit_weekly_0`;
+      sessionStorage.setItem(
+        rawKey(key),
+        JSON.stringify({ version: 2, storedAt: NOW.getTime(), entries: [entry(index)] })
+      );
+    }
+
+    setCachedLeaderboardEntries('club-new_profit_weekly_0', [entry(99)]);
+
+    const keys = Object.keys(sessionStorage).filter((key) =>
+      key.startsWith(LEADERBOARD_CACHE_PREFIX)
+    );
+    expect(keys).toHaveLength(LEADERBOARD_CACHE_MAX_RECORDS);
+    expect(getCachedLeaderboardEntries('club-new_profit_weekly_0')?.entries).toEqual([entry(99)]);
+  });
+
   it('treats blocked or quota-limited session storage as optional', () => {
     const unavailable = {
       getItem: () => {

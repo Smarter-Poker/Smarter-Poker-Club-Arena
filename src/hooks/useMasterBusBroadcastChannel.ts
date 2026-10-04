@@ -48,6 +48,12 @@ export function useMasterBusBroadcastChannel({
   useEffect(() => {
     if (!enabled || !channelName) return;
     let alive = true;
+    // MasterBus may replace a dead channel while its previous Supabase
+    // subscription is still delivering a late CLOSED/error callback. Only the
+    // newest subscription attempt owns this hook's status and payloads; without
+    // this fence an old socket can overwrite a successful rejoin back to
+    // "degraded" (or repaint stale data) after the replacement is live.
+    let subscriptionGeneration = 0;
     /* A private join first proves the session to Realtime. When that proof
        fails (no session yet, a refresh in flight, the network gone) there is
        no channel at all, so the registry's health monitor - which recovers
@@ -94,12 +100,13 @@ export function useMasterBusBroadcastChannel({
         return;
       }
 
+      const generation = ++subscriptionGeneration;
       channel
         .on('broadcast', { event }, (payload: unknown) => {
-          if (alive) callbackRef.current(payload);
+          if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
         })
         .subscribe((status: string, err?: Error) => {
-          if (!alive) return;
+          if (!alive || generation !== subscriptionGeneration) return;
           try {
             statusCallbackRef.current?.(status);
           } catch (callbackError) {

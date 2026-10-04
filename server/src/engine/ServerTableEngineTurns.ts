@@ -1555,19 +1555,52 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     userId: string,
     action: string,
     maxCallAmount?: number
-  ): { success: boolean; error?: string; armedToCall?: number } {
+  ): { success: boolean; error?: string; code?: string; armedToCall?: number } {
+    /* A CLEAR IS FINISHED WHEN NOTHING IS ARMED (2026-10-04).
+     *
+     * This used to sit BELOW the two refusals that follow it, so a clear sent
+     * between hands, or by a player not dealt into the hand, was answered
+     * `No active hand` / `Player not found at this table` with HTTP 400. Both
+     * describe a state in which this player holds no pre-action that could
+     * run, which is exactly what a clear asks for. Saying "refused" instead
+     * told the browser its cancel had failed.
+     *
+     * The browser's rule on a failed cancel is to put the control back, and
+     * until 2026-10-04 putting it back sent the pre-action to the engine
+     * again. So every hand that ended with one armed produced a refused clear,
+     * a re-arm landing in the next hand, and (an arm that arrives on the
+     * player's own turn runs at once, below) a fold nobody chose. Production,
+     * 2026-10-04 19:39 to 19:42 UTC, table a84e44e8: one armed pre-action
+     * folded thirteen hands, ten of them within half a second of the deal,
+     * while each of three open tabs of the account sent 68 to 98 refused
+     * /preaction requests a minute.
+     *
+     * The page no longer does that (src/lib/preActionSync.ts). This is the
+     * engine's half: the answer to a clear is the truth, so a browser still
+     * running the older bundle has nothing to loop on either.
+     *
+     * A seat in the running hand is cleared exactly as before. Outside that,
+     * only an entry that exists is touched, so a clear from somebody who holds
+     * nothing here creates no per-player state. */
+    if (action === 'clear') {
+      const inRunningHand =
+        this.handController?.getState().players.some((p) => p.user_id === userId) === true;
+      if (inRunningHand || this.preActionEngine.getPreAction(this.tableId, userId)) {
+        this.preActionEngine.clearPreAction(this.tableId, userId);
+      }
+      return { success: true };
+    }
+    /* The two refusals an ARM can meet before it is looked at. They carry a
+       code as well as a sentence, so the browser does not have to recognise
+       English to know that nothing was armed because there is nothing to arm
+       it in. */
     if (!this.handController) {
-      return { success: false, error: 'No active hand' };
+      return { success: false, error: 'No active hand', code: 'NO_ACTIVE_HAND' };
     }
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
     if (!player) {
-      return { success: false, error: 'Player not found at this table' };
-    }
-
-    if (action === 'clear') {
-      this.preActionEngine.clearPreAction(this.tableId, userId);
-      return { success: true };
+      return { success: false, error: 'Player not found at this table', code: 'NOT_IN_HAND' };
     }
 
     // Validate the pre-action type

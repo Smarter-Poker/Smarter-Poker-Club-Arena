@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude/f06-dead-origin-originals-20261004. Migration 20261004125152_a_dead_origins_originals_are_disposed_by_the_successor_that_ (applied 2026-10-04 14:04 UTC as 20261004140403): the successor disposes a dead origin's mixed-custody originals.",
+  "functions": ["smarter_private.f06_dispose_dead_origin", "fn_f06_dispose_dead_origin_originals"]
+}

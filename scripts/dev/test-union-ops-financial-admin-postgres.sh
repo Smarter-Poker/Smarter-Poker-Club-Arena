@@ -16,12 +16,13 @@ repo = Path(sys.argv[1])
 binding = Path(sys.argv[2])
 required = {
     "supabase/migrations/20261004153522_union_ops_reports_stay_inside_the_signed_in_budget.sql",
+    "supabase/migrations/20261004173704_union_ops_risk_and_preview_stay_inside_the_request_budget.sql",
     "tests/fixtures/union-ops-financial-admin/bootstrap.sql",
     "tests/fixtures/union-ops-financial-admin/assertions.sql",
 }
 pins = json.loads(binding.read_text()).get("repository_files")
 if not isinstance(pins, dict) or set(pins) != required:
-    raise SystemExit("Union Ops source binding must pin exactly the migration, bootstrap, and assertions.")
+    raise SystemExit("Union Ops source binding must pin exactly both migrations, bootstrap, and assertions.")
 for relative, expected in sorted(pins.items()):
     actual = hashlib.sha256((repo / relative).read_bytes()).hexdigest()
     if actual != expected:
@@ -52,6 +53,7 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres
 "${psql[@]}" \
   -f "$repo/tests/fixtures/union-ops-financial-admin/bootstrap.sql" \
   -f "$repo/supabase/migrations/20261004153522_union_ops_reports_stay_inside_the_signed_in_budget.sql" \
+  -f "$repo/supabase/migrations/20261004173704_union_ops_risk_and_preview_stay_inside_the_request_budget.sql" \
   -f "$repo/tests/fixtures/union-ops-financial-admin/assertions.sql"
 
 echo 'Union Ops Financial Admin PostgreSQL 17 fixture passed.'

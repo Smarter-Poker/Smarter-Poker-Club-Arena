@@ -14,6 +14,7 @@ DECLARE
   multi_overseer constant uuid := '90000000-0000-4000-8000-000000000007';
   a1 constant uuid := 'd0000000-0000-4000-8000-000000000001';
   a2 constant uuid := 'e0000000-0000-4000-8000-000000000002';
+  a3 constant uuid := 'f0000000-0000-4000-8000-000000000003';
   p1 constant uuid := '10000000-0000-4000-8000-000000000001';
   p2 constant uuid := '10000000-0000-4000-8000-000000000002';
   p3 constant uuid := '10000000-0000-4000-8000-000000000003';
@@ -27,6 +28,7 @@ DECLARE
   d jsonb;
   direct_rake numeric;
   plan json;
+  fn_src text;
   s jsonb;
   started timestamptz;
 BEGIN
@@ -45,9 +47,12 @@ BEGIN
   INSERT INTO public.union_clubs(union_id,club_id) VALUES (u,c1);
   INSERT INTO public.union_admins(union_id,user_id) VALUES
     (u,union_admin_user),(u,multi_overseer);
-  INSERT INTO public.profiles VALUES (a1,'Agent One'),(a2,'Agent Two');
+  INSERT INTO public.profiles(id,username,display_name,alias) VALUES
+    (a1,'agent_one','Agent One Real','Agent One'),
+    (a2,'agent_two','Agent Two Real','Agent Two');
   INSERT INTO public.agents(user_id,club_id,role) VALUES
-    (a1,c1,'agent'),(a2,c2,'super_agent'),(a1,u,'agent');
+    (a1,c1,'agent'),(a2,c1,'agent'),(a3,c1,'agent'),
+    (a2,c2,'super_agent'),(a1,u,'agent');
   INSERT INTO public.club_members(club_id,user_id,agent_id,credit_used,joined_at) VALUES
     (c1,p1,a1,10,'2026-02-01 00:00:00+00'),
     -- The house membership is older, but real union_clubs membership must
@@ -58,8 +63,15 @@ BEGIN
     (u,p5,a1,2,'2026-01-04 00:00:00+00'),
     (outsider_club,p4,a1,500,'2026-01-05 00:00:00+00');
   INSERT INTO public.club_members(club_id,user_id,role,status) VALUES
+    (c1,a1,'agent','active'),
     (u,house_admin,'admin','active'),
     (c1,ordinary_member,'member','active');
+  UPDATE public.club_members SET chip_balance=0.50
+   WHERE club_id=c1 AND user_id=a1;
+  UPDATE public.clubs SET chip_treasury=1.00 WHERE id=c1;
+  INSERT INTO public.union_wallets(union_id,rake_wallet) VALUES (u,9.00);
+  INSERT INTO public.union_rakeback_log(union_id,period_start,period_end)
+  VALUES (u,since_at,since_at + interval '7 days');
   INSERT INTO public.table_seats(user_id,club_id,left_at) VALUES
     (p1,c1,NULL),(p2,outsider_club,NULL);
   INSERT INTO public.rake_attributions(player_id,club_id,rake_amount,created_at) VALUES
@@ -80,12 +92,25 @@ BEGIN
     (outsider_club,'table_stack',gen_random_uuid(),'player_wallet',p1,100,'posted',since_at + interval '2 hours');
   INSERT INTO public.agent_commissions(user_id,club_id,amount,created_at) VALUES
     (a1,c1,2.50,since_at + interval '1 hour'),
+    (a1,c1,1.50,since_at + interval '3 days'),
+    (a2,c1,77.00,since_at + interval '4 days'),
     (a1,c1,0.25,'2026-10-10 01:00:00+00'),
     (a2,c2,1.00,since_at + interval '1 hour'),
     (a2,c2,0.50,'2026-10-10 01:00:00+00'),
+    -- The preimage counts only positive agent-pair totals in its headline,
+    -- but its independent club-shortage scan includes every signed amount.
+    -- Keeping this negative pair proves both views survive scan unification.
+    (a3,c1,-1.00,since_at + interval '3 days'),
     (a1,u,1.00,since_at + interval '1 hour'),
     (a2,c2,99.00,since_at - interval '1 hour'),
     (a1,outsider_club,100,since_at + interval '1 hour');
+  -- One partial paid period leaves a1's later 1.50 open; a2's full-period
+  -- settlement makes all 77.00 disappear without a per-row predicate call.
+  INSERT INTO public.agent_commission_settlements(
+    club_id,user_id,union_id,period_start,period_end,amount,rows_count)
+  VALUES
+    (c1,a1,u,since_at,since_at + interval '2 hours',2.50,1),
+    (c1,a2,u,since_at,since_at + interval '7 days',77.00,1);
   INSERT INTO public.rake_records(club_id,rake_amount,is_tournament,created_at) VALUES
     -- A sealed prior UTC day contains both a tournament fee and its signed
     -- reversal. The distribution law must retain both, not read cash display
@@ -124,8 +149,11 @@ BEGIN
      since_at + interval '2 hours'),
     (house_hand,u,1,jsonb_build_object(p2::text,1),false,
      'cash_hand','{}'::jsonb,since_at + interval '3 hours');
-  INSERT INTO public.rakeback_periods(club_id,rakeback_amount,period_start) VALUES
-    (c1,2,since_at::date),(c2,1,since_at::date),(outsider_club,50,since_at::date);
+  INSERT INTO public.rakeback_periods(user_id,club_id,rakeback_amount,period_start,status) VALUES
+    (p1,c1,2,since_at::date,'pending'),
+    (p2,c1,1,since_at::date,'pending'),
+    (p3,c2,1,since_at::date,'pending'),
+    (p4,outsider_club,50,since_at::date,'pending');
 
   IF NOT EXISTS (
     SELECT 1
@@ -163,6 +191,20 @@ BEGIN
      OR NOT has_function_privilege('authenticated', 'public.fn_union_overseer_options()', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.fn_union_overseer_options()', 'EXECUTE') THEN
     RAISE EXCEPTION 'overseer option reader grants are not least privilege';
+  END IF;
+  IF (SELECT p.proacl::text
+        FROM pg_proc p
+       WHERE p.oid =
+         'public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)
+       IS DISTINCT FROM
+         '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'
+     OR (SELECT p.proacl::text
+           FROM pg_proc p
+          WHERE p.oid =
+            'public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)
+       IS DISTINCT FROM
+         '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}' THEN
+    RAISE EXCEPTION 'rewritten Union Ops reader grants are not least privilege';
   END IF;
 
   PERFORM set_config('app.engine','off',false);
@@ -213,7 +255,7 @@ BEGIN
    WHERE agent_user_id=a1 AND club_name='Club One';
   IF r.players IS DISTINCT FROM 2 OR r.seated_now IS DISTINCT FROM 1
      OR r.rake_generated IS DISTINCT FROM 3.50 OR r.player_net IS DISTINCT FROM 3.00
-     OR r.commission_accrued IS DISTINCT FROM 2.75 OR r.credit_extended IS DISTINCT FROM 15.00 THEN
+     OR r.commission_accrued IS DISTINCT FROM 4.25 OR r.credit_extended IS DISTINCT FROM 15.00 THEN
     RAISE EXCEPTION 'risk report changed exact Club One accounting: %', to_jsonb(r);
   END IF;
   SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
@@ -239,6 +281,15 @@ BEGIN
   IF position('idx_rake_records_union_signed_window' in plan::text) = 0 THEN
     RAISE EXCEPTION 'signed risk plan did not use the new full covering index: %', plan;
   END IF;
+  fn_src := pg_get_functiondef(
+    'public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure);
+  IF (length(fn_src) - length(replace(fn_src, 'jsonb_each_text(', '')))
+       / length('jsonb_each_text(') IS DISTINCT FROM 1
+     OR position('scoped_rake_records AS MATERIALIZED' in fn_src) > 0
+     OR (length(fn_src) - length(replace(fn_src, 'LEFT JOIN LATERAL (', '')))
+       / length('LEFT JOIN LATERAL (') IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'risk report restored a double JSON expansion, temp fence, or OR flow join';
+  END IF;
 
   d := public.fn_union_distribution_check(u,since_at);
   SELECT COALESCE(SUM(rr.rake_amount),0) INTO direct_rake
@@ -258,6 +309,39 @@ BEGIN
   IF (d->>'rake_collected')::numeric IS DISTINCT FROM 3.50
      OR (d->>'agent_commissions')::numeric IS DISTINCT FROM 0.50 THEN
     RAISE EXCEPTION 'distribution changed the arbitrary lower-bound/open-ended contract: %', d;
+  END IF;
+
+  d := public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
+  IF (d#>>'{round1,already_executed}')::boolean IS DISTINCT FROM true
+     OR (d#>>'{round1,rake_treasury_available}')::numeric IS DISTINCT FROM 9.00
+     OR (d#>>'{round2,payees}')::int IS DISTINCT FROM 1
+     OR (d#>>'{round2,amount}')::numeric IS DISTINCT FROM 1.50
+     -- The positive a1 pair remains the 1.50 headline. The independent
+     -- preimage shortage view includes a3's -1.00 pair, leaving 0.50 owed
+     -- against 1.00 treasury and therefore no Round-2 shortage.
+     OR (d#>>'{round2,clubs_short}')::int IS DISTINCT FROM 0
+     OR (d#>>'{round2,short_by}')::numeric IS DISTINCT FROM 0.00
+     OR d#>'{round2,detail}' IS DISTINCT FROM '[]'::jsonb
+     OR (d#>>'{round3,payees}')::int IS DISTINCT FROM 2
+     OR (d#>>'{round3,amount}')::numeric IS DISTINCT FROM 3.00
+     OR (d#>>'{round3,agents_short}')::int IS DISTINCT FROM 1
+     OR (d#>>'{round3,short_by}')::numeric IS DISTINCT FROM 2.50
+     OR (d#>>'{round3,detail,0,agent_user_id}')::uuid IS DISTINCT FROM a1
+     OR (d#>>'{round3,detail,0,agent}') IS DISTINCT FROM 'Agent One'
+     OR (d->>'total_to_move')::numeric IS DISTINCT FROM 4.50
+     OR (d->>'has_blockers')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'settlement preview changed paid-period or shortage accounting: %', d;
+  END IF;
+  fn_src := pg_get_functiondef(
+    'public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure);
+  IF position('fn_agent_commission_paid_by_period' in fn_src) > 0
+     OR (length(fn_src) - length(replace(
+           fn_src, 'FROM public.agent_commissions ac', '')))
+        / length('FROM public.agent_commissions ac') IS DISTINCT FROM 1
+     OR (length(fn_src) - length(replace(
+           fn_src, 'FROM public.rakeback_periods rp', '')))
+        / length('FROM public.rakeback_periods rp') IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'settlement preview restored a per-row predicate or duplicate base scan';
   END IF;
   EXECUTE format(
     'EXPLAIN (FORMAT JSON) SELECT SUM(rake_amount) FROM public.rake_records '
@@ -282,6 +366,12 @@ BEGIN
   BEGIN
     PERFORM public.fn_union_distribution_check(u,since_at);
     RAISE EXCEPTION 'another union overseer read Midway distribution';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
+    RAISE EXCEPTION 'another union overseer read Midway settlement preview';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
   END;
@@ -344,5 +434,124 @@ BEGIN
   END IF;
 END
 $fixture$;
+
+-- Production-shaped Risk qualification. One million selected rows each carry
+-- six contribution keys, the shape that made the preimage spill its
+-- MATERIALIZED JSON set and parse every object twice. Three hundred thousand
+-- table-stack movements exercise both entity-direction indexes.
+INSERT INTO public.rake_records(
+  club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at)
+SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       0.06,
+       jsonb_build_object(
+         '10000000-0000-4000-8000-000000000001',1,
+         '10000000-0000-4000-8000-000000000002',1,
+         '90000000-0000-4000-8000-000000000001',1,
+         '90000000-0000-4000-8000-000000000002',1,
+         '90000000-0000-4000-8000-000000000003',1,
+         '90000000-0000-4000-8000-000000000006',1),
+       false,'cash_hand','{}'::jsonb,'2026-09-30 12:30:00+00'::timestamptz
+  FROM generate_series(1,1000000);
+
+INSERT INTO public.chip_ledger(
+  club_id,from_type,from_entity_id,to_type,to_entity_id,amount,status,created_at)
+SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       CASE WHEN g % 2 = 0 THEN 'player_wallet' ELSE 'table_stack' END,
+       CASE WHEN g % 2 = 0
+            THEN '10000000-0000-4000-8000-000000000001'::uuid
+            ELSE gen_random_uuid() END,
+       CASE WHEN g % 2 = 0 THEN 'table_stack' ELSE 'player_wallet' END,
+       CASE WHEN g % 2 = 0
+            THEN gen_random_uuid()
+            ELSE '10000000-0000-4000-8000-000000000001'::uuid END,
+       CASE WHEN g % 2 = 0 THEN 0.01 ELSE 0.02 END,
+       'posted','2026-09-30 13:30:00+00'::timestamptz
+  FROM generate_series(1,300000) g;
+
+ANALYZE public.rake_records;
+ANALYZE public.chip_ledger;
+
+SET work_mem = '4MB';
+SET statement_timeout = '8s';
+DO $risk_scale$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_total numeric;
+  v_net numeric;
+  v_rows integer;
+BEGIN
+  SELECT count(*), SUM(r.rake_generated), SUM(r.player_net)
+    INTO v_rows, v_total, v_net
+    FROM public.fn_union_agent_risk_report(
+      'fade0000-0000-0000-0000-000000000001'::uuid,
+      '2026-09-28 12:30:00+00'::timestamptz) r;
+  -- Baseline Player Net is +4.00. The scaled p1 ledger adds 150,000 *
+  -- (+0.02) inbound and 150,000 * (-0.01) outbound = +1,500.00.
+  IF v_rows IS DISTINCT FROM 2
+     OR v_total IS DISTINCT FROM 20004.00
+     OR v_net IS DISTINCT FROM 1504.00 THEN
+    RAISE EXCEPTION 'scaled risk result changed signed allocation/flow: rows %, rake %, net %',
+      v_rows, v_total, v_net;
+  END IF;
+  RAISE NOTICE 'scaled Risk: 1,000,000 six-way JSON rows + 300,000 flows in % ms',
+    round(extract(epoch FROM clock_timestamp() - v_started) * 1000);
+END
+$risk_scale$;
+RESET statement_timeout;
+RESET work_mem;
+
+-- Release the Risk scale relations before building the commission-scale case;
+-- the fixture runs on the external SSD and must not retain two large cases at
+-- once. Functional parity was proved above before this local-only truncation.
+TRUNCATE public.rake_records, public.chip_ledger;
+
+-- Production-shaped Preview qualification. The historical Round-2 incident
+-- involved roughly 2.2 million commission rows. 1.7 million are behind a
+-- settlement row covering the entire requested period and must be skipped at
+-- pair scope; the remaining half million are read once through the partial
+-- open index and explicit settlement anti-join.
+INSERT INTO public.agent_commissions(user_id,club_id,amount,created_at)
+SELECT 'e0000000-0000-4000-8000-000000000002'::uuid,
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       0.01,'2026-10-02 12:30:00+00'::timestamptz
+  FROM generate_series(1,1700000);
+INSERT INTO public.agent_commissions(user_id,club_id,amount,created_at)
+SELECT 'd0000000-0000-4000-8000-000000000001'::uuid,
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       0.01,'2026-10-01 12:30:00+00'::timestamptz
+  FROM generate_series(1,500000);
+
+ANALYZE public.agent_commissions;
+
+SET work_mem = '4MB';
+SET statement_timeout = '8s';
+DO $preview_scale$
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_preview jsonb;
+BEGIN
+  v_preview := public.fn_union_settlement_preview(
+    'fade0000-0000-0000-0000-000000000001'::uuid,
+    '2026-09-28 12:30:00+00'::timestamptz,
+    '2026-10-05 12:30:00+00'::timestamptz);
+  IF (v_preview#>>'{round2,payees}')::int IS DISTINCT FROM 1
+     OR (v_preview#>>'{round2,amount}')::numeric IS DISTINCT FROM 5001.50
+     -- 5,001.50 positive-pair headline - 1.00 negative-pair adjustment
+     -- - 1.00 treasury = 4,999.50 exact club shortage.
+     OR (v_preview#>>'{round2,short_by}')::numeric IS DISTINCT FROM 4999.50
+     OR (v_preview#>>'{round3,amount}')::numeric IS DISTINCT FROM 3.00
+     OR (v_preview->>'total_to_move')::numeric IS DISTINCT FROM 5004.50 THEN
+    RAISE EXCEPTION 'scaled preview changed exact paid-period accounting: %',
+      v_preview;
+  END IF;
+  RAISE NOTICE 'scaled Preview: 2,200,000 commission rows in % ms',
+    round(extract(epoch FROM clock_timestamp() - v_started) * 1000);
+END
+$preview_scale$;
+RESET statement_timeout;
+RESET work_mem;
+
+TRUNCATE public.agent_commissions, public.rakeback_periods,
+         public.agent_commission_settlements;
 
 SELECT 'union_ops_financial_admin_pg17_ok' AS result;

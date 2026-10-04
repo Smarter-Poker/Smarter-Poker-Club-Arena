@@ -1,7 +1,8 @@
 {
   "repository_files": {
     "supabase/migrations/20261004153522_union_ops_reports_stay_inside_the_signed_in_budget.sql": "b6eb0bcee0e50962d7764aa3237f47184684297051972f5e61a09a5ba213be96",
-    "tests/fixtures/union-ops-financial-admin/assertions.sql": "9f884e2189dc1945ae3de5ce3e06135e50464e1ed95947b202e6cc892e048e97",
-    "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "bb560aa3d453e2032d9f2d98b523b49af5b026e52bb095ad6f0a058da8081bbc"
+    "supabase/migrations/20261004173704_union_ops_risk_and_preview_stay_inside_the_request_budget.sql": "709b2ae01602cf08e126e2deab13280b854f44595030958c07a4d7966e354021",
+    "tests/fixtures/union-ops-financial-admin/assertions.sql": "a79816b5809038830980a7cd9a26a32b2723289849d7adc68eebb06e9e395cad",
+    "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "90a4b08b25315a9d32cf37e3e42264e801fe1a3ad72599739af19f6d51aff2be"
   }
 }

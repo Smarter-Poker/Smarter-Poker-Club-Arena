@@ -16,7 +16,7 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     .filter((name) => /^test-stats-.*-postgres\.sh$/.test(name))
     .sort();
 
-  it('runs every native Stats contract exactly once plus the financial revenue contract', () => {
+  it('runs every native Stats contract exactly once plus both financial admin contracts', () => {
     expect(statsScripts).toHaveLength(8);
     for (const script of statsScripts) {
       expect(wrapper.split(`scripts/dev/${script}`)).toHaveLength(2);
@@ -25,6 +25,13 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     expect(wrapper.split('scripts/dev/test-financial-admin-revenue-postgres.sh')).toHaveLength(2);
     expect(read('scripts/dev/test-financial-admin-revenue-postgres.sh')).toContain(
       'DATA_CONSOLE_PG_SCRATCH_PARENT'
+    );
+    expect(wrapper.split('scripts/dev/test-union-ops-financial-admin-postgres.sh')).toHaveLength(2);
+    expect(read('scripts/dev/test-union-ops-financial-admin-postgres.sh')).toContain(
+      'UNION_OPS_PG_SCRATCH_PARENT'
+    );
+    expect(wrapper).toContain(
+      'export UNION_OPS_PG_SCRATCH_PARENT="${UNION_OPS_PG_SCRATCH_PARENT:-$DATA_CONSOLE_PG_SCRATCH_PARENT}"'
     );
   });
 
@@ -41,8 +48,10 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
   it.each([
     'scripts/ci/test-data-console-postgres-contracts.sh',
     'scripts/dev/test-financial-admin-revenue-postgres.sh',
+    'scripts/dev/test-union-ops-financial-admin-postgres.sh',
     'scripts/dev/test-stats-club-scope-postgres.sh',
     'tests/fixtures/financial-admin-revenue/assertions.sql',
+    'tests/fixtures/union-ops-financial-admin/source-binding.json',
     'tests/fixtures/stats-operational-quality/bootstrap.sql',
     'tests/data-console-postgres-contracts-wired.test.ts',
   ])('routes executable contract input %s to the native server job', (path) => {

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626",
+    "scripts/ci/classify-ci-changes.mjs": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -643,5 +643,17 @@
       }
     ],
     "verification": "The exact classifier diff and positive routing cases were reviewed; tests/data-console-postgres-contracts-wired.test.ts passed and all nine native Data/Stats PostgreSQL contracts passed."
+  },
+  "unionOpsFinancialAdminNativeRouting20261004": {
+    "reason": "Add the Union Operations Financial Admin fixture directory to the existing Data Console PostgreSQL route so any bound bootstrap, assertion or source-binding change selects the native accounting job. The classifier diff widens one additive fixture alternation only; no existing accounting route, financial fixture, captured definition or historical assertion is removed or weakened.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626",
+        "current": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+      }
+    ],
+    "verification": "The exact classifier diff was reviewed. The focused routing test passes and the source-bound Union Operations PostgreSQL 17 fixture passed its exact semantic, authorization and bounded-scale assertions."
   }
 }

@@ -34,7 +34,7 @@ const accounting =
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
 const dataConsolePostgres =
-  /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/data-console-postgres-contracts-wired\.test\.ts$|tests\/fixtures\/(?:financial-admin-revenue|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+  /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/data-console-postgres-contracts-wired\.test\.ts$|tests\/fixtures\/(?:financial-admin-revenue|union-ops-financial-admin|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
 
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =

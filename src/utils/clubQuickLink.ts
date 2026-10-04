@@ -227,7 +227,16 @@ export const CHIP_BALANCE_EVENTS = [
  * club_members rows, so the union flag must be selected and filtered here —
  * otherwise the union shows up as a switchable club cashier.
  */
-export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub[]> {
+export interface QuickLinkClubFetchResult {
+  clubs: QuickLinkClub[];
+  ok: boolean;
+}
+
+/**
+ * Status-bearing form used by interfaces that must distinguish a real empty
+ * directory from a refused or unavailable membership read.
+ */
+export async function fetchQuickLinkClubsResult(userId: string): Promise<QuickLinkClubFetchResult> {
   try {
     const { data, error } = await supabase
       .from('club_members')
@@ -236,7 +245,7 @@ export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub
       .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {
       reportError(error, 'clubQuickLink.fetchQuickLinkClubs');
-      return [];
+      return { clubs: [], ok: false };
     }
     const clubs: QuickLinkClub[] = [];
     const seen = new Set<string>();
@@ -246,11 +255,16 @@ export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub
       seen.add(club.id);
       clubs.push(club);
     }
-    return eligibleQuickLinkClubs(clubs);
+    return { clubs: eligibleQuickLinkClubs(clubs), ok: true };
   } catch (err) {
     reportError(err, 'clubQuickLink.fetchQuickLinkClubs');
-    return [];
+    return { clubs: [], ok: false };
   }
+}
+
+/** Compatibility form for callers where an empty fallback remains sufficient. */
+export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub[]> {
+  return (await fetchQuickLinkClubsResult(userId)).clubs;
 }
 
 /**

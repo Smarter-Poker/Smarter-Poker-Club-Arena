@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -48,19 +47,36 @@ describe('cashier Phase 1 critical integrity contracts', () => {
 });
 
 describe('cashier Phase 5 production certification contracts', () => {
-  it('pins the protected wallet-send definition with its agreement lock', () => {
-    const successor = source('supabase/accounting/credit-reduction-v1/lock-order-successor.sql');
-    const definition = successor.match(
-      /CREATE OR REPLACE FUNCTION public\.fn_agent_wallet_send\([^\n]+\n[\s\S]+?\n\$function\$;/
-    )?.[0];
-    expect(definition).toBeDefined();
-    const catalogueDefinition = definition!.slice(0, -1) + '\n';
-    const hash = createHash('md5').update(catalogueDefinition).digest('hex');
+  it('pins the launch wallet wrappers after the global intent lock', () => {
+    const authority = source(
+      'supabase/migrations/20261004124327_cashier_authority_and_retry_keys_are_exact.sql'
+    );
     const contract = source('scripts/verification-harness/cashier-release-contract.sql');
-    const sendContract = contract.match(
-      /'signature', 'public\.fn_agent_wallet_send\([^']+'[\s\S]+?\n {4}\)/
-    )?.[0];
-    expect(sendContract).toContain(`'hash', '${hash}'`);
+    const sendWrapper = authority.slice(
+      authority.indexOf('CREATE FUNCTION public.fn_agent_wallet_send('),
+      authority.indexOf('CREATE FUNCTION public.fn_agent_wallet_claim_back(')
+    );
+    const claimWrapper = authority.slice(
+      authority.indexOf('CREATE FUNCTION public.fn_agent_wallet_claim_back('),
+      authority.indexOf(
+        'REVOKE ALL ON FUNCTION',
+        authority.indexOf('CREATE FUNCTION public.fn_agent_wallet_claim_back(')
+      )
+    );
+    for (const wrapper of [sendWrapper, claimWrapper]) {
+      expect(wrapper.indexOf('fn_cashier_exact_intent_begin')).toBeGreaterThanOrEqual(0);
+      expect(wrapper.indexOf('fn_cashier_exact_intent_begin')).toBeLessThan(
+        wrapper.indexOf('_core_20261004')
+      );
+    }
+    expect(contract).toContain("'hash', 'c6c14eb18feb9a645a7aa2ffad3cf6f1'");
+    expect(contract).toContain("'hash', '85976e86092390fb1950b8ed31c36c0d'");
+    expect(contract).toContain(
+      'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)'
+    );
+    expect(contract).toContain(
+      'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)'
+    );
   });
 
   it('runs an exact live database contract canary after every successful publish', () => {
@@ -91,6 +107,10 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(canary).toContain("('20260906093024')");
     expect(canary).toContain('club_members_cashier_tree_idx');
     expect(canary).toContain("('20260831235992')");
+    expect(canary).toContain("('20261004124327')");
+    expect(canary).toContain('cashier_rpc_operation_intents');
+    expect(canary).toContain('fn_cashier_exact_intent_begin');
+    expect(canary).toContain('cashier_agent_balance_actor_guard');
     expect(runner).toContain("await client.query('SET LOCAL ROLE authenticated')");
     expect(runner).toContain('SELECT public.fn_record_cashier_operation');
     expect(runner).not.toContain('INSERT INTO public.cashier_operations');

@@ -118,6 +118,11 @@ function idleEngine() {
     // Returns no evictions.
     collectAwayBlindEvictions: () => [] as string[],
     collectAbandonedSeatEvictions: () => [] as string[],
+    // Added 2026-10-04 with roster-owned presence, for the same reason as the
+    // three above: adoptSeatRoster now asks the presence FSM to forget anybody
+    // the roster no longer holds, on every roster read, before the add-on
+    // sweep. Forgets nobody.
+    retainOnly: () => [] as string[],
     // dealHand calls this for whoever is in the blind seats. Stubbed as a
     // no-op: presence is not what these tests are about.
     noteBlindChargedWhileAway: vi.fn(),

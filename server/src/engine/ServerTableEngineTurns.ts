@@ -1285,6 +1285,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         this.turnFSM.transition('complete');
 
+        /* A MANUAL BANK THAT RUNS OUT IS A TIMEOUT TOO (2026-10-04, timeout
+           and reconnect audit). The automatic bank's expiry has counted a
+           strike since 2026-08-21; this one never did. It is not the rare
+           path it looks like: the browser posts /timebank itself the moment
+           its ring reaches zero (TablePage onTimeout), two seconds before the
+           engine's own deadline, so for a player whose app is open and who
+           has a bank left, EVERY unanswered turn ends here. Their strike
+           count stayed at zero, the forced sit-out never came, and the table
+           waited out a full clock and a full bank on that seat every hand
+           until the bank ran dry. Same ladder, same count, both doors.
+
+           The horse timeout counter is not fed here: this callback is reached
+           only through POST /timebank, which a horse never sends, and
+           aHorseActionReleasesItsClocks pins that counter to the two expiry
+           sites a horse can reach. */
+        this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+
         // FIX 149: Wire telemetry — manual time bank expiry
         this.engineTelemetry.recordTimerExpired(this.tableId);
 
@@ -1993,6 +2010,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.turnFSM.transition('action_received');
       this.turnFSM.transition('processing');
 
+      // The published deadline of the clock this action is answering, read
+      // before that clock is cancelled. A refusal gives back exactly this.
+      const displayDeadlineBeforeAction = this.playerTurnStartTime + this.playerTurnDuration * 1000;
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
       // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool.
@@ -2059,7 +2079,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         console.warn(
           `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} - re-arming turn timer`
         );
-        this.rearmTurnTimerIfCurrent(userId);
+        this.restoreTurnClockAfterRejectedAction(userId, seat, displayDeadlineBeforeAction);
         return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
       }
       const executed = accepted.record;
@@ -2171,6 +2191,47 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       structure: bounded.structure,
       betSize: bounded.fixedBetSize ?? undefined,
     };
+  }
+
+  /**
+   * A REFUSED ACTION DOES NOT BUY A NEW CLOCK (2026-10-04, timeout and
+   * reconnect audit).
+   *
+   * The action path cancels the turn clock before it applies the action, so a
+   * refusal has to put a clock back or the seat hangs (SWEEP #4, 2026-07-23).
+   * It put back a whole new one: rearmTurnTimerIfCurrent runs the turn-change
+   * path, which arms the table's full action time and restores normal bank
+   * eligibility. Any action the validator passes and the hand controller
+   * refuses was therefore a free reset - the reachable case is a `raise` from
+   * a seat that may not reopen the betting, which no legal-actions list
+   * offers but any hand-written request can send. Posted once every few
+   * seconds it held the turn, and the table, for as long as the sender liked.
+   *
+   * The clock that was running is the clock that comes back: the same
+   * published deadline, the same enforcement grace on top of it, and whatever
+   * bank state the turn already had. A bank that was counting down was
+   * stopped and billed by `playerActed` before the action was applied, so
+   * its remaining time is served out on the plain clock and
+   * `timeBankActivatedThisTurn` (left as it was) keeps a second bank from
+   * opening on the same turn.
+   */
+  protected restoreTurnClockAfterRejectedAction(
+    userId: string,
+    seat: number,
+    displayDeadlineMs: number
+  ): void {
+    if (!this.handController) return;
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player || player.seat !== seat || state.currentPlayerSeat !== seat) return;
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return;
+    if (!Number.isFinite(displayDeadlineMs) || displayDeadlineMs <= 0) {
+      // No clock was ever published for this turn; the ordinary re-arm owns it.
+      this.rearmTurnTimerIfCurrent(userId);
+      return;
+    }
+    const remainingSeconds = Math.max(0.001, (displayDeadlineMs - Date.now()) / 1000);
+    this.startTurnTimer(userId, seat, remainingSeconds);
   }
 
   /** Transfer the current decision to the unspent, server-owned outage deadline. */

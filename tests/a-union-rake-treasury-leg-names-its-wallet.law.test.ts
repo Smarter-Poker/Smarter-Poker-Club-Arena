@@ -81,14 +81,29 @@ describe('a union rake treasury leg names its wallet', () => {
   });
 
   it('no later migration hand-writes a union_wallet leg without naming its wallet column', () => {
-    const later = sorted().filter((f) => f.slice(0, 14) > VERSION);
+    // A file the repo marks as never-to-run (header or aliases row) is not a writer.
+    const aliases = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'scripts/ci/applied-migration-aliases.json'), 'utf8')
+    ) as { superseded?: { file: string }[] };
+    const superseded = new Set(
+      (aliases.superseded ?? []).map((row) => path.basename(row.file))
+    );
+    const later = sorted().filter(
+      (f) =>
+        f.slice(0, 14) > VERSION &&
+        !superseded.has(f) &&
+        // the marker lives in the file's leading comment block
+        !/^--\s*SUPERSEDED BY\s+\d{14}\b/m.test(
+          /^(?:--[^\n]*\n)*/.exec(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))?.[0] ?? ''
+        )
+    );
     const offenders: string[] = [];
     for (const f of later) {
       const sql = fs.readFileSync(path.join(MIGRATIONS, f), 'utf8');
       for (const stmt of chipLedgerInserts(sql)) {
         if (!/'union_wallet'/.test(stmt)) continue;
         const cols = stmt.slice(0, stmt.search(/\bVALUES\b|\bSELECT\b/i));
-        if (!/from_label|to_label/.test(cols)) offenders.push(`${f}: ${stmt.slice(0, 160)}`);
+        if (!/from_label|to_label/.test(cols)) offenders.push(`${f}: ${stmt.split('\n')[0]}`);
       }
     }
     expect(offenders, offenders.join('\n')).toEqual([]);

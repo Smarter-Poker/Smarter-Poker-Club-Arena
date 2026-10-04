@@ -30,11 +30,11 @@
 --
 -- Isolated PostgreSQL 17 qualification: exact small-data parity plus 1,000,000
 -- selected six-way contribution rows and 300,000 chip movements completed the
--- Risk read in 1,111 ms; 2,200,000 commission rows (1.7M fully covered, 0.5M
--- open) completed Preview in 89 ms. Each call ran with work_mem=4MB and
+-- Risk read in 788 ms; 2,200,000 commission rows (1.7M fully covered, 0.5M
+-- open) completed Preview in 92 ms. Each call ran with work_mem=4MB and
 -- statement_timeout=8s.
 --
--- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '092931f2aacdae6edb8360e599ef636b' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = 'd0d194d412da011936c4c4b62297f921'
+-- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '46c0014d2564a051e4da77dd36c37923' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = 'd0d194d412da011936c4c4b62297f921'
 
 BEGIN;
 
@@ -168,24 +168,32 @@ BEGIN
               r.joined_at ASC NULLS LAST, r.club_id
   ),
   rake AS (
-    SELECT r.player_id, r.club_id,
+    SELECT allocation.player_id, allocation.club_id,
            SUM(rr.rake_amount * allocation.contribution
                / NULLIF(allocation.total, 0)) AS rake_generated
       FROM public.rake_records rr
       CROSS JOIN LATERAL (
-        -- One expansion supplies both each player's numerator and the row's
-        -- denominator. The preimage parsed this same JSON object twice.
-        SELECT (e.key)::uuid AS player_id,
-               e.value::numeric AS contribution,
-               SUM(e.value::numeric) OVER () AS total
-          FROM jsonb_each_text(rr.player_contributions) e(key, value)
+        SELECT r.player_id, r.club_id,
+               expanded.contribution, expanded.total
+          FROM (
+            -- One expansion supplies both each player's numerator and the
+            -- row's denominator. The preimage parsed this object twice.
+            SELECT (e.key)::uuid AS player_id,
+                   e.value::numeric AS contribution,
+                   SUM(e.value::numeric) OVER () AS total
+              FROM jsonb_each_text(rr.player_contributions) e(key, value)
+          ) expanded
+          JOIN rake_roster r ON r.player_id = expanded.player_id
+         WHERE expanded.total > 0
+         -- Keep the tiny roster join inside the parameterized subplan. This
+         -- emits only roster matches instead of six allocations per record,
+         -- while remaining bounded when every contribution map is unique.
+         OFFSET 0
       ) allocation
-      JOIN rake_roster r ON r.player_id = allocation.player_id
      WHERE rr.club_id = ANY(v_clubs)
        AND rr.created_at >= v_from
        AND rr.player_contributions IS NOT NULL
-       AND allocation.total > 0
-     GROUP BY r.player_id, r.club_id
+     GROUP BY allocation.player_id, allocation.club_id
   ),
   flows AS (
     SELECT r.player_id, r.club_id,
@@ -430,8 +438,12 @@ DECLARE
   v_preview text := pg_get_functiondef(
     'public.fn_union_settlement_preview(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure);
 BEGIN
-  IF md5(v_risk) IS DISTINCT FROM '092931f2aacdae6edb8360e599ef636b'
+  IF md5(v_risk) IS DISTINCT FROM '46c0014d2564a051e4da77dd36c37923'
      OR position('scoped_rake_records AS MATERIALIZED' IN v_risk) > 0
+     OR position('GROUP BY rr.player_contributions' IN v_risk) > 0
+     OR position('JOIN rake_roster r ON r.player_id = expanded.player_id' IN v_risk) = 0
+     OR position('OFFSET 0' IN v_risk) = 0
+     OR position('GROUP BY allocation.player_id, allocation.club_id' IN v_risk) = 0
      OR position('SUM(e.value::numeric) OVER ()' IN v_risk) = 0
      OR NOT EXISTS (
        SELECT 1

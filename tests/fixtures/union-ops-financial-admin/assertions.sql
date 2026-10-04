@@ -286,6 +286,10 @@ BEGIN
   IF (length(fn_src) - length(replace(fn_src, 'jsonb_each_text(', '')))
        / length('jsonb_each_text(') IS DISTINCT FROM 1
      OR position('scoped_rake_records AS MATERIALIZED' in fn_src) > 0
+     OR position('GROUP BY rr.player_contributions' in fn_src) > 0
+     OR position('JOIN rake_roster r ON r.player_id = expanded.player_id' in fn_src) = 0
+     OR position('OFFSET 0' in fn_src) = 0
+     OR position('GROUP BY allocation.player_id, allocation.club_id' in fn_src) = 0
      OR (length(fn_src) - length(replace(fn_src, 'LEFT JOIN LATERAL (', '')))
        / length('LEFT JOIN LATERAL (') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'risk report restored a double JSON expansion, temp fence, or OR flow join';

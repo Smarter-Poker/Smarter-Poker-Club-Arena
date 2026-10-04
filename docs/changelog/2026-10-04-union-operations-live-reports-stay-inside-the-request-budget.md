@@ -21,8 +21,10 @@ Signed-in production verification of the Financial Admin console found two real 
 - The Data Console PostgreSQL wrapper now runs the Union Operations Financial Admin fixture exactly once and maps it to runner-owned scratch storage.
 - The CI classifier now selects that native PostgreSQL job whenever the runner, binding or Union Operations fixture changes.
 - Source binding pins the predecessor migration, this follow-up migration, fixture bootstrap and exact assertions so a mismatched proof fails closed.
-- PostgreSQL 17 qualification exercised one million six-way risk-deal rows plus 300,000 wallet legs under an eight-second statement budget, completing in 1,108 ms with exact signed totals.
-- The same qualification exercised 2.2 million commission rows, including 1.7 million rows covered by a prior full-period settlement, completing preview in 98 ms with exact Round 2 and shortage totals.
+- The first hosted run exposed one remaining Risk-plan gap: all six million expanded contribution rows reached the outer roster join before four million non-roster rows were discarded. The roster join now stays inside a bounded lateral subplan, emitting only matching players while the denominator still sees every contribution.
+- PostgreSQL 17 qualification exercised one million six-way risk-deal rows plus 300,000 wallet legs under an eight-second statement budget, completing in 788 ms with exact signed totals.
+- A separate one-million-distinct-map plan probe completed in 4,147 ms without a temporary-file spill, compared with 4,301 ms for the failed candidate. The enforced source guard rejects grouping or materializing contribution JSON, which independently regressed that high-cardinality case and wrote nearly 1 GB of temporary data.
+- The same qualification exercised 2.2 million commission rows, including 1.7 million rows covered by a prior full-period settlement, completing preview in 92 ms with exact Round 2 and shortage totals.
 - Small semantic cases separately prove signed reversals, canonical membership, partial and full-cover settlements, the distinct positive-payee and signed-club shortage aggregates, all three preview rounds, same-union authorization, cross-union refusal, owner and function grants, usable index state and installed source identities.
 
 ## Delivery Contract

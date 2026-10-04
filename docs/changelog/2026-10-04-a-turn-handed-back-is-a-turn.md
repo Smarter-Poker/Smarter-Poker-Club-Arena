@@ -32,6 +32,16 @@ decision took at least 15.9 seconds. There were eight such turns:
 grace and the full 20s time bank. In the same sixteen hands, seat 2 opening a
 street that SEAT 6 had closed took 2.2 to 10.0 seconds.
 
+The turns that were "acted" were rescued by reloading. The opponent's phone
+reported a fresh mount of the table four more times during the match
+(`client_error_events`, 19:48:12, 19:49:28, 19:51:03 and 19:52:18 UTC), each
+while the app was on the lobby or the club page rather than the table route.
+A table mounts off its own route when the app has just loaded and rebuilds a
+tab for every seat the account holds. The last three are 3.2s, 3.1s and 1.8s
+before that seat's next action on one of the turns above. Read together: the
+app was being reloaded or reopened to get the action bar back, and a page
+that goes away tells the engine the seat is away.
+
 It is not that player and not that phone. Every human decision on the
 platform in the week of 2026-09-28, first to act on a new street:
 
@@ -173,6 +183,13 @@ same change.
   `tests/unit/preActionArmedPriceIsTheEngines.test.ts`,
   `tests/lightning/lightning-tablepage-pool-session.test.tsx`,
   `tests/unit/timeBankSeatFeedbackAndCards.test.ts`.
+- One unrelated test repaired because the pre-push gate could not pass
+  without it: `tests/components/player-stats-page-renders.test.tsx` waited for
+  the stats payload with `findByText('2,000')`, and two places print that
+  count. It passed only while a lazy chunk was still loading and failed with
+  "Found multiple elements" in every full `vitest related` run of
+  `TablePage.tsx` on a two-core box (three of three). It now waits for the
+  count wherever it paints. No assertion about the page changes.
 
 ## Found, and not changed here
 
@@ -197,6 +214,14 @@ same change.
 - `EngineLeaseBoundary.guard.test.ts` pins a lifecycle check inside
   `setPreAction` through a slice that runs to the end of the class, so it
   passes without the method containing one.
+- `TablePage.EngineHeroSeatNotRendered` appears to report on an ordinary
+  mount. Its effect compares the engine's snapshot with the seats the page has
+  painted in the same commit that receives the snapshot, before the mapping
+  effect's update has rendered, so a first snapshot that beats the seat
+  prefetch reports "client renders no seat". All 36 rows in the two days of
+  telemetry on hand carry that message, from three accounts, once per mount.
+  That is read from the code and the rows, not reproduced. No player sees it.
+  It is how the re-entries above were counted.
 
 ## Not verified
 

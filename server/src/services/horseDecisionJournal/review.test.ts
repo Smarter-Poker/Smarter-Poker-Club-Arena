@@ -396,9 +396,9 @@ describe('private retained-hand journal consumer', () => {
 
   it('rejects a Phase 11 witness that drops the commitment of a bound proposal', () => {
     const f = fixture('plo5', [], false, false, true);
-    const rest = { ...f.w } as Partial<typeof f.w>;
-    delete rest.phase11Inputs;
-    f.w = rest as typeof f.w;
+    f.w = Object.fromEntries(
+      Object.entries(f.w).filter(([key]) => key !== 'phase11Inputs')
+    ) as typeof f.w;
     const report = reconcileHorseJournalHand(f.rows(), handKey);
     expect(report.status).toBe('incomplete');
     expect(report.gaps).toContain('input_mismatch');

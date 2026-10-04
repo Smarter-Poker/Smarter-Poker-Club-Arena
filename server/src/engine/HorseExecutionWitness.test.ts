@@ -15,6 +15,7 @@ import { HorseMind } from './HorseMind.js';
 import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
+import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
 import { createHash } from 'node:crypto';
 import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
 
@@ -170,6 +171,57 @@ describe('private execution witness', () => {
     // A refused proposal binds nothing, and a legacy receipt is not upgraded.
     expect(make({ ...decision }).phase10Inputs).toBeNull();
     expect(make({ action: 'check', thinkTime: 1 }).phase10Inputs).toBeNull();
+  });
+
+  it('owns a compact immutable commitment to the Phase 11 input binding (P11.1)', () => {
+    const spot = omahaVariantSpot('plo8', 'river', 3);
+    const rng = saveFastRandom();
+    let decision: HorseDecision;
+    try {
+      seedFastRandom(7301004);
+      decision = HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        { telemetry: false, mind: false, decisionTimeMs: 1000, phase11EvidenceMode: true }
+      );
+    } finally {
+      restoreFastRandom(rng);
+    }
+    const receipt = decision.omahaVariantPolicy!;
+    expect(receipt.inputs).not.toBeNull();
+    const snapshot = { ...input, player: spot.hero, gameState: spot.state };
+    const witness = createHorseExecutionWitness(snapshot, decision, {
+      requestId: 1,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    const expected = {
+      version: 'horse-phase11-input-binding-v1',
+      variant: 'plo8',
+      inputSha256: createHash('sha256').update(horseJournalJson(receipt.inputs)).digest('hex'),
+      rangeStatus: receipt.inputs!.range.status,
+    };
+    expect(witness.phase11Inputs).toEqual(expected);
+    expect(Object.isFrozen(witness.phase11Inputs)).toBe(true);
+    decision.omahaVariantPolicy = { ...receipt, inputs: null, eligible: false };
+    expect(witness.phase11Inputs).toEqual(expected);
+    // A refused proposal binds null; a retained receipt without the field,
+    // and every other variant, carry no Phase 11 commitment at all.
+    expect(
+      createHorseExecutionWitness(snapshot, decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      }).phase11Inputs
+    ).toBeNull();
+    const legacy = { ...receipt };
+    delete legacy.inputs;
+    expect(make({ ...decision, omahaVariantPolicy: legacy })).not.toHaveProperty('phase11Inputs');
+    expect(make({ action: 'check', thinkTime: 1 })).not.toHaveProperty('phase11Inputs');
   });
 
   it('P10.3 binds the PLO4 selection: selected proposal, shadow baseline and the accepted action', () => {

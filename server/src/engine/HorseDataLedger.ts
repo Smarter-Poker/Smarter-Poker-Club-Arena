@@ -1871,6 +1871,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase11_range_*',
+    'evaluateOmahaVariantPolicy -> HorseLogic (P11.1 input binding)',
+    'range status of every bound PLO5/PLO6/PLO8 proposal (not_consumed_preflop, unavailable, rejected_malformed, rejected_population, consumed_unattributed, consumed); counts only, never calibration or solver evidence',
+    'Phase11',
+    'phase11_eligible',
+    0.99
+  ),
+  receipt(
+    'phase11_shadow_receipt_binding_dropped',
+    'horseDecision/client (P11.1, the P10 audit F8 rule)',
+    'a shadow-only PLO5/PLO6/PLO8 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase11'
+  ),
+  receipt(
     'phase11_street_*',
     'evaluateOmahaVariantPolicy',
     'street coverage for completed policy evaluations',

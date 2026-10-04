@@ -1,4 +1,5 @@
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
+import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
 import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
@@ -502,6 +503,12 @@ export function horseDecisionReceiptIsValid(
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
     return false;
   if (!horsePhase10SelectionIsValid(value.plo4Policy, value)) return false;
+  // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
+  if (
+    value.omahaVariantPolicy !== undefined &&
+    !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
+  )
+    return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

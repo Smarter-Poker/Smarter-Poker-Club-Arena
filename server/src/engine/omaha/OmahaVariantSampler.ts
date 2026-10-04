@@ -10,7 +10,10 @@ import {
 } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
-import { omahaVariantEquityFromShowdowns } from './OmahaVariantEquity.js';
+import {
+  omahaVariantEquityFromShowdowns,
+  type OmahaVariantRangeProvenance,
+} from './OmahaVariantEquity.js';
 import {
   OMAHA_VARIANT_PACKS,
   omahaVariantHandShape,
@@ -82,10 +85,14 @@ export function sampleOmahaVariantEquity(
     Math.floor(32 * Math.min(1, Math.max(0, equityGovernor.current())))
   );
   const samples: HorseEquityOutcomeSample[] = [];
+  // P11.1: what the prior actually did, recorded with the sample it produced.
+  let seatDraws = 0;
+  let uniformEscapes = 0;
   sampleLoop: for (let iteration = 0; iteration < requested; iteration++) {
     if (!withinBudget()) break;
     let remaining = deck.slice();
     const hands = new Map<string, Card[]>();
+    let iterationEscapes = 0;
     for (const p of dealt) {
       if (!withinBudget()) break sampleLoop;
       const read = reads.get(p.user_id)!;
@@ -106,6 +113,7 @@ export function sampleOmahaVariantEquity(
           Math.min(4, 1 + read.raises * 0.6 + read.calls * 0.1)
         );
         if (attempt === 2 || random() <= weight) {
+          if (attempt === 2) iterationEscapes++;
           remaining = trial;
           hands.set(p.user_id, cards);
           break;
@@ -119,6 +127,10 @@ export function sampleOmahaVariantEquity(
       const value = pack.splitPot ? scoreOmahaLow(cards, board) : Infinity;
       return Number.isFinite(value) ? value : null;
     };
+    // Counted only for a completed sample: an iteration cut by the budget
+    // contributes no showdown and no draw.
+    seatDraws += dealt.length;
+    uniformEscapes += iterationEscapes;
     samples.push({
       heroHigh: scoreOmahaHi(hero.cards, board),
       heroLow: low(hero.cards),
@@ -142,6 +154,39 @@ export function sampleOmahaVariantEquity(
     evidence.provenance = 'variant_public_line_joint_deck';
     evidence.requestedSamples = requested;
     evidence.sampleBudgetExhausted = samples.length < requested;
+    evidence.range = Object.freeze({
+      version: 'omaha-variant-range-provenance-v1',
+      source: 'variant_public_line_sequential_prior',
+      calibration: 'uncalibrated',
+      solverInput: false,
+      reads: 'public_action_line_only',
+      prior: Object.freeze({
+        attemptsPerSeat: 3,
+        finalAttempt: 'uniform_escape',
+        seatDraws,
+        uniformEscapes,
+      }),
+      deck: Object.freeze({
+        physical: 'single_deck_excluding_hero_and_board',
+        dealtOpponents: dealt.length,
+      }),
+      work: Object.freeze({
+        requestedSamples: requested,
+        completedSamples: samples.length,
+        budgetExhausted: samples.length < requested,
+      }),
+      opponents: Object.freeze(
+        active.map((p) => {
+          const read = reads.get(p.user_id)!;
+          return Object.freeze({
+            userId: p.user_id,
+            seat: p.seat,
+            raises: read.raises,
+            calls: read.calls,
+          });
+        })
+      ),
+    } satisfies OmahaVariantRangeProvenance);
   }
   return evidence;
 }

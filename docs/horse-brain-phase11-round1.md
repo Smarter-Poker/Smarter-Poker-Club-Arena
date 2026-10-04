@@ -1,5 +1,7 @@
 # Horse Brain Phase 11: PLO5, PLO6 and PLO8
 
+**Status note (2026-10-04).** This first-round record describes the source of September 14; where later packages changed that source it is historical only. Phase 11 round 2 starts with [P11.1](horse-brain-phase11-1-input-binding-2026-10-04.md): each proposal's inputs and the variant sampler's range provenance bound to its receipt, witness and journal; positions from the engine's posted blind seats (the tournament dead button and the dead small blind, found by Phase 10, fixed here); a census above the pack ceiling refused as `seat_count_outside_pack`.
+
 This first round provides separate, explicitly heuristic packs for five-card high, six-card high and four-card eight-or-better Omaha. Production evaluates them in shadow mode. Candidate selection and a fixed evidence clock remain forbidden at the live worker boundary. Implementation and verification are separate from protected publication, natural execution and strength promotion.
 
 The user authorized Phase 11 implementation while the preceding Phases 8–10 engine release is pending. Their release certificate remains open; this overlap changes sequencing only.

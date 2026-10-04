@@ -5,6 +5,11 @@ import { noteFire } from './BrainTelemetry.js';
 import { copyPhase6Attribution } from './HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceSha256 } from './HorseTournamentUtilityEvidence.js';
 import { plo4InputBindingSha256, type Plo4RangeStatus } from './plo4/Plo4LivePolicy.js';
+import {
+  omahaVariantInputBindingSha256,
+  type OmahaVariantRangeStatus,
+} from './omaha/OmahaVariantLivePolicy.js';
+import type { OmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import type { Phase8Selection } from './HorseTournamentPostflop.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
@@ -110,6 +115,17 @@ export interface HorseExecutionWitness {
     inputSha256: string;
     readFrameSha256: string | null;
     rangeStatus: Plo4RangeStatus;
+  }> | null;
+  /** P11.1 compact private commitment to the facts a PLO5/PLO6/PLO8 proposal
+   * used. Present only on decisions with a Phase 11 receipt that carries the
+   * binding field (null for a refused proposal); absent on retained witnesses
+   * and every other variant. The variant sampler reads the public action line
+   * only, so no read frame is bound. Never strength or calibration proof. */
+  readonly phase11Inputs?: Readonly<{
+    version: 'horse-phase11-input-binding-v1';
+    variant: OmahaPolicyVariant;
+    inputSha256: string;
+    rangeStatus: OmahaVariantRangeStatus;
   }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
@@ -278,6 +294,18 @@ export function createHorseExecutionWitness(
           rangeStatus: decision.plo4Policy.inputs.range.status,
         })
       : null,
+    ...(decision.omahaVariantPolicy && Object.hasOwn(decision.omahaVariantPolicy, 'inputs')
+      ? {
+          phase11Inputs: decision.omahaVariantPolicy.inputs
+            ? Object.freeze({
+                version: 'horse-phase11-input-binding-v1' as const,
+                variant: decision.omahaVariantPolicy.inputs.variant,
+                inputSha256: omahaVariantInputBindingSha256(decision.omahaVariantPolicy.inputs),
+                rangeStatus: decision.omahaVariantPolicy.inputs.range.status,
+              })
+            : null,
+        }
+      : {}),
     policyOwnership: decision.policyOwnership
       ? Object.freeze({ ...decision.policyOwnership })
       : null,

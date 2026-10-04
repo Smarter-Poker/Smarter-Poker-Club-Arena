@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { omahaVariantSpot } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import {
+  occupiedButtonBlinds,
+  omahaVariantSpot,
+} from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { evaluateOmahaVariantPolicy } from './OmahaVariantLivePolicy.js';
 import { omahaVariantSeatCap } from './OmahaVariantPolicyPack.js';
 
@@ -22,6 +25,10 @@ describe('Phase 11 postflop geometry and hostile-state boundaries', () => {
                 ] as const) {
                   const s = omahaVariantSpot(variant, street, seats, mode);
                   s.state.dealerSeat = button;
+                  s.state.blindSeats = occupiedButtonBlinds(
+                    button,
+                    s.state.players.map((p) => p.seat)
+                  );
                   const price = role === 'checked_to' ? 0 : role === 'call_off' ? depth * 2 : 2;
                   s.hero.bet = role === 'facing_raise' ? 1 : 0;
                   s.hero.totalInvested = 20 + s.hero.bet;

@@ -87,17 +87,21 @@ describe('the ledger replay reads only the legs it is asked about', () => {
   it('the entity reader is the full reader with one filter per side', () => {
     const full = latest('fn_ca_leg_accounts_since_snapshot');
     const FULL = declaration(full.body, 'fn_ca_leg_accounts_since_snapshot');
+    // Both readers are redefined together (20261004124640 judges a leg by its
+    // top-level transaction), so compare the newest of each, not this file's.
+    const forNow = latest('fn_ca_leg_accounts_since_snapshot_for');
+    const FOR_NOW = declaration(forNow.body, 'fn_ca_leg_accounts_since_snapshot_for');
     const expected = FULL.replace(
       'FUNCTION public.fn_ca_leg_accounts_since_snapshot(p_prev_at timestamp with time zone, p_prev_snapshot pg_snapshot)',
       'FUNCTION public.fn_ca_leg_accounts_since_snapshot_for(p_prev_at timestamp with time zone, p_prev_snapshot pg_snapshot, p_entities uuid[])'
     )
       .replace('AND l.to_entity_id IS NOT NULL', 'AND l.to_entity_id = ANY (p_entities)')
       .replace('AND l.from_entity_id IS NOT NULL', 'AND l.from_entity_id = ANY (p_entities)');
-    const withoutComment = FOR.replace(
+    const withoutComment = FOR_NOW.replace(
       /\n {2}\/\* THE SAME JOURNAL[\s\S]*?\*\/(?=\n {2}WITH sides AS)/,
       ''
     );
-    expect(withoutComment, `${full.file} and the entity reader have drifted apart`).toBe(expected);
+    expect(withoutComment, `${full.file} and ${forNow.file} have drifted apart`).toBe(expected);
   });
 
   it('the entity reader is closed to every browser role', () => {

@@ -7,6 +7,13 @@ const migration = readFileSync(
   resolve(root, 'supabase/migrations/20261003142631_stats_hand_evidence_cash_session.sql'),
   'utf8'
 );
+const repair = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20261004122156_keep_voided_stats_and_nullable_session_closes_honest.sql'
+  ),
+  'utf8'
+);
 
 describe('final composed Stats evidence RPC', () => {
   it('has one public signature with metric and exact-session inputs', () => {
@@ -29,5 +36,10 @@ describe('final composed Stats evidence RPC', () => {
     expect(migration.indexOf("WHEN 'three_bet' THEN f.three_bet_opportunity")).toBeLessThan(
       migration.indexOf('LIMIT v_limit+1')
     );
+  });
+
+  it('binds exact-session evidence to the requested chips or Diamonds asset', () => {
+    expect(repair).toContain("p_asset NOT IN (''chips'',''diamonds'')");
+    expect(repair).toContain("AND coalesce(c.asset,'chips')=p_asset");
   });
 });

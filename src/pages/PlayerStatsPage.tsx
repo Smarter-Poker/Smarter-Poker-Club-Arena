@@ -14,12 +14,12 @@
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useMemo,
   useCallback,
   lazy,
   Suspense,
-  useLayoutEffect,
 } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
@@ -80,7 +80,10 @@ import type { CashEvidenceMetric } from '../components/stats/CashIntelligencePan
 import { CHIP_STATS, statsRpcName, statsScopeArgs, type StatsClubId } from '../services/statsScope';
 import { getUserMemberships } from '../services/ClubsService';
 import { useArenaStatsScope } from './stats/arenaStatsScope';
-import { normalizeStatsContractMetadata } from '../services/statsContract';
+import {
+  normalizeStatsContractMetadata,
+  statsContractMatchesRequest,
+} from '../services/statsContract';
 import {
   exportStatsOverview,
   exportStatsSessions,
@@ -88,7 +91,10 @@ import {
 } from './stats/statsCsvExport';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
-import { restoreStatsEvidenceScroll } from '../lib/statsEvidenceNavigation';
+import {
+  buildStatsCashEvidencePath,
+  restoreStatsEvidenceScroll,
+} from '../lib/statsEvidenceNavigation';
 import SharedClubStatsView from './stats/SharedClubStatsView';
 import ClubScopeConsole from './stats/ClubScopeConsole';
 import StatsHeadlineDeck from './stats/StatsHeadlineDeck';
@@ -101,6 +107,7 @@ import {
   getCachedFull,
   normalizeFull,
   normalizeHands,
+  normalizeDashboardLayout,
   setCachedFull,
   validClubSort,
   validRangeKey,
@@ -123,6 +130,7 @@ export default function PlayerStatsPage() {
   const [clubs, setClubs] = useState<StatsClubOption[]>([]);
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubsError, setClubsError] = useState(false);
+  const [clubsReload, setClubsReload] = useState(0);
   const [selectedClubId, setSelectedClubId] = useState<StatsClubId>(
     () => searchParams.get('statsClub')?.trim() || null
   );
@@ -147,49 +155,49 @@ export default function PlayerStatsPage() {
   const [statsDataSource, setStatsDataSource] = useState<'live' | 'memory cache' | 'saved cache'>(
     'live'
   );
-  /**
-   * PRINT DOSSIER
-   *
-   * The export buttons used to dump raw CSV. A dossier needs the charts, and
-   * the three obvious ways to make a PDF were all worse than this one:
-   *   - jspdf + html2canvas: ~400KB of bundle on a mobile-first product, for a
-   *     rarely-used export, and charts come out as soft rasterised images.
-   *   - headless Chrome on the engine box: the engine runs live poker and is
-   *     latency-critical. Spawning Chrome next to it to render a report is a
-   *     bad trade for gameplay.
-   *   - a Vercel render function: cross-repo, near the 50MB function ceiling
-   *     with bundled chromium, plus cold starts to babysit.
-   *
-   * The browser already has an excellent PDF engine. Rendering every tab at
-   * once and handing it a proper print stylesheet gives real vector text,
-   * selectable and crisp, at zero bundle cost and zero server load. "Save as
-   * PDF" is in every print dialog on desktop, and on the Share sheet on
-   * mobile.
-   */
+  // The dossier preloads every tab, then uses the browser's vector print/PDF
+  // path so no renderer bundle or latency-sensitive server process is needed.
   const [printing, setPrinting] = useState(false);
   const [privacyPresentationMode, setPrivacyPresentationMode] = useState(false);
   const [dashboardLayout, setDashboardLayout] = useState<string[]>([]);
+  const [preferencesState, setPreferencesState] = useState<'loading' | 'ready' | 'error'>(
+    isOwnProfile ? 'loading' : 'ready'
+  );
+  const [preferencesReload, setPreferencesReload] = useState(0);
   useEffect(() => {
     if (!isOwnProfile) {
       setPrivacyPresentationMode(false);
+      setPreferencesState('ready');
       return;
     }
     let cancelled = false;
-    void import('../services/StatsWorkspaceService').then(async ({ statsWorkspaceService }) => {
-      const result = await statsWorkspaceService.load();
-      if (!cancelled && result.ok) {
-        setPrivacyPresentationMode(result.data.preferences.privacyPresentationMode);
+    setPreferencesState('loading');
+    void (async () => {
+      try {
+        const { statsWorkspaceService } = await import('../services/StatsWorkspaceService');
+        const result = await statsWorkspaceService.loadPreferences();
+        if (cancelled) return;
+        if (!result.ok) {
+          setPreferencesState('error');
+          return;
+        }
+        setPrivacyPresentationMode(result.data.privacyPresentationMode);
         setDashboardLayout(
-          result.data.preferences.dashboardLayout.filter(
+          (Array.isArray(result.data.dashboardLayout) ? result.data.dashboardLayout : []).filter(
             (value): value is string => typeof value === 'string'
           )
         );
+        setPreferencesState('ready');
+      } catch (error) {
+        if (cancelled) return;
+        reportError(error, 'PlayerStatsPage.load_preferences');
+        setPreferencesState('error');
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id]);
+  }, [isOwnProfile, user?.id, preferencesReload]);
   const selectedClub = useMemo(
     () => clubs.find((club) => club.id === selectedClubId) ?? null,
     [clubs, selectedClubId]
@@ -261,43 +269,18 @@ export default function PlayerStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id, statsScope]);
+  }, [isOwnProfile, user?.id, statsScope, clubsReload]);
   useEffect(() => {
     const done = () => setPrinting(false);
-    /**
-     * NO `beforeprint` ARM (Dan 2026-08-25).
-     *
-     * There was one, and it could never have worked: `beforeprint` is
-     * synchronous - the browser starts paginating the moment the handlers
-     * return - so a React state update scheduled inside it cannot commit
-     * first. Cmd-P printed the current tab regardless, which is exactly what
-     * the removed comment claimed it fixed.
-     *
-     * The lazy chart split makes it unfixable in that form as well: arming
-     * `printing` now needs three network round trips, and a synchronous event
-     * cannot await them. Cmd-P honestly prints the tab you are on; the Dossier
-     * button is the path that produces the complete report, and it preloads.
-     */
+    // beforeprint is synchronous and cannot await lazy chunks. Cmd-P prints
+    // the current tab; the Dossier action below preloads the complete report.
     window.addEventListener('afterprint', done);
     return () => {
       window.removeEventListener('afterprint', done);
     };
   }, []);
-  /**
-   * ESCAPE HATCH for a stuck `printing` (Dan 2026-08-25).
-   *
-   * `afterprint` is not reliable on mobile Safari or in several in-app
-   * browsers - the exact platforms this mobile-first product targets. When it
-   * never fires, `printing` stays true, and because showTab() short-circuits
-   * on it BEFORE checking the selected tab, changing tabs stopped doing
-   * anything at all: every section rendered at once, three recharts containers
-   * and the 13x13 heatmap included, and the Dossier button sat disabled
-   * reading "Preparing Dossier..." with no way back except a reload.
-   *
-   * This is NOT the timer that was correctly removed: it does not fire on a
-   * schedule after print(). It fires when the user comes back to the page,
-   * which on every platform means the print sheet is gone.
-   */
+  // Mobile Safari can omit afterprint. Release the all-tabs print state when
+  // focus/visibility proves the print sheet has closed.
   useEffect(() => {
     if (!printing) return;
     const release = () => {
@@ -313,36 +296,9 @@ export default function PlayerStatsPage() {
   const printTimerRef = useRef<number | null>(null);
   const printDossier = useCallback(async () => {
     setPrinting(true);
-    // Every tab has to mount, recharts has to measure its ResponsiveContainers,
-    // and the framer-motion entrances have to settle. Charts are handed
-    // `still` while printing so their own 1500ms recharts animation is off,
-    // but the layout pass still needs a moment. 1200ms is generous enough that
-    // nothing is caught mid-draw and short enough not to feel broken.
-    //
-    // There is deliberately NO timed fallback that clears `printing`. The
-    // previous one fired 1s after print(), and on Safari and mobile - where
-    // print() returns IMMEDIATELY rather than blocking - it collapsed the
-    // dossier back to a single tab while the print preview was still open,
-    // which is precisely the failure it was meant to guard against. `printing`
-    // is cleared by the afterprint listener, with a focus/visibility release
-    // above as the escape hatch for the platforms where afterprint never
-    // fires (a stuck `printing` makes the tab strip inert, see showTab).
-    /**
-     * AWAIT THE LAZY CHUNKS FIRST (Dan 2026-08-25).
-     *
-     * The three chart components are lazy now, and the default tab is Overview
-     * - which is the entire point of the split - so when the user presses this
-     * button their chunks have usually never been requested. The 1200ms budget
-     * below was sized for a layout pass, not a network round trip, so on a cold
-     * cache window.print() fired while the Suspense boundaries were still
-     * showing their fallbacks and the PDF captured the literal text
-     * "Loading Charts...". A dossier is the copy someone reads months later as
-     * authoritative; it does not get to contain a spinner.
-     *
-     * import() is idempotent and the module registry caches it, so after this
-     * resolves the lazy components render synchronously. A chunk that fails to
-     * load is left to PanelBoundary - we still print the rest.
-     */
+    // Preload idempotent lazy chunks before the 1200ms chart-layout window so
+    // a cold-cache PDF never captures Suspense text. Do not clear printing on
+    // a timer: mobile print() returns before its preview closes.
     await Promise.all([
       import('./stats/RakeTab'),
       import('./stats/OverviewTab'),
@@ -400,7 +356,7 @@ export default function PlayerStatsPage() {
     }),
     [user?.id, targetUserId, selectedClubId, statsScope, statsTimezone, isOwnProfile]
   );
-  const loadScopeKey = `${selectedClubId ?? 'all'}:${rangeKey}`;
+  const loadScopeKey = JSON.stringify(cacheIdentityFor(rangeKey, windowDays));
   const [handMode, setHandMode] = useState<HandMode>('biggest_won');
   const [hands, setHands] = useState<HandRow[] | null>(null);
   const [handsLoading, setHandsLoading] = useState(false);
@@ -608,18 +564,25 @@ export default function PlayerStatsPage() {
   ]);
   const openCashEvidence = useCallback(
     (metric: CashEvidenceMetric) => {
-      const params = new URLSearchParams({ source: 'stats', statsMetric: metric });
-      if (selectedClubId) params.set('statsClub', selectedClubId);
+      let from: string | null = null;
+      let to: string | null = null;
       if (windowDays) {
-        const to = new Date();
-        const from = new Date(to);
-        from.setDate(from.getDate() - windowDays + 1);
-        params.set('from', from.toISOString().slice(0, 10));
-        params.set('to', to.toISOString().slice(0, 10));
+        const end = new Date();
+        const start = new Date(end);
+        start.setDate(start.getDate() - windowDays + 1);
+        from = start.toISOString().slice(0, 10);
+        to = end.toISOString().slice(0, 10);
       }
-      navigate(`/hand-history?${params.toString()}`);
+      navigate(
+        buildStatsCashEvidencePath(metric, {
+          clubId: selectedClubId,
+          asset: statsScope,
+          from,
+          to,
+        })
+      );
     },
-    [navigate, selectedClubId, windowDays]
+    [navigate, selectedClubId, statsScope, windowDays]
   );
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -634,18 +597,15 @@ export default function PlayerStatsPage() {
     }
     const available: StatCategory[] = canSeeRake || isOwnProfile ? [...out, 'rake'] : out;
     if (!isOwnProfile || dashboardLayout.length === 0) return available;
-    const allowed = new Set(available);
-    const ordered = dashboardLayout.filter(
-      (value): value is StatCategory => value !== 'workspace' && allowed.has(value as StatCategory)
-    );
-    return [...new Set(ordered), 'workspace'];
+    return normalizeDashboardLayout(dashboardLayout, available);
   }, [canSeeRake, dashboardLayout, isOwnProfile]);
   // If the tab disappears (role revoked, or navigating to another profile),
   // do not strand the view on a tab that no longer exists.
   useEffect(() => {
     if (!TABS.includes(category)) {
-      setCategory('overview');
-      updateStatsUrl({ tab: null }, true);
+      const fallback = TABS[0] ?? 'overview';
+      setCategory(fallback);
+      updateStatsUrl({ tab: fallback === 'overview' ? null : fallback }, true);
     }
   }, [TABS, category, updateStatsUrl]);
   useEffect(() => {
@@ -689,6 +649,28 @@ export default function PlayerStatsPage() {
   const pendingRefreshRef = useRef(false);
   const activeRangeKeyRef = useRef(rangeKey);
   const activeClubIdRef = useRef<StatsClubId>(selectedClubId);
+  const activeLoadScopeRef = useRef(loadScopeKey);
+  const previousLoadScopeRef = useRef(loadScopeKey);
+  useLayoutEffect(() => {
+    // Only a committed tree may advance the accepted request identity. React
+    // can abandon a render, but it cannot abandon this layout effect.
+    activeLoadScopeRef.current = loadScopeKey;
+    if (previousLoadScopeRef.current === loadScopeKey) return;
+    previousLoadScopeRef.current = loadScopeKey;
+    setFull(null);
+    setAllTimeFetched(null);
+    setHands(null);
+    loadedRangeKeyRef.current = null;
+    hasStatsRef.current = false;
+    setServingCache(false);
+    setLoadError(false);
+    setHandsError(false);
+    setAllTimeError(false);
+    setComparisonRows(null);
+    setComparisonLoadedKey(null);
+    setLoading(true);
+    if (statsLoadingRef.current) pendingRefreshRef.current = true;
+  }, [loadScopeKey]);
   const changeRange = useCallback(
     (nextRangeKey: string) => {
       if (nextRangeKey === activeRangeKeyRef.current) return;
@@ -811,12 +793,24 @@ export default function PlayerStatsPage() {
         // A slow response for the previous analysis window must never paint
         // underneath the newly selected label. The pending replay below will
         // request the current range as soon as this obsolete read unwinds.
-        if (activeRangeKeyRef.current !== rangeKey || activeClubIdRef.current !== selectedClubId) {
+        if (
+          activeLoadScopeRef.current !== loadScopeKey ||
+          activeRangeKeyRef.current !== rangeKey ||
+          activeClubIdRef.current !== selectedClubId
+        ) {
           pendingRefreshRef.current = true;
           return;
         }
         const contract = normalizeStatsContractMetadata(data);
-        if (!error && data && data.overall && contract.valid) {
+        const scopeMatches = statsContractMatchesRequest(contract, {
+          targetUserId,
+          clubId: selectedClubId,
+          asset: statsScope,
+          rangeDays: windowDays,
+          timezone: statsTimezone,
+          visibility: 'owner',
+        });
+        if (!error && data && data.overall && scopeMatches) {
           const resolved = normalizeFull(data);
           const loadedAt = resolved.contract.generated_at
             ? Date.parse(resolved.contract.generated_at)
@@ -1096,7 +1090,7 @@ export default function PlayerStatsPage() {
     const cached = getCachedFull(cacheIdentityFor('all', null));
     if (cached) {
       setFull(cached.full);
-      loadedRangeKeyRef.current = `${selectedClubId ?? 'all'}:all`;
+      loadedRangeKeyRef.current = JSON.stringify(cacheIdentityFor('all', null));
       setLastUpdatedAt(
         cached.full.contract.generated_at
           ? Date.parse(cached.full.contract.generated_at)
@@ -1210,10 +1204,13 @@ export default function PlayerStatsPage() {
     statsTimezone,
   ]);
   const allTimeStats: FullStats | null = rangeKey === 'all' ? full : allTimeFetched;
-  const comparisonKey = `${statsScope}:${rangeKey}:${clubs.map((club) => club.id).join(',')}`;
+  const comparisonKey = `${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}:${rangeKey}:${statsTimezone}:${clubs.map((club) => club.id).join(',')}`;
+  const comparisonRequestRef = useRef(0);
   const loadClubComparison = useCallback(async () => {
     if (!targetUserId || !isOwnProfile || clubs.length === 0) return;
     if (comparisonRows && comparisonLoadedKey === comparisonKey) return;
+    const requestSequence = ++comparisonRequestRef.current;
+    const requestKey = comparisonKey;
     setComparisonLoading(true);
     setComparisonError(false);
     try {
@@ -1241,14 +1238,21 @@ export default function PlayerStatsPage() {
         tournamentWinnings: num(row?.tournament_winnings),
         lastPlayedAt: typeof row?.last_played_at === 'string' ? row.last_played_at : null,
       }));
-      if (!isMounted.current) return;
+      if (
+        !isMounted.current ||
+        requestSequence !== comparisonRequestRef.current ||
+        requestKey !== comparisonKey
+      )
+        return;
       setComparisonRows(rows);
-      setComparisonLoadedKey(comparisonKey);
+      setComparisonLoadedKey(requestKey);
     } catch (error) {
       reportError(error, 'PlayerStatsPage.load_club_comparison');
-      if (isMounted.current) setComparisonError(true);
+      if (isMounted.current && requestSequence === comparisonRequestRef.current)
+        setComparisonError(true);
     } finally {
-      if (isMounted.current) setComparisonLoading(false);
+      if (isMounted.current && requestSequence === comparisonRequestRef.current)
+        setComparisonLoading(false);
     }
   }, [
     targetUserId,
@@ -1262,6 +1266,9 @@ export default function PlayerStatsPage() {
     windowDays,
     isMounted,
   ]);
+  useEffect(() => {
+    if (comparisonOpen && comparisonLoadedKey !== comparisonKey) void loadClubComparison();
+  }, [comparisonOpen, comparisonLoadedKey, comparisonKey, loadClubComparison]);
   const sortedComparisonRows = useMemo(() => {
     const rows = [...(comparisonRows ?? [])];
     const lastPlay = (row: ClubComparisonRow) => Date.parse(row.lastPlayedAt || '') || 0;
@@ -1276,7 +1283,6 @@ export default function PlayerStatsPage() {
         bb100: (row) => row.bb100,
         vpip: (row) => row.vpip,
         pfr: (row) => row.pfr,
-        hours: () => Number.NEGATIVE_INFINITY,
         rake: (row) => row.rake,
         tournaments: (row) => row.tournamentEntries,
         lastPlay,
@@ -1570,7 +1576,7 @@ export default function PlayerStatsPage() {
         rangeKey={rangeKey}
         windowDays={windowDays}
         initialClubId={searchParams.get('statsClub')}
-        onClubChange={(clubId) => updateStatsUrl({ statsClub: clubId })}
+        onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
         onRangeChange={changeRange}
       />
     );
@@ -1630,6 +1636,38 @@ export default function PlayerStatsPage() {
       </div>
     );
   }
+  if (isOwnProfile && preferencesState !== 'ready') {
+    const failed = preferencesState === 'error';
+    return (
+      <div className="stats-page" aria-busy={failed ? undefined : true}>
+        <section className="stats-command-deck" role={failed ? 'alert' : undefined}>
+          <img
+            className="stats-hero-art"
+            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
+            alt=""
+            aria-hidden="true"
+          />
+          <div className="stats-command-copy">
+            <span className="stats-eyebrow">Private Stats Controls</span>
+            <h1>Player Intelligence</h1>
+            <p>
+              {failed
+                ? 'Your Privacy Preference Could Not Be Verified. Private Detail Remains Hidden.'
+                : 'Verifying Your Privacy Preference Before Opening The Dossier...'}
+            </p>
+            {failed && (
+              <button
+                className="empty-cta"
+                onClick={() => setPreferencesReload((value) => value + 1)}
+              >
+                Retry Privacy Check
+              </button>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
   const hasData = overall.total_hands > 0 || tourn.entries > 0;
   const emptyState = (
     <div className="stats-empty-state">
@@ -1654,9 +1692,10 @@ export default function PlayerStatsPage() {
         clubs={clubs}
         clubsLoading={clubsLoading}
         clubsError={clubsError}
+        onRetryClubs={() => setClubsReload((value) => value + 1)}
         comparisonOpen={comparisonOpen}
         setComparisonOpen={setComparisonOpen}
-        loadClubComparison={loadClubComparison}
+        onRetryComparison={() => void loadClubComparison()}
         comparisonSort={comparisonSort}
         changeComparisonSort={changeComparisonSort}
         comparisonLoading={comparisonLoading}
@@ -1793,8 +1832,8 @@ export default function PlayerStatsPage() {
             Rake opts out: an agent who has played no hands themselves still has
             a downline generating rake, and that is the whole point of the tab. */}
             {!hasData && category !== 'rake' && category !== 'workspace' && emptyState}
-            {!hasData && showTab('tournaments') && financialPanel}
-            {!hasData && showTab('analysis') && exactSessionPanel}
+            {!hasData && !privacyPresentationMode && showTab('tournaments') && financialPanel}
+            {!hasData && !privacyPresentationMode && showTab('analysis') && exactSessionPanel}
             {privacyPresentationMode && category !== 'workspace' ? null : (
               <>
                 {showTab('rake') && (

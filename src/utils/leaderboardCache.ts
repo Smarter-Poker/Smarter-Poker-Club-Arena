@@ -30,6 +30,7 @@ export function getCachedLeaderboardEntries(key: string): LeaderboardCacheRecord
     if (
       parsed.version !== 2 ||
       !Number.isFinite(parsed.storedAt) ||
+      (parsed.storedAt as number) > Date.now() ||
       Date.now() - (parsed.storedAt as number) > LEADERBOARD_CACHE_TTL_MS ||
       !Array.isArray(parsed.entries) ||
       !parsed.entries.every(isLeaderboardEntry)

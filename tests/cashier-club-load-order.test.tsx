@@ -145,7 +145,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /open another club cashier/i }));
     expect(await screen.findByRole('option', { name: /Midway Union/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Phase One Club/i })).toBeInTheDocument();
@@ -328,7 +328,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Trade Record' }));
     expect(await screen.findByText('Transfer Alice Agent To Bob Player')).toBeInTheDocument();
     expect(screen.getAllByText('50')).toHaveLength(2);
@@ -543,7 +543,7 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled();
 
     await act(async () => {
@@ -551,7 +551,7 @@ describe('CashierTradePage club load ordering', () => {
       window.dispatchEvent(new Event('offline'));
     });
 
-    expect(screen.getByText('Cashier offline; money actions are locked')).toBeInTheDocument();
+    expect(screen.getByText('Cashier Offline; Money Actions Are Locked')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Claim Back' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Open The Club Bank Cashier' })).toBeDisabled();
@@ -737,7 +737,7 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     const player = await screen.findByRole('checkbox', { name: /Storage Guard Player/ });
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(player);
     fireEvent.click(screen.getByRole('button', { name: 'Send Out' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Amount Per Player' }), {
@@ -829,7 +829,7 @@ describe('CashierTradePage club load ordering', () => {
       );
 
     const firstMount = renderCashier();
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
@@ -846,7 +846,7 @@ describe('CashierTradePage club load ordering', () => {
 
     firstMount.unmount();
     const secondMount = renderCashier();
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     fireEvent.click(await screen.findByRole('tab', { name: 'Chip Requests' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request Chips From Your Agent' }));
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Chips Requested' }), {
@@ -914,7 +914,7 @@ describe('CashierTradePage club load ordering', () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText('Agent wallet could not be verified')).toBeInTheDocument()
+      expect(screen.getByText('Agent Wallet Could Not Be Verified')).toBeInTheDocument()
     );
     expect(screen.getByText('Not Yet Verified')).toBeInTheDocument();
     // The wallet warning is painted as soon as that read settles, while the

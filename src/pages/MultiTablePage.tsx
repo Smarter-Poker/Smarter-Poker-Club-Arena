@@ -49,7 +49,9 @@ import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
-import { gameCode, gameCodeFromName } from '../utils/gameCode';
+import { gameCode, gameCodeFromName, isTournamentGameCode } from '../utils/gameCode';
+import { readTournamentBuyIns } from '../lib/tournamentTabLabel';
+import { reportError } from '../utils/errorReporter';
 import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
 import {
@@ -152,6 +154,14 @@ interface TableInstance {
    */
   movedToTableId?: string;
   /**
+   * WHEN THE TOURNAMENT MOVED THE HERO INTO THIS TAB (Dan 2026-10-04), epoch
+   * ms on this device. Set by both move paths at the moment the tab is
+   * re-pointed and handed to the table page, whose felt then says "You've
+   * Been Moved To <table>" for the hand-over instead of "Reconnecting Your
+   * Seat". Absent on a table the player opened themselves.
+   */
+  arrivedByMoveAt?: number;
+  /**
    * THE LOBBY BUTTON (Dan 2026-09-05): the must-move game this table belongs
    * to, '' for a table that belongs to none. Reported by TablePage; the action
    * pill row below draws its LOBBY button only when the ACTIVE table has one.
@@ -163,6 +173,14 @@ interface TableInstance {
   sitOutDeadlineMs?: number;
   /** Tournament tables sit out indefinitely; cash tables are on a clock. */
   isTournament?: boolean;
+  /**
+   * Dan 2026-10-04: what this tournament costs to enter (buy-in plus fee, the
+   * lobby's total; 0 is a freeroll). It is what a tournament tab prints under
+   * its code, in place of the blinds a cash tab prints. Reported by TablePage
+   * when it can, and read once per table by the resolver below otherwise.
+   * Undefined means not known yet.
+   */
+  tournamentBuyIn?: number;
   /** TablePage's `seatCanAddFunds` answer; the tab bar drops its Top Up items
    *  on `false`. Reported, never derived here: this page cannot see the arena. */
   canAddFunds?: boolean;
@@ -255,6 +273,14 @@ interface TableInstance {
    * exists to serve.
    */
   lobbyTournamentStack?: InTabTournamentTarget[];
+  /**
+   * Dan 2026-10-04: the lobby list this tab should open ON. Set only when the
+   * player pressed Browse Full Lobby on the Quick Join sheet from a tournament
+   * table, where "the lobby" means that club's tournaments, not its cash board.
+   * Absent everywhere else, and the lobby then opens on the player's own saved
+   * tab exactly as it always has.
+   */
+  lobbyGameType?: 'MTT' | 'SNG';
   /** undefined uses the home club; null displays the shared arena selector. */
   lobbyClubId?: string | null;
   lobbyArenaStack?: (string | null)[];
@@ -1213,6 +1239,57 @@ export default function MultiTablePage() {
 
      The dead old TablePage unmounts with the swap, which is also what ends
      the frozen "Reconnecting" state and the ghost action prompts it showed. */
+  /* ═══ ONE ANNOUNCEMENT PER MOVE, WHICHEVER EAR HEARS IT FIRST (2026-10-04) ══
+     Dan: "WHEN A TABLE BREAKS AND YOU ARE MOVED TO A NEW TABLE AND SEAT, IT
+     DISPLAYS THE 'RECONNECTING YOUR SEAT' INSTEAD OF 'YOU'VE BEEN MOVED TO
+     TABLE XXX'."
+
+     A move reaches this page two ways: the engine's SEAT_MOVED on the old
+     table's socket (TablePage reports `movedToTableId`, updateTableInfo
+     re-points the tab) and the hero's own table_seats INSERT (the
+     subscription below). Only the second one ever spoke. When the socket
+     won the race - the usual case, it is the faster transport - the tab was
+     already on the new table by the time the INSERT arrived, the
+     subscription saw "that table is already open" and returned, and nobody
+     told the player they had been moved. All they saw was the new felt
+     finding their seat.
+
+     Both paths now come here, and a destination is announced exactly once. */
+  const announcedMovesRef = useRef<Set<string>>(new Set());
+  const announceTournamentMove = useCallback(
+    (destinationId: string, knownName?: string) => {
+      if (announcedMovesRef.current.has(destinationId)) return;
+      announcedMovesRef.current.add(destinationId);
+      const say = (name: string) => toast.info(`You've Been Moved To ${name}`, 6000);
+      if (knownName) {
+        say(knownName);
+        return;
+      }
+      void (async () => {
+        let name = '';
+        try {
+          const { data, error } = await supabase
+            .from('tables')
+            .select('name')
+            .eq('id', destinationId)
+            .maybeSingle();
+          /* The move happened whether or not its name could be read: say so
+             without the name, and report why the name was missing. */
+          if (error) {
+            reportError(error, 'MultiTablePage.movedTableNameRead', { destinationId });
+          } else {
+            name = formatGameTitle((data?.name as string | undefined) ?? '') || '';
+          }
+        } catch (err) {
+          reportError(err, 'MultiTablePage.movedTableNameRead', { destinationId });
+        }
+        say(name || 'A New Table');
+      })();
+    },
+    [toast]
+  );
+  const announceTournamentMoveRef = useRef(announceTournamentMove);
+  announceTournamentMoveRef.current = announceTournamentMove;
   const heroSeatMoveBusyRef = useRef(false);
   useEffect(() => {
     if (!user?.id) return;
@@ -1299,11 +1376,12 @@ export default function MultiTablePage() {
                         pot: 0,
                         kind: 'table' as const,
                         seated: true,
+                        arrivedByMoveAt: Date.now(),
                       }
                     : t
                 )
               );
-              toast.info(`You Were Moved To ${name}`, 6000);
+              announceTournamentMove(newId, name);
             } catch {
               requestSeatResync();
             } finally {
@@ -1321,7 +1399,7 @@ export default function MultiTablePage() {
         /* channel cleanup is best-effort */
       }
     };
-  }, [user?.id, requestSeatResync, toast]);
+  }, [user?.id, requestSeatResync, announceTournamentMove]);
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
@@ -1766,6 +1844,10 @@ export default function MultiTablePage() {
              nothing else. */
           seated: t.seated,
           canAddFunds: t.canAddFunds,
+          /* Dan 2026-10-04: a tournament tab prints its buy-in, never its
+             blinds or a pot. The bar decides; it only needs to be told. */
+          isTournament: t.isTournament,
+          tournamentBuyIn: t.tournamentBuyIn,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: isTableTab(t) ? t.gameCode || gameCodeFromName(t.name) : '',
@@ -2417,11 +2499,27 @@ export default function MultiTablePage() {
     reason?: string;
     /** Ranking tier, used to flag favourites in the UI. */
     tier?: string;
+    /**
+     * Set on a TOURNAMENT row (Dan 2026-10-04). `id` is then the tournament's
+     * id, not a table's, and JOIN opens that tournament's own lobby page in a
+     * tab rather than navigating to a table.
+     */
+    tournamentId?: string;
+    /** Entrants as the row prints them ("12/200", "12 Entered"). Tournament
+     *  rows only; a cash row prints `players/max`. */
+    seats?: string;
   }
   const [quickJoin, setQuickJoin] = useState<{
     open: boolean;
     loading: boolean;
     rows: QuickJoinRow[];
+    /**
+     * Present while the sheet is answering for a TOURNAMENT table (Dan
+     * 2026-10-04): the rows are tournaments, the copy says so, and Browse Full
+     * Lobby lands on this list of the club's lobby. Absent is the cash sheet,
+     * which is every state this object had before.
+     */
+    tournamentLobby?: 'MTT' | 'SNG';
   }>({ open: false, loading: false, rows: [] });
   /* The arguments the SPIN branch of the quick-join sheet last answered with,
      or null when the sheet is showing cash tables. The live refresh below
@@ -2558,6 +2656,27 @@ export default function MultiTablePage() {
     [user?.id]
   );
 
+  /**
+   * Open the lobby tab ON a named list (Dan 2026-10-04).
+   *
+   * From a tournament table, "Browse Full Lobby" means that club's
+   * tournaments. OPEN_LOBBY_TAB does everything it always did (reuse the
+   * parked lobby tab or append one, announce the cap); this only stamps which
+   * list the tab should show. The bus dispatches synchronously, so the lobby
+   * tab already exists in the queued state by the time this updater runs, and
+   * a request the bus de-duplicated still finds the tab its twin opened.
+   *
+   * It follows a tap on the sheet and moves nothing by itself.
+   */
+  const openLobbyTabOn = useCallback((list: 'MTT' | 'SNG') => {
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+    setTables((cur) =>
+      cur.some((t) => isLobbyTab(t) && t.lobbyGameType !== list)
+        ? cur.map((t) => (isLobbyTab(t) ? { ...t, lobbyGameType: list } : t))
+        : cur
+    );
+  }, []);
+
   const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {
       notifyCapReached('add');
@@ -2617,7 +2736,24 @@ export default function MultiTablePage() {
       masterBus.emit('OPEN_LOBBY_TAB', {});
       return;
     }
-    setQuickJoin({ open: true, loading: true, rows: [] });
+    /* WHAT THE TAB ITSELF ALREADY KNOWS (Dan 2026-10-04). A tab that says it
+       is an MTT or a sit and go opens the sheet under its tournament copy from
+       the first frame, instead of saying "Open Seats" for a round trip and
+       then changing its mind. The database gets the final say below. */
+    const activeTab = tablesRef.current[activeIndexRef.current];
+    const activeIsTable = !!activeTab && isTableTab(activeTab);
+    const tabSaysTournament =
+      activeIsTable &&
+      activeTab?.gameCode !== 'SPIN' &&
+      (activeTab?.isTournament === true || isTournamentGameCode(activeTab?.gameCode));
+    const tournamentLobbyFor = (format?: string | null): 'MTT' | 'SNG' =>
+      format === 'sng' || (!format && activeTab?.gameCode === 'SNG') ? 'SNG' : 'MTT';
+    setQuickJoin({
+      open: true,
+      loading: true,
+      rows: [],
+      ...(tabSaysTournament ? { tournamentLobby: tournamentLobbyFor() } : {}),
+    });
     /* Before the first await, not after it. The spin branch re-arms this a few
        round trips down; until it does there is no scope, so the live refresh
        stays inert rather than answering for the table the player just left. */
@@ -2685,7 +2821,22 @@ export default function MultiTablePage() {
        * an unreadable tournaments table is a reason to offer something, not
        * nothing.
        */
-      const spinRows = await quickJoinSpinRows(scopeClubIds, activeTableId, openIds);
+      /* The tournament question rides ALONGSIDE the spin one, not after it, so
+         a cash player pays no extra round trip for a branch they never take.
+         Its module is loaded on demand: it pulls in the tournament service and
+         the lobby's status rules, which a cash-only session never needs. */
+      const tournamentAsk = activeIsTable
+        ? import('../lib/quickJoinTournaments')
+            .then(async (mod) => ({
+              mod,
+              ctx: await withTimeout(mod.readTournamentContext(activeTableId)),
+            }))
+            .catch(() => null)
+        : Promise.resolve(null);
+      const [spinRows, tournamentAnswer] = await Promise.all([
+        quickJoinSpinRows(scopeClubIds, activeTableId, openIds),
+        tournamentAsk,
+      ]);
       if (spinRows) {
         setSpinSheetScope({ scopeClubIds, activeTableId });
         setQuickJoin((q) => (q.open ? { open: true, loading: false, rows: spinRows } : q));
@@ -2695,6 +2846,60 @@ export default function MultiTablePage() {
          stays inert over the cash sheet rather than replacing its rows with a
          spin list on the next unrelated table update. */
       setSpinSheetScope(null);
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  A TOURNAMENT OFFERS MORE TOURNAMENTS (Dan 2026-10-04)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * Dan: "IF YOU ARE CURRENTLY ON A MTT TABLE, AND CLICK THE + BUTTON TO
+       * ADD ANOTHER, IT SHOULD BRING YOU TO MORE MTT'S, IT CURRENTLY ONLY
+       * IDENTIFIES THE 'GAME TYPE' (NO LIMIT HOLDEM) AND SHOWS YOU CASH GAMES,
+       * INSTEAD OF THE CURRENT TOURNAMENTS FOR 'QUICK JOIN' FUNCTIONALITY."
+       *
+       * The Spin branch above answers for a Spin and returns null for every
+       * other tournament, so an MTT fell through to the cash query below,
+       * which is `.is('tournament_id', null)` by construction. The only thing
+       * that query could match against an MTT was its variant: hence Hold'em
+       * cash games offered to a tournament player.
+       *
+       * Two witnesses decide this is a tournament: the table's own row
+       * (`tournamentAnswer.ctx`), and what the tab already knows. Either is
+       * enough, because the cost of being wrong the other way is the bug being
+       * fixed. A Spin is excluded by both and keeps its 2026-09-05 behaviour,
+       * including its fall-through to the cash sheet when no board is open.
+       *
+       * AN EMPTY LIST STAYS A TOURNAMENT ANSWER. It renders "No Open
+       * Tournaments Right Now" and never falls through to cash games.
+       */
+      const tournamentCtx = tournamentAnswer?.ctx ?? null;
+      const inTournament = tournamentCtx ? tournamentCtx.format !== 'spin' : tabSaysTournament;
+      if (inTournament) {
+        const lobbyList = tournamentLobbyFor(tournamentCtx?.format);
+        const tournamentScope = Array.from(
+          new Set([...scopeClubIds, tournamentCtx?.clubId].filter(Boolean) as string[])
+        );
+        const mod = tournamentAnswer?.mod ?? (await import('../lib/quickJoinTournaments'));
+        const tournamentRows = await withTimeout(
+          mod.quickJoinTournamentRows(tournamentScope, tournamentCtx, user?.id)
+        );
+        if (tournamentRows === null) {
+          // Stalled, not empty: the same exit the cash path takes, except that
+          // the lobby it lands on is the tournament list.
+          setQuickJoin({ open: false, loading: false, rows: [] });
+          openLobbyTabOn(lobbyList);
+          return;
+        }
+        setQuickJoin((q) =>
+          q.open
+            ? { open: true, loading: false, rows: tournamentRows, tournamentLobby: lobbyList }
+            : q
+        );
+        return;
+      }
+      /* A cash table after all. Drop the tournament copy if the tab's first
+         guess put it up, without closing a sheet the player is looking at. */
+      setQuickJoin((q) => (q.open && q.tournamentLobby ? { ...q, tournamentLobby: undefined } : q));
 
       const [res, favIds] = await Promise.all([
         withTimeout(
@@ -2846,7 +3051,7 @@ export default function MultiTablePage() {
       setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id, openLobbyTabOn]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════
@@ -2952,9 +3157,13 @@ export default function MultiTablePage() {
   );
 
   const handleQuickJoinLobby = useCallback(() => {
+    /* From a tournament table the full lobby is the tournament list (Dan
+       2026-10-04). From a cash table it is exactly what it was. */
+    const list = quickJoin.tournamentLobby;
     closeQuickJoin();
-    masterBus.emit('OPEN_LOBBY_TAB', {});
-  }, [closeQuickJoin]);
+    if (list) openLobbyTabOn(list);
+    else masterBus.emit('OPEN_LOBBY_TAB', {});
+  }, [closeQuickJoin, openLobbyTabOn, quickJoin.tournamentLobby]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -2972,7 +3181,14 @@ export default function MultiTablePage() {
         seatActivityRevisionRef.current += 1;
         if (seatReadPendingRef.current !== 0) requestSeatResync();
       }
-      if (updates.movedToTableId && updates.movedToTableId !== tableId) requestSeatResync();
+      if (updates.movedToTableId && updates.movedToTableId !== tableId) {
+        requestSeatResync();
+        /* A tournament move is announced from whichever path sees it first
+           (see announceTournamentMove). A cash must-move has its own notice on
+           the felt ("Seat Open On Main 2. Moving After This Hand.") and says
+           nothing more here. */
+        if (before?.isTournament) announceTournamentMoveRef.current(updates.movedToTableId);
+      }
       /**
        * THE ADDRESS BAR FOLLOWS THE CHAIR TOO (audit 2026-09-09, lane H).
        *
@@ -3032,6 +3248,13 @@ export default function MultiTablePage() {
             clusterId: current.clusterId,
             gameCode: current.gameCode,
             isTournament: current.isTournament,
+            /* A balance move stays inside ONE tournament, so its price moves
+               with the chair. Without this the tab would drop to a bare code
+               until the buy-in was read again. */
+            tournamentBuyIn: current.tournamentBuyIn,
+            /* Only a TOURNAMENT move is something done to the player without
+               their asking; the table page reads this to say so on the felt. */
+            ...(current.isTournament ? { arrivedByMoveAt: Date.now() } : {}),
           } as TableInstance;
           return next;
         }
@@ -3050,6 +3273,52 @@ export default function MultiTablePage() {
     },
     [requestSeatResync]
   );
+
+  /**
+   * ─── WHAT A TOURNAMENT TAB COSTS, READ ONCE (Dan 2026-10-04) ─────────────
+   *
+   * "THE ACTION BOX SHOULDN'T SAY MTT 200/400 OR MTT 25/50 IT SHOULD BE
+   * DISPLAYING THE HOLE CARDS WHEN THEY ARE PRESENT, OR MTT AND BUY IN AMOUNT
+   * UNDER IT FOR QUICK REFERENCE."
+   *
+   * The pill needs the tournament's entry price, and a tab can exist well
+   * before its TablePage has loaded a tournament row (a deep link, the seat
+   * rebuild, an engine auto-seat). So the container asks for itself: one
+   * bounded read per table id, for tournament tabs that do not know their
+   * price yet. A price never changes after the event is created, so this is
+   * asked once and kept; a table page that reports `tournamentBuyIn` first
+   * simply makes the read unnecessary.
+   *
+   * NOT A POLL AND NOT A RETRY LOOP. Each id is asked for exactly once per
+   * mount. A failed read leaves the tab on its bare code ("MTT"), which is the
+   * documented not-known-yet state, and never on blinds.
+   */
+  const buyInAskedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const need = tables
+      .filter(
+        (t) =>
+          isTableTab(t) &&
+          t.tournamentBuyIn === undefined &&
+          (t.isTournament === true || isTournamentGameCode(t.gameCode)) &&
+          !buyInAskedRef.current.has(t.id)
+      )
+      .map((t) => t.id);
+    if (need.length === 0) return;
+    for (const id of need) buyInAskedRef.current.add(id);
+    /* Deliberately not cancelled on re-run: `tables` changes many times a
+       hand, and cancelling would throw away the one answer this asks for.
+       updateTableInfo ignores an id that is no longer a tab. */
+    readTournamentBuyIns(need)
+      .then((totals) => {
+        for (const [tableId, total] of totals) {
+          updateTableInfo(tableId, { tournamentBuyIn: total });
+        }
+      })
+      .catch((err: unknown) => {
+        reportError(err, 'MultiTablePage.tournament_buy_in_read_failed');
+      });
+  }, [tables, updateTableInfo]);
 
   // P1-2 FIX: hand each child a STABLE callback (cached per table id) rather than
   // a fresh arrow on every render. A new prop identity was re-triggering the
@@ -3207,6 +3476,27 @@ export default function MultiTablePage() {
       return true;
     },
     [notifyCapReached]
+  );
+
+  /**
+   * JOIN on a tournament row of the Quick Join sheet (Dan 2026-10-04).
+   *
+   * It opens that tournament's own lobby page in a tab of this strip, which is
+   * where Register, its Sign Up card, the wallet check, late registration and
+   * the seat-first rules already live. Nothing is registered and no chips move
+   * from here: the sheet is a shortcut to the door, not a second door. This is
+   * the same contract a cash row has, whose JOIN opens the table and leaves
+   * the buy-in to the table.
+   *
+   * At the table cap `openTournamentTab` has already said so out loud, and the
+   * sheet closes either way so the toast is not hidden behind it.
+   */
+  const handleQuickJoinTournamentPick = useCallback(
+    (tournamentId: string) => {
+      closeQuickJoin();
+      openTournamentTab({ tournamentId, search: '' });
+    },
+    [closeQuickJoin, openTournamentTab]
   );
 
   /**
@@ -3681,7 +3971,14 @@ export default function MultiTablePage() {
             <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
             {selectedClub ? (
-              <ClubHomePage key={selectedClub} clubIdOverride={selectedClub} />
+              /* `lobbyGameType` is in the key so a lobby tab that is already
+                 mounted on the cash board REOPENS on the tournament list when
+                 Browse Full Lobby asks for it from a tournament table. */
+              <ClubHomePage
+                key={`${selectedClub}:${table.lobbyGameType ?? ''}`}
+                clubIdOverride={selectedClub}
+                initialGameType={table.lobbyGameType}
+              />
             ) : (
               <HomePage />
             )}
@@ -4637,7 +4934,7 @@ export default function MultiTablePage() {
               <SpadeConsole
                 onClose={closeQuickJoin}
                 as="div"
-                eyebrow="Open Seats"
+                eyebrow={quickJoin.tournamentLobby ? 'Open Tournaments' : 'Open Seats'}
                 title="Quick Join"
                 crest="club"
                 pill={
@@ -4652,11 +4949,13 @@ export default function MultiTablePage() {
               >
                 {quickJoin.loading ? (
                   <div className="multi-table-page__quickjoin-empty sc-copy sc-copy--center">
-                    Finding Games…
+                    {quickJoin.tournamentLobby ? 'Finding Tournaments…' : 'Finding Games…'}
                   </div>
                 ) : quickJoin.rows.length === 0 ? (
                   <div className="multi-table-page__quickjoin-empty sc-copy sc-copy--center">
-                    No Open Seats Right Now
+                    {quickJoin.tournamentLobby
+                      ? 'No Open Tournaments Right Now'
+                      : 'No Open Seats Right Now'}
                   </div>
                 ) : (
                   quickJoin.rows.map((row) => (
@@ -4664,7 +4963,11 @@ export default function MultiTablePage() {
                       key={row.id}
                       type="button"
                       className="multi-table-page__quickjoin-row"
-                      onClick={() => handleQuickJoinPick(row)}
+                      onClick={() =>
+                        row.tournamentId
+                          ? handleQuickJoinTournamentPick(row.tournamentId)
+                          : handleQuickJoinPick(row)
+                      }
                     >
                       <span className="multi-table-page__quickjoin-name">
                         <span className="multi-table-page__quickjoin-label sc-ink--silver">
@@ -4685,9 +4988,7 @@ export default function MultiTablePage() {
                       <span className="multi-table-page__quickjoin-meta sc-ink--muted">
                         {row.code && <span>{row.code}</span>}
                         {row.stakes && <span>{row.stakes}</span>}
-                        <span>
-                          {row.players}/{row.max}
-                        </span>
+                        <span>{row.seats ?? `${row.players}/${row.max}`}</span>
                       </span>
                       <span className="multi-table-page__quickjoin-cta sc-ink--blue">Join</span>
                     </button>
@@ -4763,6 +5064,7 @@ export default function MultiTablePage() {
                              unfocused tiles would animate nothing at all. */
                           isVisible={!hidden}
                           muted={mutedIds.includes(table.id)}
+                          arrivedByMoveAtMs={table.arrivedByMoveAt}
                         />
                       </TableErrorBoundary>
                     )}
@@ -5041,6 +5343,7 @@ export default function MultiTablePage() {
                              genuinely off screen and instant is the right
                              answer (spec 47). */
                           isVisible={shouldRender && !hidden}
+                          arrivedByMoveAtMs={table.arrivedByMoveAt}
                         />
                       </TableErrorBoundary>
                     )}

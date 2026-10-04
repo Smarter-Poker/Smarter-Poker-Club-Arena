@@ -16,9 +16,8 @@ describe('Stats workspace wiring', () => {
   it('loads the persisted privacy preference before the workspace tab is opened', () => {
     const page = read('src/pages/PlayerStatsPage.tsx');
     expect(page).toContain("import('../services/StatsWorkspaceService')");
-    expect(page).toContain(
-      'setPrivacyPresentationMode(result.data.preferences.privacyPresentationMode)'
-    );
+    expect(page).toContain('setPrivacyPresentationMode(result.data.privacyPresentationMode)');
+    expect(page).toContain('statsWorkspaceService.loadPreferences()');
     expect(page).toContain("privacyPresentationMode && category !== 'workspace'");
     expect(page).toContain('statsWorkspaceService.evaluateAlerts');
     expect(page).toContain('setDashboardLayout');

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildStatsHandEvidencePath,
   buildStatsCashEvidencePath,
+  buildStatsSessionEvidencePath,
   buildStatsTournamentEvidencePath,
   rememberStatsEvidenceOrigin,
   restoreStatsEvidenceScroll,
@@ -12,6 +13,13 @@ import {
 } from '../../src/lib/handHistoryDrilldown';
 
 describe('Stats evidence navigation', () => {
+  it('keeps exact session evidence in its club and asset scope', () => {
+    expect(
+      buildStatsSessionEvidencePath('session-1', { clubId: 'club-1', asset: 'diamonds' })
+    ).toBe(
+      '/hand-history?source=stats&statsSession=session-1&statsAsset=diamonds&statsClub=club-1'
+    );
+  });
   afterEach(() => {
     vi.useRealTimers();
     window.sessionStorage.clear();

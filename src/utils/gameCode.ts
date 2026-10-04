@@ -107,3 +107,20 @@ export function gameCodeFromName(name?: string | null): string {
   }
   return '';
 }
+
+/**
+ * Is this short code a TOURNAMENT format (MTT / SNG / SPIN)?
+ *
+ * Dan 2026-10-04: a tournament tab prints its buy-in under the code and never
+ * its blinds. `isTournament` from the table page is the authority, but a tab
+ * exists before its page has reported anything, and its code is already known
+ * by then (the URL, the table name, the seat rebuild). 'HU' is deliberately
+ * absent: `gameCode` only returns it for a two-seat CASH table; a two-seat
+ * tournament reads SNG.
+ */
+export function isTournamentGameCode(code?: string | null): boolean {
+  const c = String(code ?? '')
+    .trim()
+    .toUpperCase();
+  return c === 'MTT' || c === 'SNG' || c === 'SPIN';
+}

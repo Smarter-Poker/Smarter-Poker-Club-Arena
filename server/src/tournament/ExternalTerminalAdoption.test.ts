@@ -192,22 +192,17 @@ function fixture(
     }),
     recalculateEliminatedPrizes: vi.fn(),
   });
-  transport.from.mockImplementation((table: string) => {
-    expect(table).toBe('tournament_terminal_settlements');
-    const query = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn((column: string, value: string) => {
-        expect([column, value]).toEqual(['tournament_id', TOURNAMENT_ID]);
-        return query;
-      }),
-      maybeSingle: vi.fn(async () => ({
-        data: options.receiptMissing ? null : { settlement_mode: mode, winner_id: WINNER_ID },
-        error: options.readError ? { message: 'receipt read unavailable' } : null,
-      })),
-    };
-    return query;
-  });
   transport.rpc.mockImplementation(async (name: string, args: unknown) => {
+    if (name === 'fn_tournament_terminal_settlement_identity') {
+      expect(args).toEqual({ p_tournament_id: TOURNAMENT_ID });
+      if (options.readError) return { data: null, error: { message: 'receipt read unavailable' } };
+      return {
+        data: options.receiptMissing
+          ? { found: false, settlement_mode: null, winner_id: null }
+          : { found: true, settlement_mode: mode, winner_id: WINNER_ID },
+        error: null,
+      };
+    }
     if (name === 'fn_close_tournament_entry_window')
       return {
         data: {
@@ -272,6 +267,7 @@ describe('external committed completion outranks an obsolete entry reprice', () 
       expect(manager.recalculateEliminatedPrizes).not.toHaveBeenCalled();
       expect(transport.rpc.mock.calls.map(([name]) => name)).toEqual([
         'fn_close_tournament_entry_window',
+        'fn_tournament_terminal_settlement_identity',
         'fn_resolve_tournament_terminal_outcome',
       ]);
     }
@@ -286,6 +282,7 @@ describe('external committed completion outranks an obsolete entry reprice', () 
     expect(manager.broadcast).toHaveBeenCalledWith('final_table_deal', expect.any(Object));
     expect(transport.rpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_close_tournament_entry_window',
+      'fn_tournament_terminal_settlement_identity',
       'fn_resolve_tournament_terminal_outcome',
     ]);
   });
@@ -298,6 +295,7 @@ describe('external committed completion outranks an obsolete entry reprice', () 
     expect(manager.stop).toHaveBeenCalledOnce();
     expect(transport.rpc.mock.calls.map(([name]) => name)).toEqual([
       'fn_close_tournament_entry_window',
+      'fn_tournament_terminal_settlement_identity',
       'fn_resolve_tournament_terminal_outcome',
       'fn_ca_legacy_fee_custody_origin',
     ]);
@@ -332,7 +330,7 @@ describe('external committed completion outranks an obsolete entry reprice', () 
     await manager.runEliminationSweep(new AbortController().signal);
     expect(engine.stop).toHaveBeenCalledTimes(2);
     expect(manager.stop).toHaveBeenCalledOnce();
-    expect(transport.rpc).toHaveBeenCalledTimes(2);
+    expect(transport.rpc).toHaveBeenCalledTimes(3);
   });
   it('does not add receipt reads to unrelated entry refusals', async () => {
     const { manager } = fixture({ unrelatedRefusal: true });
@@ -340,6 +338,10 @@ describe('external committed completion outranks an obsolete entry reprice', () 
       false
     );
     expect(transport.from).not.toHaveBeenCalled();
+    expect(transport.rpc).not.toHaveBeenCalledWith(
+      'fn_tournament_terminal_settlement_identity',
+      expect.anything()
+    );
   });
   it('leaves ordinary open entry handling unchanged and adds no receipt read', async () => {
     const { manager } = fixture();

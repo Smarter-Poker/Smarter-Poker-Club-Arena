@@ -1,7 +1,16 @@
 {
   "_read_this_first": "Each row says: production recorded this migration under an apply-time version and name (the Supabase MCP stamps its own), and the repository already carries the same migration as `file` under the version and name its author gave it. The gates match migrations by name; these rows are the migrations whose names differ, so without them the same migration reads as 'installed with no file' in one direction and 'merged but not installed' in the other. A row is not a pardon: scripts/ci/migration-aliases.mjs honours it only when `file` exists in this tree and the applied version has no file of its own, and scripts/ci/check-recorded-migrations-evidence.mjs asks production that `appliedVersion` exists with `appliedMd5`, the md5 public.fn_ca_migration_text(version) reports (the statements joined by newlines, no trailing newline). `sameBytes` false means the authored file and the applied SQL differ in text (a condensed or revised apply); the applied SQL is in supabase_migrations.schema_migrations.statements.",
   "_how_to_add_a_row": "Only when the applied migration and the file are the same change: the same declared objects and the same intent, applied within the file's own session. Give the evidence in `basis`. If they are different changes, the applied one needs its own backfilled file instead.",
-  "aliases": [],
+  "aliases": [
+    {
+      "appliedVersion": "20261004002905",
+      "appliedName": "a_certification_fixture_never_queues_in_front_of_the_platform",
+      "appliedMd5": "0fd3c7f9e195a0964aaad2bef916d0d8",
+      "file": "supabase/migrations/20261004002615_a_certification_fixture_never_queues_in_front_of_the_platfor.sql",
+      "sameBytes": false,
+      "basis": "Same change, and the applied SQL is byte-identical to this file's executable body. The file is 9503 bytes; its first 2290 are the comment header the Supabase MCP strips when it applies, and the remaining 7213 bytes from BEGIN; to COMMIT; hash to 0fd3c7f9e195a0964aaad2bef916d0d8, which is exactly md5 of production's statements for 20261004002905 (verified read-only 2026-10-04, joined by newlines with no trailing newline). sameBytes is false only because of that stripped header. Same declared objects on both sides: the one DO $subs$ block that rewrites the advisory-gate wait in fn_ca_prepare_post_reset_welcome_certification_fixture and the three fn_ca_prepare_unused_welcome_certification_board_{leases,games,origins} preparers, each guarded by the same pre-image and post-image md5 pins and the same privilege assertions. Applied 2026-10-04 00:29:05 UTC from this file's own session, which had reserved version 20261004002615 through new-migration.mjs. The only divergence is the 60-character filename truncation: the stem ends 'platfor' and the recorded name ends 'platform', so the name key in check-applied-migrations-are-recorded misses by one character while check-migrations-are-live already matches it on its 55-character prefix."
+    }
+  ],
   "superseded": [
     {
       "file": "supabase/migrations/20260917232311_mtt_activate_unlimited_admission.sql",
@@ -12,6 +21,21 @@
       "file": "supabase/migrations/20260918005913_mtt_activate_unlimited_with_original_funding.sql",
       "by": "20260918023630",
       "reason": "Never installed; superseded the same way (its own first line calls 232311 uninstalled). Byte-pinned by the same source binding, so it is marked here rather than in its own header."
+    },
+    {
+      "file": "supabase/migrations/20261004124640_the_ledger_replay_sees_what_a_subtransaction_wrote_and_a_uni.sql",
+      "by": "20261004144112",
+      "reason": "Never installed. Its two fixes (the union rake payers name union_wallets.rake_wallet; the replay judges a leg a subtransaction wrote correctly) were installed first by another task as 20261004123650 and 20261004135607 (PRs #6050, #6062), so its preimages no longer match and it refuses to run (SUBXACT_LEG_PREIMAGE_CHANGED, read 2026-10-04 14:27 UTC). 20261004144112 completes its records against the live fix."
+    },
+    {
+      "file": "supabase/migrations/20261004125201_the_drift_the_replay_misread_is_rebaselined_and_its_incident.sql",
+      "by": "20261004144112",
+      "reason": "Never installed. It required 20261004124640, which was superseded, and its incidents and kill-switch alert were already closed by 20261004135607's task. 20261004144112 rebaselines the same four accounts on the live replay fix."
+    },
+    {
+      "file": "supabase/migrations/20261004133333_a_union_wallet_side_always_names_its_column.sql",
+      "by": "20261004144116",
+      "reason": "Never installed. Its reader preimages were 20261004124640's results, which never ran; 20261004144116 is the same change with the two snapshot readers patched where 20261004135607 left them."
     }
   ],
   "_superseded": "A merged migration that must never run, because a later file replaced it, is marked by a first line `-- SUPERSEDED BY <version>` or, when the file is byte-pinned and cannot be edited, by a row here. Either way the named version must have a file in this tree, or the mark is ignored."

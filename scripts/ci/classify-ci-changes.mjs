@@ -60,6 +60,8 @@ const discoveryPrivacy =
   /^(scripts\/ci\/(?:test-discovery-privacy-postgres\.py$|fixtures\/discovery-privacy\/)|tests\/discoveryPrivacyRegression\.test\.ts$)/;
 const playerSearchPrivacy =
   /^(scripts\/ci\/(?:test-player-search-privacy-postgres\.py$|fixtures\/player-search-privacy\/)|tests\/playerSearchPrivacyRegression\.test\.ts$)/;
+const clubCreateCapacity =
+  /^(scripts\/ci\/check-club-create-capacity\.mjs$|tests\/unit\/clubCreateCapacity\.test\.ts$|\.github\/workflows\/club-create-certification\.yml$)/;
 const backedPayoutScan =
   /^(scripts\/ci\/(?:test-backed-payout-scan-postgres\.py$|fixtures\/backed-payout-scan\/)|tests\/backedPayoutScanRegression\.test\.ts$)/;
 const bbjContributionCover =
@@ -326,6 +328,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence) ||
       matches(discoveryPrivacy) ||
       matches(playerSearchPrivacy) ||
+      matches(clubCreateCapacity) ||
       matches(bbjContributionCover) ||
       matches(scopedAuditReads) ||
       matches(backedPayoutScan) ||

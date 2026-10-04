@@ -207,12 +207,10 @@ type InvoiceRow = ClubWeeklyStatement;
 
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
-/* EXACT LEDGER FIGURES ON THE GLASS (Dan: never decimals on a forward-facing
-   page). A whole balance prints whole, 12,500; a balance that really holds
-   cents keeps them, 32,482.58, because a money desk never misstates a ledger.
-   The painted head zones never print through fmt(); they print compactChips(). */
-const fmt = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+/* #ClubArenaConsole law: chip figures outside the felt never print decimal
+   points. The authoritative ledger keeps its cents; this display deliberately
+   uses the shared rounded-down K/M/B reading without changing stored values. */
+const fmt = compactChips;
 
 /**
  * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
@@ -2153,26 +2151,26 @@ export default function CashierTradePage() {
     !isOnline || loadError || clubResolveFailed || agentWallet === null || transferRecovery
   );
   const cashierSyncMessage = !isOnline
-    ? 'Cashier offline; money actions are locked'
+    ? 'Cashier Offline; Money Actions Are Locked'
     : reconciling
-      ? 'Reconciling balances and cashier authority'
+      ? 'Reconciling Balances And Cashier Authority'
       : loading || isHydrating
-        ? 'Synchronizing cashier balances'
+        ? 'Synchronizing Cashier Balances'
         : rosterLoadingMore
-          ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
+          ? `Cashier Ready; Loading The Rest Of The Roster After ${downline.length.toLocaleString()} Members`
           : clubResolveFailed
-            ? 'Club could not be resolved'
+            ? 'Club Could Not Be Resolved'
             : loadError
-              ? 'Cashier sync requires attention'
+              ? 'Cashier Sync Requires Attention'
               : agentWallet === null
-                ? 'Agent wallet could not be verified'
-                : 'Balances synchronized';
+                ? 'Agent Wallet Could Not Be Verified'
+                : 'Balances Synchronized';
   const lastVerifiedLabel = lastVerifiedAt
     ? new Date(lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : 'Not Yet Verified';
   const currentClubLabel = membershipsLoading
     ? 'Loading Club'
-    : currentClub?.name || 'Club Cashier';
+    : titleCase(currentClub?.name || 'Club Cashier');
 
   // ── Render ────────────────────────────────────────────────────────────────
   const cashierAuthorityBlocked = busy || loading || !roleResolved || !!loadError;
@@ -2323,7 +2321,7 @@ export default function CashierTradePage() {
                       {m.logoUrl ? (
                         <img src={m.logoUrl} alt="" className={styles.entityLogo} />
                       ) : null}
-                      <span className={styles.pickerName}>{m.name}</span>
+                      <span className={styles.pickerName}>{titleCase(m.name)}</span>
                       <span className={styles.pickerBalance}>
                         {m.entityType === 'union' ? 'Union Wallets' : `${fmt(m.chipBalance)} Chips`}
                       </span>

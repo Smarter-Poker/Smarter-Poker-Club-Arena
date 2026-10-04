@@ -103,6 +103,20 @@
   fill: #00d4ff;
 }
 
+.pos-radar-axis-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.pos-radar-axis-label {
+  pointer-events: none;
+}
+
+.pos-radar-svg g[role='button']:focus-visible .pos-radar-axis-target {
+  stroke: #00d4ff;
+  stroke-width: 2;
+}
+
 /* ── Legend / metric toggles ───────────────────────────────────────────── */
 
 .pos-radar-legend {
@@ -128,9 +142,7 @@
     background 0.18s ease,
     border-color 0.18s ease,
     color 0.18s ease;
-  /* 32px is below the 44px ideal, but these are secondary controls sitting in
-     a dense panel; the row targets below carry the same information. */
-  min-height: 32px;
+  min-height: 44px;
 }
 
 .pos-radar-toggle.is-on {
@@ -185,6 +197,18 @@
   color: #e8f4ff;
   font-weight: 700;
   text-transform: none;
+}
+
+.pos-radar-row-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
 }
 
 .pos-radar-table tbody td {

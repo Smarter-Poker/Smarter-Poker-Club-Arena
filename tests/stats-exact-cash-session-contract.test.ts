@@ -4,6 +4,10 @@ const migration = readFileSync(
   'supabase/migrations/20261003142109_stats_exact_cash_sessions.sql',
   'utf8'
 );
+const repair = readFileSync(
+  'supabase/migrations/20261004122156_keep_voided_stats_and_nullable_session_closes_honest.sql',
+  'utf8'
+);
 const page = readFileSync('src/pages/PlayerStatsPage.tsx', 'utf8');
 describe('exact cash session contract', () => {
   it('captures the three authoritative close owners without changing custody', () => {
@@ -12,6 +16,10 @@ describe('exact cash session contract', () => {
     expect(migration).toContain("closed_reason='table_closed'");
     expect(migration).toContain("financial_capture_status='partial'");
     expect(migration).not.toContain('chip_balances');
+    expect(repair).toContain(
+      "financial_capture_status=CASE WHEN NEW.stack IS NULL THEN 'partial' ELSE 'exact' END"
+    );
+    expect(repair).toContain("coalesce(s.closed_at,''infinity''::timestamptz)>v_from");
   });
   it('keeps owner and club authorization on the scoped session reader', () => {
     expect(migration).toContain('PERFORM public.ca_assert_self(p_user)');
@@ -21,7 +29,11 @@ describe('exact cash session contract', () => {
   it('wires one financial vault and one exact-session analysis surface including ledger-only players', () => {
     expect(page.match(/financialPanel=\{financialPanel\}/g)).toHaveLength(1);
     expect(page).toContain('exactSessionPanel={exactSessionPanel}');
-    expect(page).toContain("!hasData && showTab('tournaments') && financialPanel");
-    expect(page).toContain("!hasData && showTab('analysis') && exactSessionPanel");
+    expect(page).toContain(
+      "!hasData && !privacyPresentationMode && showTab('tournaments') && financialPanel"
+    );
+    expect(page).toContain(
+      "!hasData && !privacyPresentationMode && showTab('analysis') && exactSessionPanel"
+    );
   });
 });

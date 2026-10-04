@@ -158,6 +158,7 @@ import { normalizeCardBack } from '../components/table/CardImage';
  */
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
+import lobbyButtonArt from '../assets/lobby-button.webp';
 import { useButtonImage } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
@@ -470,6 +471,8 @@ import HeroHubPanel from '../components/table/HeroHubPanel';
 import { CASH_TEMPLATES } from '../config/cashGames';
 import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
+import { EquityBadgeLayer, type EquityBadge } from '../components/table/EquityBadgeLayer';
+import type { EquitySpot } from '../lib/equityBadgePlacement';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
@@ -996,6 +999,17 @@ const _win = window as any;
  * wait — but never zero either. Erasing the boards in the same frame the next
  * hand starts is what made a three-board runout look like it never happened.
  */
+/** A hand's identity on the felt: its cards, in order. '' for no cards. */
+function holeCardSig(cards: readonly (Card | null | undefined)[] | null | undefined): string {
+  return (cards ?? [])
+    .filter((c): c is Card => c != null)
+    .map((c) => `${c.rank}${c.suit}`)
+    .join(',');
+}
+/** Stable empty list, so a hand with no runout never re-renders the badge layer. */
+const NO_EQUITY_BADGES: EquityBadge[] = [];
+/** Device-local memory of the tournament info dock's collapse toggle. */
+const TOURNAMENT_DOCK_COLLAPSED_KEY = 'ca.tournamentDock.collapsed';
 const RIT_BOUNDARY_ACK_MS = 1500;
 
 /**
@@ -1148,6 +1162,8 @@ interface TablePageProps {
      * toast cannot describe both.
      */
     isTournament?: boolean;
+    /** Dan 2026-10-04: tournament entry total (buy_in_amount + buy_in_fee; 0 = freeroll). */
+    tournamentBuyIn?: number;
     /** Dan 2026-08-21: the short game code the tab wears when no hand is
      *  live - NLH / PLO5 / SPIN / MTT / HU. Authoritative: this component
      *  knows the variant, the tournament format and the seat count. */
@@ -1190,6 +1206,13 @@ interface TablePageProps {
    * and there `isVisible` is false and instant is correct (spec 47).
    */
   isVisible?: boolean;
+  /**
+   * Dan 2026-10-04: the tournament moved the hero INTO this table (a table
+   * break or a balance move) at this instant, epoch ms on this device. The
+   * felt says "You've Been Moved To <table>" for the hand-over instead of
+   * "Reconnecting Your Seat". Absent on a table the player opened themselves.
+   */
+  arrivedByMoveAtMs?: number;
   /**
    * Roadmap batch 3: per-table mute from the tab's long-press menu. Silences
    * every sound this table makes (ambient, bell, tick-tock) without touching
@@ -1583,6 +1606,7 @@ function LiveTablePage({
   isMultiTable = false,
   isActive = true,
   isVisible = true,
+  arrivedByMoveAtMs,
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
@@ -3394,6 +3418,31 @@ function LiveTablePage({
   // group's fan arrives); reset false at HAND_STARTED. Purely visual: the
   // authoritative stacks in tableState are never modified.
   const [stackHoldReleased, setStackHoldReleased] = useState(false);
+  /* ═══ A FINISHED HAND'S CARDS LEAVE THE FELT (Dan 2026-10-04) ═══════════════
+     "CARDS FROM THE HAND WHEN THE MAINTENANCE BREAK STILL SHOW DURING THE
+      BREAK. THEY SHOULD NOT BE DISPLAYED WHEN ON BREAK OR WHEN THE HAND IS
+      OVER."
+
+     WHY THEY STAYED. The post-hand reset (handCompleteResetFnRef) wipes the
+     board, the pot and the winner when the result hold ends. It never touched
+     anybody's hole cards: those were only ever replaced by the NEXT hand's
+     deal. Normally the next hand starts within a second and nobody notices.
+     When no next hand comes - the hourly break parks every table at a hand
+     boundary, or the table is waiting on players - the last hand's cards
+     simply sat there, on the felt and on the tab pill, for as long as the
+     table was idle.
+
+     So the reset now records WHICH hand finished, and a hand that has
+     finished is not drawn: not on a seat, not on the tab. It is a statement
+     about one identified hand - the hand number AND the hero's own two cards -
+     and it stops applying the instant either changes, so it can never hide a
+     hand that is being played ("hero can NEVER EVER EVER lose access to
+     seeing their hole cards", 2026-08-26, is about a LIVE hand). The cards in
+     state are untouched; the recovery reads and the snapshot merge keep
+     working on exactly what they had. */
+  const [finishedHand, setFinishedHand] = useState<{ handNumber: number; heroSig: string } | null>(
+    null
+  );
   const stackHoldReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * RUN-IT-TWICE PARITY 2026-09-05 — the pot ships PER BOARD, so the stack
@@ -5046,6 +5095,10 @@ function LiveTablePage({
   // Which tournament family this table belongs to — drives the format word on
   // masthead line 1. null = cash table, which keeps its own layout.
   const [tournamentFormat, setTournamentFormat] = useState<'spin' | 'sng' | 'mtt' | null>(null);
+  /* Dan 2026-10-04: what this tournament costs to enter (buy-in plus fee), for
+     the tab pill - "MTT AND BUY IN AMOUNT UNDER IT FOR QUICK REFERENCE".
+     undefined until the tournament row has been read. */
+  const [tournamentBuyInTotal, setTournamentBuyInTotal] = useState<number | undefined>(undefined);
   const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
   const [spinHeadsUpNote, setSpinHeadsUpNote] = useState(false);
   const spinPlayersRemaining = tableState.players.filter(
@@ -6160,14 +6213,40 @@ function LiveTablePage({
   // re-fires when the cards actually change — tableState.players gets a new
   // identity on every engine snapshot, and depending on it directly would
   // re-run the effect (and updateTableInfo's compare loop) many times a hand.
+  /* Dan 2026-10-04: is the hand on the felt one that has already finished,
+     or is every table parked for the maintenance break? Then no hole card is
+     drawn - see `finishedHand` above. Both the seats and the tab pill read
+     these two, so they cannot disagree. */
+  const heroHoleSigNow = useMemo(
+    () => holeCardSig(tableState.players.find((pl) => pl?.isHero)?.holeCards),
+    [tableState.players]
+  );
+  const tableHandIsOver =
+    finishedHand !== null && (tableState.handNumber ?? 0) === finishedHand.handNumber;
+  const heroHandIsOver = tableHandIsOver && heroHoleSigNow === finishedHand!.heroSig;
+  /* The break proper: every table has finished its hand and is parked. A seat
+     on the clock means a hand is still being played here, whatever the banner
+     says, and its cards stay. */
+  const breakHidesCards =
+    maintenanceBreak.active &&
+    maintenanceBreak.phase !== 'last_hand' &&
+    maintenanceBreak.phase !== 'idle' &&
+    tableState.currentPlayerSeat === 0;
   const heroTabCards = useMemo(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
     if (!hero || !tableState.isHandInProgress || hero.status === 'folded') return '';
+    if (heroHandIsOver || breakHidesCards) return '';
     return (hero.holeCards ?? [])
       .filter((c): c is NonNullable<typeof c> => c != null)
       .map((c) => `${c.rank}${c.suit}`)
       .join(',');
-  }, [tableState.players, tableState.heroSeat, tableState.isHandInProgress]);
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    tableState.isHandInProgress,
+    heroHandIsOver,
+    breakHidesCards,
+  ]);
 
   // Hero's last action this street, for the transient badge under the tab.
   // Same memo-to-primitive pattern as heroTabCards, same reason.
@@ -6521,6 +6600,9 @@ function LiveTablePage({
       sittingOut: heroTabSittingOut,
       sitOutDeadlineMs: heroTabSitOutDeadlineMs,
       isTournament: tableState.isTournament,
+      /* Spread, not a plain field: reporting `undefined` would overwrite the
+         value MultiTablePage may already have read for this tab. */
+      ...(tournamentBuyInTotal !== undefined ? { tournamentBuyIn: tournamentBuyInTotal } : {}),
       /* The tab bar cannot see the arena, so it is told the one rule's answer.
          A Diamond tournament seat reports false and loses the two items that
          this page would only have refused. */
@@ -6561,6 +6643,7 @@ function LiveTablePage({
        learn the deadline at all, and a stale one could persist. */
     heroTabSitOutDeadlineMs,
     tableState.isTournament,
+    tournamentBuyInTotal,
     tableState.arenaAsset,
     tableState.clusterId,
     onTableInfoUpdate,
@@ -12189,6 +12272,29 @@ function LiveTablePage({
      (Dan 2026-08-28). Distinct from showTournamentInfo, which is the smaller
      four-tab summary now reached only from the hero hub's Stats tab. */
   const [showTournamentLobby, setShowTournamentLobby] = useState(false);
+  /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04): "A COLLAPSABLE BOX, UNDER THE
+     'ACTION BAR' ON THE BOTTOM OF THE PAGE". Open or collapsed is the
+     player's choice and is remembered on this device. The flag lives here,
+     not in TournamentHUD, because the bottom bars stand on the dock and read
+     its height from `data-tdock` on this page's root (TournamentHUD.css). */
+  const [tournamentDockCollapsed, setTournamentDockCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(TOURNAMENT_DOCK_COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleTournamentDock = useCallback(() => {
+    setTournamentDockCollapsed((was) => {
+      const next = !was;
+      try {
+        window.localStorage.setItem(TOURNAMENT_DOCK_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        /* Private mode: the choice simply lasts for this visit. */
+      }
+      return next;
+    });
+  }, []);
   /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
      the Must Move box in the upper-right corner or the SEAT CHANGE button.
      The refresh key is bumped by every seat-move event so the box re-reads
@@ -13064,6 +13170,9 @@ function LiveTablePage({
             const formatKind = getTournamentFormatKind(tournData);
             const fmt = formatKind === 'unknown' ? null : formatKind;
             setTournamentFormat(fmt);
+            setTournamentBuyInTotal(
+              Math.round(Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0))
+            );
             // Seat-first = a Spin (3 seats) or a Heads-Up (2 seats) that has
             // not started. Once it is RUNNING the seats are no longer for
             // sale and the normal tournament table rules apply.
@@ -17524,8 +17633,18 @@ function LiveTablePage({
         handCompleteResetAtRef.current = Date.now() + holdMs;
         /* Captured so POT_WIN can re-arm exactly this work at a later time
            without duplicating any of it. */
+        /* The hand this reset belongs to, read NOW. The reset can be pushed
+           later by POT_WIN, and reading the hand number when it finally runs
+           would name whatever hand is on the felt by then. */
+        const completedHandNumber = tableStateRef.current.handNumber ?? 0;
+        const completedHeroSig = holeCardSig(
+          tableStateRef.current.players.find((pl) => pl?.isHero)?.holeCards
+        );
         handCompleteResetFnRef.current = () => {
           handCompleteTimerRef.current = null;
+          if (completedHandNumber > 0) {
+            setFinishedHand({ handNumber: completedHandNumber, heroSig: completedHeroSig });
+          }
           setTableState((prev) => ({
             ...prev,
             communityCards: [],
@@ -23265,6 +23384,18 @@ function LiveTablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04). Present only on a
+         tournament table; TournamentHUD.css reads it to reserve the dock's
+         height under the felt and to stand the bottom bars on top of it.
+         The value follows the player's collapse toggle, the RESERVE does not:
+         collapsing the dock never resizes the table. */
+      data-tdock={
+        tableState.isTournament && tableState.tournamentId
+          ? tournamentDockCollapsed
+            ? 'collapsed'
+            : 'expanded'
+          : undefined
+      }
       /* THE MINI ROW UNDER THE JACKPOT PLATE (Dan 2026-09-11). "1" exactly
          when TableModalsLayer draws .bbj-mini-plate - the plate is on this
          table and the mini can pay at these stakes - so BadBeatJackpot.css can
@@ -23827,29 +23958,36 @@ function LiveTablePage({
           )
         }
         upperRight={
-          /* Dan 2026-08-25: "tournaments are still missing the stats bar in the
-             right corner." Two separate faults produced one empty corner:
-             MiniStatsCard bailed out to a bare STATS button for tournaments
-             (fixed in that component), and TournamentHUD — the level / blinds /
-             ante / countdown bar — was rendered as a loose inline-flex div at
-             the very END of this page's tree, outside the fixed HUD layer, so
-             it had no corner to be in and nothing anchored it on screen. Both
-             now live here, stacked, in the corner Dan is pointing at. */
+          /* THE CORNER HOLDS THE LOBBY BUTTON, NOT THE INFO BOX (Dan 2026-10-04).
+             "THE TOURNAMENT INFO BOX MUST NEVER BE DISPLAYED OVER THE TOP LIKE
+             IT CURRENTLY IS ... IN THE UPPER RIGHT HAND CORNER WHERE '36 LEFT'
+             IS SHOULD BE THE LOBBY BUTTON THAT OPENS UP TO THE TOURNAMENT
+             LOBBY PAGE."
+
+             From 2026-08-25 to that day the level / blinds / countdown bar
+             (TournamentHUD) sat here, and from 2026-08-30 the bar itself was
+             the lobby button. On a phone it lay across the top seats. The bar
+             is now the dock under the action bar (search `tournament-dock`
+             below), and this corner carries one control: Dan's LOBBY plate. */
           <div className="hud-ur-column">
-            {/* Dan 2026-08-30: "REMOVE THE STATS BUTTON AND MAKE IT THAT IF
-                YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE TOURNAMENT
-                LOBBY INSTANTLY." The bar itself is the button now - one
-                control, no separate stats icon - on every MTT, Spin and
-                heads-up match alike (isTournament covers all three). */}
             {tableState.isTournament && tableState.tournamentId && (
-              <TournamentHUD
-                tournamentId={tableState.tournamentId}
-                spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
-                /* A background slot stays mounted (PersistentTableLayer), so
-                   its bar must know it is off screen and stop asking. */
-                hidden={!isVisible}
-                onOpen={() => setShowTournamentLobby(true)}
-              />
+              <button
+                type="button"
+                className="tournament-lobby-corner-btn"
+                onClick={() => {
+                  soundService.playButtonClick();
+                  setShowTournamentLobby(true);
+                }}
+                aria-label="Open Tournament Lobby"
+                title="Tournament Lobby"
+              >
+                <img
+                  className="tournament-lobby-corner-btn__img"
+                  src={lobbyButtonArt}
+                  alt=""
+                  draggable={false}
+                />
+              </button>
             )}
             {/* THE MUST MOVE BOX (Dan 2026-09-05): "JUST LIKE THE TOURNAMENTS
                 WITH A BOX IN THE RIGHT CORNER TO CLICK TO SEE ALL TABLES, CHIP
@@ -24107,6 +24245,14 @@ function LiveTablePage({
                   disconnectStates={disconnectStates}
                   socketStatus={engineWsStatus}
                   isActive={isActive}
+                  /* Dan 2026-10-04: a seat the tournament has just moved here
+                     is not "reconnecting" - say what happened. */
+                  movedHereAtMs={arrivedByMoveAtMs}
+                  tableName={
+                    tableState.tableName && tableState.tableName !== 'Loading...'
+                      ? formatGameTitle(tableState.tableName)
+                      : undefined
+                  }
                 />
 
                 <div className="table-brand" aria-hidden="true">
@@ -25090,6 +25236,18 @@ function LiveTablePage({
                 };
               }
             }
+            /* Dan 2026-10-04: "THEY SHOULD NOT BE DISPLAYED WHEN ON BREAK OR
+               WHEN THE HAND IS OVER." A hand whose result hold has ended, or
+               any hand while the tables are parked for the break, is not
+               drawn. Presentation only - see `finishedHand`. */
+            if (
+              displayPlayer &&
+              displayPlayer.holeCards &&
+              displayPlayer.holeCards.length > 0 &&
+              (breakHidesCards || (displayPlayer.isHero ? heroHandIsOver : tableHandIsOver))
+            ) {
+              displayPlayer = { ...displayPlayer, holeCards: [], showCards: false };
+            }
             // The seat hero just tapped: show them SITTING immediately, with a
             // pending stack, while the buy-in modal is still open. Replaced by
             // real server data the moment the buy-in lands.
@@ -25240,6 +25398,8 @@ function LiveTablePage({
                     ? ' seat-wrapper--equity'
                     : ''
                 }`}
+                /* The handle EquityBadgeLayer measures this seat by. */
+                data-seat-wrapper={seatNumber}
                 style={
                   {
                     left: `${pos.x}%`,
@@ -25590,13 +25750,32 @@ function LiveTablePage({
                   );
                 })()}
 
-                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in.
-                    VIP ALL-IN SQUEEZE 2026-09-05: reads displayedEquities, which
-                    is allInEquities except while THIS viewer's squeezed card is
-                    still face down (see squeezeHolding). */}
-                {displayedEquities.length > 0 &&
-                  player &&
-                  (() => {
+                {/* The all-in win percentage is NOT drawn here any more (Dan
+                    2026-10-04). A badge inside this wrapper can never be on
+                    top of a neighbouring seat - see EquityBadgeLayer, mounted
+                    once after the seats. */}
+              </div>
+            );
+          })}
+          {/* ALL-IN WIN PERCENTAGES - ONE LAYER ABOVE EVERY SEAT (Dan 2026-10-04):
+              "THE '50%' TO WIN SHOULD NEVER BE 'IN THE BACKGROUND' OR HAVE
+              ANYTHING OVER IT ... ALWAYS LAYER ONE ON TOP, BUT CAN NEVER COVER
+              A PLAYERS DISPLAYED CARDS." The why is at the top of
+              EquityBadgeLayer.tsx.
+
+              FIX 89 history kept: shown per seat during an all-in runout.
+              VIP ALL-IN SQUEEZE 2026-09-05: reads displayedEquities, which is
+              allInEquities except while THIS viewer's squeezed card is still
+              face down (see squeezeHolding). */}
+          <EquityBadgeLayer
+            remeasureKey={`${tableState.boardStage}:${tableState.communityCards.length}:${tableState.communityCards2.length}:${tableState.communityCards3.length}:${tableState.handNumber ?? 0}`}
+            badges={
+              displayedEquities.length === 0
+                ? NO_EQUITY_BADGES
+                : seatPositions.flatMap((pos, idx) => {
+                    const seatNumber = idx + 1;
+                    const player = getPlayerAtSeat(seatNumber);
+                    if (!player) return [];
                     // AUDIT-2 FIX 2026-08-20: this was `seat === seatNumber ||
                     // userId === player.id` — an OR across two identity keys
                     // returns the FIRST entry matching EITHER, so any seat-
@@ -25606,8 +25785,7 @@ function LiveTablePage({
                     const eq =
                       displayedEquities.find((e) => e.userId === player.id) ??
                       displayedEquities.find((e) => !e.userId && e.seat === seatNumber);
-                    if (!eq) return null;
-                    const isAhead = eq.equity >= 50;
+                    if (!eq) return [];
                     /* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD
                        ALWAYS BE ABOVE THE AVATAR WHEN POSSIBLE, NOT BELOW,
                        AND NOT TO THE RIGHT. ONLY EXCEPTION IS THE TOP AVATAR
@@ -25615,73 +25793,23 @@ function LiveTablePage({
                        RIGHT IS ALSO ALL IN, IT NEEDS TO BE SMART ENOUGH TO
                        PUT IT ON THE OPEN SPACE."
 
-                       So: every seat defaults to a badge ABOVE the avatar
-                       (the felt above a seat is the one strip no cards, no
-                       plate and no chips ever occupy — the `--above` rule in
-                       TablePage.css clears the action badge's slot too). The
-                       top-cap seats cannot go above — the BBJ banner is
-                       there — so they dock to a side, and the side is CHOSEN:
-                       prefer the inboard side, but if another all-in badge is
-                       already showing on a top seat in that direction, swing
-                       to the open side. Runs only while equities are on
-                       screen, so the scan costs nothing in normal play. */
-                    const isTopCap = pos.y < 20;
-                    let eqSide = ' equity-overlay--above';
-                    if (isTopCap) {
-                      const sideBusy = (side: 'left' | 'right') =>
-                        seatPositions.some((p2, i2) => {
-                          if (i2 === idx || p2.y >= 35) return false;
-                          const pl2 = getPlayerAtSeat(i2 + 1);
-                          const otherHasEq =
-                            !!pl2 &&
-                            (allInEquities.some((e2) => e2.userId === pl2.id) ||
-                              allInEquities.some((e2) => !e2.userId && e2.seat === i2 + 1));
-                          if (!otherHasEq) return false;
-                          return side === 'left' ? p2.x < pos.x : p2.x > pos.x;
-                        });
-                      const inboard: 'left' | 'right' = pos.x <= 50 ? 'right' : 'left';
-                      const outboard: 'left' | 'right' = inboard === 'right' ? 'left' : 'right';
-                      const chosen = !sideBusy(inboard)
-                        ? inboard
-                        : !sideBusy(outboard)
-                          ? outboard
-                          : inboard;
-                      eqSide =
-                        chosen === 'right'
-                          ? ' equity-overlay--inboard-right'
-                          : ' equity-overlay--inboard-left';
-                    }
-                    /* ANIMATION AUDIT 2026-08-19: styling moved to
-                       TablePage.css (.equity-overlay) — the inline block had
-                       no transition, so 72.4% snapped to 13.1% with zero
-                       emphasis. The value is keyed so each street's new
-                       percentage replays the pop, and ahead/behind colors
-                       cross-fade via CSS. */
-                    return (
-                      <div
-                        key={`eq-${eq.equity}`}
-                        className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}${eqSide}`}
-                      >
-                        {eq.equity}%
-                        {/* Mini equity bar under the number.
-                            AUDIT-2 FIX 2026-08-20: the bar used to size itself
-                            against the BADGE, whose width follows its text —
-                            so "9%" and "100%" rendered nearly identical bars
-                            and the graphic encoded nothing. It now fills a
-                            fixed-width track, so bar lengths are directly
-                            comparable across seats. */}
-                        <span className="equity-overlay__track">
-                          <span
-                            className="equity-overlay__bar"
-                            style={{ width: `${Math.max(2, Math.min(100, eq.equity))}%` }}
-                          />
-                        </span>
-                      </div>
-                    );
-                  })()}
-              </div>
-            );
-          })}
+                       That is the ORDER each seat's spots are tried in. The
+                       top-cap seats cannot go above - the BBJ banner is
+                       there - so they start on the inboard side. The layer
+                       then takes the first spot that covers no displayed
+                       card and no badge already placed, which is what makes
+                       "smart enough to put it on the open space" true for
+                       every seat rather than for the top row only. */
+                    const inboard: 'left' | 'right' = pos.x <= 50 ? 'right' : 'left';
+                    const outboard: 'left' | 'right' = inboard === 'right' ? 'left' : 'right';
+                    const order: EquitySpot[] =
+                      pos.y < 20
+                        ? [inboard, outboard, 'below']
+                        : ['above', inboard, outboard, 'below'];
+                    return [{ seatNumber, equity: eq.equity, order }];
+                  })
+            }
+          />
           {/* THE HERO'S VPIP TRACKER (Dan 2026-09-04): to the left of the
               hero, hero only, the judged figure. A sibling of the seats at
               the hero seat's own point; HeroVpipTracker.css pushes it left of
@@ -25859,6 +25987,24 @@ function LiveTablePage({
       {/* No ref. Nothing measures this box any more, and nothing may: its height
           changes several times a hand and four rules used to resize the felt and
           the HUD from it. See the note where the observer used to be, above. */}
+      {/* THE TOURNAMENT INFO DOCK (Dan 2026-10-04): level, blinds, ante, the
+          countdown, rank, players left and average stack, "UNDER THE 'ACTION
+          BAR' ON THE BOTTOM OF THE PAGE (UNDER FOLD CHECK BET)", collapsible.
+          It is position: fixed beneath the wrapper below; the wrapper and both
+          bottom rows pad themselves by its height (TournamentHUD.css). On
+          every MTT, Spin and heads-up match alike (isTournament covers all
+          three). Never render it on the felt again. */}
+      {tableState.isTournament && tableState.tournamentId && (
+        <TournamentHUD
+          tournamentId={tableState.tournamentId}
+          spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
+          /* A background slot stays mounted (PersistentTableLayer), so
+             its dock must know it is off screen and stop asking. */
+          hidden={!isVisible}
+          collapsed={tournamentDockCollapsed}
+          onToggleCollapsed={toggleTournamentDock}
+        />
+      )}
       <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
@@ -27629,14 +27775,10 @@ function LiveTablePage({
           TournamentHUD is exactly that - level, blinds, ante, a live countdown
           to the next level, players remaining and average stack.
 
-          2026-08-25: it used to be rendered HERE, as a bare `inline-flex` div
-          with no positioning, at the end of a page whose layout is a fixed
-          full-viewport stack. Mounted, yes - but with nothing to anchor it, so
-          it never appeared in any corner, which is Dan's "tournaments are still
-          missing the stats bar in the right corner". It has moved into the
-          TableHUD upper-right slot above (search `hud-ur-column`), which is the
-          fixed overlay layer the cash-game stats card already used. Do not
-          render it a second time here. */}
+          It is the dock under the action bar (Dan 2026-10-04; search
+          `tournament-dock` above). It has been a loose div here (never on
+          screen), then a bar in the upper-right HUD corner (over the top
+          seats); do not render it in either place again. */}
       {/* Tournament lobby/stats, opened from the upper-right button while
           seated in an MTT, Spin or Heads-Up (Dan 2026-08-23). Mounted last so
           it layers above the felt, and only while open so it costs nothing on

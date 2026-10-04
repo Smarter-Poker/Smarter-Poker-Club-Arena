@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude/terminal-settlement-read-20261004. Migration 20261004141707_jackpot_facts_establish_who_is_asking (applied 2026-10-04 14:17 UTC as 20261004141741): fn_bbj_pool_facts requires a real user behind the authenticated role.",
+  "functions": ["fn_bbj_pool_facts"]
+}

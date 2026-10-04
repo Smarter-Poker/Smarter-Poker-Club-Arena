@@ -12,13 +12,13 @@
  * refusal clears everything (useCashierStatement).
  *
  * One console, the approved spade master, `foot="foot"`. Head zones print
- * compactChips(); figures on the glass print whole chips, with cents only when
- * the ledger really holds them. Every data word reaches the screen through
+ * compactChips(); figures on the glass obey the same no-decimal law without
+ * changing the ledger's exact stored cents. Every data word reaches the screen through
  * titleCase(); immutable references print exactly as stored, so they can be
  * copied and matched.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
@@ -118,11 +118,13 @@ const RANGE_PROBLEM_WORD = {
 
 // ─── Figures ─────────────────────────────────────────────────────────────────
 
-/**
- * EXACT LEDGER FIGURES ON THE GLASS, from the server's decimal string with no
- * float in between: 12,500 when whole, 32,482.58 when the ledger holds cents.
- */
+/** #ClubArenaConsole chip reading; exact decimal text remains in export/copy data. */
 function chips(value: string): string {
+  return compactChips(Number(value));
+}
+
+/** Exact server decimal for copied receipts; never route audit data through display abbreviation. */
+function exactChips(value: string): string {
   const negative = value.startsWith('-');
   const [whole = '0', fraction = ''] = value.replace(/^-/, '').split('.');
   const grouped = (whole.replace(/^0+(?=\d)/, '') || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -202,13 +204,13 @@ function receiptText(entry: StatementEntry): string {
     `Entry: ${enumToTitleCase(entry.kind)}`,
     `Wallet: ${WALLET_WORD[entry.wallet]}`,
     `Direction: ${DIRECTION_WORD[entry.direction]}`,
-    `Amount: ${signed(entry.direction)}${chips(entry.amount)} Chips`,
+    `Amount: ${signed(entry.direction)}${exactChips(entry.amount)} Chips`,
     `From: ${partyWord(entry.from.label, entry.from.type)}`,
     `To: ${partyWord(entry.to.label, entry.to.type)}`,
     `State: ${STATE_WORD[entry.state]}`,
     `Source: ${entry.source === 'receipt' ? 'Cashier Receipt' : 'Ledger Movement'}`,
   ];
-  if (entry.balance_after !== null) lines.push(`Balance After: ${chips(entry.balance_after)}`);
+  if (entry.balance_after !== null) lines.push(`Balance After: ${exactChips(entry.balance_after)}`);
   for (const [label, value] of referenceFacts(entry)) lines.push(`${label}: ${value}`);
   return lines.join('\n');
 }
@@ -244,6 +246,16 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    // React StrictMode runs setup, cleanup, setup in development. Reassert the
+    // live flag in setup or the rehearsal cleanup permanently disables Copy.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const online = () => setIsOnline(true);
@@ -306,7 +318,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
 
   const copy = useCallback(async (id: string, text: string) => {
     const ok = await copyCashierText(text);
-    setCopiedId(ok ? id : null);
+    if (mountedRef.current) setCopiedId(ok ? id : null);
   }, []);
 
   const pillText = refused

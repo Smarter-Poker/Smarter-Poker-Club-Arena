@@ -112,7 +112,8 @@
    returns groups highest-denomination first, so the ladder falls out of the DOM
    order with nothing to keep in sync. The groups are kept as separate elements
    rather than flattened into one list of discs because each group still owns
-   its own "xN" badge and its own stagger delay. */
+   its own stagger delay. (It owned an "xN" count badge too until the owner
+   ruling of 2026-10-04 removed every multiplier from bet and pot stacks.) */
 .cp-stacks {
   display: flex;
   flex-direction: column-reverse;
@@ -129,37 +130,13 @@
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
-  /* Dan 2026-08-23: relative so the "x12" multiplier badge can hang above a
-     clamped stack without joining the column-reverse flow, where the first DOM
-     child renders at the BOTTOM and the badge would sit under the chips. */
+  /* Was the anchor for the "x12" count badge on a clamped stack. Owner ruling
+     2026-10-04 removed every chip-count multiplier from bet and pot stacks;
+     the chips are illustration and the amount label is the truth. */
   position: relative;
   animation: cpStackEnter 0.45s var(--cp-ease-spring)
     calc(var(--group-idx, 0) * var(--cp-stack-stagger)) both;
   transform-origin: bottom center;
-}
-
-/* ---- Multiplier badge for a stack too tall to draw chip-for-chip ----
-   Only appears when visualChipStacks reports `truncated`. It exists because
-   Dan's ladder has nothing between 5,000 and 100,000, so a 60,000 bet really
-   is twelve orange chips and a twelve-high tower does not fit in front of a
-   seat. The PILE is clamped; the VALUE never is. */
-/* Hangs to the SIDE of its group, not above it: above is now occupied by the
-   next denomination up the tower. */
-.cp-stack__multi {
-  position: absolute;
-  bottom: 2px;
-  left: 100%;
-  margin-left: 3px;
-  font-size: 0.5rem;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--sp-text-bright);
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 4px rgba(0, 0, 0, 0.5);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 @keyframes cpStackEnter {
@@ -671,10 +648,6 @@
    number is already printed beside the stack by .cp-amount. */
 .cp--compact .cp-chip__label {
   display: none;
-}
-
-.cp--compact .cp-stack__multi {
-  font-size: 0.45rem;
 }
 
 .cp--compact .cp-amount {

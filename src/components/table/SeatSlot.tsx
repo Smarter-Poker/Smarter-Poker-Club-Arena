@@ -829,9 +829,11 @@ function seatWrapperPercent(wrap: HTMLElement): { x: number; y: number } {
 // NEON TIMER BORDER — premium-style disappearing border
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// The info box border glows neon yellow and the border progressively disappears
-// as the clock counts down. We achieve this with a conic-gradient mask on a
-// pseudo-element, driven by a CSS custom property --timer-progress.
+// The info box border glows neon blue and the border progressively disappears
+// as the clock counts down, at a constant rate along the border, reaching
+// empty at the engine's deadline. It is a conic-gradient on `.seat__timer-ring`
+// driven by a pure-CSS animation (`spTimerRingShrink`) that SeatSlot only
+// SEEDS, once per turn - see "THE RING RAN AT DOUBLE SPEED" in the render.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -1179,20 +1181,27 @@ export const SeatSlot = memo(
     const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevIsWinnerRef = useRef(false);
 
-    /* Dan 2026-08-26 mobile pass, item 10: how much of the turn had already
-       elapsed when THIS CLIENT first painted the turn. The engine stamps
-       turn_start_time_ms when it arms the timer, which is broadcast-latency
-       plus the deal hold BEFORE the seat can render the ring — so the ring
-       used to mount already part-drained and visibly emptied in fewer than 15
-       seconds. Anchoring the animation at first paint makes the ring start
-       FULL and reach empty exactly at the engine's deadline (the fold /
-       time-bank moment), which is what "it must take 15 full seconds to
-       disappear" means on a screen that cannot see the packet in flight.
-       Keyed by the turn's start stamp so re-renders mid-turn reuse the same
-       anchor instead of re-anchoring (which would freeze the ring). */
+    /* THE TURN CLOCK IS READ ONCE PER TURN AND THEN LEFT ALONE.
+
+       What is frozen here, at this client's FIRST paint of a turn, is how far
+       into the turn the engine already was (`elapsedAtPaintMs`). It becomes
+       the ring's negative animation-delay and it must never be recomputed
+       while that animation runs - see "THE RING RAN AT DOUBLE SPEED" in the
+       render below for what happened when it was.
+
+       Keyed by the turn's start stamp, and cleared whenever the seat is not
+       on the clock, so the frozen figure always belongs to the animation that
+       is actually running: a seat that leaves the clock and comes back
+       remounts `.seat__info`, which restarts the CSS animation, and it must
+       restart from a FRESH reading rather than a stale one (a stale one would
+       draw time the player no longer has).
+
+       `holoDelayMs` rides along for the on-the-clock shine, which has always
+       been frozen the same way and for the same reason. */
     const turnPaintAnchorRef = useRef<{
       key: number;
-      baseElapsedMs: number;
+      /** Engine-clock ms already gone from the turn at this client's first paint of it. */
+      elapsedAtPaintMs: number;
       /** Time left until 3s on the clock, frozen at this client's first paint of the turn. */
       holoDelayMs: number;
     } | null>(null);
@@ -2539,25 +2548,82 @@ export const SeatSlot = memo(
       // overrun). serverNow() applies the measured offset - see
       // utils/serverClock.ts. durationMs above never had this problem: it is
       // deadline minus start, server-minus-server, so the offset cancels.
-      const rawElapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
-      /* Item 10 (Dan 2026-08-26): anchor at this client's FIRST paint of the
-         turn. The base elapsed (latency + deal hold) is subtracted from both
-         the duration and the elapsed, so the ring spans mount → deadline:
-         starts full, empties exactly when the engine folds or the time bank
-         fires, never earlier. Capped so a pathological anchor can never
-         reduce the ring below one second. */
-      /* Only broadcast latency and the deal hold are compensated — a few
-         seconds at most. A LARGER first-paint elapsed means a genuine
-         mid-turn rejoin (reconnect, tab wake), where the ring must pick up
-         at its true position rather than pretend the clock restarted —
-         tests/seatslot-countdown-duration.test.tsx pins that case. */
-      const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
+      //
+      // With no start stamp the deadline is the only engine fact there is, so
+      // elapsed is read back from it (turn length minus time left). The ring
+      // then still ends AT the deadline instead of a full turn after whenever
+      // this client happened to paint.
+      const rawElapsedMs = turnStartTimeMs
+        ? Math.max(0, serverNow() - turnStartTimeMs)
+        : Math.min(durationMs, Math.max(0, durationMs - (turnDeadlineMs - serverNow())));
+      /* ═══ THE RING RAN AT DOUBLE SPEED (root cause, fixed 2026-10-04) ═══════
+
+         Owner 2026-10-04: "THE NEON BLUE DISAPPEARING COUNT DOWN CLOCK IS NOT
+         ACCURATE... YOU NEED TO SLOW IT DOWN SO IT TAKES 15 SECONDS TO
+         DISAPPEAR, IT CURRENTLY GOES AWAY WAY TO FAST."
+
+         This is the fifth pass at that sentence (08-15, 08-18, 08-20, 08-21,
+         08-26). Every earlier pass fixed something real and none of them was
+         the cause. The cause:
+
+           `--sp-timer-delay` was `-(elapsed)`, recomputed on EVERY RENDER.
+
+         The acting seat re-renders once a second (it subscribes to the action
+         clock store for its urgency thresholds). A browser does not ignore a
+         changed animation-delay on a running CSS animation, it RE-TIMES it:
+         the animation keeps its own start time and its position becomes
+         (time since it started) - (delay). With the delay rewritten to
+         -(time since it started) on each render, that is 2 x the real elapsed
+         time. Measured in Chromium against the shipped keyframes: a ring
+         given 15 seconds was empty at 7.5, in one-second jumps. The 08-21
+         easing (75% of the arc inside the first two-thirds) and the 20%
+         opacity blink were then applied on top of a clock already running at
+         double speed: one quarter of the border left at 5 real seconds,
+         blinking, gone at 7.5.
+
+         The same re-timing was understood for the shine three weeks before
+         (see holoDelayMs: "feeding it a value that shrinks on every countdown
+         tick would re-time a running animation") and never applied to the
+         ring it was copied from.
+
+         THE FIX: the elapsed figure is read ONCE, at this client's first
+         paint of the turn, and frozen for the life of that animation. From
+         then on the browser's own animation clock does the counting, which is
+         the whole point of a pure-CSS ring. Nothing below may depend on the
+         time of the current render.
+
+         A changed DEADLINE (time bank, reconnect grace) still flows through,
+         as a longer --sp-timer-duration against the same frozen delay: the
+         ring is re-timed onto the longer clock at its true position and keeps
+         draining, without restarting. That re-timing is the correct use of
+         the browser behaviour that caused the bug.
+
+         ═══ NO FIRST-PAINT STRETCH (owner ruling 2026-10-04) ═════════════════
+
+         Item 10 of 2026-08-26 anchored the ring at first paint: latency and
+         the deal hold (up to 3s) were subtracted from the duration so the
+         ring "started full" and drained over the remaining 12-15s. That was
+         a response to this same double-speed bug, misread as latency, and it
+         made the ring drain FASTER than a fifteen-second clock on every turn
+         painted late. The ring now always spans the engine's whole turn and
+         joins it at the true position: a paint 0.3s late starts 98% lit, the
+         drain rate is one fifteenth of the border per second on every
+         client, half the border is lit at 7.5s, a third at 10s, and the last
+         of it goes out at the engine's deadline. It never shows time the
+         player does not have and it never runs faster than the clock it
+         represents. tests/seatslot-countdown-duration.test.tsx pins all of
+         it, including the re-render case that was never tested before. */
       const anchorKey = turnStartTimeMs || turnDeadlineMs;
       if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        /* The shine keeps its own first-paint allowance: "on the clock for at
+           least 3 seconds" is about what THIS player has watched, so broadcast
+           latency and the deal hold do not count against it. A larger
+           first-paint elapsed is a genuine mid-turn rejoin and shines at once. */
+        const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
         const baseAtFirstPaint = rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0;
         turnPaintAnchorRef.current = {
           key: anchorKey,
-          baseElapsedMs: baseAtFirstPaint,
+          elapsedAtPaintMs: Math.min(rawElapsedMs, durationMs),
           /* Frozen ONCE per turn. animation-delay is read by the browser
              when the class mounts; feeding it a value that shrinks on every
              countdown tick would re-time a running animation and bring the
@@ -2567,53 +2633,50 @@ export const SeatSlot = memo(
           holoDelayMs: Math.max(0, HOLO_ON_CLOCK_MS - (rawElapsedMs - baseAtFirstPaint)),
         };
       }
-      const baseElapsedMs = Math.min(
-        turnPaintAnchorRef.current.baseElapsedMs,
-        Math.max(0, durationMs - 1_000)
-      );
-      const effDurationMs = durationMs - baseElapsedMs;
-      const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
+      const elapsedMs = turnPaintAnchorRef.current.elapsedAtPaintMs;
       holoOnClockDelayMs = turnPaintAnchorRef.current.holoDelayMs;
-      // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
-      // 15s turn that is the entire clock (never goes red); when a time bank
-      // extends the turn, yellow still owns the first 15s and the borrowed
-      // seconds run red. Capped at the turn length so the colour animation can
-      // never outlive the ring it colours.
+      // Dan 2026-08-15: the base colour owns the first 15 seconds. Dan
+      // 2026-08-25 then made the ring neon blue for the WHOLE turn, so this
+      // window no longer changes anything a player can see; the variable is
+      // kept because the colour animation and its pins still read it. Capped
+      // at the turn length so it can never outlive the ring it colours.
       const YELLOW_MS = 15_000;
-      const yellowMs = Math.min(YELLOW_MS, effDurationMs);
+      const yellowMs = Math.min(YELLOW_MS, durationMs);
       /**
        * Dan 2026-08-21 (bug list item 8): "it must take 15 seconds to fully
        * disappear, it needs to slow down at the end and FLASH when there are 5
        * seconds left."
        *
-       * The 15s floor above already guarantees the length. These two variables
-       * add the other half of the request:
-       *
-       *   --sp-timer-flash-delay  when the blink starts, measured from the
+       *   --sp-timer-flash-delay  when the pulse starts, measured from the
        *                           animation's own origin. Negative when the
        *                           seat first paints INSIDE the last five
        *                           seconds (reconnect, tab wake), which drops
-       *                           the player straight into a blink already in
+       *                           the player straight into a pulse already in
        *                           progress instead of restarting it.
-       *   --sp-timer-flash-count  how many 0.5s blinks are left, so the ring
-       *                           stops flashing at zero instead of strobing
-       *                           on into the next turn.
+       *   --sp-timer-flash-count  how many 0.5s pulses are left, so the ring
+       *                           stops at zero instead of strobing on into
+       *                           the next turn.
        *
-       * The slow-down itself is a CSS `linear()` easing on the shrink — see
-       * SeatSlot.css. It is expressed there rather than here because it is a
-       * fixed shape (75% of the arc in the first two-thirds of the clock), not
-       * something that varies per turn.
+       * Both are derived from the FROZEN elapsed figure, like the delay, so a
+       * re-render cannot re-time the pulse either.
+       *
+       * The "slow down at the end" half of that request is GONE as of the
+       * owner ruling of 2026-10-04 ("you need to slow it down so it takes 15
+       * seconds to disappear"): a ring that decelerates into the deadline has
+       * to spend its arc early to do it, which is exactly a clock that looks
+       * nearly out with a third of the time left. The drain is constant. See
+       * SeatSlot.css.
        */
       const FLASH_WINDOW_MS = 5_000;
       const FLASH_CYCLE_MS = 500;
-      const remainingMs = Math.max(0, effDurationMs - elapsedMs);
-      const flashDelayMs = effDurationMs - FLASH_WINDOW_MS - elapsedMs;
+      const remainingMs = Math.max(0, durationMs - elapsedMs);
+      const flashDelayMs = durationMs - FLASH_WINDOW_MS - elapsedMs;
       const flashCount = Math.max(
         0,
         Math.ceil(Math.min(FLASH_WINDOW_MS, remainingMs) / FLASH_CYCLE_MS)
       );
       timerStyle = {
-        '--sp-timer-duration': `${(effDurationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
         '--sp-timer-flash-delay': `${(flashDelayMs / 1000).toFixed(3)}s`,
@@ -2632,15 +2695,25 @@ export const SeatSlot = memo(
       // The turn's START time is its true identity: it changes exactly once
       // per turn. Keying on it means a genuine new turn restarts the ring,
       // while an extension keeps the node mounted and simply lengthens the
-      // running animation — which, with the negative --sp-timer-delay, is
-      // precisely the desired behaviour (the ring keeps draining from where
-      // it is, just more slowly).
+      // running animation against the same frozen delay, which is precisely
+      // the desired behaviour (the ring keeps draining from its true position
+      // on the longer clock, just more slowly).
+      //
+      // It is the SAME value as anchorKey above, deliberately: the node that
+      // carries the animation and the frozen figure that times it are born
+      // together and replaced together.
       timerKey = turnStartTimeMs || turnDeadlineMs;
-    } else if (isActingNow && timerProgress !== undefined) {
-      // Legacy JS-hook fallback (visible tabs only).
-      timerStyle = {
-        '--timer-progress': `${timerProgress}%`,
-      } as React.CSSProperties;
+    } else {
+      // Not on an engine clock: whatever was frozen belongs to an animation
+      // that no longer exists. The next turn (or this one, if the seat comes
+      // back onto the clock) takes a fresh reading.
+      turnPaintAnchorRef.current = null;
+      if (isActingNow && timerProgress !== undefined) {
+        // Legacy JS-hook fallback (visible tabs only).
+        timerStyle = {
+          '--timer-progress': `${timerProgress}%`,
+        } as React.CSSProperties;
+      }
     }
     // Eligible art (VIP bust, not broken, not rigged) AND on the clock. Never
     // an idle seat, never a seat the action is not on.
@@ -3094,7 +3167,17 @@ export const SeatSlot = memo(
             the escape hatch was built for. The ring is informational, not
             vestibular motion (it shrinks in place). */}
         <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
-          {/* Neon border overlay (rendered via CSS ::before when --active) */}
+          {/* The neon countdown ring. A real element (it was `.seat__info::before`
+              until 2026-10-04) because it has to be a size container: the
+              sweep is converted from "fraction of the BORDER spent" to a conic
+              angle in CSS, and that needs the ring's own width and height.
+              See "A CLOCK THAT IS LINEAR ALONG THE BORDER" in SeatSlot.css.
+              Decorative: the time is announced elsewhere. */}
+          {isActingNow && (
+            <span className="seat__timer-ring" aria-hidden="true">
+              <span className="seat__timer-ring-arc" />
+            </span>
+          )}
           {/* Dan 2026-08-30: "NAMES SHOULD NEVER BE CUT OFF... PUT A
               CHARACTER LIMIT ON THEM IF YOU CAN'T FIT THEM ALL IN WITHOUT
               USING A ... AFTER THEM." A hard budget instead of an ellipsis:

@@ -12,6 +12,26 @@ const NEMESIS_CSS = readFileSync(
   resolve(__dirname, '../src/components/stats/NemesisPanel.css'),
   'utf8'
 );
+const RADAR_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/PositionalRadar.css'),
+  'utf8'
+);
+const HEATMAP_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/HoleCardHeatmap.css'),
+  'utf8'
+);
+const TROPHY_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/TrophyRoom.css'),
+  'utf8'
+);
+const SESSION_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/SessionHistory.css'),
+  'utf8'
+);
+const FINANCIAL_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/FinancialReportingPanel.css'),
+  'utf8'
+);
 const POST_DEPLOY_WORKFLOW = readFileSync(
   resolve(__dirname, '../.github/workflows/post-deploy-e2e.yml'),
   'utf8'
@@ -65,12 +85,23 @@ describe('Stats mobile fold budget', () => {
     expect(CSS).toMatch(/\.hand-retry\s*\{[^}]*min-height:\s*44px/);
     expect(CSS).toMatch(/\.panel-boundary-retry\s*\{[^}]*min-height:\s*44px/);
   });
+
+  it('keeps every live chart, ledger and session control on the touch floor', () => {
+    expect(RADAR_CSS).toMatch(/\.pos-radar-toggle\s*\{[^}]*min-height:\s*44px/);
+    expect(HEATMAP_CSS).toMatch(/\.heatmap-mode\s*\{[^}]*min-height:\s*44px/);
+    expect(HEATMAP_CSS).toMatch(/\.heatmap-select\s*\{[^}]*min-height:\s*44px/);
+    expect(HEATMAP_CSS).toMatch(/\.heatmap-drill-close\s*\{[^}]*min-height:\s*44px/);
+    expect(TROPHY_CSS).toMatch(/\.trophy-evidence-row\s*\{[^}]*min-height:\s*44px/);
+    expect(SESSION_CSS).toMatch(/\.session-expand\s*\{[^}]*min-height:\s*44px/);
+    expect(FINANCIAL_CSS).toMatch(/\.financial-receipts summary\s*\{[^}]*min-height:\s*44px/);
+    expect(FINANCIAL_CSS).toMatch(/\.financial-console button\s*\{[^}]*min-height:\s*44px/);
+  });
 });
 
 describe('Stats evidence links to real hand history', () => {
   it('never sends a hand-history action to the member sessions page', () => {
     expect(PAGE).not.toContain("navigate('/player-sessions')");
-    expect(PAGE).toContain('navigate(`/hand-history?');
+    expect(PAGE).toContain('buildStatsCashEvidencePath(metric');
     expect(PAGE).toContain('openHandEvidence');
   });
 });

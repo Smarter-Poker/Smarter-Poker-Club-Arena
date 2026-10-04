@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 
 describe('Create Club production certification contract', () => {
+  it.each([
+    'scripts/ci/check-club-create-capacity.mjs',
+    'tests/unit/clubCreateCapacity.test.ts',
+    '.github/workflows/club-create-certification.yml',
+  ])('routes capacity contract edits through the test suite for %s', (path) => {
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+
   it('uses the exact disposable prefix accepted by the retirement RPC and lifecycle guard', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
     const cleanup = read('scripts/ci/production-e2e-account.mjs');
@@ -68,6 +77,19 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).toContain('timeout-minutes: 60');
     expect(workflow).toContain('--workers=1 --retries=0');
+  });
+
+  it('proves all opening grants fit before creating any fixture', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const capacity = workflow.indexOf('Verify Opening Grant Capacity Before Creating Fixtures');
+    const directCreate = workflow.indexOf('Certify Authenticated Club Creation And Cleanup');
+    const browserAccount = workflow.indexOf('Provision A Brand-New Player');
+
+    expect(capacity).toBeGreaterThan(-1);
+    expect(capacity).toBeLessThan(directCreate);
+    expect(capacity).toBeLessThan(browserAccount);
+    expect(workflow).toContain("CLUB_CREATE_CERT_REQUIRED_GRANTS: '3'");
+    expect(workflow).toContain('node scripts/ci/check-club-create-capacity.mjs');
   });
 
   it('supplies the direct database credential to every step that can retire a fixture club', () => {

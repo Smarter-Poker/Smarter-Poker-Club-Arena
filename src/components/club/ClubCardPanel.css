@@ -66,12 +66,23 @@
 
 /* ── The club's own art, on the glass ─────────────────────────────────── */
 
+/* THE WELL IS A CLIPPED SQUARE BEFORE ANY PICTURE EXISTS (2026-10-04). Its
+   size comes from the card's width and this ratio alone, never from the image
+   inside it, and whatever the image's natural size it is cut to the well. An
+   image that has not arrived shows the master's own glass tone (#0a0b0d, the
+   same tone .sc__body paints behind it, so a loaded card is unchanged).
+
+   These rules must be on the page BEFORE the card mounts: without them the
+   <img> prints at its natural size (896x1200 for the Shark Club art). That is
+   why CarouselSection imports the cards statically; see the note there and
+   tests/components/clubCardGeometryFromFirstPaint.test.tsx. */
 .club-card-viewport {
   display: grid;
   place-items: center;
   width: 100%;
   aspect-ratio: 1 / 1;
   overflow: hidden;
+  background: #0a0b0d;
 }
 
 .club-card-viewport-img,

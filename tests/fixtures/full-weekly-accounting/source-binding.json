@@ -158,7 +158,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
+    "tests/cashier-weekly-statements.test.tsx": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+    "scripts/ci/classify-ci-changes.mjs": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "cc16de627c8f54101315a2e0899f830abcc888ac1e67643fbe0d8e77811e9b1e",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "1cf6d300f552660a75b00f2a75e4ec40a1588a9df01adccb003a8456ad08adcb",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "7c803caa0c458d1625e147c4dd32b18d524363adb832cf1729c83c01f79b2c16",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "e270bd7bd9d50b489e65154b95c35b6cefc43ece90fc600691ab257988238abc",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2606,6 +2606,13 @@
       "to": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
       "on": "2026-10-02",
       "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
+    },
+    {
+      "file": "tests/cashier-weekly-statements.test.tsx",
+      "from": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
+      "to": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
+      "on": "2026-10-04",
+      "why": "The Cashier weekly-statement test follows the console-wide Title Case status label Balances Synchronized; statement scope, exact cents, club isolation and player refusal assertions are unchanged."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -3434,5 +3441,29 @@
         "current": "7c803caa0c458d1625e147c4dd32b18d524363adb832cf1729c83c01f79b2c16"
       }
     ]
+  },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed. The nested binding hashes move only because each binding records the integrated classifier bytes and audit history.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "cc16de627c8f54101315a2e0899f830abcc888ac1e67643fbe0d8e77811e9b1e",
+        "current": "1cf6d300f552660a75b00f2a75e4ec40a1588a9df01adccb003a8456ad08adcb"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "7c803caa0c458d1625e147c4dd32b18d524363adb832cf1729c83c01f79b2c16",
+        "current": "e270bd7bd9d50b489e65154b95c35b6cefc43ece90fc600691ab257988238abc"
+      }
+    ],
+    "verification": "The merged classifier retains protected main's Diamond selector and this branch's Club Create selector. Source binding verification and both routing suites are required on this candidate."
   }
 }

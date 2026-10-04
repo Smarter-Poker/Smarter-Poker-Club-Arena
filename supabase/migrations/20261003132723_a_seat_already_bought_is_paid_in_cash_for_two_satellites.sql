@@ -123,12 +123,22 @@ BEGIN
      AND NEW.amount = 30.00
      AND NEW.category = 'settlement'
      AND NEW.club_id = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid
-     AND NEW.idempotency_key = 'satellite-seat-cash:' || NEW.from_entity_id::text
-       || ':a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'
-     AND NEW.correlation_id IS NOT NULL
+     -- This guard sorts before the generic enrichment trigger. The exact
+     -- declared key and correlation still live in transaction-local settings
+     -- here; enrichment stamps them onto this same row after this guard.
+     AND NEW.idempotency_key IS NULL
+     AND NEW.correlation_id IS NULL
+     AND NEW.description = 'auto-audited club_members.chip_balance delta ' || NEW.amount::text
+     AND NULLIF(current_setting('app.ledger_counterparty', true), '') = NEW.from_type
+     AND NULLIF(current_setting('app.ledger_counterparty_entity', true), '') = NEW.from_entity_id::text
+     AND NULLIF(current_setting('app.ledger_category', true), '') = NEW.category
+     AND NULLIF(current_setting('app.ledger_idempotency_key', true), '')
+       = 'satellite-seat-cash:' || NEW.from_entity_id::text
+         || ':a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'
+     AND NULLIF(current_setting('app.ledger_correlation', true), '') IS NOT NULL
      AND EXISTS (
        SELECT 1 FROM public.ca_manual_adjustments a
-        WHERE a.id = NEW.correlation_id
+        WHERE a.id::text = NULLIF(current_setting('app.ledger_correlation', true), '')
           AND a.tournament_id = NEW.from_entity_id
           AND a.target_id = NEW.to_entity_id
           AND a.amount = NEW.amount

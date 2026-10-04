@@ -40,10 +40,15 @@ describe('a seat already bought is paid in cash, for two satellites', () => {
     expect(body).toContain("v_guard_md5 NOT IN ('b2affe52c4e95101c985c30c483d5127',");
     expect(body).toContain('AND NEW.from_entity_id = ANY (ARRAY[');
     expect(body).toContain("AND NEW.to_entity_id = 'a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'::uuid");
+    expect(body).toContain('AND NEW.idempotency_key IS NULL');
+    expect(body).toContain('AND NEW.correlation_id IS NULL');
     expect(body).toContain(
-      "AND NEW.idempotency_key = 'satellite-seat-cash:' || NEW.from_entity_id::text"
+      "AND NEW.description = 'auto-audited club_members.chip_balance delta ' || NEW.amount::text"
     );
-    expect(body).toContain('WHERE a.id = NEW.correlation_id');
+    expect(body).toContain("NULLIF(current_setting('app.ledger_idempotency_key', true), '')");
+    expect(body).toContain(
+      "WHERE a.id::text = NULLIF(current_setting('app.ledger_correlation', true), '')"
+    );
     expect(body).toContain("AND a.status = 'approved'");
     expect(body).toContain(
       "AND a.decision_note = 'migration 20261003132723_a_seat_already_bought_is_paid_in_cash_for_two_satellites'"

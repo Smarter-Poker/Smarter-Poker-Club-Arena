@@ -83,8 +83,67 @@ DECLARE
   v_in numeric; v_out numeric;
   v_bal_before numeric; v_bal_mid numeric; v_bal_after numeric;
   v_receipts jsonb := '[]'::jsonb;
+  v_guard_source text; v_guard_changed text; v_guard_md5 text;
   v_n int;
 BEGIN
+  ---------------------------------------------------------------------------
+  -- -1. OPEN ONLY THIS TRANSACTION'S TWO EXACT TERMINAL-LIABILITY LEGS.
+  --
+  -- The terminal satellite guard is correct: after a receipt exists, no new
+  -- journal testimony may normally name that source. These two liabilities
+  -- predate the bought-seat cash ruling and are the damage that ruling could
+  -- not settle retroactively. Replace the guard only inside this transaction,
+  -- admit only the two exact adjustment-backed legs below, and restore the
+  -- byte-exact predecessor before commit. Concurrent transactions continue to
+  -- see the committed predecessor throughout; any refusal rolls this DDL back.
+  ---------------------------------------------------------------------------
+  SELECT pg_get_functiondef('public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure)
+    INTO v_guard_source;
+  v_guard_md5 := md5(v_guard_source);
+  IF v_guard_md5 NOT IN ('b2affe52c4e95101c985c30c483d5127',
+                         '5de9ef6b567d2b40f01060ce583350f0')
+     OR (SELECT proacl::text FROM pg_proc
+          WHERE oid = 'public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure)
+        IS DISTINCT FROM '{postgres=X/postgres}'
+     OR (SELECT pg_get_userbyid(proowner) FROM pg_proc
+          WHERE oid = 'public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure)
+        IS DISTINCT FROM 'postgres' THEN
+    RAISE EXCEPTION 'seat cash guard pre-image changed; refusing terminal evidence admission'
+      USING ERRCODE = '55000';
+  END IF;
+  v_guard_changed := replace(v_guard_source, E'\nBEGIN\n', E'\nBEGIN\n'
+    || $guard$  IF TG_OP = 'INSERT'
+     AND NEW.tournament_id IS NULL
+     AND NEW.from_type = 'prize_liability'
+     AND NEW.from_entity_id = ANY (ARRAY[
+       '0d29dd54-e25b-46e5-bc6e-3a51162c67e4'::uuid,
+       '781c8905-6882-4e1a-bb6c-1cd428cf89b2'::uuid])
+     AND NEW.to_type = 'player_wallet'
+     AND NEW.to_entity_id = 'a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'::uuid
+     AND NEW.amount = 30.00
+     AND NEW.category = 'settlement'
+     AND NEW.club_id = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid
+     AND NEW.idempotency_key = 'satellite-seat-cash:' || NEW.from_entity_id::text
+       || ':a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'
+     AND NEW.correlation_id IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM public.ca_manual_adjustments a
+        WHERE a.id = NEW.correlation_id
+          AND a.tournament_id = NEW.from_entity_id
+          AND a.target_id = NEW.to_entity_id
+          AND a.amount = NEW.amount
+          AND a.status = 'approved'
+          AND a.decision_note = 'migration 20261003132723_a_seat_already_bought_is_paid_in_cash_for_two_satellites'
+          AND a.asset = 'chips') THEN
+    RETURN NEW;
+  END IF;
+$guard$);
+  IF v_guard_changed = v_guard_source THEN
+    RAISE EXCEPTION 'seat cash guard pre-image has no unique BEGIN insertion point'
+      USING ERRCODE = '55000';
+  END IF;
+  EXECUTE v_guard_changed;
+
   ---------------------------------------------------------------------------
   -- 0. PRE-IMAGE.
   ---------------------------------------------------------------------------
@@ -247,6 +306,22 @@ BEGIN
   IF (SELECT count(*) FROM public.chip_ledger l
        WHERE l.created_at = now() AND (l.from_entity_id = c_wasp OR l.to_entity_id = c_wasp)) <> 2 THEN
     RAISE EXCEPTION 'seat cash post-image: WASP carries other than exactly two journal legs in this transaction';
+  END IF;
+
+  -- The admission never survives this transaction. Restore the exact source,
+  -- owner and ACL that were read before anything moved, then prove the body is
+  -- byte-identical before commit (or before the deliberate probe rollback).
+  EXECUTE v_guard_source;
+  IF md5(pg_get_functiondef('public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure))
+       IS DISTINCT FROM v_guard_md5
+     OR (SELECT proacl::text FROM pg_proc
+          WHERE oid = 'public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure)
+        IS DISTINCT FROM '{postgres=X/postgres}'
+     OR (SELECT pg_get_userbyid(proowner) FROM pg_proc
+          WHERE oid = 'public.fn_satellite_transfer_ledger_is_immutable()'::regprocedure)
+        IS DISTINCT FROM 'postgres' THEN
+    RAISE EXCEPTION 'seat cash guard was not restored byte-exactly'
+      USING ERRCODE = '55000';
   END IF;
 
   RAISE NOTICE 'seat cash: paid 60.00 to WASP (%); receipts %', c_wasp, v_receipts;

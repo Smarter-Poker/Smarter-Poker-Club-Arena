@@ -341,12 +341,16 @@ export default function TickerManagementPanel({
         <span className={`${styles.sectionLabel} sc-ink--blue`}>Pace And Treatment</span>
         <div className={styles.customizer}>
           <label className={styles.speed}>
-            Scroll Speed <span>{settings.speedSeconds} Seconds</span>
+            <span className={styles.speedCopy}>
+              <span className={styles.speedName}>Scroll Speed</span>
+              <span>{settings.speedSeconds} Seconds</span>
+            </span>
             <input
               type="range"
               aria-label="Scroll Speed"
               min="8"
               max="60"
+              step="1"
               value={settings.speedSeconds}
               aria-valuetext={`${settings.speedSeconds} Seconds`}
               onChange={(e) => update('speedSeconds', Number(e.target.value))}

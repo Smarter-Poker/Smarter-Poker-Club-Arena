@@ -79,11 +79,11 @@
 }
 
 .healthGood {
-  color: #73e093;
+  color: #c8ffd2;
 }
 .healthWarn,
 .healthAlert {
-  color: #ffb94a;
+  color: #ffd700;
 }
 
 .surfaceNav,
@@ -269,8 +269,8 @@
   background: #6d7782;
 }
 .statusRail.live {
-  background: #33d268;
-  box-shadow: 0 0 9px rgb(51 210 104 / 72%);
+  background: #35d95a;
+  box-shadow: 0 0 9px rgb(53 217 90 / 72%);
 }
 .statusRail.scheduled {
   background: #45adff;
@@ -337,10 +337,10 @@
 .locked,
 .blocked,
 .commandRejected {
-  color: #ff7282;
+  color: #ff5b6e;
 }
 .ready {
-  color: #78e09a;
+  color: #c8ffd2;
 }
 .scheduleRail strong {
   color: #e4e7ec;
@@ -361,7 +361,7 @@
   border-top: 1px solid rgb(91 109 126 / 24%);
 }
 .rowActions .danger {
-  color: #ff7282;
+  color: #ff5b6e;
 }
 .rowActions :is(button, a):disabled {
   color: #4f5963;
@@ -449,7 +449,7 @@
   gap: 12px;
 }
 .dialogError {
-  color: #ff7282;
+  color: #ff5b6e;
 }
 .readinessGrid > span {
   display: grid;

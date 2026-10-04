@@ -16,7 +16,7 @@
  * pinned by the suites beside this one.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -173,6 +173,23 @@ const renderAt = (entry: string) =>
     </MemoryRouter>
   );
 
+const renderInBrowser = () =>
+  render(
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/clubs/:clubId/table-management"
+          element={
+            <>
+              <GameManagementPage scope="club" />
+              <LocationProbe />
+            </>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+
 const BASE = '/clubs/deep-stack-society/table-management';
 /** Every painted frame on the page. SpadeConsole's root always carries `sc`. */
 const frames = () => Array.from(document.querySelectorAll<HTMLElement>('.sc'));
@@ -197,6 +214,72 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(within(drawn[0]).getByRole('heading', { name: 'Table Management' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Ticker Management' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Club Messages' })).toBeNull();
+  });
+
+  it('normalizes dynamic game, readiness, and command labels before painting them', async () => {
+    mocks.list = async () => ({
+      items: [
+        {
+          id: 'tournament-copy',
+          kind: 'tournament',
+          name: 'Friday Flight',
+          status: 'late_registration',
+          club_id: 'club-uuid-1',
+          players: 0,
+          max_players: 90,
+          bucket: 0,
+          contract: {
+            gameId: 'tournament-copy',
+            version: 3,
+            contractHash: 'abcdef1234567890',
+            publishedAt: '2026-10-04T12:00:00Z',
+            changeReason: 'operator_update',
+            contractLocked: false,
+            readiness: {
+              state: 'incomplete',
+              canStart: false,
+              contractLocked: false,
+              guaranteeEnforced: false,
+              guaranteedPrize: 0,
+              satelliteSeatGuarantee: 0,
+              effectiveGuarantee: 0,
+              currentPrizePool: 0,
+              overlayRequired: 0,
+              bankType: 'club',
+              bankBalance: 0,
+              bankFloor: 0,
+              otherLiveExposure: 0,
+              shortBy: 0,
+            },
+          },
+          lastCommand: {
+            gameId: 'tournament-copy',
+            commandId: '12345678-aaaa-bbbb-cccc-123456789000',
+            action: 'close',
+            status: 'rejected',
+            versionBefore: 2,
+            versionAfter: 2,
+            createdAt: '2026-10-04T12:00:00Z',
+            completedAt: '2026-10-04T12:00:01Z',
+            reconciliationState: 'confirmed',
+          },
+        },
+      ],
+      counts: {
+        total: 1,
+        live: 1,
+        scheduled: 0,
+        closed: 0,
+        closedWithinHorizon: 0,
+        closedHorizonDays: 7,
+      },
+      nextCursor: null,
+    });
+    renderAt(BASE);
+
+    expect(await screen.findByText('Late Registration')).toBeTruthy();
+    expect(screen.getByText('Incomplete')).toBeTruthy();
+    expect(screen.getByText('Rejected Close')).toBeTruthy();
   });
 
   it('keeps the section strip outside every frame', async () => {
@@ -283,6 +366,62 @@ describe('each Table Management section is its own page on its own frame', () =>
     );
     expect(screen.getByTestId('location').textContent).toBe(`${BASE}?section=ticker`);
     expect(screen.getByRole('heading', { name: 'Ticker Management' })).toBeTruthy();
+  });
+
+  it('restores the exact browser-history entry when Back is refused for a dirty draft', async () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
+    window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+    window.history.pushState({ idx: 1, marker: 'draft' }, '', `${BASE}?section=ticker`);
+    const anchorUrl = window.location.href;
+    const anchorState = window.history.state;
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => {
+      window.history.replaceState(anchorState, '', anchorUrl);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: anchorState }));
+    });
+    renderInBrowser();
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Keep this draft' } });
+
+    act(() => {
+      window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { idx: 0, marker: 'before' } }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Leave Table Management And Discard Your Unsaved Changes?'
+    );
+    expect(go).toHaveBeenCalledWith(1);
+    expect(window.location.href).toBe(anchorUrl);
+    expect(window.history.state).toEqual(anchorState);
+    expect(screen.getByRole('heading', { name: 'Ticker Management' })).toBeTruthy();
+    go.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('allows the browser-history transition when a dirty-draft warning is accepted', async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+    window.history.pushState({ idx: 1, marker: 'draft' }, '', `${BASE}?section=ticker`);
+    const go = vi.spyOn(window.history, 'go');
+    renderInBrowser();
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Discard this draft' } });
+
+    act(() => {
+      window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { idx: 0, marker: 'before' } }));
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(go).not.toHaveBeenCalled();
+    expect(window.location.pathname + window.location.search).toBe(BASE);
+    expect(window.history.state).toEqual({ idx: 0, marker: 'before' });
+    go.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it('shows the Add Table selector as its own page instead of inside the board', async () => {
@@ -378,6 +517,46 @@ describe('the dialogs over the board wear their own families', () => {
     expect(frame.classList).toContain('sc--family-shark');
     expect(frame.querySelectorAll('.sc-plate')).toHaveLength(1);
   });
+
+  it('normalizes readiness and change-reason values in contract history', () => {
+    render(
+      <ContractHistoryDialog
+        game={
+          {
+            ...game,
+            kind: 'tournament',
+            contract: {
+              version: 4,
+              contractLocked: false,
+              readiness: {
+                state: 'incomplete',
+                satelliteSeatGuarantee: 0,
+                effectiveGuarantee: 0,
+                overlayRequired: 0,
+                bankType: 'club',
+                bankBalance: 0,
+                otherLiveExposure: 0,
+                shortBy: 0,
+              },
+            },
+          } as any
+        }
+        versions={[
+          {
+            version: 4,
+            contractHash: 'abcdef1234567890',
+            contract: {},
+            publishedAt: '2026-10-04T12:00:00Z',
+            changeReason: 'scheduled_update',
+          },
+        ]}
+        loading={false}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getByText('Incomplete')).toBeTruthy();
+    expect(screen.getByText('Scheduled Update')).toBeTruthy();
+  });
 });
 
 describe('an in-app navigation asks the page holding a draft', () => {
@@ -446,5 +625,18 @@ describe('the Game Board error state speaks plainly', () => {
     renderAt(BASE);
     expect(await screen.findByText('Management Health Unavailable')).toBeTruthy();
     expect(screen.queryByText('Reading Management Health')).toBeNull();
+  });
+
+  it('reports unknown game counts after the first read fails instead of painting zeroes', async () => {
+    renderAt(BASE);
+    expect(
+      await screen.findByText(
+        (_content, element) =>
+          element?.tagName === 'SPAN' && element.textContent === 'Unavailable Game Counts'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText('0 Live')).toBeNull();
+    expect(screen.queryByText('0 Scheduled')).toBeNull();
+    expect(screen.queryByText('0 Total')).toBeNull();
   });
 });

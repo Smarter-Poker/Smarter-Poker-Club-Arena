@@ -645,7 +645,7 @@ export function ContractHistoryDialog({
             <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
               <span>
                 <small>Readiness</small>
-                <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
+                <strong>{titleCase(game.contract.readiness.state.replace(/_/g, ' '))}</strong>
               </span>
               <span>
                 <small>Effective Guarantee</small>
@@ -693,7 +693,7 @@ export function ContractHistoryDialog({
                     <code>{version.contractHash.slice(0, 12)}</code>
                   </summary>
                   <div className={styles.contractMeta}>
-                    <span>{version.changeReason.replace(/_/g, ' ')}</span>
+                    <span>{titleCase(version.changeReason.replace(/_/g, ' '))}</span>
                     <span>SHA-256 {version.contractHash}</span>
                   </div>
                   <pre>{JSON.stringify(version.contract, null, 2)}</pre>
@@ -738,6 +738,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     closedWithinHorizon: 0,
     closedHorizonDays: 7,
   });
+  const [countsKnown, setCountsKnown] = useState(false);
   const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -768,8 +769,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   */
   const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
+  const contractEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
+  /** Includes union member clubs, which are labels on rows but never creation hosts. */
+  const hostNamesRef = useRef<Record<string, string>>({});
   /** Latest rows, so the refresh below never closes over a stale board. */
   const gamesRef = useRef<ManagedGame[]>([]);
   /** Games named by events since the last flush, deduplicated by kind and id. */
@@ -825,6 +829,53 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const load = useCallback(
     async (silent = false) => {
       if (!user?.id) return;
+      /*
+       * Invalidate the previous answer BEFORE consulting the in-flight
+       * coalescer. A route or bucket can change while the old request is still
+       * running; if its epoch is not retired here, that old response is still
+       * considered current and can briefly publish on the new page.
+       */
+      const routeKey = `${scope}:${scope === 'union' ? unionRef || unionId || '' : clubId || ''}`;
+      const routeChanged = loadedRouteRef.current !== routeKey;
+      const viewChanged = loadedViewRef.current !== view;
+      if (routeChanged || viewChanged) loadEpochRef.current += 1;
+      if (viewChanged) {
+        loadedViewRef.current = view;
+        setGames([]);
+        setNextCursor(null);
+      }
+      if (routeChanged) {
+        loadedRouteRef.current = routeKey;
+        contractEpochRef.current += 1;
+        hostNamesRef.current = {};
+        setAllowed(null);
+        setScopeId(null);
+        setHosts([]);
+        setHostClubId('');
+        setGames([]);
+        setCounts({
+          total: 0,
+          live: 0,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        });
+        setCountsKnown(false);
+        setNextCursor(null);
+        setLoadingMore(false);
+        setHealth(null);
+        setHealthFailed(false);
+        setSurfaceDirty(false);
+        setEditing(null);
+        setScheduling(null);
+        setContractGame(null);
+        setContractVersions([]);
+        setContractLoading(false);
+        busyKeysRef.current.clear();
+        setBusyKeys(new Set());
+      }
+      if (!silent || routeChanged || viewChanged) setLoading(true);
       // A slug in the URL is still being resolved; the resolved id re-arms load.
       if (scope === 'union' && !unionId) return;
       // Coalesce instead of stacking. Every management event for this scope
@@ -848,41 +899,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       loadInFlightRef.current = true;
       const requestId = ++loadEpochRef.current;
       const isCurrent = () => loadEpochRef.current === requestId;
-      const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
-      // A different club or union than the one on screen. The reset below empties
-      // the board, so this can never be served silently: without the spinner the
-      // operator reads the empty board as "this club has no games".
-      const routeChanged = loadedRouteRef.current !== routeKey;
-      // Switching tabs asks a different question of the server, so the rows on
-      // screen belong to the previous answer. Clear them and show the spinner
-      // rather than leaving the old tab's games under the new tab's heading.
-      const viewChanged = loadedViewRef.current !== view;
-      if (viewChanged) {
-        loadedViewRef.current = view;
-        setGames([]);
-        setNextCursor(null);
-      }
-      if (routeChanged) {
-        loadedRouteRef.current = routeKey;
-        setAllowed(null);
-        setScopeId(null);
-        setHosts([]);
-        setHostClubId('');
-        setGames([]);
-        setCounts({
-          total: 0,
-          live: 0,
-          scheduled: 0,
-          closed: 0,
-          closedWithinHorizon: 0,
-          closedHorizonDays: 7,
-        });
-        setNextCursor(null);
-        setHealth(null);
-        setHealthFailed(false);
-        setSurfaceDirty(false);
-      }
-      if (!silent || routeChanged || viewChanged) setLoading(true);
       setLoadError(null);
       try {
         let resolvedScopeId: string;
@@ -992,6 +1008,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           ...nextMemberNames,
           ...Object.fromEntries(nextHosts.map((host) => [host.id, host.name])),
         };
+        hostNamesRef.current = hostNames;
         const rows: ManagedGame[] = page.items.map((row: any) =>
           toManagedGame(row, hostNames, resolvedScopeName)
         );
@@ -1004,7 +1021,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setGames((current) => mergeManagedGames(current, rows));
         // Null counts mean unchanged, not zero: a paged read does not recount
         // the scope, and reading null as 0 would blank the header.
-        if (page.counts) setCounts(page.counts);
+        if (page.counts) {
+          setCounts(page.counts);
+          setCountsKnown(true);
+        }
         setNextCursor(page.nextCursor);
         /*
           A refused read must not silently replace the numbers already on
@@ -1025,10 +1045,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setHealthFailed(true);
       } finally {
         loadInFlightRef.current = false;
-        // Unconditional. The in-flight guard means the load that reaches this
-        // line is the only one running, so it is always the one that raised the
-        // flag. Gating this on isCurrent() is exactly what starved it before.
-        setLoading(false);
+        // A superseded request must not lower the new route's loading curtain.
+        if (isCurrent()) setLoading(false);
         if (rerunRef.current && mountedRef.current) {
           rerunRef.current = false;
           const rerunSilent = rerunSilentRef.current;
@@ -1044,7 +1062,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         }
       }
     },
-    [clubId, scope, unionId, user?.id, view]
+    [clubId, scope, unionId, unionRef, user?.id, view]
   );
   loadRef.current = load;
 
@@ -1059,33 +1077,40 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => {
       mountedRef.current = false;
       loadEpochRef.current += 1;
+      contractEpochRef.current += 1;
     };
   }, []);
 
   const loadMore = useCallback(async () => {
     if (!scopeId || !nextCursor || loadingMore) return;
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     setLoadingMore(true);
     try {
       const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
       // Same as the first page: the rows already carry their contract and
       // their last command, so Load More is one request, not five.
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = page.items.map((row: any) =>
-        toManagedGame(row, hostNames, scopeName)
+        toManagedGame(row, hostNamesRef.current, scopeName)
       );
       setGames((current) => {
         const seen = new Set(current.map(managedGameKey));
         return [...current, ...rows.filter((game) => !seen.has(managedGameKey(game)))];
       });
       // Null on a paged read means unchanged, not zero.
-      if (page.counts) setCounts(page.counts);
+      if (page.counts) {
+        setCounts(page.counts);
+        setCountsKnown(true);
+      }
       setNextCursor(page.nextCursor);
     } catch (error) {
+      if (loadEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load more games.');
     } finally {
-      setLoadingMore(false);
+      if (loadEpochRef.current === requestEpoch) setLoadingMore(false);
     }
-  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
+  }, [loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
 
   useEffect(() => {
     void load();
@@ -1098,6 +1123,34 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return holdInAppNavigation(() =>
       window.confirm('Leave Table Management And Discard Your Unsaved Changes?')
     );
+  }, [surfaceDirty]);
+
+  // popstate has already moved the browser by the time React Router hears it.
+  // Stop that event when the operator refuses, then put the history cursor
+  // back on the exact entry where the draft was created.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    const anchorUrl = window.location.href;
+    const anchorState = window.history.state;
+    const anchorIndex = Number.isInteger(anchorState?.idx) ? anchorState.idx : null;
+    let restoring = false;
+    const onPopState = (event: PopStateEvent) => {
+      if (restoring) {
+        restoring = false;
+        return;
+      }
+      if (window.confirm('Leave Table Management And Discard Your Unsaved Changes?')) return;
+      event.stopImmediatePropagation();
+      const destinationIndex = Number.isInteger(event.state?.idx) ? event.state.idx : null;
+      if (anchorIndex !== null && destinationIndex !== null && destinationIndex !== anchorIndex) {
+        restoring = true;
+        window.history.go(anchorIndex - destinationIndex);
+      } else {
+        window.history.pushState(anchorState, '', anchorUrl);
+      }
+    };
+    window.addEventListener('popstate', onPopState, true);
+    return () => window.removeEventListener('popstate', onPopState, true);
   }, [surfaceDirty]);
 
   // BrowserRouter links do not fire beforeunload. Protect drafts when an
@@ -1206,12 +1259,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       requestBoardRefresh();
       return;
     }
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     try {
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const fresh = await Promise.all(
         known.map((game) => gameManagementService.getGame(scope, scopeId, game.kind, game.id))
       );
-      const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
+      const mapped = fresh.map((row) =>
+        row ? toManagedGame(row, hostNamesRef.current, scopeName) : null
+      );
       const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
       if (!splicable) {
         requestBoardRefresh();
@@ -1224,7 +1281,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       reportError(error, 'GameManagementPage.refreshChangedGames');
       requestBoardRefresh();
     }
-  }, [hosts, requestBoardRefresh, scope, scopeId, scopeName]);
+  }, [requestBoardRefresh, scope, scopeId, scopeName]);
 
   // Accumulate every event. The decider below is debounced, and a debounced
   // subscription only ever sees the LAST payload of a burst - which would
@@ -1321,7 +1378,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     A zero next to the word Live is read as "counting"; a sentence is read as
     an answer. The sentence waits for the read.
   */
-  const countsAreKnown = !loading;
+  const countsCanBeExplained = countsKnown && !loadError;
   /* The tab decides what "of" means: paging the Closed tab reaches the closed
      games within the horizon, not the whole board. */
   const viewTotal =
@@ -1396,17 +1453,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   };
 
   const openContractHistory = async (game: ManagedGame) => {
+    const requestEpoch = ++contractEpochRef.current;
     setContractGame(game);
     setContractVersions([]);
     setContractLoading(true);
     try {
-      setContractVersions(await gameManagementService.getContractHistory(game.kind, game.id));
+      const versions = await gameManagementService.getContractHistory(game.kind, game.id);
+      if (contractEpochRef.current !== requestEpoch) return;
+      setContractVersions(versions);
     } catch (error) {
+      if (contractEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load contract history.');
       setContractGame(null);
     } finally {
-      setContractLoading(false);
+      if (contractEpochRef.current === requestEpoch) setContractLoading(false);
     }
+  };
+
+  const closeContractHistory = () => {
+    contractEpochRef.current += 1;
+    setContractGame(null);
+    setContractVersions([]);
+    setContractLoading(false);
   };
 
   if (allowed === null) {
@@ -1530,23 +1598,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                   <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
                   Automatically
                 </span>
-                <span>
-                  <strong>{liveCount}</strong> Live
-                </span>
-                <span>
-                  <strong>{scheduledCount}</strong> Scheduled
-                </span>
-                <span
-                  title={
-                    archivedBeyondHorizon
-                      ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                      : countsAreKnown
-                        ? 'Every Game In This Scope Is On The Board'
-                        : undefined
-                  }
-                >
-                  <strong>{reachableTotal}</strong> Total
-                </span>
+                {countsKnown ? (
+                  <>
+                    <span>
+                      <strong>{liveCount}</strong> Live
+                    </span>
+                    <span>
+                      <strong>{scheduledCount}</strong> Scheduled
+                    </span>
+                    <span
+                      title={
+                        archivedBeyondHorizon
+                          ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                          : countsCanBeExplained
+                            ? 'Every Game In This Scope Is On The Board'
+                            : undefined
+                      }
+                    >
+                      <strong>{reachableTotal}</strong> Total
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    <strong>{loadError ? 'Unavailable' : 'Reading'}</strong> Game Counts
+                  </span>
+                )}
               </div>
               <div className={styles.healthRail} aria-label="Management Health">
                 {/*
@@ -1667,7 +1743,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         status: managedGameStatus(game),
                         statusLabel: isBaggedStatus(game.status)
                           ? DAY_COMPLETE_LABEL
-                          : game.status.replace(/_/g, ' '),
+                          : titleCase(game.status.replace(/_/g, ' ')),
                         rules: [],
                       }}
                       actions={{
@@ -1712,7 +1788,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                             >
                               {game.contract.readiness.state === 'funding_blocked'
                                 ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
-                                : game.contract.readiness.state.replace(/_/g, ' ')}
+                                : titleCase(game.contract.readiness.state.replace(/_/g, ' '))}
                             </span>
                           )}
                         </div>
@@ -1730,8 +1806,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           <span>
                             {game.lastCommand.status === 'succeeded'
                               ? 'Confirmed'
-                              : game.lastCommand.status}{' '}
-                            {game.lastCommand.action}
+                              : titleCase(game.lastCommand.status.replace(/_/g, ' '))}{' '}
+                            {titleCase(game.lastCommand.action.replace(/_/g, ' '))}
                           </span>
                           <code>{game.lastCommand.commandId.slice(0, 8)}</code>
                           <span>
@@ -2030,7 +2106,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           game={contractGame}
           versions={contractVersions}
           loading={contractLoading}
-          onClose={() => setContractGame(null)}
+          onClose={closeContractHistory}
         />
       )}
     </main>

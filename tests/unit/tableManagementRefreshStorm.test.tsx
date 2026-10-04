@@ -28,8 +28,12 @@ const mocks = vi.hoisted(() => ({
   getGameResult: undefined as any,
   listCalls: 0,
   listResolvers: [] as Array<(value: unknown) => void>,
+  contractResolvers: [] as Array<(value: unknown) => void>,
   busHandlers: [] as Array<() => void>,
   resync: { current: null as null | (() => void) },
+  unionId: undefined as string | undefined,
+  unionRef: undefined as string | undefined,
+  unionAdmin: false,
 }));
 
 const page = () => ({ total: 1, live: 1, scheduled: 0 });
@@ -52,6 +56,10 @@ const fireGameRefresh = (payload?: unknown) => {
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
+}));
+
+vi.mock('../../src/hooks/useUnionRouteId', () => ({
+  useUnionRouteId: () => ({ unionId: mocks.unionId, unionRef: mocks.unionRef }),
 }));
 
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
@@ -91,21 +99,36 @@ vi.mock('../../src/services/GameAccessService', () => ({
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
+    from: (table: string) => ({
+      select: () => {
+        if (table === 'union_clubs') {
+          return {
+            eq: async () => ({
+              data: [{ club_id: 'member-club-1', clubs: { name: 'Member Shark Club' } }],
+              error: null,
+            }),
+          };
+        }
+        const chain: any = {
+          eq: () => chain,
           maybeSingle: async () => ({
-            data: { id: 'club-uuid-1', name: 'Deep Stack Society' },
+            data:
+              table === 'unions'
+                ? { id: 'union-uuid-1', name: 'Midway Union' }
+                : table === 'clubs' && mocks.unionAdmin
+                  ? { id: 'union-uuid-1', name: 'Midway Union House' }
+                  : { id: 'club-uuid-1', name: 'Deep Stack Society' },
             error: null,
           }),
-        }),
-      }),
+        };
+        return chain;
+      },
     }),
   },
 }));
 
 vi.mock('../../src/services/UnionService', () => ({
-  unionService: { isUnionAdmin: async () => false },
+  unionService: { isUnionAdmin: async () => mocks.unionAdmin },
 }));
 
 vi.mock('../../src/components/common/Toast', () => ({
@@ -136,6 +159,7 @@ vi.mock('../../src/services/GameManagementService', () => ({
     },
     getContracts: async () => [],
     getCommandReceipts: async () => [],
+    getContractHistory: () => new Promise((resolve) => mocks.contractResolvers.push(resolve)),
     getHealth: async () => ({
       latestEventSequence: 0,
       lastEventAt: null,
@@ -187,6 +211,18 @@ const renderBoardWithNav = () =>
     </MemoryRouter>
   );
 
+const renderUnionBoard = () =>
+  render(
+    <MemoryRouter initialEntries={['/unions/midway-union/table-management']}>
+      <Routes>
+        <Route
+          path="/unions/:unionId/table-management"
+          element={<GameManagementPage scope="union" />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
 const settleFirstList = async () => {
   const resolve = mocks.listResolvers.shift();
   expect(resolve, 'the board never reached fn_list_managed_games').toBeTruthy();
@@ -229,6 +265,10 @@ describe('a changed game is read back, not the whole board', () => {
     mocks.getGameCalls = [];
     mocks.getGameKinds = [];
     mocks.getGameResult = undefined;
+    mocks.contractResolvers.length = 0;
+    mocks.unionId = undefined;
+    mocks.unionRef = undefined;
+    mocks.unionAdmin = false;
   });
 
   const settle = async () => {
@@ -383,6 +423,86 @@ describe('a changed game is read back, not the whole board', () => {
 
     await waitFor(() => expect(mocks.listCalls).toBe(2));
   });
+
+  it('keeps union member-club names on pagination and targeted refresh rows', async () => {
+    mocks.unionId = 'union-uuid-1';
+    mocks.unionRef = 'midway-union';
+    mocks.unionAdmin = true;
+    renderUnionBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    const first = mocks.listResolvers.shift();
+    await act(async () => {
+      first!({
+        items: [
+          {
+            id: 'member-table-1',
+            kind: 'table',
+            name: 'Member Club First Page',
+            status: 'running',
+            club_id: 'member-club-1',
+            players: 2,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: {
+          total: 2,
+          live: 2,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        },
+        nextCursor: {
+          bucket: 0,
+          sortAt: '2026-10-04T12:00:00Z',
+          kind: 'table',
+          id: 'member-table-1',
+        },
+      });
+    });
+    await screen.findByText('Member Club First Page');
+    expect(screen.getAllByText('Member Shark Club')).toHaveLength(1);
+
+    screen.getByRole('button', { name: /Load More/ }).click();
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+    const next = mocks.listResolvers.shift();
+    await act(async () => {
+      next!({
+        items: [
+          {
+            id: 'member-table-2',
+            kind: 'table',
+            name: 'Member Club Second Page',
+            status: 'running',
+            club_id: 'member-club-1',
+            players: 1,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: null,
+        nextCursor: null,
+      });
+    });
+    await screen.findByText('Member Club Second Page');
+    expect(screen.getAllByText('Member Shark Club')).toHaveLength(2);
+
+    mocks.getGameResult = {
+      id: 'member-table-1',
+      kind: 'table',
+      name: 'Member Club Refreshed',
+      status: 'running',
+      club_id: 'member-club-1',
+      players: 3,
+      max_players: 9,
+      bucket: 0,
+    };
+    await act(async () => fireGameRefresh({ tableId: 'member-table-1' }));
+    expect(await screen.findByText('Member Club Refreshed')).toBeInTheDocument();
+    expect(screen.getAllByText('Member Shark Club')).toHaveLength(2);
+    expect(mocks.listCalls).toBe(2);
+  });
 });
 
 describe('Table Management under its own refresh storm', () => {
@@ -394,6 +514,10 @@ describe('Table Management under its own refresh storm', () => {
     mocks.getGameCalls = [];
     mocks.getGameKinds = [];
     mocks.getGameResult = undefined;
+    mocks.contractResolvers.length = 0;
+    mocks.unionId = undefined;
+    mocks.unionRef = undefined;
+    mocks.unionAdmin = false;
   });
 
   it('coalesces refreshes that arrive while a load is still running', async () => {
@@ -478,5 +602,172 @@ describe('Table Management under its own refresh storm', () => {
     await waitFor(() => expect(mocks.listCalls).toBe(2));
     expect(screen.queryByText('Friday Deep Stack')).not.toBeInTheDocument();
     expect(screen.getByText(/Loading Live Game Controls/i)).toBeInTheDocument();
+  });
+
+  it('does not publish the previous bucket when the view changes mid-load', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    screen.getByRole('button', { name: 'scheduled' }).click();
+    const oldView = mocks.listResolvers.shift();
+    await act(async () => {
+      oldView!({
+        items: [
+          {
+            id: 'old-running',
+            kind: 'table',
+            name: 'Old Running Answer',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 2,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: { ...page(), closed: 0, closedWithinHorizon: 0, closedHorizonDays: 7 },
+        nextCursor: null,
+      });
+    });
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+    expect(screen.queryByText('Old Running Answer')).not.toBeInTheDocument();
+    const scheduled = mocks.listResolvers.shift();
+    await act(async () => {
+      scheduled!({
+        items: [
+          {
+            id: 'scheduled-game',
+            kind: 'tournament',
+            name: 'Scheduled Answer',
+            status: 'scheduled',
+            club_id: 'club-uuid-1',
+            players: 0,
+            max_players: 90,
+            bucket: 1,
+          },
+        ],
+        counts: {
+          total: 1,
+          live: 0,
+          scheduled: 1,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        },
+        nextCursor: null,
+      });
+    });
+    expect(await screen.findByText('Scheduled Answer')).toBeInTheDocument();
+  });
+
+  it('does not append a deferred Load More page after the operator changes club', async () => {
+    renderBoardWithNav();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    const first = mocks.listResolvers.shift();
+    expect(first).toBeTruthy();
+    await act(async () => {
+      first!({
+        items: [
+          {
+            id: 'table-1',
+            kind: 'table',
+            name: 'First Club Game',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 2,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: {
+          total: 2,
+          live: 2,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        },
+        nextCursor: { bucket: 0, sortAt: '2026-10-04T12:00:00Z', kind: 'table', id: 'table-1' },
+      });
+    });
+    await screen.findByText('First Club Game');
+    screen.getByRole('button', { name: /Load More/ }).click();
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+
+    await act(async () => screen.getByTestId('go').click());
+    await waitFor(() => expect(mocks.listCalls).toBe(3));
+    const oldPage = mocks.listResolvers.shift();
+    const newClub = mocks.listResolvers.shift();
+    expect(oldPage).toBeTruthy();
+    expect(newClub).toBeTruthy();
+    await act(async () => {
+      oldPage!({
+        items: [
+          {
+            id: 'old-page',
+            kind: 'table',
+            name: 'Old Club Deferred Page',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 1,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: null,
+        nextCursor: null,
+      });
+      newClub!({
+        items: [
+          {
+            id: 'new-club',
+            kind: 'table',
+            name: 'New Club Game',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 3,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: {
+          total: 1,
+          live: 1,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        },
+        nextCursor: null,
+      });
+    });
+
+    expect(await screen.findByText('New Club Game')).toBeInTheDocument();
+    expect(screen.queryByText('Old Club Deferred Page')).not.toBeInTheDocument();
+  });
+
+  it('retires deferred contract history and closes its modal on a club change', async () => {
+    renderBoardWithNav();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    await settleFirstList();
+    await screen.findByText('Friday Deep Stack');
+    screen.getByRole('button', { name: 'Contract' }).click();
+    await waitFor(() => expect(mocks.contractResolvers).toHaveLength(1));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await act(async () => screen.getByTestId('go').click());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const finishOldHistory = mocks.contractResolvers.shift();
+    await act(async () => {
+      finishOldHistory!([
+        {
+          version: 9,
+          contractHash: 'old-history',
+          contract: {},
+          publishedAt: '2026-10-04T12:00:00Z',
+          changeReason: 'old_scope',
+        },
+      ]);
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Old Scope')).not.toBeInTheDocument();
   });
 });

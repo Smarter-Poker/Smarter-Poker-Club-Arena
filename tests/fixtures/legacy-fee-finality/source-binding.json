@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -607,6 +607,17 @@
         "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
         "previous": "ac6aac2f3f64fa357e899e5c4f84045924973b5b267c5ff7533542cc8a060d27",
         "current": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e"
+      }
+    ]
+  },
+  "diamondCrossFormatConservationRoute20261004": {
+    "reason": "Restamped 2026-10-04 with the Diamond Phase 9 cross-format conservation runner. The only change to this classifier is one alternation widened so tests/sql/diamond-cross-format-*.manifest.json reaches the accounting job that executes the runner reading it, plus the comment saying why its two .sql fixtures are named poker-diamond-* instead. No existing route, lane, financial source or assertion in this file was altered, and the two Diamond lanes it already declares are byte-identical. Diff read before restamping.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
       }
     ]
   }

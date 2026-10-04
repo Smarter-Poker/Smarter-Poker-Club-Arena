@@ -23,6 +23,11 @@ DECLARE
   tournament_rake constant uuid := '70000000-0000-4000-8000-000000000001';
   tournament_cancel constant uuid := '70000000-0000-4000-8000-000000000002';
   house_hand constant uuid := '70000000-0000-4000-8000-000000000003';
+  cash_record constant uuid := '70000000-0000-4000-8000-000000000004';
+  cash_hand constant uuid := '80000000-0000-4000-8000-000000000004';
+  house_cash_hand constant uuid := '80000000-0000-4000-8000-000000000005';
+  p5_record constant uuid := '70000000-0000-4000-8000-000000000006';
+  p5_hand constant uuid := '80000000-0000-4000-8000-000000000006';
   since_at constant timestamptz := '2026-09-28 12:30:00+00';
   r record;
   d jsonb;
@@ -74,12 +79,14 @@ BEGIN
   VALUES (u,since_at,since_at + interval '7 days');
   INSERT INTO public.table_seats(user_id,club_id,left_at) VALUES
     (p1,c1,NULL),(p2,outsider_club,NULL);
-  INSERT INTO public.rake_attributions(player_id,club_id,rake_amount,created_at) VALUES
-    (p1,c1,3.25,since_at + interval '1 hour'),
-    (p2,c1,1.75,since_at + interval '2 hours'),
-    (p3,c2,4.50,since_at + interval '3 hours'),
-    (p5,u,0.50,since_at + interval '4 hours'),
-    (p1,outsider_club,100,since_at + interval '4 hours');
+  INSERT INTO public.rake_attributions(
+    hand_id,rake_record_id,player_id,club_id,rake_amount,created_at) VALUES
+    (cash_hand,cash_record,p1,c1,2.60,since_at + interval '1 hour'),
+    (cash_hand,cash_record,p2,c1,1.40,since_at + interval '1 hour'),
+    (gen_random_uuid(),gen_random_uuid(),p3,c2,4.50,since_at + interval '3 hours'),
+    (p5_hand,p5_record,p5,u,0.50,since_at + interval '4 hours'),
+    (house_cash_hand,house_hand,p2,c1,1.00,since_at + interval '3 hours'),
+    (gen_random_uuid(),gen_random_uuid(),p1,outsider_club,100,since_at + interval '4 hours');
   INSERT INTO public.chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,status,created_at) VALUES
     (c1,'player_wallet',p1,'table_stack',gen_random_uuid(),20,'posted',since_at + interval '1 hour'),
     (c1,'table_stack',gen_random_uuid(),'player_wallet',p1,30,'posted',since_at + interval '2 hours'),
@@ -127,27 +134,27 @@ BEGIN
   -- rake_attributions rejects negatives, so cancellation/reversal evidence
   -- must remain on signed rake_records and retain its contribution map.
   INSERT INTO public.rake_records(
-    club_id,rake_amount,player_contributions,is_tournament,created_at) VALUES
-    (c1,4,jsonb_build_object(p1::text,3.25,p2::text,1.75),false,since_at + interval '1 hour'),
-    (c1,-1,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours'),
-    (c1,-0.5,jsonb_build_object(p1::text,1),false,'2026-10-10 01:00:00+00'),
-    (u,0.5,jsonb_build_object(p5::text,1),false,since_at + interval '4 hours'),
-    (outsider_club,100,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours');
+    id,hand_id,club_id,rake_amount,player_contributions,is_tournament,created_at) VALUES
+    (cash_record,cash_hand,c1,4,jsonb_build_object(p1::text,3.25,p2::text,1.75),false,since_at + interval '1 hour'),
+    (gen_random_uuid(),cash_hand,c1,-1,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours'),
+    (gen_random_uuid(),cash_hand,c1,-0.5,jsonb_build_object(p1::text,1),false,'2026-10-10 01:00:00+00'),
+    (p5_record,p5_hand,u,0.5,jsonb_build_object(p5::text,1),false,since_at + interval '4 hours'),
+    (gen_random_uuid(),gen_random_uuid(),outsider_club,100,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours');
   -- Production cancellations retain the original contribution map and link
   -- the signed reversal to the positive tournament rake row. This pair nets
   -- to zero; a separate house-hosted hand proves its player credits c1 once.
   INSERT INTO public.rake_records(
-    id,club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at) VALUES
-    (tournament_rake,u,2,jsonb_build_object(p1::text,1,p2::text,1),true,
+    id,hand_id,club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at) VALUES
+    (tournament_rake,NULL,u,2,jsonb_build_object(p1::text,1,p2::text,1),true,
      'fn_spin_book_entry','{}'::jsonb,since_at + interval '1 hour'),
-    (tournament_cancel,u,-2,jsonb_build_object(p1::text,1,p2::text,1),true,
+    (tournament_cancel,NULL,u,-2,jsonb_build_object(p1::text,1,p2::text,1),true,
      'atomic_cancel_tournament',
      jsonb_build_object(
        'kind','spin_rake_refund',
        'original_source','fn_spin_book_entry',
        'original_rake_record_id',tournament_rake::text),
      since_at + interval '2 hours'),
-    (house_hand,u,1,jsonb_build_object(p2::text,1),false,
+    (house_hand,house_cash_hand,u,1,jsonb_build_object(p2::text,1),false,
      'cash_hand','{}'::jsonb,since_at + interval '3 hours');
   INSERT INTO public.rakeback_periods(user_id,club_id,rakeback_amount,period_start,status) VALUES
     (p1,c1,2,since_at::date,'pending'),
@@ -286,10 +293,13 @@ BEGIN
   IF (length(fn_src) - length(replace(fn_src, 'jsonb_each_text(', '')))
        / length('jsonb_each_text(') IS DISTINCT FROM 1
      OR position('scoped_rake_records AS MATERIALIZED' in fn_src) > 0
-     OR position('GROUP BY rr.player_contributions' in fn_src) > 0
-     OR position('JOIN rake_roster r ON r.player_id = expanded.player_id' in fn_src) = 0
-     OR position('OFFSET 0' in fn_src) = 0
-     OR position('GROUP BY allocation.player_id, allocation.club_id' in fn_src) = 0
+     OR position('club_rake_daily_user' in fn_src) = 0
+     OR position('club_rake_rollup_complete' in fn_src) = 0
+     OR position('edge_attribution_rake AS' in fn_src) = 0
+     OR position('gap_days AS MATERIALIZED' in fn_src) = 0
+     OR position('flow_legs AS MATERIALIZED' in fn_src) = 0
+     OR position('comm_pairs AS MATERIALIZED' in fn_src) = 0
+     OR position('JOIN edge_windows' in fn_src) > 0
      OR NOT EXISTS (
        SELECT 1
          FROM pg_proc p
@@ -297,9 +307,8 @@ BEGIN
           'public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure
           AND p.proconfig IS NOT DISTINCT FROM
               ARRAY['search_path=public','jit=off']::text[])
-     OR (length(fn_src) - length(replace(fn_src, 'LEFT JOIN LATERAL (', '')))
-       / length('LEFT JOIN LATERAL (') IS DISTINCT FROM 2 THEN
-    RAISE EXCEPTION 'risk report restored a double JSON expansion, temp fence, or OR flow join';
+     OR position('LEFT JOIN LATERAL (' in fn_src) > 0 THEN
+    RAISE EXCEPTION 'risk report lost bounded facts or restored per-roster probes';
   END IF;
 
   d := public.fn_union_distribution_check(u,since_at);
@@ -459,13 +468,23 @@ BEGIN
 END
 $fixture$;
 
--- Production-shaped Risk qualification. One million selected rows each carry
--- six contribution keys, the shape that made the preimage spill its
--- MATERIALIZED JSON set and parse every object twice. Three hundred thousand
--- table-stack movements exercise both entity-direction indexes.
-INSERT INTO public.rake_records(
-  club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at)
+-- Match the production roster dimension without changing the small-data
+-- parity case above: 587 roster rows / 586 distinct players in the union.
+INSERT INTO public.club_members(club_id,user_id,agent_id,joined_at)
 SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       ('20000000-0000-4000-8000-' || lpad(g::text,12,'0'))::uuid,
+       'd0000000-0000-4000-8000-000000000001'::uuid,
+       '2026-01-01 00:00:00+00'::timestamptz
+  FROM generate_series(1,583) g;
+
+-- Production-shaped Risk qualification. One million selected cash rows are
+-- represented by the exact completed-day per-player facts the production
+-- reader is required to use. Three hundred thousand table-stack movements
+-- exercise both set-based covering-index legs.
+INSERT INTO public.rake_records(
+  hand_id,club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at)
+SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
        0.06,
        jsonb_build_object(
          '10000000-0000-4000-8000-000000000001',1,
@@ -476,6 +495,15 @@ SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
          '90000000-0000-4000-8000-000000000006',1),
        false,'cash_hand','{}'::jsonb,'2026-09-30 12:30:00+00'::timestamptz
   FROM generate_series(1,1000000);
+
+INSERT INTO public.club_rake_daily_user(
+  club_id,day,user_id,rake_amount,hands) VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-09-30',
+   '10000000-0000-4000-8000-000000000001',10000.00,1000000),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-09-30',
+   '10000000-0000-4000-8000-000000000002',10000.00,1000000);
+INSERT INTO public.club_rake_rollup_complete(club_id,day,rows_written)
+VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-09-30',2);
 
 INSERT INTO public.chip_ledger(
   club_id,from_type,from_entity_id,to_type,to_entity_id,amount,status,created_at)
@@ -561,7 +589,22 @@ DO $preview_scale$
 DECLARE
   v_started timestamptz := clock_timestamp();
   v_preview jsonb;
+  v_risk_rows integer;
+  v_commission numeric;
 BEGIN
+  SELECT count(*), MAX(r.commission_accrued) FILTER (
+           WHERE r.agent_user_id='d0000000-0000-4000-8000-000000000001'::uuid
+             AND r.club_name='Club One')
+    INTO v_risk_rows, v_commission
+    FROM public.fn_union_agent_risk_report(
+      'fade0000-0000-0000-0000-000000000001'::uuid,
+      '2026-09-28 12:30:00+00'::timestamptz) r;
+  IF v_risk_rows IS DISTINCT FROM 2
+     OR v_commission IS DISTINCT FROM 5004.25 THEN
+    RAISE EXCEPTION 'scaled Risk commission pair filter changed: rows %, commission %',
+      v_risk_rows, v_commission;
+  END IF;
+
   v_preview := public.fn_union_settlement_preview(
     'fade0000-0000-0000-0000-000000000001'::uuid,
     '2026-09-28 12:30:00+00'::timestamptz,

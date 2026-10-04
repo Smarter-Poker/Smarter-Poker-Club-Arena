@@ -40,3 +40,9 @@ host and prints one pack's journaled receipts for one release and window;
 authority's own `horsePhase11CompletionCounts`, binds the release's policy
 digest computed from that release's sources (`git show`), and writes the
 `horse-phase11-completion-v1` record admission reads.
+
+## Post-merge audit fixes (same package)
+
+- **Completion definition v2** (`HorsePhase11Authority.ts`). v1 counted a postflop decision whose live range sample was never consumed (the sampler's 3 ms budget spent before its first completed sample) as `completed`, although the matrix never priced a postflop proposal without a sample. v2 counts it as `sampleUnavailable`; `eligible = completed + workBudget + samplerBudgetExhausted + sampleUnavailable`. Pinned by a test that spends the sampler budget on the first iteration and keeps the policy inside its 4 ms budget, on every postflop street.
+- **Policy digest v2** (`HorsePhase11PolicyDigest.ts`). v1 left out three files whose values the policy and sampler compute with: `HorseFiveCardScore.ts` (every Omaha showdown score), `config/rakeSpec.ts` (the pot arithmetic's rake) and `config/tableSeating.ts` (positions). A change to any of them could alter candidate behaviour without moving the digest a qualification is admitted against. v2 hashes all 20; the engine image keeps `src/`, so the running digest is computable in production.
+- `releaseSha` in a completion record identifies the window's source release; admission binds through `policyDigest`, so a later release with unchanged policy code keeps the record valid (documented in the P11.3 record).

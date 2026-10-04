@@ -99,7 +99,8 @@ export const HORSE_PHASE11_COMPLETION_SCHEMA = 'horse-phase11-completion-v1';
  * pack evaluated the node). Completed: an eligible decision whose proposal is
  * the policy the P11.2 matrix measured, which ran on a fixed clock with every
  * sample complete. Two live outcomes are not that policy and are counted
- * separately, so `eligible = completed + workBudget + samplerBudgetExhausted`:
+ * separately, so `eligible = completed + workBudget + samplerBudgetExhausted +
+ * sampleUnavailable`:
  *  - `workBudget`: the policy exceeded `OMAHA_VARIANT_DOMAIN.liveBudgetMs` and
  *    fell back to the reference action (reason `work_budget`);
  *  - `samplerBudgetExhausted`: the proposal finished inside the budget but
@@ -107,7 +108,7 @@ export const HORSE_PHASE11_COMPLETION_SCHEMA = 'horse-phase11-completion-v1';
  *    budget (`inputs.range.provenance.work.budgetExhausted`), so it priced a
  *    smaller sample than the matrix did.
  */
-export const HORSE_PHASE11_COMPLETION_DEFINITION = 'horse-phase11-completion-definition-v1';
+export const HORSE_PHASE11_COMPLETION_DEFINITION = 'horse-phase11-completion-definition-v2';
 
 /**
  * THE COMPLETION FLOOR, per street: 0.95, judged on the 99% lower confidence
@@ -160,6 +161,8 @@ export interface HorsePhase11StreetCompletion {
   readonly completed: number;
   readonly workBudget: number;
   readonly samplerBudgetExhausted: number;
+  /** v2: a postflop decision priced with no complete live sample at all. */
+  readonly sampleUnavailable: number;
 }
 
 /** A committed `horse-phase11-completion-v1` record (exact keys). */
@@ -189,7 +192,8 @@ export type HorsePhase11CompletionOutcome =
   | 'not_counted'
   | 'completed'
   | 'work_budget'
-  | 'sampler_budget_exhausted';
+  | 'sampler_budget_exhausted'
+  | 'sample_unavailable';
 
 const objectOf = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -223,6 +227,12 @@ export function horsePhase11CompletionOutcome(
     work.budgetExhausted === true
   )
     return 'sampler_budget_exhausted';
+  // v2 (audit 2026-10-04): every postflop proposal the matrix measured priced a
+  // complete live sample. One priced with none (the sampler's budget ran out
+  // before the first sample, or the sample was refused) took the no-equity
+  // branches the matrix never played: not completed.
+  if (receipt.street !== 'preflop' && !(objectOf(range) && range.status === 'consumed'))
+    return 'sample_unavailable';
   return 'completed';
 }
 
@@ -234,11 +244,17 @@ export function horsePhase11CompletionCounts(
   const counts = Object.fromEntries(
     HORSE_PHASE11_COMPLETION_STREETS.map((street) => [
       street,
-      { eligible: 0, completed: 0, workBudget: 0, samplerBudgetExhausted: 0 },
+      { eligible: 0, completed: 0, workBudget: 0, samplerBudgetExhausted: 0, sampleUnavailable: 0 },
     ])
   ) as Record<
     HorsePhase11CompletionStreet,
-    { eligible: number; completed: number; workBudget: number; samplerBudgetExhausted: number }
+    {
+      eligible: number;
+      completed: number;
+      workBudget: number;
+      samplerBudgetExhausted: number;
+      sampleUnavailable: number;
+    }
   >;
   for (const receipt of receipts) {
     const outcome = horsePhase11CompletionOutcome(variant, receipt);
@@ -247,7 +263,8 @@ export function horsePhase11CompletionCounts(
     street.eligible += 1;
     if (outcome === 'completed') street.completed += 1;
     else if (outcome === 'work_budget') street.workBudget += 1;
-    else street.samplerBudgetExhausted += 1;
+    else if (outcome === 'sampler_budget_exhausted') street.samplerBudgetExhausted += 1;
+    else street.sampleUnavailable += 1;
   }
   return counts;
 }
@@ -401,7 +418,13 @@ const COMPLETION_KEYS = [
   'window',
   'streets',
 ] as const;
-const STREET_KEYS = ['eligible', 'completed', 'workBudget', 'samplerBudgetExhausted'] as const;
+const STREET_KEYS = [
+  'eligible',
+  'completed',
+  'workBudget',
+  'samplerBudgetExhausted',
+  'sampleUnavailable',
+] as const;
 
 /** Schema, shape and internal consistency of a completion record. */
 function completionIsWellFormed(value: unknown): value is HorsePhase11CompletionRecord {
@@ -429,7 +452,10 @@ function completionIsWellFormed(value: unknown): value is HorsePhase11Completion
     return (
       exactKeys(s, STREET_KEYS) &&
       STREET_KEYS.every((key) => count(s[key])) &&
-      (s.completed as number) + (s.workBudget as number) + (s.samplerBudgetExhausted as number) ===
+      (s.completed as number) +
+        (s.workBudget as number) +
+        (s.samplerBudgetExhausted as number) +
+        (s.sampleUnavailable as number) ===
         s.eligible
     );
   });

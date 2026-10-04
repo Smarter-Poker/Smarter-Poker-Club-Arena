@@ -27,7 +27,7 @@ import {
 } from './omaha/OmahaVariantPolicyPack.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v1';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v2';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -39,7 +39,11 @@ export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-dige
  * evaluator, pot/rake arithmetic, variant rules, dealt-seat census and load
  * governor the policy and sampler call at run time; the tournament utility
  * evidence the kernel imports; and the HorseMind reads and observation windows
- * the reference path and the kernel's imports consume.
+ * the reference path and the kernel's imports consume. v2 adds the three
+ * value sources v1 left out: the five-card scorer every Omaha showdown score
+ * reduces to (HorseFiveCardScore.ts), the rake specification the pot
+ * arithmetic charges (config/rakeSpec.ts), and the seating tables the live
+ * policy reads positions from (config/tableSeating.ts).
  */
 export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freeze([
   'src/engine/omaha/OmahaVariantPolicyPack.ts',
@@ -59,6 +63,9 @@ export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/HorseTournamentUtilityEvidence.ts',
   'src/engine/HorseObservationWindow.ts',
   'src/engine/HorseMind.ts',
+  'src/engine/HorseFiveCardScore.ts',
+  'src/config/rakeSpec.ts',
+  'src/config/tableSeating.ts',
 ]);
 
 /** Reads a server-relative source path. Throws on failure. */

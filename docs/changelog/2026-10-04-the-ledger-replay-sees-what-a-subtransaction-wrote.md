@@ -59,3 +59,9 @@ Both migrations are applied after merge through **Apply Merged Migration**, in o
 ## Still open
 
 The same kind of unlabelled union side can still be written by rarely used paths that declare a union wallet as the autoledger counterparty without naming a column (union send to a member, union P&L settlement, spin settlement, BBJ funding and backup transfer, promo rain and promo disbursement to a player). None has written a leg in 60 days. They are the next cut, together with a constraint that refuses an unlabelled union side.
+
+## Superseded before it ran (14:27 UTC)
+
+Another task fixed the same two defects live first: `20261004123650_a_union_rake_treasury_leg_names_its_wallet` (the three payers name `union_wallets.rake_wallet`) and `20261004135607_the_ledger_replay_knows_which_legs_its_snapshot_saw` (the replay records, under REPEATABLE READ, which legs at or above its snapshot's xmin it saw, and the next window trusts `pg_visible_in_snapshot` only for those; PRs #6050 and #6062). That task also closed the six incidents and the kill-switch alert. So `20261004124640` refuses to run (its preimages changed) and `20261004125201` requires it; neither will run. Both are marked superseded in `scripts/ci/applied-migration-aliases.json`.
+
+The one thing still needed is the rebaseline: the four accounts' stored cumulatives would carry into tonight's reading and re-trip the kill switch on any same-sign move. `20261004144112_the_misread_drift_accounts_are_rebaselined_on_the_live_repla` does that on the live fix, in REPEATABLE READ, and records what its snapshot saw in `ca_ledger_replay_readings` exactly as the replay does, so the next window judges a leg that straddles the baseline correctly. It closes nothing and moves no chips.

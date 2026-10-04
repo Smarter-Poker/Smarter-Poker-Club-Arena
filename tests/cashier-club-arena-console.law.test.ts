@@ -230,6 +230,11 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(read('src/pages/CashierPage.tsx')).toContain(
       "subtitle={titleCase(clubName || 'Club Wallet')}"
     );
+
+    const wallet = read('src/components/wallet/DynamicWallet.tsx');
+    expect(wallet).toContain("import { compactChips } from '../../utils/format';");
+    expect(wallet).toContain('return compactChips(num);');
+    expect(wallet).not.toContain('minimumFractionDigits: 2');
   });
 
   it('keeps copied statement receipts exact and drops clipboard completion after unmount', () => {

@@ -8,9 +8,11 @@ import {
 
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const CASHIER_ROLES = ['Owner', 'Co Owner', 'Admin', 'Super Agent', 'Agent', 'Sub Agent'] as const;
-const EXPECTED_WALLETS = (
-  process.env.E2E_CASHIER_WALLETS || 'SHARK CLUB|Club JAQK|Deep Stack Society|Midway Union'
-)
+// Production account membership is intentionally mutable. Exact wallet names
+// are an optional environment contract; the maintained certificate below
+// always proves the durable behavior: an owned union, at least two club
+// wallets, alternate-club navigation, keyboard opening, right-click and hold.
+const EXPECTED_WALLETS = (process.env.E2E_CASHIER_WALLETS || '')
   .split('|')
   .map((name) => name.trim())
   .filter(Boolean);
@@ -162,7 +164,15 @@ test.describe('Production Cashier Certification', () => {
       'maintained Cashier fixture needs at least two club wallets for navigation proof'
     ).toBeGreaterThanOrEqual(2);
     await testInfo.attach('cashier-wallet-directory.json', {
-      body: JSON.stringify({ expected: EXPECTED_WALLETS, observed: desktopLabels }, null, 2),
+      body: JSON.stringify(
+        {
+          configuredExpected: EXPECTED_WALLETS,
+          observed: desktopLabels,
+          structuralMinimum: { ownedUnionWallets: 1, clubWallets: 2 },
+        },
+        null,
+        2
+      ),
       contentType: 'application/json',
     });
 

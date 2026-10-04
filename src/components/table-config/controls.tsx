@@ -95,6 +95,7 @@ export const Slider = ({
         value={value}
         disabled={disabled}
         aria-label={label}
+        aria-orientation="vertical"
         onChange={(e) => onChange(Number(e.target.value))}
         className="slider-input"
       />

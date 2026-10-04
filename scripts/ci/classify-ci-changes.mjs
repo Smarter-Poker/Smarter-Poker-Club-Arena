@@ -35,6 +35,10 @@ const accounting =
 // to any one of them must select that job even without a migration beside it.
 const dataConsolePostgres =
   /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/data-console-postgres-contracts-wired\.test\.ts$|tests\/fixtures\/(?:financial-admin-revenue|union-ops-financial-admin|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+// Every input to the managed-game one-door fixture must select the hosted
+// PostgreSQL job, including a fixture-only correction.
+const managedGameOneDoor =
+  /^(scripts\/dev\/test-managed-game-one-door-postgres\.sh$|tests\/fixtures\/managed-game-one-door\/|tests\/unit\/managedGameOneDoorMigration\.test\.ts$|supabase\/migrations\/20261004195024_managed_game_browser_updates_use_command_gateway\.sql$)/;
 
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
@@ -273,6 +277,7 @@ export function classifyChangedPaths(paths) {
       commitmentAudit ||
       matches(accounting) ||
       matches(dataConsolePostgres) ||
+      matches(managedGameOneDoor) ||
       nativeIsolationTool ||
       spinRules ||
       horsePriority ||

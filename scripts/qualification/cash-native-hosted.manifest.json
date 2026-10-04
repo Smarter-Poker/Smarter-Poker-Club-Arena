@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 185697,
-      "sha256": "60eb48077cf49681e5796dde168d140c2a9d841b289c81b423f2b0ecd70a19a1"
+      "bytes": 185988,
+      "sha256": "5614f8cf455b70c25e4c1aad080c7ce8a9946647aa56969519ec013d34bd8435"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 30451,
-      "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+      "bytes": 30894,
+      "sha256": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1588,6 +1588,35 @@
         "current": {
           "bytes": 30451,
           "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+        }
+      }
+    ]
+  },
+  "managedGameOneDoorNativeRouting20261004": {
+    "reason": "Add the bounded managed-game one-door PostgreSQL 17 fixture to accounting shard 2 and route its migration, runner, fixture and law test into the existing accounting verdict. The fixture proves browser direct updates are refused while the receipted command gateway and service role retain their intended authority. No cash qualification runner, fixture, financial input, assertion, schedule or existing route changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 185697,
+          "sha256": "60eb48077cf49681e5796dde168d140c2a9d841b289c81b423f2b0ecd70a19a1"
+        },
+        "current": {
+          "bytes": 185988,
+          "sha256": "5614f8cf455b70c25e4c1aad080c7ce8a9946647aa56969519ec013d34bd8435"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 30451,
+          "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+        },
+        "current": {
+          "bytes": 30894,
+          "sha256": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d"
         }
       }
     ]

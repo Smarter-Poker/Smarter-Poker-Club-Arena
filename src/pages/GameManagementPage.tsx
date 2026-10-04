@@ -1234,6 +1234,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
    *   - a changed game is not on the board (created, or on another page)
    *   - the row is gone from this scope (null)
    *   - the row changed BUCKET, so it belongs under a different tab now
+   *   - a tournament's start time changed, so its ordered position moved
    *   - more games changed at once than a full read is worth
    * The bucket case matters twice over: the counters are per-bucket totals, so
    * a row that stays in its bucket cannot move any of them, and one that
@@ -1269,7 +1270,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const mapped = fresh.map((row) =>
         row ? toManagedGame(row, hostNamesRef.current, scopeName) : null
       );
-      const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
+      const splicable = mapped.every(
+        (row, index) =>
+          row &&
+          row.bucket === known[index].bucket &&
+          (row.kind !== 'tournament' || row.startTime === known[index].startTime)
+      );
       if (!splicable) {
         requestBoardRefresh();
         return;
@@ -1488,7 +1494,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           crest="flat"
           className={styles.stateConsole}
         >
-          <section className={styles.empty}>Verifying Game-Management Access…</section>
+          <section className={styles.empty} role="status" aria-live="polite">
+            Verifying Game-Management Access…
+          </section>
         </SpadeConsole>
       </main>
     );
@@ -1513,7 +1521,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             },
           }}
         >
-          <section className={styles.denied}>
+          <section className={styles.denied} role="alert">
             <p className="sc-copy sc-copy--center">
               {scope === 'club'
                 ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
@@ -1534,6 +1542,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ? 'config'
         : 'selector'
       : null;
+  const unionHostUnavailable = scope === 'union' && !loading && hosts.length === 0;
+  const creationDisabledReason = unionHostUnavailable
+    ? 'Game Creation Is Unavailable Until This Union Has A House Club Row.'
+    : undefined;
 
   return (
     <main className={styles.page} data-management-surface={surface}>
@@ -1570,6 +1582,22 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ))}
       </nav>
 
+      {surface !== 'games' && !creatorStage && (
+        <section className={styles.sectionCreationActions} aria-label="Game Creation Controls">
+          <GameCreationActions
+            managementPath={managementPath}
+            disabled={!hostClubId}
+            disabledReason={creationDisabledReason}
+            onNavigate={(path) => void openCreationFromHeader(path)}
+          />
+          {unionHostUnavailable && (
+            <p className={styles.creationUnavailable} role="status" aria-live="polite">
+              {creationDisabledReason}
+            </p>
+          )}
+        </section>
+      )}
+
       {surface === 'games' && !creatorStage && (
         <SpadeConsole
           eyebrow={scope === 'union' ? 'Union Command' : 'Club Command'}
@@ -1583,6 +1611,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
           className={styles.boardConsole}
           aria-labelledby="table-management-title"
+          aria-busy={loading}
         >
           <header className={styles.commandHeader}>
             <div className={styles.heroCopy}>
@@ -1659,6 +1688,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               </div>
               <GameCreationActions
                 managementPath={managementPath}
+                disabled={!hostClubId}
+                disabledReason={creationDisabledReason}
                 onNavigate={(path) => void openCreationFromHeader(path)}
               />
             </div>
@@ -1694,14 +1725,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           </nav>
 
           {loadError ? (
-            <section className={styles.empty}>
+            <section className={styles.empty} role="alert">
               <p>{loadError}</p>
               <button onClick={() => void load()}>Try Again</button>
             </section>
           ) : loading ? (
-            <section className={styles.empty}>Loading Live Game Controls…</section>
+            <section className={styles.empty} role="status" aria-live="polite">
+              Loading Live Game Controls…
+            </section>
           ) : filteredGames.length === 0 ? (
-            <section className={styles.empty}>
+            <section className={styles.empty} role="status" aria-live="polite">
               <h2>No Games In This View</h2>
               <p>Use The Controls Above To Add The First One.</p>
             </section>
@@ -2026,13 +2059,36 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         />
       )}
 
-      {surface === 'messages' && allowed && hostClubId && (
-        <ClubMessageManagementPanel
-          clubId={hostClubId}
-          clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
-          onDirtyChange={setSurfaceDirty}
-        />
-      )}
+      {surface === 'messages' &&
+        allowed &&
+        (hostClubId ? (
+          <ClubMessageManagementPanel
+            clubId={hostClubId}
+            clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+            onDirtyChange={setSurfaceDirty}
+          />
+        ) : (
+          <SpadeConsole
+            eyebrow={scope === 'union' ? 'Union Communications' : 'Club Communications'}
+            title="Club Messages"
+            subtitle={scopeName}
+            pill={loading ? 'Loading' : 'Unavailable'}
+            pillInk={loading ? 'blue' : 'gold'}
+            family="riveted"
+            foot="foot"
+            aria-busy={loading}
+          >
+            <section
+              className={styles.empty}
+              role={loading ? 'status' : 'alert'}
+              aria-live={loading ? 'polite' : undefined}
+            >
+              {loading
+                ? 'Reading The Club Message Host…'
+                : 'Club Messages Are Unavailable Until This Union Has A House Club Row.'}
+            </section>
+          </SpadeConsole>
+        ))}
 
       {tournamentModalOpen && hostClubId && (
         <CreateTournamentModal

@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   unionId: undefined as string | undefined,
   unionRef: undefined as string | undefined,
   unionAdmin: false,
+  unionHouse: true,
 }));
 
 const page = () => ({ total: 1, live: 1, scheduled: 0 });
@@ -116,7 +117,9 @@ vi.mock('../../src/lib/supabase', () => ({
               table === 'unions'
                 ? { id: 'union-uuid-1', name: 'Midway Union' }
                 : table === 'clubs' && mocks.unionAdmin
-                  ? { id: 'union-uuid-1', name: 'Midway Union House' }
+                  ? mocks.unionHouse
+                    ? { id: 'union-uuid-1', name: 'Midway Union House' }
+                    : null
                   : { id: 'club-uuid-1', name: 'Deep Stack Society' },
             error: null,
           }),
@@ -211,9 +214,9 @@ const renderBoardWithNav = () =>
     </MemoryRouter>
   );
 
-const renderUnionBoard = () =>
+const renderUnionBoard = (entry = '/unions/midway-union/table-management') =>
   render(
-    <MemoryRouter initialEntries={['/unions/midway-union/table-management']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route
           path="/unions/:unionId/table-management"
@@ -269,6 +272,7 @@ describe('a changed game is read back, not the whole board', () => {
     mocks.unionId = undefined;
     mocks.unionRef = undefined;
     mocks.unionAdmin = false;
+    mocks.unionHouse = true;
   });
 
   const settle = async () => {
@@ -410,6 +414,53 @@ describe('a changed game is read back, not the whole board', () => {
     await waitFor(() => expect(mocks.listCalls).toBe(2));
   });
 
+  it('reloads the ordered board when a tournament moves within the same bucket', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    const first = mocks.listResolvers.shift();
+    await act(async () => {
+      first!({
+        items: [
+          {
+            id: 'tournament-1',
+            kind: 'tournament',
+            name: 'Friday Flight',
+            status: 'registering',
+            club_id: 'club-uuid-1',
+            players: 0,
+            max_players: 90,
+            bucket: 1,
+            start_time: '2026-10-04T18:00:00Z',
+          },
+        ],
+        counts: { total: 1, live: 0, scheduled: 1, closed: 0 },
+        nextCursor: {
+          bucket: 1,
+          sortAt: '2026-10-04T18:00:00Z',
+          kind: 'tournament',
+          id: 'tournament-1',
+        },
+      });
+    });
+    await screen.findByText('Friday Flight');
+
+    mocks.getGameResult = {
+      id: 'tournament-1',
+      kind: 'tournament',
+      name: 'Friday Flight',
+      status: 'registering',
+      club_id: 'club-uuid-1',
+      players: 0,
+      max_players: 90,
+      bucket: 1,
+      start_time: '2026-10-04T20:00:00Z',
+    };
+    await act(async () => fireGameRefresh({ tournamentId: 'tournament-1' }));
+
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+    expect(mocks.getGameKinds).toContain('tournament');
+  });
+
   it('reloads the board when the game is gone from this scope', async () => {
     renderBoard();
     await waitFor(() => expect(mocks.listCalls).toBe(1));
@@ -503,6 +554,35 @@ describe('a changed game is read back, not the whole board', () => {
     expect(screen.getAllByText('Member Shark Club')).toHaveLength(2);
     expect(mocks.listCalls).toBe(2);
   });
+
+  it('disables creation and explains Club Messages when a union has no house club row', async () => {
+    mocks.unionId = 'union-uuid-1';
+    mocks.unionRef = 'midway-union';
+    mocks.unionAdmin = true;
+    mocks.unionHouse = false;
+    renderUnionBoard('/unions/midway-union/table-management?section=messages');
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    const first = mocks.listResolvers.shift();
+    await act(async () => {
+      first!({
+        items: [],
+        counts: { total: 0, live: 0, scheduled: 0, closed: 0 },
+        nextCursor: null,
+      });
+    });
+
+    expect(
+      await screen.findByText(
+        'Club Messages Are Unavailable Until This Union Has A House Club Row.'
+      )
+    ).toBeInTheDocument();
+    for (const label of [/Add Table/, /Event/, /Spins/, /Sit N Go/]) {
+      expect(screen.getByRole('button', { name: label })).toBeDisabled();
+    }
+    expect(
+      screen.getByText('Game Creation Is Unavailable Until This Union Has A House Club Row.')
+    ).toHaveAttribute('role', 'status');
+  });
 });
 
 describe('Table Management under its own refresh storm', () => {
@@ -518,6 +598,7 @@ describe('Table Management under its own refresh storm', () => {
     mocks.unionId = undefined;
     mocks.unionRef = undefined;
     mocks.unionAdmin = false;
+    mocks.unionHouse = true;
   });
 
   it('coalesces refreshes that arrive while a load is still running', async () => {

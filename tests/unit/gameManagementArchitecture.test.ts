@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(resolve(__dirname, `../../${path}`), 'utf8');
 const app = read('src/App.tsx');
+const unionGuard = read('src/components/auth/UnionOverseerGuard.tsx');
 const page = read('src/pages/GameManagementPage.tsx');
 const navigation = read('src/config/clubArenaNavigation.ts');
 const hamburger = read('src/components/navigation/HamburgerMenu.tsx');
@@ -15,6 +16,7 @@ const ticker = read('src/components/tournament/TournamentStartingTicker.tsx');
 const rail = read('src/components/tournament/TickerRail.tsx');
 const messages = read('src/components/tournament/tickerMessages.ts');
 const unionGames = read('src/pages/UnionGamesPage.tsx');
+const unionDetail = read('src/pages/UnionDetailPage.tsx');
 const messagePanel = read('src/components/club/ClubMessageManagementPanel.tsx');
 const messageService = read('src/services/ClubMessageManagementService.ts');
 const clubHome = read('src/pages/ClubHomePage.tsx');
@@ -29,8 +31,14 @@ describe('canonical table management architecture', () => {
     expect(app).toContain('<GameManagementPage scope="club" />');
     expect(app).toContain('path="unions/:unionId/table-management"');
     expect(app).toContain('<GameManagementPage scope="union" />');
+    expect(app).toContain('<UnionOverseerGuard authority="game-management">');
+    expect(unionGuard).toContain("authority === 'game-management'");
+    expect(unionGuard).toContain("supabase.rpc('fn_is_union_operator'");
     expect(unionGames).toContain('unionService.isUnionAdmin(targetUnion, user.id)');
     expect(unionGames).toContain('GameCreationActions');
+    expect(unionDetail).toContain('setCanManageUnion(allowed)');
+    expect(unionDetail).toContain('{canManageUnion ? (');
+    expect(unionDetail).toContain('to={`/unions/${unionRef}/table-management`}');
   });
 
   it('fails closed for a club after it joins a union', () => {

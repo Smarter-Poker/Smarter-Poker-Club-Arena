@@ -104,18 +104,37 @@ export default function UnionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadRevision, setLoadRevision] = useState(0);
+  const [canManageUnion, setCanManageUnion] = useState<boolean | null>(null);
 
-  // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
-  // page. Players never see a union card, and a deep link must not leak the
-  // surface either — non-owners bounce back to their clubs, where union games
-  // already appear inside their own club lobby.
+  // The union surface is an operations page. Its owner and appointed admins
+  // use the same authoritative predicate as Table Management; everybody else
+  // is returned to Clubs without briefly seeing the operator controls.
   useEffect(() => {
-    if (!union || !user?.id) return;
-    if (union.ownerId !== user.id) {
-      navigate('/clubs', { replace: true });
+    let cancelled = false;
+    if (!union || !user?.id) {
+      setCanManageUnion(null);
+      return () => {
+        cancelled = true;
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [union?.id, union?.ownerId, user?.id]);
+    setCanManageUnion(null);
+    void unionService
+      .isUnionAdmin(union.id, user.id)
+      .then((allowed) => {
+        if (cancelled) return;
+        setCanManageUnion(allowed);
+        if (!allowed) navigate('/clubs', { replace: true });
+      })
+      .catch((error) => {
+        reportError(error, 'UnionDetailPage.management_authority');
+        if (cancelled) return;
+        setCanManageUnion(false);
+        navigate('/clubs', { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, union?.id, user?.id]);
 
   const [activeTab, setActiveTabRaw] = useState<
     'overview' | 'clubs' | 'tables' | 'tournaments' | 'financials' | 'settings'
@@ -717,6 +736,22 @@ export default function UnionDetailPage() {
     );
   }
 
+  if (user?.id && canManageUnion === null) {
+    return (
+      <div className={styles.loading} role="status" aria-live="polite">
+        <LoadingState message="Checking Union Management Access" />
+      </div>
+    );
+  }
+
+  if (user?.id && canManageUnion === false) {
+    return (
+      <div className={styles.loading} role="status" aria-live="polite">
+        <LoadingState message="Returning To Your Clubs" />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
@@ -744,7 +779,7 @@ export default function UnionDetailPage() {
           <p>{union.description}</p>
         </div>
         <div className={styles.headerActions}>
-          {union.ownerId === user?.id ? (
+          {canManageUnion ? (
             <>
               <Link className={styles.managementButton} to={`/unions/${unionRef}/table-management`}>
                 Table Management

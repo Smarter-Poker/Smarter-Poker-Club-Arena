@@ -236,10 +236,12 @@ REVOKE ALL ON FUNCTION public.fn_union_agent_risk_report(uuid,timestamptz)
 GRANT EXECUTE ON FUNCTION public.fn_union_agent_risk_report(uuid,timestamptz)
   TO authenticated, service_role;
 
--- Current preimage of the read-only settlement preview. The 20260908 paid
--- period migration added the scalar predicate to both Round-2 scans; the
--- production repair under test replaces those per-row calls with one explicit
--- anti-join and one commission fact set.
+-- Exact production preimage of the read-only settlement preview. The body is
+-- preserved from the historical live schema capture, including its engine-or-
+-- overseer authorization guard, Round labels, and arena-name fallback. The
+-- 20260908 paid-period migration added the scalar predicate to both Round-2
+-- scans; the production repair under test replaces those per-row calls with
+-- one explicit anti-join and one commission fact set.
 CREATE OR REPLACE FUNCTION public.fn_union_settlement_preview(
   p_union_id uuid DEFAULT 'fade0000-0000-0000-0000-000000000001'::uuid,
   p_period_start timestamptz DEFAULT NULL,
@@ -261,7 +263,7 @@ DECLARE
   v_r3_short jsonb := '[]'::jsonb;
   v_r2_short_amt numeric := 0; v_r3_short_amt numeric := 0;
 BEGIN
-  IF auth.uid() IS NOT NULL AND NOT public.fn_is_union_overseer(p_union_id, auth.uid()) THEN
+  IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR ( NOT public.fn_is_union_overseer(p_union_id, auth.uid()))) THEN
     RAISE EXCEPTION 'not_authorised';
   END IF;
 
@@ -273,6 +275,7 @@ BEGIN
   SELECT COALESCE(rake_wallet,0) INTO v_rake_wallet
     FROM union_wallets WHERE union_id = p_union_id;
 
+  -- ROUND 2 - unsettled agent commission, and whether the club treasury covers it.
   WITH owed AS (
     SELECT ac.club_id, ac.user_id, SUM(ac.amount) AS amt
       FROM agent_commissions ac
@@ -308,6 +311,7 @@ BEGIN
     FROM owed o JOIN clubs c ON c.id = o.club_id
    WHERE COALESCE(c.chip_treasury,0) < o.amt;
 
+  -- ROUND 3 - pending player rakeback, and whether the paying agent covers it.
   WITH owed AS (
     SELECT rp.user_id AS player_id, rp.club_id, cm.agent_id AS agent_user,
            SUM(rp.rakeback_amount) AS amt
@@ -335,7 +339,7 @@ BEGIN
   )
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'agent_user_id', o.agent_user,
-           'agent', public.fn_arena_name(pr.alias, pr.username, pr.display_name, pr.first_name, pr.last_name, pr.full_name),
+           'agent', COALESCE(public.fn_arena_name(pr.alias, pr.username, pr.display_name, pr.first_name, pr.last_name, pr.full_name), pr.username),
            'club_id', o.club_id, 'owed', o.amt,
            'agent_balance', COALESCE(am.chip_balance,0),
            'short_by', round(o.amt - COALESCE(am.chip_balance,0), 2))), '[]'::jsonb),

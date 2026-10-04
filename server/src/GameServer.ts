@@ -1,6 +1,7 @@
 import {
   findMixedF06Transfer,
   admitMixedF06Transfer,
+  disposeDeadOriginMixedF06Originals,
   mixedF06PendingOriginals,
   type MixedF06Transfer,
 } from './tournament/mixedF06Custody.js';
@@ -2952,6 +2953,22 @@ export class GameServer {
     let mixedTerminalProof: unknown = null;
     if (mode === 'resume' || packet || durableMixed) {
       try {
+        if (!packet && durableMixed && mixedF06PendingOriginals(durableMixed).length > 0) {
+          // The process that held these originals is gone; only this
+          // successor can give them a terminal disposition. See
+          // disposeDeadOriginMixedF06Originals (2026-10-04).
+          const disposed = await disposeDeadOriginMixedF06Originals(
+            tournamentId,
+            lease.leaseGeneration,
+            durableMixed
+          );
+          if (disposed.absentReleased > 0 || disposed.handsVoided > 0)
+            console.warn(
+              `[GameServer] tournament ${tournamentId.slice(0, 8)}: dead origin of transfer ` +
+                `${durableMixed.transferId.slice(0, 8)} disposed - ${disposed.handsVoided} reserved ` +
+                `hand(s) voided as misdeals, ${disposed.absentReleased} never-begun permit(s) released`
+            );
+        }
         const state =
           !packet && durableMixed
             ? await admitMixedF06Transfer(tournamentId, lease.leaseGeneration, durableMixed)

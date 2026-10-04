@@ -175,6 +175,63 @@ export const admitMixedF06Transfer = bindToProcessRoot(
   }
 );
 
+/**
+ * A DEAD ORIGIN'S ORIGINALS ARE DISPOSED BY THE SUCCESSOR THAT HOLDS THE EVENT
+ * (2026-10-04, migration 20261004125152).
+ *
+ * A transfer read from the database (no drained packet: the process that held
+ * the original engines is gone) can name originals only that dead origin could
+ * finish: a hand it reserved and dealt but never committed, or a permit whose
+ * begin never reached the database. The admission refuses
+ * F06_MIXED_ORIGINAL_DISPOSITION_REQUIRED until each has a terminal
+ * disposition, so before this every engine replacement during a database stall
+ * froze those events until an operator ran the stranded void by hand (09-26 x71,
+ * 09-28, 10-01 x2, 10-03 x15).
+ *
+ * The successor holds a live protocol-2 lease at the transfer's successor
+ * generation, so the origin generation is fenced: nothing it still holds can
+ * reach a commit. The database door records each never-begun permit's absence
+ * and runs the reviewed stranded void for each reserved hand (every chair keeps
+ * its pre-deal stack), then the ordinary admission proceeds. Idempotent: a
+ * replay records nothing and voids nothing again. Asked under the successor's
+ * own authority, never the process root's, because the door is that
+ * authority's to exercise.
+ */
+export const disposeDeadOriginMixedF06Originals = bindToProcessRoot(
+  async (tournamentId: string, leaseGeneration: string, transfer: MixedF06Transfer) => {
+    if (leaseGeneration !== transfer.successorGeneration)
+      throw new Error('f06_mixed_successor_generation_changed');
+    const { data, error } = await runWithTournamentDataAuthority(
+      { tournamentId, leaseGeneration },
+      () =>
+        supabase.rpc('fn_f06_dispose_dead_origin_originals', {
+          p_tournament_id: tournamentId,
+          p_lease_generation: leaseGeneration,
+          p_transfer_id: transfer.transferId,
+        })
+    );
+    if (
+      error ||
+      !data ||
+      data.ok !== true ||
+      data.transfer_id !== transfer.transferId ||
+      data.tournament_id !== tournamentId ||
+      typeof data.absent_released !== 'number'
+    )
+      throw new Error(
+        `f06_mixed_dead_origin_disposal_unproven${error?.message ? `: ${error.message}` : ''}`
+      );
+    return Object.freeze({
+      admitted: data.admitted === true,
+      absentReleased: data.absent_released as number,
+      handsVoided:
+        data.void && typeof data.void.hands_voided === 'number'
+          ? (data.void.hands_voided as number)
+          : 0,
+    });
+  }
+);
+
 /** Read the immutable selected successor before any ordinary lease claim. */
 export const findMixedF06Transfer = bindToProcessRoot(
   async (tournamentId: string): Promise<MixedF06Transfer | null> => {

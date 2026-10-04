@@ -4894,7 +4894,25 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
+    /* PRESENCE DOES NOT OUTLIVE THE SEAT (2026-10-04). The roster is the one
+       authority on who sits here, and the presence FSM is the engine's mirror
+       of those seats. Two paths filled the mirror with players the roster no
+       longer holds: a tournament departure (the seat closes in the database
+       and this engine runs no leave path for it) and a restart (the park
+       restores every entry it was written with, seated or not). Forgetting a
+       mirror entry is not a seat release: no row is read or written, and
+       TournamentGhostSeat's single database authority is untouched. A cash
+       stay that ended is torn down whole by the loop below, so on that path
+       this runs after it and finds only what the loop could not know about.
+       See DisconnectEngine.retainOnly for what a stale entry costs. */
+    const forgetUnseatedPresence = (): void => {
+      this.disconnectEngine.retainOnly(
+        this.tableId,
+        nextRoster.map((p) => p.user_id)
+      );
+    };
     if (this.isTournamentTable()) {
+      forgetUnseatedPresence();
       // A tournament seat closes in the database (a balancing move or an
       // accepted elimination) and is simply absent from the next roster; the
       // engine runs no leave path of its own for it (TournamentGhostSeat.law).
@@ -4933,6 +4951,7 @@ export abstract class ServerTableEngineBase {
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.chipContinuity.forget(userId);
     }
+    forgetUnseatedPresence();
     this.applyParkedTimeBanks(nextRoster);
     return replaced;
   }

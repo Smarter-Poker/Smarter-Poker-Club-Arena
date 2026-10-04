@@ -15,7 +15,8 @@
  * question is asked - a re-evaluated tick cannot produce a different field.
  */
 
-import { DSS_CLUB_ID, MIDWAY_UNION_ID, shHash } from './StableHand.js';
+// DSS_CLUB_ID is imported again when the Deep Stack Society host below is restored.
+import { MIDWAY_UNION_ID, shHash } from './StableHand.js';
 import { mttSpeedColumns, mttPayoutPercent } from '../tournament/mttStructurePolicy.js';
 
 /* ------------------------------------------------------------------ */
@@ -393,7 +394,10 @@ export interface FreeBuyHost {
 }
 
 /**
- * The two hosts, in the order their boards are filled.
+ * The Free Buy hosts, in the order their boards are filled.
+ *
+ * Deep Stack Society is commented out under the 2026-10-04 operator hold; the
+ * note on its entry below has the detail. Restoring it makes this two again.
  *
  * Midway Union stamps club_id AND union_id with the union id, which is the
  * shape every house-owned event on this platform has always had and is what
@@ -407,12 +411,21 @@ export const FREE_BUY_HOSTS: FreeBuyHost[] = [
     unionId: MIDWAY_UNION_ID,
     label: 'Midway Union',
   },
-  {
-    hostId: DSS_CLUB_ID,
-    clubId: DSS_CLUB_ID,
-    unionId: null,
-    label: 'Deep Stack Society',
-  },
+  // OPERATOR HOLD 2026-10-04 (owner: "pause any and all horses and games that
+  // are running inside of deep stack society until further notice", then
+  // "disable any and all games now"). Deep Stack Society's Spin and SNG boards
+  // were stopped at source with fn_spin_deactivate, which drops the club from
+  // activatedSpinOwners(). This board has no such database gate: FREE_BUY_HOSTS
+  // is a constant and checkAndCreateFreeBuys walks it every FREE_BUY_TICK_MS,
+  // so DSS kept gaining a Free Buy MTT per due slot after everything else had
+  // stopped. Commented rather than deleted: lifting the hold is re-adding these
+  // five lines and the DSS_CLUB_ID import above.
+  // {
+  //   hostId: DSS_CLUB_ID,
+  //   clubId: DSS_CLUB_ID,
+  //   unionId: null,
+  //   label: 'Deep Stack Society',
+  // },
 ];
 
 /**

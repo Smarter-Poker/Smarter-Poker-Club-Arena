@@ -53,11 +53,27 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
   if (!REQUIRED_DATA_ROUTES.has(route)) return;
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
   const routePath = route.split('?')[0];
-  expect(new URL(page.url()).pathname.endsWith(`/${routePath}`)).toBe(true);
   if (route === `clubs/${CLUB}/data`) {
+    // Club entry accepts an id, then deliberately canonicalizes it to the
+    // public slug (for example, /clubs/shark-club/data). Require the exact
+    // Club Data route shape and its page identity instead of mistaking that
+    // supported redirect for a failed navigation. Every other required route
+    // remains exact below.
     await expect(page.locator('[data-page="club-data"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
-  } else if (route === 'stats') {
+    const dataLink = page
+      .getByRole('navigation', { name: 'Club Operations Sections' })
+      .getByRole('link', { name: 'Club Data', exact: true });
+    await expect(dataLink).toBeVisible();
+    const canonicalHref = await dataLink.getAttribute('href');
+    expect(canonicalHref).toMatch(/\/clubs\/[^/]+\/data\/?$/);
+    const canonicalPath = new URL(canonicalHref!, page.url()).pathname;
+    await expect.poll(() => new URL(page.url()).pathname).toBe(canonicalPath);
+    return;
+  } else {
+    expect(new URL(page.url()).pathname.endsWith(`/${routePath}`)).toBe(true);
+  }
+  if (route === 'stats') {
     await expect(
       page.getByRole('heading', { name: 'Player Intelligence', exact: true })
     ).toBeVisible({

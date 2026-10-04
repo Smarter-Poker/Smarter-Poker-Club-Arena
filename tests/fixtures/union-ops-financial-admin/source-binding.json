@@ -1,0 +1,7 @@
+{
+  "repository_files": {
+    "supabase/migrations/20261004153522_union_ops_reports_stay_inside_the_signed_in_budget.sql": "b6eb0bcee0e50962d7764aa3237f47184684297051972f5e61a09a5ba213be96",
+    "tests/fixtures/union-ops-financial-admin/assertions.sql": "9f884e2189dc1945ae3de5ce3e06135e50464e1ed95947b202e6cc892e048e97",
+    "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "bb560aa3d453e2032d9f2d98b523b49af5b026e52bb095ad6f0a058da8081bbc"
+  }
+}

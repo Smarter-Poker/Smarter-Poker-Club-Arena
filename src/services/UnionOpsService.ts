@@ -12,7 +12,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { extractRawErrorText, safeErrorMessage } from '../utils/safeErrorMessage';
 
 /* A union-scoped call names its union. Every method below used to default to
    one hardcoded union (Midway), and so did UnionOpsPanel, so a surface that
@@ -25,56 +25,106 @@ function requireUnionId(unionId: string | null | undefined): void {
   }
 }
 
-export interface CompletedUnionSettlement {
-  success: true;
-  union_id: string;
-  round2_club_to_agents: { amount: number; shortfalls: 0 };
-  round3_agents_to_players: { amount: number; shortfalls: 0 };
-}
-
 function settlementRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
 
-function completedSettlement(data: unknown, unionId: string): CompletedUnionSettlement {
-  const receipt = settlementRecord(data);
-  if (receipt?.success === false) {
-    // Earlier rounds may already have paid recipients. Do not report completion
-    // or automatically retry a partially completed financial operation.
-    throw new Error(
-      'Settlement did not complete. Review the settlement rounds before trying again.'
-    );
-  }
-  const round2 = settlementRecord(receipt?.round2_club_to_agents);
-  const round3 = settlementRecord(receipt?.round3_agents_to_players);
-  const validRound = (round: Record<string, unknown> | null) =>
-    round !== null &&
-    typeof round.amount === 'number' &&
-    Number.isFinite(round.amount) &&
-    round.amount >= 0 &&
-    Number.isSafeInteger(Math.round(round.amount * 100)) &&
-    round.shortfalls === 0 &&
-    round.success !== false;
+function validPeriodBoundary(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})(?:$|T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$)/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [, year, month, day] = match;
+  const calendar = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return (
+    calendar.getUTCFullYear() === Number(year) &&
+    calendar.getUTCMonth() === Number(month) - 1 &&
+    calendar.getUTCDate() === Number(day)
+  );
+}
+
+function verifiedSettlementPreview(data: unknown, unionId: string): SettlementPreview {
+  const preview = settlementRecord(data);
+  const round1 = settlementRecord(preview?.round1);
+  const round2 = settlementRecord(preview?.round2);
+  const round3 = settlementRecord(preview?.round3);
+  const money = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
+  const uuid = (value: unknown) =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const nullableDisplayName = (value: unknown) =>
+    value === null || (typeof value === 'string' && value.trim() !== '');
+  const round2Detail = Array.isArray(round2?.detail) ? round2.detail : null;
+  const round3Detail = Array.isArray(round3?.detail) ? round3.detail : null;
+  const validRound2Detail =
+    round2Detail !== null &&
+    round2Detail.every((value) => {
+      const row = settlementRecord(value);
+      return (
+        row !== null &&
+        uuid(row.club_id) &&
+        nullableDisplayName(row.club) &&
+        money(row.owed) &&
+        money(row.treasury) &&
+        money(row.short_by)
+      );
+    });
+  const validRound3Detail =
+    round3Detail !== null &&
+    round3Detail.every((value) => {
+      const row = settlementRecord(value);
+      return (
+        row !== null &&
+        uuid(row.agent_user_id) &&
+        uuid(row.club_id) &&
+        nullableDisplayName(row.agent) &&
+        money(row.owed) &&
+        money(row.agent_balance) &&
+        money(row.short_by)
+      );
+    });
+  const round2ShortCount = count(round2?.clubs_short) ? (round2?.clubs_short as number) : null;
+  const round3ShortCount = count(round3?.agents_short) ? (round3?.agents_short as number) : null;
+  const blockerCount =
+    round2ShortCount !== null && round3ShortCount !== null
+      ? round2ShortCount + round3ShortCount
+      : null;
+  const validPeriod =
+    validPeriodBoundary(preview?.period_start) &&
+    validPeriodBoundary(preview?.period_end) &&
+    Date.parse(preview.period_end) > Date.parse(preview.period_start);
   if (
-    receipt?.success !== true ||
-    receipt.union_id !== unionId ||
-    !validRound(round2) ||
-    !validRound(round3)
+    preview?.union_id !== unionId ||
+    !validPeriod ||
+    round1 === null ||
+    typeof round1.already_executed !== 'boolean' ||
+    !money(round1.rake_treasury_available) ||
+    round2 === null ||
+    !count(round2.payees) ||
+    !money(round2.amount) ||
+    !count(round2.clubs_short) ||
+    !money(round2.short_by) ||
+    !validRound2Detail ||
+    round2Detail?.length !== round2.clubs_short ||
+    round3 === null ||
+    !count(round3.payees) ||
+    !money(round3.amount) ||
+    !count(round3.agents_short) ||
+    !money(round3.short_by) ||
+    !validRound3Detail ||
+    round3Detail?.length !== round3.agents_short ||
+    !money(preview.total_to_move) ||
+    typeof preview.has_blockers !== 'boolean' ||
+    blockerCount === null ||
+    preview.has_blockers !== blockerCount > 0
   ) {
-    throw new Error(
-      'Settlement could not be verified. Refresh the settlement rounds before trying again.'
-    );
+    throw new Error('Settlement Preview Could Not Be Verified For The Selected Union And Period.');
   }
-  // Only return the verified amounts used by the completion message. Missing or
-  // malformed amounts must never become an invented zero-chip success.
-  return {
-    success: true,
-    union_id: unionId,
-    round2_club_to_agents: { amount: round2!.amount as number, shortfalls: 0 },
-    round3_agents_to_players: { amount: round3!.amount as number, shortfalls: 0 },
-  };
+  return data as SettlementPreview;
 }
 
 export interface AgentRosterRow {
@@ -122,6 +172,11 @@ export interface AgentRiskRow {
   player_net: number;
   commission_accrued: number;
   credit_extended: number;
+}
+
+export interface OverseerUnionOption {
+  id: string;
+  name: string;
 }
 
 export interface UnionCoverage {
@@ -202,6 +257,17 @@ export interface LawSelfTest {
   healthy: boolean;
   breaches: Array<Record<string, unknown>>;
   warnings: Array<Record<string, unknown>>;
+  available?: boolean;
+  run_status?: string;
+  started_at?: string | null;
+  checked_at?: string | null;
+  note?: string;
+}
+
+export interface IntegritySweepReceipt {
+  union_id: string;
+  window_hours: number;
+  signals: number;
 }
 
 export interface ExitBlockers {
@@ -220,16 +286,19 @@ export interface ExitBlockers {
 export type LoadResult<T> = { data: T; error: string | null };
 
 export function describeRpcError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e ?? 'Request failed');
+  const msg = extractRawErrorText(e) || 'Request failed';
   if (/not_authorised|not_authorized/i.test(msg)) {
-    return 'You do not have permission to view this. Union operations are visible to union owners and admins.';
+    return 'You Do Not Have Permission To View This. Union Operations Are Visible To Union Owners And Admins.';
   }
-  if (/permission denied/i.test(msg)) return 'You do not have permission to do that.';
-  if (/fetch|network/i.test(msg)) return 'Connection problem. Please check your internet.';
+  if (/permission denied/i.test(msg)) return 'You Do Not Have Permission To Do That.';
+  if (/\b57014\b|statement timeout|canceling statement/i.test(msg)) {
+    return 'That Took Too Long. Please Try Again.';
+  }
+  if (/fetch|network/i.test(msg)) return 'Connection Problem. Please Check Your Internet.';
   // Anything unrecognised goes through the allowlist sanitiser rather than
   // straight to the screen — this used to `return msg`, which put raw
   // PostgREST text in front of players. See utils/safeErrorMessage.ts.
-  return safeErrorMessage(e, 'That request could not be completed.');
+  return safeErrorMessage(e, 'That Request Could Not Be Completed.');
 }
 
 function num(v: unknown): number {
@@ -278,6 +347,31 @@ export const UnionOpsService = {
   },
 
   // UNION OVERSIGHT
+  async getOverseerUnionOptions(): Promise<OverseerUnionOption[]> {
+    const { data, error } = await supabase.rpc('fn_union_overseer_options');
+    if (error) throw error;
+    if (!Array.isArray(data)) {
+      throw new Error('Authorized Union List Could Not Be Verified.');
+    }
+    const seen = new Set<string>();
+    return data.map((value) => {
+      const row = settlementRecord(value);
+      const unionId = row?.union_id;
+      const unionName = row?.union_name;
+      if (
+        typeof unionId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(unionId) ||
+        typeof unionName !== 'string' ||
+        unionName.trim() === '' ||
+        seen.has(unionId)
+      ) {
+        throw new Error('Authorized Union List Could Not Be Verified.');
+      }
+      seen.add(unionId);
+      return { id: unionId, name: unionName };
+    });
+  },
+
   async getAgentRisk(unionId: string, since?: string): Promise<AgentRiskRow[]> {
     requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_agent_risk_report', {
@@ -286,7 +380,7 @@ export const UnionOpsService = {
     });
     if (error) {
       reportError(error, 'UnionOpsService.getAgentRisk');
-      return [];
+      throw error;
     }
     return (data ?? []) as AgentRiskRow[];
   },
@@ -338,7 +432,7 @@ export const UnionOpsService = {
       .limit(limit);
     if (error) {
       reportError(error, 'UnionOpsService.getSettlementRounds');
-      return [];
+      throw error;
     }
     return (data ?? []).map((r) => ({
       ...r,
@@ -359,18 +453,7 @@ export const UnionOpsService = {
       p_period_end: to ?? null,
     });
     if (error) throw error;
-    return data as SettlementPreview;
-  },
-
-  async runSettlementCascade(unionId: string, from?: string, to?: string) {
-    requireUnionId(unionId);
-    const { data, error } = await supabase.rpc('fn_union_settlement_cascade', {
-      p_union_id: unionId,
-      p_period_start: from ?? null,
-      p_period_end: to ?? null,
-    });
-    if (error) throw error;
-    return completedSettlement(data, unionId);
+    return verifiedSettlementPreview(data, unionId);
   },
 
   async getDistributionCheck(unionId: string, since?: string): Promise<DistributionCheck | null> {
@@ -381,29 +464,44 @@ export const UnionOpsService = {
     });
     if (error) {
       reportError(error, 'UnionOpsService.getDistributionCheck');
-      return null;
+      throw error;
     }
     return (data ?? null) as DistributionCheck | null;
   },
 
   // INTEGRITY & LAW
   async getLawSelfTest(): Promise<LawSelfTest | null> {
-    const { data, error } = await supabase.rpc('fn_union_law_selftest');
+    // The full self-test is a scheduled global audit, not an interactive read.
+    // Financial Admin reads the last persisted verdict in constant time.
+    const { data, error } = await supabase.rpc('fn_union_law_selftest_status');
     if (error) {
       reportError(error, 'UnionOpsService.getLawSelfTest');
-      return null;
+      throw error;
     }
     return (data ?? null) as LawSelfTest | null;
   },
 
-  async runIntegritySweep(unionId: string, hours = 24) {
+  async runIntegritySweep(unionId: string, hours = 24): Promise<IntegritySweepReceipt> {
     requireUnionId(unionId);
     const { data, error } = await supabase.rpc('fn_union_integrity_sweep', {
       p_union_id: unionId,
       p_hours: hours,
     });
     if (error) throw error;
-    return data as Record<string, unknown>;
+    const receipt = settlementRecord(data);
+    if (
+      receipt?.union_id !== unionId ||
+      receipt.window_hours !== hours ||
+      !Number.isSafeInteger(receipt.signals) ||
+      (receipt.signals as number) < 0
+    ) {
+      throw new Error('Integrity Sweep Could Not Be Verified For The Selected Union And Window.');
+    }
+    return {
+      union_id: unionId,
+      window_hours: hours,
+      signals: receipt.signals as number,
+    };
   },
 
   // GOVERNANCE

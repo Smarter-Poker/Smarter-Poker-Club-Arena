@@ -1700,7 +1700,7 @@
   .stats-club-sort button,
   .stats-club-actions button,
   .stats-club-table th button {
-    min-height: 42px;
+    min-height: 44px;
     padding: 8px 13px;
     border: 1px solid rgba(199, 210, 220, 0.2);
     border-radius: 2px;

@@ -17,6 +17,7 @@
 -- policies are untouched.  service_role and the SECURITY DEFINER command
 -- gateway retain their existing privileges, so engine writes and the
 -- supported management path continue unchanged.
+-- @live-proof: NOT has_any_column_privilege('anon', 'public.tables', 'UPDATE') AND NOT has_any_column_privilege('authenticated', 'public.tables', 'UPDATE') AND NOT has_any_column_privilege('anon', 'public.tournaments', 'UPDATE') AND NOT has_any_column_privilege('authenticated', 'public.tournaments', 'UPDATE') AND has_table_privilege('service_role', 'public.tables', 'UPDATE') AND has_table_privilege('service_role', 'public.tournaments', 'UPDATE') AND has_function_privilege('authenticated', 'public.fn_execute_managed_game_command(uuid,text,uuid,text,integer,jsonb)', 'EXECUTE') AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policies WHERE schemaname = 'public' AND tablename = 'tables' AND policyname IN ('Club admins can update tables', 'tables_update'))
 
 BEGIN;
 

@@ -1,0 +1,44 @@
+{
+  "_owner": "cashier security hardening; migration 20261004124327_cashier_authority_and_retry_keys_are_exact",
+  "tables": ["cashier_rpc_operation_intents"],
+  "functions": [
+    "fn_cashier_member_is_active",
+    "fn_club_active_cashier_edges",
+    "fn_cashier_assert_active_actor",
+    "fn_cashier_agent_status_mutex",
+    "fn_cashier_balance_actor_guard",
+    "fn_cashier_operation_mutex_guard",
+    "fn_cashier_operation_intent_guard",
+    "fn_cashier_exact_intent_begin",
+    "fn_cashier_exact_intent_finish",
+    "fn_club_bank_role",
+    "fn_club_is_in_downline",
+    "fn_club_cashier_members",
+    "fn_cashier_statement_downline",
+    "fn_cashier_statement_scope",
+    "fn_club_trade_ledger",
+    "fn_club_bank_send",
+    "fn_club_bank_claim_back",
+    "fn_club_bank_reverse",
+    "fn_admin_remove_player_chips",
+    "fn_promo_wallet_send",
+    "fn_club_promo_wallet_send",
+    "fn_agent_wallet_send",
+    "fn_agent_wallet_claim_back",
+    "fn_request_chips",
+    "fn_request_chips_core_20261004"
+  ],
+  "columns": {
+    "cashier_rpc_operation_intents": [
+      "actor_user_id",
+      "operation_id",
+      "action",
+      "club_id",
+      "operation_intent",
+      "intent_fingerprint",
+      "receipt",
+      "created_at",
+      "completed_at"
+    ]
+  }
+}

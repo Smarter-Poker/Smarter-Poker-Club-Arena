@@ -565,36 +565,33 @@ function HomePageInner() {
     { debounce: 500 }
   );
 
-  // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
-  useMasterBusSubscription(
-    'AUTH_STATE_CHANGED',
-    (payload: any) => {
-      if (payload.isAuthenticated) {
-        if (directoryOwnerRef.current !== payload.userId) {
-          directoryOwnerRef.current = payload.userId || null;
-          setUserClubs([]);
-          setOwnedUnionWallets([]);
-        }
-        fetchUserData(false);
-      } else {
-        // Invalidate any request that started before sign-out. There is no
-        // replacement fetch in this branch to advance the generation for us.
-        directoryRequestGenerationRef.current += 1;
-        directoryOwnerRef.current = null;
-        setDirectoryPending(false);
+  // AUTH_STATE_CHANGED: immediate. Delaying this even briefly leaves the old
+  // account's wallet names available to an already-open Cashier directory.
+  useMasterBusSubscription('AUTH_STATE_CHANGED', (payload: any) => {
+    if (payload.isAuthenticated) {
+      if (directoryOwnerRef.current !== payload.userId) {
+        directoryOwnerRef.current = payload.userId || null;
         setUserClubs([]);
         setOwnedUnionWallets([]);
-        // Clear SWR cache to prevent stale club data leaking across logins
-        try {
-          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
-          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
-        } catch {
-          /* */
-        }
       }
-    },
-    { debounce: 300 }
-  );
+      fetchUserData(false);
+    } else {
+      // Invalidate any request that started before sign-out. There is no
+      // replacement fetch in this branch to advance the generation for us.
+      directoryRequestGenerationRef.current += 1;
+      directoryOwnerRef.current = null;
+      setDirectoryPending(false);
+      setUserClubs([]);
+      setOwnedUnionWallets([]);
+      // Clear SWR cache to prevent stale club data leaking across logins
+      try {
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+      } catch {
+        /* */
+      }
+    }
+  });
 
   // Welcome toast for new users — auto-dismiss, once per device
   // Guard: only fires AFTER first fetch completes (prevents false-fire on cache miss)
@@ -1488,6 +1485,13 @@ function HomePageInner() {
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
                 preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}
+                directoryPending={tile.alt === 'Cashier' ? directoryPending : false}
+                directoryError={tile.alt === 'Cashier' ? loadFailed : false}
+                onDirectoryRetry={
+                  tile.alt === 'Cashier'
+                    ? () => void fetchUserData(false, () => isMountedRef.current)
+                    : undefined
+                }
               />
             ) : (
               <button

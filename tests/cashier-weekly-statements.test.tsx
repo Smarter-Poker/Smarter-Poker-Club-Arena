@@ -89,7 +89,7 @@ function mountCashier() {
   );
 }
 async function openWeeklyStatements() {
-  await screen.findByText('Balances synchronized');
+  await screen.findByText('Balances Synchronized');
   fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
   return screen.getByRole('tabpanel', { name: 'Settlement Record' });
 }
@@ -261,7 +261,7 @@ describe('cashier club weekly statement boundary', () => {
         expect.objectContaining({ p_club_id: ID.otherClub })
       )
     );
-    await screen.findByText('Balances synchronized');
+    await screen.findByText('Balances Synchronized');
     fireEvent.click(screen.getByRole('tab', { name: 'Settlement Record' }));
     const next = screen.getByRole('tabpanel', { name: 'Settlement Record' });
     expect(next).not.toHaveTextContent('Retained 40.05');
@@ -278,7 +278,7 @@ describe('cashier club weekly statement boundary', () => {
   it('preserves the existing player tab restriction without fetching weekly club documents', async () => {
     state.role = 'player';
     mountCashier();
-    await screen.findByText('Balances synchronized');
+    await screen.findByText('Balances Synchronized');
     expect(screen.queryByRole('tab', { name: 'Settlement Record' })).not.toBeInTheDocument();
     expect(state.calls.some((call) => call.table === 'settlement_invoices')).toBe(false);
   });

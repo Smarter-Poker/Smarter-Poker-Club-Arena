@@ -8,8 +8,8 @@ const CSS = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.module.css'),
 
 describe('cashier phase 2 reports trustworthy operational state', () => {
   it('never calls a failed or partially unread cashier synchronized', () => {
-    expect(PAGE).toContain("? 'Cashier sync requires attention'");
-    expect(PAGE).toContain("? 'Agent wallet could not be verified'");
+    expect(PAGE).toContain("? 'Cashier Sync Requires Attention'");
+    expect(PAGE).toContain("? 'Agent Wallet Could Not Be Verified'");
     expect(PAGE).toContain("? 'Unavailable'");
     expect(PAGE).toContain('securityDotWarning');
   });

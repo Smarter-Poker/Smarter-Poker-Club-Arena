@@ -231,7 +231,12 @@ describe('no chip reader sums a Diamond into a chip figure', () => {
        only when it NAMES a version whose file exists, because "it was
        superseded" is the easiest lie to tell about a migration that simply
        never ran. */
-    expect(SUPERSEDED_SQL.slice(0, 400)).toMatch(/^--\s*SUPERSEDED BY\s+20261004194622\b/m);
+    /* The FIRST LINE, which is where the convention puts it and the narrowest
+       window there is. Never a byte count: tests/helpers/sourceWindow.ts and
+       tests/unit/noFixedSizeSourceWindows.test.ts refuse a window bounded by a
+       magic number, and a header that grows would outrun one. */
+    const [supersededFirstLine] = SUPERSEDED_SQL.split('\n');
+    expect(supersededFirstLine).toMatch(/^--\s*SUPERSEDED BY\s+20261004194622\b/);
     expect(SUPERSEDED_SQL).toContain('THIS FILE MUST NEVER RUN');
     /* It records both verbatim refusals, so the next agent reads the cause
        rather than re-deriving it. */

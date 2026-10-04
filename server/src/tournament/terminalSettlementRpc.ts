@@ -275,15 +275,35 @@ async function verifyTerminalReceipt(
   return verifyTournamentCompletionReceipt(raw, tournamentId, mode, winnerId, origin);
 }
 
+/**
+ * THE STORED TERMINAL IDENTITY IS READ THROUGH ITS OWN DOOR (2026-10-04).
+ *
+ * 20260909014534 revoked every privilege on tournament_terminal_settlements
+ * from service_role, so the direct PostgREST read here was refused
+ * `permission denied for table tournament_terminal_settlements` (42501) on
+ * every call - about 36 a day - and a manager could never adopt a terminal
+ * result another authority had committed. fn_tournament_terminal_settlement_identity
+ * returns exactly the two columns this reads, and nothing else of the receipt.
+ */
+async function readStoredTerminalIdentity(
+  tournamentId: string
+): Promise<{ data: Record<string, unknown> | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('fn_tournament_terminal_settlement_identity', {
+    p_tournament_id: tournamentId,
+  });
+  if (error) return { data: null, error };
+  const row = record(data);
+  if (typeof row.found !== 'boolean')
+    return { data: null, error: { message: 'terminal identity reply is malformed' } };
+  if (!row.found) return { data: null, error: null };
+  return { data: { settlement_mode: row.settlement_mode, winner_id: row.winner_id }, error: null };
+}
+
 /** Read an existing immutable result through its serialized verifier; never pay. */
 export async function readCommittedTournamentTerminalReceipt(
   tournamentId: string
 ): Promise<VerifiedTournamentCompletionReceipt | null> {
-  const { data, error } = await supabase
-    .from('tournament_terminal_settlements')
-    .select('settlement_mode, winner_id')
-    .eq('tournament_id', tournamentId)
-    .maybeSingle();
+  const { data, error } = await readStoredTerminalIdentity(tournamentId);
   if (error) throw new TerminalSettlementOutcomeUnknownError(errorMessage(error));
   if (!data) return null;
   const stored = storedParameters(data);
@@ -339,11 +359,7 @@ async function adoptStoredTerminalReceipt(
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const { data, error } = await supabase
-        .from('tournament_terminal_settlements')
-        .select('settlement_mode, winner_id')
-        .eq('tournament_id', tournamentId)
-        .maybeSingle();
+      const { data, error } = await readStoredTerminalIdentity(tournamentId);
       if (error) {
         lastFailure = `stored receipt unreadable: ${errorMessage(error)}`;
       } else if (!data) {

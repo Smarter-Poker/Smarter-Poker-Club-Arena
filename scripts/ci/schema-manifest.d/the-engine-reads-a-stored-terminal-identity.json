@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude/terminal-settlement-read-20261004. Migration 20261004141441_the_engine_reads_a_stored_terminal_identity_it_is_allowed_to (applied 2026-10-04 14:15 UTC as 20261004141541): read-only door for the stored terminal identity the engine may not read from the table.",
+  "functions": ["fn_tournament_terminal_settlement_identity"]
+}

@@ -483,7 +483,13 @@ describe('PlayerStatsPage mounts', () => {
     // The tab strip mounts with the payload, not with the heading; on a loaded
     // runner the two are visibly apart (the awaited-element law, 2026-09-04).
     const analysisTab = await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 });
-    await screen.findByText('2,000');
+    // The payload has painted once the hand count is on the page. Two places
+    // print it, the headline deck and (once its chunk resolves) an Overview
+    // row, so asking for exactly one passed only while the lazy chunk was
+    // still loading and failed with "Found multiple elements" when it was
+    // already cached (2026-10-04: every full `vitest related` run on a
+    // two-core box). Either order is the payload having arrived.
+    await screen.findAllByText('2,000');
     fireEvent.click(analysisTab);
     expect(
       await screen.findByText('What To Work On', undefined, { timeout: 6_000 })

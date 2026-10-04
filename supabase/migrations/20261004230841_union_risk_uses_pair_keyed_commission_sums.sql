@@ -18,6 +18,7 @@
 --
 -- @qualified-postimage: definition md5 = 01baaad80223fe3364d9cf90da0076ae
 -- @qualified-postimage: body md5 = 5fc4d72c95f2b58ab61c783e800e0327
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamp with time zone)'::regprocedure)) = '01baaad80223fe3364d9cf90da0076ae')
 
 BEGIN;
 

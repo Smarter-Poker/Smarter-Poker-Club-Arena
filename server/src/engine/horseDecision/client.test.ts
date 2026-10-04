@@ -2667,6 +2667,43 @@ describe('P11.3 per-pack authority at the client boundary', () => {
     expect(plo8.mainState()).toBe('withdrawn');
   });
 
+  it.each([
+    ['plo6', 'no authority', 'missing_receipt'],
+    ['plo6', 'a usable PLO6 worker receipt at an unselected gate', 'unselected'],
+    ['plo4', 'no authority', 'mismatched'],
+  ] as const)(
+    'an effect commit beside an applied %s Phase 11 receipt with %s is refused (%s) and retired',
+    async (variant, authorityCase, verdict) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      phase11Main.admission.plo6 = null;
+      liveHorsePhase11Authorities.plo6.refresh();
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const holder = new HorseQualifiedAuthorityHolder(
+        'client-test-p11-commit',
+        OMAHA_VARIANT_PACKS.plo6.version
+      );
+      holder.apply(qualifiedPhase11TestAdmission('plo6'));
+      // The receipt as it would stand if an applied candidate reached the commit.
+      (owned.decision as { omahaVariantPolicy?: unknown }).omahaVariantPolicy = {
+        variant,
+        applied: true,
+        authority: authorityCase === 'no authority' ? null : holder.receipt(),
+      };
+      enableBrainTelemetry();
+      drainFires();
+      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+        `Horse plan commit refused: Phase 11 authority ${verdict}`
+      );
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'RETIRE_DECISION_EFFECTS' });
+      expect(drainFires().map((row) => row.feature)).toContain(
+        `phase11_authority_effects_${verdict}`
+      );
+    }
+  );
+
   it.each(['missing', 'withdrawn', 'another pack'] as const)(
     'refuses an applied PLO8 receipt whose worker authority is %s',
     async (mode) => {

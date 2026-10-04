@@ -58,3 +58,7 @@ reports nothing the live bodies do not already report).
 
 Without this, the week closing 2026-10-05 would have tripped the kill switch
 again on the first replay after its close.
+
+## Live
+
+Applied to production 2026-10-04 ~13:45 UTC; all three live proofs read true and grants are unchanged. Recorded in schema_migrations from the file bytes (md5 c987ccf4f7ae210a5b328e5df5f907ed). Incidents 30bf6669, 18f578be and de1c3649 resolved with this migration as the correction.

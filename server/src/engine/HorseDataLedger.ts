@@ -1913,6 +1913,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase11'
   ),
   receipt(
+    'phase11_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P11.3)',
+    'none, shadow change (never applied), authority-backed cash selection of the deciding pack, controller acceptance or withdrawal before acceptance; never a tournament objective selection',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_authority_*',
+    'HorsePhase11Authority (HorseQualifiedAuthority, one gate per pack) -> workerRuntime / client / ServerTableEngineTurns (P11.3)',
+    'protected-release PLO5/PLO6/PLO8 authority admission per pack, local withdrawal and acceptance-time verdicts',
+    'Phase11'
+  ),
+  receipt(
     'phase11_variant_*',
     'HorseLogic',
     'partition entering decisions by exact variant',

@@ -380,7 +380,19 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
    * same receipt shape and laws as Phase 8. Absent is never usable authority. */
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  /** P11.3: the worker's authority receipt for each Phase 11 pack after this
+   * decision (one holder per pack, the Phase 8 shape and laws). Absent is
+   * never usable authority. */
+  phase11Authority?: HorsePhase11AuthorityReceipts;
 }
+
+/** P11.3: one worker authority receipt per Phase 11 pack. */
+export type HorsePhase11AuthorityReceipts = Readonly<
+  Record<
+    import('../omaha/OmahaVariantPolicyPack.js').OmahaPolicyVariant,
+    import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt
+  >
+>;
 
 export interface DeepHorseDecisionResult extends HorseDecisionFence {
   type: 'DEEP_RESULT';
@@ -391,6 +403,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   governorScale: number;
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase11Authority?: HorsePhase11AuthorityReceipts;
 }
 
 export interface HorseDecisionWorkerAck extends HorseDecisionFence {

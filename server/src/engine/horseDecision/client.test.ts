@@ -29,6 +29,9 @@ import {
   type HorseAuthorityAdmission,
 } from '../HorseQualifiedAuthority.js';
 import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.js';
+import { liveHorsePhase11Authorities } from '../HorsePhase11Authority.js';
+import { qualifiedPhase11TestAdmission } from '../HorsePhase11Authority.test-support.js';
+import { OMAHA_VARIANT_PACKS } from '../omaha/OmahaVariantPolicyPack.js';
 import {
   HorseDecisionAbortedError,
   HORSE_CAPTURE_LANE_MAX_QUEUED,
@@ -54,6 +57,35 @@ vi.mock('../HorseQualifiedAuthority.js', async (importOriginal) => {
         },
       'client-test-main'
     ),
+  };
+});
+
+// P11.3: the three Phase 11 main gates, each replaced the same way.
+const phase11Main = vi.hoisted(() => ({
+  admission: { plo5: null, plo6: null, plo8: null } as Record<string, unknown>,
+}));
+vi.mock('../HorsePhase11Authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../HorsePhase11Authority.js')>();
+  const { HorsePhase8AuthorityGate } = await import('../HorseQualifiedAuthority.js');
+  const { OMAHA_VARIANT_PACKS } = await import('../omaha/OmahaVariantPolicyPack.js');
+  const gate = (variant: 'plo5' | 'plo6' | 'plo8') =>
+    new HorsePhase8AuthorityGate(
+      () =>
+        (phase11Main.admission[variant] as HorseAuthorityAdmission | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      `client-test-phase11-main-${variant}`,
+      OMAHA_VARIANT_PACKS[variant].version
+    );
+  return {
+    ...actual,
+    liveHorsePhase11Authorities: Object.freeze({
+      plo5: gate('plo5'),
+      plo6: gate('plo6'),
+      plo8: gate('plo8'),
+    }),
   };
 });
 
@@ -2526,6 +2558,173 @@ describe('P11.1: a PLO5/PLO6/PLO8 receipt whose input binding fails validation',
       'phase11_shadow_receipt_binding_dropped'
     );
   });
+});
+
+describe('P11.3 per-pack authority at the client boundary', () => {
+  let approval = 200;
+  /** A fresh lane whose PLO8 main gate admits a usable test-fixture authority. */
+  function lane() {
+    approval += 1;
+    phase11Main.admission.plo8 = qualifiedPhase11TestAdmission('plo8', approval);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    // One worker epoch shared by its three pack holders, as workerRuntime builds them.
+    const epoch = `client-test-p11-worker-${approval}`;
+    const holders = {
+      plo5: new HorseQualifiedAuthorityHolder(epoch, OMAHA_VARIANT_PACKS.plo5.version),
+      plo6: new HorseQualifiedAuthorityHolder(epoch, OMAHA_VARIANT_PACKS.plo6.version),
+      plo8: new HorseQualifiedAuthorityHolder(epoch, OMAHA_VARIANT_PACKS.plo8.version),
+    };
+    holders.plo8.apply(qualifiedPhase11TestAdmission('plo8', approval));
+    const receipts = () => ({
+      plo5: holders.plo5.receipt(),
+      plo6: holders.plo6.receipt(),
+      plo8: holders.plo8.receipt(),
+    });
+    return { worker, client, holders, receipts };
+  }
+  /** A real PLO8 cash candidate (the premium open the worker would select). */
+  const selectedPlo8 = (authority: unknown) => {
+    const spot = omahaVariantSpot('plo8', 'preflop', 2);
+    seedFastRandom(100104);
+    const decision = structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase11Omaha: 'candidate',
+          phase11EvidenceMode: true,
+        }
+      )
+    );
+    decision.omahaVariantPolicy!.authority = authority as never;
+    return decision;
+  };
+  function request(client: LiveHorseDecisionWorkerClient, fence: string) {
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'plo8';
+    input.decisionKey = buildHorseDecisionKey(input);
+    return client.decideFast(input);
+  }
+
+  it('stamps the receipt at its own pack gate, binds the witness, and a worker exit restarts it', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const pending = request(client, 'p11-3-fence-1');
+    const decision = selectedPlo8(holders.plo8.receipt());
+    expect(decision.omahaVariantPolicy).toMatchObject({ applied: true, selection: 'selected' });
+    worker.emitMessage({
+      ...fastResult(1, 'p11-3-fence-1'),
+      decision,
+      phase11Authority: receipts(),
+    });
+    const result = await pending;
+    const receipt = result.decision.omahaVariantPolicy!;
+    const plo8 = liveHorsePhase11Authorities.plo8;
+    expect(receipt.authority).toMatchObject({
+      state: 'usable',
+      generation: holders.plo8.currentGeneration(),
+      mainGeneration: plo8.mainGeneration(),
+      continuationVersion: OMAHA_VARIANT_PACKS.plo8.version,
+    });
+    expect(result.decision.executionWitness?.phase11Authority).toMatchObject({
+      continuationVersion: OMAHA_VARIANT_PACKS.plo8.version,
+      mode: 'candidate',
+      selection: 'selected',
+      verdict: null,
+      candidate: { action: receipt.proposalAction, amount: receipt.proposalAmount },
+      reference: { action: receipt.baselineAction, amount: receipt.baselineAmount },
+    });
+    expect(plo8.check(receipt.authority)).toBe('usable');
+    // The PLO5 gate is unselected and refuses the same receipt.
+    expect(liveHorsePhase11Authorities.plo5.check(receipt.authority)).toBe('unselected');
+    worker.emitExit(1);
+    expect(plo8.check(receipt.authority)).toBe('restarted');
+    void client;
+  });
+
+  it('a PLO8 withdrawal reported by a later result stales already returned PLO8 work', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const first = request(client, 'p11-3-fence-2');
+    worker.emitMessage({
+      ...fastResult(1, 'p11-3-fence-2'),
+      decision: selectedPlo8(holders.plo8.receipt()),
+      phase11Authority: receipts(),
+    });
+    const returned = (await first).decision.omahaVariantPolicy!;
+    const plo8 = liveHorsePhase11Authorities.plo8;
+    expect(plo8.check(returned.authority)).toBe('usable');
+    holders.plo8.withdraw('controller_fallback_candidate');
+    const second = request(client, 'p11-3-fence-3');
+    worker.emitMessage({ ...fastResult(2, 'p11-3-fence-3'), phase11Authority: receipts() });
+    await second;
+    expect(plo8.check(returned.authority)).toBe('withdrawn');
+    expect(plo8.mainState()).toBe('withdrawn');
+  });
+
+  it.each([
+    ['plo6', 'no authority', 'missing_receipt'],
+    ['plo6', 'a usable PLO6 worker receipt at an unselected gate', 'unselected'],
+    ['plo4', 'no authority', 'mismatched'],
+  ] as const)(
+    'an effect commit beside an applied %s Phase 11 receipt with %s is refused (%s) and retired',
+    async (variant, authorityCase, verdict) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      phase11Main.admission.plo6 = null;
+      liveHorsePhase11Authorities.plo6.refresh();
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const holder = new HorseQualifiedAuthorityHolder(
+        'client-test-p11-commit',
+        OMAHA_VARIANT_PACKS.plo6.version
+      );
+      holder.apply(qualifiedPhase11TestAdmission('plo6'));
+      // The receipt as it would stand if an applied candidate reached the commit.
+      (owned.decision as { omahaVariantPolicy?: unknown }).omahaVariantPolicy = {
+        variant,
+        applied: true,
+        authority: authorityCase === 'no authority' ? null : holder.receipt(),
+      };
+      enableBrainTelemetry();
+      drainFires();
+      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+        `Horse plan commit refused: Phase 11 authority ${verdict}`
+      );
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'RETIRE_DECISION_EFFECTS' });
+      expect(drainFires().map((row) => row.feature)).toContain(
+        `phase11_authority_effects_${verdict}`
+      );
+    }
+  );
+
+  it.each(['missing', 'withdrawn', 'another pack'] as const)(
+    'refuses an applied PLO8 receipt whose worker authority is %s',
+    async (mode) => {
+      const { worker, client, holders, receipts } = lane();
+      if (mode === 'withdrawn') holders.plo8.withdraw('test');
+      const authority =
+        mode === 'missing'
+          ? null
+          : mode === 'another pack'
+            ? { ...holders.plo8.receipt(), continuationVersion: OMAHA_VARIANT_PACKS.plo5.version }
+            : holders.plo8.receipt();
+      const pending = request(client, `p11-3-fence-${mode.replace(' ', '-')}`);
+      worker.emitMessage({
+        ...fastResult(1, `p11-3-fence-${mode.replace(' ', '-')}`),
+        decision: selectedPlo8(authority),
+        phase11Authority: receipts(),
+      });
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+    }
+  );
 });
 
 describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', () => {

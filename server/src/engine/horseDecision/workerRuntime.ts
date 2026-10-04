@@ -8,6 +8,7 @@ import {
   type HorsePlanIssueDisposition,
   type HorsePlanRefusal,
 } from '../HorsePlanHandIdentity.js';
+import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
   startHorseDecisionJournal,
@@ -84,6 +85,17 @@ import {
 } from '../HorsePhase10Authority.js';
 import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
 import type { Plo4LiveMode } from '../plo4/Plo4LivePolicy.js';
+import {
+  admitHorsePhase11ReleaseAuthority,
+  horsePhase11AdmittedMode,
+  HORSE_PHASE11_VARIANTS,
+} from '../HorsePhase11Authority.js';
+import {
+  isOmahaPolicyVariant,
+  OMAHA_VARIANT_PACKS,
+  type OmahaPolicyVariant,
+} from '../omaha/OmahaVariantPolicyPack.js';
+import type { OmahaVariantMode } from '../omaha/OmahaVariantLivePolicy.js';
 import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
@@ -175,6 +187,11 @@ export interface HorseDecisionWorkerDependencies {
    * Absent in an injected test runtime means no selection: PLO4 stays shadow.
    */
   admitPhase10Authority?(): HorseAuthorityAdmission;
+  /**
+   * P11.3: admit one Phase 11 pack's committed protected-release selection.
+   * Absent in an injected test runtime means no selection: every pack stays shadow.
+   */
+  admitPhase11Authority?(variant: OmahaPolicyVariant): HorseAuthorityAdmission;
 }
 
 let ownedServicesStarted = false;
@@ -280,6 +297,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   admitPhase8Authority: () => admitHorsePhase8ReleaseAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
   admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
+  admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
   decide: HorseLogic.decide.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
@@ -451,6 +469,18 @@ export class HorseDecisionWorkerRuntime {
     PLO4_POLICY_PACK.version
   );
   private phase10AuthorityAdmitted = false;
+  /** P11.3: worker-owned Phase 11 authority, one holder per pack (the same
+   * holder class and laws), each bound to its own pack version and sharing
+   * this worker's epoch. Never obtained from a request. */
+  private readonly phase11Epoch = randomUUID();
+  private readonly phase11Authority: Readonly<
+    Record<OmahaPolicyVariant, HorseQualifiedAuthorityHolder>
+  > = Object.freeze({
+    plo5: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo5.version),
+    plo6: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo6.version),
+    plo8: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo8.version),
+  });
+  private phase11AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -463,6 +493,7 @@ export class HorseDecisionWorkerRuntime {
     this.started = true;
     this.admitPhase8Authority();
     this.admitPhase10Authority();
+    this.admitPhase11Authority();
     this.readyPromise = this.deps.startServices();
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -1541,6 +1572,71 @@ export class HorseDecisionWorkerRuntime {
     if (decision.plo4Policy) decision.plo4Policy.authority = receipt;
   }
 
+  private admitPhase11Authority(): void {
+    if (this.phase11AuthorityAdmitted) return;
+    this.phase11AuthorityAdmitted = true;
+    for (const variant of HORSE_PHASE11_VARIANTS) {
+      let admission: HorseAuthorityAdmission;
+      try {
+        admission = this.deps.admitPhase11Authority?.(variant) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        };
+      } catch {
+        admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+      }
+      const holder = this.phase11Authority[variant];
+      holder.apply(admission);
+      noteFire(`phase11_authority_worker_${variant}_${holder.currentState()}`);
+    }
+  }
+
+  /**
+   * P11.3 worker-owned PLO5/PLO6/PLO8 admission, the Phase 8 law: candidate
+   * mode comes from this worker's usable authority for the decision's own
+   * pack when the request RUNS, never from the caller, and only for a cash
+   * decision; a tournament decision stays shadow so Phase 7 keeps its
+   * objective. The caller may only turn the packs off. A decision of any
+   * other variant carries no Phase 11 receipt and binds none.
+   */
+  private phase11Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: OmahaVariantMode;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase11Authority();
+    const variant = request.gameState.gameVariant;
+    const holder = isOmahaPolicyVariant(variant) ? this.phase11Authority[variant] : null;
+    const receipt = holder ? holder.receipt() : null;
+    return {
+      mode: horsePhase11AdmittedMode({
+        callerMode: request.opts?.phase11Omaha,
+        gameMode: request.gameState.gameMode,
+        variant,
+        packVariant: isOmahaPolicyVariant(variant) ? variant : null,
+        verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 11 admission receipt to the returned pack receipt. */
+  private bindPhase11Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.omahaVariantPolicy && receipt) decision.omahaVariantPolicy.authority = receipt;
+  }
+
+  /** Every pack's current receipt, for the main scheduler's gates. */
+  private phase11AuthorityReceipts(): Readonly<Record<OmahaPolicyVariant, HorseAuthorityReceipt>> {
+    return Object.freeze({
+      plo5: this.phase11Authority.plo5.receipt(),
+      plo6: this.phase11Authority.plo6.receipt(),
+      plo8: this.phase11Authority.plo8.receipt(),
+    });
+  }
+
   /** Bind the admission receipt to the returned Phase 8 ledger. */
   private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
     if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
@@ -1568,6 +1664,7 @@ export class HorseDecisionWorkerRuntime {
     const startedAt = this.deps.now();
     const phase8 = this.phase8Admission(request);
     const phase10 = this.phase10Admission(request);
+    const phase11 = this.phase11Admission(request);
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1581,6 +1678,7 @@ export class HorseDecisionWorkerRuntime {
             ...request.opts,
             phase8Postflop: phase8.mode,
             phase10Plo4: phase10.mode,
+            phase11Omaha: phase11.mode,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
             observeMind: true,
@@ -1597,6 +1695,7 @@ export class HorseDecisionWorkerRuntime {
     }
     this.bindPhase8Authority(captured.value, phase8.receipt);
     this.bindPhase10Authority(captured.value, phase10.receipt);
+    this.bindPhase11Authority(captured.value, phase11.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -1696,6 +1795,7 @@ export class HorseDecisionWorkerRuntime {
         governorScale,
         phase8Authority: this.phase8Authority.receipt(),
         phase10Authority: this.phase10Authority.receipt(),
+        phase11Authority: this.phase11AuthorityReceipts(),
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -1763,6 +1863,7 @@ export class HorseDecisionWorkerRuntime {
     // waited behind think time turns it back to shadow.
     const phase8 = this.phase8Admission(request);
     const phase10 = this.phase10Admission(request);
+    const phase11 = this.phase11Admission(request);
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -1783,6 +1884,7 @@ export class HorseDecisionWorkerRuntime {
                 ...request.opts,
                 phase8Postflop: phase8.mode,
                 phase10Plo4: phase10.mode,
+                phase11Omaha: phase11.mode,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -1800,6 +1902,7 @@ export class HorseDecisionWorkerRuntime {
     }
     this.bindPhase8Authority(decision, phase8.receipt);
     this.bindPhase10Authority(decision, phase10.receipt);
+    this.bindPhase11Authority(decision, phase11.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -1847,6 +1950,7 @@ export class HorseDecisionWorkerRuntime {
       governorScale,
       phase8Authority: this.phase8Authority.receipt(),
       phase10Authority: this.phase10Authority.receipt(),
+      phase11Authority: this.phase11AuthorityReceipts(),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

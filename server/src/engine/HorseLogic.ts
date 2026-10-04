@@ -2758,7 +2758,20 @@ export class HorseLogic {
               phase11DecisionEquityCeiling ?? 1
             )
           : null;
-      if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
+      if (phase11) {
+        const legal = this.legalize(phase11.decision, player, gs, vi);
+        // P11.3, the P10.3 law: an applied candidate the legalizer would
+        // rewrite is illegal as proposed. It never reaches the table: the
+        // reference is retained.
+        if (
+          phase11.receipt.applied &&
+          (legal.action !== phase11.decision.action ||
+            (legal.amount ?? null) !== (phase11.decision.amount ?? null))
+        ) {
+          phase11.receipt.applied = false;
+          phase11.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       const phase12 =
         registration.owner === 'phase12' && opts.phase12Remaining !== 'off'
           ? evaluateRemainingVariantPolicy(
@@ -3064,6 +3077,14 @@ export class HorseLogic {
         }
         phase11.receipt.finalAction = decision.action;
         phase11.receipt.finalAmount = decision.amount ?? null;
+        // P11.3: `selected` only when the applied candidate is the action
+        // leaving this guard; otherwise the pack did not own the decision.
+        phase11.receipt.selection =
+          phase11.receipt.applied &&
+          (decision.action !== phase11.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase11.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase11.receipt);
         decision = { ...decision, omahaVariantPolicy: phase11.receipt };
         if (tele) {
           noteFire('phase11_seen');
@@ -3084,6 +3105,7 @@ export class HorseLogic {
           if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
           if (phase11.receipt.applied) noteFire('phase11_applied');
           else noteFire('phase11_baseline_retained');
+          noteFire(`phase11_selection_${phase11.receipt.selection}`);
           noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
           if (phase11.receipt.utilityUnavailableReason)
             noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);

@@ -56,15 +56,19 @@ import {
   createHorseExecutionWitness,
   recordHorsePhase8Verdict,
   recordHorsePhase10Verdict,
+  recordHorsePhase11Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
   withdrawHorsePhase8Selection,
   withdrawHorsePhase10Selection,
+  withdrawHorsePhase11Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
 import { liveHorsePhase8Authority } from './HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
+import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
+import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -3733,6 +3737,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('phase10_selection_withdrawn_before_acceptance');
             }
           }
+          // P11.3: the same acceptance law for a selected PLO5/PLO6/PLO8
+          // candidate, at its own pack's gate. Only usable authority for that
+          // pack NOW lets it act; otherwise the shadow baseline is executed.
+          if (omahaLedger?.applied) {
+            const verdict = isOmahaPolicyVariant(omahaLedger.variant)
+              ? liveHorsePhase11Authorities[omahaLedger.variant].check(omahaLedger.authority)
+              : 'mismatched';
+            omahaLedger.authorityVerdict = verdict;
+            noteFire(`phase11_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase11Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase11Selection(decision.executionWitness, decisionSnapshot, verdict);
+              omahaLedger.applied = false;
+              omahaLedger.selection = 'withdrawn_before_acceptance';
+              omahaLedger.finalAction = omahaLedger.baselineAction;
+              omahaLedger.finalAmount = omahaLedger.baselineAmount;
+              decision = {
+                ...decision,
+                action: omahaLedger.baselineAction,
+                amount: omahaLedger.baselineAmount ?? undefined,
+              };
+              noteFire('phase11_selection_withdrawn_before_acceptance');
+            }
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
@@ -4041,6 +4070,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     : 'coerced';
               noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
               noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
+              if (omahaLedger.selection === 'selected') {
+                if (omahaLedger.executionStatus === 'intended') {
+                  omahaLedger.selection = 'controller_accepted';
+                  noteFire('phase11_selection_controller_accepted');
+                } else if (
+                  (omahaLedger.executionStatus === 'fallback' ||
+                    omahaLedger.executionStatus === 'coerced') &&
+                  isOmahaPolicyVariant(omahaLedger.variant)
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable of that pack, local to this
+                  // process (Phase 8 law).
+                  liveHorsePhase11Authorities[omahaLedger.variant].withdraw(
+                    `controller_${omahaLedger.executionStatus}_candidate`
+                  );
+                  noteFire('phase11_authority_controller_withdrawn');
+                }
+              }
             }
             if (remainingLedger) {
               remainingLedger.executedAction = executedAction;

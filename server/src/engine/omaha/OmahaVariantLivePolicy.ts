@@ -15,7 +15,9 @@ import {
   plo4DealerSeatIsValid,
   plo4PreflopChoice,
   plo4Role,
+  plo4SelectionOf,
   type Plo4BlindSeats,
+  type Plo4Selection,
 } from '../plo4/Plo4LivePolicy.js';
 import { PLO4_POSITIONS, PLO4_POSTFLOP_ROLES, PLO4_PREFLOP_ROLES } from '../plo4/Plo4PolicyPack.js';
 import {
@@ -207,6 +209,18 @@ export interface OmahaVariantReceipt {
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
   executedAction: HorseDecision['action'] | null;
   executedAmount: number | null;
+  /** P11.3 selection outcome, the Phase 10 vocabulary (`Plo4Selection`).
+   * Phase 11 receipts only; absent on retained receipts and on the Phase 12
+   * receipts that share this type. */
+  selection?: Plo4Selection;
+  /** P11.3: why an authority-backed candidate was not selected (the
+   * reference was retained); null otherwise. */
+  selectionRefusal?: 'illegal_candidate' | null;
+  /** P11.3: the worker's authority receipt for this pack; null outside the
+   * live worker; absent on retained receipts. */
+  authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt | null;
+  /** P11.3: main-scheduler verdict immediately before acceptance; null in the worker. */
+  authorityVerdict?: import('../HorseQualifiedAuthority.js').HorseAuthorityVerdict | null;
 }
 const same = (a: HorseDecision, b: HorseDecision) =>
   a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
@@ -710,7 +724,8 @@ export function omahaVariantInputBindingSha256(binding: OmahaVariantInputBinding
 }
 
 /** Only in-memory facts and a decision-local equity sample are consumed here.
- * Candidate activation remains an offline control until promotion evidence exists.
+ * Live candidate mode is granted only by the worker's own P11.3 authority for
+ * this pack (`horsePhase11AdmittedMode`); no caller can request it.
  */
 export function evaluateOmahaVariantPolicy(
   hero: SeatPlayer,
@@ -761,6 +776,10 @@ export function evaluateOmahaVariantPolicy(
     executionStatus: 'pending',
     executedAction: null,
     executedAmount: null,
+    selection: 'none',
+    selectionRefusal: null,
+    authority: null,
+    authorityVerdict: null,
   };
   /** Assembled only once every canonical check has passed. */
   let bind: (() => OmahaVariantInputBinding) | null = null;
@@ -785,6 +804,7 @@ export function evaluateOmahaVariantPolicy(
     receipt.changed = !same(proposal, baseline);
     const decision = mode === 'candidate' && receipt.fired ? proposal : baseline;
     receipt.applied = !same(decision, baseline);
+    receipt.selection = plo4SelectionOf(receipt);
     return { decision, proposal, receipt };
   };
   if (mode === 'off') return finish('off');

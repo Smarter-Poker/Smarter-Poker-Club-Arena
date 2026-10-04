@@ -30,6 +30,8 @@ import {
 } from '../HorseExecutionWitness.js';
 import { liveHorsePhase8Authority } from '../HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from '../HorsePhase10Authority.js';
+import { HORSE_PHASE11_VARIANTS, liveHorsePhase11Authorities } from '../HorsePhase11Authority.js';
+import { isOmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import type {
@@ -456,6 +458,8 @@ export class LiveHorseDecisionWorkerClient {
   private phase8WorkerEpoch: string | null = null;
   /** P10.3: epoch of this client's worker Phase 10 authority. */
   private phase10WorkerEpoch: string | null = null;
+  /** P11.3: epoch of this client's worker Phase 11 holders (one per worker). */
+  private phase11WorkerEpoch: string | null = null;
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
@@ -464,6 +468,7 @@ export class LiveHorseDecisionWorkerClient {
     // never a withdrawal and never a renewal.
     liveHorsePhase8Authority.refresh();
     liveHorsePhase10Authority.refresh();
+    for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -669,6 +674,21 @@ export class LiveHorseDecisionWorkerClient {
         this.retireDecisionEffects(result, 'decision_finalized');
         return Promise.reject(
           new Error(`Horse plan commit refused: Phase 10 authority ${verdict}`)
+        );
+      }
+    }
+    // P11.3: the same effect law for a selected PLO5/PLO6/PLO8 candidate,
+    // checked at that pack's own gate.
+    const phase11 = result.decision.omahaVariantPolicy;
+    if (phase11?.applied) {
+      const verdict = isOmahaPolicyVariant(phase11.variant)
+        ? liveHorsePhase11Authorities[phase11.variant].check(phase11.authority)
+        : 'mismatched';
+      if (verdict !== 'usable') {
+        noteFire(`phase11_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 11 authority ${verdict}`)
         );
       }
     }
@@ -1319,6 +1339,21 @@ export class LiveHorseDecisionWorkerClient {
       const plo4Receipt = message.decision.plo4Policy;
       if (plo4Receipt?.authority)
         plo4Receipt.authority = liveHorsePhase10Authority.stamp(plo4Receipt.authority);
+      // P11.3: mirror every pack's receipt at its own gate, then stamp the
+      // decision's receipt at the gate of the pack that decided it.
+      if (message.phase11Authority) {
+        for (const variant of HORSE_PHASE11_VARIANTS) {
+          const receipt = message.phase11Authority[variant];
+          if (!receipt) continue;
+          this.phase11WorkerEpoch = receipt.epoch;
+          liveHorsePhase11Authorities[variant].observeWorker(receipt);
+        }
+      }
+      const omahaReceipt = message.decision.omahaVariantPolicy;
+      if (omahaReceipt?.authority && isOmahaPolicyVariant(omahaReceipt.variant))
+        omahaReceipt.authority = liveHorsePhase11Authorities[omahaReceipt.variant].stamp(
+          omahaReceipt.authority
+        );
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -1403,6 +1438,8 @@ export class LiveHorseDecisionWorkerClient {
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    for (const variant of HORSE_PHASE11_VARIANTS)
+      liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1550,6 +1587,8 @@ export class LiveHorseDecisionWorkerClient {
   private terminateWorker(): Promise<void> {
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    for (const variant of HORSE_PHASE11_VARIANTS)
+      liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

@@ -101,6 +101,12 @@ export default function StatsWorkspacePanel({
           </button>
         </div>
 
+        {workspace.coverage.capped && (
+          <p className="sc-copy stats-workspace__state" role="status">
+            Showing The {workspace.coverage.rowLimit} Most Recent Items Per Workspace Ledger.
+          </p>
+        )}
+
         {isEmpty && (
           <p className="sc-copy stats-workspace__state" role="status">
             No Reports, Goals, Study Collections, Or Alerts Have Been Saved Yet.
@@ -188,7 +194,9 @@ export default function StatsWorkspacePanel({
               <div className="stats-workspace__row" key={collection.id}>
                 <span>{collection.name}</span>
                 <span className="stats-workspace__meta">
-                  {collection.hands.length} Saved {collection.hands.length === 1 ? 'Hand' : 'Hands'}
+                  {collection.hands.length}
+                  {collection.handsCapped ? '+' : ''} Saved{' '}
+                  {collection.hands.length === 1 ? 'Hand' : 'Hands'}
                   {collection.hands.some((hand) => hand.note) ? ', With Private Notes' : ''}
                 </span>
               </div>

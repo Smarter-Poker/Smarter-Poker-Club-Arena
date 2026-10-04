@@ -47,4 +47,42 @@ DO $$DECLARE u uuid:='00000000-0000-0000-0000-000000000001';c uuid:='00000000-00
   SET CONSTRAINTS zz_close_session_when_seat_vacated IMMEDIATE;
   IF EXISTS(SELECT 1 FROM cash_player_session WHERE id='00000000-0000-0000-0000-000000000064' AND closed_at IS NOT NULL) THEN RAISE EXCEPTION 'seat move closed the continuous session';END IF;
 END$$;
+
+DO $$DECLARE u uuid:='00000000-0000-0000-0000-000000000001';c uuid:='00000000-0000-0000-0000-000000000011';j jsonb;BEGIN
+  INSERT INTO tables(id,club_id,status) VALUES
+    ('00000000-0000-0000-0000-000000000046',c,'active'),
+    ('00000000-0000-0000-0000-000000000047',c,'active'),
+    ('00000000-0000-0000-0000-000000000048',c,'active'),
+    ('00000000-0000-0000-0000-000000000049','00000000-0000-0000-0000-000000000012','active');
+  INSERT INTO table_seats VALUES
+    ('00000000-0000-0000-0000-000000000056','00000000-0000-0000-0000-000000000046',u,NULL,now(),NULL),
+    ('00000000-0000-0000-0000-000000000057','00000000-0000-0000-0000-000000000047',u,NULL,now(),NULL),
+    ('00000000-0000-0000-0000-000000000058','00000000-0000-0000-0000-000000000049',u,250,now(),NULL);
+  INSERT INTO cash_player_session(id,player_id,club_id,scope_type,scope_id,table_id,variant,baseline,opened_at) VALUES
+    ('00000000-0000-0000-0000-000000000066',u,c,'table','00000000-0000-0000-0000-000000000046','00000000-0000-0000-0000-000000000046','nlh',100,now()),
+    ('00000000-0000-0000-0000-000000000067',u,c,'table','00000000-0000-0000-0000-000000000047','00000000-0000-0000-0000-000000000047','nlh',100,now()),
+    ('00000000-0000-0000-0000-000000000068',u,c,'table','00000000-0000-0000-0000-000000000048','00000000-0000-0000-0000-000000000048','nlh',100,now()-interval '90 days'),
+    ('00000000-0000-0000-0000-000000000069',u,'00000000-0000-0000-0000-000000000012','table','00000000-0000-0000-0000-000000000049','00000000-0000-0000-0000-000000000049','nlh',100,now());
+  UPDATE table_seats SET left_at=now() WHERE id='00000000-0000-0000-0000-000000000056';
+  SET CONSTRAINTS zz_close_session_when_seat_vacated IMMEDIATE;
+  IF NOT EXISTS(SELECT 1 FROM cash_player_session WHERE id='00000000-0000-0000-0000-000000000066'
+      AND final_stack IS NULL AND final_stack_captured_at IS NULL AND financial_capture_status='partial') THEN
+    RAISE EXCEPTION 'nullable vacated stack was manufactured as exact';
+  END IF;
+  UPDATE tables SET status='closed' WHERE id='00000000-0000-0000-0000-000000000047';
+  IF NOT EXISTS(SELECT 1 FROM cash_player_session WHERE id='00000000-0000-0000-0000-000000000067'
+      AND final_stack IS NULL AND final_stack_captured_at IS NULL AND financial_capture_status='partial') THEN
+    RAISE EXCEPTION 'nullable table-close stack did not close partial';
+  END IF;
+  UPDATE table_seats SET left_at=now() WHERE id='00000000-0000-0000-0000-000000000058';
+  IF EXISTS(SELECT 1 FROM cash_player_session WHERE id='00000000-0000-0000-0000-000000000069'
+      AND closed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'diamond seat vacate entered chip cash-session close machinery';
+  END IF;
+  SELECT ca_player_stats_cash_sessions(u,c,30,'UTC','chips',100) INTO j;
+  IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(j->'sessions') x
+      WHERE x->>'session_id'='00000000-0000-0000-0000-000000000068') THEN
+    RAISE EXCEPTION 'open session beginning before range was omitted: %',j;
+  END IF;
+END$$;
 SELECT 'stats exact cash sessions fixture: PASS';

@@ -97,7 +97,7 @@ describe('ExactCashSessionsPanel', () => {
     expect(screen.getByText('s1')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Session Hands' })).toHaveAttribute(
       'href',
-      '/hand-history?source=stats&statsSession=s1&statsClub=c1'
+      '/hand-history?source=stats&statsSession=s1&statsAsset=chips&statsClub=c1'
     );
   });
   it('shows a verification failure instead of an empty ledger', async () => {
@@ -115,5 +115,51 @@ describe('ExactCashSessionsPanel', () => {
       </MemoryRouter>
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('Could Not Be Verified');
+  });
+  it('never paints an older scope response over the current club', async () => {
+    let resolveA!: (value: typeof base) => void;
+    let resolveB!: (value: typeof base) => void;
+    get
+      .mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveB = resolve)));
+    const { rerender } = render(
+      <MemoryRouter>
+        <ExactCashSessionsPanel
+          userId="u1"
+          clubId="a"
+          clubLabel="Club A"
+          days={30}
+          timezone="UTC"
+          asset="chips"
+        />
+      </MemoryRouter>
+    );
+    rerender(
+      <MemoryRouter>
+        <ExactCashSessionsPanel
+          userId="u1"
+          clubId="b"
+          clubLabel="Club B"
+          days={30}
+          timezone="UTC"
+          asset="chips"
+        />
+      </MemoryRouter>
+    );
+    resolveB({
+      ...base,
+      sessions: [
+        {
+          ...base.sessions[0],
+          session_id: 'session-b',
+          evidence: { kind: 'cash_session', session_id: 'session-b' },
+        },
+      ],
+    });
+    expect(await screen.findByText('session-b')).toBeInTheDocument();
+    resolveA(base);
+    await Promise.resolve();
+    expect(screen.getByText('session-b')).toBeInTheDocument();
+    expect(screen.queryByText('s1')).not.toBeInTheDocument();
   });
 });

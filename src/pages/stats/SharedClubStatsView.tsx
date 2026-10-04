@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   SharedClubStatsService,
   type SharedStatsClub,
 } from '../../services/SharedClubStatsService';
 import { RANGES } from './types';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   targetUserId: string;
@@ -12,59 +13,97 @@ interface Props {
   rangeKey: string;
   windowDays: number | null;
   initialClubId: string | null;
-  onClubChange: (clubId: string) => void;
+  onClubChange: (clubId: string, replace?: boolean) => void;
   onRangeChange: (key: string) => void;
 }
 
 export default function SharedClubStatsView(props: Props) {
+  const {
+    targetUserId,
+    asset,
+    timezone,
+    windowDays,
+    initialClubId,
+    onClubChange,
+    onRangeChange,
+    rangeKey,
+  } = props;
+  const initialClubIdRef = useRef(initialClubId);
+  initialClubIdRef.current = initialClubId;
   const [clubs, setClubs] = useState<SharedStatsClub[]>([]);
-  const [clubId, setClubId] = useState<string | null>(props.initialClubId);
+  const [clubId, setClubId] = useState<string | null>(initialClubId);
   const [payload, setPayload] = useState<any>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [errorSource, setErrorSource] = useState<'access' | 'overview' | null>(null);
+  const [accessReload, setAccessReload] = useState(0);
+  const [overviewReload, setOverviewReload] = useState(0);
   useEffect(() => {
     let live = true;
     setState('loading');
-    SharedClubStatsService.listClubs(props.targetUserId, props.asset)
+    setErrorMessage('');
+    setErrorSource(null);
+    setClubs([]);
+    setClubId(null);
+    setPayload(null);
+    SharedClubStatsService.listClubs(targetUserId, asset)
       .then((rows) => {
         if (!live) return;
         setClubs(rows);
-        const selected = rows.some((c) => c.id === clubId) ? clubId : (rows[0]?.id ?? null);
+        const initialClubId = initialClubIdRef.current;
+        const selected = rows.some((c) => c.id === initialClubId)
+          ? initialClubId
+          : (rows[0]?.id ?? null);
         setClubId(selected);
-        if (selected) props.onClubChange(selected);
-        else setState('empty');
+        if (!selected) setState('empty');
       })
-      .catch(() => live && setState('error'));
+      .catch((error) => {
+        if (!live) return;
+        reportError(error, 'SharedClubStatsView.listClubs');
+        setErrorMessage('Shared Club Access Could Not Be Verified.');
+        setErrorSource('access');
+        setState('error');
+      });
     return () => {
       live = false;
     };
-    // Callback is intentionally excluded: URL synchronization must not refetch access.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.targetUserId, props.asset]);
+  }, [targetUserId, asset, accessReload]);
+  useEffect(() => {
+    if (clubs.length === 0) return;
+    const requested = initialClubId;
+    const resolved =
+      requested && clubs.some((club) => club.id === requested) ? requested : clubs[0].id;
+    setClubId((current) => (current === resolved ? current : resolved));
+    if (resolved !== requested) onClubChange(resolved, true);
+  }, [clubs, initialClubId, onClubChange]);
   useEffect(() => {
     if (!clubId) return;
     let live = true;
     setState('loading');
-    SharedClubStatsService.getOverview(
-      props.targetUserId,
-      clubId,
-      props.windowDays,
-      props.timezone,
-      props.asset
-    )
+    setPayload(null);
+    setErrorMessage('');
+    setErrorSource(null);
+    SharedClubStatsService.getOverview(targetUserId, clubId, windowDays, timezone, asset)
       .then((data) => {
         if (live) {
           setPayload(data);
           setState('ready');
         }
       })
-      .catch(() => live && setState('error'));
+      .catch((error) => {
+        if (!live) return;
+        reportError(error, 'SharedClubStatsView.getOverview');
+        setErrorMessage('Shared Club Statistics Could Not Be Verified.');
+        setErrorSource('overview');
+        setState('error');
+      });
     return () => {
       live = false;
     };
-  }, [props.targetUserId, props.asset, props.timezone, props.windowDays, clubId]);
+  }, [targetUserId, asset, timezone, windowDays, clubId, overviewReload]);
   const choose = (id: string) => {
     setClubId(id);
-    props.onClubChange(id);
+    onClubChange(id);
   };
   const o = payload?.overview ?? {};
   const t = payload?.tournaments ?? {};
@@ -117,9 +156,9 @@ export default function SharedClubStatsView(props: Props) {
           <button
             type="button"
             key={r.key}
-            className={r.key === props.rangeKey ? 'active' : ''}
-            aria-pressed={r.key === props.rangeKey}
-            onClick={() => props.onRangeChange(r.key)}
+            className={r.key === rangeKey ? 'active' : ''}
+            aria-pressed={r.key === rangeKey}
+            onClick={() => onRangeChange(r.key)}
           >
             {r.label}
           </button>
@@ -141,6 +180,17 @@ export default function SharedClubStatsView(props: Props) {
       {state === 'error' && (
         <div className="stats-empty-state" role="alert">
           <span className="empty-title">Shared Readout Unavailable</span>
+          <span className="empty-description">{errorMessage}</span>
+          <button
+            type="button"
+            onClick={() =>
+              errorSource === 'access'
+                ? setAccessReload((value) => value + 1)
+                : setOverviewReload((value) => value + 1)
+            }
+          >
+            {errorSource === 'access' ? 'Retry Shared Clubs' : 'Retry Shared Readout'}
+          </button>
         </div>
       )}
       {state === 'ready' && (

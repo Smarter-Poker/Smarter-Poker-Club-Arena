@@ -1,0 +1,97 @@
+# P11.2 shard sizing (Horse Brain Phase 11). Kept as text; run with python3 after
+# copying pilot-<variant>.json beside it. sizing.py reproduces Phase 10's documented
+# planned half-widths for its locked matrix (check printed first), then opt.py finds,
+# per pack, the smallest total shard count (then least runner time) meeting the rule.
+# --- sizing.py ---
+import json, math, sys, itertools
+Z=2.5758293035489004
+def pos(o,seats):
+    if o==0: return 'button'
+    if seats==2 or o==2: return 'big_blind'
+    if o==1: return 'small_blind'
+    if o==seats-1: return 'cutoff'
+    return 'early' if o==3 else 'middle'
+PROF=[('2dealt',2,'standard'),('4dealt',4,'standard'),('40bb',6,'short'),('100bb',6,'standard'),('200bb',6,'deep')]
+def cells(sd, shards, P):
+    N=[s*P*3 for s in shards]
+    out={}
+    for i,(k,seats,b) in enumerate(PROF): out['profile:'+k]=[(sd[i],N[i])]
+    for po in ['button','small_blind','big_blind','cutoff','middle','early']:
+        m=[]
+        for i,(k,seats,b) in enumerate(PROF):
+            c=sum(1 for o in range(seats) if pos(o,seats)==po)
+            if c: m.append((sd[i],N[i]*c/seats))
+        out['position:'+po]=m
+    for band in ['short','standard','deep']:
+        out['depth:'+band]=[(sd[i],N[i]) for i,(k,s,b) in enumerate(PROF) if b==band]
+    res={}
+    for c,m in out.items():
+        w=1/len(m)
+        v=sum(w*w*(1.2*s)**2/n for s,n in m)
+        res[c]=(Z*math.sqrt(v)*100, min(n for s,n in m))
+    return res
+def feasible(sd,sh,P):
+    r=cells(sd,sh,P); return all(h<=8.5 and n>=10000 for h,n in r.values())
+def solve(sd, ms, P, maxs=60):
+    sh=[1]*5
+    cost=lambda sh: sum(s*P*m for s,m in zip(sh,ms))
+    while not feasible(sd,sh,P):
+        r=cells(sd,sh,P)
+        def viol(sh2):
+            r2=cells(sd,sh2,P); return sum(max(0,h-8.5) for h,n in r2.values())+sum(max(0,10000-n) for h,n in r2.values())/1000
+        base=viol(sh); best=None
+        for i in range(5):
+            t=sh[:]; t[i]+=1
+            gain=(base-viol(t))/ (P*ms[i])
+            if best is None or gain>best[0]: best=(gain,i)
+        sh[best[1]]+=1
+    # prune
+    changed=True
+    while changed:
+        changed=False
+        for i in sorted(range(5), key=lambda i:-ms[i]):
+            if sh[i]>1:
+                t=sh[:]; t[i]-=1
+                if feasible(sd,t,P): sh=t; changed=True
+    return sh
+if __name__=='__main__':
+    # Phase 10 check
+    sd10=[7.61,16.07,9.2,13.49,21.38]; sh10=[2,8,4,8,15]
+    for c,(h,n) in cells(sd10,sh10,23040).items(): print(c, round(h,1), int(n))
+    print('feasible',feasible(sd10,sh10,23040))
+# --- opt.py ---
+import json, math, sys, itertools
+sys.path.insert(0,'/tmp/claude-0')
+from sizing import cells, feasible
+def best(sd, ms, P, cap=45):
+    # minimise total shards, then runner time; exhaustive with pruning
+    bestv=None
+    # profile-cell lower bounds per profile
+    lb=[]
+    for i in range(5):
+        for s in range(1,cap+1):
+            sh=[cap]*5; sh[i]=s
+            r=cells(sd,sh,P)
+            name='profile:'+['2dealt','4dealt','40bb','100bb','200bb'][i]
+            if r[name][0]<=8.5 and r[name][1]>=10000: lb.append(s); break
+    for s0 in range(lb[0],cap+1):
+     for s1 in range(lb[1],cap+1):
+      for s2 in range(lb[2],cap+1):
+       for s3 in range(lb[3],cap+1):
+        for s4 in range(lb[4],cap+1):
+          sh=[s0,s1,s2,s3,s4]
+          tot=sum(sh)
+          if bestv and tot>bestv[0]: break
+          if feasible(sd,sh,P):
+            cost=sum(s*m for s,m in zip(sh,ms))
+            if bestv is None or (tot,cost)<bestv[:2]: bestv=(tot,cost,sh)
+            break
+    return bestv, lb
+for v,ks in [('plo5',[17]),('plo6',[15,16,17,18]),('plo8',[17,18])]:
+    d=json.load(open(f'pilot-{v}.json'))
+    sd=[p['pairedDifferenceSdBB'] for p in d['profiles']]
+    ms=[p['msPerPair'] for p in d['profiles']]
+    for k in ks:
+        P=576*k
+        b,lb=best(sd,ms,P)
+        print(v,k,P,'lb',lb,'best',b[2],'jobs',3*b[0],'hosted max min',round(2.5*max(ms)*P/60000,1))

@@ -39,6 +39,11 @@ import {
   type Plo4DivergenceStreet,
   type Plo4StrengthShardResult,
 } from './Plo4StrengthContract.js';
+import {
+  isOmahaVariantHoldoutSeed,
+  omahaVariantMoodClockMs,
+} from './OmahaVariantStrengthContract.js';
+import type { OmahaVariant } from './OmahaReference.js';
 import type { Plo4PolicyMode } from './Plo4PolicyProgram.js';
 import { equityGovernor } from '../engine/EquityLoadGovernor.js';
 import { equitySampleSizeOfLastCall, variantInfo } from '../engine/HorseEval.js';
@@ -74,6 +79,10 @@ export interface Plo4LeagueProfile {
   /** P10.2: every seat, hero included, takes its production style from
    * plo4StrengthSeatStyle(dealSeed, seat) instead of balanced/opponentStyle. */
   productionStyles?: boolean;
+  /** P11.2: v9 mood on in every seat and both arms, on the deterministic
+   * decision clock omahaVariantMoodClockMs(dealSeed). Absent (every PLO4 and
+   * earlier profile): mood off at decisionTimeMs 0, exactly as before. */
+  moodClock?: 'deal_seed_time_of_day';
   bombBoards?: 1 | 2 | 3;
   asset?: 'chips' | 'diamonds';
   bbj?: boolean;
@@ -177,6 +186,8 @@ export interface Plo4HandChecks {
   deductionMismatches: number;
   showdownChecked: boolean;
   foldWinChecked: boolean;
+  /** P11.2: set only when the independent reference awarded a low half. */
+  lowHalfChecked?: boolean;
 }
 export interface Plo4HandReceipt {
   checks?: Plo4HandChecks;
@@ -471,8 +482,8 @@ export async function playPlo4PolicyHand(
           {
             mind: true,
             telemetry: false,
-            decisionTimeMs: 0,
-            v9Mood: false,
+            decisionTimeMs: profile.moodClock ? omahaVariantMoodClockMs(seed) : 0,
+            v9Mood: Boolean(profile.moodClock),
             phase8Postflop: 'off',
             phase10Plo4:
               !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
@@ -580,6 +591,10 @@ export async function runOmahaPolicyLeague(
   if (isPlo4HoldoutSeed(options.seed))
     throw new Error(
       'Held-out PLO4 strength seeds run only through the P10.2 contract shard runner'
+    );
+  if (isOmahaVariantHoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out Phase 11 strength seeds run only through the P11.2 contract shard runner'
     );
   const profile = profiles.find((p) => p.id === options.profileId);
   if (
@@ -726,14 +741,15 @@ export function runPlo4PolicyLeague(
 
 // ── P10.2 strength contract machinery ───────────────────────────────────────
 
-/** The engine's own cash pricing for the published PLO4 1/2 game, built the
- * way ServerTableEngineBase builds a cash hand config. */
+/** The engine's own cash pricing for the published 1/2 game of the profile's
+ * variant (PLO4 when the profile names none), built the way
+ * ServerTableEngineBase builds a cash hand config. */
 function publishedCashPricing(
   profile: Plo4LeagueProfile
 ): Pick<HandConfig, 'rakeConfig' | 'bbjConfig'> {
   if (profile.tournament || BB !== PLO4_STRENGTH_BB)
     throw new Error('Published PLO4 pricing is the cash 1/2 game only');
-  const full = getFullRakeConfig(1, BB, 'plo4');
+  const full = getFullRakeConfig(1, BB, profile.variant ?? 'plo4');
   return {
     rakeConfig: {
       percent: full.rakePercent,
@@ -753,7 +769,8 @@ function publishedCashPricing(
 /** Independent per-hand settlement and deduction checks (Phase 9 rules). The
  * controller's result is compared with OmahaReference's gross awards on the
  * same contributions and cards, and its rake/BBJ with the rake specification
- * the database implements, on the contested pot. */
+ * the database implements, on the contested pot. The variant is the profile's
+ * (PLO4 when it names none); PLO8 settles high and low halves. */
 export function plo4IndependentHandChecks(
   profile: Plo4LeagueProfile,
   end: ReturnType<HandController['getState']>,
@@ -769,6 +786,7 @@ export function plo4IndependentHandChecks(
   };
   const start = profile.stackBB * BB;
   const cents = (n: number) => Math.round(n * 100);
+  const variant = (profile.variant ?? 'plo4') as OmahaVariant;
   try {
     const players = end.players.map((p) => ({
       id: p.user_id,
@@ -800,7 +818,7 @@ export function plo4IndependentHandChecks(
         sb: config.smallBlind,
         playersDealt,
         sawFlop,
-        variant: 'plo4',
+        variant,
         pot,
         rake,
       });
@@ -818,7 +836,7 @@ export function plo4IndependentHandChecks(
     } else if (end.communityCards.length === 5) {
       checks.showdownChecked = true;
       const reference = settleOmahaReference({
-        variant: 'plo4',
+        variant,
         players,
         boards: [end.communityCards],
         chipUnit: 0.01,
@@ -833,6 +851,7 @@ export function plo4IndependentHandChecks(
         shortfall += gross - got;
       }
       if (Math.abs(shortfall - deductions) > 1) checks.settlementMismatches++;
+      if (reference.awards.some((a) => a.half === 'low')) checks.lowHalfChecked = true;
     } else checks.settlementMismatches++;
   } catch {
     checks.settlementMismatches++;
@@ -898,6 +917,8 @@ export async function runPlo4StrengthShard(
   const holdout = isPlo4HoldoutSeed(request.seed);
   if (request.mode !== 'contract' && request.mode !== 'development')
     throw new Error('Unknown P10.2 shard mode');
+  if (isOmahaVariantHoldoutSeed(request.seed))
+    throw new Error('A P10.2 shard never runs a held-out Phase 11 seed');
   if (request.mode === 'contract' && !holdout)
     throw new Error('A contract shard runs only a held-out seed');
   if (request.mode === 'development' && holdout)

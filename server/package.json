@@ -20,6 +20,7 @@
     "horse:omaha-evaluate": "tsx src/scripts/horseOmahaEvaluate.ts",
     "horse:plo4-evaluate": "node --import tsx src/scripts/plo4PolicyEvaluate.ts",
     "horse:omaha-variants-evaluate": "node --import tsx src/scripts/omahaVariantPolicyEvaluate.ts",
+    "horse:omaha-variant-strength-evaluate": "node --import tsx src/scripts/omahaVariantStrengthEvaluate.ts",
     "horse:remaining-variants-evaluate": "node --import tsx src/scripts/remainingVariantPolicyEvaluate.ts",
     "horse:joint-evaluate": "node --import tsx src/scripts/jointPolicyEvaluate.ts"
   },

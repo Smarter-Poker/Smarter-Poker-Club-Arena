@@ -17,18 +17,33 @@
  * from_type is prize_liability, exactly so a NULL tournament_id cannot route
  * around it, and refuses the INSERT while that satellite is terminal. So a
  * sealed satellite's prize_liability can never be debited again, and the shape
- * the old law demanded is unreachable without weakening a money guard.
- * 20261004151352 pays the same 60.00 through the door the estate had already
- * blessed for an event whose books are sealed (20260926085132, 20261002082429,
- * 20260926131530): the house pays outside the event. Midway Union, which
- * hosted both satellites and took their 2.00 fee each, pays from its bank.
+ * the old law demanded is unreachable while the guard stands.
+ *
+ * #6067 then amended that migration to reach it anyway: read the guard's own
+ * source, inject a WASP-and-those-two-satellites exemption after its BEGIN,
+ * EXECUTE the modified function inside the transaction, restore the byte-exact
+ * original before COMMIT. However carefully it is restored, that is replacing
+ * a money guard to let one write through. The owner's standing instruction for
+ * this settlement forbids it, and it could not have applied in any case: it
+ * admits only guard md5 b2affe52... or 5de9ef6b..., while the installed guard
+ * reads f8311ad66092ee2c9c6c807fb9868d58, so its own pre-image refuses it.
+ * Production was read on 2026-10-04: the file is absent from
+ * schema_migrations and the installed guard carries no reference to WASP, to
+ * either satellite, or to the satellite-seat-cash key.
+ *
+ * 20261004151352 pays the same 60.00 with no guard touched, through the door
+ * the estate had already blessed for an event whose books are sealed
+ * (20260926085132, 20261002082429, 20260926131530): the house pays outside the
+ * event. Midway Union, which hosted both satellites and took their 2.00 fee
+ * each, pays from its bank.
  *
  * What this pins now: the settlement pays from the union bank through the
  * platform's idempotent wallet door, never names a terminal tournament on a
  * key, wallet row, obligation or journal leg, leaves each sealed satellite's
- * 30.00 where it is, weakens no guard, asserts its pre-image and post-image to
- * the cent, closes exactly the four alerts, can be proved rolled back, and the
- * migration it replaces is marked so it can never run.
+ * 30.00 where it is, replaces or weakens no guard, asserts its pre-image and
+ * post-image to the cent, closes exactly the four alerts, can be proved rolled
+ * back, and the migration it replaces is marked so it can never run in either
+ * of its two forms.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -102,9 +117,11 @@ describe('a seat already bought is paid in cash, for two satellites', () => {
     );
   });
 
-  it('weakens no money guard, and refuses to run if the guard it reasons about is gone', () => {
+  it('replaces no guard, weakens none, and refuses to run if the guard it reasons about is gone', () => {
     for (const forbidden of [
       /CREATE\s+OR\s+REPLACE\s+FUNCTION/i,
+      /pg_get_functiondef/i,
+      /EXECUTE\s+v_guard/i,
       /DROP\s+TRIGGER/i,
       /DISABLE\s+TRIGGER/i,
       /ALTER\s+TABLE/i,
@@ -127,8 +144,11 @@ describe('a seat already bought is paid in cash, for two satellites', () => {
     // A conservation baseline row is ADDED by the delta, so writing one here
     // would clear the satellite audit by breaking the delta. See
     // tests/the-two-conservation-checks-agree-on-a-seat.law.test.ts.
-    expect(MIG).not.toMatch(/tournament_conservation_baseline\s*\(/i);
+    // The header explains why none is written; the executable body never
+    // mentions it at all, and nothing writes to the table.
+    expect(body).not.toMatch(/tournament_conservation_baseline/i);
     expect(MIG).not.toMatch(/INSERT\s+INTO\s+public\.tournament_conservation_baseline/i);
+    expect(MIG).not.toMatch(/UPDATE\s+public\.tournament_conservation_baseline/i);
   });
 
   it('asserts the case it settles before anything moves', () => {
@@ -154,16 +174,22 @@ describe('a seat already bought is paid in cash, for two satellites', () => {
     expect(MIG).not.toContain('—');
   });
 
-  it('marks the migration it replaces so that it can never run', () => {
+  it('marks the migration it replaces so that neither of its forms can ever run', () => {
     expect(OLD.split('\n')[0]).toBe(
       '-- SUPERSEDED BY 20261004151352 (the_house_pays_wasp_the_two_seats_it_could_not_deliver)'
     );
-    expect(OLD).toContain('THIS FILE MUST NEVER RUN.');
+    expect(OLD).toContain('THIS FILE MUST NEVER RUN, IN EITHER OF ITS TWO FORMS.');
     expect(OLD).toContain('fn_satellite_transfer_ledger_is_immutable');
-    // History is never deleted: the original file is still there under the notice.
+    // History is never deleted: both forms are still there under the notice,
+    // including #6067's guard replacement, which the notice names as the second
+    // reason this file must never run rather than quietly dropping it.
     expect(OLD).toContain(`-- ${SUPERSEDED}.sql`);
     expect(OLD).toContain(
       "PERFORM public.fn_ca_declare_ledger('settlement', 'prize_liability', v_sat, NULL, v_key, NULL);"
     );
+    expect(OLD).toContain('EXECUTE v_guard_changed;');
+    expect(OLD).toContain("RAISE EXCEPTION 'seat cash guard was not restored byte-exactly'");
+    expect(OLD).toContain('replacing a');
+    expect(OLD).toContain('f8311ad66092ee2c9c6c807fb9868d58');
   });
 });

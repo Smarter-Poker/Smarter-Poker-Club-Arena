@@ -441,6 +441,7 @@ import GameServerAPI, {
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
 } from '../services/GameServerAPI';
+import { HEARTBEAT_NOT_DELIVERED } from '../services/heartbeatCodes';
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
@@ -2277,6 +2278,7 @@ function LiveTablePage({
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
     requestSnapshot: requestEngineSnapshot,
+    probeLink: probeEngineLink,
     reconnectNow: reconnectEngineNow,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
@@ -3738,6 +3740,14 @@ function LiveTablePage({
    * EXPECTED state and none of the dead-table alarms may speak.
    */
   const seatFirstOpenRef = useRef(false);
+  /* The "This Table Is No Longer Running" verdict of the 4404 effect further
+     down: claimed there, released when the socket connects or the row turns
+     out to be wakeable. Declared here, above the heartbeat that reads it. */
+  const tableClosedToastShownRef = useRef(false);
+  /* Read by the heartbeat below without joining its dependency list, which
+     would restart the five-second interval on every render. */
+  const probeEngineLinkRef = useRef(probeEngineLink);
+  probeEngineLinkRef.current = probeEngineLink;
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -3751,6 +3761,17 @@ function LiveTablePage({
     let consecutiveMisses = 0;
     let warned = false;
     const beat = async () => {
+      /* A TABLE THAT IS NO LONGER RUNNING IS NOT HEARTBEATED (2026-10-04).
+         Once the page has established that the engine holds no game for this
+         table and the row agrees (the "This Table Is No Longer Running"
+         verdict below), there is nothing to keep alive - but the beat went on
+         every five seconds for as long as the table stayed mounted, and
+         PersistentTableLayer keeps it mounted after the player has gone
+         elsewhere. Each one was a 404. Production, two days to 2026-10-04:
+         3,141 of them from two players. The flag is cleared the moment the
+         socket connects again or the row turns out to be wakeable, so a table
+         that comes back is beaten again at once. */
+      if (tableClosedToastShownRef.current) return;
       /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
          PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
 
@@ -3786,6 +3807,17 @@ function LiveTablePage({
       // seatFirstOpenRef above.
       if (seatFirstOpenRef.current) return;
       consecutiveMisses += 1;
+      /* TWO BEATS WITH NO ANSWER: ASK THE SOCKET TO PROVE ITSELF (2026-10-04).
+         The beat and the socket are two paths to one engine. When this path
+         goes silent - not refused, silent - the usual cause is a link that
+         died without closing, and the socket's own watchdog would take most
+         of a minute to notice while the felt sat frozen and looked live. The
+         probe is bounded and single-flight (EngineStateClient.probeLink); a
+         socket that answers it is left exactly as it was. Once per run of
+         misses, so a long outage asks one question. */
+      if (consecutiveMisses === 2 && res?.code === HEARTBEAT_NOT_DELIVERED) {
+        probeEngineLinkRef.current?.();
+      }
       // Dan 2026-08-23: this used to raise its OWN "Connection lost" toast at
       // 3 misses, which is why one outage produced two separate alarms - this
       // one and the engine-WS watcher below - on every mounted table at once,
@@ -3885,7 +3917,8 @@ function LiveTablePage({
   // forever. After 3 consecutive 4404s we suppress the reload failsafe and
   // tell the player once instead.
   const notFoundCountRef = useRef(0);
-  const tableClosedToastShownRef = useRef(false);
+  // `tableClosedToastShownRef` is declared above the heartbeat effect, which
+  // reads it (no-tdz-in-table-route law).
   /**
    * The scheduled maintenance break (Dan 2026-09-01). Driven by the engine
    * while a socket exists, by the local clock while it does not, and by the

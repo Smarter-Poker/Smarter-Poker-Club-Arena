@@ -66,10 +66,17 @@ describe('GameServerAPI', () => {
   });
   describe('submitAction', () => {
     it('should return success:false when server unreachable', async () => {
+      // 2026-10-04: an action nobody answered is re-sent under its own key
+      // before it is given up on, and the give-up sentence is one the felt
+      // shows. "Server unreachable" is suppressed there as self-healing, and
+      // after the last re-send nothing is healing. See
+      // tests/an-action-that-did-not-arrive-is-sent-again.test.ts.
       mockFetch.mockRejectedValue(new Error('Network error'));
       const result = await submitAction('table-1', 'user-1', 'fold');
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Server unreachable');
+      expect(result.error).toBe(GameServerAPI.ACTION_NOT_DELIVERED_MESSAGE);
+      expect(result.code).toBe('ACTION_NOT_DELIVERED');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('should return success:false on HTTP error', async () => {

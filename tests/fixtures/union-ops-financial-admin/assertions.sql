@@ -290,6 +290,13 @@ BEGIN
      OR position('JOIN rake_roster r ON r.player_id = expanded.player_id' in fn_src) = 0
      OR position('OFFSET 0' in fn_src) = 0
      OR position('GROUP BY allocation.player_id, allocation.club_id' in fn_src) = 0
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid =
+          'public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure
+          AND p.proconfig IS NOT DISTINCT FROM
+              ARRAY['search_path=public','jit=off']::text[])
      OR (length(fn_src) - length(replace(fn_src, 'LEFT JOIN LATERAL (', '')))
        / length('LEFT JOIN LATERAL (') IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'risk report restored a double JSON expansion, temp fence, or OR flow join';
@@ -475,6 +482,10 @@ SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
 ANALYZE public.rake_records;
 ANALYZE public.chip_ledger;
 
+-- The hosted PGDG image has LLVM available while production does not. Keep
+-- the caller JIT-enabled so this scale case proves the function-local guard
+-- rather than hiding the ambient-host dependency in fixture configuration.
+SET jit = 'on';
 SET work_mem = '4MB';
 SET statement_timeout = '8s';
 DO $risk_scale$
@@ -489,6 +500,9 @@ BEGIN
     FROM public.fn_union_agent_risk_report(
       'fade0000-0000-0000-0000-000000000001'::uuid,
       '2026-09-28 12:30:00+00'::timestamptz) r;
+  IF current_setting('jit') IS DISTINCT FROM 'on' THEN
+    RAISE EXCEPTION 'risk report leaked its function-local JIT setting';
+  END IF;
   -- Baseline Player Net is +4.00. The scaled p1 ledger adds 150,000 *
   -- (+0.02) inbound and 150,000 * (-0.01) outbound = +1,500.00.
   IF v_rows IS DISTINCT FROM 2
@@ -503,6 +517,7 @@ END
 $risk_scale$;
 RESET statement_timeout;
 RESET work_mem;
+RESET jit;
 
 -- Release the Risk scale relations before building the commission-scale case;
 -- the fixture runs on the external SSD and must not retain two large cases at

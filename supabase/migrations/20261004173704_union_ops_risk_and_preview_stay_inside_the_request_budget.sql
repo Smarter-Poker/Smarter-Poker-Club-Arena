@@ -34,7 +34,13 @@
 -- open) completed Preview in 92 ms. Each call ran with work_mem=4MB and
 -- statement_timeout=8s.
 --
--- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '46c0014d2564a051e4da77dd36c37923' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = 'd0d194d412da011936c4c4b62297f921'
+-- The production PostgreSQL 17 service has JIT unavailable and disabled. The
+-- PGDG qualification runner can expose LLVM, and this high-estimate JSON plan
+-- crossed the hosted budget despite its no-JIT qualification. Pinning JIT off
+-- on this one short-lived reader removes that ambient planning/code-generation
+-- variable; PostgreSQL restores the caller setting on return.
+--
+-- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '992fd2f4e0d37df3ff418a00eb7f620b' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = 'd0d194d412da011936c4c4b62297f921'
 
 BEGIN;
 
@@ -129,6 +135,7 @@ LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path TO 'public'
+SET jit TO 'off'
 AS $function$
 DECLARE
   v_from timestamptz := COALESCE(p_since, public.fn_union_week_start(now()));
@@ -438,7 +445,7 @@ DECLARE
   v_preview text := pg_get_functiondef(
     'public.fn_union_settlement_preview(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure);
 BEGIN
-  IF md5(v_risk) IS DISTINCT FROM '46c0014d2564a051e4da77dd36c37923'
+  IF md5(v_risk) IS DISTINCT FROM '992fd2f4e0d37df3ff418a00eb7f620b'
      OR position('scoped_rake_records AS MATERIALIZED' IN v_risk) > 0
      OR position('GROUP BY rr.player_contributions' IN v_risk) > 0
      OR position('JOIN rake_roster r ON r.player_id = expanded.player_id' IN v_risk) = 0
@@ -453,7 +460,8 @@ BEGIN
           AND pg_get_userbyid(p.proowner) = 'postgres'
           AND p.prosecdef
           AND p.provolatile = 's'
-          AND p.proconfig IS NOT DISTINCT FROM ARRAY['search_path=public']::text[]
+          AND p.proconfig IS NOT DISTINCT FROM
+              ARRAY['search_path=public','jit=off']::text[]
           AND p.proacl::text IS NOT DISTINCT FROM
               '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}')
      OR position('idx_chip_ledger_club_to_created' IN

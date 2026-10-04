@@ -1,0 +1,3 @@
+# tests/the-diamond-snapshot-reads-the-register-once-per-holder.law.test.ts
+
+The Diamond snapshot reads the register once per holder (2026-10-04): fn_ca_diamond_snapshot and fn_ca_diamond_trial_balance net the Diamond register per holder in one pass inside the same statement as the balances and put fn_ca_is_fixture_account to each holder once, never to each ledger row (the per-row read was cancelled at the statement timeout on 2026-10-01 17:10 UTC, no snapshot was stored and the trial balance read unknown); the trial balance measures from the newest earlier snapshot when none is inside its window, for every caller, and still reads unknown with no snapshot at all; the fix is no schedule, retry, backfill, index or quieter alarm

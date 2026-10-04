@@ -59,6 +59,8 @@
 -- (retainLapsedOriginalForSuccessor) and the `retainWhenLeaseLapses` flag set
 -- for verified cash generations in ServerTableEngineSettlement.postHandTasks.
 --
+-- @live-proof: position('A LAPSED CASH LEASE STILL RETAINS ITS FINISHED HAND' in pg_get_functiondef('public.fn_ca_retain_hand_submission(jsonb)'::regprocedure)) > 0
+--
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).

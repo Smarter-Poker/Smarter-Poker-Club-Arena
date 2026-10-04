@@ -903,6 +903,336 @@ BEGIN
 END $case13b$;
 
 -- ===========================================================================
+-- CASE 14: THE DIAMOND SATELLITE SEAT DOOR, EXECUTED
+-- ===========================================================================
+-- Phase 9's satellite line delivers a seat as a custody-to-custody movement
+-- through fn_poker_diamond_tournament_seat_transfer, and that door's rules were
+-- pinned only as migration TEXT by
+-- tests/a-diamond-satellite-seat-is-a-whole-ticket.law.test.ts. A text pin
+-- proves the migration said something; it does not prove the installed door
+-- does it. This case EXECUTES the door, which the capture now carries, and
+-- reads back what it refused.
+--
+-- WHAT THIS CASE CAN AND CANNOT REACH. The door's funded half needs a prize
+-- bank, and a Diamond prize bank can only be filled through an entry door that
+-- refuses while tournaments_enabled is false (case 6). This fixture never opens
+-- a switch, so every call below is a REFUSAL, asserted to have moved nothing.
+-- The funded delivery itself stays proved by the rolled-back production
+-- rehearsal under docs/evidence/diamond-phase-9-funded-conservation/.
+--
+-- NO NUMBER HERE IS INVENTED. Every ticket, prize and fee is read back from the
+-- target row the create door wrote earlier in this file, never typed.
+-- ===========================================================================
+SELECT fixture_as('10000000-0000-0000-0000-00000000000f');
+
+DO $case14_door$
+BEGIN
+  PERFORM fixture_assert((SELECT p.prosecdef AND p.pronargs = 8
+     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'fn_poker_diamond_tournament_seat_transfer'),
+    'satellite seat: the installed door is loaded, takes its eight arguments and runs as its definer');
+  PERFORM fixture_assert(NOT EXISTS (
+     SELECT 1 FROM information_schema.routine_privileges g
+      WHERE g.specific_schema = 'public'
+        AND g.routine_name = 'fn_poker_diamond_tournament_seat_transfer'
+        AND g.grantee IN ('anon', 'authenticated', 'service_role', 'PUBLIC')),
+    'satellite seat: no client role may call the seat door; it is the owner''s');
+  -- The schema refuses a second open entry even if a door ever forgot to.
+  PERFORM fixture_assert((SELECT indisunique AND pg_get_expr(indpred, indrelid) IS NOT NULL
+     FROM pg_index WHERE indexrelid = 'public.poker_diamond_one_open_entry'::regclass),
+    'satellite seat: one open entry per player per event is a partial unique index, not only a door check');
+END $case14_door$;
+
+-- The ends this case needs, created through the same create door and NOT
+-- reused from case 9: those events are cancelled by case 12, and
+-- fn_cancelled_tournament_evidence_is_immutable rightly refuses a roster row
+-- on a cancelled event, which 14e needs to write. Same committed
+-- configurations, their own names. The satellite names this target and starts
+-- before it, as a satellite must.
+CREATE TABLE fixture_seat_ends AS
+WITH target AS (
+  SELECT fixture_create(fixture_mtt_config()
+    || jsonb_build_object('name','Diamond Fixture Seat Target')) AS id),
+other AS (
+  SELECT fixture_create(fixture_mtt_config()
+    || jsonb_build_object('name','Diamond Fixture Seat Other','type','sng','maxPlayers',6)) AS id),
+bounty AS (
+  SELECT fixture_create(fixture_mtt_config()
+    || jsonb_build_object('name','Diamond Fixture Seat Bounty','type','bounty',
+                          'buyIn',10,'bountyAmount',5)) AS id),
+sat AS (
+  SELECT fixture_create(fixture_mtt_config()
+    || jsonb_build_object('name','Diamond Fixture Seat Satellite','type','satellite','buyIn',5,
+                          'startingStack',8000,'maxPlayers',100,'minPlayers',4,
+                          'satelliteTargetId',(SELECT id FROM target),'startTime',now())) AS id)
+SELECT (SELECT id FROM sat)    AS sat,
+       (SELECT id FROM target) AS target,
+       (SELECT id FROM other)  AS other,
+       (SELECT id FROM bounty) AS bounty;
+
+DO $case14_ends$
+DECLARE e record;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  PERFORM fixture_assert(public.fn_poker_diamond_tournament(e.sat)
+    AND public.fn_poker_diamond_tournament(e.target)
+    AND public.fn_poker_diamond_tournament(e.other)
+    AND public.fn_poker_diamond_tournament(e.bounty),
+    'satellite seat: all four events this case uses are Diamond events the create door wrote');
+  PERFORM fixture_assert((SELECT COALESCE(satellite_target_id, satellite_target) = e.target
+     FROM public.tournaments WHERE id = e.sat),
+    'satellite seat: the satellite names this target and no other');
+  PERFORM fixture_assert((SELECT status <> 'CANCELLED' FROM public.tournaments WHERE id = e.target),
+    'satellite seat: the target this case uses is live, so its roster is not immutable evidence');
+END $case14_ends$;
+
+CREATE FUNCTION fixture_seat(p_sat uuid, p_target uuid, p_user uuid, p_reg uuid,
+                             p_ticket numeric, p_prize numeric, p_fee numeric, p_key text)
+RETURNS jsonb LANGUAGE sql AS $$
+  SELECT public.fn_poker_diamond_tournament_seat_transfer(p_sat, p_target, p_user, p_reg,
+                                                          p_ticket, p_prize, p_fee, p_key);
+$$;
+
+-- Snapshot of every place a Diamond could land, so each refusal can be proved
+-- to have moved nothing rather than assumed to have.
+CREATE TABLE fixture_seat_before AS
+SELECT (SELECT count(*) FROM public.poker_diamond_tournament_ledger) AS ledger,
+       (SELECT count(*) FROM public.poker_diamond_custody)           AS custody,
+       (SELECT count(*) FROM public.poker_diamond_movements)         AS movements,
+       (SELECT count(*) FROM public.diamond_transactions)            AS journal,
+       (SELECT COALESCE(sum(diamonds),0) FROM public.profiles)       AS wallets;
+
+-- -------------------------------------------------------------------------
+-- 14a. WHERE THE UNIT DIVIDES: NOWHERE. The door's first test is the divider.
+-- A ticket, a prize or a fee that is not a whole Diamond, and parts that do
+-- not add up to the ticket, are refused by name before the door reads a row.
+-- -------------------------------------------------------------------------
+DO $case14_whole$
+DECLARE e record; v_ticket numeric; v_prize numeric; v_fee numeric;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO v_prize, v_fee
+    FROM public.tournaments WHERE id = e.target;
+  v_ticket := v_prize + v_fee;
+  PERFORM fixture_assert(v_ticket = trunc(v_ticket) AND v_prize = trunc(v_prize)
+    AND v_fee = trunc(v_fee) AND v_ticket >= 1,
+    format('satellite seat: the target''s own ticket is whole Diamonds (%s = %s prize + %s fee)',
+           v_ticket, v_prize, v_fee));
+
+  -- A fractional ticket.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket + 0.5, v_prize + 0.5, v_fee, 'fixture-divider-ticket'),
+    'diamond_satellite_seat_requires_whole_parts');
+  -- A fractional prize part, with the parts still adding up.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize - 0.5, v_fee + 0.5, 'fixture-divider-prize'),
+    'diamond_satellite_seat_requires_whole_parts');
+  -- A fractional fee part, with the parts still adding up.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize + 0.5, v_fee - 0.5, 'fixture-divider-fee'),
+    'diamond_satellite_seat_requires_whole_parts');
+  -- Whole parts that do not add up to the ticket: a Diamond would be created
+  -- or destroyed by the move, so the door refuses it.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee + 1, 'fixture-divider-sum'),
+    'diamond_satellite_seat_requires_whole_parts');
+  -- A seat for nothing is not a seat.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    0, 0, 0, 'fixture-divider-zero'),
+    'diamond_satellite_seat_requires_whole_parts');
+  -- A movement with no key could not be replayed, so it is not allowed to exist.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee, '   '),
+    'diamond_satellite_seat_requires_whole_parts');
+END $case14_whole$;
+
+-- -------------------------------------------------------------------------
+-- 14b. ASSETS NEVER CROSS. Both ends of a Diamond seat are Diamond events,
+-- and an event this arena does not hold is not one.
+-- -------------------------------------------------------------------------
+DO $case14_assets$
+DECLARE e record; v_ticket numeric; v_prize numeric; v_fee numeric;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO v_prize, v_fee
+    FROM public.tournaments WHERE id = e.target;
+  v_ticket := v_prize + v_fee;
+  PERFORM fixture_assert(NOT public.fn_poker_diamond_tournament('20000000-0000-0000-0000-0000000000ee'),
+    'satellite seat: an event the Diamond arena does not hold is not a Diamond event');
+  -- A target that is not a Diamond event.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, '20000000-0000-0000-0000-0000000000ee',
+    '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee, 'fixture-cross-target'),
+    'diamond_satellite_seat_requires_two_diamond_events');
+  -- A satellite that is not a Diamond event.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    '20000000-0000-0000-0000-0000000000ee', e.target,
+    '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee, 'fixture-cross-satellite'),
+    'diamond_satellite_seat_requires_two_diamond_events');
+END $case14_assets$;
+
+-- -------------------------------------------------------------------------
+-- 14c. A SEAT IS THE TARGET'S OWN ENTRY, IN THE TARGET THIS SATELLITE FEEDS.
+-- -------------------------------------------------------------------------
+DO $case14_target$
+DECLARE e record; v_ticket numeric; v_prize numeric; v_fee numeric;
+        b_ticket numeric; b_prize numeric; b_fee numeric;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO v_prize, v_fee
+    FROM public.tournaments WHERE id = e.target;
+  v_ticket := v_prize + v_fee;
+  -- Another Diamond event, correctly priced for itself, is still not the
+  -- target this satellite names.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.other, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee, 'fixture-other-target'),
+    'diamond_satellite_seat_names_another_target');
+  -- The right target, whole parts that add up, but not the split the target
+  -- actually charges: the prize and fee parts are swapped.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_fee, v_prize, 'fixture-swapped-parts'),
+    'diamond_satellite_seat_is_not_the_target_entry');
+  -- A bounty event is refused at the same target gate, and that is exactly
+  -- what this proves: the gate reads which target the satellite names before
+  -- it reads anything about the event's format, so the entry test's own bounty
+  -- clause is NOT what refuses here and is not claimed by this case.
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO b_prize, b_fee
+    FROM public.tournaments WHERE id = e.bounty;
+  b_ticket := b_prize + b_fee;
+  PERFORM fixture_assert((SELECT is_bounty FROM public.tournaments WHERE id = e.bounty),
+    'satellite seat: the bounty row this case uses really is a bounty event');
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.bounty, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    b_ticket, b_prize, b_fee, 'fixture-bounty-target'),
+    'diamond_satellite_seat_names_another_target');
+END $case14_target$;
+
+-- -------------------------------------------------------------------------
+-- 14d. A SEAT FUNDS A REGISTRATION, AND ONLY THIS SATELLITE'S QUALIFIER.
+-- -------------------------------------------------------------------------
+DO $case14_reg$
+DECLARE e record; v_ticket numeric; v_prize numeric; v_fee numeric;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO v_prize, v_fee
+    FROM public.tournaments WHERE id = e.target;
+  v_ticket := v_prize + v_fee;
+  PERFORM fixture_assert((SELECT count(*) = 0 FROM public.tournament_players
+                           WHERE tournament_id = e.target),
+    'satellite seat: the closed switch has let nobody register in the target, so there is no qualifier row');
+  -- Everything else correct, and no registration to fund.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', gen_random_uuid(),
+    v_ticket, v_prize, v_fee, 'fixture-no-registration'),
+    'diamond_satellite_seat_has_no_qualifier_registration');
+END $case14_reg$;
+
+-- -------------------------------------------------------------------------
+-- 14e. DUPLICATE QUALIFICATION: A QUALIFIER WHO ALREADY HOLDS THE TARGET'S
+-- ENTRY IS NOT GIVEN A SECOND ONE.
+--
+-- This is the second half of Phase 9's satellite line, and reaching it needs
+-- the two rows the door reads before it: the satellite's own qualifier
+-- registration, and an entry the player already holds. Both are written here
+-- as PRECONDITION STATE, not as money: the registration is a roster row, and
+-- the custody row is created at balance ZERO, so no Diamond is fabricated and
+-- the arena float does not move. The door's own duplicate test reads only
+-- whether a non-released entry row exists, which is what this reaches. Both
+-- rows are removed again below and the counts re-proved.
+-- -------------------------------------------------------------------------
+SELECT set_config('request.jwt.claim.role', 'service_role', false);
+DO $case14_dup$
+DECLARE e record; v_ticket numeric; v_prize numeric; v_fee numeric;
+        v_reg uuid := gen_random_uuid(); v_cust uuid := gen_random_uuid();
+        v_arena uuid;
+BEGIN
+  SELECT * INTO e FROM fixture_seat_ends;
+  SELECT buy_in_amount, COALESCE(buy_in_fee,0) INTO v_prize, v_fee
+    FROM public.tournaments WHERE id = e.target;
+  v_ticket := v_prize + v_fee;
+  SELECT club_id INTO v_arena FROM public.tournaments WHERE id = e.target;
+
+  INSERT INTO public.tournament_players
+    (id, tournament_id, user_id, is_satellite_qualifier, source_satellite_id)
+  VALUES (v_reg, e.target, '10000000-0000-0000-0000-000000000001', true, e.sat);
+  -- The entry this player already holds. Balance zero: the row is the marker
+  -- the door reads, and it carries no Diamonds.
+  INSERT INTO public.poker_diamond_custody
+    (id, user_id, arena_id, purpose, target_id, entry_key, balance, state)
+  VALUES (v_cust, '10000000-0000-0000-0000-000000000001', v_arena,
+          'tournament_entry', e.target, 'entry:fixture-already-held', 0, 'active');
+
+  PERFORM fixture_assert((SELECT count(*) = 1 FROM public.poker_diamond_custody
+     WHERE user_id = '10000000-0000-0000-0000-000000000001'
+       AND purpose = 'tournament_entry' AND target_id = e.target AND state <> 'released'),
+    'satellite seat: the qualifier holds exactly one open entry in the target before the second seat is asked for');
+
+  -- Everything the door needs is correct; the only thing wrong is that this
+  -- player already has the entry a seat would fund.
+  PERFORM fixture_refuses(format(
+    $q$SELECT fixture_seat(%L,%L,%L,%L,%s,%s,%s,%L)$q$,
+    e.sat, e.target, '10000000-0000-0000-0000-000000000001', v_reg,
+    v_ticket, v_prize, v_fee, 'fixture-already-held'),
+    'diamond_tournament_entry_already_held');
+
+  -- And the schema would have refused it too, independently of the door.
+  PERFORM fixture_refuses(format(
+    $q$INSERT INTO public.poker_diamond_custody
+         (user_id, arena_id, purpose, target_id, entry_key, balance, state)
+       VALUES (%L,%L,'tournament_entry',%L,'entry:fixture-second-open',0,'active')$q$,
+    '10000000-0000-0000-0000-000000000001', v_arena, e.target),
+    'poker_diamond_one_open_entry');
+
+  DELETE FROM public.poker_diamond_custody WHERE id = v_cust;
+  DELETE FROM public.tournament_players WHERE id = v_reg;
+END $case14_dup$;
+SELECT fixture_as('10000000-0000-0000-0000-00000000000f');
+
+-- -------------------------------------------------------------------------
+-- 14f. NOTHING MOVED. Six divider refusals, two cross-asset refusals, three
+-- target refusals, one registration refusal and the duplicate refusal, and not
+-- one Diamond, custody row, movement, ledger row or arena journal row exists
+-- because of any of them. The precondition rows 14e wrote are gone too.
+-- -------------------------------------------------------------------------
+DO $case14_moved$
+DECLARE b record;
+BEGIN
+  SELECT * INTO b FROM fixture_seat_before;
+  PERFORM fixture_assert(
+       (SELECT count(*) FROM public.poker_diamond_tournament_ledger) = b.ledger
+   AND (SELECT count(*) FROM public.poker_diamond_custody)           = b.custody
+   AND (SELECT count(*) FROM public.poker_diamond_movements)         = b.movements
+   AND (SELECT count(*) FROM public.diamond_transactions)            = b.journal
+   AND (SELECT COALESCE(sum(diamonds),0) FROM public.profiles)       = b.wallets,
+    'satellite seat: every refusal moved nothing - no ledger row, no custody, no movement, no journal row and no wallet change');
+  PERFORM fixture_assert((SELECT count(*) = 0 FROM public.diamond_transactions
+                           WHERE source = 'poker_arena'),
+    'satellite seat: the refused seats left no arena journal row behind');
+END $case14_moved$;
+
+-- ===========================================================================
 -- THE FIXTURE CLOSES NOTHING IT OPENED, AND OPENS NOTHING
 -- ===========================================================================
 DO $close$

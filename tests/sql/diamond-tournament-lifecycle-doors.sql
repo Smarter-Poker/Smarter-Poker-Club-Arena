@@ -2779,6 +2779,167 @@ ALTER FUNCTION public.fn_spin_tournament_contract_is_draw() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_spin_tournament_contract_is_draw() FROM PUBLIC, anon, authenticated, service_role;
 -- @@END fn_spin_tournament_contract_is_draw()
 
+-- The Diamond satellite seat door (Phase 9, 2026-09-21), joined on
+-- 2026-10-04 so the cases can EXECUTE its refusals instead of only pinning
+-- the migration text that wrote them. Owner-only: production grants EXECUTE
+-- to postgres and to nobody else, and the capture keeps it that way.
+-- @@DOOR fn_poker_diamond_tournament_seat_transfer(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_registration_id uuid, p_ticket numeric, p_prize numeric, p_fee numeric, p_seat_key text)
+-- @@PIN md5=3c7b92f5f29c7440fec5d8e82f4e4018 len=10047 owner=postgres
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament_seat_transfer(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_registration_id uuid, p_ticket numeric, p_prize numeric, p_fee numeric, p_seat_key text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_sat record; v_target record; v_reg public.tournament_players%ROWTYPE;
+  v_existing public.poker_diamond_tournament_ledger%ROWTYPE; v_e record;
+  v_out_key text; v_in_key text; v_wallet bigint; v_journal uuid; v_custody uuid;
+  v_request uuid; v_drained jsonb; v_out_ledger bigint; v_in_ledger bigint; v_receipt jsonb;
+BEGIN
+  IF p_satellite_id IS NULL OR p_target_id IS NULL OR p_user_id IS NULL OR p_registration_id IS NULL
+     OR p_seat_key IS NULL OR length(btrim(p_seat_key)) = 0 OR length(p_seat_key) > 300
+     OR p_ticket IS NULL OR p_prize IS NULL OR p_fee IS NULL
+     OR p_ticket < 1 OR p_ticket > 2147483647 OR p_prize < 0 OR p_fee < 0
+     OR p_ticket <> trunc(p_ticket) OR p_prize <> trunc(p_prize) OR p_fee <> trunc(p_fee)
+     OR p_prize + p_fee <> p_ticket THEN
+    RAISE EXCEPTION 'diamond_satellite_seat_requires_whole_parts' USING ERRCODE='22023';
+  END IF;
+  -- ASSETS NEVER CROSS: both ends of a Diamond seat are Diamond events.
+  IF NOT public.fn_poker_diamond_tournament(p_satellite_id)
+     OR NOT public.fn_poker_diamond_tournament(p_target_id) THEN
+    RAISE EXCEPTION 'diamond_satellite_seat_requires_two_diamond_events: satellite % target %',
+      p_satellite_id, p_target_id USING ERRCODE='23514';
+  END IF;
+  SELECT t.id, t.club_id, t.name, t.satellite_target_id, t.satellite_target
+    INTO v_sat FROM public.tournaments t WHERE t.id=p_satellite_id;
+  SELECT t.id, t.club_id, t.name, t.buy_in_amount, t.buy_in_fee, t.bounty_amount,
+         t.is_bounty, t.is_pko, t.is_mystery_bounty
+    INTO v_target FROM public.tournaments t WHERE t.id=p_target_id;
+  IF COALESCE(v_sat.satellite_target_id, v_sat.satellite_target) IS DISTINCT FROM p_target_id THEN
+    RAISE EXCEPTION 'diamond_satellite_seat_names_another_target' USING ERRCODE='23514';
+  END IF;
+  IF v_target.buy_in_amount IS DISTINCT FROM p_prize OR COALESCE(v_target.buy_in_fee,0) IS DISTINCT FROM p_fee
+     OR COALESCE(v_target.bounty_amount,0) <> 0 OR v_target.is_bounty IS DISTINCT FROM false
+     OR v_target.is_pko IS DISTINCT FROM false OR v_target.is_mystery_bounty IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'diamond_satellite_seat_is_not_the_target_entry' USING ERRCODE='23514';
+  END IF;
+  v_out_key := 'poker-tournament-seat-out:' || p_seat_key;
+  v_in_key := 'poker-tournament-seat-in:' || p_seat_key;
+
+  -- The same seat twice is the same seat: return what it wrote.
+  SELECT * INTO v_existing FROM public.poker_diamond_tournament_ledger WHERE idempotency_key=v_in_key;
+  IF FOUND THEN
+    IF v_existing.user_id IS DISTINCT FROM p_user_id OR v_existing.tournament_id IS DISTINCT FROM p_target_id
+       OR v_existing.amount IS DISTINCT FROM p_ticket::bigint
+       OR v_existing.registration_id IS DISTINCT FROM p_registration_id THEN
+      RAISE EXCEPTION 'idempotency_payload_mismatch';
+    END IF;
+    RETURN jsonb_build_object('success',true,'idempotent',true,'custody_id',v_existing.custody_id,
+      'target_ledger_id',v_existing.id,'journal_id',v_existing.wallet_journal_id,'amount',v_existing.amount);
+  END IF;
+
+  -- The registration the seat funds is the satellite's own qualifier row.
+  SELECT * INTO v_reg FROM public.tournament_players tp WHERE tp.id=p_registration_id FOR UPDATE;
+  IF NOT FOUND OR v_reg.tournament_id IS DISTINCT FROM p_target_id OR v_reg.user_id IS DISTINCT FROM p_user_id
+     OR COALESCE(v_reg.is_satellite_qualifier,false) IS NOT TRUE
+     OR v_reg.source_satellite_id IS DISTINCT FROM p_satellite_id THEN
+    RAISE EXCEPTION 'diamond_satellite_seat_has_no_qualifier_registration' USING ERRCODE='23514';
+  END IF;
+  -- One funded entry per player per event, as the entry door holds it.
+  IF EXISTS (SELECT 1 FROM public.poker_diamond_custody c
+              WHERE c.user_id=p_user_id AND c.purpose='tournament_entry'
+                AND c.target_id=p_target_id AND c.state<>'released') THEN
+    RAISE EXCEPTION 'diamond_tournament_entry_already_held' USING ERRCODE='23505';
+  END IF;
+  SELECT * INTO v_e FROM public.fn_poker_diamond_tournament_escrow(p_satellite_id);
+  IF v_e.prize_balance < p_ticket THEN
+    RAISE EXCEPTION 'diamond_tournament_bank_short' USING ERRCODE='P0404';
+  END IF;
+
+  -- THE JOURNAL ROW THE MOVEMENTS CARRY. A custody movement names a journal
+  -- row. This one moves no wallet: amount 0 at the unchanged balance, so the
+  -- register (which follows no zero) does not move; its metadata names the
+  -- Diamonds that moved between the two custody accounts, so the qualifier's
+  -- own journal shows the seat.
+  v_custody := gen_random_uuid();
+  SELECT COALESCE(p.diamonds,0) INTO v_wallet FROM public.profiles p WHERE p.id=p_user_id FOR UPDATE;
+  INSERT INTO public.diamond_transactions(user_id,type,transaction_type,amount,balance_after,
+    reference_id,description,source,issuance_class,counterparty,metadata)
+  VALUES (p_user_id,'tournament_satellite_seat','tournament_satellite_seat',0,v_wallet,
+    'poker-tournament-satellite-seat:'||p_seat_key,
+    'Satellite seat: '||p_ticket::bigint::text||' Diamonds moved from the prize bank of '
+      ||COALESCE(v_sat.name,'the satellite')||' into your entry in '||COALESCE(v_target.name,'its target')
+      ||' (your wallet did not move)',
+    'poker_arena','arena','arena_custody:'||v_custody::text,
+    jsonb_build_object('satellite_id',p_satellite_id,'target_id',p_target_id,'registration_id',p_registration_id,
+      'custody_id',v_custody,'amount',p_ticket,'prize_part',p_prize,'fee_part',p_fee,'wallet_moved',0,
+      'seat_key',p_seat_key))
+  RETURNING id INTO v_journal;
+
+  -- OUT: the whole ticket leaves the satellite's prize bank, oldest entry rows
+  -- first, each drained row releasing its part to the new entry row.
+  v_drained := public.fn_poker_diamond_tournament_drain(
+    p_satellite_id, 'prize', p_ticket::bigint, v_out_key, 'arena_custody:'||v_custody::text, v_journal);
+  INSERT INTO public.poker_diamond_tournament_ledger(
+    tournament_id,arena_id,user_id,custody_id,kind,amount,prize_part,bounty_part,fee_part,
+    idempotency_key,wallet_journal_id,registration_id,request)
+  VALUES (p_satellite_id,v_sat.club_id,p_user_id,NULL,'prize',p_ticket::bigint,p_ticket::bigint,0,0,
+    v_out_key,v_journal,NULL,
+    jsonb_build_object('kind','prize','delivery','satellite_seat','seat_key',p_seat_key,'target_id',p_target_id,
+      'registration_id',p_registration_id,'target_custody_id',v_custody,'drained',v_drained))
+  RETURNING id INTO v_out_ledger;
+
+  -- IN: the same Diamonds become the qualifier's funded entry in the target,
+  -- ACTIVE from the moment it exists (the seat guards admit a Diamond seat
+  -- only against an active entry) and never bound to a seat.
+  INSERT INTO public.poker_diamond_custody(id,user_id,arena_id,purpose,target_id,entry_key,balance,state)
+  VALUES (v_custody,p_user_id,v_target.club_id,'tournament_entry',p_target_id,
+    'entry:'||p_registration_id::text,p_ticket::bigint,'active');
+  v_request := uuid_in(md5(v_in_key)::cstring);
+  v_receipt := jsonb_build_object('success',true,'custody_id',v_custody,'request_id',v_request,
+    'amount',p_ticket,'custody_balance',p_ticket,'journal_id',v_journal,
+    'source','tournament_prize_bank:'||p_satellite_id::text);
+  INSERT INTO public.poker_diamond_movements(request_id,custody_id,user_id,action,amount,
+    source_account,destination_account,wallet_journal_id,request,receipt)
+  VALUES (v_request,v_custody,p_user_id,'reserve',p_ticket::bigint,
+    'tournament_prize_bank:'||p_satellite_id::text,'arena_custody:'||v_custody::text,v_journal,
+    jsonb_build_object('action','satellite_seat','satellite_id',p_satellite_id,'target_id',p_target_id,
+      'user_id',p_user_id,'registration_id',p_registration_id,'amount',p_ticket,'seat_key',p_seat_key),
+    v_receipt);
+  INSERT INTO public.poker_diamond_tournament_ledger(
+    tournament_id,arena_id,user_id,custody_id,kind,amount,prize_part,bounty_part,fee_part,
+    idempotency_key,wallet_journal_id,registration_id,request)
+  VALUES (p_target_id,v_target.club_id,p_user_id,v_custody,'entry',p_ticket::bigint,p_prize::bigint,0,p_fee::bigint,
+    v_in_key,v_journal,p_registration_id,
+    jsonb_build_object('kind','entry','source','satellite_seat','satellite_id',p_satellite_id,'gross',p_ticket,
+      'prize',p_prize,'bounty',0,'fee',p_fee,'request_id',v_request,'seat_key',p_seat_key))
+  RETURNING id INTO v_in_ledger;
+
+  -- The first funded entry locks the target's entry contract, as the entry
+  -- door locks it; an open target shadow follows the entry, as it follows one.
+  UPDATE public.tournaments t SET entry_contract_locked=true
+   WHERE t.id=p_target_id AND NOT t.entry_contract_locked;
+  IF EXISTS (SELECT 1 FROM public.tournament_escrow x WHERE x.tournament_id=p_target_id) THEN
+    PERFORM public.fn_ca_escrow_apply(p_target_id,'diamond satellite seat',
+      p_gross_in => p_ticket, p_fee_entries_in => p_fee);
+  END IF;
+
+  -- Both events' banks agree with their custody after the move.
+  IF (SELECT prize_balance+bounty_balance+fee_balance FROM public.fn_poker_diamond_tournament_escrow(p_satellite_id))
+       IS DISTINCT FROM public.fn_poker_diamond_tournament_custody(p_satellite_id)::numeric
+     OR (SELECT prize_balance+bounty_balance+fee_balance FROM public.fn_poker_diamond_tournament_escrow(p_target_id))
+       IS DISTINCT FROM public.fn_poker_diamond_tournament_custody(p_target_id)::numeric THEN
+    RAISE EXCEPTION 'diamond_tournament_escrow_disagrees_with_custody' USING ERRCODE='P0404';
+  END IF;
+  RETURN jsonb_build_object('success',true,'custody_id',v_custody,'registration_id',p_registration_id,
+    'amount',p_ticket,'prize',p_prize,'fee',p_fee,'journal_id',v_journal,'request_id',v_request,
+    'satellite_ledger_id',v_out_ledger,'target_ledger_id',v_in_ledger,'drained',v_drained);
+END $function$;
+ALTER FUNCTION public.fn_poker_diamond_tournament_seat_transfer(uuid, uuid, uuid, uuid, numeric, numeric, numeric, text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_seat_transfer(uuid, uuid, uuid, uuid, numeric, numeric, numeric, text) FROM PUBLIC, anon, authenticated, service_role;
+-- @@END fn_poker_diamond_tournament_seat_transfer(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_registration_id uuid, p_ticket numeric, p_prize numeric, p_fee numeric, p_seat_key text)
+
 -- ---------------------------------------------------------------------------
 -- THE TRIGGER SET ON public.tournaments, AS PRODUCTION CARRIES IT
 -- ---------------------------------------------------------------------------
@@ -2878,7 +3039,8 @@ BEGIN
     ('trg_validate_tournament_table_origin()','23771af148d48a94a01e1df628f765aa'),
     ('trg_auto_cashout_on_table_close()','a936bf2b604a14a6ae620e6b3db852f0'),
     ('fn_cashout_seats_for_closing_table(p_table_id uuid, p_reason text)','d3de0cde88f515f903c7fc381dc8681c'),
-    ('fn_spin_tournament_contract_is_draw()','c43cf8d367e0028c0764df3c33f4df41')
+    ('fn_spin_tournament_contract_is_draw()','c43cf8d367e0028c0764df3c33f4df41'),
+    ('fn_poker_diamond_tournament_seat_transfer(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_registration_id uuid, p_ticket numeric, p_prize numeric, p_fee numeric, p_seat_key text)','3c7b92f5f29c7440fec5d8e82f4e4018')
   ) AS t(ident, want)
   LOOP
     v_seen := v_seen + 1;
@@ -2895,8 +3057,8 @@ BEGIN
     END IF;
     v_oid := NULL;
   END LOOP;
-  IF v_seen <> 41 THEN
-    RAISE EXCEPTION 'the lifecycle capture declares % doors but this file carries %', 41, v_seen;
+  IF v_seen <> 42 THEN
+    RAISE EXCEPTION 'the lifecycle capture declares % doors but this file carries %', 42, v_seen;
   END IF;
   IF v_bad <> 0 THEN
     RAISE EXCEPTION '% of % captured Diamond tournament lifecycle doors do not match their pins', v_bad, v_seen;

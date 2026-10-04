@@ -204,8 +204,13 @@ export function classifyChangedPaths(paths) {
   // other lane, so the two cannot disagree - a path matched by either is in.
   // The diamond-concurrency-* capture, manifest, tables and seed (2026-09-30)
   // are what run-diamond-concurrency.py loads, named here for the same reason.
+  // diamond-cross-format-*.manifest.json (2026-10-04) is the md5 pin list
+  // run-diamond-cross-format-conservation.py checks its loaded readers
+  // against; its two .sql fixtures are poker-diamond-* and are already routed
+  // by that prefix, deliberately, so they do not also select the eleven
+  // tests/sql/diamond-*.sql game probes.
   const diamondSqlAcceptance = matches(
-    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
+    /^(tests\/sql\/(?:run-[a-z0-9-]*diamond[a-z0-9-]*\.py|poker-diamond-[a-z0-9-]+\.sql|poker-arena-access\.sql|diamond-controlled-play-driver\.ts|diamond-session-fixture\.sql|diamond-transfer-cap-fixture\.sql|diamond-tournament-[a-z0-9-]+\.sql|diamond-tournament-[a-z0-9-]+\.manifest\.json|diamond-concurrency-[a-z0-9-]+\.sql|diamond-concurrency-[a-z0-9-]+\.manifest\.json|diamond-cross-format-[a-z0-9-]+\.manifest\.json)|scripts\/ci\/(?:run-diamond-sql-acceptance\.py|check-diamond-runners-listed\.mjs))$/
   );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);

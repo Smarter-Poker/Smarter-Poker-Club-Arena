@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "e3cf054daaa8be83dde402a7f414fab597710e456f224336a64a88abe4567e37",
+    "scripts/ci/classify-ci-changes.mjs": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -610,14 +610,25 @@
       }
     ]
   },
-  "clubCreateCapacityRouting20261004": {
-    "reason": "Route the read-only Club Create capacity preflight, its focused unit test, and the certification workflow through the maintained test lane. The classifier change is additive; no financial source, fixture, assertion, or existing route changed.",
+  "diamondCrossFormatConservationRoute20261004": {
+    "reason": "Restamped 2026-10-04 with the Diamond Phase 9 cross-format conservation runner. The only change to this classifier is one alternation widened so tests/sql/diamond-cross-format-*.manifest.json reaches the accounting job that executes the runner reading it, plus the comment saying why its two .sql fixtures are named poker-diamond-* instead. No existing route, lane, financial source or assertion in this file was altered, and the two Diamond lanes it already declares are byte-identical. Diff read before restamping.",
     "changes": [
       {
         "section": "repository_files",
         "path": "scripts/ci/classify-ci-changes.mjs",
         "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
-        "current": "e3cf054daaa8be83dde402a7f414fab597710e456f224336a64a88abe4567e37"
+        "current": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
+      }
+    ]
+  },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
       }
     ]
   }

@@ -78,8 +78,14 @@
 -- tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json, and the
 -- shared-hand lane installs the snapshot section of this file.
 --
--- Applied to production as version <recorded version> (the apply transport
--- stamps its own version; match by name, never by version).
+-- Applied to production as version 20261004140403 (the apply transport
+-- stamps its own version; match by name, never by version). Applied form:
+-- the snapshot and void bodies were produced from the live pre-images by the
+-- one replacement each shown here and asserted at the same pre-image and
+-- post-image md5s as this file (snapshot c0d85cbb / 4a960ad8, void
+-- f9a4e418); the doors and the one-time disposal are this file's text.
+-- The one-time disposal voided 12 reserved originals (credit 0); the three
+-- never-begun originals already carried their absence records.
 -- ===========================================================================
 
 BEGIN;

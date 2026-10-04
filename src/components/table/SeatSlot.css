@@ -1071,7 +1071,28 @@
 
    A browser without container units or CSS trigonometry keeps the rule above
    the @supports block: the same ring, linear in angle. It still starts on
-   time, still ends at the deadline, and still has no easing. */
+   time, still ends at the deadline, and still has no easing.
+
+   THE GATE TESTS THE THING IT GUARDS (2026-10-04). It used to ask two
+   unrelated questions, `width: 1cqw` and `rotate: atan2(1px, 1px)`. What is
+   actually used is an atan2() of CONTAINER-UNIT lengths, clamped and summed,
+   as a conic-gradient colour stop, and it reaches the gradient through
+   var(--sp-ring-edge). A declaration containing var() cannot fall back: if
+   the engine accepts the custom property and then rejects the stop, the
+   background is invalid at computed-value time and there is NO ring at all.
+   So the gate now asks for exactly that construct, in a real `background`
+   declaration with no var() in it, where a rejection is a parse error the
+   @supports can see - and the browser stays on the angle-linear ring.
+
+   WITHOUT @property (iOS 16.0 to 16.3). Both rings are driven by registered
+   custom properties animated in spTimerRingShrink; @property arrived in
+   Safari 16.4 and @supports cannot test for an at-rule. An engine without it
+   cannot interpolate --timer-progress / --sp-timer-spent, so the arc does
+   not drain smoothly there: it holds full and, where the engine animates
+   unregistered properties at all, flips to empty at the midpoint of the
+   turn. The last-five-seconds pulse (standard properties) still runs. There
+   is no clean CSS-only substitute for a conic sweep on a standard animatable
+   property, so this is stated rather than papered over. */
 .seat--active .seat__timer-ring {
   position: absolute;
   inset: -3px;
@@ -1108,7 +1129,13 @@
   will-change: background;
 }
 
-@supports (width: 1cqw) and (rotate: atan2(1px, 1px)) {
+@supports (container-type: size) and
+  (
+    background: conic-gradient(
+        red calc(atan2(clamp(0px, 1cqw, 50cqw), 50cqh) + atan2(50cqh, 50cqw)),
+        blue 0
+      )
+  ) {
   .seat--active .seat__timer-ring-arc {
     --sp-ring-d: calc(var(--sp-timer-spent, 0) * (200cqw + 200cqh));
     --sp-ring-edge: calc(
@@ -1146,18 +1173,28 @@
 
    So the pulse now goes UP from the steady ring instead of down from it: at
    rest the arc is exactly as lit as it is for the rest of the turn, and on
-   each beat it flares (a tight bright halo). The trough never drops below
-   65% opacity, so at every instant of the last five seconds the remaining
-   arc is plainly there and plainly the right length. */
+   each beat it flares (a tight bright halo). The arc is never dimmed at all,
+   so at every instant of the last five seconds the remaining arc is plainly
+   there and plainly the right length.
+
+   REST IS THE 0% / 100% FRAME, THE FLARE IS THE 50% FRAME (2026-10-04, same
+   day). The first cut of this had them the other way round: the flare at
+   0%/100% and a 65% trough at 50%. The animation waits out most of the turn
+   on a positive delay with `both` fill, and backwards fill holds the 0%
+   frame for that whole wait - so the ring sat FLARED, under a filter layer,
+   from the first second of every turn, the "pulse" at the end was a dip, and
+   a reduced-motion player (animation: none) saw a dimmer ring than everyone
+   else. The resting frame therefore declares nothing but full opacity - no
+   filter, so none is applied while it waits - which is exactly the ring a
+   reduced-motion player gets, and what it settles back to at the deadline. */
 @keyframes spTimerFlash {
   0%,
   100% {
     opacity: 1;
-    filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.95)) brightness(1.25);
   }
   50% {
-    opacity: 0.65;
-    filter: drop-shadow(0 0 0 rgba(0, 229, 255, 0)) brightness(1);
+    opacity: 1;
+    filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.95)) brightness(1.25);
   }
 }
 

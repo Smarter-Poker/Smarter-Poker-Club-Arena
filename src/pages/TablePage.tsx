@@ -85,7 +85,15 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  * All five component files (TSX + CSS) and useTableModals.ts are deleted.
  */
 
-import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  startTransition,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
@@ -479,6 +487,11 @@ import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { EquityBadgeLayer, type EquityBadge } from '../components/table/EquityBadgeLayer';
 import type { EquitySpot } from '../lib/equityBadgePlacement';
+import {
+  subscribeTournamentDock,
+  toggleTournamentDockCollapsed,
+  tournamentDockCollapsed as readTournamentDockCollapsed,
+} from '../lib/tournamentDockStore';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
@@ -1014,8 +1027,6 @@ function holeCardSig(cards: readonly (Card | null | undefined)[] | null | undefi
 }
 /** Stable empty list, so a hand with no runout never re-renders the badge layer. */
 const NO_EQUITY_BADGES: EquityBadge[] = [];
-/** Device-local memory of the tournament info dock's collapse toggle. */
-const TOURNAMENT_DOCK_COLLAPSED_KEY = 'ca.tournamentDock.collapsed';
 const RIT_BOUNDARY_ACK_MS = 1500;
 
 /**
@@ -6290,14 +6301,28 @@ function LiveTablePage({
   const tableHandIsOver =
     finishedHand !== null && (tableState.handNumber ?? 0) === finishedHand.handNumber;
   const heroHandIsOver = tableHandIsOver && heroHoleSigNow === finishedHand!.heroSig;
-  /* The break proper: every table has finished its hand and is parked. A seat
-     on the clock means a hand is still being played here, whatever the banner
-     says, and its cards stay. */
+  /* The break proper, for a page that never saw the hand end (it loaded or
+     reconnected mid-break): the tables are parked and NOTHING on this felt
+     says a hand is being played or shown.
+
+     It used to read `currentPlayerSeat === 0` alone, and that is not "parked":
+     the seat is 0 between every two actions, through every all-in runout, and
+     for the whole result hold - and the engine starts the countdown on the
+     clock at :55 whether or not this table's last hand has finished. So a
+     hand still running at :55 had its hole cards blink off between actions
+     and its tabled hands turned face-down under the winner. A live or
+     just-finished hand always has chips in the middle or a winner on show;
+     only when there is neither does the break get to hide a card. The
+     ordinary case - this page watched the hand end - is `tableHandIsOver`
+     and does not depend on any of this. */
   const breakHidesCards =
     maintenanceBreak.active &&
     maintenanceBreak.phase !== 'last_hand' &&
     maintenanceBreak.phase !== 'idle' &&
-    tableState.currentPlayerSeat === 0;
+    tableState.currentPlayerSeat === 0 &&
+    (tableState.pot || 0) === 0 &&
+    tableState.communityCards.length === 0 &&
+    winnerInfo.playerIds.length === 0;
   const heroTabCards = useMemo(() => {
     const hero = tableState.players[tableState.heroSeat - 1];
     if (!hero || !tableState.isHandInProgress || hero.status === 'folded') return '';
@@ -6313,6 +6338,8 @@ function LiveTablePage({
     heroHandIsOver,
     breakHidesCards,
   ]);
+  /* One verdict for everything a seat draws about the hand that is over. */
+  const feltShowsNoHand = tableHandIsOver || breakHidesCards;
 
   // Hero's last action this street, for the transient badge under the tab.
   // Same memo-to-primitive pattern as heroTabCards, same reason.
@@ -12340,27 +12367,18 @@ function LiveTablePage({
   const [showTournamentLobby, setShowTournamentLobby] = useState(false);
   /* THE TOURNAMENT INFO DOCK (Dan 2026-10-04): "A COLLAPSABLE BOX, UNDER THE
      'ACTION BAR' ON THE BOTTOM OF THE PAGE". Open or collapsed is the
-     player's choice and is remembered on this device. The flag lives here,
-     not in TournamentHUD, because the bottom bars stand on the dock and read
-     its height from `data-tdock` on this page's root (TournamentHUD.css). */
-  const [tournamentDockCollapsed, setTournamentDockCollapsed] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem(TOURNAMENT_DOCK_COLLAPSED_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  const toggleTournamentDock = useCallback(() => {
-    setTournamentDockCollapsed((was) => {
-      const next = !was;
-      try {
-        window.localStorage.setItem(TOURNAMENT_DOCK_COLLAPSED_KEY, next ? '1' : '0');
-      } catch {
-        /* Private mode: the choice simply lasts for this visit. */
-      }
-      return next;
-    });
-  }, []);
+     player's choice and is remembered on this device. It is ONE value for
+     every table open in this tab (lib/tournamentDockStore): each page used to
+     keep its own copy, so collapsing the dock on one tournament tab left the
+     others open. This page reads it, not TournamentHUD, because the bottom
+     bars stand on the dock and take its height from `data-tdock` on this
+     page's root (TournamentHUD.css). */
+  const tournamentDockCollapsed = useSyncExternalStore(
+    subscribeTournamentDock,
+    readTournamentDockCollapsed,
+    readTournamentDockCollapsed
+  );
+  const toggleTournamentDock = toggleTournamentDockCollapsed;
   /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
      the Must Move box in the upper-right corner or the SEAT CHANGE button.
      The refresh key is bumped by every seat-move event so the box re-reads
@@ -17703,7 +17721,18 @@ function LiveTablePage({
         /* The hand this reset belongs to, read NOW. The reset can be pushed
            later by POT_WIN, and reading the hand number when it finally runs
            would name whatever hand is on the felt by then. */
-        const completedHandNumber = tableStateRef.current.handNumber ?? 0;
+        /* And only the hand THIS event is about. The engine stamps
+           `hand_number` on hand_complete from the same counter the snapshot
+           carries; an event for another hand than the one on the felt (a
+           replayed or late frame) marks nothing, so it can never name the
+           live hand as finished. */
+        const feltHandNumber = tableStateRef.current.handNumber ?? 0;
+        const eventHandNumber =
+          Number((evt.data as { hand_number?: unknown } | undefined)?.hand_number) || 0;
+        const completedHandNumber =
+          eventHandNumber > 0 && feltHandNumber > 0 && eventHandNumber !== feltHandNumber
+            ? 0
+            : feltHandNumber;
         const completedHeroSig = holeCardSig(
           tableStateRef.current.players.find((pl) => pl?.isHero)?.holeCards
         );
@@ -22538,7 +22567,10 @@ function LiveTablePage({
         // Dan 2026-08-15: also flag it for THIS hand so recordHand() can post
         // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
         heroVpipThisHandRef.current = true;
-        if (action === 'raise' || action === 'allin') heroPfrThisHandRef.current = true;
+        /* `raise` only. An ALL IN press may be executed as a call (see the
+           'allin' case below); the engine's echo counts a real shove as a
+           preflop raise in the lastActions effect. */
+        if (action === 'raise') heroPfrThisHandRef.current = true;
       }
 
       //All local engine calls removed — server is authoritative
@@ -22629,7 +22661,12 @@ function LiveTablePage({
           if (heroStack <= 0) return;
           if (!validateAndExecuteAction('allin')) return;
           soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
-          setIsAllInMode(true);
+          /* No `setIsAllInMode(true)` here (2026-10-04). Since the engine
+             plays an ALL IN press as a CALL where only a call is legal, the
+             button no longer proves the hero is all-in: the vignette and the
+             dimmed stack stayed up over a player with chips behind until
+             their next turn. The engine's own PLAYER_ACTION echo turns the
+             mode on for a real all-in, and says nothing for a call. */
           {
             const revert = applyOptimisticHeroAction('allin', heroStack);
             if (tableId) {
@@ -25361,7 +25398,15 @@ function LiveTablePage({
               displayPlayer.holeCards.length > 0 &&
               (breakHidesCards || (displayPlayer.isHero ? heroHandIsOver : tableHandIsOver))
             ) {
-              displayPlayer = { ...displayPlayer, holeCards: [], showCards: false };
+              displayPlayer = {
+                ...displayPlayer,
+                holeCards: [],
+                showCards: false,
+                /* A seat the engine left `all_in` between hands would still be
+                   drawn a fan of card backs (SeatSlot treats all-in as "in a
+                   hand" on its own). The hand is over; so is the all-in. */
+                status: displayPlayer.status === 'all_in' ? 'active' : displayPlayer.status,
+              };
             }
             // The seat hero just tapped: show them SITTING immediately, with a
             // pending stack, while the buy-in modal is still open. Replaced by
@@ -25502,16 +25547,12 @@ function LiveTablePage({
                     ? ' seat-wrapper--showing'
                     : ''
                 }${
-                  /* Dan 2026-08-28 (equity smart placement): a seat showing
-                     an all-in equity badge lifts above the neighbouring
-                     wrappers (z 28, under --showing's 30) so the badge is
-                     never sealed beneath a DOM-later neighbour's avatar. */
-                  displayedEquities.length > 0 &&
-                  player &&
-                  (displayedEquities.some((e) => e.userId === player.id) ||
-                    displayedEquities.some((e) => !e.userId && e.seat === seatNumber))
-                    ? ' seat-wrapper--equity'
-                    : ''
+                  /* The `seat-wrapper--equity` lift that lived here is gone
+                     (2026-10-04). It raised a badge-carrying seat to z 28 so
+                     its badge beat a neighbour; the badge is in
+                     EquityBadgeLayer now, and all the lift still did was
+                     paint that seat over its neighbours' chips. */
+                  ''
                 }`}
                 /* The handle EquityBadgeLayer measures this seat by. */
                 data-seat-wrapper={seatNumber}
@@ -25623,7 +25664,14 @@ function LiveTablePage({
                   actionClock={actionClock}
                   bigBlind={seatBigBlind}
                   /* Dan 2026-08-21, item 15: hero's live made hand. */
-                  handStrength={displayPlayer?.isHero ? heroHandStrength : null}
+                  /* ...and it leaves with its cards: "Pair" under a plate with
+                     no cards beside it is the same finished hand still on
+                     show (2026-10-04). */
+                  handStrength={
+                    displayPlayer?.isHero && !heroHandIsOver && !breakHidesCards
+                      ? heroHandStrength
+                      : null
+                  }
                   isTournament={tableState.isTournament}
                   bountyValue={
                     tableState.isBountyTournament && player
@@ -25752,7 +25800,15 @@ function LiveTablePage({
                      fan belongs to a HAND — see SeatSlot's `handInPlay`. The
                      hand number is included because it survives the gaps
                      between streets where isHandInProgress can dip. */
-                  handInPlay={tableState.isHandInProgress || (tableState.handNumber ?? 0) > 0}
+                  /* Dan 2026-10-04: a finished hand leaves the felt for EVERY
+                     seat. Blanking the cards alone left each opponent a fan of
+                     card backs (this flag stays true after the reset - the
+                     hand number is still > 0), and a tabled hand turned back
+                     face-down for the whole break. */
+                  handInPlay={
+                    (tableState.isHandInProgress || (tableState.handNumber ?? 0) > 0) &&
+                    !feltShowsNoHand
+                  }
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}

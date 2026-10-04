@@ -89,8 +89,32 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
       return at;
     });
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    // An ordinary short read is judged by when the release arrived, not
-    // counted as a missed break outright.
+    // No lock is taken without an emergency reason (owner ruling 2026-10-04).
+    // The seal answers `unavailable` to every reservation that names no
+    // cause, so between reading the reason and the one lock acquisition the
+    // request returns unless the reason is urgent, engine-degraded or
+    // deadline - and a missed scheduled break is not a reason at all.
+    const gate = between(
+      request,
+      'reason="$(recovery_window_reason "$health")"',
+      "acquire_engine_lock 'one recovery announcement'"
+    );
+    expect(gate).toMatch(
+      /case "\$\{reason%% \*\}" in\s+urgent\|engine-degraded\|deadline\) ;;\s+\*\) return 0 ;;\s+esac/
+    );
+    expect(request.split("acquire_engine_lock 'one recovery announcement'")).toHaveLength(2);
+    expect(request).toContain('reserve_args+=(--cause "${reason%% *}")');
+    expect(policy).not.toContain('--missed-window');
+    const reasons = between(policy, 'recovery_window_reason() {', '\n}');
+    expect(reasons).not.toContain('RECOVERY_ADMISSION_MISSED');
+    expect([...reasons.matchAll(/echo "([a-z-]+) /g)].map((m) => m[1])).toEqual([
+      'urgent',
+      'engine-degraded',
+      'deadline',
+    ]);
+    // An ordinary short read is still judged by when the release arrived, not
+    // recorded as a missed break outright. The record no longer asks for
+    // anything: see the gate above.
     const queue = code(
       transaction.slice(transaction.indexOf('RECOVERY_WAIT_STARTED_EPOCH="$(date +%s)"'))
     );

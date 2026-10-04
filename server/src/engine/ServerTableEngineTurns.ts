@@ -3821,6 +3821,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             horseCapChips > 0
               ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
               : Infinity;
+          // Set only where a SIZED bet/raise of the whole stack is rewritten to
+          // all_in below - never when the horse itself chose all_in.
+          let promotedToAllIn = false;
           if (action === 'bet' && amount !== undefined) {
             amount = horseIsFixedLimit
               ? (commitActions.minRaiseTo ?? amount)
@@ -3830,6 +3833,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
               action = 'all_in';
               amount = undefined;
+              promotedToAllIn = true;
             }
           } else if (action === 'raise' && amount !== undefined) {
             const minRaiseTo = state.currentBet + state.minRaise;
@@ -3844,6 +3848,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
               action = 'all_in';
               amount = undefined;
+              promotedToAllIn = true;
             }
           }
 
@@ -3863,6 +3868,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          // Owner ruling 2026-10-04, same rule as the human request path:
+          // HandController now executes an `all_in` that cannot be a legal
+          // raise as a call. That tolerance belongs to a chosen ALL IN only. A
+          // sized bet/raise of the whole stack was promoted to `all_in` above;
+          // when the engine does not offer a shove to this seat the sized wager
+          // was illegal, so it is not submitted and the seat takes the refused
+          // path below (check, else fold) exactly as before the ruling. It must
+          // never become a call the player did not choose.
+          const promotedShoveIsIllegal =
+            promotedToAllIn &&
+            action === 'all_in' &&
+            !commitActions.legalActions.includes('all_in');
+
           const normalizedAmount =
             typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
           // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
@@ -3881,14 +3899,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           let executedAmount: number | null = null;
           const acceptedActions: HorseAcceptedAction[] = [];
           let attemptingFallback = false;
-          const acceptanceObserver: [] | [(record: Readonly<ActionRecord>) => void] =
-            decision.executionWitness
-              ? [
-                  (record) => {
-                    acceptedActions.push({ record, intended: !attemptingFallback });
-                  },
-                ]
-              : [];
+          // Always observed, witness or not: the controller may execute a
+          // different action from the one submitted (an all_in that is only a
+          // call), and every ledger below must record what was executed.
+          const acceptanceObserver = (record: Readonly<ActionRecord>): void => {
+            acceptedActions.push({ record, intended: !attemptingFallback });
+          };
           const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
           const worker = getLiveHorseDecisionWorker();
@@ -3905,7 +3921,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 attemptedAction,
                 attemptedAmount,
                 origin,
-                ...acceptanceObserver
+                acceptanceObserver
               );
             } catch (err) {
               reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
@@ -3916,13 +3932,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             return returned || acceptedActions.length > receiptsBefore;
           };
           worker.runWithDispatchBarrier(() => {
-            applied = attemptAction(
-              action as ActionType,
-              amount,
-              safeWorkerFallback || decision.policyFallback === 'brain_exception'
-                ? 'horse_fallback'
-                : 'horse_policy'
-            );
+            if (!promotedShoveIsIllegal) {
+              applied = attemptAction(
+                action as ActionType,
+                amount,
+                safeWorkerFallback || decision.policyFallback === 'brain_exception'
+                  ? 'horse_fallback'
+                  : 'horse_policy'
+              );
+            }
             intendedApplied = applied;
             if (applied) {
               executedAction = action as ActionType;

@@ -222,7 +222,16 @@ describe('the buy-in travels from the tournament row to the pill', () => {
     expect(lookup).not.toMatch(/setInterval|setTimeout/);
   });
 
-  it('a balance move keeps the price with the chair', () => {
+  it('a balance move keeps the price with the chair, on both move paths', () => {
+    // The socket path (the tab re-point in updateTableInfo) ...
     expect(multi).toMatch(/tournamentBuyIn: current\.tournamentBuyIn,/);
+    // ... and the seat-row path, which rebuilds the tab from the new table's row.
+    const insertPath = multi.slice(
+      multi.indexOf("event: 'INSERT',"),
+      multi.indexOf('announceTournamentMove(oldTab.id, newId, name);')
+    );
+    const repointed = insertPath.slice(insertPath.indexOf('t.id === oldTab.id'));
+    expect(repointed).toContain('arrivedByMoveAt: Date.now(),');
+    expect(repointed).toContain('tournamentBuyIn: t.tournamentBuyIn,');
   });
 });

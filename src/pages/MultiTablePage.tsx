@@ -42,7 +42,12 @@ import {
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import {
+  rankQuickJoinTables,
+  bigBlindFromStakesLabel,
+  claimMoveAnnouncement,
+  quickJoinIsTournament,
+} from '../lib/quickJoinRanking';
 import { quickJoinSpinRows } from '../lib/quickJoinSpins';
 import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
@@ -279,8 +284,20 @@ interface TableInstance {
    * table, where "the lobby" means that club's tournaments, not its cash board.
    * Absent everywhere else, and the lobby then opens on the player's own saved
    * tab exactly as it always has.
+   *
+   * ONE-SHOT: it is a landing, not a setting. The lobby page reports back the
+   * moment it has applied it and the stamp is cleared, so a later remount of
+   * the page in this tab (drill-in then Back, a cash table's "+") opens on the
+   * player's own tab pick again.
    */
   lobbyGameType?: 'MTT' | 'SNG';
+  /**
+   * Which Browse Full Lobby request this tab last answered. It is the lobby
+   * page's key, so EVERY request remounts the page on its list, including a
+   * second request for the same list, and it survives the stamp above being
+   * cleared, so clearing the stamp remounts nothing.
+   */
+  lobbyLandingNonce?: number;
   /** undefined uses the home club; null displays the shared arena selector. */
   lobbyClubId?: string | null;
   lobbyArenaStack?: (string | null)[];
@@ -1254,12 +1271,14 @@ export default function MultiTablePage() {
      told the player they had been moved. All they saw was the new felt
      finding their seat.
 
-     Both paths now come here, and a destination is announced exactly once. */
+     Both paths now come here, and a MOVE is announced exactly once. The key
+     is the move (`from->destination`), not the destination: keyed by
+     destination alone, a player balanced A to B, back to A, then to B again
+     heard only the first of three moves (see claimMoveAnnouncement). */
   const announcedMovesRef = useRef<Set<string>>(new Set());
   const announceTournamentMove = useCallback(
-    (destinationId: string, knownName?: string) => {
-      if (announcedMovesRef.current.has(destinationId)) return;
-      announcedMovesRef.current.add(destinationId);
+    (fromId: string, destinationId: string, knownName?: string) => {
+      if (!claimMoveAnnouncement(announcedMovesRef.current, fromId, destinationId)) return;
       const say = (name: string) => toast.info(`You've Been Moved To ${name}`, 6000);
       if (knownName) {
         say(knownName);
@@ -1377,11 +1396,14 @@ export default function MultiTablePage() {
                         kind: 'table' as const,
                         seated: true,
                         arrivedByMoveAt: Date.now(),
+                        /* One tournament, one price: it moves with the chair
+                           here exactly as it does on the socket path. */
+                        tournamentBuyIn: t.tournamentBuyIn,
                       }
                     : t
                 )
               );
-              announceTournamentMove(newId, name);
+              announceTournamentMove(oldTab.id, newId, name);
             } catch {
               requestSeatResync();
             } finally {
@@ -2668,11 +2690,35 @@ export default function MultiTablePage() {
    *
    * It follows a tap on the sheet and moves nothing by itself.
    */
+  const lobbyLandingNonceRef = useRef(0);
   const openLobbyTabOn = useCallback((list: 'MTT' | 'SNG') => {
     masterBus.emit('OPEN_LOBBY_TAB', {});
+    /* A fresh nonce per REQUEST, taken outside the updater so the updater
+       stays pure. It keys the lobby page, so a second request for the same
+       list lands on that list again instead of doing nothing. */
+    lobbyLandingNonceRef.current += 1;
+    const nonce = lobbyLandingNonceRef.current;
     setTables((cur) =>
-      cur.some((t) => isLobbyTab(t) && t.lobbyGameType !== list)
-        ? cur.map((t) => (isLobbyTab(t) ? { ...t, lobbyGameType: list } : t))
+      cur.some(isLobbyTab)
+        ? cur.map((t) =>
+            isLobbyTab(t) ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce } : t
+          )
+        : cur
+    );
+  }, []);
+
+  /**
+   * The lobby page has applied its landing list: the request is spent.
+   *
+   * Clears `lobbyGameType` and KEEPS `lobbyLandingNonce`, so the page's key
+   * does not change and nothing remounts. Every later mount of the page in
+   * this tab then opens on the player's own saved tab, which is what a cash
+   * table's "+" and a Back out of a tournament page both mean.
+   */
+  const consumeLobbyLanding = useCallback((tabId: string) => {
+    setTables((cur) =>
+      cur.some((t) => t.id === tabId && t.lobbyGameType !== undefined)
+        ? cur.map((t) => (t.id === tabId ? { ...t, lobbyGameType: undefined } : t))
         : cur
     );
   }, []);
@@ -2748,11 +2794,14 @@ export default function MultiTablePage() {
       (activeTab?.isTournament === true || isTournamentGameCode(activeTab?.gameCode));
     const tournamentLobbyFor = (format?: string | null): 'MTT' | 'SNG' =>
       format === 'sng' || (!format && activeTab?.gameCode === 'SNG') ? 'SNG' : 'MTT';
+    /* Which list the sheet on screen is selling, kept beside the sheet state
+       so the failure exit at the bottom can land on the same list. */
+    let sheetTournamentList: 'MTT' | 'SNG' | null = tabSaysTournament ? tournamentLobbyFor() : null;
     setQuickJoin({
       open: true,
       loading: true,
       rows: [],
-      ...(tabSaysTournament ? { tournamentLobby: tournamentLobbyFor() } : {}),
+      ...(sheetTournamentList ? { tournamentLobby: sheetTournamentList } : {}),
     });
     /* Before the first await, not after it. The spin branch re-arms this a few
        round trips down; until it does there is no scope, so the live refresh
@@ -2824,14 +2873,19 @@ export default function MultiTablePage() {
       /* The tournament question rides ALONGSIDE the spin one, not after it, so
          a cash player pays no extra round trip for a branch they never take.
          Its module is loaded on demand: it pulls in the tournament service and
-         the lobby's status rules, which a cash-only session never needs. */
+         the lobby's status rules, which a cash-only session never needs.
+
+         THE CHUNK FETCH IS INSIDE THE TIMEOUT. It used to sit outside it, so
+         a stalled download of this module left the sheet on "Finding Games"
+         for good, on a cash table too. A timeout here is "unreadable": the
+         tab's own guess decides, exactly as for a failed read. */
       const tournamentAsk = activeIsTable
-        ? import('../lib/quickJoinTournaments')
-            .then(async (mod) => ({
+        ? withTimeout(
+            import('../lib/quickJoinTournaments').then(async (mod) => ({
               mod,
-              ctx: await withTimeout(mod.readTournamentContext(activeTableId)),
+              ctx: await mod.readTournamentContext(activeTableId),
             }))
-            .catch(() => null)
+          ).catch(() => null)
         : Promise.resolve(null);
       const [spinRows, tournamentAnswer] = await Promise.all([
         quickJoinSpinRows(scopeClubIds, activeTableId, openIds),
@@ -2872,20 +2926,29 @@ export default function MultiTablePage() {
        * AN EMPTY LIST STAYS A TOURNAMENT ANSWER. It renders "No Open
        * Tournaments Right Now" and never falls through to cash games.
        */
-      const tournamentCtx = tournamentAnswer?.ctx ?? null;
-      const inTournament = tournamentCtx ? tournamentCtx.format !== 'spin' : tabSaysTournament;
+      /* THE ROW OUTRANKS THE TAB'S GUESS (see quickJoinIsTournament). A row
+         that was READ and has no tournament is a cash table, whatever its
+         name made the tab guess; the guess decides only when the read failed. */
+      const tableRead = tournamentAnswer?.ctx ?? null;
+      const tournamentCtx = tableRead && tableRead.format !== 'cash' ? tableRead : null;
+      const inTournament = quickJoinIsTournament(tableRead, tabSaysTournament);
       if (inTournament) {
         const lobbyList = tournamentLobbyFor(tournamentCtx?.format);
+        sheetTournamentList = lobbyList;
         const tournamentScope = Array.from(
           new Set([...scopeClubIds, tournamentCtx?.clubId].filter(Boolean) as string[])
         );
-        const mod = tournamentAnswer?.mod ?? (await import('../lib/quickJoinTournaments'));
+        /* The module again when the first ask timed out, and again INSIDE the
+           timeout: a chunk that will not download must not hold the sheet. */
         const tournamentRows = await withTimeout(
-          mod.quickJoinTournamentRows(tournamentScope, tournamentCtx, user?.id)
+          (async () => {
+            const mod = tournamentAnswer?.mod ?? (await import('../lib/quickJoinTournaments'));
+            return mod.quickJoinTournamentRows(tournamentScope, tournamentCtx, user?.id);
+          })()
         );
         if (tournamentRows === null) {
-          // Stalled, not empty: the same exit the cash path takes, except that
-          // the lobby it lands on is the tournament list.
+          // Stalled or unreadable, not empty: the same exit the cash path
+          // takes, except that the lobby it lands on is the tournament list.
           setQuickJoin({ open: false, loading: false, rows: [] });
           openLobbyTabOn(lobbyList);
           return;
@@ -2899,6 +2962,7 @@ export default function MultiTablePage() {
       }
       /* A cash table after all. Drop the tournament copy if the tab's first
          guess put it up, without closing a sheet the player is looking at. */
+      sheetTournamentList = null;
       setQuickJoin((q) => (q.open && q.tournamentLobby ? { ...q, tournamentLobby: undefined } : q));
 
       const [res, favIds] = await Promise.all([
@@ -3048,8 +3112,10 @@ export default function MultiTablePage() {
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
     } catch {
       // Query failed - fall back to the lobby tab rather than a dead sheet.
+      // A tournament sheet falls to the tournament list, as its stalled exit does.
       setQuickJoin({ open: false, loading: false, rows: [] });
-      masterBus.emit('OPEN_LOBBY_TAB', {});
+      if (sheetTournamentList) openLobbyTabOn(sheetTournamentList);
+      else masterBus.emit('OPEN_LOBBY_TAB', {});
     }
   }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id, openLobbyTabOn]);
 
@@ -3187,7 +3253,9 @@ export default function MultiTablePage() {
            (see announceTournamentMove). A cash must-move has its own notice on
            the felt ("Seat Open On Main 2. Moving After This Hand.") and says
            nothing more here. */
-        if (before?.isTournament) announceTournamentMoveRef.current(updates.movedToTableId);
+        if (before?.isTournament) {
+          announceTournamentMoveRef.current(tableId, updates.movedToTableId);
+        }
       }
       /**
        * THE ADDRESS BAR FOLLOWS THE CHAIR TOO (audit 2026-09-09, lane H).
@@ -3230,7 +3298,16 @@ export default function MultiTablePage() {
         if (updates.movedToTableId && updates.movedToTableId !== tableId) {
           const dest = updates.movedToTableId;
           if (prev.some((t) => t.id === dest)) {
-            return prev.filter((t) => t.id !== tableId);
+            /* The destination is already open: the old tab closes and the
+               open one IS the moved seat. A tournament move stamps it exactly
+               as the re-point below does, or its felt says "Reconnecting Your
+               Seat" for a seat the tournament just moved there. */
+            if (!current.isTournament) return prev.filter((t) => t.id !== tableId);
+            return prev
+              .filter((t) => t.id !== tableId)
+              .map((t) =>
+                t.id === dest ? { ...t, arrivedByMoveAt: Date.now(), seated: true } : t
+              );
           }
           const next = prev.slice();
           next[idx] = {
@@ -3971,13 +4048,16 @@ export default function MultiTablePage() {
             <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
             {selectedClub ? (
-              /* `lobbyGameType` is in the key so a lobby tab that is already
-                 mounted on the cash board REOPENS on the tournament list when
-                 Browse Full Lobby asks for it from a tournament table. */
+              /* The request's nonce is in the key so a lobby tab that is
+                 already mounted REOPENS on the tournament list every time
+                 Browse Full Lobby asks for it from a tournament table. The
+                 list itself is one-shot: the page reports it applied and the
+                 stamp is cleared, the key unchanged. */
               <ClubHomePage
-                key={`${selectedClub}:${table.lobbyGameType ?? ''}`}
+                key={`${selectedClub}:${table.lobbyLandingNonce ?? 0}`}
                 clubIdOverride={selectedClub}
                 initialGameType={table.lobbyGameType}
+                onInitialGameTypeConsumed={() => consumeLobbyLanding(table.id)}
               />
             ) : (
               <HomePage />

@@ -349,9 +349,17 @@ describe('the ring stylesheet drains linearly and never hides the arc (owner 202
     // rule converts "fraction of border spent" to an angle with atan2() over
     // container units. This evaluates THAT rule's own text, then measures
     // the border it leaves lit with independent geometry.
-    const supports = CODE.slice(
-      CODE.indexOf('@supports (width: 1cqw) and (rotate: atan2(1px, 1px))')
-    );
+    /* 2026-10-04: the gate was `(width: 1cqw) and (rotate: atan2(1px, 1px))`,
+       two questions about things the rule does not use. It now tests the
+       real construct (atan2 of container units as a conic stop); located here
+       by the block that declares --sp-ring-d so the pin follows the rule,
+       whatever the condition reads. The condition itself is pinned in
+       tests/unit/seatAndEquityFollowups.test.tsx, block 4. */
+    const ringD = CODE.indexOf('--sp-ring-d:');
+    expect(ringD).toBeGreaterThan(-1);
+    const supportsAt = CODE.lastIndexOf('@supports', ringD);
+    expect(supportsAt).toBeGreaterThan(-1);
+    const supports = CODE.slice(supportsAt);
     const d = supports.match(/--sp-ring-d:\s*([^;]+);/)?.[1];
     const edge = supports.match(/--sp-ring-edge:\s*([^;]+);/)?.[1];
     expect(d?.replace(/\s+/g, ' ')).toBe('calc(var(--sp-timer-spent, 0) * (200cqw + 200cqh))');

@@ -848,11 +848,12 @@ print(math.floor(ends/1000))
 #                        at or over RECOVERY_UNCERTIFIED_BREAKS), or it holds
 #                        RECOVERY_QUARANTINED_MANAGERS quarantined managers;
 #        deadline        no scheduled break can admit it before its own
-#                        certificate deadline;
-#        missed          it was already waiting when a break opened, that
-#                        break never admitted it, and NO release shipped in
-#                        it (a sibling shipping is the break working);
-#      or the seal's own unchanged cause, an unshipped failed ancestor.
+#                        certificate deadline.
+#      Nothing else is a reason (owner ruling 2026-10-04, one scheduled break
+#      an hour): a failed release that has not shipped and a scheduled break
+#      this release waited through are NOT causes, the seal answers both
+#      `unavailable`, and so a release without one of the three reasons above
+#      never takes the engine lock or asks the seal at all.
 #   2. The newest release owns the window: a release never asks while a
 #      release of a newer protected-main engine SHA is queued or running on
 #      this host.
@@ -883,6 +884,8 @@ RECOVERY_URGENT_TRAILER='Engine-Release: urgent'
 # still admit it: its first (BREAK_WINDOW_MS - BREAK_ADMISSION_MIN_BREAK_MS)
 # of countdown. A release whose build finished at :57 arrived late; that is
 # not the break failing, and it waits for the next one.
+# Since 2026-10-04 a missed break is recorded only: it is not a reason for an
+# off-cycle window (recovery_window_reason never names it).
 note_missed_admission() {
   local remaining_ms="${1:-0}" now break_started
   [[ "$remaining_ms" =~ ^[0-9]+$ ]] && [ "$remaining_ms" -gt 0 ] || return 0
@@ -928,9 +931,6 @@ print(",".join(signs))
       echo "deadline the next scheduled admission ends at $last_admission, at or after the certificate deadline $CERTIFICATE_DEADLINE"
       return 0
     fi
-  fi
-  if [ "$RECOVERY_ADMISSION_MISSED" = 1 ]; then
-    echo 'missed the scheduled break this release waited through shipped nothing'
   fi
   return 0
 }
@@ -1006,7 +1006,7 @@ newer_release_awaiting_certificate() {
 }
 
 request_recovery_window() {
-  local health minute now stamp outcome reason cause_key desired newer stuck
+  local health minute now stamp outcome reason cause_key newer stuck
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
   now="$(date +%s)"
@@ -1043,18 +1043,17 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     fi
     return 0
   fi
-  if [ "$RECOVERY_ADMISSION_MISSED" = 1 ]; then
-    # A release that shipped since this one began waiting shipped in a break
-    # this one also saw: that break worked, and was not this one's to miss.
-    desired="$(timeout --signal=TERM --kill-after=1s 10s "$RELEASE_SEAL" get desired-sha 2>/dev/null)" \
-      || return 0
-    if [ "$desired" != "${RECOVERY_BASELINE_DESIRED:-}" ]; then
-      echo "[engine-release-transaction] release $desired shipped while this one waited; the scheduled break is working, so the missed certificate is no reason for an off-cycle window"
-      RECOVERY_ADMISSION_MISSED=0
-      RECOVERY_BASELINE_DESIRED="$desired"
-    fi
-  fi
   reason="$(recovery_window_reason "$health")"
+  # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
+  # to every reservation that names no cause, so a routine release (no
+  # reason, or only a scheduled break it waited through) has nothing to ask.
+  # Taking the engine lock for that guaranteed answer contended with sibling
+  # releases for up to the whole lock wait and could end this one in `die`.
+  # It waits for the scheduled break without touching the lock or the seal.
+  case "${reason%% *}" in
+    urgent|engine-degraded|deadline) ;;
+    *) return 0 ;;
+  esac
   cause_key="$RECOVERY_ADMISSION_MISSED:${reason%% *}"
   [ "$RECOVERY_CHECKED_CAUSE" != "$cause_key" ] || return 0
   acquire_engine_lock 'one recovery announcement'
@@ -1072,10 +1071,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
-  [ "$RECOVERY_ADMISSION_MISSED" = 0 ] || reserve_args+=(--missed-window)
-  case "${reason%% *}" in
-    urgent|engine-degraded|deadline) reserve_args+=(--cause "${reason%% *}") ;;
-  esac
+  reserve_args+=(--cause "${reason%% *}")
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
     "${reserve_args[@]}")"; then
     # NOT FATAL (2026-10-02). A refused or slow reservation asks for nothing:
@@ -1090,7 +1086,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   if [ "$stamp" = rate-limited ]; then
     release_engine_lock
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
-    echo "[engine-release-transaction] off-cycle window wanted (${reason:-seal cause}) but one was already announced in the last hour; waiting for the scheduled break"
+    echo "[engine-release-transaction] off-cycle window wanted ($reason) but one was already announced in the last hour; waiting for the scheduled break"
     return 0
   fi
   RECOVERY_CHECKED_CAUSE="$cause_key"
@@ -1100,7 +1096,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   fi
   [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
   RECOVERY_REQUESTED=1
-  echo "[engine-release-transaction] off-cycle recovery window reason: ${reason:-an unshipped failed ancestor (seal)}"
+  echo "[engine-release-transaction] off-cycle recovery window reason: $reason"
   # The configured key stays inside the running engine container. The API is
   # loopback-only and has the same maintenance/database owner as hourly work.
   # A lost response is UNKNOWN; observe the certificate, never allocate a new
@@ -1602,12 +1598,11 @@ if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1
 fi
 
 # What the proportionate off-cycle policy above needs to know about this wait:
-# when it began, which release was serving when it began, and whether any
-# commit this release adds over the sealed high-water asks to be urgent.
+# when it began, and whether any commit this release adds over the sealed
+# high-water asks to be urgent.
 # Unreadable urgency is ordinary: it can only ever make a release wait for
 # the scheduled break, never admit a cutover.
 RECOVERY_WAIT_STARTED_EPOCH="$(date +%s)"
-RECOVERY_BASELINE_DESIRED="$CHECKPOINT_PREDECESSOR_SHA"
 RECOVERY_URGENT=0
 if URGENT_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
   "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \

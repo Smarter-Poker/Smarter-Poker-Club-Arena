@@ -767,7 +767,10 @@ class TournamentService {
   /**
    * Get all tournaments for a club
    */
-  async getTournaments(clubId: string): Promise<TournamentWithArena[]> {
+  async getTournaments(
+    clubId: string,
+    options?: { throwOnError?: boolean }
+  ): Promise<TournamentWithArena[]> {
     // Resolve integer club_id to UUID for FK queries
     const resolvedId = await resolveClubUUID(clubId);
 
@@ -793,6 +796,9 @@ class TournamentService {
       .order('created_at', { ascending: false });
 
     if (error) {
+      /* A caller that must tell "no tournaments" from "could not read them"
+         asks for the throw (the same option getTournament takes). */
+      if (options?.throwOnError) throw error;
       reportError(error, 'TournamentService.Error_fetching_tournaments');
       return [];
     }

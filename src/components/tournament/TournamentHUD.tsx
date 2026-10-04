@@ -833,7 +833,27 @@ export function TournamentHUD({
     return () => clearInterval(clock);
   }, [scopeKey, readsField, hidden, live, running]);
 
-  if (hidden || !row) return null;
+  if (hidden) return null;
+  /* The row has not been read yet (or the read is failing and being retried).
+     The page has already reserved the dock's band and stood the action bar on
+     it, so returning nothing here left the bar floating over an empty strip.
+     The dock's own frame holds the band until the figures arrive. */
+  if (!row) {
+    return (
+      <div
+        /* Not `tournament-hud-bar`: that name means "the figures are
+           on screen" to everything that looks for it. */
+        className="tournament-dock tournament-dock--loading"
+        data-collapsed={collapsed ? 'true' : 'false'}
+        role="group"
+        aria-label="Tournament Info"
+      >
+        <div className="tournament-dock__line">
+          <span className="tournament-dock__status">Tournament Info</span>
+        </div>
+      </div>
+    );
+  }
 
   const nowMs = serverNow();
   const levelState = tournamentService.getCurrentLevelState(row, nowMs);

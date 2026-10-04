@@ -138,15 +138,17 @@ describe('the move is announced once, whichever transport hears it first', () =>
   const MTP = strip(read('src/pages/MultiTablePage.tsx'));
   const PAGE = strip(read('src/pages/TablePage.tsx'));
 
-  it('both move paths go through one announcer that speaks once per destination', () => {
-    expect(MTP).toMatch(/if \(announcedMovesRef\.current\.has\(destinationId\)\) return;/);
+  it('both move paths go through one announcer that speaks once per move', () => {
+    expect(MTP).toMatch(
+      /if \(!claimMoveAnnouncement\(announcedMovesRef\.current, fromId, destinationId\)\) return;/
+    );
     expect(MTP).toMatch(/toast\.info\(`You've Been Moved To \$\{name\}`, 6000\)/);
     // The socket path (the tab re-point) ...
     expect(MTP).toMatch(
-      /if \(before\?\.isTournament\) announceTournamentMoveRef\.current\(updates\.movedToTableId\);/
+      /if \(before\?\.isTournament\) \{\s*announceTournamentMoveRef\.current\(tableId, updates\.movedToTableId\);\s*\}/
     );
     // ... and the seat-row path.
-    expect(MTP).toMatch(/announceTournamentMove\(newId, name\);/);
+    expect(MTP).toMatch(/announceTournamentMove\(oldTab\.id, newId, name\);/);
     // The old wording, which only one of the two paths ever said, is gone.
     expect(MTP).not.toMatch(/You Were Moved To/);
   });

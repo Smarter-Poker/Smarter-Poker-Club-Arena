@@ -623,7 +623,11 @@ export default function FinancialAdminHub() {
                   </strong>
                 </div>
                 <div className={styles.chart} aria-label="Seven Complete Days Revenue Chart">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                    initialDimension={{ width: 280, height: 132 }}
+                  >
                     <AreaChart data={revenueData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                       <XAxis
                         dataKey="day"

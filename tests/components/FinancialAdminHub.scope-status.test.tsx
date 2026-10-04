@@ -61,6 +61,7 @@ const m = vi.hoisted(() => ({
   response: vi.fn(),
   getOverseerUnionOptions: vi.fn(),
   unionPanel: vi.fn(),
+  responsiveContainer: vi.fn(),
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
@@ -169,7 +170,13 @@ vi.mock('../../src/components/union/UnionOpsPanel', () => ({
   },
 }));
 vi.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }: { children: unknown }) => children,
+  ResponsiveContainer: (props: {
+    children: unknown;
+    initialDimension?: { width: number; height: number };
+  }) => {
+    m.responsiveContainer(props);
+    return props.children;
+  },
   AreaChart: ({ children }: { children: unknown }) => children,
   Area: () => null,
   XAxis: () => null,
@@ -291,6 +298,9 @@ describe('financial admin reading identity and health truth', () => {
       })
     );
     expect(m.response).not.toHaveBeenCalledWith(expect.objectContaining({ table: 'rake_records' }));
+    expect(m.responsiveContainer).toHaveBeenCalledWith(
+      expect.objectContaining({ initialDimension: { width: 280, height: 132 } })
+    );
   });
 
   it('hides the platform-only Financial Alerts door from club finance operators', async () => {

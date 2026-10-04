@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 30425,
-      "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
+      "bytes": 30451,
+      "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1571,6 +1571,23 @@
         "current": {
           "bytes": 30425,
           "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
+        }
+      }
+    ]
+  },
+  "unionOpsFinancialAdminNativeRouting20261004": {
+    "reason": "Add the source-bound Union Operations Financial Admin PostgreSQL fixture directory to the existing Data Console accounting route. This is one additive classifier alternative; no cash qualification runner, fixture, financial input, assertion, schedule or existing route changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 30425,
+          "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
+        },
+        "current": {
+          "bytes": 30451,
+          "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
         }
       }
     ]

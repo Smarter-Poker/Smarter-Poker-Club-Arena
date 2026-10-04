@@ -4,6 +4,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export STATS_PG_SCRATCH_PARENT="${STATS_PG_SCRATCH_PARENT:-${RUNNER_TEMP:-/Volumes/SmarterWork/agent-work}}"
 export DATA_CONSOLE_PG_SCRATCH_PARENT="${DATA_CONSOLE_PG_SCRATCH_PARENT:-$STATS_PG_SCRATCH_PARENT}"
+export UNION_OPS_PG_SCRATCH_PARENT="${UNION_OPS_PG_SCRATCH_PARENT:-$DATA_CONSOLE_PG_SCRATCH_PARENT}"
 
 scripts=(
   scripts/dev/test-stats-cash-opportunities-postgres.sh
@@ -15,6 +16,7 @@ scripts=(
   scripts/dev/test-stats-operational-quality-postgres.sh
   scripts/dev/test-stats-owner-workspace-postgres.sh
   scripts/dev/test-financial-admin-revenue-postgres.sh
+  scripts/dev/test-union-ops-financial-admin-postgres.sh
 )
 
 for script in "${scripts[@]}"; do

@@ -17,7 +17,7 @@ $$;
 CREATE TABLE public.unions(id uuid PRIMARY KEY, name text NOT NULL, owner_id uuid);
 CREATE TABLE public.clubs(
   id uuid PRIMARY KEY, name text, union_id uuid, owner_id uuid,
-  is_union boolean NOT NULL DEFAULT false);
+  is_union boolean NOT NULL DEFAULT false, chip_treasury numeric DEFAULT 0);
 CREATE TABLE public.union_admins(
   union_id uuid NOT NULL, user_id uuid NOT NULL,
   PRIMARY KEY(union_id, user_id));
@@ -25,6 +25,7 @@ CREATE TABLE public.union_clubs(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), union_id uuid, club_id uuid);
 CREATE TABLE public.club_members(
   club_id uuid, user_id uuid, agent_id uuid, credit_used numeric DEFAULT 0,
+  chip_balance numeric DEFAULT 0,
   joined_at timestamptz, role text NOT NULL DEFAULT 'member',
   status text NOT NULL DEFAULT 'active',
   PRIMARY KEY(club_id, user_id));
@@ -50,8 +51,21 @@ LANGUAGE sql STABLE AS $$
 $$;
 CREATE FUNCTION public.fn_union_week_start(p_at timestamptz DEFAULT now()) RETURNS timestamptz
 LANGUAGE sql STABLE AS $$ SELECT date_trunc('week', p_at) $$;
-CREATE TABLE public.profiles(id uuid PRIMARY KEY, username text);
-CREATE TABLE public.agents(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, club_id uuid, role text);
+CREATE FUNCTION public.fn_union_prev_week_start(p_at timestamptz DEFAULT now()) RETURNS timestamptz
+LANGUAGE sql STABLE AS $$ SELECT public.fn_union_week_start(p_at) - interval '7 days' $$;
+CREATE TABLE public.profiles(
+  id uuid PRIMARY KEY, username text, display_name text, alias text,
+  first_name text, last_name text, full_name text);
+CREATE FUNCTION public.fn_arena_name(
+  p_alias text, p_username text, p_display_name text,
+  p_first_name text, p_last_name text, p_full_name text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $function$
+  SELECT COALESCE(NULLIF(btrim(p_alias), ''), NULLIF(btrim(p_username), ''),
+                  NULLIF(btrim(p_display_name), ''), 'Player')
+$function$;
+CREATE TABLE public.agents(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, club_id uuid,
+  role text, status text NOT NULL DEFAULT 'active');
 CREATE TABLE public.table_seats(user_id uuid, club_id uuid, left_at timestamptz);
 CREATE TABLE public.rake_attributions(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), player_id uuid, club_id uuid,
@@ -68,9 +82,12 @@ CREATE INDEX idx_chip_ledger_club_to_created
   ON public.chip_ledger(club_id, to_entity_id, created_at);
 CREATE TABLE public.agent_commissions(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, club_id uuid,
-  amount numeric, created_at timestamptz);
+  amount numeric, created_at timestamptz, settled_at timestamptz);
 CREATE INDEX idx_agent_commissions_club_created
-  ON public.agent_commissions(club_id, created_at) INCLUDE(user_id, amount);
+  ON public.agent_commissions(club_id, created_at) INCLUDE(user_id, amount, settled_at);
+CREATE INDEX agent_commissions_open_idx
+  ON public.agent_commissions(club_id, user_id, created_at) INCLUDE(amount, id)
+  WHERE settled_at IS NULL;
 CREATE TABLE public.rake_records(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), club_id uuid, rake_amount numeric,
   player_contributions jsonb, is_tournament boolean NOT NULL DEFAULT false,
@@ -78,12 +95,38 @@ CREATE TABLE public.rake_records(
 CREATE INDEX idx_rake_records_club_created
   ON public.rake_records(club_id, created_at) WHERE rake_amount > 0;
 CREATE TABLE public.rakeback_periods(
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), club_id uuid,
-  rakeback_amount numeric, period_start date);
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, club_id uuid,
+  rakeback_amount numeric, period_start date,
+  status text NOT NULL DEFAULT 'pending');
 CREATE INDEX idx_rakeback_periods_club ON public.rakeback_periods(club_id);
 CREATE TABLE public.wallet_transactions(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, type text,
   category text, amount numeric, created_at timestamptz);
+
+CREATE TABLE public.union_rakeback_log(
+  union_id uuid, period_start timestamptz, period_end timestamptz);
+CREATE TABLE public.union_wallets(
+  union_id uuid PRIMARY KEY, rake_wallet numeric DEFAULT 0);
+CREATE TABLE public.agent_commission_settlements(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL, user_id uuid NOT NULL, union_id uuid,
+  period_start timestamptz NOT NULL, period_end timestamptz NOT NULL,
+  amount numeric NOT NULL DEFAULT 0, rows_count integer NOT NULL DEFAULT 0,
+  paid_at timestamptz NOT NULL DEFAULT now(), settlement_ref text,
+  UNIQUE(club_id, user_id, period_start, period_end));
+CREATE INDEX agent_commission_settlements_pair_idx
+  ON public.agent_commission_settlements(club_id, user_id, period_start, period_end);
+
+CREATE FUNCTION public.fn_agent_commission_paid_by_period(
+  p_club_id uuid, p_user_id uuid, p_created_at timestamptz)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $function$
+  SELECT EXISTS (SELECT 1 FROM public.agent_commission_settlements s
+                  WHERE s.club_id = p_club_id AND s.user_id = p_user_id
+                    AND p_created_at >= s.period_start AND p_created_at < s.period_end);
+$function$;
 
 CREATE TABLE cron.job(
   jobid bigint PRIMARY KEY, jobname text, schedule text, command text, active boolean,
@@ -185,6 +228,147 @@ BEGIN
    GROUP BY r.agent_user_id, pr.username, cl.name, a.role
    ORDER BY 8 DESC NULLS LAST;
 END $function$;
+
+-- Match the installed preimage ACL established by the Union Ops UI grant
+-- migration and preserved by later CREATE OR REPLACE migrations.
+REVOKE ALL ON FUNCTION public.fn_union_agent_risk_report(uuid,timestamptz)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_union_agent_risk_report(uuid,timestamptz)
+  TO authenticated, service_role;
+
+-- Current preimage of the read-only settlement preview. The 20260908 paid
+-- period migration added the scalar predicate to both Round-2 scans; the
+-- production repair under test replaces those per-row calls with one explicit
+-- anti-join and one commission fact set.
+CREATE OR REPLACE FUNCTION public.fn_union_settlement_preview(
+  p_union_id uuid DEFAULT 'fade0000-0000-0000-0000-000000000001'::uuid,
+  p_period_start timestamptz DEFAULT NULL,
+  p_period_end   timestamptz DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_from timestamptz := COALESCE(p_period_start, public.fn_union_prev_week_start(now()));
+  v_to   timestamptz := COALESCE(p_period_end,   public.fn_union_week_start(now()));
+  v_r1_done boolean;
+  v_rake_wallet numeric;
+  v_r2_total numeric := 0; v_r2_payees int := 0;
+  v_r3_total numeric := 0; v_r3_payees int := 0;
+  v_r2_short jsonb := '[]'::jsonb;
+  v_r3_short jsonb := '[]'::jsonb;
+  v_r2_short_amt numeric := 0; v_r3_short_amt numeric := 0;
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT public.fn_is_union_overseer(p_union_id, auth.uid()) THEN
+    RAISE EXCEPTION 'not_authorised';
+  END IF;
+
+  SELECT EXISTS (SELECT 1 FROM union_rakeback_log
+                  WHERE union_id = p_union_id
+                    AND period_start = v_from AND period_end = v_to)
+    INTO v_r1_done;
+
+  SELECT COALESCE(rake_wallet,0) INTO v_rake_wallet
+    FROM union_wallets WHERE union_id = p_union_id;
+
+  WITH owed AS (
+    SELECT ac.club_id, ac.user_id, SUM(ac.amount) AS amt
+      FROM agent_commissions ac
+      JOIN union_clubs uc ON uc.club_id = ac.club_id AND uc.union_id = p_union_id
+      JOIN agents a ON a.user_id = ac.user_id AND a.club_id = ac.club_id AND a.status='active'
+     WHERE ac.created_at >= v_from AND ac.created_at < v_to
+       AND ac.settled_at IS NULL AND NOT public.fn_agent_commission_paid_by_period(ac.club_id, ac.user_id, ac.created_at)
+     GROUP BY ac.club_id, ac.user_id
+    HAVING SUM(ac.amount) > 0
+  ), byclub AS (
+    SELECT o.club_id, SUM(o.amt) AS club_owed,
+           COALESCE(c.chip_treasury,0) AS treasury, c.name
+      FROM owed o JOIN clubs c ON c.id = o.club_id
+     GROUP BY o.club_id, c.chip_treasury, c.name
+  )
+  SELECT COALESCE(SUM(o.amt),0), COUNT(*)::int
+    INTO v_r2_total, v_r2_payees FROM owed o;
+
+  WITH owed AS (
+    SELECT ac.club_id, SUM(ac.amount) AS amt
+      FROM agent_commissions ac
+      JOIN union_clubs uc ON uc.club_id = ac.club_id AND uc.union_id = p_union_id
+      JOIN agents a ON a.user_id = ac.user_id AND a.club_id = ac.club_id AND a.status='active'
+     WHERE ac.created_at >= v_from AND ac.created_at < v_to AND ac.settled_at IS NULL AND NOT public.fn_agent_commission_paid_by_period(ac.club_id, ac.user_id, ac.created_at)
+     GROUP BY ac.club_id
+  )
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'club_id', o.club_id, 'club', c.name,
+           'owed', o.amt, 'treasury', COALESCE(c.chip_treasury,0),
+           'short_by', round(o.amt - COALESCE(c.chip_treasury,0), 2))), '[]'::jsonb),
+         COALESCE(SUM(o.amt - COALESCE(c.chip_treasury,0)), 0)
+    INTO v_r2_short, v_r2_short_amt
+    FROM owed o JOIN clubs c ON c.id = o.club_id
+   WHERE COALESCE(c.chip_treasury,0) < o.amt;
+
+  WITH owed AS (
+    SELECT rp.user_id AS player_id, rp.club_id, cm.agent_id AS agent_user,
+           SUM(rp.rakeback_amount) AS amt
+      FROM rakeback_periods rp
+      JOIN union_clubs uc ON uc.club_id = rp.club_id AND uc.union_id = p_union_id
+      JOIN club_members cm ON cm.user_id = rp.user_id AND cm.club_id = rp.club_id
+     WHERE rp.status = 'pending'
+       AND rp.period_start >= v_from::date
+       AND rp.period_start <  v_to::date + 1
+       AND cm.agent_id IS NOT NULL
+     GROUP BY rp.user_id, rp.club_id, cm.agent_id
+    HAVING SUM(rp.rakeback_amount) > 0
+  )
+  SELECT COALESCE(SUM(amt),0), COUNT(*)::int INTO v_r3_total, v_r3_payees FROM owed;
+
+  WITH owed AS (
+    SELECT rp.club_id, cm.agent_id AS agent_user, SUM(rp.rakeback_amount) AS amt
+      FROM rakeback_periods rp
+      JOIN union_clubs uc ON uc.club_id = rp.club_id AND uc.union_id = p_union_id
+      JOIN club_members cm ON cm.user_id = rp.user_id AND cm.club_id = rp.club_id
+     WHERE rp.status = 'pending'
+       AND rp.period_start >= v_from::date AND rp.period_start < v_to::date + 1
+       AND cm.agent_id IS NOT NULL
+     GROUP BY rp.club_id, cm.agent_id
+  )
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'agent_user_id', o.agent_user,
+           'agent', public.fn_arena_name(pr.alias, pr.username, pr.display_name, pr.first_name, pr.last_name, pr.full_name),
+           'club_id', o.club_id, 'owed', o.amt,
+           'agent_balance', COALESCE(am.chip_balance,0),
+           'short_by', round(o.amt - COALESCE(am.chip_balance,0), 2))), '[]'::jsonb),
+         COALESCE(SUM(o.amt - COALESCE(am.chip_balance,0)), 0)
+    INTO v_r3_short, v_r3_short_amt
+    FROM owed o
+    LEFT JOIN club_members am ON am.user_id = o.agent_user AND am.club_id = o.club_id
+    LEFT JOIN profiles pr ON pr.id = o.agent_user
+   WHERE COALESCE(am.chip_balance,0) < o.amt;
+
+  RETURN jsonb_build_object(
+    'union_id', p_union_id,
+    'period_start', v_from, 'period_end', v_to,
+    'round1', jsonb_build_object(
+      'already_executed', v_r1_done,
+      'rake_treasury_available', v_rake_wallet),
+    'round2', jsonb_build_object(
+      'payees', v_r2_payees, 'amount', round(v_r2_total,2),
+      'clubs_short', jsonb_array_length(v_r2_short),
+      'short_by', round(v_r2_short_amt,2), 'detail', v_r2_short),
+    'round3', jsonb_build_object(
+      'payees', v_r3_payees, 'amount', round(v_r3_total,2),
+      'agents_short', jsonb_array_length(v_r3_short),
+      'short_by', round(v_r3_short_amt,2), 'detail', v_r3_short),
+    'total_to_move', round(v_r2_total + v_r3_total, 2),
+    'has_blockers', (jsonb_array_length(v_r2_short) + jsonb_array_length(v_r3_short)) > 0
+  );
+END $function$;
+
+REVOKE ALL ON FUNCTION public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)
+  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_union_distribution_check(p_union_id uuid DEFAULT 'fade0000-0000-0000-0000-000000000001'::uuid, p_since timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS jsonb

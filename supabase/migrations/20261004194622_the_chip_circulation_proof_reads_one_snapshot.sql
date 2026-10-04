@@ -1,9 +1,17 @@
--- SUPERSEDED BY 20261004194622 (the_chip_circulation_proof_reads_one_snapshot)
--- THIS FILE MUST NEVER RUN. It is correct in substance and cannot apply.
+-- ============================================================================
+-- THE CHIP CIRCULATION PROOF READS ONE SNAPSHOT
+-- ============================================================================
 --
--- It was dispatched twice through apply-merged-migration.yml and refused
--- ITSELF both times, its own section 4 post-image assertion firing, and
--- rolled back cleanly. Verbatim:
+-- This carries the whole of
+-- 20261004124546_the_chip_circulation_marks_count_no_diamond.sql, which is
+-- merged on main and CANNOT APPLY. That file is marked SUPERSEDED BY this one
+-- and must never run. Nothing about the substance it changed is weakened here:
+-- the same three readers, the same three md5 pins, the same clause-occurrence
+-- counts, the same reverse-substitution checks, the same refusals and the same
+-- closing block. The one thing that changes is HOW the migration proves that
+-- no chip figure moves, and the new proof is stronger, not looser.
+--
+-- WHY THE FIRST FILE REFUSED ITSELF, TWICE, VERBATIM:
 --
 --   attempt 1 (run 37210153821):
 --     ERROR P0001: the chip member wallet total moved:
@@ -13,44 +21,92 @@
 --                  club 174066957.78 -> 174066957.78, cash 86094.98 -> 86094.98,
 --                  tourney 8039400.00 -> 8039400.00, seats 1632 -> 1631
 --
--- Attempt 2 is the diagnosis. Every money figure held identical to the cent;
--- the only thing that changed was seats 1632 -> 1631, one player standing up
--- during the 334 ms the transaction was open. Section 0 below captures
--- absolute figures into ca_p9b_before and section 4 re-reads them AFTER the
--- substitutions and requires equality - two statements, two instants, and at
--- the default READ COMMITTED two snapshots. So it asserts "applying the
--- Diamond exclusion changes no chip figure" AND "no unrelated player did
--- anything while I was open", and the second can essentially never hold on a
--- live floor with 1632 seats on the felt.
+-- Attempt 2 is the diagnosis. Every money figure held identical to the cent.
+-- The only thing that changed was seats 1632 -> 1631: one player stood up
+-- during the 334 ms the transaction was open. The migration was correct and
+-- its assertion was wrong.
 --
--- The successor carries every line of substance here unchanged - the same
--- three readers, md5 pins, clause-occurrence counts, reverse-substitution
--- checks, refusals and closing block - and replaces section 0's capture and
--- section 4's comparison with comparisons that read the filtered and the
--- unfiltered figure IN ONE STATEMENT, which is one snapshot even at READ
--- COMMITTED. No money comparison is loosened and none gains a tolerance; the
--- chip circulation report is now compared figure by figure instead of only by
--- row count. See the successor's header and
--- docs/changelog/2026-10-04-the-chip-circulation-proof-reads-one-snapshot.md.
+-- THE CAUSE, named in one sentence. Its section 0 captured absolute figures
+-- into a temp table and its section 4 re-read the same figures AFTER the
+-- substitutions and required equality. Those are two statements at two
+-- instants, and at the default READ COMMITTED each statement takes a new
+-- snapshot, so the assertion conflated two different claims:
 --
--- History is never deleted, so this file stays exactly as it merged below.
--- ============================================================================
--- THE CHIP CIRCULATION MARKS COUNT NO DIAMOND
--- ============================================================================
+--   the claim that matters:  applying the Diamond exclusion changes no chip
+--                            figure;
+--   the claim it tested:     no unrelated player did anything anywhere on the
+--                            platform while my transaction was open.
 --
--- Phase 9 of the Diamond Arena programme, the line "Remove every inherited
--- union/agent distribution and chip treasury dependency", and the
--- cross-format conservation line beside it. It continues step 0 of
--- docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md section 4, which taught the
--- hourly chip supply meter (fn_ca_supply_snapshot) to count no Diamond seat,
--- no Diamond pending add-on and no Diamond event. Step 0 fixed that one
--- meter. It did not fix the three other readers that measure the same two
--- pools, and one of them decides whether the platform freeze conserved.
+-- The second can essentially never hold on a live floor where horses sit,
+-- stand and rebuy continuously. 1632 live seats were on the felt when it ran.
 --
--- WHAT IS WRONG, read from production on 2026-10-04 (every figure below is a
--- SELECT through the Supabase MCP inside BEGIN TRANSACTION ISOLATION LEVEL
--- REPEATABLE READ READ ONLY; nothing was written and nothing was rehearsed
--- against production):
+-- THE FIX. Compare the filtered figure against the unfiltered figure INSIDE A
+-- SINGLE SQL STATEMENT. One statement is evaluated against one snapshot even
+-- at READ COMMITTED, so "raw" and "filtered" computed as subqueries of one
+-- SELECT are immune to concurrent churn and together prove exactly the claim:
+-- that turning the Diamond exclusion on changes the number by nothing. Where
+-- the substituted function can be called it IS called, in that same statement,
+-- so the new text is exercised rather than assumed:
+--
+--   * fn_ca_circulation_total() is STABLE, so a call inside the comparison
+--     statement uses the CALLING statement's snapshot. Section 4a reads its
+--     three outputs and the three unfiltered expressions it was built from in
+--     one SELECT, and requires each pair equal.
+--   * fn_club_chip_circulation() is STABLE too. Section 4c FULL JOINs its rows
+--     against the per-club aggregates computed raw, in one statement, and
+--     requires every chip club's four figures identical, no chip club missing,
+--     no row without a club and no diamonds club present. That is strictly
+--     more than the first file asserted, which only counted the rows.
+--   * fn_snapshot_chip_supply() is VOLATILE and WRITES a snapshot row, so it
+--     is still not called (CLAUDE.md 11.5: never probe a money path in a way
+--     that commits). Section 4b instead reads its four measurements both ways
+--     - unfiltered as the pinned text had them, filtered as the substituted
+--     text has them - as eight subqueries of ONE statement. The function's own
+--     new text is executed for real in the isolated fixture, not here.
+--
+-- Because both sides of every comparison are read at the same instant, a
+-- player standing up no longer answers for the Diamond filter. The seat count
+-- is still compared; it is simply compared against itself rather than against
+-- a number taken 300 ms earlier.
+--
+-- WHY NOT REPEATABLE READ, MEASURED AND NOT ASSUMED. The obvious alternative
+-- is SET TRANSACTION ISOLATION LEVEL REPEATABLE READ as the first statement
+-- after BEGIN. Two things were measured on an isolated PostgreSQL 17 before
+-- choosing:
+--
+--   1. It WOULD take effect. scripts/ci/apply-recorded-migration.mjs sends the
+--      whole file as one simple query (client.query(sql)) and does NOT wrap it
+--      in a transaction of its own, so this file's own BEGIN is the real
+--      transaction start. Sending "BEGIN; SET TRANSACTION ISOLATION LEVEL
+--      REPEATABLE READ; ..." as one multi-statement simple query reports
+--      transaction_isolation = repeatable read. After any real query it fails
+--      with "SET TRANSACTION ISOLATION LEVEL must be called before any query",
+--      which is why it would have to be first.
+--   2. It would introduce a NEW false refusal here. Under REPEATABLE READ the
+--      DATA snapshot is pinned at the first statement while CATALOG lookups
+--      stay current. Measured: inside one REPEATABLE READ transaction, a
+--      second session replaced a function and updated the table row holding
+--      its hash; the transaction then read the OLD stored hash and the NEW
+--      pg_get_functiondef text, disagreeing with each other while the two
+--      agreed in reality. Section 5 compares ca_guard_defs.def_hash (data)
+--      against live pg_get_functiondef (catalog) for every watched guard. On
+--      this estate other lanes apply guard migrations continuously, so
+--      REPEATABLE READ would make a concurrent lane's correctly-paired
+--      redefinition read as "watched guards off their baseline" and abort this
+--      file for something nobody did wrong. That is the same class of defect
+--      as the one being fixed - an assertion that answers about someone else's
+--      work - so it is not added.
+--
+-- The single-statement comparison needs no isolation level, is unaffected by
+-- how the applier transmits the file, and proves the narrower, true claim.
+-- Section 4 therefore asserts the property it rests on instead of trusting it:
+-- it refuses if either called reader is not STABLE (CLAUDE.md 10.86).
+--
+-- ---------------------------------------------------------------------------
+-- WHAT IS WRONG, and it is unchanged from the superseded file. Read from
+-- production on 2026-10-04 (every figure a SELECT through the Supabase MCP
+-- inside BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; nothing
+-- written, nothing rehearsed against production):
 --
 --   1. fn_ca_circulation_total() (md5 f4a6ddceec4e02cffd220c0db26d1019) is
 --      sum(club_members.chip_balance) + sum(table_seats.stack WHERE left_at
@@ -74,21 +130,16 @@
 --      leaving a seat between :55 and :00 moves on_the_felt in Diamonds, the
 --      delta is compared against a chip tolerance of max(1.0, chips * 1e-7),
 --      and the break is recorded as not having conserved chips when no chip
---      moved at all. Diamond stacks would be summed with 174,126,305.73 chips
---      in member wallets and 5,842,340.25 chips on the felt (read 2026-10-04
---      12:52 UTC; both move with live chip play).
+--      moved at all.
 --
 --   2. fn_snapshot_chip_supply() (md5 450da5111403dde7283f46499ad8ef8a)
 --      measures the same two pools with no asset filter, writes them into
 --      chip_supply_snapshots as club_wallets_total, table_stacks and
---      tournament_stacks, and computes holdings as wallets + club wallets +
---      cash table stacks, then delta_holdings and unexplained_delta against
---      the previous row. chip_supply_snapshots took 23 rows in the 24 hours
---      before this was written, so it runs; the latest row is table_stacks
---      89,586.84, tournament_stacks 5,340,900.00, unexplained_delta 10,383.99.
---      A Diamond seat's stack would enter table_stacks and then
---      unexplained_delta as unexplained CHIPS. No cron.job names this
---      function; its hourly caller is outside the database.
+--      tournament_stacks, and computes holdings, delta_holdings and
+--      unexplained_delta against the previous row. A Diamond seat's stack
+--      would enter table_stacks and then unexplained_delta as unexplained
+--      CHIPS. No cron.job names this function; its hourly caller is outside
+--      the database.
 --
 --   3. fn_club_chip_circulation(uuid) (md5 f71a1a5f26ffc70cc639777b232635cd)
 --      lists every club's member wallets, felt and treasury as chips. It is
@@ -122,11 +173,10 @@
 -- ca_arena_settings switches are false, and there is exactly one diamonds
 -- club (002c2d27-9584-4e52-835a-bb2be148fc81, Diamond Arena, is_platform).
 -- So every figure these three readers return is bit-for-bit unchanged by this
--- migration, which is asserted below rather than asserted about: section 5
--- reads each pool both ways in this transaction and refuses the migration if
--- any of them differs. That is also why this belongs before the cash switch
--- and not after it: applied after the first Diamond seat, the change would
--- itself show up as a step in table_stacks and a one-off unexplained_delta.
+-- migration, which section 4 asserts rather than asserts about. That is also
+-- why this belongs before the cash switch and not after it: applied after the
+-- first Diamond seat, the change would itself show up as a step in
+-- table_stacks and a one-off unexplained_delta.
 --
 -- NOT A WATCHER AND NOT A REPAIR (CLAUDE.md 10.11, 10.12). Nothing is swept,
 -- backfilled or reconciled. The lines that produced the wrong figure are the
@@ -140,7 +190,8 @@
 -- pinned text. A drifted function aborts the whole migration rather than
 -- being rewritten from this file's idea of it.
 --
--- PINNED LIVE md5(pg_get_functiondef(oid)), read 2026-10-04:
+-- PINNED LIVE md5(pg_get_functiondef(oid)), re-read 2026-10-04 19:29 UTC and
+-- unchanged from the superseded file:
 --   fn_ca_circulation_total        f4a6ddceec4e02cffd220c0db26d1019
 --   fn_snapshot_chip_supply        450da5111403dde7283f46499ad8ef8a
 --   fn_club_chip_circulation       f71a1a5f26ffc70cc639777b232635cd
@@ -166,6 +217,7 @@
 -- of the three defects on an isolated PostgreSQL 17 with the installed
 -- function text, applies THIS FILE, and proves the same figures afterwards.
 -- Law: tests/no-chip-reader-sums-a-diamond.law.test.ts, docs/laws.d/.
+-- Changelog: docs/changelog/2026-10-04-the-chip-circulation-proof-reads-one-snapshot.md
 -- ============================================================================
 
 BEGIN;
@@ -174,22 +226,12 @@ SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '120s';
 
 -- ---------------------------------------------------------------------------
--- 0. NOTHING IS OPEN, AND WHAT THE FIGURES ARE BEFORE THIS TRANSACTION
+-- 0. NOTHING IS OPEN
 -- ---------------------------------------------------------------------------
-CREATE TEMP TABLE ca_p9b_before ON COMMIT DROP AS
-SELECT
-  (SELECT COALESCE(sum(chip_balance),0) FROM public.club_members)                             AS member_wallets,
-  (SELECT COALESCE(sum(stack),0) FROM public.table_seats WHERE left_at IS NULL)               AS felt,
-  (SELECT COALESCE(sum(COALESCE(chip_balance,0)),0) FROM public.club_members)                 AS snap_club,
-  (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NULL),0)
-     FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
-    WHERE ts.left_at IS NULL)                                                                 AS snap_cash,
-  (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NOT NULL),0)
-     FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
-    WHERE ts.left_at IS NULL)                                                                 AS snap_tourney,
-  (SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
-    WHERE ts.left_at IS NULL)                                                                 AS snap_seats;
-
+-- Every refusal the superseded file carried, unchanged. What is GONE is the
+-- ca_p9b_before temp table it also built here: capturing absolute figures at
+-- this instant to compare at a later one is exactly the defect, and section 4
+-- now reads both sides of every comparison together instead.
 DO $m$
 BEGIN
   IF EXISTS (SELECT 1 FROM public.ca_arena_settings WHERE tournaments_enabled OR cash_games_enabled) THEN
@@ -335,46 +377,178 @@ END $m$;
 -- ---------------------------------------------------------------------------
 -- 4. NOTHING THE CHIP BOOKS PUBLISH TODAY MOVES BY ONE CHIP
 -- ---------------------------------------------------------------------------
--- The three readers are measured again, after the substitutions, against the
--- values taken at the top of this transaction. Equality is the whole claim of
--- this migration: it removes a Diamond that is not there yet, and changes no
--- chip figure. fn_snapshot_chip_supply is NOT called - calling it would write
--- a snapshot row - so its two measurements are read directly instead.
+-- Every comparison below reads BOTH SIDES IN ONE STATEMENT - the figure with
+-- the Diamond exclusion on and the figure with it off - so the equality it
+-- requires is a statement about this migration's filter and about nothing
+-- else. The superseded file compared a figure measured after the substitution
+-- against one measured before it, and a player standing up in between answered
+-- for the filter. On production that is what happened: three money figures
+-- identical to the cent and seats 1632 -> 1631.
+
+-- 4a. The property the whole section rests on, named rather than assumed
+-- (CLAUDE.md 10.86 rule 1). A single SQL statement sees a single snapshot even
+-- at READ COMMITTED, and a STABLE function called inside that statement uses
+-- the CALLING statement's snapshot. A VOLATILE one would take a fresh snapshot
+-- per statement in its body, which would put the comparison back across two
+-- instants - the exact defect this file corrects. So if either reader stops
+-- being STABLE, this refuses rather than quietly proving less than it says.
 DO $m$
-DECLARE b record; v_w numeric; v_f numeric; v_club numeric;
-        v_cash numeric; v_tourney numeric; v_seats integer;
+DECLARE r record; v_n integer := 0;
 BEGIN
-  SELECT * INTO b FROM ca_p9b_before;
-  SELECT member_wallets, on_the_felt INTO v_w, v_f FROM public.fn_ca_circulation_total();
-  IF v_w IS DISTINCT FROM b.member_wallets THEN
-    RAISE EXCEPTION 'the chip member wallet total moved: % -> %', b.member_wallets, v_w;
+  FOR r IN SELECT p.proname, p.provolatile FROM pg_proc p
+            WHERE p.pronamespace = 'public'::regnamespace
+              AND p.proname IN ('fn_ca_circulation_total','fn_club_chip_circulation')
+  LOOP
+    IF r.provolatile <> 's' THEN
+      RAISE EXCEPTION '% is not STABLE (provolatile %), so calling it cannot share the snapshot of the statement that compares it', r.proname, r.provolatile;
+    END IF;
+    v_n := v_n + 1;
+  END LOOP;
+  IF v_n <> 2 THEN
+    RAISE EXCEPTION 'expected 2 STABLE readers to compare in one statement, found %', v_n;
   END IF;
-  IF v_f IS DISTINCT FROM b.felt THEN
-    RAISE EXCEPTION 'the chip felt total moved: % -> %', b.felt, v_f;
+END $m$;
+
+-- 4b. The freeze mark's circulation total. The substituted function is CALLED,
+-- and the three unfiltered expressions its pinned text was built from are read
+-- as subqueries of the same SELECT. Equality of each pair is the claim.
+DO $m$
+DECLARE
+  v_w numeric; v_f numeric; v_t numeric;
+  v_raw_w numeric; v_raw_f numeric; v_raw_t numeric;
+BEGIN
+  SELECT ct.member_wallets, ct.on_the_felt, ct.total,
+         COALESCE((SELECT sum(chip_balance) FROM public.club_members), 0)::numeric,
+         COALESCE((SELECT sum(stack) FROM public.table_seats WHERE left_at IS NULL), 0)::numeric,
+         COALESCE((SELECT sum(chip_balance) FROM public.club_members), 0)::numeric
+           + COALESCE((SELECT sum(stack) FROM public.table_seats WHERE left_at IS NULL), 0)::numeric
+    INTO v_w, v_f, v_t, v_raw_w, v_raw_f, v_raw_t
+    FROM public.fn_ca_circulation_total() ct;
+
+  -- A figure that could not be read is not a figure that did not move.
+  IF v_w IS NULL OR v_f IS NULL OR v_t IS NULL
+     OR v_raw_w IS NULL OR v_raw_f IS NULL OR v_raw_t IS NULL THEN
+    RAISE EXCEPTION 'a chip circulation figure read as NULL, which is not a measurement';
   END IF;
 
-  SELECT COALESCE(sum(COALESCE(cm.chip_balance,0)),0) INTO v_club FROM public.club_members cm
-   WHERE NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = cm.club_id AND dc.asset = 'diamonds');
-  SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NULL),0),
-         COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NOT NULL),0), count(*)
-    INTO v_cash, v_tourney, v_seats
-    FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
-   WHERE ts.left_at IS NULL
-     AND NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = t.club_id AND dc.asset = 'diamonds');
-  IF v_club IS DISTINCT FROM b.snap_club OR v_cash IS DISTINCT FROM b.snap_cash
-     OR v_tourney IS DISTINCT FROM b.snap_tourney OR v_seats IS DISTINCT FROM b.snap_seats THEN
-    RAISE EXCEPTION 'the chip supply measurement moved: club % -> %, cash % -> %, tourney % -> %, seats % -> %',
-      b.snap_club, v_club, b.snap_cash, v_cash, b.snap_tourney, v_tourney, b.snap_seats, v_seats;
+  IF v_w IS DISTINCT FROM v_raw_w THEN
+    RAISE EXCEPTION 'the chip member wallet total moved: % -> % (one snapshot, Diamond filter off then on)', v_raw_w, v_w;
+  END IF;
+  IF v_f IS DISTINCT FROM v_raw_f THEN
+    RAISE EXCEPTION 'the chip felt total moved: % -> % (one snapshot, Diamond filter off then on)', v_raw_f, v_f;
+  END IF;
+  IF v_t IS DISTINCT FROM v_raw_t THEN
+    RAISE EXCEPTION 'the chip circulation total moved: % -> % (one snapshot, Diamond filter off then on)', v_raw_t, v_t;
+  END IF;
+END $m$;
+
+-- 4c. The chip supply snapshot's four measurements. fn_snapshot_chip_supply
+-- is VOLATILE and writes a row, so it is not called (CLAUDE.md 11.5); its
+-- measurements are read directly, unfiltered exactly as the pinned text had
+-- them and filtered exactly as the substituted text has them, as eight
+-- subqueries of ONE statement. The seat count is compared too - against
+-- itself at the same instant, which is the comparison the superseded file
+-- meant to make.
+DO $m$
+DECLARE
+  v_raw_club numeric; v_raw_cash numeric; v_raw_tourney numeric; v_raw_seats bigint;
+  v_club numeric; v_cash numeric; v_tourney numeric; v_seats bigint;
+BEGIN
+  SELECT
+    (SELECT COALESCE(sum(COALESCE(chip_balance,0)), 0) FROM public.club_members),
+    (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NULL), 0)
+       FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL),
+    (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NOT NULL), 0)
+       FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL),
+    (SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL),
+    (SELECT COALESCE(sum(COALESCE(cm.chip_balance,0)), 0) FROM public.club_members cm
+      WHERE NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = cm.club_id AND dc.asset = 'diamonds')),
+    (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NULL), 0)
+       FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = t.club_id AND dc.asset = 'diamonds')),
+    (SELECT COALESCE(sum(ts.stack) FILTER (WHERE t.tournament_id IS NOT NULL), 0)
+       FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = t.club_id AND dc.asset = 'diamonds')),
+    (SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+      WHERE ts.left_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = t.club_id AND dc.asset = 'diamonds'))
+    INTO v_raw_club, v_raw_cash, v_raw_tourney, v_raw_seats,
+         v_club, v_cash, v_tourney, v_seats;
+
+  IF v_raw_club IS NULL OR v_raw_cash IS NULL OR v_raw_tourney IS NULL OR v_raw_seats IS NULL
+     OR v_club IS NULL OR v_cash IS NULL OR v_tourney IS NULL OR v_seats IS NULL THEN
+    RAISE EXCEPTION 'a chip supply measurement read as NULL, which is not a measurement';
   END IF;
 
+  IF v_club IS DISTINCT FROM v_raw_club OR v_cash IS DISTINCT FROM v_raw_cash
+     OR v_tourney IS DISTINCT FROM v_raw_tourney OR v_seats IS DISTINCT FROM v_raw_seats THEN
+    RAISE EXCEPTION 'the chip supply measurement moved: club % -> %, cash % -> %, tourney % -> %, seats % -> % (one snapshot, Diamond filter off then on)',
+      v_raw_club, v_club, v_raw_cash, v_cash, v_raw_tourney, v_tourney, v_raw_seats, v_seats;
+  END IF;
+END $m$;
+
+-- 4d. The chip circulation report. The substituted function is CALLED and its
+-- rows are FULL JOINed, in one statement, against the per-club aggregates
+-- computed raw from the same snapshot. This is strictly more than the
+-- superseded file asserted: it counted the rows, and this compares every chip
+-- club's name and all four of its figures as well.
+DO $m$
+DECLARE
+  v_reported_without_a_club bigint;
+  v_chip_club_missing bigint;
+  v_diamond_club_reported bigint;
+  v_figure_changed bigint;
+  v_chip_clubs bigint;
+  v_reported bigint;
+BEGIN
+  SELECT count(*) FILTER (WHERE x.reported AND NOT x.a_club),
+         count(*) FILTER (WHERE x.a_club AND x.asset <> 'diamonds' AND NOT x.reported),
+         count(*) FILTER (WHERE x.a_club AND x.asset = 'diamonds' AND x.reported),
+         count(*) FILTER (WHERE x.reported AND x.a_club AND x.changed),
+         count(*) FILTER (WHERE x.a_club AND x.asset <> 'diamonds'),
+         count(*) FILTER (WHERE x.reported)
+    INTO v_reported_without_a_club, v_chip_club_missing, v_diamond_club_reported,
+         v_figure_changed, v_chip_clubs, v_reported
+    FROM (
+      SELECT (r.club_id IS NOT NULL) AS reported,
+             (c.id IS NOT NULL)      AS a_club,
+             c.asset                 AS asset,
+             (r.club_name      IS DISTINCT FROM c.name
+           OR r.member_wallets IS DISTINCT FROM
+                COALESCE((SELECT SUM(cm.chip_balance) FROM public.club_members cm
+                           WHERE cm.club_id = c.id), 0)
+           OR r.on_the_felt    IS DISTINCT FROM
+                COALESCE((SELECT SUM(ts.stack) FROM public.table_seats ts
+                           WHERE ts.club_id = c.id AND ts.left_at IS NULL), 0)
+           OR r.treasury       IS DISTINCT FROM COALESCE(c.chip_pool, 0)
+           OR r.total          IS DISTINCT FROM
+                COALESCE((SELECT SUM(cm.chip_balance) FROM public.club_members cm
+                           WHERE cm.club_id = c.id), 0)
+              + COALESCE((SELECT SUM(ts.stack) FROM public.table_seats ts
+                           WHERE ts.club_id = c.id AND ts.left_at IS NULL), 0)
+              + COALESCE(c.chip_pool, 0)) AS changed
+        FROM public.clubs c
+        FULL JOIN public.fn_club_chip_circulation() r ON r.club_id = c.id
+    ) x;
+
+  IF v_reported_without_a_club <> 0 THEN
+    RAISE EXCEPTION 'the chip circulation report lists % row(s) for a club that does not exist', v_reported_without_a_club;
+  END IF;
   -- And every chip club still has its row in the chip circulation report.
-  IF (SELECT count(*) FROM public.fn_club_chip_circulation())
-     IS DISTINCT FROM (SELECT count(*) FROM public.clubs WHERE asset <> 'diamonds') THEN
-    RAISE EXCEPTION 'the chip circulation report lost or gained a chip club';
+  IF v_chip_club_missing <> 0 OR v_reported IS DISTINCT FROM v_chip_clubs THEN
+    RAISE EXCEPTION 'the chip circulation report lost or gained a chip club: % chip clubs, % rows, % chip club(s) missing',
+      v_chip_clubs, v_reported, v_chip_club_missing;
   END IF;
-  IF EXISTS (SELECT 1 FROM public.fn_club_chip_circulation() r
-              JOIN public.clubs c ON c.id = r.club_id WHERE c.asset = 'diamonds') THEN
+  IF v_diamond_club_reported <> 0 THEN
     RAISE EXCEPTION 'the chip circulation report still lists a diamonds club';
+  END IF;
+  IF v_figure_changed <> 0 THEN
+    RAISE EXCEPTION 'the chip circulation report changed a chip club: % club(s) differ from the raw per-club aggregate read in the same statement', v_figure_changed;
   END IF;
 END $m$;
 
@@ -442,7 +616,7 @@ BEGIN
     RAISE EXCEPTION 'watched guards off their baseline: %', v_bad;
   END IF;
 
-  RAISE NOTICE 'the chip circulation marks count no Diamond: the freeze mark total, the chip supply snapshot and the club chip circulation report each exclude a known diamonds pool, and every chip figure they publish today is unchanged';
+  RAISE NOTICE 'the chip circulation marks count no Diamond: the freeze mark total, the chip supply snapshot and the club chip circulation report each exclude a known diamonds pool, and every chip figure they publish today is unchanged - each one proved by reading the filtered and unfiltered figure in a single statement, so no concurrent seat can answer for the filter';
 END $m$;
 
 COMMIT;

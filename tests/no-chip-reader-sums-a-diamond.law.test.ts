@@ -53,8 +53,23 @@ const migration = (needle: string) => {
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 const code = (sql: string) => sql.replace(/--[^\n]*/g, '');
 
-const SQL = migration('the_chip_circulation_marks_count_no_diamond');
+/* THE LIVE FILE IS THE SUCCESSOR (2026-10-04).
+   20261004124546_the_chip_circulation_marks_count_no_diamond.sql merged correct
+   in substance and could not apply: dispatched twice, it refused ITSELF both
+   times on its own section 4 and rolled back. Its section 0 captured the
+   unfiltered figures and its section 4 read the filtered figures afterwards and
+   required equality - two statements, two snapshots at READ COMMITTED - so a
+   player standing up mid-transaction answered for the Diamond filter. The
+   second refusal is the proof: every money figure identical to the cent and
+   `seats 1632 -> 1631`.
+
+   20261004194622_the_chip_circulation_proof_reads_one_snapshot.sql carries the
+   same substance and reads both sides of every comparison in ONE statement.
+   `files.find` returns the first match, so this law has to name the successor
+   explicitly or it would keep pinning the dead file. */
+const SQL = migration('the_chip_circulation_proof_reads_one_snapshot');
 const BODY = code(SQL);
+const SUPERSEDED_SQL = migration('the_chip_circulation_marks_count_no_diamond');
 
 describe('no chip reader sums a Diamond into a chip figure', () => {
   it('changes exactly the three readers that measure the two mixed pools', () => {
@@ -124,8 +139,12 @@ describe('no chip reader sums a Diamond into a chip figure', () => {
        what change. Nothing repairs a row after the fact. */
     expect(BODY).not.toMatch(/cron\.(schedule|job)/i);
     expect(BODY).not.toMatch(/fn_[a-z_]*(repair|backpay|sweep|redrive|catchup|heal)[a-z_]*/i);
-    expect(BODY).not.toMatch(/UPDATE\s+public\.(chip_supply_snapshots|ca_freeze_circulation_marks)/i);
-    expect(BODY).not.toMatch(/DELETE\s+FROM\s+public\.(chip_supply_snapshots|ca_freeze_circulation_marks)/i);
+    expect(BODY).not.toMatch(
+      /UPDATE\s+public\.(chip_supply_snapshots|ca_freeze_circulation_marks)/i
+    );
+    expect(BODY).not.toMatch(
+      /DELETE\s+FROM\s+public\.(chip_supply_snapshots|ca_freeze_circulation_marks)/i
+    );
   });
 
   it('has a runner that reproduces the defect before it proves the fix', () => {
@@ -142,7 +161,7 @@ describe('no chip reader sums a Diamond into a chip figure', () => {
       expect(runner, `the runner does not reproduce: ${needle}`).toContain(needle);
     }
     /* And the runner applies THIS FILE, not a copy of its intent. */
-    expect(runner).toContain('20261004124546_the_chip_circulation_marks_count_no_diamond.sql');
+    expect(runner).toContain('20261004194622_the_chip_circulation_proof_reads_one_snapshot.sql');
     expect(runner).toContain('psql_file(MIGRATION');
   });
 
@@ -165,6 +184,65 @@ describe('no chip reader sums a Diamond into a chip figure', () => {
     for (const sig of manifest.changed_by_the_migration) {
       expect(BODY).toContain(String(manifest.pins[sig]));
     }
+  });
+
+  it('proves no chip figure moves on ONE snapshot, not across two instants', () => {
+    /* THE CAUSE THAT COST TWO APPLY ATTEMPTS, PINNED. A single SQL statement
+       sees a single snapshot even at READ COMMITTED, so the filtered figure and
+       the unfiltered figure it is compared against must be read TOGETHER. Read
+       apart, the comparison also asserts that nobody else moved a chip or a
+       seat while the transaction was open, which can essentially never hold on
+       a live floor - 1632 seats were on the felt when it refused. */
+    expect(BODY, 'the cross-instant capture table is back').not.toContain('ca_p9b_before');
+    /* Each money comparison names the snapshot it was read on. */
+    expect(
+      BODY.split('one snapshot, Diamond filter off then on').length - 1,
+      'a money comparison does not say it read one snapshot'
+    ).toBe(4);
+    /* The substituted readers are CALLED inside the comparing statement, so the
+       new text is exercised rather than assumed - which only holds while they
+       are STABLE, and the migration refuses if they are not. */
+    expect(BODY).toContain('FROM public.fn_ca_circulation_total() ct');
+    expect(BODY).toContain('FULL JOIN public.fn_club_chip_circulation() r ON r.club_id = c.id');
+    expect(BODY).toContain('is not STABLE (provolatile');
+    /* fn_snapshot_chip_supply writes a row, so it is never called from a
+       migration (CLAUDE.md 11.5); its measurements are read both ways instead. */
+    expect(BODY).not.toMatch(/(PERFORM|:=|FROM|INTO)\s+public\.fn_snapshot_chip_supply\s*\(/i);
+    /* And no comparison gained a tolerance. The three amounts held perfectly on
+       production and are the evidence the change is correct. */
+    expect(BODY).not.toMatch(/abs\s*\(/i);
+    expect(BODY).not.toMatch(/GREATEST\s*\(/i);
+    for (const exact of [
+      'v_w IS DISTINCT FROM v_raw_w',
+      'v_f IS DISTINCT FROM v_raw_f',
+      'v_t IS DISTINCT FROM v_raw_t',
+      'v_club IS DISTINCT FROM v_raw_club',
+      'v_cash IS DISTINCT FROM v_raw_cash',
+      'v_tourney IS DISTINCT FROM v_raw_tourney',
+      'v_seats IS DISTINCT FROM v_raw_seats',
+    ]) {
+      expect(BODY, `${exact} is not an exact comparison any more`).toContain(exact);
+    }
+  });
+
+  it('leaves the file it replaced marked, named and unable to run', () => {
+    /* History is never deleted. check-migrations-are-live.mjs and
+       check-migrations-applied.mjs both honour "-- SUPERSEDED BY <version>"
+       only when it NAMES a version whose file exists, because "it was
+       superseded" is the easiest lie to tell about a migration that simply
+       never ran. */
+    /* The FIRST LINE, which is where the convention puts it and the narrowest
+       window there is. Never a byte count: tests/helpers/sourceWindow.ts and
+       tests/unit/noFixedSizeSourceWindows.test.ts refuse a window bounded by a
+       magic number, and a header that grows would outrun one. */
+    const [supersededFirstLine] = SUPERSEDED_SQL.split('\n');
+    expect(supersededFirstLine).toMatch(/^--\s*SUPERSEDED BY\s+20261004194622\b/);
+    expect(SUPERSEDED_SQL).toContain('THIS FILE MUST NEVER RUN');
+    /* It records both verbatim refusals, so the next agent reads the cause
+       rather than re-deriving it. */
+    expect(SUPERSEDED_SQL).toContain('the chip member wallet total moved:');
+    expect(SUPERSEDED_SQL).toContain('seats 1632 -> 1631');
+    expect(files).toContain('20261004194622_the_chip_circulation_proof_reads_one_snapshot.sql');
   });
 
   it('never opens a switch from the fixture, and says both are closed at the end', () => {

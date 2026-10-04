@@ -269,6 +269,7 @@
 }
 
 .stats-evidence-action {
+  min-height: 44px;
   color: #45adff;
   text-decoration: underline;
   text-decoration-color: rgb(69 173 255 / 45%);
@@ -891,7 +892,7 @@
    be the same sentence; this one has to be actionable. */
 .hand-retry {
   margin-left: 6px;
-  min-height: 32px;
+  min-height: 44px;
   padding: 4px 12px;
   border: 1px solid rgba(0, 212, 255, 0.35);
   border-radius: 8px;
@@ -1545,7 +1546,7 @@
 .panel-boundary-retry {
   align-self: flex-start;
   margin-top: 0.35rem;
-  min-height: 32px;
+  min-height: 44px;
   padding: 4px 12px;
   border: 1px solid rgba(245, 158, 11, 0.45);
   border-radius: 8px;

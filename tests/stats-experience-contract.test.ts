@@ -59,6 +59,12 @@ describe('Stats mobile fold budget', () => {
     expect(CSS).toMatch(/\.stats-evidence-row\s*\{[^}]*min-height:\s*44px/);
     expect(NEMESIS_CSS).toMatch(/\.nemesis-expand\s*\{[^}]*min-height:\s*44px/);
   });
+
+  it('keeps alternate and failure-state actions on the 44px touch floor', () => {
+    expect(CSS).toMatch(/\.stats-evidence-action\s*\{[^}]*min-height:\s*44px/);
+    expect(CSS).toMatch(/\.hand-retry\s*\{[^}]*min-height:\s*44px/);
+    expect(CSS).toMatch(/\.panel-boundary-retry\s*\{[^}]*min-height:\s*44px/);
+  });
 });
 
 describe('Stats evidence links to real hand history', () => {

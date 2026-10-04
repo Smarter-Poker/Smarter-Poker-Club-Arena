@@ -70,6 +70,19 @@ describe('Create Club production certification contract', () => {
     expect(workflow).toContain('--workers=1 --retries=0');
   });
 
+  it('proves all opening grants fit before creating any fixture', () => {
+    const workflow = read('.github/workflows/club-create-certification.yml');
+    const capacity = workflow.indexOf('Verify Opening Grant Capacity Before Creating Fixtures');
+    const directCreate = workflow.indexOf('Certify Authenticated Club Creation And Cleanup');
+    const browserAccount = workflow.indexOf('Provision A Brand-New Player');
+
+    expect(capacity).toBeGreaterThan(-1);
+    expect(capacity).toBeLessThan(directCreate);
+    expect(capacity).toBeLessThan(browserAccount);
+    expect(workflow).toContain("CLUB_CREATE_CERT_REQUIRED_GRANTS: '3'");
+    expect(workflow).toContain('node scripts/ci/check-club-create-capacity.mjs');
+  });
+
   it('supplies the direct database credential to every step that can retire a fixture club', () => {
     const workflow = read('.github/workflows/club-create-certification.yml');
     const step = (name: string) => {

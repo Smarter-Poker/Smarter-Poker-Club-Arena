@@ -29,5 +29,10 @@ describe('Find A Player native privacy qualification', () => {
     expect(runner).toContain("player['tables'] == []");
     expect(runner).toContain("player['display_name'] is None");
     expect(runner).toContain('fn_get_table_watch_access');
+    expect(runner).toContain("assert live_access['action'] == 'request_join'");
+    expect(runner).toContain("assert joined_access['action'] == 'watch'");
+    expect(runner.indexOf("assert live_access['action'] == 'request_join'")).toBeLessThan(
+      runner.indexOf("assert joined_access['action'] == 'watch'")
+    );
   });
 });

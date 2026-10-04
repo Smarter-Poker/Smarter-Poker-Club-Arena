@@ -100,7 +100,11 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
  *     went missing underneath it. The argument for all three is in
  *     docs/attestation/cron-roster.tsv's header beside this one.
  */
-const ACTIVE_JOBS = 125;
+/*
+ * 125 -> 126 active on 2026-10-04: postgrest-pool-renew-10m, scheduled by
+ * the_api_pool_is_renewed_before_it_outgrows_the_host (argument in its header).
+ */
+const ACTIVE_JOBS = 126;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -126,8 +130,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('127 total is 125 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(127);
+  it('128 total is 126 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(128);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

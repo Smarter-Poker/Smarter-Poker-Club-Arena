@@ -49,10 +49,10 @@ export function useMasterBusBroadcastChannel({
     if (!enabled || !channelName) return;
     let alive = true;
     // MasterBus may replace a dead channel while its previous Supabase
-    // subscription is still delivering a late CLOSED/error callback. Only the
-    // newest subscription attempt owns this hook's status and payloads; without
-    // this fence an old socket can overwrite a successful rejoin back to
-    // "degraded" (or repaint stale data) after the replacement is live.
+    // subscription is still delivering a late CLOSED/error callback. Reserve
+    // ownership when an attempt starts (before async auth), so an older attempt
+    // that finishes auth last cannot supersede a newer channel or repaint stale
+    // data after recovery.
     let subscriptionGeneration = 0;
     /* A private join first proves the session to Realtime. When that proof
        fails (no session yet, a refresh in flight, the network gone) there is
@@ -65,15 +65,17 @@ export function useMasterBusBroadcastChannel({
     let disarmAuthRetry: (() => void) | null = null;
 
     const subscribeChannel = async () => {
+      const generation = ++subscriptionGeneration;
       if (privateChannel) {
         try {
           // Realtime Authorization is separate from PostgREST authentication.
           // Prime it from the Supabase client's current session before a private
           // channel asks realtime.messages RLS for permission to join.
           await supabase.realtime.setAuth();
+          if (!alive || generation !== subscriptionGeneration) return;
           disarmAuthRetry?.();
         } catch (authError) {
-          if (!alive) return;
+          if (!alive || generation !== subscriptionGeneration) return;
           armAuthRetry();
           const error =
             authError instanceof Error
@@ -89,7 +91,7 @@ export function useMasterBusBroadcastChannel({
         }
       }
 
-      if (!alive) return;
+      if (!alive || generation !== subscriptionGeneration) return;
       const channel = masterBus.getOrCreateChannel(channelName, { private: privateChannel });
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
@@ -100,7 +102,6 @@ export function useMasterBusBroadcastChannel({
         return;
       }
 
-      const generation = ++subscriptionGeneration;
       channel
         .on('broadcast', { event }, (payload: unknown) => {
           if (alive && generation === subscriptionGeneration) callbackRef.current(payload);

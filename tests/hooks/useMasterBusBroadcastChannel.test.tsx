@@ -183,6 +183,41 @@ describe('useMasterBusBroadcastChannel', () => {
     expect(onPayload).toHaveBeenCalledWith({ revision: 2 });
   });
 
+  it('does not let an older auth attempt win when it completes after its replacement', async () => {
+    const resolveAuth: Array<() => void> = [];
+    mocks.setAuth.mockImplementation(
+      () => new Promise<void>((resolve) => resolveAuth.push(resolve))
+    );
+    const firstChannel = { state: 'closed', on: mocks.on };
+    const replacementChannel = { state: 'closed', on: mocks.on };
+    mocks.getOrCreateChannel
+      .mockReturnValueOnce(firstChannel)
+      .mockReturnValueOnce(replacementChannel);
+
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'private:user-1',
+        event: 'changed',
+        onPayload: vi.fn(),
+      })
+    );
+    await waitFor(() => expect(resolveAuth).toHaveLength(1));
+
+    const startReplacement = mocks.registerChannelFactory.mock.calls[0]?.[1] as
+      | (() => void)
+      | undefined;
+    startReplacement?.();
+    await waitFor(() => expect(resolveAuth).toHaveLength(2));
+
+    await act(async () => resolveAuth[1]?.());
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    await act(async () => resolveAuth[0]?.());
+
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce();
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', { private: true });
+    expect(mocks.subscriptionCallbacks).toHaveLength(1);
+  });
+
   it('does not join after unmount while authentication is pending', async () => {
     let releaseAuth: (() => void) | undefined;
     mocks.setAuth.mockReturnValue(

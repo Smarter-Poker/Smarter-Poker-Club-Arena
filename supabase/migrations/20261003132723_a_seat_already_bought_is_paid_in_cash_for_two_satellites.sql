@@ -1,3 +1,23 @@
+-- SUPERSEDED BY 20261004151352 (the_house_pays_wasp_the_two_seats_it_could_not_deliver)
+-- THIS FILE MUST NEVER RUN. It was merged on main and REFUSED ITSELF on apply
+-- (run 37209895373): "ERROR 55000: completed satellite transfer journal is
+-- immutable", raised by fn_satellite_transfer_ledger_is_immutable() at line 74.
+-- The reason is structural, not transient. It paid each 30.00 out of a COMPLETED
+-- satellite's own prize_liability and wrote the leg with tournament_id NULL,
+-- believing that kept the terminal tournament unnamed. That guard deliberately
+-- resolves the source satellite from from_entity_id whenever from_type is
+-- prize_liability, precisely so a NULL tournament_id cannot route around it, and
+-- refuses any INSERT whose source satellite is terminal. Nothing short of
+-- weakening that guard would let this file apply, and the guard is right: the
+-- satellite's journal is sealed. Its post-image ("each satellite's
+-- prize_liability reads 0.00") is therefore unreachable by any honest path.
+-- WASP is paid the same 60.00 by 20261004151352, through the house door the
+-- estate already blessed (20260926085132, 20261002082429, 20260926131530):
+-- Midway Union, which hosted both satellites and took their 2.00 fee each, pays
+-- it from its bank, and each sealed satellite keeps the 30.00 it never
+-- disbursed. History is never deleted, so this file stays exactly as it was
+-- below this notice.
+-- docs/changelog/2026-10-04-the-house-pays-wasp-the-two-seats-it-could-not-deliver.md
 -- 20261003132723_a_seat_already_bought_is_paid_in_cash_for_two_satellites.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

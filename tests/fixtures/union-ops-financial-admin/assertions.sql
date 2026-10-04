@@ -304,7 +304,10 @@ BEGIN
      OR position('club_rake_rollup_complete' in fn_src) = 0
      OR position('edge_attribution_rake AS' in fn_src) = 0
      OR position('gap_days AS MATERIALIZED' in fn_src) = 0
-     OR position('flow_legs AS MATERIALIZED' in fn_src) = 0
+     OR position('flow_legs AS MATERIALIZED' in fn_src) > 0
+     OR position('flows AS MATERIALIZED' in fn_src) = 0
+     OR position('l.to_entity_id = p.player_id' in fn_src) = 0
+     OR position('l.from_entity_id = p.player_id' in fn_src) = 0
      OR position('comm_pairs AS MATERIALIZED' in fn_src) = 0
      OR position('JOIN edge_windows' in fn_src) > 0
      OR NOT EXISTS (
@@ -315,7 +318,7 @@ BEGIN
           AND p.proconfig IS NOT DISTINCT FROM
               ARRAY['search_path=public','jit=off']::text[])
      OR position('LEFT JOIN LATERAL (' in fn_src) > 0 THEN
-    RAISE EXCEPTION 'risk report lost bounded facts or restored per-roster probes';
+    RAISE EXCEPTION 'risk report lost bounded facts or player-keyed flow reads';
   END IF;
 
   d := public.fn_union_distribution_check(u,since_at);
@@ -359,6 +362,26 @@ BEGIN
           AND p.proconfig IS NOT DISTINCT FROM
               ARRAY['search_path=public','jit=off']::text[]) THEN
     RAISE EXCEPTION 'distribution check lost exact daily facts or UTC edge reads';
+  END IF;
+
+  fn_src := pg_get_functiondef(
+    'public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure);
+  IF position('l.to_entity_id = p.player_id' in fn_src) = 0
+     OR position('l.from_entity_id = p.player_id' in fn_src) = 0
+     OR position('flow_legs AS MATERIALIZED' in fn_src) <> 0
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_index i
+        WHERE i.indexrelid =
+              'public.idx_chip_ledger_risk_in_player_window'::regclass
+          AND i.indisvalid AND i.indisready AND i.indislive)
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_index i
+        WHERE i.indexrelid =
+              'public.idx_chip_ledger_risk_out_player_window'::regclass
+          AND i.indisvalid AND i.indisready AND i.indislive) THEN
+    RAISE EXCEPTION 'risk report lost exact player-keyed chip flow reads';
   END IF;
 
   d := public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
@@ -510,7 +533,7 @@ SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
 -- Production-shaped Risk qualification. One million selected cash rows are
 -- represented by the exact completed-day per-player facts the production
 -- reader is required to use. Three hundred thousand table-stack movements
--- exercise both set-based covering-index legs.
+-- exercise both player-keyed covering-index legs.
 INSERT INTO public.rake_records(
   hand_id,club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at)
 SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,

@@ -4,7 +4,8 @@
     "supabase/migrations/20261004173704_union_ops_risk_and_preview_stay_inside_the_request_budget.sql": "1f51b68b5dd9969578fff206a152756499adbe7678c49ed524c516c324a1e198",
     "supabase/migrations/20261004202942_union_ops_risk_reads_bounded_production_facts.sql": "e0da293ea3dfda020375e80a5daaf468fb34071ee1510f3aa012092a7199d95b",
     "supabase/migrations/20261004212118_union_distribution_check_reads_daily_commission_facts.sql": "b717e4b3c2771e03278d0bca9a348a6a12a6cb85b32f3091a684ee504be360b7",
-    "tests/fixtures/union-ops-financial-admin/assertions.sql": "4e430ac3ee3288e21c274a487497b28d24ddca0b210f28720c350b1085202950",
+    "supabase/migrations/20261004221303_union_risk_uses_player_keyed_chip_flow_indexes.sql": "8c17b6af62dfb23436e51e9399bd3b5084875b5516e0adec8c4aff1f0781bc70",
+    "tests/fixtures/union-ops-financial-admin/assertions.sql": "14871a2a03ba908389cc38e04c7a2dff4d7e7e6f806ee54663e473614b21473e",
     "tests/fixtures/union-ops-financial-admin/bootstrap.sql": "5ff1bf7524513a2cfdb58e76250ea3bb82522474b1bc00e873d89a70a2979212"
   }
 }

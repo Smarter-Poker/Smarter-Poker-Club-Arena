@@ -2024,7 +2024,7 @@ function LiveTablePage({
             setChestReveals((prev) => ({
               ...prev,
               [awardKey]: {
-                amount: Math.round(cents / 100),
+                amount: Math.round(cents) / 100,
                 tier: a?.tier ?? undefined,
                 tierLabel: formatBountyTierLabel(a?.tier),
                 isJackpot: !!a?.is_jackpot,
@@ -2037,7 +2037,7 @@ function LiveTablePage({
             knockerUserId: String(a?.designated_revealer || ''),
             knockerName: String(a?.designated_revealer_name || 'Player'),
             eliminatedName: String(a?.eliminated?.username || 'Player'),
-            amount: cents !== null ? Math.round(cents / 100) : 0,
+            amount: cents !== null ? Math.round(cents) / 100 : 0,
             amountPending: cents === null,
             tier: a?.tier ?? undefined,
             tierLabel: formatBountyTierLabel(a?.tier),
@@ -14446,7 +14446,7 @@ function LiveTablePage({
                   // figure rather than zero.
                   const revealedAmount =
                     typeof b.amountCents === 'number'
-                      ? Math.round(b.amountCents / 100)
+                      ? Math.round(b.amountCents) / 100
                       : Number(b.amount) || 0;
                   const revealedRecipients: Array<{
                     userId: string;
@@ -14458,7 +14458,7 @@ function LiveTablePage({
                         name: String(r.name ?? r.username ?? 'Player'),
                         amount:
                           typeof r.amountCents === 'number'
-                            ? Math.round(r.amountCents / 100)
+                            ? Math.round(r.amountCents) / 100
                             : Number(r.amount) || 0,
                       }))
                     : [];

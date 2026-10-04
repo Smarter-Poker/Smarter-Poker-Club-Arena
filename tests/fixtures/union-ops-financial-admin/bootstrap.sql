@@ -68,8 +68,11 @@ CREATE TABLE public.agents(
   role text, status text NOT NULL DEFAULT 'active');
 CREATE TABLE public.table_seats(user_id uuid, club_id uuid, left_at timestamptz);
 CREATE TABLE public.rake_attributions(
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), player_id uuid, club_id uuid,
-  rake_amount numeric NOT NULL CHECK (rake_amount >= 0), created_at timestamptz NOT NULL);
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), hand_id uuid, rake_record_id uuid,
+  player_id uuid, club_id uuid, rake_amount numeric NOT NULL CHECK (rake_amount >= 0),
+  eligible_contribution numeric, contribution_weight numeric,
+  weighted_rake_credit numeric, rake_method text,
+  created_at timestamptz NOT NULL);
 CREATE INDEX idx_rake_attributions_club_created
   ON public.rake_attributions(club_id, created_at) INCLUDE(player_id, rake_amount);
 CREATE TABLE public.chip_ledger(
@@ -89,11 +92,27 @@ CREATE INDEX agent_commissions_open_idx
   ON public.agent_commissions(club_id, user_id, created_at) INCLUDE(amount, id)
   WHERE settled_at IS NULL;
 CREATE TABLE public.rake_records(
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), club_id uuid, rake_amount numeric,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), hand_id uuid, club_id uuid, rake_amount numeric,
   player_contributions jsonb, is_tournament boolean NOT NULL DEFAULT false,
-  source text, metadata jsonb, created_at timestamptz);
+  source text, metadata jsonb, rake_method text NOT NULL DEFAULT 'DEALT_EQUAL',
+  created_at timestamptz);
 CREATE INDEX idx_rake_records_club_created
   ON public.rake_records(club_id, created_at) WHERE rake_amount > 0;
+CREATE TABLE public.club_rake_daily_user(
+  club_id uuid NOT NULL, day date NOT NULL, user_id uuid NOT NULL,
+  rake_amount numeric(20,2) NOT NULL DEFAULT 0, hands bigint NOT NULL DEFAULT 0,
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(club_id,day,user_id));
+CREATE INDEX club_rake_daily_user_day_idx
+  ON public.club_rake_daily_user(day,club_id);
+CREATE INDEX club_rake_daily_user_user_idx
+  ON public.club_rake_daily_user(user_id,club_id,day);
+CREATE TABLE public.club_rake_rollup_complete(
+  club_id uuid NOT NULL, day date NOT NULL, rows_written integer NOT NULL DEFAULT 0,
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(club_id,day));
+CREATE INDEX club_rake_rollup_complete_day_idx
+  ON public.club_rake_rollup_complete(day);
 CREATE TABLE public.rakeback_periods(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, club_id uuid,
   rakeback_amount numeric, period_start date,

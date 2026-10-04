@@ -477,7 +477,7 @@ export const ordinal = (n: unknown): string => {
  */
 export const compactChips = (n: number | null | undefined): string => {
   const v = Math.floor(Math.abs(Number(n) || 0));
-  const sign = Number(n) < 0 ? '-' : '';
+  const sign = v > 0 && Number(n) < 0 ? '-' : '';
   const units: Array<[number, string]> = [
     [1_000_000_000, 'B'],
     [1_000_000, 'M'],

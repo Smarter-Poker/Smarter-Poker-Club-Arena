@@ -3,14 +3,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
+  identity: vi.fn(),
   verify: vi.fn(),
   parseOrigin: vi.fn(),
 }));
 
-vi.mock('../services/supabase.js', () => ({
-  supabase: { rpc: mocks.rpc, from: mocks.from },
-  maintenanceSupabase: { rpc: mocks.rpc, from: mocks.from },
-}));
+// The stored terminal identity has its own door (2026-10-04); its reads are
+// counted apart from the settlement RPCs these tests pin.
+vi.mock('../services/supabase.js', () => {
+  const rpc = (name: string, args: unknown) =>
+    name === 'fn_tournament_terminal_settlement_identity'
+      ? mocks.identity(name, args)
+      : mocks.rpc(name, args);
+  return {
+    supabase: { rpc, from: mocks.from },
+    maintenanceSupabase: { rpc, from: mocks.from },
+  };
+});
 
 vi.mock('./completionSettlementReceipt.js', () => ({
   verifyTournamentCompletionReceipt: mocks.verify,
@@ -33,12 +42,13 @@ const DISAGREE = {
   message: `terminal replay parameters disagree with stored receipt for ${TOURNAMENT_ID}`,
 };
 
-/** The engine's read of tournament_terminal_settlements, one row or none. */
+/** The engine's read of the stored terminal identity, one row or none. */
 function storedReceiptRow(row: Record<string, unknown> | null, error: unknown = null): void {
-  const maybeSingle = vi.fn().mockResolvedValue({ data: row, error });
-  const eq = vi.fn().mockReturnValue({ maybeSingle });
-  const select = vi.fn().mockReturnValue({ eq });
-  mocks.from.mockReturnValue({ select });
+  mocks.identity.mockResolvedValue(
+    error
+      ? { data: null, error }
+      : { data: row ? { found: true, ...row } : { found: false }, error: null }
+  );
 }
 const RECEIPT = { tournamentId: TOURNAMENT_ID, winnerId: WINNER_ID } as any;
 const noWait = async (): Promise<void> => undefined;
@@ -414,7 +424,8 @@ describe('terminal replay disagreement is not retried forever', () => {
     // The refused request is sent once. The eight identical attempts the
     // caller allowed are not spent on a deterministic refusal.
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    expect(mocks.from).toHaveBeenCalledTimes(3);
+    expect(mocks.identity).toHaveBeenCalledTimes(3);
+    expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalledWith(
       'fn_resolve_tournament_terminal_outcome',
       expect.anything()

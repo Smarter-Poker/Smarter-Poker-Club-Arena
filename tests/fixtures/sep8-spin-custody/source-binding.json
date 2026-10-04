@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -694,6 +694,28 @@
         "path": "tests/unit/fixtureNativeCi.test.ts",
         "previous": "de6b3df38897164bbd2959b7add96db5be7594007388b0de552dd3f94a1ad615",
         "current": "d6e9aca796e2719eb8c6b5ee284eb06f70b2004d6c3720abd1b79718cd9883b3"
+      }
+    ]
+  },
+  "diamondCrossFormatConservationRoute20261004": {
+    "reason": "Restamped 2026-10-04 with the Diamond Phase 9 cross-format conservation runner. The only change to this classifier is one alternation widened so tests/sql/diamond-cross-format-*.manifest.json reaches the accounting job that executes the runner reading it, plus the comment saying why its two .sql fixtures are named poker-diamond-* instead. No existing route, lane, financial source or assertion in this file was altered, and the two Diamond lanes it already declares are byte-identical. Diff read before restamping.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
+      }
+    ]
+  },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
       }
     ]
   }

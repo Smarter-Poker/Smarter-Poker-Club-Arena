@@ -202,6 +202,16 @@ def qualify(root,out,cmd,command,run,probe,require,results):
             run('historical-addon-install','BEGIN;\n'+addon+'\nCOMMIT;')
             run('historical-addon-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_assert_movement(uuid)');",
                 'smarter_private.f06_assert_movement(uuid) a0e369a33e735ba728b72228a3134b01 e3355bb05eecda8aed293f155f1ddfef')
+            # Production then applies 20261004125152, whose snapshot witnesses an
+            # original whose permit never reached the database by its recorded
+            # f06_absent_permit_releases row (one ELSIF). Its pre-image refuses
+            # unless the installed snapshot is exactly 5422e7f7..., which this
+            # clone holds, so the snapshot section is applied as written.
+            absent=(root/'supabase/migrations/20261004125152_a_dead_origins_originals_are_disposed_by_the_successor_that_.sql').read_text()
+            absent=absent[absent.index('DO $dead_origin_snapshot_preimage$'):absent.index('$dead_origin_snapshot_postimage$;',absent.index('DO $dead_origin_snapshot_postimage$')+40)+len('$dead_origin_snapshot_postimage$;')]
+            run('historical-absent-original-install','BEGIN;\n'+absent+'\nCOMMIT;')
+            run('historical-absent-original-identity',"SELECT p.oid::regprocedure::text||' '||md5(prosrc)||' '||md5(pg_get_functiondef(p.oid)) FROM pg_proc p WHERE p.oid=to_regprocedure('smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)');",
+                'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb) c0d85cbbd162a208efe73855374e2518 4a960ad8ba45a470d23b84b84a60d65f')
         if name=='retired-origin-local-proof-store':
             run('historical-explicit-loss',"""UPDATE fixture_origin_inputs SET local_proof=jsonb_set(local_proof,'{engines}',(SELECT jsonb_agg(jsonb_set(e,'{bank_custody,historical_loss}',fixture_history_scope(i)-ARRAY['occupants','pending_arrivals']) ORDER BY e->>'table_id') FROM jsonb_array_elements(local_proof->'engines')e));""")
             run('historical-pending-physical-capture',"""UPDATE fixture_origin_inputs SET local_proof=local_proof||jsonb_build_object('historical_loss_pending_arrivals',(SELECT COALESCE(jsonb_agg(jsonb_build_object('original',e,'durable_presence',NULL,'absence',jsonb_build_object('kind','all_current_engine_maps_absent_v1','source',local_proof#>>'{release_checkpoint,source}','instance_id','1-3846b8bb','table_id',e->>'table_id','global_absent',true,'owned_absent',true,'retirement_absent',true,'managers',(SELECT jsonb_agg(jsonb_build_object('manager_id',fixture_origin_c(j)->>'manager_id','absent',true)) FROM generate_series(1401,1402)j)))),'[]') FROM jsonb_array_elements(fixture_history_scope(i)->'pending_arrivals')e));""")
@@ -304,8 +314,9 @@ def qualify(root,out,cmd,command,run,probe,require,results):
     # added-column movement proof migration 20260926043127, the bounty
     # columns movement proof migration 20260928170557, the never-dealt
     # movement proof migration 20261001151056, the disposed-original
-    # dispatch admission migration 20261002023035 and the add-on movement
-    # proof migration 20261002055945.
+    # dispatch admission migration 20261002023035, the add-on movement
+    # proof migration 20261002055945 and the absent-original witness
+    # migration 20261004125152.
     catalog=json.loads((out/'qualified-service-contract.json').read_text())
     fixture=json.loads((root/'tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json').read_text())
     require(catalog==fixture,'Publisher fixture does not equal actual historical-loss catalogue')

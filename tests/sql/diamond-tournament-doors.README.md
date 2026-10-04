@@ -4,7 +4,7 @@
 > README, under "The lifecycle cases".** Run them with
 > `python3 tests/sql/run-diamond-tournament-lifecycle.py`. This first half
 > describes the base and its 79 doors; that runner loads the base, this
-> capture, a second delta, a second capture of 41 more doors, a seed and the
+> capture, a second delta, a second capture of 42 more doors, a seed and the
 > cases.
 
 This is the base of the Diamond tournament lifecycle fixture: a private
@@ -132,12 +132,12 @@ lifecycle cases. It never connects to production, needs no credential, and
 arrive false as production holds them, and the runner refuses to pass if either
 is on when the cases finish.
 
-| #   | File                                      | What it is                                                                                                          |
-| --- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 5   | `diamond-tournament-lifecycle-schema.sql` | two relations, four `tournaments` columns and four `tournaments` constraints the base lacks, sliced verbatim        |
-| 6   | `diamond-tournament-lifecycle-doors.sql`  | 26 more installed doors, md5-pinned, plus the nine `tournaments` triggers production carries that the base does not |
-| 7   | `diamond-tournament-lifecycle-seed.sql`   | one Diamond arena, four synthetic accounts, the staff account, the arena settings row and the MTT admission ABI     |
-| 8   | `diamond-tournament-lifecycle-cases.sql`  | the cases                                                                                                           |
+| #   | File                                      | What it is                                                                                                            |
+| --- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 5   | `diamond-tournament-lifecycle-schema.sql` | two relations, four `tournaments` columns and four `tournaments` constraints the base lacks, sliced verbatim          |
+| 6   | `diamond-tournament-lifecycle-doors.sql`  | 42 more installed doors, md5-pinned, plus the eleven `tournaments` triggers production carries that the base does not |
+| 7   | `diamond-tournament-lifecycle-seed.sql`   | one Diamond arena, four synthetic accounts, the staff account, the arena settings row and the MTT admission ABI       |
+| 8   | `diamond-tournament-lifecycle-cases.sql`  | the cases                                                                                                             |
 
 ## Why a second capture
 
@@ -258,3 +258,48 @@ refuses, is proved by the rolled-back production rehearsal kept in
 `docs/changelog/2026-09-29-diamond-phase-9-cross-format-conservation.md` and
 `docs/changelog/2026-09-29-diamond-phase-9-every-diamond-format-conserves.md`
 say what each half proves, and the ladder defect the cases found.
+
+## Case 14, and why the seat door joined the capture (2026-10-04)
+
+Phase 9's satellite line delivers a seat through
+`fn_poker_diamond_tournament_seat_transfer`, and until this change that door's
+rules were held only by `tests/a-diamond-satellite-seat-is-a-whole-ticket.law.test.ts`,
+which reads the MIGRATION TEXT. A text pin proves the migration said something.
+It does not prove the installed door does it, and no fixture had ever called
+this door - the only execution evidence was one rolled-back production
+rehearsal on 2026-09-29, which is not a repeatable gate.
+
+So the door is now the capture's forty-second, transported from production on
+2026-10-04 by a read-only `pg_get_functiondef()` and md5-pinned like every
+other (md5 `3c7b92f5f29c7440fec5d8e82f4e4018`, 10,047 bytes, owner `postgres`;
+production grants EXECUTE to nobody else and the capture keeps it that way).
+Case 14 then executes it fourteen times and reads back what it refused:
+
+| Reached by name                                        | How many ways | What it is                                                                                                               |
+| ------------------------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `diamond_satellite_seat_requires_whole_parts`          | 6             | THE DIVIDER: a fractional ticket, prize or fee, whole parts that do not add up to the ticket, a seat for nothing, no key |
+| `diamond_satellite_seat_requires_two_diamond_events`   | 2             | assets never cross, at either end                                                                                        |
+| `diamond_satellite_seat_names_another_target`          | 2             | another Diamond event, and a bounty event, are both refused at the target gate before the format is read                 |
+| `diamond_satellite_seat_is_not_the_target_entry`       | 1             | the right target, whole parts that add up, but the prize and fee parts swapped                                           |
+| `diamond_satellite_seat_has_no_qualifier_registration` | 1             | everything correct and no registration to fund                                                                           |
+| `diamond_tournament_entry_already_held`                | 1             | DUPLICATE QUALIFICATION: the qualifier already holds the target's entry                                                  |
+| `poker_diamond_one_open_entry`                         | 1             | and the schema's partial unique index would refuse a second open entry even if a door forgot to                          |
+
+Every one of the fourteen is then proved to have moved nothing: the ledger,
+custody, movement, journal and wallet totals are snapshotted before the case
+and re-read after it.
+
+Two things case 14 does NOT do, both named rather than worked around. It does
+not execute the funded delivery: that needs a prize bank, a Diamond prize bank
+is filled only through an entry door that refuses while `tournaments_enabled`
+is false (case 6), and this fixture opens no switch. And it does not reach the
+entry test's own bounty clause, because the target gate refuses a bounty event
+first; the swapped-parts call is what reaches that test.
+
+Case 14 creates its own satellite, target, second Diamond event and bounty
+event through the same create door rather than reusing case 9's rows, because
+case 12 cancels those and `fn_cancelled_tournament_evidence_is_immutable`
+rightly refuses the roster row the duplicate case has to write. Its
+registration row and its already-held entry row are precondition state, not
+money: the entry custody row is created at balance ZERO, so no Diamond is
+fabricated, and both rows are removed again before the case ends.

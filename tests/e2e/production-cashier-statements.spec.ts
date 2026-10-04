@@ -15,6 +15,11 @@
 
 import { expect, test } from '@playwright/test';
 import { cashierTotalsObservation } from './support/cashierTotalsObservation';
+import {
+  attachCashierScreenshot,
+  expectCashierAxeClean,
+  expectNoRawCashierCents,
+} from './support/cashierProductionCertification';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const HAS_AUTH = Boolean(process.env.SP_EMAIL && process.env.SP_PASS);
@@ -24,12 +29,11 @@ const TOTALS_RPC = '/rest/v1/rpc/fn_cashier_statement_totals';
 const EXPORT_RPC = /^\/rest\/v1\/rpc\/fn_cashier_statement_export_(?:start|page|cancel)$/;
 
 /**
- * A figure on the glass, as CashierStatementsPage's chips() prints it: whole
- * chips grouped by thousands, a leading sign only on a non-zero In or Out, and
- * cents only when the ledger really holds them. The Entries cell is a plain
- * en-US integer, which the same shape accepts.
+ * A figure on the glass, as compactChips() prints it: no fractional chip count,
+ * with a rounded-down one-decimal K/M/B magnitude when needed. The Entries
+ * cell is a plain en-US integer, which the same shape also accepts.
  */
-const FIGURE = /^[+-]?\d{1,3}(?:,\d{3})*(?:\.\d{2,})?$/;
+const FIGURE = /^[+-]?(?:\d{1,3}(?:,\d{3})*|\d+(?:\.\d)?[KMB])$/;
 
 test.describe('Cashier Statements - authenticated production route', () => {
   test.describe.configure({ timeout: 90_000 });
@@ -42,6 +46,7 @@ test.describe('Cashier Statements - authenticated production route', () => {
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
+    await page.setViewportSize({ width: 393, height: 852 });
     const consoleErrors: Array<{ text: string; url: string }> = [];
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -227,5 +232,13 @@ test.describe('Cashier Statements - authenticated production route', () => {
         !entry.url.includes('favicon')
     );
     expect(critical, critical.map((entry) => `${entry.url}: ${entry.text}`).join('\n')).toEqual([]);
+    await expectNoRawCashierCents(surface, 'Full Statement');
+    await expectCashierAxeClean(
+      page,
+      testInfo,
+      '[data-cashier-surface="statements"]',
+      'cashier-statements'
+    );
+    await attachCashierScreenshot(page, testInfo, 'cashier-statements');
   });
 });

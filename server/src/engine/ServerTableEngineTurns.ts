@@ -1722,6 +1722,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (normalizedAction === 'call' && toCall === 0) normalizedAction = 'check';
     if (normalizedAction === 'raise' && state.currentBet === 0) normalizedAction = 'bet';
     if (normalizedAction === 'bet' && state.currentBet > 0) normalizedAction = 'raise';
+    // Owner ruling 2026-10-04: only the ALL-IN BUTTON "counts as a call" when
+    // the shove cannot be a legal raise. Remember what was actually pressed,
+    // because the clamps below promote a sized bet/raise of the whole stack to
+    // `all_in`, and that promotion must not inherit the button's tolerance.
+    const pressedAllInButton = normalizedAction === 'all_in';
 
     // Bible V8 §4.14: PLO variants are pot-limit; flh/flo8 are fixed-limit
     // (2026-08-23). BettingStructure decides — this used to be an inline
@@ -1832,6 +1837,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (stillAllowed < player.stack) {
         normalizedAction = state.currentBet > 0 ? 'raise' : 'bet';
         amount = state.currentBet > 0 ? player.bet + stillAllowed : stillAllowed;
+        // Owner ruling 2026-10-04 ("the ALL IN click counts as a CALL ...
+        // either one should work"). The cap has turned the shove into a sized
+        // wager, and HandController only degrades an action that ARRIVES as
+        // all_in. If that sized wager is not legal for this seat (it may not
+        // reopen betting, or the cap leaves less than a full bet/raise), the
+        // press is the passive action instead of a bounced raise. The call is
+        // known to fit under the cap: the under-call case returned just above.
+        const live = this.handController.getAuthoritativeActionState(userId);
+        const wagerLegal =
+          !!live &&
+          live.legalActions.includes(normalizedAction as any) &&
+          live.minRaiseTo !== null &&
+          amount >= live.minRaiseTo - 0.005;
+        if (!wagerLegal) {
+          normalizedAction = toCall > 0 ? 'call' : 'check';
+          amount = undefined;
+        }
       }
     }
 
@@ -1941,6 +1963,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       amount = validation.sanitizedAmount;
     }
 
+    // Owner ruling 2026-10-04: HandController now executes an `all_in` that
+    // cannot be a legal raise as a call. That tolerance belongs to the all-in
+    // BUTTON only. A sized bet/raise of the whole stack is promoted to
+    // `all_in` above; when the engine does not offer a shove to this seat the
+    // sized wager was illegal and stays rejected, exactly as before the
+    // ruling. Checked here, before any clock is cancelled.
+    if (
+      !pressedAllInButton &&
+      normalizedAction === 'all_in' &&
+      (action.toLowerCase() === 'bet' || action.toLowerCase() === 'raise')
+    ) {
+      const live = this.handController.getAuthoritativeActionState(userId);
+      if (!live || !live.legalActions.includes('all_in')) {
+        return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
+      }
+    }
+
     try {
       // Bible V8 §2.15: Log action received
       this.currentHandTimerLog.push({
@@ -1991,11 +2030,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // to pick up.
       const actClockWasArmed = this.lastActionAcceptedAtMs;
       this.lastActionAcceptedAtMs = Date.now();
+      // What the engine actually executed. Since the 2026-10-04 ruling an
+      // all-in press can be accepted as a call, and the log line below must
+      // say what happened to the chips, not which button was pressed.
+      const accepted: { record: Readonly<ActionRecord> | null } = { record: null };
       const actionApplied = this.handController.performAction(
         seat,
         normalizedAction as any,
         amount,
-        origin
+        origin,
+        (record) => {
+          accepted.record = record;
+        }
       );
       if (!actionApplied) {
         // Restore whatever was pending; this action contributed nothing.
@@ -2016,9 +2062,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.rearmTurnTimerIfCurrent(userId);
         return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
       }
-      console.log(
-        `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
-      );
+      const executed = accepted.record;
+      if (executed && executed.action !== normalizedAction) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Player ${userId} → ${executed.action}${executed.amount ? ` ${executed.amount}` : ''} (pressed ${normalizedAction})`
+        );
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
+        );
+      }
 
       // Bible V8 §3.3: Turn FSM — processing → complete
       this.turnFSM.transition('complete');

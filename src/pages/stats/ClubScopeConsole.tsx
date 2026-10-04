@@ -16,9 +16,10 @@ interface Props {
   clubs: StatsClubOption[];
   clubsLoading: boolean;
   clubsError: boolean;
+  onRetryClubs: () => void;
   comparisonOpen: boolean;
   setComparisonOpen: (open: boolean) => void;
-  loadClubComparison: () => Promise<void>;
+  onRetryComparison: () => void;
   comparisonSort: ClubComparisonSort;
   changeComparisonSort: (sort: ClubComparisonSort) => void;
   comparisonLoading: boolean;
@@ -36,9 +37,10 @@ export default function ClubScopeConsole(props: Props) {
     clubs,
     clubsLoading,
     clubsError,
+    onRetryClubs,
     comparisonOpen,
     setComparisonOpen,
-    loadClubComparison,
+    onRetryComparison,
     comparisonSort,
     changeComparisonSort,
     comparisonLoading,
@@ -86,7 +88,14 @@ export default function ClubScopeConsole(props: Props) {
             </div>
             <div className="stats-club-actions">
               {clubsLoading && <span role="status">Loading Club Access...</span>}
-              {clubsError && <span role="alert">Club Access Could Not Be Loaded.</span>}
+              {clubsError && (
+                <span role="alert">
+                  Club Access Could Not Be Loaded.
+                  <button type="button" onClick={onRetryClubs}>
+                    Retry Club Access
+                  </button>
+                </span>
+              )}
               {clubs.length > 1 && (
                 <button
                   type="button"
@@ -95,7 +104,6 @@ export default function ClubScopeConsole(props: Props) {
                   onClick={() => {
                     const next = !comparisonOpen;
                     setComparisonOpen(next);
-                    if (next) void loadClubComparison();
                   }}
                 >
                   {comparisonOpen ? 'Close Club Comparison' : 'Compare Clubs'}
@@ -137,11 +145,7 @@ export default function ClubScopeConsole(props: Props) {
           {comparisonError && (
             <div className="stats-notice stats-notice-warn" role="alert">
               Club Comparison Could Not Be Loaded.{' '}
-              <button
-                type="button"
-                className="hand-retry"
-                onClick={() => void loadClubComparison()}
-              >
+              <button type="button" className="hand-retry" onClick={onRetryComparison}>
                 Try Again
               </button>
             </div>

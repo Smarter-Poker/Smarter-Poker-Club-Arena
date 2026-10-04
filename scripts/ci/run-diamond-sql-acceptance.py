@@ -98,6 +98,8 @@ RUNNERS = [
      'diamond commerce ownership, deletion and restore-shaped recovery qualified in isolation'),
     ('run-diamond-concurrency.py',
      'checks passed: one Diamond cannot be spent twice under concurrency, duplicate delivery or a crash; isolated PostgreSQL 17, not a production certification.'),
+    ('run-diamond-cross-format-conservation.py',
+     'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -122,6 +124,7 @@ PRIVATE_CLUSTER_RUNNERS = [
     'run-diamond-club-commerce-refunds.py',
     'run-diamond-club-commerce.py',
     'run-diamond-concurrency.py',
+    'run-diamond-cross-format-conservation.py',
     'run-diamond-stats-asset-dimension.py',
     'run-diamond-tournament-doors.py',
     'run-diamond-tournament-lifecycle.py',

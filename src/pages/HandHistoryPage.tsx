@@ -209,6 +209,7 @@ export default function HandHistoryPage() {
               const result = statsDrilldown.statsSession
                 ? await StatsEvidenceService.listCashSession(
                     userId,
+                    statsAssetScope,
                     statsDrilldown.statsSession,
                     null,
                     PAGE_SIZE
@@ -281,6 +282,7 @@ export default function HandHistoryPage() {
               const result = statsDrilldown.statsSession
                 ? await StatsEvidenceService.listCashSession(
                     userId,
+                    statsAssetScope,
                     statsDrilldown.statsSession,
                     evidenceCursorRef.current,
                     PAGE_SIZE

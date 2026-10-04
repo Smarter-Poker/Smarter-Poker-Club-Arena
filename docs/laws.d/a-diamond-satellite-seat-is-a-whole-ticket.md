@@ -34,3 +34,23 @@ seat door is registered before it exists, revoked from every client role,
 watched and declared; every chip edit is an asserted substitution with its
 live md5 pinned and the reverse proved; the switch is never opened and nothing
 is priced.
+
+Added October 4, 2026. Every pin above reads the migration's own text, which
+proves what the migration said and not that the installed door does it. The
+Diamond tournament lifecycle fixture now executes the seat door itself, against
+the md5-pinned capture, on isolated PostgreSQL 17: the door joined
+`tests/sql/diamond-tournament-lifecycle-doors.sql` as its forty-second door,
+and case 14 of `tests/sql/diamond-tournament-lifecycle-cases.sql` reaches each
+of its refusals by name. The divider is reached six ways (a fractional ticket,
+a fractional prize part, a fractional fee part, whole parts that do not add up
+to the ticket, a seat for nothing, and a movement with no key), the cross-asset
+fence twice, the target gate three times, the qualifier-registration gate once,
+and duplicate qualification twice: the door's own refusal, and the partial
+unique index that would refuse a second open entry even if a door forgot to.
+Every call is proved to have moved nothing. The law now also pins that
+arrangement, so a future change cannot drop the door from the capture or delete
+a case and still pass. The funded delivery itself is still not executed here:
+it needs a prize bank, a Diamond prize bank is filled only through an entry
+door that refuses while `tournaments_enabled` is false, and this fixture opens
+no switch. That half remains proved by the rolled-back production rehearsal
+under `docs/evidence/diamond-phase-9-funded-conservation/`.

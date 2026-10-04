@@ -72,7 +72,8 @@ describe('Phase 6 canonical cash opportunity contract', () => {
     expect(service).toContain("supabase.rpc('ca_player_cash_opportunity_stats'");
     expect(service).toContain('p_days: days == null ? null');
     expect(page).toContain('StatsFactsService.getCashOpportunityStats(');
-    expect(page).toContain('statsMetric: metric');
+    expect(page).toContain('buildStatsCashEvidencePath(metric, {');
+    expect(page).toContain('asset: statsScope');
     expect(page).toContain('cashOpportunityStats={cashOpportunityStats}');
     expect(performance).toContain('<CashIntelligencePanel');
     expect(performance).toContain('exactThreeBet.actions / exactThreeBet.opportunities');

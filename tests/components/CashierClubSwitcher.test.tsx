@@ -134,6 +134,20 @@ describe('CashierClubSwitcher', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows an honest loading rail on a cold deep link before any club name resolves', async () => {
+    let finish!: (value: { data: Array<{ club: typeof A }>; error: null }) => void;
+    inMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    renderSwitcher('99999');
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/Checking Clubs/i);
+    await act(async () => finish({ data: [{ club: A }], error: null }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('records the resolved club as last-visited (numeric deep-link gap)', async () => {
     inMock.mockResolvedValue({ data: [{ club: A }, { club: B }], error: null });
     renderSwitcher('22222', 'Bravo Club');
@@ -144,7 +158,36 @@ describe('CashierClubSwitcher', () => {
 
   it('renders nothing when there is no club to show at all', async () => {
     const { container } = renderSwitcher('99999');
-    expect(container).toBeEmptyDOMElement();
-    await act(async () => {}); // flush the cold-cache fetch
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+  });
+
+  it('distinguishes a failed cold-cache read and retries it', async () => {
+    inMock
+      .mockResolvedValueOnce({ data: null, error: new Error('membership read unavailable') })
+      .mockResolvedValueOnce({ data: [{ club: A }, { club: B }], error: null });
+    const user = userEvent.setup();
+    renderSwitcher(A.id, 'Alpha Club');
+
+    const retry = await screen.findByRole('button', { name: /Retry Club List/i });
+    await user.click(retry);
+
+    expect(
+      await screen.findByRole('button', { name: /Current Club: Alpha Club/i })
+    ).toBeInTheDocument();
+  });
+
+  it('shows and retries an unavailable balance read', async () => {
+    const user = userEvent.setup();
+    writeCachedQuickLinkClubs('test-user-123', [A, B]);
+    inMock
+      .mockResolvedValueOnce({ data: null, error: new Error('balance read unavailable') })
+      .mockResolvedValueOnce({ data: [{ club_id: A.id, chip_balance: 4200 }], error: null });
+    renderSwitcher(A.id);
+
+    await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/i }));
+    expect(await screen.findByText(/Balances Unavailable/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Retry$/i }));
+
+    expect(await screen.findByText(/4\.2K Chips/i)).toBeInTheDocument();
   });
 });

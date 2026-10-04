@@ -53,6 +53,14 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     }
   });
 
+  it('keeps every rate audit filter word on the 44px touch floor', () => {
+    const rates = read('src/pages/RateAuditPage.module.css');
+    const controls = rates.match(/\.filterWord,\s*\.litAction\s*\{[^}]*\}/s)?.[0] ?? '';
+
+    expect(controls).toContain('min-width: 44px');
+    expect(controls).toContain('min-height: 44px');
+  });
+
   it('keeps scope generations and failed reads explicit rather than false zeroes', () => {
     const hub = read(pages[0]);
     const rates = read(pages[1]);

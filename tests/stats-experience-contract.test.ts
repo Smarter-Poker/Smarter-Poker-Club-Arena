@@ -8,6 +8,10 @@ const HEADLINE_DECK = readFileSync(
   'utf8'
 );
 const CSS = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.css'), 'utf8');
+const NEMESIS_CSS = readFileSync(
+  resolve(__dirname, '../src/components/stats/NemesisPanel.css'),
+  'utf8'
+);
 const POST_DEPLOY_WORKFLOW = readFileSync(
   resolve(__dirname, '../.github/workflows/post-deploy-e2e.yml'),
   'utf8'
@@ -49,6 +53,17 @@ describe('Stats mobile fold budget', () => {
     expect(CSS).toMatch(
       /\.stats-range-row button\s*\{\s*min-width:\s*72px;[^}]*min-height:\s*44px/
     );
+  });
+
+  it('keeps hand-evidence rows and the rival expansion on the 44px touch floor', () => {
+    expect(CSS).toMatch(/\.stats-evidence-row\s*\{[^}]*min-height:\s*44px/);
+    expect(NEMESIS_CSS).toMatch(/\.nemesis-expand\s*\{[^}]*min-height:\s*44px/);
+  });
+
+  it('keeps alternate and failure-state actions on the 44px touch floor', () => {
+    expect(CSS).toMatch(/\.stats-evidence-action\s*\{[^}]*min-height:\s*44px/);
+    expect(CSS).toMatch(/\.hand-retry\s*\{[^}]*min-height:\s*44px/);
+    expect(CSS).toMatch(/\.panel-boundary-retry\s*\{[^}]*min-height:\s*44px/);
   });
 });
 

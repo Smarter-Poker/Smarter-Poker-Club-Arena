@@ -139,8 +139,16 @@ CREATE FUNCTION public.fn_cashier_statement_downline(uuid,uuid) RETURNS uuid[] L
 CREATE FUNCTION public.fn_cashier_statement_scope(uuid) RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER AS $$ SELECT '{{}}'::jsonb $$;
 CREATE FUNCTION public.fn_club_trade_ledger(uuid,integer DEFAULT 50,integer DEFAULT 0)
 RETURNS TABLE(id uuid,created_at timestamptz,transaction_type text,amount numeric,
- from_user_id uuid,to_user_id uuid,notes text,from_name text,to_name text)
-LANGUAGE sql STABLE SECURITY DEFINER AS $$ SELECT NULL::uuid,NULL::timestamptz,NULL::text,0::numeric,NULL::uuid,NULL::uuid,NULL::text,NULL::text,NULL::text WHERE false $$;
+ from_user_id uuid,to_user_id uuid,notes text,metadata jsonb,from_name text,to_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp'
+SET lock_timeout TO '5s' AS $$ SELECT NULL::uuid,NULL::timestamptz,NULL::text,0::numeric,NULL::uuid,NULL::uuid,NULL::text,NULL::jsonb,NULL::text,NULL::text WHERE false $$;
+REVOKE ALL ON FUNCTION public.fn_club_trade_ledger(uuid,integer,integer) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_club_trade_ledger(uuid,integer,integer) TO authenticated,service_role;
+CREATE TABLE public.cashier_trade_ledger_preimage(function_oid oid NOT NULL);
+INSERT INTO public.cashier_trade_ledger_preimage
+VALUES ('public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure::oid);
+CREATE VIEW public.cashier_trade_ledger_dependency AS
+SELECT id,metadata FROM public.fn_club_trade_ledger('00000000-0000-0000-0000-0000000000c1',1,0);
 
 CREATE FUNCTION public.fn_club_bank_send(uuid,uuid,numeric,text DEFAULT 'agent_wallet',text DEFAULT NULL,uuid DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp' AS $$
@@ -293,10 +301,20 @@ try:
     require(start.returncode == 0, start.stderr)
     run("fixture", FIXTURE)
     run("shipped-migration", MIGRATION.read_text())
+    run("classic-ledger-oid-preserved", "SELECT function_oid='public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure::oid FROM cashier_trade_ledger_preimage;", "t")
+    run("classic-ledger-dependent-view-preserved", "SELECT to_regclass('public.cashier_trade_ledger_dependency') IS NOT NULL;", "t")
+    run("classic-ledger-result-shape-preserved", "SELECT pg_get_function_result('public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure);", "TABLE(id uuid, created_at timestamp with time zone, transaction_type text, amount numeric, from_user_id uuid, to_user_id uuid, notes text, metadata jsonb, from_name text, to_name text)")
+    run("classic-ledger-function-posture-preserved", "SELECT p.prosecdef||'|'||(p.provolatile='s')||'|'||r.rolname||'|'||array_to_string(p.proconfig,'|') FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.oid='public.fn_club_trade_ledger(uuid,integer,integer)'::regprocedure;", "true|true|postgres|search_path=public, pg_temp|lock_timeout=5s")
+    run("classic-ledger-acl-preserved", "SELECT has_function_privilege('anon','public.fn_club_trade_ledger(uuid,integer,integer)','EXECUTE')||'|'||has_function_privilege('authenticated','public.fn_club_trade_ledger(uuid,integer,integer)','EXECUTE')||'|'||has_function_privilege('service_role','public.fn_club_trade_ledger(uuid,integer,integer)','EXECUTE');", "false|true|true")
+    run("classic-ledger-pagination-fixture", f"INSERT INTO chip_transactions(id,created_at,club_id,transaction_type,amount,from_user_id,to_user_id,notes,metadata) SELECT ('20000000-0000-0000-0000-'||lpad(g::text,12,'0'))::uuid,'2026-01-01T00:00:00Z','{CLUB}','pagination_contract',g,'{OWNER}','{PLAYER}','Pagination Contract',jsonb_build_object('sequence',g) FROM generate_series(1,252) g;")
+    run("classic-ledger-251-row-sentinel-cap", as_role(OWNER, f"SELECT count(*) FROM public.fn_club_trade_ledger('{CLUB}',999,0) WHERE notes='Pagination Contract';"), "251")
+    run("classic-ledger-tie-order-is-deterministic", as_role(OWNER, f"SELECT string_agg(id::text,',' ORDER BY row_number) FROM (SELECT id,row_number() OVER () AS row_number FROM public.fn_club_trade_ledger('{CLUB}',999,0) WHERE notes='Pagination Contract' LIMIT 2) ordered;"), "20000000-0000-0000-0000-000000000252,20000000-0000-0000-0000-000000000251")
+    run("classic-ledger-pages-do-not-overlap", as_role(OWNER, f"WITH first_page AS (SELECT id FROM public.fn_club_trade_ledger('{CLUB}',250,0)), second_page AS (SELECT id FROM public.fn_club_trade_ledger('{CLUB}',250,250)) SELECT count(*) FROM first_page JOIN second_page USING(id);"), "0")
 
     op1 = "10000000-0000-0000-0000-000000000001"
     call = f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',10,'player_wallet','Exact Send','{op1}')->>'success';"
     run("active-agent-send", as_role(AGENT_A, call), "true")
+    run("classic-ledger-preserves-metadata", as_role(AGENT_A, f"SELECT count(*) FROM public.fn_club_trade_ledger('{CLUB}',251,0) WHERE metadata->>'op_id'='{op1}';"), "1")
     replay = f"SELECT (public.fn_club_bank_send('{CLUB}','{PLAYER}',10,'player_wallet','Exact Send','{op1}')->>'replayed')::boolean; SELECT count(*) FROM cashier_core_calls WHERE operation_id='{op1}';"
     run("identical-replay-once", as_role(AGENT_A, replay), "t\n1")
 

@@ -111,7 +111,7 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_trade_ledger(uuid,integer,integer)',
-      'hash', '60517d630864a69b6fc65bab8955d607'
+      'hash', '49797528c3b5ddfcd2ccbaa01f8a1bd3'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',

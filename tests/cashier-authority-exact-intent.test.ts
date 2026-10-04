@@ -209,6 +209,15 @@ describe('cashier authority and exact intent', () => {
     expect(sql).toMatch(/fn_club_cashier_members[\s\S]*fn_club_active_cashier_edges/);
     expect(sql).toMatch(/fn_cashier_statement_downline[\s\S]*fn_club_active_cashier_edges/);
     expect(sql).toMatch(/fn_club_trade_ledger[\s\S]*fn_club_active_cashier_edges/);
+    expect(sql).toMatch(
+      /fn_club_trade_ledger[\s\S]*notes text,\s*metadata jsonb, from_name text, to_name text/
+    );
+    expect(sql).toMatch(/v_limit integer := least\(greatest\(coalesce\(p_limit, 50\), 1\), 251\)/);
+    expect(sql).toMatch(
+      /fn_club_trade_ledger[\s\S]*SET search_path TO 'public', 'pg_temp'\s*SET lock_timeout TO '5s'/
+    );
+    expect(sql.match(/ct\.notes, ct\.metadata/g)).toHaveLength(3);
+    expect(sql.match(/ORDER BY ct\.created_at DESC, ct\.id DESC/g)).toHaveLength(3);
     expect(sql).toMatch(/fn_cashier_statement_scope[\s\S]*fn_club_bank_role/);
   });
 });

@@ -1121,7 +1121,7 @@ function FullApp() {
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
-                      <UnionOverseerGuard>
+                      <UnionOverseerGuard authority="game-management">
                         <PageErrorBoundary pageName="Union Table Management">
                           <GameManagementPage scope="union" />
                         </PageErrorBoundary>

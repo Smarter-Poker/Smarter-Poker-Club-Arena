@@ -441,20 +441,24 @@ class UnionServiceClass {
    */
   async isUnionAdmin(unionId: string, userId: string): Promise<boolean> {
     // Check if owner
-    const { data: union } = await supabase
+    const { data: union, error: unionError } = await supabase
       .from('unions')
       .select('owner_id')
       .eq('id', unionId)
       .maybeSingle();
 
+    if (unionError) throw unionError;
+
     if (union?.owner_id === userId) return true;
 
     // Check if admin
-    const { count } = await supabase
+    const { count, error: adminError } = await supabase
       .from('union_admins')
       .select('*', { count: 'exact', head: true })
       .eq('union_id', unionId)
       .eq('user_id', userId);
+
+    if (adminError) throw adminError;
 
     return (count || 0) > 0;
   }

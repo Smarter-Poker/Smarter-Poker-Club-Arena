@@ -299,6 +299,10 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(document.getElementById('table-management-title')).toBeNull();
     expect(screen.queryByText('Friday Deep Stack')).toBeNull();
     expect(within(drawn[0]).getByRole('button', { name: 'Save Ticker' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Add Table/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Event/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Spins/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Sit N Go/ })).toBeEnabled();
   });
 
   it('draws Club Messages as its own riveted console, with no board around it', async () => {
@@ -310,6 +314,7 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(drawn[0].contains(heading)).toBe(true);
     expect(document.getElementById('table-management-title')).toBeNull();
     expect(within(drawn[0]).getByRole('button', { name: 'Save Identity' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Add Table/ })).toBeEnabled();
   });
 
   it('gives the three principal sections three different frame families', async () => {
@@ -366,6 +371,26 @@ describe('each Table Management section is its own page on its own frame', () =>
     );
     expect(screen.getByTestId('location').textContent).toBe(`${BASE}?section=ticker`);
     expect(screen.getByRole('heading', { name: 'Ticker Management' })).toBeTruthy();
+  });
+
+  it('uses the same draft guard before a Ticker creation shortcut changes pages', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    renderAt(`${BASE}?section=ticker`);
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Keep the final table alert' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Add Table/ }));
+    });
+
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Discard the unsaved changes on this management section?',
+      })
+    );
+    expect(screen.getByTestId('location').textContent).toBe(`${BASE}?section=ticker`);
+    expect(screen.queryByTestId('create-table-selector')).toBeNull();
   });
 
   it('restores the exact browser-history entry when Back is refused for a dirty draft', async () => {
@@ -458,10 +483,48 @@ describe('each Table Management section is its own page on its own frame', () =>
   it('checks access on the flat-headed spade, not a borrowed crest', async () => {
     mocks.access = () => new Promise(() => {});
     renderAt(BASE);
-    await screen.findByText('Verifying Game-Management Access…');
+    expect(await screen.findByText('Verifying Game-Management Access…')).toHaveAttribute(
+      'role',
+      'status'
+    );
     const drawn = frames();
     expect(drawn).toHaveLength(1);
     expect(drawn[0].classList).toContain('sc--crest-flat');
+  });
+
+  it('marks the board busy while its authoritative game read is pending', async () => {
+    mocks.list = () => new Promise(() => {});
+    renderAt(BASE);
+    const loadingState = await screen.findByText('Loading Live Game Controls…');
+    expect(loadingState.closest('.sc')).toHaveAttribute('aria-busy', 'true');
+    expect(loadingState).toHaveAttribute('role', 'status');
+  });
+
+  it('announces an authoritative empty board without presenting it as an error', async () => {
+    mocks.list = async () => ({
+      items: [],
+      counts: {
+        total: 0,
+        live: 0,
+        scheduled: 0,
+        closed: 0,
+        closedWithinHorizon: 0,
+        closedHorizonDays: 7,
+      },
+      nextCursor: null,
+    });
+    renderAt(BASE);
+    const empty = await screen.findByText('No Games In This View');
+    expect(empty.closest('section')).toHaveAttribute('role', 'status');
+    expect(empty.closest('.sc')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('announces a refused club-management route as an alert', async () => {
+    mocks.access = async () => ({ allowed: true, unionId: 'union-1', reason: 'ok' });
+    renderAt(BASE);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'When A Club Joins A Union, Its Staff Can No Longer Create'
+    );
   });
 });
 
@@ -614,9 +677,10 @@ describe('the Game Board error state speaks plainly', () => {
   it('prints a plain sentence, never the raw fetch error', async () => {
     vi.stubEnv('DEV', false);
     renderAt(BASE);
-    expect(
-      await screen.findByText('Connection Problem. Please Check Your Internet And Try Again.')
-    ).toBeTruthy();
+    const errorMessage = await screen.findByText(
+      'Connection Problem. Please Check Your Internet And Try Again.'
+    );
+    expect(errorMessage.closest('section')).toHaveAttribute('role', 'alert');
     expect(screen.queryByText(/TypeError|Failed to fetch/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
   });

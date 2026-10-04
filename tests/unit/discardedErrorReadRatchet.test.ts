@@ -73,7 +73,10 @@ const BASELINE = new Map<string, number>([
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
   ['src/pages/UnionDashboardPage.tsx', 7],
-  ['src/services/UnionService.ts', 11],
+  // 11 -> 9: Table Management's owner/admin authority read now binds both
+  // the union-owner and appointed-admin query errors instead of converting an
+  // unreadable answer into a confident access denial.
+  ['src/services/UnionService.ts', 9],
   ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],

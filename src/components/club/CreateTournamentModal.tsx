@@ -51,6 +51,8 @@ import {
 } from '../../config/blindStructures';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { confirmDialog } from '../common/confirmDialog';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
   MTT_PAYOUT_DEPTH_CHOICES,
   provisionalMttPayoutStructure,
@@ -343,6 +345,10 @@ export default function CreateTournamentModal({
     recurrence === 'none' ? 'weekly' : recurrence;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [draftTouched, setDraftTouched] = useState(false);
+  const [closeConfirmationOpen, setCloseConfirmationOpen] = useState(false);
+  const closeConfirmationPendingRef = useRef(false);
+  const dialogRef = useFocusTrap<HTMLDivElement>(!closeConfirmationOpen);
 
   /** The weekday and time this event starts, read from the start-time
    *  fields (or "about now" for an event that starts now), on the owner's own
@@ -1058,13 +1064,37 @@ export default function CreateTournamentModal({
     return true;
   })();
 
-  /* "Anything typed" is the right bar for a destructive backdrop click: the
-     defaults alone are not worth protecting, a name or a buy-in is. */
-  const formIsDirty = Boolean(name.trim()) || Boolean(buyIn.trim());
+  /* Programmatic defaults and the caller's initial format are not edits. Any
+     operator change inside the form is, including nested builders and toggles. */
+  const formIsDirty = draftTouched;
+
+  const requestClose = useCallback(async () => {
+    if (isSubmitting || closeConfirmationPendingRef.current) return;
+    if (!formIsDirty) {
+      onClose();
+      return;
+    }
+
+    closeConfirmationPendingRef.current = true;
+    setCloseConfirmationOpen(true);
+    try {
+      const confirmed = await confirmDialog({
+        title: 'Discard Tournament Draft?',
+        message: 'Your Unsaved Tournament Changes Will Be Lost.',
+        confirmText: 'Discard Draft',
+        cancelText: 'Keep Editing',
+        variant: 'danger',
+      });
+      if (confirmed) onClose();
+    } finally {
+      closeConfirmationPendingRef.current = false;
+      if (isMountedRef.current) setCloseConfirmationOpen(false);
+    }
+  }, [formIsDirty, isSubmitting, onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmitting) onClose();
+      if (e.key === 'Escape') void requestClose();
     };
     document.addEventListener('keydown', onKey);
     const previousOverflow = document.body.style.overflow;
@@ -1073,7 +1103,7 @@ export default function CreateTournamentModal({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose, isSubmitting]);
+  }, [requestClose]);
 
   // Whole numbers only — no decimal buy-ins on any tournament or SNG.
   // A Free Buy is the one event whose entry price is legitimately 0, so the
@@ -1116,16 +1146,16 @@ export default function CreateTournamentModal({
       role="dialog"
       aria-modal="true"
       aria-label="Create Game"
-      onClick={() => {
-        if (isSubmitting) return;
-        if (formIsDirty) return;
-        onClose();
-      }}
+      onClick={() => void requestClose()}
     >
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <form className={styles.form} onSubmit={handleSubmit}>
+      <div ref={dialogRef} className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <form
+          className={styles.form}
+          onSubmit={handleSubmit}
+          onChangeCapture={() => setDraftTouched(true)}
+        >
           <SpadeConsole
-            onClose={isSubmitting ? undefined : onClose}
+            onClose={isSubmitting ? undefined : requestClose}
             eyebrow={unionId ? 'Union Tournament Command' : 'Club Tournament Command'}
             title={unionId ? 'Create Union Tournament' : 'Create Tournament'}
             subtitle="Configure, Validate, Then Publish"
@@ -1140,7 +1170,7 @@ export default function CreateTournamentModal({
               secondary: {
                 label: 'Cancel',
                 type: 'button',
-                onClick: onClose,
+                onClick: requestClose,
                 disabled: isSubmitting,
               },
               primary: {
@@ -1152,10 +1182,11 @@ export default function CreateTournamentModal({
             }}
           >
             <div className={styles.formGroup}>
-              <label>
+              <label htmlFor="tournament-name">
                 Tournament Name <span className={styles.required}>*</span>
               </label>
               <input
+                id="tournament-name"
                 className={`${styles.input}${nameTouched && !name.trim() ? ` ${styles.invalid}` : ''}`}
                 aria-invalid={!name.trim()}
                 value={name}
@@ -1245,10 +1276,11 @@ export default function CreateTournamentModal({
 
             {/* Game Variant Selection */}
             <div className={styles.formGroup}>
-              <label>
+              <label htmlFor="tournament-game">
                 Game <span className={styles.required}>*</span>
               </label>
               <select
+                id="tournament-game"
                 className={styles.select}
                 value={gameVariant}
                 onChange={(e) => setGameVariant(e.target.value as TournamentGameVariant)}
@@ -1267,8 +1299,9 @@ export default function CreateTournamentModal({
               {format === 'spin' && (
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>Players</label>
+                    <label htmlFor="tournament-spin-players">Players</label>
                     <input
+                      id="tournament-spin-players"
                       type="text"
                       className={styles.input}
                       value="3 Players (Fixed)"
@@ -1301,7 +1334,7 @@ export default function CreateTournamentModal({
                     tier table rather than typed, so it cannot drift again the
                     next time a tier changes.
                   */}
-                    <label>Spin Payout Table</label>
+                    <span className={styles.sectionLabel}>Spin Payout Table</span>
                     <span className={styles.helperText}>
                       {`One Table, ${SPIN_TIERS.length} Multipliers. Expected Return ${expectedMultiplier().toFixed(2)}X Per Buy In Across ${SPIN_SEATS} Seats, A House Edge Of ${(impliedHouseEdge() * 100).toFixed(1)}%.`}
                     </span>
@@ -1311,10 +1344,11 @@ export default function CreateTournamentModal({
               {format === 'sng' && (
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>
+                    <label htmlFor="tournament-max-players">
                       Max Players <span className={styles.required}>*</span>
                     </label>
                     <select
+                      id="tournament-max-players"
                       className={styles.select}
                       value={maxPlayers}
                       onChange={(e) => setMaxPlayers(e.target.value)}
@@ -1331,10 +1365,11 @@ export default function CreateTournamentModal({
                 <div className={styles.formGroup}>
                   {isSngOrSpin ? (
                     <>
-                      <label>
+                      <label htmlFor="tournament-blind-speed">
                         Speed <span className={styles.required}>*</span>
                       </label>
                       <select
+                        id="tournament-blind-speed"
                         className={styles.select}
                         value={blindSpeed}
                         onChange={(e) =>
@@ -1425,13 +1460,14 @@ export default function CreateTournamentModal({
             <div className={styles.row}>
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>
+                  <label htmlFor="tournament-buy-in">
                     Buy-In <span className={styles.required}>*</span>
                   </label>
                   {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
                     the browser and the mobile keypad, and digitsOnly stops a
                     decimal point being typed or pasted at all. */}
                   <input
+                    id="tournament-buy-in"
                     type="number"
                     className={`${styles.input}${!buyInValid ? ` ${styles.invalid}` : ''}`}
                     aria-invalid={!buyInValid}
@@ -1456,12 +1492,13 @@ export default function CreateTournamentModal({
                     2026-08-20: the fee is a CUT OUT OF the buy-in, rounded to a
                     whole number, so the player pays exactly the figure typed on
                     the left and never a decimal. */}
-                  <label>
+                  <label htmlFor="tournament-fee">
                     {quotedRakeRate === 0
                       ? 'Fee (Spins Carry None)'
                       : `Fee (${Math.round(quotedRakeRate * 100)}% Of Buy-In)`}
                   </label>
                   <input
+                    id="tournament-fee"
                     type="number"
                     className={styles.input}
                     value={split.fee}
@@ -1496,8 +1533,9 @@ export default function CreateTournamentModal({
               </div>
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>Guaranteed Prize</label>
+                  <label htmlFor="tournament-guaranteed-prize">Guaranteed Prize</label>
                   <input
+                    id="tournament-guaranteed-prize"
                     type="number"
                     className={styles.input}
                     value={guaranteedPrize}
@@ -1516,8 +1554,9 @@ export default function CreateTournamentModal({
               <div className={styles.row}>
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>Awards Seats Into</label>
+                    <label htmlFor="tournament-satellite-target">Awards Seats Into</label>
                     <select
+                      id="tournament-satellite-target"
                       className={styles.select}
                       value={satelliteTargetId}
                       onChange={(e) => setSatelliteTargetId(e.target.value)}
@@ -1540,8 +1579,9 @@ export default function CreateTournamentModal({
                 </div>
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>Seats Awarded</label>
+                    <label htmlFor="tournament-satellite-seats">Seats Awarded</label>
                     <input
+                      id="tournament-satellite-seats"
                       type="number"
                       className={styles.input}
                       value={satelliteSeats}
@@ -1558,10 +1598,11 @@ export default function CreateTournamentModal({
             {/* ── Start Time ── */}
             {format !== 'sng' && format !== 'spin' && !isSatellite && (
               <div className={styles.formGroup}>
-                <label>Start Time</label>
+                <label htmlFor="tournament-start-time-mode">Start Time</label>
                 <div className={styles.row}>
                   <div className={styles.col}>
                     <select
+                      id="tournament-start-time-mode"
                       className={styles.select}
                       value={startTimeMode}
                       onChange={(e) =>
@@ -1620,8 +1661,11 @@ export default function CreateTournamentModal({
                 <div className={styles.row}>
                   <div className={styles.col}>
                     <div className={styles.formGroup}>
-                      <label>Late Reg Cutoff (Levels)</label>
+                      <label htmlFor="tournament-late-registration-levels">
+                        Late Reg Cutoff (Levels)
+                      </label>
                       <select
+                        id="tournament-late-registration-levels"
                         className={styles.select}
                         value={lateRegLevels}
                         onChange={(e) => setLateRegLevels(e.target.value)}
@@ -1686,13 +1730,14 @@ export default function CreateTournamentModal({
                 <div className={styles.row}>
                   <div className={styles.col}>
                     <div className={styles.formGroup}>
-                      <label>
+                      <label htmlFor="tournament-bounty-amount">
                         {format === 'mystery_bounty'
                           ? 'Base Bounty (Chips)'
                           : 'Bounty Per KO (Chips)'}{' '}
                         <span className={styles.required}>*</span>
                       </label>
                       <input
+                        id="tournament-bounty-amount"
                         type="number"
                         className={`${styles.input}${!isWholeBuyIn(bountyAmount) ? ` ${styles.invalid}` : ''}`}
                         aria-invalid={!isWholeBuyIn(bountyAmount)}
@@ -1717,8 +1762,9 @@ export default function CreateTournamentModal({
                         block still gets the ladder Dan specified. */}
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>Prize Ladder</label>
+                          <label htmlFor="tournament-mystery-prize-ladder">Prize Ladder</label>
                           <select
+                            id="tournament-mystery-prize-ladder"
                             className={styles.input}
                             value={mysteryProfile}
                             onChange={(e) =>
@@ -1736,8 +1782,9 @@ export default function CreateTournamentModal({
                       </div>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>Chests Open</label>
+                          <label htmlFor="tournament-mystery-activation">Chests Open</label>
                           <select
+                            id="tournament-mystery-activation"
                             className={styles.input}
                             value={mysteryActivation}
                             onChange={(e) =>
@@ -1756,12 +1803,13 @@ export default function CreateTournamentModal({
                       {mysteryActivation !== 'at_the_money' && (
                         <div className={styles.col}>
                           <div className={styles.formGroup}>
-                            <label>
+                            <label htmlFor="tournament-mystery-activation-value">
                               {mysteryActivation === 'percent_field'
                                 ? 'Percent Of Field Left'
                                 : 'Players Left'}
                             </label>
                             <input
+                              id="tournament-mystery-activation-value"
                               type="number"
                               className={styles.input}
                               value={mysteryActivationValue}
@@ -1782,8 +1830,11 @@ export default function CreateTournamentModal({
                       )}
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>Percent Of Bounties In Chests</label>
+                          <label htmlFor="tournament-mystery-pool-percent">
+                            Percent Of Bounties In Chests
+                          </label>
                           <input
+                            id="tournament-mystery-pool-percent"
                             type="number"
                             className={styles.input}
                             value={mysteryPoolPercent}
@@ -1909,10 +1960,11 @@ export default function CreateTournamentModal({
                     <div className={styles.row}>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>
+                          <label htmlFor="tournament-rebuy-cost">
                             {isFreeBuy ? 'Rebuy / Re-Entry' : isRebuy ? 'Rebuy' : 'Re-Entry'} Cost
                           </label>
                           <input
+                            id="tournament-rebuy-cost"
                             type="number"
                             className={styles.input}
                             value={isFreeBuy ? freeBuyTerms.rebuyCost : rebuyCost}
@@ -1930,10 +1982,11 @@ export default function CreateTournamentModal({
                       </div>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>
+                          <label htmlFor="tournament-rebuy-chips">
                             {isFreeBuy ? 'Rebuy / Re-Entry' : isRebuy ? 'Rebuy' : 'Re-Entry'} Chips
                           </label>
                           <input
+                            id="tournament-rebuy-chips"
                             type="number"
                             className={styles.input}
                             value={isFreeBuy ? freeBuyTerms.rebuyChips : rebuyChips}
@@ -1967,8 +2020,9 @@ export default function CreateTournamentModal({
                   <div className={styles.row} style={{ marginTop: 8 }}>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Add-On Cost</label>
+                        <label htmlFor="tournament-addon-cost">Add-On Cost</label>
                         <input
+                          id="tournament-addon-cost"
                           type="number"
                           className={styles.input}
                           value={isFreeBuy ? freeBuyTerms.addOnCost : addOnCost}
@@ -1986,8 +2040,9 @@ export default function CreateTournamentModal({
                     </div>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Add-On Chips</label>
+                        <label htmlFor="tournament-addon-chips">Add-On Chips</label>
                         <input
+                          id="tournament-addon-chips"
                           type="number"
                           className={styles.input}
                           value={addOnChips}
@@ -1999,7 +2054,7 @@ export default function CreateTournamentModal({
                     </div>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Add-On Period</label>
+                        <span className={styles.sectionLabel}>Add-On Period</span>
                         <div className={styles.readOnlyRule}>
                           {isFreeBuy
                             ? 'From Seating Until The Add-On Window Closes'
@@ -2049,8 +2104,11 @@ export default function CreateTournamentModal({
                         }}
                       >
                         <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Number Of Satellites</label>
+                          <label htmlFor="tournament-generated-satellite-count">
+                            Number Of Satellites
+                          </label>
                           <input
+                            id="tournament-generated-satellite-count"
                             type="text"
                             inputMode="numeric"
                             className={styles.input}
@@ -2061,8 +2119,11 @@ export default function CreateTournamentModal({
                           />
                         </div>
                         <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Satellite Buy-In</label>
+                          <label htmlFor="tournament-generated-satellite-buy-in">
+                            Satellite Buy-In
+                          </label>
                           <input
+                            id="tournament-generated-satellite-buy-in"
                             type="text"
                             inputMode="numeric"
                             className={styles.input}
@@ -2073,8 +2134,11 @@ export default function CreateTournamentModal({
                           />
                         </div>
                         <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Seats Awarded</label>
+                          <label htmlFor="tournament-generated-satellite-seats">
+                            Seats Awarded
+                          </label>
                           <input
+                            id="tournament-generated-satellite-seats"
                             type="text"
                             inputMode="numeric"
                             className={styles.input}
@@ -2115,8 +2179,9 @@ export default function CreateTournamentModal({
               {showAdvanced && (
                 <div id="tournament-advanced-options">
                   <div className={styles.formGroup} style={{ marginTop: 8 }}>
-                    <label>Short Description</label>
+                    <label htmlFor="tournament-short-description">Short Description</label>
                     <input
+                      id="tournament-short-description"
                       className={styles.input}
                       value={shortDescription}
                       maxLength={200}
@@ -2155,8 +2220,9 @@ export default function CreateTournamentModal({
                   <div className={styles.row}>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Action Time (Seconds)</label>
+                        <label htmlFor="tournament-action-time">Action Time (Seconds)</label>
                         <input
+                          id="tournament-action-time"
                           type="number"
                           className={styles.input}
                           value={actionTimeSeconds}
@@ -2171,8 +2237,9 @@ export default function CreateTournamentModal({
                     </div>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Table Size</label>
+                        <label htmlFor="tournament-table-size">Table Size</label>
                         <input
+                          id="tournament-table-size"
                           type="number"
                           className={styles.input}
                           value={tableSize}
@@ -2200,8 +2267,9 @@ export default function CreateTournamentModal({
                     {earlyBirdEnabled && (
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>Early Bird Chips</label>
+                          <label htmlFor="tournament-early-bird-chips">Early Bird Chips</label>
                           <input
+                            id="tournament-early-bird-chips"
                             type="number"
                             className={styles.input}
                             value={earlyBirdChips}
@@ -2221,8 +2289,9 @@ export default function CreateTournamentModal({
                   <div className={styles.row}>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Restart Every (Minutes)</label>
+                        <label htmlFor="tournament-restart-minutes">Restart Every (Minutes)</label>
                         <input
+                          id="tournament-restart-minutes"
                           type="number"
                           className={styles.input}
                           value={restartEvery}
@@ -2241,8 +2310,11 @@ export default function CreateTournamentModal({
                     {(isRebuy || isReentry) && (
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>Max {isRebuy ? 'Rebuys' : 'Re-Entries'} Per Player</label>
+                          <label htmlFor="tournament-max-rebuys">
+                            Max {isRebuy ? 'Rebuys' : 'Re-Entries'} Per Player
+                          </label>
                           <input
+                            id="tournament-max-rebuys"
                             type="number"
                             className={styles.input}
                             value={maxRebuysStr}

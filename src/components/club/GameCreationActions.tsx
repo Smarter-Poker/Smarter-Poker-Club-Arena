@@ -6,6 +6,9 @@ export type GameCreationTarget = 'table' | 'event' | 'spin' | 'sng';
 interface Props {
   managementPath: string;
   compact?: boolean;
+  /** Keep the painted command rail visible while its hosting scope is unavailable. */
+  disabled?: boolean;
+  disabledReason?: string;
   onNavigate?: (path: string) => void;
   /**
    * ONE BUTTON, BELONGING TO THE FIELD IT SITS ON (Dan 2026-09-02).
@@ -55,6 +58,8 @@ const ACTIONS: Array<{ target: GameCreationTarget; label: string }> = [
 export default function GameCreationActions({
   managementPath,
   compact = false,
+  disabled = false,
+  disabledReason,
   onNavigate,
   only,
   desktopOnly = false,
@@ -82,6 +87,9 @@ export default function GameCreationActions({
         <button
           key={action.target}
           type="button"
+          disabled={disabled}
+          aria-disabled={disabled || undefined}
+          title={disabled ? disabledReason : undefined}
           onClick={() => {
             const path = `${managementPath}?create=${action.target}`;
             (onNavigate || navigate)(

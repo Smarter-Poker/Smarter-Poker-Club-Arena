@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,7 +59,8 @@ const m = vi.hoisted(() => ({
     reload: vi.fn(),
   } as Scope,
   response: vi.fn(),
-  getUnions: vi.fn(),
+  getOverseerUnionOptions: vi.fn(),
+  unionPanel: vi.fn(),
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
@@ -156,10 +157,17 @@ vi.mock('../../src/hooks/useFinancialAdminScope', async (original) => {
 vi.mock('../../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: vi.fn() }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => m.toast }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
-vi.mock('../../src/services/UnionService', () => ({
-  unionService: { getUnions: (...args: unknown[]) => m.getUnions(...args) },
+vi.mock('../../src/services/UnionOpsService', () => ({
+  UnionOpsService: {
+    getOverseerUnionOptions: (...args: unknown[]) => m.getOverseerUnionOptions(...args),
+  },
 }));
-vi.mock('../../src/components/union/UnionOpsPanel', () => ({ default: () => null }));
+vi.mock('../../src/components/union/UnionOpsPanel', () => ({
+  default: (props: { unionId: string; canRun: boolean }) => {
+    m.unionPanel(props);
+    return <div data-testid="union-ops-panel">Union Operations For {props.unionId}</div>;
+  },
+}));
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: unknown }) => children,
   AreaChart: ({ children }: { children: unknown }) => children,
@@ -190,7 +198,7 @@ beforeEach(() => {
     reload: vi.fn(),
   };
   m.response.mockImplementation(fallback);
-  m.getUnions.mockResolvedValue([]);
+  m.getOverseerUnionOptions.mockResolvedValue([]);
 });
 
 afterEach(() => cleanup());
@@ -334,5 +342,96 @@ describe('financial admin reading identity and health truth', () => {
     expect(
       within(screen.getByText('Active Alerts').closest('div')!).getByText('2')
     ).toBeInTheDocument();
+  });
+});
+
+describe('financial admin exact overseer union gate', () => {
+  it('shows a list failure and mounts no Union Ops panel or report reads', async () => {
+    m.getOverseerUnionOptions.mockRejectedValueOnce(new Error('permission denied'));
+    mount();
+
+    expect(await screen.findByText('Unions Could Not Be Loaded')).toBeInTheDocument();
+    expect(screen.queryByTestId('union-ops-panel')).toBeNull();
+    expect(m.unionPanel).not.toHaveBeenCalled();
+    expect(m.response.mock.calls.some(([read]: [Read]) => read.table.startsWith('fn_union_'))).toBe(
+      false
+    );
+  });
+
+  it('keeps the panel and mutation controls absent when no authorized unions exist', async () => {
+    m.getOverseerUnionOptions.mockResolvedValueOnce([]);
+    mount();
+
+    expect(await screen.findByText('No Authorized Unions Available')).toBeInTheDocument();
+    expect(screen.queryByTestId('union-ops-panel')).toBeNull();
+    expect(m.unionPanel).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Settlement|Integrity Sweep/i })).toBeNull();
+  });
+
+  it('mounts the panel only after an exact authorized union is selected', async () => {
+    m.getOverseerUnionOptions.mockResolvedValueOnce([
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'authorized alpha' },
+    ]);
+    mount();
+
+    const select = (await screen.findByLabelText('Union')) as HTMLSelectElement;
+    await waitFor(() => expect(select).toBeEnabled());
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      'Choose An Authorized Union',
+      'Authorized Alpha',
+    ]);
+    expect(screen.queryByTestId('union-ops-panel')).toBeNull();
+    expect(m.unionPanel).not.toHaveBeenCalled();
+
+    fireEvent.change(select, {
+      target: { value: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    });
+    expect(await screen.findByTestId('union-ops-panel')).toHaveTextContent(
+      'Union Operations For aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    );
+    expect(m.unionPanel).toHaveBeenLastCalledWith({
+      unionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      canRun: true,
+    });
+  });
+
+  it('ignores an old viewer and scope list after the signed-in scope changes', async () => {
+    let resolveOld!: (value: Array<{ id: string; name: string }>) => void;
+    m.getOverseerUnionOptions
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveOld = resolve)))
+      .mockResolvedValue([
+        { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'authorized bravo' },
+      ]);
+    const view = mount();
+    await waitFor(() => expect(m.getOverseerUnionOptions).toHaveBeenCalledTimes(1));
+
+    m.user = { id: 'owner-b' };
+    m.scope = {
+      ...m.scope,
+      clubId: 'club-b',
+      userId: 'owner-b',
+    };
+    view.rerender(
+      <MemoryRouter>
+        <FinancialAdminHub />
+      </MemoryRouter>
+    );
+
+    const select = (await screen.findByLabelText('Union')) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(Array.from(select.options).map((option) => option.textContent)).toContain(
+        'Authorized Bravo'
+      )
+    );
+    await act(async () => {
+      resolveOld([{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'stale alpha' }]);
+      await Promise.resolve();
+    });
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      'Choose An Authorized Union',
+      'Authorized Bravo',
+    ]);
+    expect(screen.queryByText('Stale Alpha')).toBeNull();
+    expect(screen.queryByTestId('union-ops-panel')).toBeNull();
   });
 });

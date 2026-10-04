@@ -1,0 +1,348 @@
+DO $fixture$
+DECLARE
+  u constant uuid := 'fade0000-0000-0000-0000-000000000001';
+  c1 constant uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  c2 constant uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  outsider_club constant uuid := 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  extra_union constant uuid := 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  admin constant uuid := '90000000-0000-4000-8000-000000000001';
+  other_admin constant uuid := '90000000-0000-4000-8000-000000000002';
+  union_admin_user constant uuid := '90000000-0000-4000-8000-000000000003';
+  house_owner constant uuid := '90000000-0000-4000-8000-000000000004';
+  house_admin constant uuid := '90000000-0000-4000-8000-000000000005';
+  ordinary_member constant uuid := '90000000-0000-4000-8000-000000000006';
+  multi_overseer constant uuid := '90000000-0000-4000-8000-000000000007';
+  a1 constant uuid := 'd0000000-0000-4000-8000-000000000001';
+  a2 constant uuid := 'e0000000-0000-4000-8000-000000000002';
+  p1 constant uuid := '10000000-0000-4000-8000-000000000001';
+  p2 constant uuid := '10000000-0000-4000-8000-000000000002';
+  p3 constant uuid := '10000000-0000-4000-8000-000000000003';
+  p4 constant uuid := '10000000-0000-4000-8000-000000000004';
+  p5 constant uuid := '10000000-0000-4000-8000-000000000005';
+  tournament_rake constant uuid := '70000000-0000-4000-8000-000000000001';
+  tournament_cancel constant uuid := '70000000-0000-4000-8000-000000000002';
+  house_hand constant uuid := '70000000-0000-4000-8000-000000000003';
+  since_at constant timestamptz := '2026-09-28 12:30:00+00';
+  r record;
+  d jsonb;
+  direct_rake numeric;
+  plan json;
+  s jsonb;
+  started timestamptz;
+BEGIN
+  INSERT INTO public.unions(id,name,owner_id) VALUES
+    (u,'Midway Union',admin),
+    (extra_union,'alpha union',multi_overseer),
+    (outsider_club,'Outside Union',other_admin);
+  INSERT INTO public.clubs(id,name,union_id,owner_id,is_union) VALUES
+    (u,'Midway Union',u,house_owner,true),
+    (c1,'Club One',NULL,NULL,false),
+    (c2,'Club Two',u,NULL,false),
+    (outsider_club,'Outside Club',NULL,NULL,false);
+  -- The two membership stores deliberately disagree. Risk follows the
+  -- canonical union_clubs roster plus the house; distribution preserves its
+  -- accounting scope of clubs.union_id plus the house.
+  INSERT INTO public.union_clubs(union_id,club_id) VALUES (u,c1);
+  INSERT INTO public.union_admins(union_id,user_id) VALUES
+    (u,union_admin_user),(u,multi_overseer);
+  INSERT INTO public.profiles VALUES (a1,'Agent One'),(a2,'Agent Two');
+  INSERT INTO public.agents(user_id,club_id,role) VALUES
+    (a1,c1,'agent'),(a2,c2,'super_agent'),(a1,u,'agent');
+  INSERT INTO public.club_members(club_id,user_id,agent_id,credit_used,joined_at) VALUES
+    (c1,p1,a1,10,'2026-02-01 00:00:00+00'),
+    -- The house membership is older, but real union_clubs membership must
+    -- still win the inherited canonical attribution rule.
+    (u,p1,a1,0,'2026-01-01 00:00:00+00'),
+    (c1,p2,a1,5,'2026-01-02 00:00:00+00'),
+    (c2,p3,a2,7,'2026-01-03 00:00:00+00'),
+    (u,p5,a1,2,'2026-01-04 00:00:00+00'),
+    (outsider_club,p4,a1,500,'2026-01-05 00:00:00+00');
+  INSERT INTO public.club_members(club_id,user_id,role,status) VALUES
+    (u,house_admin,'admin','active'),
+    (c1,ordinary_member,'member','active');
+  INSERT INTO public.table_seats(user_id,club_id,left_at) VALUES
+    (p1,c1,NULL),(p2,outsider_club,NULL);
+  INSERT INTO public.rake_attributions(player_id,club_id,rake_amount,created_at) VALUES
+    (p1,c1,3.25,since_at + interval '1 hour'),
+    (p2,c1,1.75,since_at + interval '2 hours'),
+    (p3,c2,4.50,since_at + interval '3 hours'),
+    (p5,u,0.50,since_at + interval '4 hours'),
+    (p1,outsider_club,100,since_at + interval '4 hours');
+  INSERT INTO public.chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,status,created_at) VALUES
+    (c1,'player_wallet',p1,'table_stack',gen_random_uuid(),20,'posted',since_at + interval '1 hour'),
+    (c1,'table_stack',gen_random_uuid(),'player_wallet',p1,30,'posted',since_at + interval '2 hours'),
+    (c1,'player_wallet',p2,'table_stack',gen_random_uuid(),12,'posted',since_at + interval '1 hour'),
+    (c1,'table_stack',gen_random_uuid(),'player_wallet',p2,5,'posted',since_at + interval '2 hours'),
+    (c2,'player_wallet',p3,'table_stack',gen_random_uuid(),8,'posted',since_at + interval '1 hour'),
+    (c2,'table_stack',gen_random_uuid(),'player_wallet',p3,8,'posted',since_at + interval '2 hours'),
+    (u,'player_wallet',p5,'table_stack',gen_random_uuid(),2,'posted',since_at + interval '1 hour'),
+    (u,'table_stack',gen_random_uuid(),'player_wallet',p5,3,'posted',since_at + interval '2 hours'),
+    (outsider_club,'table_stack',gen_random_uuid(),'player_wallet',p1,100,'posted',since_at + interval '2 hours');
+  INSERT INTO public.agent_commissions(user_id,club_id,amount,created_at) VALUES
+    (a1,c1,2.50,since_at + interval '1 hour'),
+    (a1,c1,0.25,'2026-10-10 01:00:00+00'),
+    (a2,c2,1.00,since_at + interval '1 hour'),
+    (a2,c2,0.50,'2026-10-10 01:00:00+00'),
+    (a1,u,1.00,since_at + interval '1 hour'),
+    (a2,c2,99.00,since_at - interval '1 hour'),
+    (a1,outsider_club,100,since_at + interval '1 hour');
+  INSERT INTO public.rake_records(club_id,rake_amount,is_tournament,created_at) VALUES
+    -- A sealed prior UTC day contains both a tournament fee and its signed
+    -- reversal. The distribution law must retain both, not read cash display
+    -- facts or a positive-only partial index.
+    (c2,7,true,'2026-09-29 01:00:00+00'),
+    (c2,-2,true,'2026-09-29 02:00:00+00'),
+    (c2,2,false,'2026-09-29 03:00:00+00'),
+    (u,0.5,false,'2026-09-29 04:00:00+00'),
+    (c1,50,false,'2026-09-29 05:00:00+00'),
+    (c2,99,true,since_at - interval '1 hour'),
+    (c2,1,true,'2026-10-10 01:00:00+00'),
+    (outsider_club,100,false,'2026-09-29 06:00:00+00');
+  -- Risk keeps the preimage's signed player allocation. Production
+  -- rake_attributions rejects negatives, so cancellation/reversal evidence
+  -- must remain on signed rake_records and retain its contribution map.
+  INSERT INTO public.rake_records(
+    club_id,rake_amount,player_contributions,is_tournament,created_at) VALUES
+    (c1,4,jsonb_build_object(p1::text,3.25,p2::text,1.75),false,since_at + interval '1 hour'),
+    (c1,-1,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours'),
+    (c1,-0.5,jsonb_build_object(p1::text,1),false,'2026-10-10 01:00:00+00'),
+    (u,0.5,jsonb_build_object(p5::text,1),false,since_at + interval '4 hours'),
+    (outsider_club,100,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours');
+  -- Production cancellations retain the original contribution map and link
+  -- the signed reversal to the positive tournament rake row. This pair nets
+  -- to zero; a separate house-hosted hand proves its player credits c1 once.
+  INSERT INTO public.rake_records(
+    id,club_id,rake_amount,player_contributions,is_tournament,source,metadata,created_at) VALUES
+    (tournament_rake,u,2,jsonb_build_object(p1::text,1,p2::text,1),true,
+     'fn_spin_book_entry','{}'::jsonb,since_at + interval '1 hour'),
+    (tournament_cancel,u,-2,jsonb_build_object(p1::text,1,p2::text,1),true,
+     'atomic_cancel_tournament',
+     jsonb_build_object(
+       'kind','spin_rake_refund',
+       'original_source','fn_spin_book_entry',
+       'original_rake_record_id',tournament_rake::text),
+     since_at + interval '2 hours'),
+    (house_hand,u,1,jsonb_build_object(p2::text,1),false,
+     'cash_hand','{}'::jsonb,since_at + interval '3 hours');
+  INSERT INTO public.rakeback_periods(club_id,rakeback_amount,period_start) VALUES
+    (c1,2,since_at::date),(c2,1,since_at::date),(outsider_club,50,since_at::date);
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.rake_records positive
+      JOIN public.rake_records cancellation
+        ON cancellation.metadata->>'original_rake_record_id' = positive.id::text
+     WHERE positive.id = tournament_rake
+       AND cancellation.id = tournament_cancel
+       AND positive.source = 'fn_spin_book_entry'
+       AND cancellation.source = 'atomic_cancel_tournament'
+       AND cancellation.metadata->>'kind' = 'spin_rake_refund'
+       AND cancellation.metadata->>'original_source' = 'fn_spin_book_entry'
+       AND cancellation.player_contributions = positive.player_contributions
+       AND cancellation.rake_amount = -positive.rake_amount
+  ) THEN
+    RAISE EXCEPTION 'tournament cancellation fixture does not match production signed linkage';
+  END IF;
+
+  -- Large unrelated evidence must not enter the union arithmetic or determine
+  -- its latency. The candidate's club-first indexes skip these rows.
+  INSERT INTO public.agent_commissions(user_id,club_id,amount,created_at)
+  SELECT p4, outsider_club, 1, since_at + interval '1 hour'
+    FROM generate_series(1,50000);
+  INSERT INTO public.rake_records(club_id,rake_amount,created_at)
+  SELECT outsider_club, 1, since_at + interval '1 hour'
+    FROM generate_series(1,50000);
+  INSERT INTO public.rake_records(club_id,rake_amount,is_tournament,created_at)
+  SELECT c2, CASE WHEN g % 2 = 0 THEN 1 ELSE -1 END, (g % 3 = 0),
+         '2026-09-29 05:00:00+00'::timestamptz
+    FROM generate_series(1,20000) g;
+  ANALYZE public.agent_commissions;
+  ANALYZE public.rake_records;
+
+  IF has_function_privilege('anon', 'public.fn_union_overseer_options()', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.fn_union_overseer_options()', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.fn_union_overseer_options()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'overseer option reader grants are not least privilege';
+  END IF;
+
+  PERFORM set_config('app.engine','off',false);
+  PERFORM set_config('app.user_id',admin::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[u]::uuid[] THEN
+    RAISE EXCEPTION 'union owner was not restricted to their exact union';
+  END IF;
+  PERFORM set_config('app.user_id',multi_overseer::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[extra_union,u]::uuid[]
+     OR (SELECT array_agg(o.union_name) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY['alpha union','Midway Union']::text[] THEN
+    RAISE EXCEPTION 'multi-union options lost deterministic authorized shape/order';
+  END IF;
+  PERFORM set_config('app.user_id',union_admin_user::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[u]::uuid[] THEN
+    RAISE EXCEPTION 'union admin was not offered their exact union';
+  END IF;
+  PERFORM set_config('app.user_id',house_owner::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[u]::uuid[] THEN
+    RAISE EXCEPTION 'house-club owner was not offered their exact union';
+  END IF;
+  PERFORM set_config('app.user_id',house_admin::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[u]::uuid[] THEN
+    RAISE EXCEPTION 'house-club admin was not offered their exact union';
+  END IF;
+  PERFORM set_config('app.user_id',ordinary_member::text,false);
+  IF EXISTS (SELECT 1 FROM public.fn_union_overseer_options()) THEN
+    RAISE EXCEPTION 'ordinary club member was offered union operations';
+  END IF;
+  PERFORM set_config('app.user_id',other_admin::text,false);
+  IF (SELECT array_agg(o.union_id) FROM public.fn_union_overseer_options() o)
+       IS DISTINCT FROM ARRAY[outsider_club]::uuid[] THEN
+    RAISE EXCEPTION 'cross-union actor saw another union option';
+  END IF;
+  PERFORM set_config('app.user_id','',false);
+  IF EXISTS (SELECT 1 FROM public.fn_union_overseer_options()) THEN
+    RAISE EXCEPTION 'anonymous caller received union options';
+  END IF;
+
+  PERFORM set_config('app.engine','on',false);
+  started := clock_timestamp();
+  SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
+   WHERE agent_user_id=a1 AND club_name='Club One';
+  IF r.players IS DISTINCT FROM 2 OR r.seated_now IS DISTINCT FROM 1
+     OR r.rake_generated IS DISTINCT FROM 3.50 OR r.player_net IS DISTINCT FROM 3.00
+     OR r.commission_accrued IS DISTINCT FROM 2.75 OR r.credit_extended IS DISTINCT FROM 15.00 THEN
+    RAISE EXCEPTION 'risk report changed exact Club One accounting: %', to_jsonb(r);
+  END IF;
+  SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
+   WHERE agent_user_id=a1 AND club_name='Midway Union';
+  IF r.players IS DISTINCT FROM 2 OR r.seated_now IS DISTINCT FROM 0
+     OR r.rake_generated IS DISTINCT FROM 0.50 OR r.player_net IS DISTINCT FROM 1.00
+     OR r.commission_accrued IS DISTINCT FROM 1.00 OR r.credit_extended IS DISTINCT FROM 2.00 THEN
+    RAISE EXCEPTION 'risk report changed exact house-club accounting: %', to_jsonb(r);
+  END IF;
+  IF (SELECT count(*) FROM public.fn_union_agent_risk_report(u,since_at)) <> 2 THEN
+    RAISE EXCEPTION 'risk report lost canonical/house membership or admitted mirror-only/outsider rows';
+  END IF;
+  IF (SELECT SUM(x.rake_generated) FROM public.fn_union_agent_risk_report(u,since_at) x)
+       IS DISTINCT FROM 4.00 THEN
+    RAISE EXCEPTION 'house-hosted multi-membership rake was lost or duplicated';
+  END IF;
+  EXECUTE format(
+    'EXPLAIN (FORMAT JSON) SELECT SUM(rake_amount) FROM public.rake_records '
+    || 'WHERE club_id=ANY(ARRAY[%L::uuid,%L::uuid]) AND created_at >= %L::timestamptz '
+    || 'AND player_contributions IS NOT NULL',
+    c1,u,since_at)
+    INTO plan;
+  IF position('idx_rake_records_union_signed_window' in plan::text) = 0 THEN
+    RAISE EXCEPTION 'signed risk plan did not use the new full covering index: %', plan;
+  END IF;
+
+  d := public.fn_union_distribution_check(u,since_at);
+  SELECT COALESCE(SUM(rr.rake_amount),0) INTO direct_rake
+    FROM public.rake_records rr
+    JOIN public.clubs c ON c.id=rr.club_id AND (c.union_id=u OR c.id=u)
+   WHERE rr.created_at>=since_at;
+  IF direct_rake IS DISTINCT FROM 10.00
+     OR (d->>'rake_collected')::numeric IS DISTINCT FROM direct_rake
+     OR (d->>'agent_commissions')::numeric IS DISTINCT FROM 2.50
+     OR (d->>'player_rakeback')::numeric IS DISTINCT FROM 1.00
+     OR (d->>'total_distributed')::numeric IS DISTINCT FROM 3.50
+     OR (d->>'over_distributed_by')::numeric IS DISTINCT FROM 0.00
+     OR (d->>'healthy')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'distribution check changed exact conservation arithmetic: %', d;
+  END IF;
+  d := public.fn_union_distribution_check(u,'2026-09-29 02:30:00+00');
+  IF (d->>'rake_collected')::numeric IS DISTINCT FROM 3.50
+     OR (d->>'agent_commissions')::numeric IS DISTINCT FROM 0.50 THEN
+    RAISE EXCEPTION 'distribution changed the arbitrary lower-bound/open-ended contract: %', d;
+  END IF;
+  EXECUTE format(
+    'EXPLAIN (FORMAT JSON) SELECT SUM(rake_amount) FROM public.rake_records '
+    || 'WHERE club_id=ANY(ARRAY[%L::uuid,%L::uuid]) AND created_at >= %L::timestamptz',
+    c2,u,since_at)
+    INTO plan;
+  IF position('idx_rake_records_union_signed_window' in plan::text) = 0 THEN
+    RAISE EXCEPTION 'signed rake plan did not use the new full covering index: %', plan;
+  END IF;
+  IF clock_timestamp() - started > interval '8 seconds' THEN
+    RAISE EXCEPTION 'focused Union Ops reads exceeded signed-in budget';
+  END IF;
+
+  PERFORM set_config('app.engine','off',false);
+  PERFORM set_config('app.user_id',other_admin::text,false);
+  BEGIN
+    PERFORM public.fn_union_agent_risk_report(u,since_at);
+    RAISE EXCEPTION 'another union overseer read Midway risk';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
+  END;
+  BEGIN
+    PERFORM public.fn_union_distribution_check(u,since_at);
+    RAISE EXCEPTION 'another union overseer read Midway distribution';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
+  END;
+
+  PERFORM set_config('app.user_id',admin::text,false);
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM true
+     OR s->>'run_status' IS DISTINCT FROM 'succeeded' THEN
+    RAISE EXCEPTION 'migration did not seed an immediately available law verdict: %', s;
+  END IF;
+  UPDATE cron.job SET active=false WHERE jobid=121;
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM false
+     OR s->>'run_status' IS DISTINCT FROM 'inactive' THEN
+    RAISE EXCEPTION 'an inactive audit job left cached green visible: %', s;
+  END IF;
+  UPDATE cron.job SET active=true WHERE jobid=121;
+  DELETE FROM cron.job WHERE jobid=121;
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM false
+     OR s->>'run_status' IS DISTINCT FROM 'missing' THEN
+    RAISE EXCEPTION 'a missing audit job left cached green visible: %', s;
+  END IF;
+  INSERT INTO cron.job(jobid,jobname,schedule,command,active,username,database) VALUES
+    (121,'union-law-selftest','20 0 * * *',
+     'SET statement_timeout = ''600s''; SELECT public.fn_union_law_selftest_record();',true,
+     'postgres','postgres');
+  UPDATE public.union_law_selftest_runs
+     SET completed_at=clock_timestamp()-interval '48 hours';
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM false
+     OR s->>'run_status' IS DISTINCT FROM 'stale' THEN
+    RAISE EXCEPTION 'an aged law verdict remained green: %', s;
+  END IF;
+  UPDATE public.union_law_selftest_runs SET completed_at=clock_timestamp();
+  TRUNCATE public.union_law_selftest_runs RESTART IDENTITY;
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM false
+     OR s->>'run_status' IS DISTINCT FROM 'pending' THEN
+    RAISE EXCEPTION 'uncached law status did not preserve the latest scheduler state: %', s;
+  END IF;
+  PERFORM public.fn_union_law_selftest_record();
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM true
+     OR (s->>'healthy')::boolean IS DISTINCT FROM true
+     OR jsonb_array_length(s->'warnings') <> 1 THEN
+    RAISE EXCEPTION 'cached law status changed the scheduled verdict: %', s;
+  END IF;
+  INSERT INTO cron.job_run_details(jobid,status,start_time,end_time,return_message) VALUES
+    (121,'failed',clock_timestamp() + interval '1 second',clock_timestamp() + interval '2 seconds',
+     'statement timeout');
+  s := public.fn_union_law_selftest_status();
+  IF (s->>'available')::boolean IS DISTINCT FROM false
+     OR s->>'run_status' IS DISTINCT FROM 'failed' THEN
+    RAISE EXCEPTION 'a newer failed audit left an older cached green visible: %', s;
+  END IF;
+  IF (SELECT command FROM cron.job WHERE jobid=121) IS DISTINCT FROM
+     'SET statement_timeout = ''600s''; SELECT public.fn_union_law_selftest_record();' THEN
+    RAISE EXCEPTION 'daily law producer was not repointed to the recorder';
+  END IF;
+END
+$fixture$;
+
+SELECT 'union_ops_financial_admin_pg17_ok' AS result;

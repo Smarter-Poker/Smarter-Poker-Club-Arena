@@ -17,7 +17,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
-import { unionService } from '../services/UnionService';
+import { UnionOpsService } from '../services/UnionOpsService';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
@@ -260,9 +260,10 @@ export default function FinancialAdminHub() {
 
   /* WHICH UNION (2026-09-24). The union operations panel below was rendered
      with no union and fell back to one hardcoded union (Midway), so this hub
-     previewed, settled and swept that union's books whatever the staff member
-     meant. The union is now chosen here, from the unions this viewer can
-     read, and until one is chosen no panel exists to run anything. */
+     reviewed and swept that union's books whatever the staff member
+     meant. The union is now chosen here only from the exact overseer-authorized
+     server list, and until one is chosen no panel exists to read or run
+     anything. Discoverability or platform staff status is not authority. */
   const [unionOptions, setUnionOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [unionOptionsStatus, setUnionOptionsStatus] = useState<'loading' | 'ready' | 'error'>(
     'loading'
@@ -284,11 +285,9 @@ export default function FinancialAdminHub() {
     setUnionOptions([]);
     setSelectedUnionId('');
     try {
-      const unions = await unionService.getUnions();
+      const unions = await UnionOpsService.getOverseerUnionOptions();
       if (!isCurrent()) return;
-      setUnionOptions(
-        unions.map((u) => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))
-      );
+      setUnionOptions(unions);
       setUnionOptionsStatus('ready');
     } catch (e) {
       reportError(e, 'FinancialAdminHub.loadUnionOptions');
@@ -624,7 +623,7 @@ export default function FinancialAdminHub() {
                   </strong>
                 </div>
                 <div className={styles.chart} aria-label="Seven Complete Days Revenue Chart">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <AreaChart data={revenueData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                       <XAxis
                         dataKey="day"
@@ -718,7 +717,7 @@ export default function FinancialAdminHub() {
           onChange={(event) => setSelectedUnionId(event.target.value)}
         >
           <option value="">
-            {unionOptionsStatus === 'loading' ? 'Loading Unions' : 'Choose A Union'}
+            {unionOptionsStatus === 'loading' ? 'Loading Unions' : 'Choose An Authorized Union'}
           </option>
           {unionOptions.map((union) => (
             <option key={union.id} value={union.id}>
@@ -734,15 +733,15 @@ export default function FinancialAdminHub() {
             </button>
           </div>
         ) : unionOptionsStatus === 'ready' && unionOptions.length === 0 ? (
-          <p className="sc-copy sc-copy--center">No Unions Available</p>
+          <p className="sc-copy sc-copy--center">No Authorized Unions Available</p>
         ) : !selectedUnion ? (
-          <p className="sc-copy sc-copy--center">Choose A Union To See Its Operations</p>
+          <p className="sc-copy sc-copy--center">
+            Choose An Authorized Union To See Its Operations
+          </p>
         ) : (
-          <p className="sc-copy sc-copy--center">{titleCase(selectedUnion.name)} Is Ready Below</p>
+          <UnionOpsPanel key={selectedUnion.id} unionId={selectedUnion.id} canRun />
         )}
       </SpadeConsole>
-
-      {selectedUnion && <UnionOpsPanel key={selectedUnion.id} unionId={selectedUnion.id} canRun />}
     </main>
   );
 }

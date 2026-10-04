@@ -40,7 +40,7 @@
 -- on this one short-lived reader removes that ambient planning/code-generation
 -- variable; PostgreSQL restores the caller setting on return.
 --
--- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '992fd2f4e0d37df3ff418a00eb7f620b' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = 'd0d194d412da011936c4c4b62297f921'
+-- @live-proof: md5(pg_get_functiondef('public.fn_union_agent_risk_report(uuid,timestamptz)'::regprocedure)) = '992fd2f4e0d37df3ff418a00eb7f620b' AND md5(pg_get_functiondef('public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure)) = '2ed8a11aa32de0f20a979c59244c946d'
 
 BEGIN;
 
@@ -69,10 +69,19 @@ BEGIN
     RAISE EXCEPTION 'UNION_AGENT_RISK_REPORT_SECURITY_PREIMAGE_CHANGED';
   END IF;
 
+  -- Captured in the maintained 2026-09-08 live RPC register and independently
+  -- read back immediately after the first fail-closed apply attempt rolled back.
   IF md5(pg_get_functiondef(
        'public.fn_union_settlement_preview(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))
-       IS DISTINCT FROM '67d01730fd29d53ba0c04fd2d2637c31' THEN
+       IS DISTINCT FROM '74919720de9fafe281e48f5d8bbd6572' THEN
     RAISE EXCEPTION 'UNION_SETTLEMENT_PREVIEW_PREIMAGE_CHANGED';
+  END IF;
+  IF (SELECT md5(p.prosrc)
+        FROM pg_proc p
+       WHERE p.oid =
+         'public.fn_union_settlement_preview(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)
+       IS DISTINCT FROM 'dc8328ed8286b5b48ba24db229c814d0' THEN
+    RAISE EXCEPTION 'UNION_SETTLEMENT_PREVIEW_BODY_PREIMAGE_CHANGED';
   END IF;
   IF NOT EXISTS (
     SELECT 1
@@ -283,7 +292,8 @@ DECLARE
   v_r3_short jsonb := '[]'::jsonb;
   v_r2_short_amt numeric := 0; v_r3_short_amt numeric := 0;
 BEGIN
-  IF auth.uid() IS NOT NULL AND NOT public.fn_is_union_overseer(p_union_id, auth.uid()) THEN
+  IF NOT public.fn_caller_is_engine()
+     AND (auth.uid() IS NULL OR NOT public.fn_is_union_overseer(p_union_id, auth.uid())) THEN
     RAISE EXCEPTION 'not_authorised';
   END IF;
 
@@ -470,11 +480,13 @@ BEGIN
           pg_get_indexdef('public.idx_chip_ledger_club_from_created'::regclass)) = 0 THEN
     RAISE EXCEPTION 'UNION_AGENT_RISK_REPORT_POSTIMAGE_INVALID';
   END IF;
-  IF md5(v_preview) IS DISTINCT FROM 'd0d194d412da011936c4c4b62297f921'
+  IF md5(v_preview) IS DISTINCT FROM '2ed8a11aa32de0f20a979c59244c946d'
      OR position('fn_agent_commission_paid_by_period' IN v_preview) > 0
      OR position('agent_commission_settlements' IN v_preview) = 0
      OR position('CROSS JOIN LATERAL' IN v_preview) = 0
      OR position('owed AS MATERIALIZED' IN v_preview) = 0
+     OR position('fn_caller_is_engine()' IN v_preview) = 0
+     OR position('auth.uid() IS NULL' IN v_preview) = 0
      OR NOT EXISTS (
        SELECT 1
          FROM pg_proc p
@@ -486,7 +498,8 @@ BEGIN
           AND p.proconfig IS NOT DISTINCT FROM ARRAY['search_path=public']::text[]
           AND p.proacl::text IS NOT DISTINCT FROM
               '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}') THEN
-    RAISE EXCEPTION 'UNION_SETTLEMENT_PREVIEW_POSTIMAGE_INVALID';
+    RAISE EXCEPTION 'UNION_SETTLEMENT_PREVIEW_POSTIMAGE_INVALID (actual=%)',
+      md5(v_preview);
   END IF;
   IF (SELECT count(*)
         FROM pg_index i

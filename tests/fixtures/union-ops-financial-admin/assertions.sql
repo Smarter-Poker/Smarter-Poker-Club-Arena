@@ -346,13 +346,15 @@ BEGIN
   fn_src := pg_get_functiondef(
     'public.fn_union_settlement_preview(uuid,timestamptz,timestamptz)'::regprocedure);
   IF position('fn_agent_commission_paid_by_period' in fn_src) > 0
+     OR position('fn_caller_is_engine()' in fn_src) = 0
+     OR position('auth.uid() IS NULL' in fn_src) = 0
      OR (length(fn_src) - length(replace(
            fn_src, 'FROM public.agent_commissions ac', '')))
         / length('FROM public.agent_commissions ac') IS DISTINCT FROM 1
      OR (length(fn_src) - length(replace(
            fn_src, 'FROM public.rakeback_periods rp', '')))
         / length('FROM public.rakeback_periods rp') IS DISTINCT FROM 1 THEN
-    RAISE EXCEPTION 'settlement preview restored a per-row predicate or duplicate base scan';
+    RAISE EXCEPTION 'settlement preview changed authorization or restored an unbounded scan';
   END IF;
   EXECUTE format(
     'EXPLAIN (FORMAT JSON) SELECT SUM(rake_amount) FROM public.rake_records '
@@ -386,6 +388,17 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
   END;
+
+  PERFORM set_config('app.user_id','',false);
+  BEGIN
+    PERFORM public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
+    RAISE EXCEPTION 'an unauthenticated non-engine caller read Midway settlement preview';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM IS DISTINCT FROM 'not_authorised' THEN RAISE; END IF;
+  END;
+  PERFORM set_config('app.engine','on',false);
+  PERFORM public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');
+  PERFORM set_config('app.engine','off',false);
 
   PERFORM set_config('app.user_id',admin::text,false);
   s := public.fn_union_law_selftest_status();

@@ -29,9 +29,11 @@
 -- Twelve originals are 'reserved' permits of the dead origin generation:
 -- dealt preflop, never dispatched, never committed. Three originals
 -- (9a8e68e9, fe0582bd, e8bfda49) have NO permit row at all: the origin's
--- fn_f06_begin_hand never committed (the stall), but the engine's binding
--- named the permit, so the snapshot lists the table as pending and nothing
--- can ever witness it.
+-- fn_f06_begin_hand never committed (the stall). The engine itself recorded
+-- each absence at 23:43:47-48Z (fn_park_stopped_time_bank_custody wrote the
+-- f06_absent_permit_releases rows fn_f06_begin_hand obeys), four seconds
+-- before the transfers were prepared, but the snapshot reads only permit
+-- rows, so it listed those tables as pending for ever.
 --
 -- Only the dead origin could give either kind a terminal disposition. This
 -- is the fourth time the class has frozen events (2026-09-26 x71, 09-28,
@@ -300,8 +302,8 @@ BEGIN
  -- A permit that never reached the database is witnessed by its recorded
  -- absence (20261004125152): the f06_absent_permit_releases row fn_f06_begin_hand
  -- reads, so a begin that arrives later is refused for ever.
- SELECT jsonb_build_object('absent_release',to_jsonb(r)) INTO witness FROM smarter_private.f06_absent_permit_releases r
- WHERE (r.permit_id,r.tournament_id,r.generation,r.table_id,r.hand_number)=
+ SELECT jsonb_build_object('absent_release',to_jsonb(apr)) INTO witness FROM smarter_private.f06_absent_permit_releases apr
+ WHERE (apr.permit_id,apr.tournament_id,apr.generation,apr.table_id,apr.hand_number)=
  ((b->>'permit_id')::uuid,t,g,(b->>'table_id')::uuid,(b->>'hand_number')::bigint);
  END IF;
  IF EXISTS(SELECT 1 FROM smarter_private.f06_hand_dispatch WHERE permit_id=original_row.permit_id) THEN witness:=NULL; END IF;
@@ -335,7 +337,7 @@ DO $dead_origin_snapshot_postimage$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc p
                   WHERE p.oid = to_regprocedure('smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)')
-                    AND md5(p.prosrc) = 'da0de440dd0eff62f183e677887fe950'
+                    AND md5(p.prosrc) = 'c0d85cbbd162a208efe73855374e2518'
                     AND p.proowner = 'postgres'::regrole AND p.prosecdef
                     AND p.proacl::text = '{postgres=X/postgres}'
                     AND p.proconfig = ARRAY['search_path=pg_catalog, public, smarter_private']) THEN

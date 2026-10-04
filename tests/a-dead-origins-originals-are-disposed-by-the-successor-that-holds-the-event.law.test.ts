@@ -43,8 +43,8 @@ const VOID_PRIOR = readFileSync(
 );
 const SNAP_SIG = 'smarter_private.f06_mixed_custody_snapshot(uuid,uuid,jsonb)';
 const SNAP_PRE = '5422e7f73fdbdd34bf73d46e514e844e';
-const SNAP_POST = 'da0de440dd0eff62f183e677887fe950';
-const SNAP_POST_DEF = 'db2e73c779a636d088fda6a77b0008f4';
+const SNAP_POST = 'c0d85cbbd162a208efe73855374e2518';
+const SNAP_POST_DEF = '4a960ad8ba45a470d23b84b84a60d65f';
 const VOID_PRE = '92466252b142a745157d2ba69c1aa35b';
 const VOID_POST = 'f9a4e4187953347b613ac505d9828127';
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
@@ -66,8 +66,8 @@ const SNAP_ADDED = ` ELSIF original_row.permit_id IS NULL THEN
  -- A permit that never reached the database is witnessed by its recorded
  -- absence (20261004125152): the f06_absent_permit_releases row fn_f06_begin_hand
  -- reads, so a begin that arrives later is refused for ever.
- SELECT jsonb_build_object('absent_release',to_jsonb(r)) INTO witness FROM smarter_private.f06_absent_permit_releases r
- WHERE (r.permit_id,r.tournament_id,r.generation,r.table_id,r.hand_number)=
+ SELECT jsonb_build_object('absent_release',to_jsonb(apr)) INTO witness FROM smarter_private.f06_absent_permit_releases apr
+ WHERE (apr.permit_id,apr.tournament_id,apr.generation,apr.table_id,apr.hand_number)=
  ((b->>'permit_id')::uuid,t,g,(b->>'table_id')::uuid,(b->>'hand_number')::bigint);
 `;
 const VOID_OLD = `     OR (SELECT count(*) FROM smarter_private.f06_hand_permits o

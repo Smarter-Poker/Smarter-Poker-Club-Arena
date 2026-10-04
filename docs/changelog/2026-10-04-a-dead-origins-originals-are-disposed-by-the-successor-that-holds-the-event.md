@@ -16,9 +16,10 @@ original was disposed. From then on every resume was refused:
 
 Twelve originals were `reserved` permits of the dead origin generation, dealt
 preflop and never dispatched. Three (9a8e68e9, fe0582bd, e8bfda49) had no
-permit row at all: their `fn_f06_begin_hand` never committed during the stall,
-but the engine's binding named the permit, so the snapshot listed the table as
-pending and nothing could ever witness it.
+permit row at all: their `fn_f06_begin_hand` never committed during the stall.
+The engine had already recorded each absence at 23:43:47Z
+(`f06_absent_permit_releases`, the record `fn_f06_begin_hand` obeys), but the
+snapshot reads only permit rows, so it listed those tables as pending for ever.
 
 ## Why It Kept Happening
 
@@ -60,7 +61,7 @@ by the existing void, which proves every chair already holds its pre-deal stack.
 ## Contract
 
 The snapshot is part of `fn_f06_mixed_custody_contract`; its new digests
-(`da0de440...`, definition `db2e73c7...`) are carried by
+(`c0d85cbb...`, definition `4a960ad8...`) are carried by
 `MIXED_CUSTODY_CONTRACT` in `server/scripts/engine-release-database-proof.py`,
 by `tests/fixtures/legacy-engine-checkpoint/mixed-custody-contract.json`, and
 by the shared-hand lane, which installs the snapshot section of the migration.

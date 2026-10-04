@@ -14,7 +14,7 @@ PG_BIN = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin')).resolve()
 SCRATCH = Path(os.environ.get('RUNNER_TEMP', tempfile.gettempdir()))
 CLUSTER = Path(tempfile.mkdtemp(prefix='ca-player-search-', dir=SCRATCH))
 DATA = CLUSTER / 'data'
-SOCKET = Path(tempfile.mkdtemp(prefix='ca-ps-', dir=tempfile.gettempdir()))
+SOCKET = Path(tempfile.mkdtemp(prefix='ca-ps-', dir=SCRATCH))
 ENV = {
     'PATH': str(PG_BIN) + ':/usr/bin:/bin',
     'LANG': 'C',
@@ -165,6 +165,26 @@ try:
     assert live_access['found'] is True, live_access
     assert live_access['can_watch'] is False, live_access
     assert live_access['action'] == 'request_join', live_access
+
+    # Joining the current club is the only state transition that opens the
+    # rail. The target and table stay unchanged: this proves the seam from
+    # Find A Player -> Join/Request -> Watch, not merely three isolated RPCs.
+    query("""
+      INSERT INTO public.club_members (club_id, user_id, status, role)
+      VALUES (
+        'a0000000-0000-0000-0000-000000000004',
+        '20000000-0000-0000-0000-000000000001',
+        'active', 'player'
+      );
+    """)
+    joined_access = json.loads(as_viewer(
+        "SELECT public.fn_get_table_watch_access("
+        "'30000000-0000-0000-0000-000000000004', "
+        "'20000000-0000-0000-0000-000000000002');"
+    ))
+    assert joined_access['found'] is True, joined_access
+    assert joined_access['can_watch'] is True, joined_access
+    assert joined_access['action'] == 'watch', joined_access
 
     acl = query("""
       SELECT NOT has_function_privilege('anon',

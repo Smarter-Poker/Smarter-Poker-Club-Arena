@@ -6,7 +6,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "b1b972a77e9565ef8e5252fc1c1726174bb588b39aedc87a90892ece62f5b7f7",
+    "scripts/ci/classify-ci-changes.mjs": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -708,14 +708,25 @@
       }
     ]
   },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+      }
+    ]
+  },
   "clubDataNativeRoutingRebinding20261004": {
     "reason": "Route the Data/Stats native PostgreSQL wrapper, its fixtures and its wiring test into the existing required server and test verdicts. The classifier change is additive: no Spin or accounting route, financial fixture, captured definition or historical assertion is removed or weakened.",
     "changes": [
       {
         "section": "repository_files",
         "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
-        "current": "b1b972a77e9565ef8e5252fc1c1726174bb588b39aedc87a90892ece62f5b7f7"
+        "previous": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
+        "current": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
       }
     ],
     "verification": "The exact classifier diff and positive routing cases were reviewed; tests/data-console-postgres-contracts-wired.test.ts passed and all nine native Data/Stats PostgreSQL contracts passed."

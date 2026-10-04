@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/the-legacy-diamond-arena-database-objects-are-dropped (Poker Arena Diamond build programme, Phase 12 line 7; 2026-10-04)",
+  "_comment": "Migration 20261004214251_the_legacy_diamond_arena_database_objects_are_dropped drops public.fn_arena_deposit(integer,text), public.fn_arena_withdraw(integer,text) and public.diamond_arena_events, and drops the column profiles.diamond_arena_preferences. The base snapshot still lists all four until the nightly refresh after the migration is applied; these tombstones stop the phantom-reference gate from blessing the three relation and function names in the meantime. There is no column tombstone in this convention (removedTables and removedFunctions only), so the column leaves supabase-columns-manifest.json with the nightly refresh; no source file in either repository reads it (tests/unit/staleStorageIsReadSafelyOrDiscarded.test.ts pins that for src/). NOT YET APPLIED when this fragment was written: the nightly refresh goes red on a promised removal that is still live, which is the intended alarm if the migration is merged and not applied.",
+  "removedTables": ["diamond_arena_events"],
+  "removedFunctions": ["fn_arena_deposit", "fn_arena_withdraw"]
+}

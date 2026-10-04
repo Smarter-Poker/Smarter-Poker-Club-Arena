@@ -50,6 +50,7 @@ const pick = (suffix: string) => {
 const tr = pick('_transfers_are_off_gifts_are_atomic_and_the_waivers_are_gone.sql');
 const door = pick('_atomic_wallet_diamond_transfers.sql');
 const custody = pick('_poker_diamond_custody.sql');
+const dropped = pick('_the_legacy_diamond_arena_database_objects_are_dropped.sql');
 // The migration's own assertion block names the strings it forbids, so absence pins read the
 // part that DEFINES the functions, not the part that checks them.
 const defs = tr.slice(0, tr.indexOf('-- 5. Assertions.'));
@@ -97,19 +98,21 @@ describe('the retired doors stay retired', () => {
     expect(tr).toContain('DROP FUNCTION IF EXISTS public.transfer_diamonds_credit(uuid, integer);');
   });
 
-  it('the manual arena deposit and withdraw pair raises instead of moving money', () => {
-    expect(custody).toContain(
-      'CREATE OR REPLACE FUNCTION public.fn_arena_deposit(p_amount integer,p_op_id text)'
-    );
+  it('the manual arena deposit and withdraw pair is dropped', () => {
+    // 20260909065458 (custody) first reduced both doors to a single RAISE. Phase 12 of the
+    // build programme then dropped them and took their two names out of the wallet guard, so
+    // nothing created under either name later inherits an admission to profiles.diamonds.
+    // tests/the-legacy-diamond-arena-database-objects-are-dropped.law.test.ts pins that no
+    // later migration brings them back.
     expect(custody).toContain(
       "RAISE EXCEPTION 'Manual arena deposits are retired; use game reservation.'"
     );
     expect(custody).toContain(
-      'CREATE OR REPLACE FUNCTION public.fn_arena_withdraw(p_amount integer,p_op_id text)'
-    );
-    expect(custody).toContain(
       "RAISE EXCEPTION 'Manual arena withdrawals are retired; use game release.'"
     );
+    expect(dropped).toContain('DROP FUNCTION public.fn_arena_deposit(integer, text);');
+    expect(dropped).toContain('DROP FUNCTION public.fn_arena_withdraw(integer, text);');
+    expect(dropped).toContain("IF position('fn_arena_' IN v_after) > 0");
   });
 });
 

@@ -4409,7 +4409,7 @@ GRANT EXECUTE ON FUNCTION public.fn_guard_managed_game_lifecycle() TO service_ro
 -- @@END fn_guard_managed_game_lifecycle()
 
 -- @@DOOR fn_guard_profile_privileged_columns()
--- @@PIN md5=d40c547c47f3d0516dc24f22ab53da7e len=3480 owner=postgres
+-- @@PIN md5=b140541b68ba8f97ce74d7e0a5e7680f len=3357 owner=postgres
 CREATE OR REPLACE FUNCTION public.fn_guard_profile_privileged_columns()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -4440,8 +4440,6 @@ BEGIN
      OR v_stack ~ 'function (public[.])?fn_ca_mint[(]'
      OR v_stack ~ 'function (public[.])?fn_ca_burn[(]'
      OR v_stack ~ 'function (public[.])?send_stream_gift[(]'
-     OR v_stack ~ 'function (public[.])?fn_arena_deposit[(]'
-     OR v_stack ~ 'function (public[.])?fn_arena_withdraw[(]'
      -- DIAMOND PHASE 8: a tournament entry is custody; its charge and refund
      -- move the wallet from client doors.
      OR v_stack ~ 'function (public[.])?fn_poker_diamond_tournament_charge[(]'
@@ -10542,7 +10540,7 @@ BEGIN
     ('fn_get_seat_cashout_receipt(p_user_id uuid, p_table_id uuid, p_seat_number integer, p_occupancy_id uuid)','49d452fa253d5ac059a199284f4ce806'),
     ('fn_guard_horse_profile_authority()','515acecbbd2af70b7d3384c83c468fad'),
     ('fn_guard_managed_game_lifecycle()','b90cc1cb27839211a82715c4741410c1'),
-    ('fn_guard_profile_privileged_columns()','d40c547c47f3d0516dc24f22ab53da7e'),
+    ('fn_guard_profile_privileged_columns()','b140541b68ba8f97ce74d7e0a5e7680f'),
     ('fn_is_owner_operational_notification(p_user uuid, p_type text, p_title text, p_data jsonb)','8c2c62359d92dcbd3b3621a762b981ca'),
     ('fn_kill_pot_configuration_refusal(p_kill_mode text, p_variant text, p_game_type text, p_tournament_id uuid, p_bomb_pot_enabled boolean, p_big_blind numeric, p_club_id uuid)','c5f1d7f6361676b0ed0780e8ca9394a2'),
     ('fn_lightning_anchor_is_live_eligible(p_seat_id uuid, p_cluster_id uuid, p_player_id uuid)','a121611dd69437875e82a06832715981'),

@@ -54,13 +54,41 @@ export interface DisconnectToastProps {
   socketStatus: string;
   /** False for a backgrounded tab in the multi-table view. */
   isActive?: boolean;
+  /**
+   * The tournament moved the hero INTO this table at this instant (epoch ms,
+   * this device's clock): a table break or a balance move. See MOVED_HERE_MS.
+   */
+  movedHereAtMs?: number;
+  /** The table's display name, for the moved line. */
+  tableName?: string;
 }
+
+/**
+ * ─── A MOVED SEAT IS NOT A RECONNECTING SEAT (Dan 2026-10-04) ─────────────────
+ *
+ * "WHEN A TABLE BREAKS AND YOU ARE MOVED TO A NEW TABLE AND SEAT, IT DISPLAYS
+ *  THE 'RECONNECTING YOUR SEAT' INSTEAD OF 'YOU'VE BEEN MOVED TO TABLE XXX'."
+ *
+ * The engine seats a moved player at the destination before that player's
+ * browser has opened the destination's socket and sent its first heartbeat,
+ * so for the first moments the destination's presence map can read the hero
+ * as MISSING. That reading is true and the old line was still the wrong thing
+ * to say: nothing is being reconnected, the player was carried here. For the
+ * hand-over the felt says what happened.
+ *
+ * It is a bounded window, not a mute: if the engine STILL cannot hear the
+ * player once it has passed, that is a real presence problem and the ordinary
+ * line (with its auto-action countdown) takes over.
+ */
+export const MOVED_HERE_MS = 10_000;
 
 export default function DisconnectToast({
   heroUserId,
   disconnectStates,
   socketStatus,
   isActive = true,
+  movedHereAtMs,
+  tableName,
 }: DisconnectToastProps): ReactElement | null {
   const entry = heroUserId ? disconnectStates[heroUserId] : undefined;
   const state = entry?.state;
@@ -97,9 +125,38 @@ export default function DisconnectToast({
     };
   }, [state, graceDeadline]);
 
-  if (!entry || !isActive) return null;
+  /* The arrival window. One timeout to its end, so the line leaves on time
+     even on a table where nothing else is re-rendering this component. */
+  const [movedHere, setMovedHere] = useState(
+    () => movedHereAtMs !== undefined && Date.now() - movedHereAtMs < MOVED_HERE_MS
+  );
+  useEffect(() => {
+    if (movedHereAtMs === undefined) {
+      setMovedHere(false);
+      return;
+    }
+    const left = movedHereAtMs + MOVED_HERE_MS - Date.now();
+    if (left <= 0) {
+      setMovedHere(false);
+      return;
+    }
+    setMovedHere(true);
+    const t = window.setTimeout(() => setMovedHere(false), left);
+    return () => window.clearTimeout(t);
+  }, [movedHereAtMs]);
+
+  if (!isActive) return null;
   // The socket's own banner owns this moment; the map cannot be current.
   if (socketStatus !== 'connected') return null;
+
+  if (movedHere) {
+    return (
+      <div className="disconnect-toast disconnect-toast--moved" role="status" aria-live="polite">
+        <span>{formatPopupText(`You've Been Moved To ${tableName || 'A New Table'}`)}</span>
+      </div>
+    );
+  }
+  if (!entry) return null;
 
   if (state === 'MISSING') {
     // At zero the engine has already acted; the DISCONNECTED verdict (or a

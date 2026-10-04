@@ -313,8 +313,6 @@ export interface ChipStackVisual {
   count: number;
   /** How many discs to actually draw. Never more than `count`. */
   drawn: number;
-  /** True when drawn is less than count, so the caller prints an "x12" tag. */
-  truncated: boolean;
   /**
    * True only for the placeholder disc standing in for a sub-1 remainder (see
    * FRACTIONAL AND SUB-1 AMOUNTS). It is drawn as an ordinary round white
@@ -327,10 +325,10 @@ export interface ChipStackVisual {
 export interface VisualChipOptions {
   /** Denomination groups to draw, highest first. */
   maxStacks?: number;
-  /** Discs to draw per group before switching to an "xN" multiplier. */
+  /** Most discs to draw for any one denomination group. */
   maxPerStack?: number;
   /**
-   * Discs to draw across ALL groups combined, before switching to "xN".
+   * Most discs to draw across ALL groups combined.
    *
    * Dan 2026-08-24: "chips entering the pot should be stacked and slightly
    * offset so you can see them all, highest denomination on the bottom, but
@@ -343,9 +341,12 @@ export interface VisualChipOptions {
    * the tower upward (largest denomination first), because the big chips are
    * the ones carrying the value a player is trying to read.
    *
-   * Like every other cap in this module it clamps the DISCS DRAWN and never
-   * the value: a group it shortens reports `truncated` and keeps its true
-   * `count`, so the pile still adds up to the amount.
+   * It clamps the DISCS DRAWN only. A shortened group keeps its true `count`
+   * for arithmetic and tests, but NOTHING on the felt prints it: owner ruling
+   * 2026-10-04, "POT STACKING AND BET SIZING NEVER EVER EVER NEEDS THE X3 X2
+   * ETC. CHIPS INSIDE THE POT ARE JUST AN ANIMATION AND DOESN'T NEED TO BE
+   * 100% ACCURATE AS LONG AS THE ANIMATION ITS SELF IS CLOSE." The numeric
+   * amount label is the truth; the discs are illustration.
    */
   maxTotal?: number;
 }
@@ -353,11 +354,11 @@ export interface VisualChipOptions {
 /**
  * breakChips, shaped for a renderer.
  *
- * The count is never lied about: if a stack is taller than `maxPerStack` the
- * disc count is clamped for layout and `truncated` is set so the component can
- * print the real number beside it. This is precisely the bug the old
- * per-component breakdowns had — they clamped the count AND subtracted the
- * clamped count, so the value simply evaporated.
+ * `count` is always the true number of chips of that denomination; `drawn` is
+ * how many discs fit (clamped by `maxPerStack` and `maxTotal`). The renderers
+ * draw `drawn` discs and print no count badge for the difference (owner
+ * ruling 2026-10-04: no "x2 x3 x4" multipliers on pot or bet stacks, the
+ * chips only have to be close and the amount label is exact).
  */
 export function visualChipStacks(
   amount: number,
@@ -371,7 +372,7 @@ export function visualChipStacks(
   // the exact value.
   if (chips.length === 0) {
     if (remainder <= 0) return [];
-    return [{ denom: SMALLEST_CHIP, count: 1, drawn: 1, truncated: false, partial: true }];
+    return [{ denom: SMALLEST_CHIP, count: 1, drawn: 1, partial: true }];
   }
 
   // A sub-1 residue riding along with real chips (7.5 -> red + 2 white + 0.5)
@@ -381,13 +382,12 @@ export function visualChipStacks(
     denom,
     count,
     drawn: Math.max(1, Math.min(count, maxPerStack)),
-    truncated: count > maxPerStack,
     partial: false,
   }));
 
   // Tower budget, spent bottom-up. `chips` is already highest-denomination
   // first, so walking it in order hands the budget to the big chips and lets
-  // the small ones fall back to an "xN" tag - the same trade a dealer makes
+  // the small ones be drawn short - the same trade a dealer makes
   // when they colour up. Every group keeps at least one disc: a denomination
   // that is in the pot but drawn nowhere is a chip the player cannot see.
   if (Number.isFinite(maxTotal) && groups.length > 0) {
@@ -398,7 +398,6 @@ export function visualChipStacks(
       const give = Math.min(g.drawn - 1, spent - budget);
       if (give <= 0) continue;
       g.drawn -= give;
-      g.truncated = g.count > g.drawn;
       spent -= give;
     }
   }

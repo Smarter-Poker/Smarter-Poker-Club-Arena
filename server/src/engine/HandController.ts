@@ -1253,24 +1253,62 @@ export class HandController {
     // decides which — the nine copies of `startsWith('plo')` are gone.
     const bettingState = this.buildBettingState(player);
 
+    // Only the ALL-IN BUTTON gets the "counts as a call" treatment below. A
+    // `raise`/`bet` with an explicit amount that is illegal stays rejected.
+    const requestedAllIn = action === 'all_in';
+
     const clamped = this.clampToStructure(player, action, amount, bettingState);
-    const effAction: ActionType = clamped.action;
-    const effAmount = clamped.amount;
+    let effAction: ActionType = clamped.action;
+    let effAmount = clamped.amount;
 
-    const validation = validateAction(effAction, effAmount, player.stack, bettingState);
+    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): a `raise` that cannot
+    // legally reopen betting is illegal — e.g. a player who already acted and
+    // now faces only a sub-full-raise all-in may call or fold, not re-raise.
+    // This is the authoritative server enforcement; getAvailableActions hides
+    // the button. An all-in that exceeds the call is also a raise, never an
+    // exemption.
+    const isLegalWager = (a: ActionType, amt: number | undefined): boolean => {
+      if (!validateAction(a, amt, player.stack, bettingState).valid) return false;
+      const raisesBet =
+        a === 'raise' || (a === 'all_in' && player.stack > bettingState.toCall + 0.005);
+      return !(raisesBet && !this.canReopenBetting(player));
+    };
 
-    if (!validation.valid) return false;
+    if (!isLegalWager(effAction, effAmount)) {
+      // ── Owner ruling 2026-10-04 (live tournament play) ────────────────────
+      // "IF A PLAYER IS FACING A LARGE BET, AND CLICKS 'ALL IN' INSTEAD OF CALL
+      //  THE BET, (EVEN IF THEY ARE LAST ACTION) THE 'ALL IN' CLICK COUNTS AS A
+      //  'CALL'. IT CURRENTLY SILENTLY FAILS, AND FORCES YOU TO CLICK CALL.
+      //  EITHER ONE SHOULD WORK."
+      //
+      // This used to `return false`: a covered player who may not reopen
+      // betting (TDA 44/47), or whose pot-limit shove clamps to a raise that
+      // is below a full raise, pressed ALL IN and nothing happened. The shove
+      // cannot be a raise there, so it is executed as the passive action the
+      // seat is entitled to: a plain CALL of exactly min(toCall, stack) — or a
+      // CHECK when nothing is owed. From here on it IS that action: the switch
+      // below runs the ordinary call/check case, so the record, history,
+      // PLAYER_ACTION broadcast and accepted-action receipt all say `call`,
+      // the rest of the stack stays behind, betting is not reopened, and
+      // lastRaise/minRaise/lastAggressorSeat are untouched. Fixed limit has
+      // done exactly this inside clampToStructure since 2026-08-23.
+      //
+      // The MENU is deliberately unchanged (getAvailableActions still withholds
+      // all_in here): this is tolerance for a button press, not a new legal
+      // shove, so nothing that chooses from the menu changes its semantics.
+      if (!requestedAllIn) return false;
+      const passive: ActionType = bettingState.toCall > 0 ? 'call' : 'check';
+      // All-in-or-fold preflop has no call; the degrade never widens what the
+      // table's own rules permit.
+      if (this.config.allInOrFold && this.state.stage === 'preflop' && passive !== 'check') {
+        return false;
+      }
+      if (!validateAction(passive, undefined, player.stack, bettingState).valid) return false;
+      effAction = passive;
+      effAmount = undefined;
+    }
     action = effAction;
     amount = effAmount;
-
-    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
-    // cannot legally reopen betting — e.g. a player who already acted and now
-    // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
-    // the authoritative server enforcement; getAvailableActions hides the button.
-    // An all-in that exceeds the call is also a raise, never an exemption.
-    const raisesBet =
-      action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
-    if (raisesBet && !this.canReopenBetting(player)) return false;
 
     let publicNode;
     try {
@@ -3556,6 +3594,13 @@ export class HandController {
     // betting state and the same clamp performAction uses - so the menu and
     // the rule can never disagree again. Calling all-in with a stack of zero
     // is likewise not an action.
+    //
+    // 2026-10-04 (owner ruling, "the ALL IN click counts as a CALL"):
+    // performAction now ACCEPTS an all_in that cannot be a legal raise and
+    // executes it as a call/check. The menu is deliberately NOT widened to
+    // match: all_in is advertised only where it is a real shove, so anything
+    // that chooses from this list (horses, solvers, the fuzzer) never picks
+    // "all in" and gets a call. Everything offered here is still accepted.
     if (player.stack > 0) {
       // 2026-08-23: probe through the SAME clamp performAction uses, so the
       // menu and the rule cannot drift apart — that drift is exactly what the

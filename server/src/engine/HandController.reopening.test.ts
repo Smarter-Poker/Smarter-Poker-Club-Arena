@@ -7,7 +7,17 @@
  *
  * These drive the real HandController and assert both the advertised action menu
  * (TURN_CHANGE.availableActions) and the authoritative server enforcement
- * (performAction rejects an illegal raise/shove, still accepts a legal call).
+ * (performAction rejects an illegal raise, still accepts a legal call).
+ *
+ * OWNER RULING 2026-10-04 (live tournament play): "IF A PLAYER IS FACING A
+ * LARGE BET, AND CLICKS 'ALL IN' INSTEAD OF CALL THE BET, (EVEN IF THEY ARE
+ * LAST ACTION) THE 'ALL IN' CLICK COUNTS AS A 'CALL'. IT CURRENTLY SILENTLY
+ * FAILS, AND FORCES YOU TO CLICK CALL. EITHER ONE SHOULD WORK."
+ * An `all_in` from a seat that may not reopen betting used to be pinned here
+ * as REJECTED. It is now accepted and executed as a plain call: the reopening
+ * rule itself is unchanged (no raise happens, betting is not reopened, the
+ * menu still withholds all_in), only the dead button is gone. The full law is
+ * AnAllInPressCountsAsACall.law.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
@@ -117,8 +127,15 @@ describe('REOPENING RULE - sub-full-raise all-in does not reopen betting', () =>
     });
     expect(h.actSeat(1, 'raise', 20)).toBe(false);
     expect(h.menu(1)).not.toContain('all_in');
-    expect(h.actSeat(1, 'all_in')).toBe(false); // a shove is still a raise
-    expect(h.actSeat(1, 'call', 8)).toBe(true);
+    // Owner ruling 2026-10-04: the shove still cannot be a raise, so the press
+    // is the call - 2 chips, 192 behind, betting not reopened, street closes.
+    expect(h.actSeat(1, 'all_in')).toBe(true);
+    expect(h.st().actionHistory.at(-1)).toMatchObject({ seat: 1, action: 'call', amount: 2 });
+    expect(h.st().actionHistory.at(-1).isFullRaise).toBeUndefined();
+    const dealer = h.st().players.find((p: SeatPlayer) => p.seat === 1);
+    expect(dealer).toMatchObject({ stack: 192, is_all_in: false });
+    expect(h.st().stage).toBe('flop');
+    expect(h.st().pot).toBe(32);
   });
 });
 
@@ -189,8 +206,14 @@ describe('reopening follows the wager faced by this player', () => {
     expect(h.cur()).toBe(6);
     expect(h.menu(6)).not.toContain('raise');
     expect(h.menu(6)).not.toContain('all_in');
-    expect(h.actSeat(6, 'all_in')).toBe(false);
-    expect(h.actSeat(6, 'call', 10)).toBe(true);
+    // Owner ruling 2026-10-04: the caller still inherits no right to raise;
+    // its all-in press is the 2-chip call and nothing more.
+    expect(h.actSeat(6, 'all_in')).toBe(true);
+    expect(h.st().actionHistory.at(-1)).toMatchObject({ seat: 6, action: 'call', amount: 2 });
+    expect(h.st().players.find((p: SeatPlayer) => p.seat === 6)).toMatchObject({
+      stack: 190,
+      is_all_in: false,
+    });
   });
   it('a short all-in expressed as raise does not become a full raise', () => {
     const h = harness(mkConfig(), mkPlayers([200, 8, 200, 200]), 1);
@@ -207,7 +230,7 @@ describe('reopening follows the wager faced by this player', () => {
 
 describe.each(['nlh', 'plo4'])('closed %s betting and short stacks', (variant) => {
   it.each([8, 9])(
-    'only permits an all-in that does not raise the standing bet (stack %s)',
+    'an all-in never raises the standing bet when betting is closed (stack %s)',
     (stack) => {
       const h = harness(
         mkConfig({ gameVariant: variant as HandConfig['gameVariant'] }),
@@ -227,9 +250,15 @@ describe.each(['nlh', 'plo4'])('closed %s betting and short stacks', (variant) =
       } else {
         expect(h.menu(1)).not.toContain('all_in');
         const pot = h.st().pot;
-        expect(h.actSeat(1, 'all_in')).toBe(false);
-        expect(h.st().pot).toBe(pot);
-        expect(h.actSeat(1, 'call', 8)).toBe(true);
+        // Owner ruling 2026-10-04: a 9 stack may not raise the standing 8 by
+        // its last chip, so the press calls 2 and that chip stays behind.
+        expect(h.actSeat(1, 'all_in')).toBe(true);
+        expect(h.st().actionHistory.at(-1)).toMatchObject({ seat: 1, action: 'call', amount: 2 });
+        expect(h.st().pot).toBe(pot + 2);
+        expect(h.st().players.find((p: SeatPlayer) => p.seat === 1)).toMatchObject({
+          stack: 1,
+          is_all_in: false,
+        });
       }
     }
   );

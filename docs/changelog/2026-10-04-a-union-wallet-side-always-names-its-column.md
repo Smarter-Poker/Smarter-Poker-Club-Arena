@@ -36,3 +36,7 @@ No chips move, no job is added, nothing is backfilled. Every preimage and result
 ## How to apply
 
 After merge, through **Apply Merged Migration**, after `20261004124640` and `20261004125201`. Avoid minute :50 to :03 UTC.
+
+## Rebased onto the live readers
+
+`20261004133333` was written on the snapshot readers of `20261004124640`, which was superseded before it ran (see the companion changelog). `20261004144116_a_union_wallet_side_names_its_column_on_the_live_readers` is the same change: every payer, the autoledger, the declaration helpers, `fn_ca_leg_accounts` and the constraint are byte-identical to it; the two snapshot readers are patched where `20261004135607` left them (only the account key and type of the final SELECT change), with the pre- and post-images md5-asserted. `20261004133333` is marked superseded by it.

@@ -49,6 +49,24 @@ import {
   qualifiedPhase10TestAdmission,
 } from '../HorsePhase10Authority.test-support.js';
 import { plo4Cards } from '../../benchmark/Plo4PolicyEvidence.js';
+import { variantCards } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import { horseVariantRulesFor } from '../VariantRules.js';
+import {
+  admitHorsePhase11QualifiedAuthority,
+  admitHorsePhase11ReleaseAuthority,
+} from '../HorsePhase11Authority.js';
+import {
+  P11_TEST_CONTRACT_DIGEST,
+  P11_TEST_NOW,
+  p11CompletionBytes,
+  p11CompletionObject,
+  p11QualificationBytes,
+  p11Reader,
+  p11Selection,
+  p11Street,
+  qualifiedPhase11TestAdmission,
+} from '../HorsePhase11Authority.test-support.js';
+import { OMAHA_VARIANT_PACKS, type OmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
 import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../HorseEval.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
@@ -3334,5 +3352,405 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
     expect(h.decisionOpts.map((o) => o.phase10Plo4)).toEqual(['off', 'candidate', 'candidate']);
     const deep = h.messages.find((m) => m.type === 'DEEP_RESULT');
     expect(deep?.type === 'DEEP_RESULT' && deep.phase10Authority?.state).toBe('usable');
+  });
+});
+
+describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused per pack)', () => {
+  const omahaCash = (
+    requestId: number,
+    variant: OmahaPolicyVariant,
+    cards: string
+  ): FastHorseDecisionRequest =>
+    rekey({
+      ...fastRequest(requestId),
+      player: { ...snapshot.player, cards: variantCards(cards) },
+      gameState: {
+        ...structuredClone(snapshot.gameState),
+        gameVariant: variant,
+        variantRules: horseVariantRulesFor(variant),
+        dealerSeat: 2,
+        // Heads-up the button posts the small blind (HandController's walk).
+        blindSeats: { smallBlind: 2, bigBlind: 3 },
+      },
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  const omahaTournament = (
+    requestId: number,
+    variant: OmahaPolicyVariant,
+    cards: string
+  ): FastHorseDecisionRequest => {
+    const base = phase6TournamentRequest(requestId);
+    return rekey({
+      ...base,
+      player: { ...snapshot.player, cards: variantCards(cards) },
+      gameState: {
+        ...base.gameState,
+        gameVariant: variant,
+        bettingStructure: 'pot_limit',
+        variantRules: horseVariantRulesFor(variant),
+        legalActions: snapshot.gameState.legalActions,
+        minRaiseTo: snapshot.gameState.minRaiseTo,
+        maxRaiseTo: snapshot.gameState.maxRaiseTo,
+        // Heads-up the button (seat 2) posts the small blind.
+        blindSeats: { smallBlind: 2, bigBlind: 3 },
+        tournament: { ...base.gameState.tournament!, gameVariant: variant },
+      },
+      style: 'balanced',
+      mods: {},
+      opts: { mind: false },
+    });
+  };
+  /** One real worker decision; HorseLogic's RNG is seeded identically for
+   * every run, so two runs differ only by what the worker admitted. */
+  async function decideThrough(
+    request: FastHorseDecisionRequest,
+    admission?: (variant: OmahaPolicyVariant) => HorseAuthorityAdmission,
+    packOff = false
+  ) {
+    const h = harness(true);
+    h.deps.admitPhase11Authority = admission;
+    const decide = h.deps.decide;
+    h.deps.decide = (player, gameState, style, mods, opts) => {
+      const rng = saveFastRandom();
+      seedFastRandom(10_301_104);
+      try {
+        return decide(
+          player,
+          gameState,
+          style,
+          mods,
+          packOff ? { ...opts, phase11Omaha: 'off' } : opts
+        );
+      } finally {
+        restoreFastRandom(rng);
+      }
+    };
+    // Wiring, not latency: the 4 ms budget is tested by OmahaVariantLivePolicy.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      h.runtime.receive(request);
+      await h.runtime.drain();
+    } finally {
+      clock.mockRestore();
+    }
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    return { h, result, decision: result.decision };
+  }
+  const act = (d: { action: string; amount?: number }) => ({
+    action: d.action,
+    amount: d.amount ?? null,
+  });
+  const only =
+    (variant: OmahaPolicyVariant, approval = 1) =>
+    (requested: OmahaPolicyVariant): HorseAuthorityAdmission =>
+      requested === variant
+        ? qualifiedPhase11TestAdmission(variant, approval)
+        : { status: 'refused', reason: 'unselected', transient: false };
+
+  // Actions pinned from the unmodified base (fb9c43ea, P11.1 merged with
+  // P11.2): the packs are shadow there, so these are the reference actions
+  // live tables execute. Read through this same harness and seed on that base
+  // before any P11.3 change (docs/evidence/phase11/p11-3-pin-base.log).
+  const LIVE_STATES = [
+    ['plo5', 'cash', 'As Ad Ks Kd Qs', true, { action: 'raise', amount: 11 }],
+    ['plo5', 'cash', 'Ah 7c 2s 3d 9h', false, { action: 'fold', amount: null }],
+    ['plo5', 'cash', 'Qs Qh 4c 4d 8s', false, { action: 'fold', amount: null }],
+    ['plo5', 'tournament', 'As Ad Ks Kd Qs', true, { action: 'raise', amount: 11 }],
+    ['plo6', 'cash', 'As Ad Ks Kd Qs Jd', true, { action: 'raise', amount: 11 }],
+    ['plo6', 'cash', 'Ah 7c 2s 3d 9h 5c', true, { action: 'fold', amount: null }],
+    ['plo6', 'cash', 'Qs Qh 4c 4d 8s 9c', true, { action: 'call', amount: 2 }],
+    ['plo6', 'tournament', 'As Ad Ks Kd Qs Jd', true, { action: 'raise', amount: 11 }],
+    ['plo8', 'cash', 'As 2s 3d Ac', true, { action: 'raise', amount: 11 }],
+    ['plo8', 'cash', 'Ah 7c Ks 9d', false, { action: 'fold', amount: null }],
+    ['plo8', 'cash', 'Qs Qh 4c 4d', true, { action: 'call', amount: 2 }],
+    ['plo8', 'tournament', 'As 2s 3d Ac', true, { action: 'raise', amount: 11 }],
+  ] as const;
+
+  it.each(LIVE_STATES)(
+    'live behaviour is unchanged today: %s %s %s executes the same action as before P11.3',
+    async (variant, format, cards, changed, baseAction) => {
+      const request =
+        format === 'cash' ? omahaCash(611, variant, cards) : omahaTournament(611, variant, cards);
+      const live = await decideThrough(request, (v) => admitHorsePhase11ReleaseAuthority(v));
+      const reference = await decideThrough(request, undefined, true);
+      expect(live.h.decisionOpts[0].phase11Omaha).toBe('shadow');
+      expect(act(live.decision)).toEqual(baseAction);
+      expect(act(reference.decision)).toEqual(baseAction);
+      expect(reference.decision.omahaVariantPolicy).toBeUndefined();
+      const receipt = live.decision.omahaVariantPolicy!;
+      expect(receipt).toMatchObject({
+        variant,
+        mode: 'shadow',
+        eligible: true,
+        applied: false,
+        authorityVerdict: null,
+        selectionRefusal: null,
+        authority: {
+          state: 'unselected',
+          reason: 'unselected',
+          authorityKey: null,
+          continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
+        },
+      });
+      expect(receipt.changed).toBe(changed);
+      expect(receipt.selection).toBe(changed ? 'shadow_change' : 'none');
+      expect(receipt.finalAction).toBe(live.decision.action);
+      for (const pack of ['plo5', 'plo6', 'plo8'] as const)
+        expect(live.result.phase11Authority?.[pack]).toMatchObject({
+          state: 'unselected',
+          continuationVersion: OMAHA_VARIANT_PACKS[pack].version,
+        });
+      expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);
+    }
+  );
+
+  it('a decision of another variant carries no Phase 11 authority', async () => {
+    const live = await decideThrough(
+      rekey({ ...fastRequest(612), style: 'balanced', mods: {}, opts: { mind: false } }),
+      () => qualifiedPhase11TestAdmission('plo5')
+    );
+    expect(live.decision.omahaVariantPolicy).toBeUndefined();
+    expect(live.h.decisionOpts[0].phase11Omaha).toBe('shadow');
+    expect(live.result.phase11Authority?.plo5.state).toBe('usable');
+  });
+
+  const refused = (overrides: {
+    qualification?: Record<string, unknown>;
+    completion?: Record<string, unknown> | null;
+  }) => {
+    const q = p11QualificationBytes('plo6', overrides.qualification);
+    const c =
+      overrides.completion === null ? null : p11CompletionBytes('plo6', overrides.completion);
+    return () =>
+      admitHorsePhase11QualifiedAuthority(
+        'plo6',
+        p11Selection('plo6', q, c),
+        p11Reader('plo6', q, c),
+        P11_TEST_NOW,
+        P11_TEST_CONTRACT_DIGEST
+      );
+  };
+  it.each([
+    ['qualified:false', refused({ qualification: { qualified: false } }), 'not_qualified'],
+    ['wrong-source', refused({ qualification: { sourceSha: 'c'.repeat(40) } }), 'source_mismatch'],
+    ['no-completion', refused({ completion: null }), 'completion_evidence_missing'],
+    [
+      'other-policy completion',
+      refused({ completion: { policyDigest: 'd'.repeat(64) } }),
+      'completion_release_mismatch',
+    ],
+    [
+      'below-floor',
+      refused({
+        completion: {
+          streets: { ...p11CompletionObject('plo6').streets, river: p11Street(200, 20) },
+        },
+      }),
+      'completion_below_floor',
+    ],
+  ] as const)(
+    'a %s PLO6 admission keeps the pack in shadow and the reference action',
+    async (_name, admission, reason) => {
+      const request = omahaCash(613, 'plo6', 'Ah 7c 2s 3d 9h 5c');
+      const result = await decideThrough(request, (v) =>
+        v === 'plo6' ? admission() : { status: 'refused', reason: 'unselected', transient: false }
+      );
+      const reference = await decideThrough(request, undefined, true);
+      expect(result.h.decisionOpts[0].phase11Omaha).toBe('shadow');
+      expect(act(result.decision)).toEqual(act(reference.decision));
+      expect(result.decision.omahaVariantPolicy).toMatchObject({
+        mode: 'shadow',
+        changed: true,
+        applied: false,
+        selection: 'shadow_change',
+        authority: { state: 'refused', reason },
+      });
+    }
+  );
+
+  it.each([
+    ['plo5', 'As Ad Ks Kd Qs'],
+    ['plo6', 'Ah 7c 2s 3d 9h 5c'],
+    ['plo8', 'Qs Qh 4c 4d'],
+  ] as const)(
+    'a valid %s qualification and completion record (test fixture only) select the cash proposal and record selected and baseline actions',
+    async (variant, cards) => {
+      const request = omahaCash(614, variant, cards);
+      const selected = await decideThrough(request, only(variant));
+      const reference = await decideThrough(request, undefined, true);
+      expect(selected.h.decisionOpts[0].phase11Omaha).toBe('candidate');
+      const receipt = selected.decision.omahaVariantPolicy!;
+      expect(receipt).toMatchObject({
+        variant,
+        mode: 'candidate',
+        fired: true,
+        changed: true,
+        applied: true,
+        selection: 'selected',
+        selectionRefusal: null,
+        utilityOwner: 'cash',
+        authority: {
+          state: 'usable',
+          generation: 1,
+          approvalGeneration: 1,
+          mainGeneration: null,
+          continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
+        },
+      });
+      // Selected = the proposal; shadow baseline = the reference the worker
+      // would have executed without authority.
+      expect(act(selected.decision)).toEqual({
+        action: receipt.proposalAction,
+        amount: receipt.proposalAmount,
+      });
+      expect({ action: receipt.baselineAction, amount: receipt.baselineAmount }).toEqual(
+        act(reference.decision)
+      );
+      expect(act(selected.decision)).not.toEqual(act(reference.decision));
+      expect(selected.result.phase11Authority?.[variant]).toEqual(receipt.authority);
+      expect(horseDecisionReceiptIsValid(structuredClone(selected.decision), variant)).toBe(true);
+      // The worker boundary refuses the same selection without usable
+      // authority, with another pack's authority, labelled as a tournament
+      // objective decision, or claiming acceptance.
+      const otherPack = variant === 'plo5' ? 'plo6' : 'plo5';
+      for (const forge of [
+        (r: any) => (r.authority = { ...r.authority, state: 'refused' }),
+        (r: any) => (r.authority = null),
+        (r: any) =>
+          (r.authority = {
+            ...r.authority,
+            continuationVersion: OMAHA_VARIANT_PACKS[otherPack].version,
+          }),
+        (r: any) =>
+          (r.authority = { ...r.authority, continuationVersion: 'plo4-policy-round1-v3' }),
+        (r: any) => (r.utilityOwner = 'phase7_evaluated'),
+        (r: any) => (r.selection = 'controller_accepted'),
+        (r: any) => (r.authorityVerdict = 'usable'),
+        (r: any) => (r.selectionRefusal = 'retained'),
+        (r: any) => (r.proposalAction = 'all_in'),
+        (r: any) => delete r.selection,
+      ]) {
+        const forged = structuredClone(selected.decision) as any;
+        forge(forged.omahaVariantPolicy);
+        expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+      }
+    }
+  );
+
+  it('a PLO5 selection never selects a PLO6 or PLO8 decision', async () => {
+    const plo5 = await decideThrough(omahaCash(615, 'plo5', 'As Ad Ks Kd Qs'), only('plo5'));
+    expect(plo5.h.decisionOpts[0].phase11Omaha).toBe('candidate');
+    expect(plo5.decision.omahaVariantPolicy?.selection).toBe('selected');
+    for (const [variant, cards] of [
+      ['plo6', 'Ah 7c 2s 3d 9h 5c'],
+      ['plo8', 'Qs Qh 4c 4d'],
+    ] as const) {
+      const other = await decideThrough(omahaCash(616, variant, cards), only('plo5'));
+      expect(other.h.decisionOpts[0].phase11Omaha, variant).toBe('shadow');
+      expect(other.result.phase11Authority?.plo5.state).toBe('usable');
+      expect(other.decision.omahaVariantPolicy).toMatchObject({
+        mode: 'shadow',
+        applied: false,
+        selection: 'shadow_change',
+        authority: {
+          state: 'unselected',
+          continuationVersion: OMAHA_VARIANT_PACKS[variant].version,
+        },
+      });
+      // Its receipt cannot borrow the usable PLO5 authority at the boundary.
+      const forged = structuredClone(other.decision) as any;
+      Object.assign(forged.omahaVariantPolicy, {
+        mode: 'candidate',
+        applied: true,
+        selection: 'selected',
+        authority: other.result.phase11Authority!.plo5,
+        finalAction: forged.omahaVariantPolicy.proposalAction,
+        finalAmount: forged.omahaVariantPolicy.proposalAmount,
+      });
+      forged.action = forged.omahaVariantPolicy.proposalAction;
+      forged.amount = forged.omahaVariantPolicy.proposalAmount ?? undefined;
+      expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+    }
+  });
+
+  it.each([
+    ['plo5', 'As Ad Ks Kd Qs'],
+    ['plo8', 'As 2s 3d Ac'],
+  ] as const)(
+    'a %s tournament decision keeps Phase 7 ownership even when the pack would be selected',
+    async (variant, cards) => {
+      const request = omahaTournament(617, variant, cards);
+      const withAuthority = await decideThrough(request, only(variant));
+      const withoutAuthority = await decideThrough(request);
+      expect(withAuthority.result.phase11Authority?.[variant].state).toBe('usable');
+      expect(withAuthority.h.decisionOpts[0].phase11Omaha).toBe('shadow');
+      const receipt = withAuthority.decision.omahaVariantPolicy!;
+      expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+      expect(receipt.selection).not.toBe('selected');
+      expect(receipt.utilityOwner).not.toBe('cash');
+      // Identical to the decision made with no authority at all.
+      expect(act(withAuthority.decision)).toEqual(act(withoutAuthority.decision));
+      expect(withAuthority.decision.tournamentUtility ?? null).toEqual(
+        withoutAuthority.decision.tournamentUtility ?? null
+      );
+      expect(withAuthority.decision.tournamentPreflopAttribution ?? null).toEqual(
+        withoutAuthority.decision.tournamentPreflopAttribution ?? null
+      );
+      // A tournament receipt can never cross the boundary as a selection.
+      const forged = structuredClone(withAuthority.decision) as any;
+      Object.assign(forged.omahaVariantPolicy, {
+        mode: 'candidate',
+        applied: true,
+        changed: true,
+        selection: 'selected',
+        finalAction: forged.omahaVariantPolicy.proposalAction,
+        finalAmount: forged.omahaVariantPolicy.proposalAmount,
+      });
+      forged.action = forged.omahaVariantPolicy.proposalAction;
+      forged.amount = forged.omahaVariantPolicy.proposalAmount ?? undefined;
+      expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+    }
+  );
+
+  it('a caller still cannot supply Phase 11 candidate control when authority is usable', async () => {
+    const h = harness(true);
+    h.deps.admitPhase11Authority = only('plo5');
+    h.runtime.receive({
+      ...omahaCash(618, 'plo5', 'As Ad Ks Kd Qs'),
+      opts: { phase11Omaha: 'candidate' },
+    } as unknown as FastHorseDecisionRequest);
+    await h.runtime.drain();
+    expect(h.decisionOpts).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'offline candidate controls are forbidden in live decision requests',
+    });
+  });
+
+  it('the caller may turn the packs off; deep think-time work admits afresh', async () => {
+    const h = harness();
+    h.deps.admitPhase11Authority = only('plo8');
+    const off = omahaCash(1, 'plo8', 'Qs Qh 4c 4d');
+    h.runtime.receive(rekey({ ...off, opts: { phase11Omaha: 'off' } }));
+    const request = omahaCash(2, 'plo8', 'Qs Qh 4c 4d');
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.filter((m) => m.type === 'FAST_RESULT').at(-1);
+    if (fast?.type !== 'FAST_RESULT') throw Error('expected FAST_RESULT');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 3,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.decisionOpts.map((o) => o.phase11Omaha)).toEqual(['off', 'candidate', 'candidate']);
+    const deep = h.messages.find((m) => m.type === 'DEEP_RESULT');
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase11Authority?.plo8.state).toBe('usable');
+    expect(deep?.type === 'DEEP_RESULT' && deep.phase11Authority?.plo5.state).toBe('unselected');
   });
 });

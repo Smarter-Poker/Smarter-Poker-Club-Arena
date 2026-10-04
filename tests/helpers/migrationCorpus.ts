@@ -61,6 +61,65 @@ export const migrationText = (name: string): string => {
 };
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE LATEST DEFINITION OF A NAMED FUNCTION, WITHOUT READING THE WHOLE
+ *  DIRECTORY (2026-10-04)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `migrationCorpus()` reads every file. That is the right shape for a law
+ * that asks "does ANY migration do X", and the wrong shape for the commoner
+ * question "what does the LATEST definition of these few functions look
+ * like", because the answer is always in the newest handful of files and the
+ * directory only grows.
+ *
+ * Measured on this repository on 2026-10-04 at 5,093 files (62 MB): reading
+ * the corpus costs 1,960 ms and the regex passes over it another 213 ms, so a
+ * test that asks this question through `migrationCorpus()` spends 2.2 s
+ * before its first assertion. `tests/unit/diamondStaffDeskService.test.ts`
+ * was doing exactly that and finished in 4,652 ms of vitest's 5,000 ms
+ * default - 93% of its budget - so it passed alone and timed out in a shard
+ * alongside other files. A timed-out test is not a failed assertion; the
+ * assertion never ran at all (CLAUDE.md 10.86 rule 1), and raising the budget
+ * to the ceiling just read is the trap rule 4 names. The fix is to stop doing
+ * the work.
+ *
+ * So: walk the names NEWEST FIRST, read a file only while a name is still
+ * unanswered, and skip the regex on any file whose text does not mention the
+ * function at all. The first (newest) file that defines a name holds its
+ * latest definition, which is the same answer an ascending whole-corpus pass
+ * gives. The same measurement, through this helper: 103 ms, 242 files read.
+ *
+ * Nothing is memoised across calls, because the caller asks once.
+ */
+export const latestFunctionParams = (names: readonly string[]): Map<string, string[]> => {
+  const wanted = new Set(names);
+  const found = new Map<string, string[]>();
+  const all = migrationNames();
+  for (let i = all.length - 1; i >= 0 && wanted.size > 0; i -= 1) {
+    const sql = readFileSync(resolve(MIGRATIONS_DIR, all[i]), 'utf8');
+    for (const fn of [...wanted]) {
+      if (!sql.includes(`public.${fn}(`)) continue;
+      const head = new RegExp(
+        `CREATE (?:OR REPLACE )?FUNCTION public\\.${fn}\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`,
+        'g'
+      );
+      let list: string | null = null;
+      for (const match of sql.matchAll(head)) list = match[1];
+      if (list === null) continue;
+      found.set(
+        fn,
+        list
+          .split(',')
+          .map((part) => part.trim().split(/\s+/)[0])
+          .filter(Boolean)
+      );
+      wanted.delete(fn);
+    }
+  }
+  return found;
+};
+
+/**
  * IS THIS FILE A VERIFIED RECORDING OF SQL PRODUCTION ALREADY RAN? (2026-09-28)
  *
  * A law that asks "does this migration INTRODUCE X" has already had its answer

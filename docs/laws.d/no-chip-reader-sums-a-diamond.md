@@ -13,3 +13,19 @@ that is KNOWN to be Diamond, and only a known one, so an orphan seat or
 membership is still counted as it is today. The Diamond is not lost by leaving
 the chip books: its custody row is inside fn_ca_arena_diamonds(), which the
 Diamond identity closes on.
+
+AND THE PROOF READS ONE SNAPSHOT (2026-10-04). The first migration to carry
+this change, 20261004124546, was correct in substance and could not apply. Its
+section 0 captured the unfiltered figures and its section 4 read the filtered
+figures afterwards and required equality, so it asserted both "the Diamond
+exclusion changes no chip figure" and "no unrelated player did anything while I
+was open". Two statements are two snapshots at READ COMMITTED, and the second
+claim can essentially never hold on a live floor: it refused itself twice, the
+second time with every money figure identical to the cent and seats 1632 ->
+1631, one player standing up inside 334 ms. 20261004194622 supersedes it and
+reads the filtered and the unfiltered figure in a SINGLE statement, which is
+one snapshot, so the equality it requires is about the Diamond filter and
+nothing else. No money comparison is loosened and none has a tolerance; the
+chip circulation report is now compared figure by figure instead of only by row
+count, and the migration refuses if a reader it calls inside a comparing
+statement is no longer STABLE, or if any figure reads NULL.

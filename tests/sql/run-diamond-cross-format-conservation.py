@@ -39,9 +39,12 @@ pinned for it in diamond-cross-format-conservation-doors.manifest.json before a
 single case runs. The BEFORE cases then reproduce each defect as an assertion
 that PASSES on the installed text - a regression that only ever passes proves
 nothing about the bug it claims to fix. The runner then applies
-supabase/migrations/20261004124546_the_chip_circulation_marks_count_no_diamond.sql,
+supabase/migrations/20261004194622_the_chip_circulation_proof_reads_one_snapshot.sql,
 the real file, verbatim, including its own md5 pins and its closing assertions,
-and proves the same figures afterwards.
+and proves the same figures afterwards. That file supersedes
+20261004124546_the_chip_circulation_marks_count_no_diamond.sql, which merged,
+refused itself twice on apply and must never run; this runner checks the
+superseded file still says so and never applies it.
 
 The last section walks a Diamond through every format the arena deals and
 asserts, after each movement, that the Diamond identity still closes, that the
@@ -69,7 +72,15 @@ SQL_DIR = ROOT / 'tests' / 'sql'
 DOORS = SQL_DIR / 'poker-diamond-cross-format-conservation-doors.sql'
 SCHEMA = SQL_DIR / 'poker-diamond-cross-format-conservation-schema.sql'
 MANIFEST = SQL_DIR / 'diamond-cross-format-conservation-doors.manifest.json'
+# The applied file is the SUCCESSOR. 20261004124546 merged, refused itself
+# twice on apply (its section 4 compared a figure measured after the
+# substitutions against one measured before them, so a player standing up
+# mid-transaction answered for the Diamond filter) and is marked SUPERSEDED
+# BY 20261004194622, which carries the same substance and proves it by
+# reading the filtered and unfiltered figure in one statement.
 MIGRATION = ROOT / 'supabase' / 'migrations' / \
+    '20261004194622_the_chip_circulation_proof_reads_one_snapshot.sql'
+SUPERSEDED = ROOT / 'supabase' / 'migrations' / \
     '20261004124546_the_chip_circulation_marks_count_no_diamond.sql'
 
 # PG_BIN names the PostgreSQL 17 BINARIES and never a server. Default is the
@@ -601,6 +612,85 @@ BEGIN
 END $outer$;
 """.replace('PDIA_UUID', P_DIA).replace('ARENA_UUID', ARENA).replace('TDIA_UUID', T_DIA)
 
+# ---------------------------------------------------------------------------
+# TWO INSTANTS VERSUS ONE SNAPSHOT. Why 20261004124546 merged correct and could
+# not apply, and why its successor can.
+#
+# Its section 0 read the UNFILTERED figures and its section 4 read the FILTERED
+# figures afterwards and required equality. Two statements are two snapshots at
+# READ COMMITTED, so anything any player did in between answered for the
+# Diamond filter. On production it refused itself twice: once on 174066724.55
+# -> 174066739.55, and once with every money figure identical to the cent and
+# seats 1632 -> 1631 - one player standing up inside 334 ms.
+#
+# This runs in production's state (no live Diamond seat), where the filtered
+# and unfiltered figures are the same number, which is the migration's whole
+# claim. The BEFORE half reproduces the refusal deterministically by moving a
+# CHIP seat between the two reads; the AFTER half shows the successor's shape -
+# both figures as subqueries of one SELECT - holding across the same movement.
+# ---------------------------------------------------------------------------
+TWO_INSTANTS_VERSUS_ONE_SNAPSHOT = """
+DO $$
+DECLARE
+  v_before numeric; v_after numeric; v_raw numeric; v_filtered numeric;
+  v_raw_seats bigint; v_seats bigint; v_seats_before bigint;
+BEGIN
+  -- 1. THE SHAPE THAT COULD NOT APPLY, on the amount (production attempt 1).
+  v_before := COALESCE((SELECT sum(stack) FROM public.table_seats WHERE left_at IS NULL), 0);
+  UPDATE public.table_seats SET stack = stack + 15.00 WHERE table_id = '__T_CHIP__';
+  SELECT on_the_felt INTO v_after FROM public.fn_ca_circulation_total();
+  IF v_after = v_before THEN
+    RAISE EXCEPTION 'fixture wrong: the chip felt did not move, so this proves nothing';
+  END IF;
+  RAISE NOTICE 'PASS: reproduced the apply failure - 15.00 of CHIPS moving between a read and a later read reads as "the chip felt total moved: % -> %", which is what refused on production', v_before, v_after;
+
+  -- 2. THE SHAPE THAT APPLIES. One statement, one snapshot: the figure the
+  --    substituted STABLE function returns and the unfiltered figure it was
+  --    built from, which no concurrent movement can separate.
+  SELECT ct.on_the_felt,
+         COALESCE((SELECT sum(stack) FROM public.table_seats WHERE left_at IS NULL), 0)::numeric
+    INTO v_filtered, v_raw
+    FROM public.fn_ca_circulation_total() ct;
+  IF v_filtered IS DISTINCT FROM v_raw THEN
+    RAISE EXCEPTION 'the one-statement comparison separated the filtered figure from the raw one: % vs %', v_filtered, v_raw;
+  END IF;
+  RAISE NOTICE 'PASS: and the one-statement comparison holds at the moved figure (% = %), because it asks only whether the Diamond filter changed the number', v_raw, v_filtered;
+  UPDATE public.table_seats SET stack = stack - 15.00 WHERE table_id = '__T_CHIP__';
+
+  -- 3. The same thing on the SEAT COUNT, which is what actually refused on
+  --    production attempt 2: seats 1632 -> 1631, every money figure identical.
+  v_seats_before := (SELECT count(*) FROM public.table_seats ts
+                       JOIN public.tables t ON t.id = ts.table_id WHERE ts.left_at IS NULL);
+  UPDATE public.table_seats SET left_at = now() WHERE table_id = '__T_CHIP__';
+  SELECT (SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+           WHERE ts.left_at IS NULL),
+         (SELECT count(*) FROM public.table_seats ts JOIN public.tables t ON t.id = ts.table_id
+           WHERE ts.left_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM public.clubs dc WHERE dc.id = t.club_id AND dc.asset = 'diamonds'))
+    INTO v_raw_seats, v_seats;
+  IF v_seats_before = v_raw_seats THEN
+    RAISE EXCEPTION 'fixture wrong: the seat count did not move, so this proves nothing';
+  END IF;
+  IF v_seats IS DISTINCT FROM v_raw_seats THEN
+    RAISE EXCEPTION 'the one-statement seat comparison separated the filtered count from the raw one: % vs %', v_seats, v_raw_seats;
+  END IF;
+  RAISE NOTICE 'PASS: a player standing up moves the seat count % -> % and the one-statement comparison still reads % = %, so no seat answers for the Diamond filter', v_seats_before, v_raw_seats, v_raw_seats, v_seats;
+  UPDATE public.table_seats SET left_at = NULL WHERE table_id = '__T_CHIP__';
+
+  -- 4. And the fixture is exactly where it was, so the AFTER cases below
+  --    measure the same world the baseline was taken from.
+  IF (SELECT on_the_felt FROM public.fn_ca_circulation_total()) <> 900.00 THEN
+    RAISE EXCEPTION 'the chip felt did not return to 900.00 (it is %)',
+      (SELECT on_the_felt FROM public.fn_ca_circulation_total());
+  END IF;
+  IF (SELECT member_wallets FROM public.fn_ca_circulation_total()) <> 250.00 THEN
+    RAISE EXCEPTION 'the chip wallets did not return to 250.00';
+  END IF;
+  RAISE NOTICE 'PASS: the felt and the wallets are back at 900.00 and 250.00, exactly as the baseline took them';
+END $$;
+""".replace('__T_CHIP__', T_CHIP)
+
+
 CLOSES_NOTHING = """
 DO $$
 BEGIN
@@ -623,6 +713,19 @@ def main() -> int:
     sock = pathlib.Path(tmp) / 'sock'
     sock.mkdir(parents=True, exist_ok=True)
     passes = 0
+
+    # The file this runner replaced must still say it must never run, and this
+    # runner must never be the thing that runs it. A superseding marker that
+    # names no version is the easiest lie to tell about a migration that simply
+    # never applied, so the marker is read rather than assumed.
+    head = SUPERSEDED.read_text()[:400]
+    if '-- SUPERSEDED BY 20261004194622' not in head:
+        raise SystemExit(
+            f'{SUPERSEDED.name} does not carry "-- SUPERSEDED BY 20261004194622" in its head')
+    if 'THIS FILE MUST NEVER RUN' not in head:
+        raise SystemExit(f'{SUPERSEDED.name} does not say it must never run')
+    print('  PASS: the superseded 20261004124546 is marked, named and never applied here')
+    passes += 1
     try:
         subprocess.run([bin_path('initdb'), '-D', str(data), '-U', 'postgres',
                         '-A', 'trust', '--no-sync', '--locale=C', '--encoding=UTF8'],
@@ -705,6 +808,10 @@ def main() -> int:
             psql_file(MIGRATION, 'the migration')
             print('  the migration committed, with its own md5 pins, its'
                   ' nothing-moved assertions and its closing block')
+
+            print('\nTWO INSTANTS VERSUS ONE SNAPSHOT - why 20261004124546 could not apply:')
+            psql(TWO_INSTANTS_VERSUS_ONE_SNAPSHOT, 'two instants versus one snapshot')
+
             psql(SEAT_THE_DIAMOND_PLAYER_AGAIN, 'the Diamond seat again')
 
             print('\nAFTER - every figure asset-pure, and the Diamond still counted:')

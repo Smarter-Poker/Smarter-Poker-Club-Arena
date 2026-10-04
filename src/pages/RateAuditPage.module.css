@@ -24,6 +24,7 @@
 
 .filterWord,
 .litAction {
+  min-width: 44px;
   min-height: 44px;
   padding: 1.2cqw 1.5cqw;
   border: 0;

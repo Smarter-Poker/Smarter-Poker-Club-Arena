@@ -138,6 +138,17 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     expect(fixture.channel).not.toHaveBeenCalled();
   });
 
+  it('keeps exact balance state while printing forward-facing Cashier figures without cents', async () => {
+    fixture.bank = 1299.99;
+    fixture.agent = 23.75;
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1.2K');
+    expect(value(view.container, 'agent_wallet')).toHaveTextContent('23');
+    expect(view.container).not.toHaveTextContent('1,299.99');
+    expect(view.container).not.toHaveTextContent('23.75');
+  });
+
   it('refreshes the union bank through the existing permission-aware money panel', async () => {
     const view = render(<DynamicWallet {...base} variant="union" />);
     await flush();

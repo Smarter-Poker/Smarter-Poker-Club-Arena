@@ -7,9 +7,16 @@
  * press a button. This reads each door's latest definition in the migration
  * corpus (no database) and pins that every call sends exactly the door's
  * parameters, and that a refusal reaches staff in words, never as a raw name.
+ *
+ * It reads those definitions through `latestFunctionParams`, which walks the
+ * migration directory newest-first and stops once every door is answered.
+ * Reading the whole corpus instead cost 2.2 s of this test's 5 s budget at
+ * 5,093 migration files, so it passed alone and timed out in a shard, and a
+ * timed-out test proves nothing: the assertion never ran (CLAUDE.md 10.86
+ * rule 1). A bigger budget is not the fix; not doing the work is.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { migrationCorpus } from '../helpers/migrationCorpus';
+import { latestFunctionParams } from '../helpers/migrationCorpus';
 
 const rpc = vi.hoisted(() => ({
   calls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
@@ -40,19 +47,27 @@ import {
   setDiamondStraddle,
 } from '../../src/services/DiamondStaffDeskService';
 
+/** Every door this service calls, in the order the first test expects them. */
+const DOORS = [
+  'fn_poker_diamond_open_cash_table',
+  'fn_poker_diamond_edit_cash_table',
+  'fn_poker_diamond_close_cash_table',
+  'fn_poker_diamond_set_table_straddle',
+  'fn_poker_diamond_set_table_run_it_twice',
+  'fn_poker_diamond_set_table_bomb_pot',
+  'fn_poker_diamond_cancel_tournament',
+  'fn_poker_diamond_remove_tournament_player',
+  'fn_ca_diamond_staff_books',
+] as const;
+
+/** The parameter names of each door's latest CREATE, read once for all of them. */
+const doorParams = latestFunctionParams(DOORS);
+
 /** The parameter names of a function's latest CREATE in the corpus. */
 function params(fn: string): string[] {
-  const head = new RegExp(
-    `CREATE (?:OR REPLACE )?FUNCTION public\\.${fn}\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)`,
-    'g'
-  );
-  let list: string | null = null;
-  for (const { sql } of migrationCorpus()) for (const m of sql.matchAll(head)) list = m[1];
-  if (list === null) throw new Error(`${fn} is not defined in the corpus`);
-  return list
-    .split(',')
-    .map((p) => p.trim().split(/\s+/)[0])
-    .filter(Boolean);
+  const list = doorParams.get(fn);
+  if (list === undefined) throw new Error(`${fn} is not defined in the corpus`);
+  return list;
 }
 
 const stakes = {
@@ -83,15 +98,7 @@ describe('the Diamond staff desk service', () => {
     await readHealthReading();
     await readDiamondBooks();
     expect(rpc.calls.map((c) => c.fn)).toEqual([
-      'fn_poker_diamond_open_cash_table',
-      'fn_poker_diamond_edit_cash_table',
-      'fn_poker_diamond_close_cash_table',
-      'fn_poker_diamond_set_table_straddle',
-      'fn_poker_diamond_set_table_run_it_twice',
-      'fn_poker_diamond_set_table_bomb_pot',
-      'fn_poker_diamond_cancel_tournament',
-      'fn_poker_diamond_remove_tournament_player',
-      'fn_ca_diamond_staff_books',
+      ...DOORS,
       'fn_ca_diamond_staff_books',
       'fn_ca_diamond_staff_books',
     ]);

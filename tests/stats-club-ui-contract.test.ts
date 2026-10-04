@@ -30,13 +30,17 @@ describe('Player Stats authorized club UI contract', () => {
     expect(page).toContain('const cacheIdentityFor = useCallback');
     expect(page).toContain('contractVersion: STATS_CACHE_CONTRACT_VERSION');
     expect(page).toContain('activeClubIdRef.current !== selectedClubId');
-    expect(page).toContain("const loadScopeKey = `${selectedClubId ?? 'all'}:${rangeKey}`");
+    expect(page).toContain(
+      'const loadScopeKey = JSON.stringify(cacheIdentityFor(rangeKey, windowDays))'
+    );
+    expect(page).toContain('activeLoadScopeRef.current !== loadScopeKey');
     expect(page).toContain('clubId: selectedClubId');
   });
 
   it('loads comparison once with the bounded comparison RPC and exposes every required sort', () => {
     expect(page).toContain("supabase.rpc('ca_player_stats_club_comparison'");
     expect(page).toContain('p_tz: statsTimezone');
+    expect(page).toContain("`${user?.id ?? ''}:${targetUserId ?? ''}:${statsScope}");
     expect(page).not.toContain('clubs.map(async (club)');
     for (const key of [
       'club',
@@ -45,13 +49,13 @@ describe('Player Stats authorized club UI contract', () => {
       'bb100',
       'vpip',
       'pfr',
-      'hours',
       'rake',
       'tournaments',
       'lastPlay',
     ]) {
       expect(model).toContain(`key: '${key}'`);
     }
+    expect(model).not.toContain("{ key: 'hours', label: 'Hours' }");
     expect(clubScopeConsole).toContain("row.hours === null ? 'Unavailable'");
   });
 

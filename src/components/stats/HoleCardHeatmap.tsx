@@ -29,7 +29,7 @@
  * grid. Rather than render an empty 13x13, the component explains why.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import StatsFactsService, {
   type HandGridCell,
   type ClassHand,
@@ -110,6 +110,8 @@ export default function HoleCardHeatmap({
   const [position, setPosition] = useState<string | null>(null);
   const [variant, setVariant] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [activeCell, setActiveCell] = useState('AA');
+  const gridRef = useRef<HTMLDivElement>(null);
   // Drill-down: the individual hands behind one cell.
   const [selected, setSelected] = useState<string | null>(null);
   const [classHands, setClassHands] = useState<ClassHand[] | null>(null);
@@ -293,6 +295,7 @@ export default function HoleCardHeatmap({
 
       <div className="heatmap-scroll">
         <div
+          ref={gridRef}
           className="heatmap-grid"
           role="grid"
           aria-label="Starting Hand Grid, 13 By 13"
@@ -329,12 +332,39 @@ export default function HoleCardHeatmap({
                     key={key}
                     type="button"
                     role="gridcell"
+                    data-row={rowIdx}
+                    data-column={colIdx}
+                    tabIndex={activeCell === key ? 0 : -1}
                     className={`heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
                       hovered === key ? ' is-hovered' : ''
                     }${cell && mode !== 'frequency' && !confident ? ' is-thin' : ''}`}
                     style={{ background: bg }}
                     onMouseEnter={() => setHovered(key)}
-                    onFocus={() => setHovered(key)}
+                    onFocus={() => {
+                      setActiveCell(key);
+                      setHovered(key);
+                    }}
+                    onKeyDown={(event) => {
+                      let nextRow = rowIdx;
+                      let nextColumn = colIdx;
+                      if (event.key === 'ArrowUp') nextRow -= 1;
+                      else if (event.key === 'ArrowDown') nextRow += 1;
+                      else if (event.key === 'ArrowLeft') nextColumn -= 1;
+                      else if (event.key === 'ArrowRight') nextColumn += 1;
+                      else if (event.key === 'Home') nextColumn = 0;
+                      else if (event.key === 'End') nextColumn = RANKS.length - 1;
+                      else return;
+                      event.preventDefault();
+                      nextRow = Math.max(0, Math.min(RANKS.length - 1, nextRow));
+                      nextColumn = Math.max(0, Math.min(RANKS.length - 1, nextColumn));
+                      const nextKey = classFor(nextRow, nextColumn);
+                      setActiveCell(nextKey);
+                      gridRef.current
+                        ?.querySelector<HTMLButtonElement>(
+                          `[data-row="${nextRow}"][data-column="${nextColumn}"]`
+                        )
+                        ?.focus();
+                    }}
                     // Touch has no hover. Without a click handler the readout
                     // never populated on a phone, on a mobile-first product.
                     // A click also opens the hands behind the cell.
@@ -343,6 +373,7 @@ export default function HoleCardHeatmap({
                       setSelected((cur) => (cur === key && cell ? null : cell ? key : null));
                     }}
                     aria-expanded={cell ? selected === key : undefined}
+                    aria-selected={selected === key}
                     aria-label={
                       !cell
                         ? `${key}, Never Dealt`

@@ -191,7 +191,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.5rem;
   align-items: center;
-  min-height: 32px;
+  min-height: 44px;
   color: #e4e7ec;
   text-decoration: none;
   border-top: 1px solid rgb(255 255 255 / 6%);

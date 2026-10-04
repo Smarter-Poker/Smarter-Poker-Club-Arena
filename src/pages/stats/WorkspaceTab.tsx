@@ -6,6 +6,16 @@ import {
   type StatsWorkspaceSnapshot,
   type WorkspaceLeakStatus,
 } from '../../services/StatsWorkspaceService';
+import { BASE_TABS, normalizeDashboardLayout, type StatCategory } from './playerStatsPageModel';
+
+const OWNER_STATS_TABS: StatCategory[] = [
+  ...BASE_TABS.slice(0, 3),
+  'hands',
+  ...BASE_TABS.slice(3),
+  'trophies',
+  'rake',
+  'workspace',
+];
 
 interface Props {
   isOwnProfile: boolean;
@@ -65,26 +75,47 @@ export default function WorkspaceTab({
   const [leakTitle, setLeakTitle] = useState('');
   const [leakHandId, setLeakHandId] = useState('');
   const reportKey = useRef(newOperationKey());
+  const loadSequence = useRef(0);
+  const mutationPendingRef = useRef(false);
+  const [mutationPending, setMutationPending] = useState(false);
+
+  async function guardedMutation<T>(operation: () => Promise<T>): Promise<T | null> {
+    if (mutationPendingRef.current) return null;
+    mutationPendingRef.current = true;
+    setMutationPending(true);
+    try {
+      return await operation();
+    } finally {
+      mutationPendingRef.current = false;
+      setMutationPending(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!isOwnProfile) return;
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     const result = await statsWorkspaceService.load();
+    if (sequence !== loadSequence.current) return;
     if (result.ok) {
       setWorkspace(result.data);
-      onPresentationModeChange?.(result.data.preferences.privacyPresentationMode);
-      onDashboardLayoutChange?.(
-        result.data.preferences.dashboardLayout.filter(
-          (value): value is string => typeof value === 'string'
-        )
+      const normalizedLayout = normalizeDashboardLayout(
+        result.data.preferences.dashboardLayout,
+        OWNER_STATS_TABS
       );
+      setLayout(normalizedLayout.filter((tab) => tab !== 'workspace').join(', '));
+      onPresentationModeChange?.(result.data.preferences.privacyPresentationMode);
+      onDashboardLayoutChange?.(normalizedLayout);
     } else setError(result.error);
     setLoading(false);
   }, [isOwnProfile, onPresentationModeChange, onDashboardLayoutChange]);
 
   useEffect(() => {
     void load();
+    return () => {
+      loadSequence.current += 1;
+    };
   }, [load]);
 
   const finish = async (message: string) => {
@@ -94,14 +125,17 @@ export default function WorkspaceTab({
 
   const savePlayerReport = async (event: FormEvent) => {
     event.preventDefault();
-    const result = await statsWorkspaceService.saveReport({
-      idempotencyKey: reportKey.current,
-      title: reportTitle,
-      sourceKind: 'player_authored',
-      sourceVersion: 'player-v1',
-      body: { summary: reportSummary },
-      evidence: reportEvidenceHand.trim() ? [{ hand_id: reportEvidenceHand.trim() }] : [],
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveReport({
+        idempotencyKey: reportKey.current,
+        title: reportTitle,
+        sourceKind: 'player_authored',
+        sourceVersion: 'player-v1',
+        body: { summary: reportSummary },
+        evidence: reportEvidenceHand.trim() ? [{ hand_id: reportEvidenceHand.trim() }] : [],
+      })
+    );
+    if (!result) return;
     if (!result.ok) return setNotice('Report Was Not Saved.');
     reportKey.current = newOperationKey();
     setReportTitle('');
@@ -112,16 +146,19 @@ export default function WorkspaceTab({
 
   const saveRuleReport = async () => {
     if (!ruleReport) return;
-    const result = await statsWorkspaceService.saveReport({
-      idempotencyKey: `rules:${ruleReport.sourceVersion}:${ruleReport.clubId ?? 'all'}:${ruleReport.rangeDays ?? 'all'}:${ruleReport.generatedAt}`,
-      title: ruleReport.title,
-      sourceKind: 'rule_derived',
-      sourceVersion: ruleReport.sourceVersion,
-      body: ruleReport.body,
-      evidence: ruleReport.evidence,
-      clubId: ruleReport.clubId,
-      rangeDays: ruleReport.rangeDays,
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveReport({
+        idempotencyKey: `rules:${ruleReport.sourceVersion}:${ruleReport.clubId ?? 'all'}:${ruleReport.rangeDays ?? 'all'}:${ruleReport.generatedAt}`,
+        title: ruleReport.title,
+        sourceKind: 'rule_derived',
+        sourceVersion: ruleReport.sourceVersion,
+        body: ruleReport.body,
+        evidence: ruleReport.evidence,
+        clubId: ruleReport.clubId,
+        rangeDays: ruleReport.rangeDays,
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Rule-Derived Report Saved.' : 'Rule-Derived Report Was Not Saved.');
     if (result.ok) await load();
   };
@@ -132,14 +169,17 @@ export default function WorkspaceTab({
     const baseline = Number(goalBaseline);
     if (!Number.isFinite(target) || !Number.isFinite(baseline))
       return setNotice('Enter A Valid Goal Baseline And Target.');
-    const result = await statsWorkspaceService.saveGoal({
-      id: goalId || null,
-      title: goalTitle,
-      metricKey: goalMetric,
-      direction: 'increase',
-      baseline,
-      target,
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveGoal({
+        id: goalId || null,
+        title: goalTitle,
+        metricKey: goalMetric,
+        direction: 'increase',
+        baseline,
+        target,
+      })
+    );
+    if (!result) return;
     if (!result.ok) return setNotice('Goal Was Not Saved.');
     setGoalTitle('');
     setGoalId('');
@@ -149,19 +189,42 @@ export default function WorkspaceTab({
     await finish('Goal Saved.');
   };
 
+  const chooseGoal = (id: string) => {
+    setGoalId(id);
+    if (!id) {
+      setGoalTitle('');
+      setGoalMetric('');
+      setGoalTarget('');
+      setGoalBaseline('');
+      return;
+    }
+    const goal = workspace?.goals.find((candidate) => candidate.id === id);
+    if (!goal) return;
+    setGoalTitle(goal.title);
+    setGoalMetric(goal.metricKey);
+    setGoalBaseline(String(goal.baseline));
+    setGoalTarget(String(goal.target));
+  };
+
   const addProgress = async (event: FormEvent) => {
     event.preventDefault();
     const value = Number(progressValue);
     if (!progressGoalId || !Number.isFinite(value))
       return setNotice('Choose A Goal And Valid Reading.');
-    const result = await statsWorkspaceService.addGoalProgress(progressGoalId, value);
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.addGoalProgress(progressGoalId, value)
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Goal Progress Saved.' : 'Goal Progress Was Not Saved.');
     if (result.ok) await load();
   };
 
   const saveCollection = async (event: FormEvent) => {
     event.preventDefault();
-    const result = await statsWorkspaceService.saveCollection(null, collectionName);
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveCollection(null, collectionName)
+    );
+    if (!result) return;
     if (!result.ok) return setNotice('Collection Was Not Saved.');
     setCollectionName('');
     await finish('Study Collection Saved.');
@@ -169,7 +232,10 @@ export default function WorkspaceTab({
 
   const addStudyHand = async (event: FormEvent) => {
     event.preventDefault();
-    const result = await statsWorkspaceService.addStudyHand(studyCollectionId, studyHandId.trim());
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.addStudyHand(studyCollectionId, studyHandId.trim())
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Owned Hand Added To Study Collection.' : 'Hand Was Not Added.');
     if (result.ok) {
       setStudyHandId('');
@@ -179,37 +245,46 @@ export default function WorkspaceTab({
 
   const saveLayout = async (event: FormEvent) => {
     event.preventDefault();
-    const dashboardLayout = layout
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const result = await statsWorkspaceService.savePreferences({
-      dashboardLayout,
-      privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
-    });
+    const dashboardLayout = normalizeDashboardLayout(
+      layout.split(',').map((value) => value.trim()),
+      OWNER_STATS_TABS
+    ).filter((tab) => tab !== 'workspace');
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.savePreferences({
+        dashboardLayout,
+        privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Dashboard Layout Saved.' : 'Dashboard Layout Was Not Saved.');
     if (result.ok) await load();
   };
 
   const restoreLayout = async () => {
-    const result = await statsWorkspaceService.savePreferences({
-      dashboardLayout: [],
-      privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
-    });
-    setLayout('overview, performance, hands');
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.savePreferences({
+        dashboardLayout: [],
+        privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
+      })
+    );
+    if (!result) return;
+    setLayout(OWNER_STATS_TABS.filter((tab) => tab !== 'workspace').join(', '));
     setNotice(result.ok ? 'Default Dashboard Restored.' : 'Dashboard Was Not Restored.');
     if (result.ok) await load();
   };
 
   const trackLeak = async (event: FormEvent) => {
     event.preventDefault();
-    const result = await statsWorkspaceService.saveLeak({
-      leakKey: newOperationKey(),
-      title: leakTitle,
-      severity: 'medium',
-      status: 'open',
-      evidenceHandIds: leakHandId.trim() ? [leakHandId.trim()] : [],
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveLeak({
+        leakKey: newOperationKey(),
+        title: leakTitle,
+        severity: 'medium',
+        status: 'open',
+        evidenceHandIds: leakHandId.trim() ? [leakHandId.trim()] : [],
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Leak Added To Your Practice Queue.' : 'Leak Was Not Saved.');
     if (result.ok) {
       setLeakTitle('');
@@ -222,21 +297,31 @@ export default function WorkspaceTab({
     event.preventDefault();
     const threshold = Number(alertThreshold);
     if (!Number.isFinite(threshold)) return setNotice('Enter A Valid Alert Threshold.');
-    const result = await statsWorkspaceService.saveAlertRule({
-      name: alertName,
-      metricKey: alertMetric,
-      comparator: 'gt',
-      threshold,
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveAlertRule({
+        name: alertName,
+        metricKey: alertMetric,
+        comparator: 'gt',
+        threshold,
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Refresh Alert Saved.' : 'Refresh Alert Was Not Saved.');
     if (result.ok) await load();
   };
 
   const changePrivacy = async (enabled: boolean) => {
-    const result = await statsWorkspaceService.savePreferences({
-      dashboardLayout: workspace?.preferences.dashboardLayout ?? [],
-      privacyPresentationMode: enabled,
-    });
+    const dashboardLayout = normalizeDashboardLayout(
+      workspace?.preferences.dashboardLayout ?? [],
+      OWNER_STATS_TABS
+    ).filter((tab) => tab !== 'workspace');
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.savePreferences({
+        dashboardLayout,
+        privacyPresentationMode: enabled,
+      })
+    );
+    if (!result) return;
     setNotice(
       result.ok ? 'Presentation Preference Saved.' : 'Presentation Preference Was Not Saved.'
     );
@@ -246,15 +331,18 @@ export default function WorkspaceTab({
   const changeLeakStatus = async (leakId: string, status: WorkspaceLeakStatus) => {
     const leak = workspace?.leaks.find((item) => item.id === leakId);
     if (!leak) return;
-    const result = await statsWorkspaceService.saveLeak({
-      leakKey: leak.leakKey,
-      title: leak.title,
-      severity: leak.severity,
-      status,
-      snapshot: leak.snapshot,
-      evidenceHandIds: leak.evidenceHandIds,
-      reportId: leak.reportId,
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveLeak({
+        leakKey: leak.leakKey,
+        title: leak.title,
+        severity: leak.severity,
+        status,
+        snapshot: leak.snapshot,
+        evidenceHandIds: leak.evidenceHandIds,
+        reportId: leak.reportId,
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Leak Status Saved.' : 'Leak Status Was Not Saved.');
     if (result.ok) await load();
   };
@@ -262,15 +350,18 @@ export default function WorkspaceTab({
   const toggleAlert = async (alertId: string, enabled: boolean) => {
     const alert = workspace?.alerts.find((item) => item.id === alertId);
     if (!alert) return;
-    const result = await statsWorkspaceService.saveAlertRule({
-      id: alert.id,
-      name: alert.name,
-      metricKey: alert.metricKey,
-      comparator: alert.comparator,
-      threshold: alert.threshold,
-      enabled,
-      cooldownMinutes: alert.cooldownMinutes,
-    });
+    const result = await guardedMutation(() =>
+      statsWorkspaceService.saveAlertRule({
+        id: alert.id,
+        name: alert.name,
+        metricKey: alert.metricKey,
+        comparator: alert.comparator,
+        threshold: alert.threshold,
+        enabled,
+        cooldownMinutes: alert.cooldownMinutes,
+      })
+    );
+    if (!result) return;
     setNotice(result.ok ? 'Alert State Saved.' : 'Alert State Was Not Saved.');
     if (result.ok) await load();
   };
@@ -289,7 +380,12 @@ export default function WorkspaceTab({
       />
       {isOwnProfile && workspace && (
         <SpadeConsole eyebrow="Private Controls" title="Workspace Builder" pill="Saved" foot="foot">
-          <section className="stats-workspace-composer" aria-label="Workspace Builder">
+          <fieldset
+            className="stats-workspace-composer"
+            aria-label="Workspace Builder"
+            aria-busy={mutationPending}
+            disabled={mutationPending}
+          >
             <form onSubmit={savePlayerReport}>
               <label>
                 Report Title
@@ -305,6 +401,13 @@ export default function WorkspaceTab({
                   value={reportSummary}
                   onChange={(event) => setReportSummary(event.target.value)}
                   required
+                />
+              </label>
+              <label>
+                Player Report Evidence Hand
+                <input
+                  value={reportEvidenceHand}
+                  onChange={(event) => setReportEvidenceHand(event.target.value)}
                 />
               </label>
               <button type="submit">Save Player-Authored Report</button>
@@ -324,14 +427,7 @@ export default function WorkspaceTab({
                 />
               </label>
               <label>
-                Evidence Hand Reference
-                <input
-                  value={reportEvidenceHand}
-                  onChange={(event) => setReportEvidenceHand(event.target.value)}
-                />
-              </label>
-              <label>
-                Evidence Hand Reference
+                Leak Evidence Hand
                 <input value={leakHandId} onChange={(event) => setLeakHandId(event.target.value)} />
               </label>
               <button type="submit">Track Leak</button>
@@ -339,7 +435,7 @@ export default function WorkspaceTab({
             <form onSubmit={saveGoal}>
               <label>
                 Goal To Edit
-                <select value={goalId} onChange={(event) => setGoalId(event.target.value)}>
+                <select value={goalId} onChange={(event) => chooseGoal(event.target.value)}>
                   <option value="">New Goal</option>
                   {workspace.goals.map((goal) => (
                     <option value={goal.id} key={goal.id}>
@@ -497,7 +593,7 @@ export default function WorkspaceTab({
             <p role="status" aria-live="polite">
               {notice}
             </p>
-          </section>
+          </fieldset>
         </SpadeConsole>
       )}
     </>

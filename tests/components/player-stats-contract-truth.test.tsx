@@ -162,6 +162,16 @@ vi.mock('../../src/services/ClubsService', () => ({
   getUserMemberships: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock('../../src/services/StatsWorkspaceService', () => ({
+  statsWorkspaceService: {
+    loadPreferences: vi.fn().mockResolvedValue({
+      ok: true,
+      data: { dashboardLayout: [], privacyPresentationMode: false },
+    }),
+    evaluateAlerts: vi.fn().mockResolvedValue({ ok: true, data: 0 }),
+  },
+}));
+
 vi.mock('../../src/services/AgentRakeService', () => ({
   AgentRakeService: { getMyAgentRoles },
 }));
@@ -225,7 +235,14 @@ function payload(overall: Record<string, unknown>, lifetimeHands: number) {
   return {
     contract_version: 2,
     generated_at: '2026-09-20T12:00:00.000Z',
-    scope: { target_user_id: 'user-1', club_id: null, range_days: null, visibility: 'owner' },
+    scope: {
+      target_user_id: 'user-1',
+      club_id: null,
+      asset: 'chips',
+      range_days: null,
+      range_tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      visibility: 'owner',
+    },
     quality: {
       cash_money_source: 'engine_settlement',
       cash_money_exact: true,

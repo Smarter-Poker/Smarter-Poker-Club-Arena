@@ -21,6 +21,13 @@ const retirement = readFileSync(
   resolve(root, 'supabase/migrations/20261003214510_retire_stats_fact_repair_door.sql'),
   'utf8'
 );
+const launchRepair = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20261004122156_keep_voided_stats_and_nullable_session_closes_honest.sql'
+  ),
+  'utf8'
+);
 
 describe('Phase 2 exact fact durability', () => {
   it('keeps private cards in the immutable service receipt, outside hand_history', () => {
@@ -50,6 +57,10 @@ describe('Phase 2 exact fact durability', () => {
     expect(migration).toContain('ca_hand_fact_revisions is append-only');
     expect(migration).toContain('hand fact revision refused (idempotency_conflict)');
     expect(migration).toContain("IF p_kind='void'");
+    expect(launchRepair).toContain('pg_advisory_xact_lock(hashtextextended(');
+    expect(launchRepair).toContain('DELETE FROM public.ca_hand_player_stat');
+    expect(launchRepair).toContain('DELETE FROM public.ca_hand_player_idx');
+    expect(launchRepair).toContain("is_winner=((v_result->>'net')::numeric>0)");
   });
 
   it('retains facts across history pruning and keeps privileged doors private', () => {

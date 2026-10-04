@@ -80,7 +80,7 @@ describe('FinancialReportingPanel', () => {
     get.mockResolvedValue({
       ...base,
       scope: { ...base.scope, asset: 'diamonds' },
-      availability: { ...base.availability, tournament_wallet: false },
+      availability: { ...base.availability, tournament_wallet: false, rakeback: false },
       tournament_wallet: { totals: {}, entries: [] },
       rakeback: { pending_amount: 0, paid_amount: 0, periods: [], payout_receipts: [] },
     });
@@ -95,7 +95,16 @@ describe('FinancialReportingPanel', () => {
       />
     );
     expect(await screen.findByText('Diamond Tournament Receipts Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Diamond Rakeback Receipts Unavailable')).toBeInTheDocument();
     expect(screen.getByText('Diamond Ledger')).toBeInTheDocument();
+    expect(screen.getAllByText('Unavailable')).toHaveLength(5);
+    expect(screen.queryByText(/0 Diamonds/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No Posted Tournament Wallet Receipts In This Scope.')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('No Rakeback Period Or Payout Receipt In This Scope.')
+    ).not.toBeInTheDocument();
   });
   it('renders verification failure, not an empty ledger', async () => {
     get.mockResolvedValue(null);
@@ -113,5 +122,43 @@ describe('FinancialReportingPanel', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Receipts Could Not Be Verified')
     );
     expect(screen.queryByText(/No Posted Tournament/)).not.toBeInTheDocument();
+  });
+  it('never paints an older club response over the current club', async () => {
+    let resolveA!: (value: typeof base) => void;
+    let resolveB!: (value: typeof base) => void;
+    get
+      .mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveB = resolve)));
+    const { rerender } = render(
+      <FinancialReportingPanel
+        userId="u"
+        clubId="a"
+        clubLabel="Club A"
+        days={30}
+        timezone="UTC"
+        asset="chips"
+      />
+    );
+    rerender(
+      <FinancialReportingPanel
+        userId="u"
+        clubId="b"
+        clubLabel="Club B"
+        days={30}
+        timezone="UTC"
+        asset="chips"
+      />
+    );
+    resolveB({
+      ...base,
+      tournament_wallet: {
+        ...base.tournament_wallet,
+        totals: { debits: 1, credits: 100, net: 99 },
+      },
+    });
+    expect(await screen.findByText('99 Chips')).toBeInTheDocument();
+    resolveA(base);
+    await Promise.resolve();
+    expect(screen.getByText('99 Chips')).toBeInTheDocument();
   });
 });

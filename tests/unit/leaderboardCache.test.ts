@@ -65,6 +65,21 @@ describe('leaderboard session cache', () => {
     expect(sessionStorage.getItem(key)).toBeNull();
   });
 
+  it('evicts future-dated rows so clock skew cannot extend the cache lifetime', () => {
+    const key = rawKey('club-a_profit_weekly_0');
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 2,
+        storedAt: NOW.getTime() + 1,
+        entries: [entry(0)],
+      })
+    );
+
+    expect(getCachedLeaderboardEntries('club-a_profit_weekly_0')).toBeNull();
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+
   it.each([
     ['malformed JSON', '{broken'],
     [

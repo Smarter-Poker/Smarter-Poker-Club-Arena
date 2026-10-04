@@ -29,10 +29,13 @@ had named the cost and left it.
 ## Change
 
 New `public.fn_ca_f06_share_table_lane(tournament, lease generation, table)`
-(service role only): lease fence, G shared, T(id) shared, lease re-check,
-tournament row `FOR SHARE`, this table `FOR UPDATE`, its seats `FOR UPDATE`, in
-`f06_prefix`'s order and the shape the same table's hand settlement already
-takes. It replaces `f06_prefix` in `fn_f06_hand_number_state` (and so in
+(service role only): lease fence, G shared, T(id) shared, lease re-check, this
+table `FOR UPDATE`, its seats `FOR UPDATE`, in `f06_prefix`'s order and the lane
+shape the same table's hand settlement already takes. The tournament row is
+read, not locked: its status is written only under T(id) or G exclusive, which
+waits for the shared holders, and a shared row lock from 40 tables at once
+would only add MultiXact churn (the MultiXact caches were already thrashing:
+about 46M member and 37M offset block reads between 21:00 and 23:30). It replaces `f06_prefix` in `fn_f06_hand_number_state` (and so in
 `fn_f06_allocate_hand_number` and `fn_f06_table_state`), `fn_f06_begin_hand`, and
 `fn_f06_finish_hand` for an accepted hand. Nothing else changes:
 
@@ -59,7 +62,7 @@ applies the shipped migration to one, and checks:
 
 | case | result |
 | --- | --- |
-| migration applies to its pinned post-images (`79c2a20b`, `e498a501`, `f85ee8fb`) | ok |
+| migration applies to its pinned post-images (`3d11dc85`, `fb338521`, `f85ee8fb`) | ok |
 | before: a sibling table waits 1.5 s behind a held table | ok (the defect) |
 | after: the sibling answers in 11 ms | ok |
 | after: the same table still waits | ok |

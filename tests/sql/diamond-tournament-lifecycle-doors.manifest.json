@@ -355,7 +355,15 @@
       "owner": "postgres",
       "grants": "NONE",
       "bytes_from": "transported from production 2026-09-29 (read-only pg_get_functiondef)"
+    },
+    {
+      "identity": "fn_poker_diamond_tournament_seat_transfer(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_registration_id uuid, p_ticket numeric, p_prize numeric, p_fee numeric, p_seat_key text)",
+      "md5": "3c7b92f5f29c7440fec5d8e82f4e4018",
+      "len": 10047,
+      "owner": "postgres",
+      "grants": "NONE",
+      "bytes_from": "transported from production 2026-10-04 (read-only pg_get_functiondef, base64, md5 and length re-checked after decode)"
     }
   ],
-  "refreshed_at": "2026-09-29T18:44Z: fn_ca_guard_new_satellite_target re-pinned; fifteen doors added for the satellite and Spin rows and the insert chain production runs today; two INSERT triggers installed; every pin re-checked against production"
+  "refreshed_at": "2026-09-29T18:44Z: fn_ca_guard_new_satellite_target re-pinned; fifteen doors added for the satellite and Spin rows and the insert chain production runs today; two INSERT triggers installed; every pin re-checked against production; 2026-10-04T00:00Z: fn_poker_diamond_tournament_seat_transfer added so the Diamond satellite seat refusals are executed, not only text-pinned"
 }

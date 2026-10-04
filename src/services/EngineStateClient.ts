@@ -1379,6 +1379,25 @@ export class EngineStateClient {
     this.requestResync();
   }
 
+  /**
+   * Ask a socket that reads OPEN to prove it (2026-10-04).
+   *
+   * For a caller holding evidence the transport cannot see: TablePage's
+   * heartbeat is a second, independent path to the same engine, and when two
+   * beats in a row get no answer the link is very likely gone even though
+   * this socket has not closed. Left to itself the watchdog needs 35 seconds
+   * of silence before its first question and about 50 before it gives up,
+   * and for all of that the felt looks live and is not.
+   *
+   * This is the wake probe, unchanged: one RESYNC, five seconds to answer,
+   * then the ordinary reconnect ladder. It is single-flight and does nothing
+   * unless the socket is open, the page is visible and no announced restart
+   * explains the silence - so a wrong guess costs one snapshot.
+   */
+  probeLink(): void {
+    this.beginForegroundStateProbe();
+  }
+
   /** Refresh authoritative state after a confirmed server purchase. */
   requestSnapshot(): void {
     this.requestResync();

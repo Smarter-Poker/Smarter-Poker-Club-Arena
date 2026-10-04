@@ -5,3 +5,5 @@
 `scripts/ci/annotate-e2e-failures.mjs` reads the JSON reports the job already writes and prints one `::error` per failed or timed-out test (file, line, title, first 700 characters of the error). GitHub keeps them as check-run annotations, readable with `gh api <check_run_url>/annotations`. The first nine failures are named; the tenth annotation counts the rest and names any missing report. It only reports and always exits 0; the steps that ran the specs still own the verdict.
 
 Wired into the `Client browser verification` job of `post-deploy-e2e.yml`, before "Did the suite actually verify production?".
+
+The `Live-table and engine verification` job gets the same report-only step for `e2e-report/live-table-realtime.json`: its first post-merge red (run 37237184797) again said only "exit code 1".

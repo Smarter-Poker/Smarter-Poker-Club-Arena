@@ -2212,6 +2212,7 @@ function CashierContent() {
                       className={styles.select}
                       value={selectedRecipient}
                       onChange={(e) => setSelectedRecipient(e.target.value)}
+                      aria-label="Send To Recipient"
                     >
                       <option value="">Select Recipient</option>
                       {filteredRecipients.map((r) => {
@@ -2389,6 +2390,7 @@ function CashierContent() {
                       className={styles.select}
                       value={selectedRecipient}
                       onChange={(e) => setSelectedRecipient(e.target.value)}
+                      aria-label="Distribute To Player"
                     >
                       <option value="">Select Player...</option>
                       {filteredRecipients.map((r) => (

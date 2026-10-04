@@ -30,6 +30,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:db:rake-attribution-atomic": "python3 scripts/ci/test-rake-attribution-atomic.py",
+    "test:data:postgres": "bash scripts/ci/test-data-console-postgres-contracts.sh",
     "test:e2e": "playwright test",
     "test:e2e:customization": "playwright test --config=playwright.customization.config.ts",
     "test:e2e:financial-decisions": "playwright test --config=playwright.financial-decisions.config.ts",

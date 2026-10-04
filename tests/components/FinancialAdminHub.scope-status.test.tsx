@@ -4,14 +4,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Scope = {
   status: 'ready';
-  clubId: string;
-  platformWide: false;
-  clubRole: string;
-  isPlatformStaff: false;
+  clubId: string | null;
+  platformWide: boolean;
+  clubRole: string | null;
+  isPlatformStaff: boolean;
   userId: string;
   message: null;
   reload: () => void;
 };
+
+function revenueSeries(clubId: string | null, scope: 'club' | 'platform' = 'club') {
+  const end = new Date();
+  end.setUTCHours(0, 0, 0, 0);
+  end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end.getTime() - 6 * 86400000);
+  return {
+    contract: 'ca_financial_admin_revenue_series_v1',
+    basis: 'cash_rake_plus_tournament_fees',
+    includes_live_day: false,
+    scope,
+    club_id: clubId,
+    range_days: 7,
+    range_start: start.toISOString().slice(0, 10),
+    range_end: end.toISOString().slice(0, 10),
+    daily: Array.from({ length: 7 }, (_, index) => ({
+      d: new Date(start.getTime() + index * 86400000).toISOString().slice(0, 10),
+      cash_rake: index === 6 ? 5999.75 : 0,
+      tournament_fees: index === 6 ? 1.25 : 0,
+      revenue: index === 6 ? 6001 : 0,
+    })),
+    period_total: 6001,
+    data_updated_at: new Date().toISOString(),
+    generated_at: new Date().toISOString(),
+  };
+}
 
 type Read = {
   table: string;
@@ -44,7 +70,14 @@ function fallback(read: Read) {
   if (read.table === 'fn_ca_incident_dashboard') {
     return { data: [], count: null, error: null };
   }
-  if (read.table === 'rake_records') return { data: [], count: null, error: null };
+  if (read.table === 'ca_financial_admin_revenue_series') {
+    const clubId = (read.filters.p_club_id as string | null | undefined) ?? null;
+    return {
+      data: revenueSeries(clubId, clubId === null ? 'platform' : 'club'),
+      count: null,
+      error: null,
+    };
+  }
   return { data: [], count: 0, error: null };
 }
 
@@ -102,13 +135,13 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: (table: string) => new Query(table),
-      rpc: (name: string) =>
+      rpc: (name: string, args?: Record<string, unknown>) =>
         Promise.resolve(
           m.response({
             table: name,
             columns: '*',
             countQuery: false,
-            filters: {},
+            filters: args || {},
           })
         ),
     },
@@ -182,8 +215,15 @@ describe('financial admin reading identity and health truth', () => {
 
   it('shows an unverified state for a malformed successful revenue response', async () => {
     m.response.mockImplementation((read: Read) =>
-      read.table === 'rake_records'
-        ? { data: [{ rake_amount: 10, created_at: 'not-a-date' }], count: null, error: null }
+      read.table === 'ca_financial_admin_revenue_series'
+        ? {
+            data: {
+              ...revenueSeries('club-a'),
+              daily: [{ d: 'not-a-date', cash_rake: 10, tournament_fees: 0, revenue: 10 }],
+            },
+            count: null,
+            error: null,
+          }
         : fallback(read)
     );
     mount();
@@ -194,6 +234,75 @@ describe('financial admin reading identity and health truth', () => {
       )
     ).toBeInTheDocument();
     expect(screen.queryByText('Checks Passing')).toBeNull();
+  });
+
+  it('rejects coercible non-numeric values instead of treating them as ledger money', async () => {
+    const series = revenueSeries('club-a');
+    series.daily[6] = { ...series.daily[6], revenue: true as unknown as number };
+    m.response.mockImplementation((read: Read) =>
+      read.table === 'ca_financial_admin_revenue_series'
+        ? { data: series, count: null, error: null }
+        : fallback(read)
+    );
+    mount();
+
+    expect(
+      await screen.findByText(
+        'Financial Status Could Not Be Verified. No All Clear Is Being Shown.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('rejects a revenue component mismatch instead of displaying an invented total', async () => {
+    const series = revenueSeries('club-a');
+    series.daily[6] = { ...series.daily[6], tournament_fees: 2 };
+    m.response.mockImplementation((read: Read) =>
+      read.table === 'ca_financial_admin_revenue_series'
+        ? { data: series, count: null, error: null }
+        : fallback(read)
+    );
+    mount();
+
+    expect(
+      await screen.findByText(
+        'Financial Status Could Not Be Verified. No All Clear Is Being Shown.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('reads the complete bounded revenue RPC and never downloads raw rake rows', async () => {
+    mount();
+
+    expect(await screen.findByText('6K Chips')).toBeInTheDocument();
+    expect(screen.getByLabelText('Seven Complete Days Revenue')).toBeInTheDocument();
+    expect(screen.getByText(/Reading Window/).parentElement).toHaveTextContent(/UTC/);
+    expect(m.response).toHaveBeenCalledWith(
+      expect.objectContaining({
+        table: 'ca_financial_admin_revenue_series',
+        filters: { p_club_id: 'club-a', p_days: 7 },
+      })
+    );
+    expect(m.response).not.toHaveBeenCalledWith(expect.objectContaining({ table: 'rake_records' }));
+  });
+
+  it('hides the platform-only Financial Alerts door from club finance operators', async () => {
+    mount();
+
+    expect(await screen.findByRole('navigation', { name: 'Financial Tools' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Financial Alerts/i })).toBeNull();
+  });
+
+  it('shows the Financial Alerts door to verified platform staff', async () => {
+    m.scope = {
+      ...m.scope,
+      clubId: null,
+      platformWide: true,
+      clubRole: null,
+      isPlatformStaff: true,
+    };
+    mount();
+
+    expect(await screen.findByRole('link', { name: /Financial Alerts/i })).toBeInTheDocument();
   });
 
   it('rejects a late club A reading after the signed-in viewer moves to club B', async () => {

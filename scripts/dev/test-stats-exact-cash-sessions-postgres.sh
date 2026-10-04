@@ -2,7 +2,8 @@
 set -euo pipefail
 export LC_ALL=C LANG=C
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"; pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"
-work="$(mktemp -d /Volumes/SmarterWork/agent-work/stats-exact-sessions.XXXXXX)"; data="$work/data"; socket="$work/socket"; port="$((57000+($$%6000)))"; mkdir -p "$socket"
+scratch_parent="${STATS_PG_SCRATCH_PARENT:-/Volumes/SmarterWork/agent-work}"; [[ -d "$scratch_parent" ]] || { echo "Stats PostgreSQL scratch parent is unavailable: $scratch_parent" >&2; exit 2; }
+work="$(mktemp -d "$scratch_parent/stats-exact-sessions.XXXXXX")"; data="$work/data"; socket="$work/socket"; port="$((57000+($$%6000)))"; mkdir -p "$socket"
 cleanup(){ "$pgbin/pg_ctl" -D "$data" -m immediate stop >/dev/null 2>&1||true; find "$work" -depth -delete; };trap cleanup EXIT
 "$pgbin/initdb" -D "$data" -U fixture_admin --auth-local=trust --auth-host=reject --no-locale -E UTF8 >/dev/null
 "$pgbin/pg_ctl" -D "$data" -o "-h '' -k '$socket' -p $port -c shared_memory_type=mmap" -w start >/dev/null

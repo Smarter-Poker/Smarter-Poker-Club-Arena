@@ -873,8 +873,14 @@ export default function ClubDataPage() {
       supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle(),
       'Club name request timed out'
     ).then(
-      ({ data }) => {
-        if (!stale()) setClubName(data?.name || '');
+      ({ data, error: clubNameError }) => {
+        if (stale()) return;
+        if (clubNameError) {
+          reportError(clubNameError, 'ClubDataPage.club_name');
+          setClubName('');
+          return;
+        }
+        setClubName(data?.name || '');
       },
       (err: unknown) => {
         if (!stale()) reportError(err, 'ClubDataPage.club_name');

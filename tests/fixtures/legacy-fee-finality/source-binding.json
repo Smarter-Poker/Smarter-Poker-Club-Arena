@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "e19968901be65c285c76735cb0ccd3413e83e7beaff8bf5febbadc569a53d835",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -609,5 +609,17 @@
         "current": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e"
       }
     ]
+  },
+  "clubDataNativeRoutingRebinding20261004": {
+    "reason": "Route the Data/Stats native PostgreSQL wrapper, its fixtures and its wiring test into the existing required server and test verdicts. The classifier change is additive: no accounting route, financial fixture, captured definition or historical assertion is removed or weakened.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "e19968901be65c285c76735cb0ccd3413e83e7beaff8bf5febbadc569a53d835"
+      }
+    ],
+    "verification": "The exact classifier diff and positive routing cases were reviewed; tests/data-console-postgres-contracts-wired.test.ts passed and all nine native Data/Stats PostgreSQL contracts passed."
   }
 }

@@ -251,6 +251,16 @@ const AUDITED_ZERO = [
 describe('discarded-error-read ratchet', () => {
   const current = countsByFile();
 
+  it('the Club Data promise reader keeps its resolved Supabase error bound', () => {
+    const clubData = readFileSync(join(SRC_ROOT, 'pages', 'club', 'ClubDataPage.tsx'), 'utf8');
+    const dataOnlyThen = /\.then\(\s*\(\{\s*data(?:\s*:\s*[A-Za-z_$][\w$]*)?\s*\}\)/g;
+
+    expect(
+      clubData.match(dataOnlyThen) ?? [],
+      'ClubDataPage may not turn a resolved Supabase failure into an empty club name'
+    ).toEqual([]);
+  });
+
   it('the audited surfaces stay at zero', () => {
     for (const file of AUDITED_ZERO) {
       expect(current.get(file) ?? 0, `${file} regained a discarded-error read`).toBe(0);

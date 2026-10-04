@@ -1570,7 +1570,7 @@ export default function PlayerStatsPage() {
         rangeKey={rangeKey}
         windowDays={windowDays}
         initialClubId={searchParams.get('statsClub')}
-        onClubChange={(clubId) => updateStatsUrl({ statsClub: clubId })}
+        onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
         onRangeChange={changeRange}
       />
     );

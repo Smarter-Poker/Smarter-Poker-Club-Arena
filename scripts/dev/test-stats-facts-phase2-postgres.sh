@@ -3,10 +3,12 @@ set -euo pipefail
 export LC_ALL=C LANG=C
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"
+scratch_parent="${STATS_PG_SCRATCH_PARENT:-/Volumes/SmarterWork/agent-work}"
 migration="$repo/supabase/migrations/20261003134650_stats_facts_outbox_and_corrections.sql"
 fixture="$repo/tests/fixtures/stats-facts-phase2"
 "$pgbin/postgres" --version | grep -Eq ' 17\.' || { echo 'PostgreSQL 17 required' >&2; exit 2; }
-work="$(mktemp -d /Volumes/SmarterWork/agent-work/stats-facts-phase2.XXXXXX)"
+[[ -d "$scratch_parent" ]] || { echo "Stats PostgreSQL scratch parent is unavailable: $scratch_parent" >&2; exit 2; }
+work="$(mktemp -d "$scratch_parent/stats-facts-phase2.XXXXXX")"
 data="$work/data"; socket="$work/socket"; port="$((57000 + ($$ % 7000)))"; mkdir -p "$socket"
 cleanup(){ "$pgbin/pg_ctl" -D "$data" -m immediate stop >/dev/null 2>&1 || true; find "$work" -depth -delete; }
 trap cleanup EXIT

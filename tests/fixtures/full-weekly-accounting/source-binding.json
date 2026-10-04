@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "e19968901be65c285c76735cb0ccd3413e83e7beaff8bf5febbadc569a53d835",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "82fcd55210b927ce7e26736fc46e96cd9eaf0d348a82238c1b503be8e0e01423",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "60a29e003985c8b7aa847351089c3c1fec9fd240b40810b613f8bcc045560360",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -3406,5 +3406,32 @@
     ],
     "reason": "The Club Data console audit keeps the maintained accounting observation components and tests aligned with scope-safe reads, operator-visible failures and painted status output. UnionAccountingRunStatus and WeeklyAccountingWorkspace assertions now exercise the current console presentation and reporting behavior; ClubWeeklyAccountingReader covers the stricter read contract; discardedErrorReadRatchet tightens the allowed discarded reads for the changed Data surfaces. No assertion, captured financial fixture, native accounting component or production object is removed or weakened.",
     "verification": "Each replacement is the exact SHA-256 of the reviewed file bytes in this branch. The changed tests passed in the candidate suites, and scripts/ci/verify-source-bindings.py re-reads every repository and fixture pin after this targeted restamp. The binding edit preserves all prior audit history and changes only these four hashes plus this audit block."
+  },
+  "clubDataDeepCertificationRebinding20261004": {
+    "source_branch": "agent/codex/club-data-deep-cert-20261004",
+    "reason": "The deep Club Data launch certification adds fail-closed native Data/Stats routing and a page-specific discarded-read regression. The classifier addition selects existing server/test jobs for the exact new wrapper and fixtures; the ratchet addition forbids ClubDataPage from discarding a Supabase error. Leaf binding changes record only the reviewed classifier restamp. No financial SQL image, accounting fixture, assertion threshold, existing route or audit history is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "sha256": "e19968901be65c285c76735cb0ccd3413e83e7beaff8bf5febbadc569a53d835"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e",
+        "sha256": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+        "sha256": "82fcd55210b927ce7e26736fc46e96cd9eaf0d348a82238c1b503be8e0e01423"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+        "sha256": "60a29e003985c8b7aa847351089c3c1fec9fd240b40810b613f8bcc045560360"
+      }
+    ],
+    "verification": "Reviewed exact diffs; focused component/contract suites passed, all nine native PostgreSQL contracts passed, and verify-source-bindings.py must re-read every pin after this targeted cascade."
   }
 }

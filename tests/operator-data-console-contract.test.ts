@@ -61,6 +61,22 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     expect(controls).toContain('min-height: 44px');
   });
 
+  it('keeps every Data route in the retained phone-fit and thumb sweeps', () => {
+    const phoneFit = read('tests/e2e/mobile-fit-audit.spec.ts');
+    const thumbSweep = read('tests/e2e/mobile-tap-targets.spec.ts');
+
+    expect(phoneFit).toContain('`rate-audit?club=${');
+    expect(phoneFit).toContain("'settlement-history'");
+    for (const route of [
+      '`clubs/${CLUB}/data`',
+      "'stats'",
+      '`rate-audit?club=${CLUB}`',
+      "'settlement-history'",
+    ]) {
+      expect(thumbSweep).toContain(route);
+    }
+  });
+
   it('keeps scope generations and failed reads explicit rather than false zeroes', () => {
     const hub = read(pages[0]);
     const rates = read(pages[1]);

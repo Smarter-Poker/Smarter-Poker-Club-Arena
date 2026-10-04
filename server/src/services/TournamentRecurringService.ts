@@ -1087,6 +1087,78 @@ export function selectHumanFillCandidates(
   );
   return { events, cash };
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HUMAN'S OPPONENT SEAT IS KEPT FOR PEOPLE FIRST (2026-10-04)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-10-04: "HEADS UP SIT N GO'S DID NOT WORK WHEN 2 HUMAN PLAYERS
+ * TRIED TO SIT DOWN AND PLAY TOGETHER."
+ *
+ * Measured on production, 19:35-19:41 UTC that day. KingFish sat at the empty
+ * NLH Heads-Up 1 board at 19:37:19.2; a horse took the other seat 3.8 s later
+ * and the game dealt at 19:37:23.8 - eleven seconds BEFORE that board's own
+ * human window (start_time 19:37:34.7) had closed. The second player was
+ * opening heads-up boards in the same minute and met a horse on every one
+ * ("That Seat Was Just Taken" at 19:37:26). Of every heads-up board created in
+ * the preceding 30 hours, that was the only one a human ever sat in, and its
+ * other seat went to the fleet inside one fast-lane tick.
+ *
+ * The 2026-08-26 rule ("the moment one does, topUpWithHorses fills the
+ * remaining seats") made it impossible for two people ever to meet at a
+ * seat-first table: whoever sat first was dealt in against a horse before
+ * anyone else could see the board was half full.
+ *
+ * So once a human holds a seat, the open seats stay open for PEOPLE until the
+ * later of
+ *   - the board's own human window, `start_time` (Dan 2026-09-05: "fleet
+ *     should hold the seat for 90-350 seconds max before filling"), and
+ *   - SEAT_FIRST_HUMAN_PARTNER_HOLD_MS after the first human sat - the 90 s
+ *     floor that window already uses, because a person who opens the lobby,
+ *     reads the stakes and taps a seat needs longer than a minute;
+ * and never longer than SEAT_FIRST_HUMAN_WINDOW_MAX_MS after the first human
+ * sat, so a malformed start_time cannot strand anyone. The moment the hold
+ * ends the fleet fills the board at once, with the human's first claim on
+ * free horses (noteHumanSeatDemand) exactly as before. The table tells the
+ * seated player the countdown (TablePage, seatFirstPartnerHold), so the wait
+ * is named, never a frozen-looking felt.
+ *
+ * Returns -Infinity when nothing is known to hold for (no seated human).
+ */
+export const SEAT_FIRST_HUMAN_PARTNER_HOLD_MS = SEAT_FIRST_HUMAN_WINDOW_MIN_MS;
+
+export function seatFirstHumanPartnerHoldUntilMs(
+  startTimeMs: number,
+  firstHumanSeatedAtMs: number
+): number {
+  if (!Number.isFinite(firstHumanSeatedAtMs)) return -Infinity;
+  const partnerFloor = firstHumanSeatedAtMs + SEAT_FIRST_HUMAN_PARTNER_HOLD_MS;
+  const ceiling = firstHumanSeatedAtMs + SEAT_FIRST_HUMAN_WINDOW_MAX_MS;
+  const windowEnd = Number.isFinite(startTimeMs) ? startTimeMs : -Infinity;
+  return Math.min(ceiling, Math.max(windowEnd, partnerFloor));
+}
+
+/**
+ * The earliest `joined_at` among live seats held by humans, in ms, or NaN when
+ * no human holds a seat. Pure so the rule above is pinned without a database.
+ */
+export function firstHumanSeatedAtMs(
+  seats: ReadonlyArray<{ user_id?: string | null; joined_at?: string | null }>,
+  isHuman: (userId: string) => boolean
+): number {
+  let first = NaN;
+  for (const seat of seats) {
+    const id = String(seat.user_id ?? '');
+    if (!id || !isHuman(id)) continue;
+    const at = Date.parse(String(seat.joined_at ?? ''));
+    // A human whose seat time is unreadable still holds the seat: count them
+    // as having sat now, the conservative end of the floor.
+    const when = Number.isFinite(at) ? at : Date.now();
+    if (!Number.isFinite(first) || when < first) first = when;
+  }
+  return first;
+}
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST GAMES (Dan, 2026-08-21)
@@ -2801,6 +2873,8 @@ export class TournamentRecurringService {
     this.humanSeatDemand.delete(tournamentId);
   }
   private lastHeldReportAt = 0;
+  /** Partner holds already logged, by board, with the instant each ends. */
+  private partnerHoldsSaid = new Map<string, number>();
   /**
    * Tournaments whose top-up was refused because their prize pool is already
    * finalized - reported once each, not on every backoff. Bounded by the
@@ -5729,6 +5803,67 @@ export class TournamentRecurringService {
    *   its load, the cash-room reserve and club membership are read once per
    *   pass instead of once per call. Every other caller omits it.
    */
+  /**
+   * Until when a seat-first board's open seats are kept for people, because a
+   * human already holds one of its seats (seatFirstHumanPartnerHoldUntilMs).
+   * -Infinity when no hold applies. Reads profiles only when a hold could still
+   * be running - every seat's joined_at is past the floor and the window is
+   * closed means no seated human can be holding anything - so a horse-only
+   * board past its window costs nothing extra. An unreadable profile read is
+   * reported and holds nothing: the fill then behaves exactly as it did
+   * before this rule, which strands no one.
+   */
+  private async seatFirstHumanPartnerHold(
+    tournamentId: string,
+    seats: ReadonlyArray<{ user_id?: string | null; joined_at?: string | null }>,
+    startTimeMs: number
+  ): Promise<number> {
+    const now = Date.now();
+    let latestJoin = -Infinity;
+    for (const seat of seats) {
+      const at = Date.parse(String(seat.joined_at ?? ''));
+      latestJoin = Math.max(latestJoin, Number.isFinite(at) ? at : now);
+    }
+    const windowEnd = Number.isFinite(startTimeMs) ? startTimeMs : -Infinity;
+    if (Math.max(windowEnd, latestJoin + SEAT_FIRST_HUMAN_PARTNER_HOLD_MS) <= now) {
+      return -Infinity;
+    }
+    const ids = seats.map((s) => String(s.user_id ?? '')).filter((id) => id.length > 0);
+    if (ids.length === 0) return -Infinity;
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, is_horse')
+      .in('id', ids);
+    if (error) {
+      reportError(
+        new Error(
+          `[TournamentRecurring] partner-hold occupant read failed for ${tournamentId.slice(0, 8)}: ${error.message}`
+        ),
+        'TournamentRecurring.seat_first_partner_hold_read_failed'
+      );
+      return -Infinity;
+    }
+    // is_horse IDENTIFIES the occupant only (CLAUDE.md 10.5).
+    const horses = new Set(
+      (profiles ?? [])
+        .filter((p) => (p as { is_horse?: boolean | null }).is_horse === true)
+        .map((p) => String((p as { id?: string }).id ?? ''))
+    );
+    const known = new Set((profiles ?? []).map((p) => String((p as { id?: string }).id ?? '')));
+    // A seat with no profile row is not proven human; it holds nothing.
+    const first = firstHumanSeatedAtMs(seats, (id) => known.has(id) && !horses.has(id));
+    const holdUntil = seatFirstHumanPartnerHoldUntilMs(startTimeMs, first);
+    if (holdUntil > now && this.partnerHoldsSaid.get(tournamentId) !== holdUntil) {
+      // Said once per board per hold, never per pass.
+      if (this.partnerHoldsSaid.size > 500) this.partnerHoldsSaid.clear();
+      this.partnerHoldsSaid.set(tournamentId, holdUntil);
+      console.log(
+        `[TournamentRecurring] partner hold: ${tournamentId.slice(0, 8)} keeps its open seat(s) for people until ${new Date(holdUntil).toISOString()} (a human is seated)`
+      );
+    }
+    return holdUntil;
+  }
+
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
@@ -5869,7 +6004,11 @@ export class TournamentRecurringService {
            the loop skips the RPC for a horse this shows seated and for a table
            this shows full, so the read below returns the rows rather than a
            bare count. Same rows, same index, same liveCount. */
-        let liveSeatRows: Array<{ user_id?: string | null; seat_number?: number | null }> = [];
+        let liveSeatRows: Array<{
+          user_id?: string | null;
+          seat_number?: number | null;
+          joined_at?: string | null;
+        }> = [];
         if (seatFirst) {
           const { data: primaryId, error: primErr } = await supabase.rpc(
             'fn_tournament_primary_table',
@@ -5893,7 +6032,7 @@ export class TournamentRecurringService {
             primaryTableId = String(primaryId);
             const { data: seatRows, error: seatErr } = await supabase
               .from('table_seats')
-              .select('user_id, seat_number')
+              .select('user_id, seat_number, joined_at')
               .eq('table_id', primaryTableId)
               .is('left_at', null)
               .limit(1000);
@@ -5978,6 +6117,19 @@ export class TournamentRecurringService {
           // create/revive/exit, so this held board simply remains available.
           this.noteSeatFirstHeld(tournamentId);
           return 0;
+        }
+
+        /* A HUMAN'S OPPONENT SEAT IS KEPT FOR PEOPLE FIRST (2026-10-04). See
+           seatFirstHumanPartnerHoldUntilMs. Enforced here, where every caller
+           (the fast lane, the past-start walk, the overlay guard) meets it,
+           and decided before a single horse is picked. */
+        if (seatFirst && liveCount > 0 && liveCount < targetPlayers) {
+          const holdUntil = await this.seatFirstHumanPartnerHold(
+            tournamentId,
+            liveSeatRows,
+            heldStartMs
+          );
+          if (holdUntil > Date.now()) return 0;
         }
 
         if (this.lifecycleGeneration !== generation || this.stopOperation || isMaintenanceFrozen())

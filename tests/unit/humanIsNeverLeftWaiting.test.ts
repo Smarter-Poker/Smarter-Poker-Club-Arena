@@ -37,7 +37,7 @@ describe('the fast lane owns the human case', () => {
 
   it('hands every partially-paid seat-first game to the human fill', () => {
     expect(lane).toContain('paid > 0 && paid < seats');
-    expect(lane).toContain('fillPartialSeatFirstGame(id, seats, paid, windowClosed)');
+    expect(lane).toContain('fillPartialSeatFirstGame(id, seats, paid, windowClosed, startMs)');
   });
 
   it('still fast-starts full games exactly as before', () => {
@@ -68,7 +68,7 @@ describe('fillHumanSeatFirstGame', () => {
     expect(occupancy).toContain('human_fill_occupant_read_failed');
     expect(occupancy).toContain('human_fill_profile_read_failed');
     // An unreadable answer fills nobody this pass rather than guessing.
-    expect(fill).toContain('if (hasHuman === null) return');
+    expect(fill).toContain('if (occupancy === null) return');
   });
 
   it('a short fill raises the human-waiting alarm, throttled', () => {

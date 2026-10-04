@@ -4,6 +4,11 @@ import {
   isSeatFirstTournamentFormat,
 } from '../utils/tournamentPresentation';
 import { uuid } from '../utils/uuid';
+import {
+  seatFirstPartnerHoldEndsAtMs,
+  seatFirstPartnerHoldLabel,
+  seatFirstPartnerHoldStatus,
+} from '../utils/seatFirstPartnerHold';
 import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
 /* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
@@ -1445,6 +1450,13 @@ function spinRevealStillLive(revealAtMs: number | null): boolean {
   // behaviour and let it play rather than silently swallowing a live draw.
   if (revealAtMs == null || !Number.isFinite(revealAtMs)) return true;
   return Date.now() - revealAtMs < spinRevealTotalMs();
+}
+
+/** tournaments.start_time as ms, or null when absent or unparseable. */
+function parseStartTimeMs(raw: unknown): number | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 export function seatFillEtaLabel(elapsedMs: number): string {
@@ -5170,6 +5182,10 @@ function LiveTablePage({
        tournament row at creation, and shown on the felt before the wheel so a
        seated player is not looking at a table of zeroes (Dan, round 17). */
     startingChips: number;
+    /* The board's human window (tournaments.start_time), ms or null. A seated
+       player's open seats are kept for people until at least then - see
+       seatFirstPartnerHold. */
+    startTimeMs: number | null;
   } | null>(null);
   /* Mirror for the early dead-table effects — see seatFirstOpenRef where it
      is declared, next to the heartbeat machinery it silences. Render-time
@@ -5211,6 +5227,14 @@ function LiveTablePage({
       seatFirstWaitReportedRef.current = false;
       return;
     }
+    /* A DELIBERATE WAIT IS NOT A STALL (2026-10-04). While the engine keeps
+       the open seats for other people (seatFirstPartnerHold) the footer counts
+       that down; "still filling" and its telemetry start 30 s after it ends. */
+    const holdEnds = seatFirstPartnerHoldEndsAtMs(
+      seatFirstBuyIn?.startTimeMs,
+      seatAcquiredAtRef.current
+    );
+    const holdLeftMs = Number.isFinite(holdEnds) ? Math.max(0, holdEnds - Date.now()) : 0;
     const timer = window.setTimeout(() => {
       setSeatFirstWaitLong(true);
       if (!seatFirstWaitReportedRef.current) {
@@ -5226,7 +5250,7 @@ function LiveTablePage({
           }
         );
       }
-    }, 30_000);
+    }, holdLeftMs + 30_000);
     return () => window.clearTimeout(timer);
     // Re-arms whenever the roster moves, so the 30s measures STALLED time,
     // not merely elapsed time - a game filling normally never trips it.
@@ -5241,7 +5265,14 @@ function LiveTablePage({
     const holding = !!seatFirstBuyIn && tableState.heroSeat > 0 && !playHasBegun;
     if (!holding) return;
     setSeatFillClock(Date.now());
-    const timer = window.setInterval(() => setSeatFillClock(Date.now()), 15_000);
+    /* Once a second while the partner hold is counting down, so the clock on
+       the footer moves; every 15 s otherwise, as before. */
+    const holdEnds = seatFirstPartnerHoldEndsAtMs(
+      seatFirstBuyIn?.startTimeMs,
+      seatAcquiredAtRef.current
+    );
+    const counting = Number.isFinite(holdEnds) && holdEnds > Date.now();
+    const timer = window.setInterval(() => setSeatFillClock(Date.now()), counting ? 1_000 : 15_000);
     return () => window.clearInterval(timer);
   }, [seatFirstBuyIn, tableState.heroSeat, playHasBegun]);
   /**
@@ -13073,7 +13104,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'format_contract, is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
+              'format_contract, is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13230,6 +13261,7 @@ function LiveTablePage({
                   seats: maxP!,
                   label: fmt === 'spin' ? 'Spin' : 'Heads Up',
                   startingChips: Number(tournData.starting_chips ?? 0),
+                  startTimeMs: parseStartTimeMs(tournData.start_time),
                 });
               } else {
                 setSeatFirstBuyIn(null);
@@ -20594,7 +20626,7 @@ function LiveTablePage({
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'format_contract, status, variant, tournament_type, satellite_target_id, satellite_target, max_players, buy_in_amount, buy_in_fee, starting_chips'
+          'format_contract, status, variant, tournament_type, satellite_target_id, satellite_target, max_players, buy_in_amount, buy_in_fee, starting_chips, start_time'
         )
         .eq('id', tournId)
         .maybeSingle();
@@ -20665,6 +20697,7 @@ function LiveTablePage({
         seats: maxP!,
         label: isSpin ? 'Spin' : 'Heads Up',
         startingChips: Number(row.starting_chips ?? 0),
+        startTimeMs: parseStartTimeMs((row as { start_time?: unknown }).start_time),
       });
     };
 
@@ -26205,6 +26238,18 @@ function LiveTablePage({
                 if (left > 0 && seatFirstWaitLong) {
                   return seatCopy(tableState.arenaAsset).stillFillingSeatIsSafe;
                 }
+                /* 2026-10-04: the open seats are being kept for other
+                   people - say so, so a two-player table waiting for its
+                   second player never reads as a frozen one. */
+                if (
+                  left > 0 &&
+                  seatFirstPartnerHoldEndsAtMs(
+                    seatFirstBuyIn.startTimeMs,
+                    seatAcquiredAtRef.current
+                  ) > seatFillClock
+                ) {
+                  return seatFirstPartnerHoldLabel(left);
+                }
                 return left === 1
                   ? 'Seat Reserved, Waiting For 1 More Player'
                   : left > 1
@@ -26215,9 +26260,19 @@ function LiveTablePage({
             <span className="seat-fill-status">
               {seatFillDots(tableState.players.filter(Boolean).length, seatFirstBuyIn.seats)}
               {' · '}
-              {seatFillEtaLabel(
-                Math.max(0, seatFillClock - (seatAcquiredAtRef.current ?? seatFillClock))
-              )}
+              {(() => {
+                const holdEnds = seatFirstPartnerHoldEndsAtMs(
+                  seatFirstBuyIn.startTimeMs,
+                  seatAcquiredAtRef.current
+                );
+                const openSeats = seatFirstBuyIn.seats - tableState.players.filter(Boolean).length;
+                if (openSeats > 0 && holdEnds > seatFillClock) {
+                  return seatFirstPartnerHoldStatus(holdEnds - seatFillClock);
+                }
+                return seatFillEtaLabel(
+                  Math.max(0, seatFillClock - (seatAcquiredAtRef.current ?? seatFillClock))
+                );
+              })()}
             </span>
             <button
               type="button"

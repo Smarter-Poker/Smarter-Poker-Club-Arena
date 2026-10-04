@@ -1,0 +1,92 @@
+Horse Brain Phase 11 P11.1 natural evidence: predeclaration
+===========================================================
+
+Declared at: 2026-10-04T19:33:30Z (UTC), before any Horse journal record, decision, hand or
+telemetry row in the window below was read. Only source code on origin/main
+(d770a32718, which contains the P11.1 merge 885c7f9eb7), the merged P11.1 record,
+the Phase 10 evidence files and the engine container label had been read.
+
+1. Serving release
+------------------
+club-arena-engine label sp.release.sha on engine.smarter.poker, read
+2026-10-04T19:32:54Z: 885c7f9eb77b007a6bc028277010dd73e61a1710 (PR #6074 squash
+merge), container StartedAt 2026-10-04T16:55:46.604996225Z, status running.
+Exact-engine certificate: Post-Deploy E2E run 37227331751, job 111509666842
+"Live-table and engine verification", EXPECTED_ENGINE_SHA 885c7f9e, success
+2026-10-04T19:23:21Z. Only records whose sourceRelease is exactly this SHA count;
+any other release in the window is counted and excluded by name (release_other).
+
+2. Window and population (complete, not a sample)
+-------------------------------------------------
+Every Horse decision record in the engine host's journal archive segments
+(/var/lib/club-arena/horse-decisions/archive/segments and
+/var/lib/club-arena/horse-decisions/archive-shard-1/segments; segment files only,
+read-only, nice 19 / ionice idle, detached) with decision time
+(snapshot.decisionTimeMs) in [2026-10-04T17:05:00Z, 2026-10-04T17:50:00Z), and
+gameVariant plo5, plo6 or plo8, single board, cash and tournament alike. The
+whole window is read. Records that are unreadable or fail the journal's own
+schema are counted by name, never dropped silently.
+
+Scanner: docs/evidence/phase11/p11-1-journal-observe.py, adapted from
+docs/evidence/phase10/p10-blindseats-journal-observe.py with the same
+independence (no engine code): record schema and digest, canonical JSON,
+census, pot-limit geometry, depth and witness hash are recomputed. If a dry run
+is needed to fix the field mapping, it reads only records decided before
+2026-10-04T17:05:00Z and is reported as such.
+
+3. Checks (each counted; a single failure is reported as a defect, by identifier)
+---------------------------------------------------------------------------------
+D1 Presence: every population decision carries decision.omahaVariantPolicy;
+   it is eligible iff inputs is an object; a refused proposal carries
+   inputs = null and a named reason.
+D2 Labels: pack versions plo5-high-round1-v2 / plo6-high-round1-v2 /
+   plo8-split-round1-v2 (receipt version and inputs.pack.version, per variant);
+   pack.calibratedConfidence null; approximation.solverInput false;
+   handShape {kind heuristic_entry_score, probability false}; range provenance
+   (when present) calibration uncalibrated, solverInput false, reads
+   public_action_line_only. Any calibrated or solver label is a defect.
+D3 Census: contesting opponents are a subset of dealt seats and disjoint from
+   folded and away seats; hero dealt and not folded; dealt count in
+   2..pack ceiling for the mode, read from omahaVariantSeatCap in source at
+   d770a32718: cash plo5 7, plo6 6, plo8 8; tournament min(10, deck capacity):
+   plo5 9, plo6 7, plo8 10. pack.seats and pack.seatCapOwner equal these.
+D4 Range population (when provenance is present): the consumed provenance
+   opponents equal the contesting seats and their user ids; seatDraws ==
+   completedSamples * dealtOpponents; dealtOpponents == dealt count - 1.
+D5 Geometry, recomputed from the recorded snapshot: callCost =
+   min(heroStack, max(0, currentBet - heroBet)); potLimitRaiseTo ==
+   currentBet + pot + callCost; stackRaiseTo == heroBet + heroStack;
+   wagerCap == min(maxRaiseTo, stackRaiseTo, potLimitRaiseTo) (null iff
+   maxRaiseTo null); effective depth == min(hero cover, deepest contesting
+   cover) / BB and <= 250 on every eligible proposal; every decision with
+   recomputed depth > 250 is not eligible and, when it reached the depth
+   check, is refused as depth_or_ante_outside_pack.
+D6 Witness: the execution record joined on (producerId, turnKey) carries
+   phase11Inputs {version horse-phase11-input-binding-v1, variant ==
+   inputs.variant, inputSha256 == sha256 of the sorted-key canonical JSON of
+   the journaled binding, recomputed here, rangeStatus == inputs.range.status};
+   phase11Inputs null for a refused proposal.
+D7 Positions versus posted blinds: the Phase 10 B3 logic applied to the
+   Phase 11 binding: census.blindSeats equals the engine's posted
+   gameState.blindSeats and census.dealerSeat equals gameState.dealerSeat;
+   posted blinds are clockwise from the button; hero offset and the hero and
+   aggressor labels equal the labels recomputed from the dealer seat, dealt
+   seats and posted blinds alone, including dead button and dead small blind;
+   an empty dealer seat only at a tournament table of 3 or more.
+D8 Authority: omahaVariantPolicy.mode == shadow and applied == false on every
+   record that carries it.
+
+4. Reported, not gated
+----------------------
+Counts by variant, gameMode, street, hero position, depth band (<=40,
+40-100, 100-250, >250 BB), range status, refusal name; sampler work
+(requested and completed samples, budget exhausted) and uniform escapes;
+work_budget refusals per street (river completion matters for P11.3);
+dead-button and dead-small-blind decisions by mode, street and outcome;
+accepted action from the joined execution witness.
+
+5. Exclusions, by name only
+---------------------------
+unreadable_record, outside_window, release_other, not_phase11_variant (other
+variant, or multi-board plo5/plo6/plo8 under phase11_multiboard),
+no_variant_policy_step.

@@ -44,6 +44,12 @@ describe('Stats mobile fold budget', () => {
       /\.stats-club-selector button,\s*\.stats-club-sort button,\s*\.stats-club-actions button,\s*\.stats-club-table th button\s*\{[^}]*min-height:\s*44px/
     );
   });
+
+  it('keeps the authoritative time-range controls on the 44px touch floor', () => {
+    expect(CSS).toMatch(
+      /\.stats-range-row button\s*\{\s*min-width:\s*72px;[^}]*min-height:\s*44px/
+    );
+  });
 });
 
 describe('Stats evidence links to real hand history', () => {

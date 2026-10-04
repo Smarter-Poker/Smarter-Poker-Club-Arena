@@ -42,7 +42,6 @@ visibility, the legs the new rule counts and the old one did not are exactly
 `750498599 prize_liability->union_wallet 10.00` and
 `750500000 bbj_pool->promo_wallet 6.21` - nothing else.
 
-## Not live yet
+## Live
 
-The apply from this session was refused by its approval check. Apply with
-`apply-merged-migration.yml` after merge.
+Applied to production 2026-10-04 ~14:30 UTC; all four live proofs read true and grants are unchanged. Incidents c8a4dcb2, f972f5db and 89f91485 resolved with this migration as the correction.

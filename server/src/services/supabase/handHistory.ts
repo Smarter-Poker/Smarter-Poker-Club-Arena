@@ -197,6 +197,81 @@ export interface AtomicHandCommitInput {
    * UNKNOWN local retry and a stale continuation running after DB takeover.
    */
   assertLeaseAuthority?: () => void;
+  /**
+   * Cash only. When assertLeaseAuthority refuses because this generation's
+   * local proof lapsed before its finished hand was retained, the writer
+   * still retains the exact original request under the original generation
+   * and only then refuses. See retainLapsedOriginalForSuccessor.
+   */
+  retainWhenLeaseLapses?: boolean;
+}
+
+/**
+ * A FINISHED HAND OUTLIVES ITS DEALER'S PROOF (2026-10-04).
+ *
+ * 2026-10-03 23:43:08-23:43:44 UTC the database host stalled for about 36 s
+ * (the onset of the memory exhaustion that stopped it at 23:44:27). No lease
+ * heartbeat could be answered, so every cash generation's 20 s proof lapsed
+ * and every hand that had finished but was not yet retained was refused here
+ * with `lease_proof_expired`: 85 hands on 85 tables, of which the 30 retained
+ * before the stall were settled by their successor and the other 55 were
+ * disposed. Those 55 had been dealt, played and shown to the table under a
+ * valid lease; only their persistence was still in flight.
+ *
+ * The original cannot commit once its proof lapses, and that stays true. But
+ * retention moves no money: it stores the exact request so the successor's
+ * door (fn_ca_resume_hand_submission) can settle it under its own lease, after
+ * proving the original never settled it and that every before-stack, chair
+ * and hand number is still exactly as the request names them. So a lapsed
+ * cash generation retains first and refuses second. The database decides:
+ * migration 20261004201926 admits a cash retention while the lease row still
+ * names this exact instance and generation, stale or not; a row that was
+ * taken, released or re-claimed refuses it, and the hand is then disposed
+ * exactly as before. The generation is still terminated either way.
+ */
+export const LAPSED_RETENTION_RETAINED = 'original retained for the successor';
+
+function isLeaseProofLapse(error: unknown): boolean {
+  return /atomic hand commit refused \(lease_proof_expired\)/.test(
+    error instanceof Error ? error.message : String(error)
+  );
+}
+
+async function retainLapsedOriginalForSuccessor(
+  payload: { p_hand_row: Record<string, unknown> } & Record<string, unknown>,
+  lapse: unknown
+): Promise<Error> {
+  const lapseMessage = lapse instanceof Error ? lapse.message : String(lapse);
+  let outcome = 'retention unknown: no response';
+  for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const retained = await supabase.rpc('fn_ca_retain_hand_submission', {
+        p_request: payload,
+      });
+      if (!retained.error) {
+        const receipt = retained.data as Record<string, unknown> | null;
+        outcome =
+          receipt?.retained === true &&
+          receipt.submission_id === payload.p_hand_row.id &&
+          typeof receipt.request_hash === 'string' &&
+          /^[0-9a-f]{64}$/.test(receipt.request_hash)
+            ? LAPSED_RETENTION_RETAINED
+            : 'retention refused: invalid_submission_receipt';
+        break;
+      }
+      const code = String(retained.error.code ?? '');
+      if (code === '22023' || code === '55000') {
+        outcome = `retention refused: ${String(retained.error.message ?? code)}`;
+        break;
+      }
+      outcome = `retention unknown: ${String(retained.error.message ?? code)}`;
+    } catch (err) {
+      outcome = `retention unknown: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    const delayMs = HAND_COMMIT_RETRY_DELAYS_MS[attempt];
+    if (delayMs !== undefined) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+  return new Error(`${lapseMessage}; ${outcome}`);
 }
 
 /** Exact deal stacks carried by the accepted atomic envelope. Never infer them
@@ -917,7 +992,20 @@ async function insertHandHistoryRow(
   // Lost responses remain unknown; no alternate writer or per-seat fallback.
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
-      atomicCommit.assertLeaseAuthority?.();
+      try {
+        atomicCommit.assertLeaseAuthority?.();
+      } catch (lapse) {
+        // Retain first, refuse second (see retainLapsedOriginalForSuccessor).
+        if (
+          atomicCommit.retainWhenLeaseLapses === true &&
+          hasPostCommitObligations &&
+          !submission &&
+          isLeaseProofLapse(lapse)
+        ) {
+          throw await retainLapsedOriginalForSuccessor(payload, lapse);
+        }
+        throw lapse;
+      }
       if (hasPostCommitObligations && !submission) {
         // A process-local clone cannot survive a terminal engine refusal. First
         // retain the exact original request under its current lease. An unknown

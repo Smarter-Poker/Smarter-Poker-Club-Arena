@@ -9912,6 +9912,11 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    // The durable window says this break has not started yet. A break that is
+    // already active here was begun from a deadline the window has since left
+    // behind; see withdrawAddOnBreakBegunBeforeItsStart.
+    if (this.addOnBreakActive) this.withdrawAddOnBreakBegunBeforeItsStart();
+
     this.addOnBreakStartTimer = this.setLifecycleTimeout(() => {
       this.addOnBreakStartTimer = null;
       return this.beginAddOnBreak(endMs).catch((error) =>
@@ -10007,6 +10012,72 @@ export abstract class TournamentManagerBase {
         } catch (error) {
           reportError(error, 'TournamentManagerBase.addon_break_resume');
         }
+      }
+    }
+
+    if (ownsLevelClock && !this.onBreak && !this.stageEndPause) {
+      const blindStructure = this.tournamentCache?.blind_structure || [];
+      const remaining = this.savedBlindTimerRemaining;
+      this.savedBlindTimerRemaining = 0;
+      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+    }
+    this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A BREAK BEGUN INSIDE THE FREEZE HAS NOT BEGUN (2026-10-04)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break is the last `addon_break_minutes` of the durable add-on
+   * window, and its start is a wall-clock timer. The platform clock stops for
+   * the maintenance freeze and fn_thaw_platform then moves
+   * `addon_period_ends_at` forward by the frozen duration, so a break whose
+   * pre-thaw start fell INSIDE the freeze starts, after the thaw, that same
+   * duration later. The timer does not know that. It fired inside the freeze,
+   * beginAddOnBreak adopted the pause, and the thaw re-read re-armed the START
+   * timer for the shifted deadline but left the adopted break active. Nothing
+   * lifted it until the shifted END, so the one-minute break held every table
+   * from the thaw to the shifted end with no break announced.
+   *
+   * Measured 2026-10-04, $100 Freeroll e51546f6: the window opened 11:02:11
+   * and runs 58 minutes (57 of entry plus the one-minute break), so its break
+   * start fell at 11:59:11, inside the 11:55 freeze; the thawed row ends
+   * 12:05:55. Last hand 11:54:07, next hand 12:06:12, on all 44 tables; every
+   * other event resumed at 12:01. Same shape on 03ba4530, a7d24468, bfcbea31
+   * (2026-10-04), afe0949c, da75d640 (2026-10-03) and 33a093ca (2026-10-02):
+   * each dealt zero hands in the five minutes before its add-on break. The
+   * hourly $100 Freeroll starts on the hour, so its break start lands in the
+   * freeze whenever the window opened within about three minutes of the
+   * start.
+   *
+   * The durable window is the only authority for this phase. When it says the
+   * break starts in the future, an active break is given back exactly as
+   * finishAddOnBreak gives one back, and the caller arms the start timer for
+   * the real deadline. This runs from the thaw re-read while the maintenance
+   * break still holds every dealer, so `resumeDealing` only lowers this
+   * manager's own pause and the tables resume with the rest of the platform.
+   * A break that began before the freeze is never withdrawn: its shifted start
+   * is in the past and scheduleAddOnBreak re-enters beginAddOnBreak instead.
+   */
+  private withdrawAddOnBreakBegunBeforeItsStart(): void {
+    if (!this.addOnBreakActive) return;
+    const heldUntilMs = this.addOnBreakEndsAtMs;
+    const ownsLevelClock = this.addOnBreakOwnsLevelClock;
+    this.addOnBreakActive = false;
+    this.addOnBreakEndsAtMs = 0;
+    this.addOnBreakOwnsLevelClock = false;
+    this.addOnBreakOwnsPause = false;
+    if (!this.running) return;
+
+    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    for (const engine of this.tableEngines.values()) {
+      try {
+        // The absolute hold was placed for the deadline that no longer exists.
+        engine.releaseDealingHold(heldUntilMs);
+        if (releasePause) engine.resumeDealing();
+      } catch (error) {
+        reportError(error, 'TournamentManagerBase.addon_break_withdraw_resume');
       }
     }
 

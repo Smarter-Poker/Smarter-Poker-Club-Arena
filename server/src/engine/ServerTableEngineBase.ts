@@ -689,6 +689,20 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Give back a hold placed for exactly `atMs` (2026-10-04).
+   *
+   * The hold only ever extends, which is right while its deadline stands. An
+   * add-on break begun inside the maintenance freeze holds for a deadline the
+   * thaw then moves; the manager withdraws that break and must take its hold
+   * with it, or the table waits out a break that is not running. Only the
+   * deadline still in force is released, so a later hold placed by another
+   * authority is never shortened.
+   */
+  public releaseDealingHold(atMs: number): void {
+    if (atMs > 0 && this.dealHoldUntilMs === atMs) this.dealHoldUntilMs = 0;
+  }
+
+  /**
    * ═══════════════════════════════════════════════════════════════════════
    *  MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65)
    * ═══════════════════════════════════════════════════════════════════════

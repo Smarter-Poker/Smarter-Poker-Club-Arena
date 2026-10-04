@@ -13,3 +13,9 @@
 **Verified:** YES - the migration and retained law test were re-read after the edit. Local focused and database qualification results are recorded in the task checkpoint.
 
 **TypeScript:** PASS - `npx tsc --noEmit` completed with zero errors on the final local candidate.
+
+## Change #2 - Match The Pre-Enrichment Journal Shape
+
+**What Production Proved:** Apply run `37212699771` reached the real wallet-credit trigger and rolled back because PostgreSQL runs `satellite_transfer_ledger_is_immutable` before `trg_ca_chip_ledger_enrich`. At that boundary, the exact declared idempotency key and adjustment correlation still live in transaction-local settings and have not yet been stamped onto the new journal row.
+
+**What Changed:** The one-transaction admission now requires the exact raw club-members writer row, including its generated description and null pre-enrichment key fields, and independently binds it to the exact declared counterparty, key, category, and approved adjustment correlation in the same transaction-local settings. The later enrichment trigger still stamps those values onto the committed row, and every existing post-image assertion remains unchanged.

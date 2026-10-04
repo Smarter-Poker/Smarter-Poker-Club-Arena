@@ -1,13 +1,39 @@
 /**
- * ♠ CLUB ARENA — Tournament Details Styles
- * 
+ * CLUB ARENA - Tournament Lobby shell
+ *
+ * Dan 2026-10-04: "remove all these large frames, and make it like a normal,
+ * 'industry standard' tournament lobby card ... this whole display REALLY
+ * SUCKS and is trash, it needs a 100% redesign."
+ *
+ * What was here: this sheet, then PremiumTournamentConsole.css on top of it,
+ * which painted a chassis PNG behind the shell and a separate chrome frame
+ * around the header, the tab rail, every tab, the title strip, the content
+ * well and each footer button. Each frame cost between 38px and 76px of
+ * padding on every side. On a 375px phone the frames alone were wider than
+ * the text they held and, inside the in-game popup, left the tab panel 52px
+ * tall. PremiumTournamentConsole.css is deleted; this is the only shell skin.
+ *
+ * What is here now is the layout every poker lobby uses, drawn flat:
+ *
+ *   [ status . id . close ]
+ *   [ event name          ]
+ *   [ buy-in . blurb      ]
+ *   [ tabs, underlined    ]
+ *   [ the tab, scrolling  ]
+ *   [ share | the action  ]
+ *
+ * No artwork, no clip-paths, no nested boxes. One hairline between bands.
+ * The bands run edge to edge and their contents share one centred column
+ * (--tdl-gutter), so on a wide screen the lobby reads as a page, not as a
+ * phone layout stretched across a monitor.
+ *
  * STRICT SMARTER.POKER PALETTE ONLY:
  * surfaces: #223046 -> #1a2436 -> #131b28 -> #0d1120
  * accent: #6fdcff / #00b4e6
  * action: #1877f2 / #0a5dc2
  * text: #e8eaf0 primary, #8892a4 secondary, #6b7686 hints
  * refusal: #ef4444 / #ffb4b4
- * NO BROWN, NO YELLOW, NO GOLD. 3D depth and glassmorphism.
+ * NO BROWN, NO YELLOW, NO GOLD.
  */
 
 /* -------------------------------------------------------------------------
@@ -43,13 +69,26 @@
    the Share / Late Register row.
    ------------------------------------------------------------------------- */
 .tournament-details {
+  /* One centred column for every band: 16px on a phone, and never wider than
+     1040px of content on a desktop. A percentage in a padding resolves against
+     the containing block's WIDTH, and every band is a direct child of this
+     element, so one expression lines all of them up. */
+  --tdl-gutter: max(16px, calc((100% - 1040px) / 2));
+  --tdl-line: rgba(255, 255, 255, 0.08);
+  position: relative;
   height: var(--details-h, 100dvh);
   max-height: 100dvh;
   overflow: hidden;
-  background: linear-gradient(180deg, #131b28 0%, #0d1120 50%, #131b28 100%);
   display: flex;
   flex-direction: column;
   color: #e8eaf0;
+  background: #0d1120;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
 }
 
 .tournament-details.loading,
@@ -59,135 +98,140 @@
   gap: 1rem;
 }
 
-/* ── 3D Header ── */
+/* The way out while there is no header to carry it. */
+.tournament-details.loading > .details-close,
+.tournament-details.error > .details-close {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 12px;
+}
+
+/* -------------------------------------------------------------------------
+   HEADER - state, identity, price, and the way out.
+   ------------------------------------------------------------------------- */
 .details-header {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
-  background: linear-gradient(180deg, rgba(34, 48, 70, 0.4) 0%, rgba(26, 36, 54, 0.6) 100%);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border-bottom: 1px solid rgba(111, 220, 255, 0.15);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: calc(10px + env(safe-area-inset-top, 0px)) var(--tdl-gutter) 12px;
+  background: #131b28;
+  border-bottom: 1px solid var(--tdl-line);
 }
 
-.details-header .back-btn {
-  color: #6fdcff;
-  font-size: 24px;
-  font-weight: bold;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.details-header h1 {
-  font-size: 18px;
-  font-weight: 600;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-/* ── 3D Tabs ── */
-.details-tabs {
-  flex: 0 0 auto;
-  display: flex;
-  padding: 12px 16px;
-  gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  background: rgba(13, 17, 32, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-  box-shadow: inset 0 -4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.details-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.details-tabs .tab {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #8892a4;
-  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
-  border: 1px solid #223046;
-  border-radius: 20px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.details-tabs .tab.active {
-  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
-  color: #ffffff;
-  border-color: #6fdcff;
-  box-shadow:
-    0 4px 12px rgba(10, 93, 194, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
-
-/* ── Tournament Title & Details ── */
-/* -------------------------------------------------------------------------
-   TITLE STRIP - name, short id, share, price, blurb. Everything else that
-   used to print here (FREEZEOUT / REBUY / ADD-ON, the bounty line, MULTI-DAY,
-   XMTT, SPIN, the parity tag row, EARLY BIRD) is drawn as badges by
-   DetailOverviewTab. Printing both said the same thing twice.
-   ------------------------------------------------------------------------- */
-.details-title {
-  flex: 0 0 auto;
-  padding: 10px 16px 8px;
-}
-
-.tournament-title {
+.details-header__top {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
 }
 
-.tournament-title h2 {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.details-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
-  color: #e8eaf0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.details-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.details-status--open {
+  color: #6fdcff;
+  background: rgba(111, 220, 255, 0.12);
+}
+
+.details-status--live {
+  color: #ffffff;
+  background: #1877f2;
+}
+
+.details-status--done {
+  color: #8892a4;
+  background: rgba(136, 146, 164, 0.14);
+}
+
+.details-status--cancelled {
+  color: #ffb4b4;
+  background: rgba(239, 68, 68, 0.16);
 }
 
 .tournament-id {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
   color: #6b7686;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.qr-btn {
+/* Close. 44px square, the touch floor every control at the table defends,
+   pulled to the right edge so the glyph lines up with the column. */
+.details-close {
   flex: 0 0 auto;
-  color: #6fdcff;
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  border: 1px solid #223046;
-  padding: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 -10px 0 auto;
+  padding: 0;
+  border: 0;
   border-radius: 8px;
+  color: #e8eaf0;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.details-close:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.details-close:focus-visible,
+.details-tabs .tab:focus-visible,
+.details-footer button:focus-visible,
+.details-footer .btn-enter-table:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
+}
+
+.tournament-name {
+  margin: 2px 0 0;
+  font-size: clamp(19px, 2.4vw, 26px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: #ffffff;
+  /* Two lines, then an ellipsis: a long event name must not push the tabs
+     and the action off a short phone. */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .tournament-desc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
   margin-top: 6px;
 }
 
@@ -198,34 +242,76 @@
   color: #8892a4;
 }
 
-.tournament-buyin {
+.tournament-desc .tournament-buyin {
   color: #6fdcff;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-
-/* The owner's own words. Quieter than the price, and italic so nobody reads
-   a description as a rule of the event. */
-.tournament-blurb {
-  margin-top: 4px !important;
-  font-style: italic;
-  color: #6b7686 !important;
-}
-
-.start-time {
-  display: inline-block;
-  margin-top: 16px;
-  padding: 6px 16px;
-  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
-  color: white;
-  font-size: 12px;
   font-weight: 600;
-  border-radius: 20px;
-  border: 1px solid #6fdcff;
-  box-shadow:
-    0 4px 12px rgba(10, 93, 194, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* The owner's own words. Quieter than the price. */
+.tournament-desc .tournament-blurb {
+  color: #8892a4;
+}
+
+/* -------------------------------------------------------------------------
+   TABS - one row, underlined. It scrolls sideways when it does not fit
+   rather than wrapping onto a second row and eating the content's height.
+   ------------------------------------------------------------------------- */
+.details-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 0 var(--tdl-gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  background: #131b28;
+  border-bottom: 1px solid var(--tdl-line);
+}
+
+.details-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.details-tabs .tab {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #8892a4;
+  background: transparent;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.details-tabs .tab:first-child {
+  margin-left: -12px;
+}
+
+.details-tabs .tab::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+}
+
+.details-tabs .tab.active {
+  color: #ffffff;
+}
+
+.details-tabs .tab.active::after {
+  background: #6fdcff;
 }
 
 /* ── Quick Stats 3D Tiles ── */
@@ -273,44 +359,38 @@
   vertical-align: top;
 }
 
-/* ── TOURNAMENT STATUS BADGES (NO YELLOW/BROWN) ── */
+/* ── Status badges in the footer: a state, said flat. Not a button. ── */
 .tournament-status-badge {
-  flex: 1;
-  padding: 12px;
-  border-radius: 20px;
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .tournament-status-badge.running {
-  background: linear-gradient(180deg, rgba(111, 220, 255, 0.15) 0%, rgba(0, 180, 230, 0.1) 100%);
   color: #6fdcff;
-  border: 1px solid #00b4e6;
-  box-shadow:
-    0 0 12px rgba(0, 180, 230, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(111, 220, 255, 0.1);
+  border: 1px solid rgba(111, 220, 255, 0.3);
 }
 
 .tournament-status-badge.completed {
-  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
-  color: #6fdcff;
-  border: 1px solid #1877f2;
-  box-shadow:
-    0 0 12px rgba(24, 119, 242, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: #8892a4;
+  background: rgba(136, 146, 164, 0.1);
+  border: 1px solid rgba(136, 146, 164, 0.24);
 }
 
 .tournament-status-badge.cancelled {
-  background: linear-gradient(180deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%);
   color: #ffb4b4;
-  border: 1px solid #ef4444;
-  box-shadow:
-    0 0 12px rgba(239, 68, 68, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
 .results-podium {
@@ -421,7 +501,7 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: rgba(111, 220, 255, 0.3) transparent;
-  padding: 0 12px 12px;
+  padding: 12px var(--tdl-gutter) 16px;
   /* NOT `display: flex`. A flex column shrinks its children to fit rather than
      overflowing, which is precisely how a container with `overflow-y: auto`
      ends up with nothing to scroll. Block layout lets the tab be as tall as
@@ -471,181 +551,193 @@
    ------------------------------------------------------------------------- */
 .details-footer {
   flex: 0 0 auto;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(13, 17, 32, 0.8) 0%, rgba(10, 14, 26, 0.95) 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(111, 220, 255, 0.15);
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+  gap: 10px;
+  padding: 10px var(--tdl-gutter) calc(10px + env(safe-area-inset-bottom, 0px));
+  background: #131b28;
+  border-top: 1px solid var(--tdl-line);
 }
 
 .details-footer button,
 .details-footer .btn-enter-table {
-  flex: 1;
-  padding: 14px 20px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-.details-footer button:active {
-  transform: translateY(1px);
-}
-
-/* The Entries hover/focus affordance that used to live here moved with the
-   block it styled. EntriesTab renders a watchable row as `.et-row--watch` on
-   `.tl-row--interactive`, and the shared `tl-` layer carries the hover lift
-   and the focus ring for every interactive row in the lobby. */
-
-/* WATCH — Dan 2026-08-25. Sits beside whatever else the running footer says,
-   never instead of it, so a spectator, a player waiting on a seat and a busted
-   player all get the same one-tap route onto the featured table. Cyan house
-   accent rather than the blue action colour: watching is not registering, and
-   the two must not look like the same button. */
-.details-footer .btn-watch {
-  flex: 0 0 auto;
-  min-width: 108px;
-  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
-  color: #6fdcff;
-  border: 1px solid #6fdcff;
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.35),
-    0 0 10px rgba(111, 220, 255, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.details-footer .btn-register {
-  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
-  color: white;
-  border: 1px solid #6fdcff;
-  box-shadow:
-    0 4px 16px rgba(24, 119, 242, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-/* These two were `.btn-secondary` and `.btn-danger`, which this footer has
-   never rendered - it emits `btn-share` and `btn-unregister`, so both blocks
-   painted nothing at all and Share fell back to the bare button base. Same
-   paint, selectors that match the markup. */
-.details-footer .btn-share {
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  color: #e8eaf0;
-  border: 1px solid #223046;
-}
-
-.details-footer .btn-unregister {
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-  color: white;
-  border: 1px solid #ffb4b4;
-  box-shadow:
-    0 4px 16px rgba(239, 68, 68, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.details-footer button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* ENTER TABLE is a router <Link>, so it needs the anchor half of the button
-   shape spelled out. It was painted #10b981 with inline styles - a green that
-   is in no house palette. House action gradient, house accent border. */
-.details-footer .btn-enter-table {
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   text-decoration: none;
-  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
-  color: #ffffff;
-  border: 1px solid #6fdcff;
-  box-shadow:
-    0 4px 16px rgba(0, 180, 230, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* ── Late Registration Button ── */
+.details-footer button:active,
+.details-footer .btn-enter-table:active {
+  filter: brightness(0.9);
+}
+
+/* Share is the quiet one: it never competes with the action beside it. */
+.details-footer .btn-share {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: #e8eaf0;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* WATCH - Dan 2026-08-25. Sits beside whatever else the running footer says,
+   never instead of it. Accent outline rather than the action fill: watching
+   is not registering, and the two must not look like the same button. */
+.details-footer .btn-watch {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: #6fdcff;
+  background: transparent;
+  border-color: rgba(111, 220, 255, 0.5);
+}
+
+.details-footer .btn-register,
+.details-footer .btn-enter-table {
+  color: #ffffff;
+  background: #1877f2;
+}
+
+.details-footer .btn-unregister {
+  color: #ffb4b4;
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.details-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* Late registration is the same action on a clock; the pulse is the clock. */
 .btn.btn-register.late-reg {
-  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
   animation: tournamentDetailsPulse-glow 2s infinite;
 }
 
 @keyframes tournamentDetailsPulse-glow {
   0%,
   100% {
-    box-shadow:
-      0 0 12px rgba(111, 220, 255, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 0 0 rgba(24, 119, 242, 0.55);
   }
   50% {
-    box-shadow:
-      0 0 24px rgba(111, 220, 255, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 0 6px rgba(24, 119, 242, 0);
   }
 }
 
-/* ═══════ MEDIA QUERIES ═══════ */
-@media (max-width: 768px) {
-  .details-tabs .tab {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-  .qr-btn {
-    min-width: 44px;
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-  .details-footer {
-    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
-  }
+.tournament-recovery-notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px var(--tdl-gutter);
+  font-size: 13px;
+  color: #ffb4b4;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-/* Stacked footer buttons. As a flex CHILD there is nothing else to adjust
-   here: the fixed version had to keep its `bottom` offset and the shell's
-   `padding-bottom` in step with this breakpoint, and they drifted. */
-@media (max-width: 480px) {
+.tournament-recovery-notice p {
+  margin: 0;
+}
+
+/* On a wide screen the action does not need to be a thousand pixels long.
+   The buttons keep to the right of the column, where the eye lands last. */
+@media (min-width: 768px) {
   .details-footer {
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    justify-content: flex-end;
   }
+
   .details-footer button,
-  .details-footer .btn-enter-table {
-    padding: 12px;
-    font-size: 13px;
+  .details-footer .btn-enter-table,
+  .details-footer .tournament-status-badge {
+    flex: 0 1 280px;
   }
+
+  .details-footer .btn-share,
   .details-footer .btn-watch {
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 120px;
   }
-  .tournament-title h2 {
-    font-size: 15px;
+}
+
+/* A short phone in landscape, or an SE: the header gives its air back to the
+   tab before the tab gives up any more of its own. */
+@media (max-height: 520px) {
+  .details-header {
+    padding-top: calc(4px + env(safe-area-inset-top, 0px));
+    padding-bottom: 6px;
+  }
+
+  .tournament-name {
+    -webkit-line-clamp: 1;
+    font-size: 17px;
+  }
+
+  .tournament-desc .tournament-blurb {
+    display: none;
+  }
+
+  .details-tabs .tab {
+    min-height: 40px;
+  }
+
+  .details-footer {
+    padding-top: 6px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .details-footer button,
+  .details-footer .btn-enter-table,
+  .tournament-status-badge {
+    min-height: 44px;
   }
 }
 
 @media (max-width: 380px) {
-  .details-tabs {
-    padding: 8px 12px;
-    gap: 6px;
+  .details-footer .btn-share,
+  .details-footer .btn-watch {
+    min-width: 80px;
+    padding: 0 10px;
   }
-  .details-tabs .tab {
-    padding: 8px 12px;
-    font-size: 13px;
-  }
-  .details-title {
-    padding: 8px 12px 6px;
-  }
-  .details-content {
-    padding: 0 8px 8px;
-  }
+}
+
+/* -------------------------------------------------------------------------
+   ONE SURFACE, NOT A BOX INSIDE A BOX (Dan 2026-10-04: "remove all these
+   large frames").
+
+   Four tabs (Ranking, Entries, Unions, Tables) wrap their whole content in a
+   `.tl-panel`: a bordered, padded, shadowed card. Inside the old chassis that
+   made three nested frames around a list of rows. The page IS the surface
+   now, so a panel that is the tab's root gives up its frame and its padding
+   and the rows run the full width of the column. Panels INSIDE a tab (a
+   current-level card, a prize-pool card) keep theirs: those group something.
+   ------------------------------------------------------------------------- */
+.details-content > .tl-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.details-content > .tl-panel::before {
+  display: none;
 }

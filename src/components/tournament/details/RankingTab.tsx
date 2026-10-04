@@ -77,6 +77,8 @@ import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
   chipsCompact,
+  effectivePrizePool,
+  finishedFieldSummary,
   initials,
   isPlayerOut,
   lastPaidPlace,
@@ -845,6 +847,12 @@ export default function RankingTab({
     );
   }
 
+  const isFinished = String(tournament.status || '').toUpperCase() === 'COMPLETED';
+  const finished = finishedFieldSummary(tournament, entries);
+  const finishedPool = effectivePrizePool(tournament.prize_pool, tournament.guaranteed_prize);
+  const finishedPaid =
+    finished.paid > 0 ? finished.paid : (resolvePayoutStructure(tournament) ?? []).length;
+
   const heroStack = hero ? Number(hero.chips) || 0 : 0;
   const heroBB = hero && bigBlind > 0 ? Math.floor(heroStack / bigBlind) : null;
   const heroOut = hero ? isOut(hero) : false;
@@ -857,25 +865,62 @@ export default function RankingTab({
   return (
     <div className="tl-panel rk-panel">
       {/* ── Field summary ──────────────────────────────────────────────── */}
-      <div className="tl-stat-grid rk-stats">
-        <div className="tl-stat">
-          <span className="tl-stat__label">Remaining</span>
-          <span className="tl-stat__value tl-stat__value--accent">{chips(living.length)}</span>
-          <span className="tl-stat__sub">Of {chips(ordered.length)}</span>
+      {isFinished ? (
+        /* A FINISHED EVENT (2026-10-04). Nobody remains and nothing is in
+           play, so the three live tiles read "0, 0, 0" under a list of seat
+           winners holding chips - while Detail counted those same winners as
+           seven players remaining. Both tabs now print what happened, from
+           finishedFieldSummary. */
+        <div className="tl-stat-grid rk-stats">
+          <div className="tl-stat">
+            <span className="tl-stat__label">Entries</span>
+            <span className="tl-stat__value tl-stat__value--accent">{chips(finished.entries)}</span>
+            <span className="tl-stat__sub">Final</span>
+          </div>
+          <div className="tl-stat">
+            <span className="tl-stat__label">Prize Pool</span>
+            <span className="tl-stat__value">
+              {finishedPool > 0 ? chipsCompact(finishedPool) : '-'}
+            </span>
+            <span className="tl-stat__sub">Final</span>
+          </div>
+          {finished.qualified > 0 ? (
+            <div className="tl-stat">
+              <span className="tl-stat__label">Qualified</span>
+              <span className="tl-stat__value">{chips(finished.qualified)}</span>
+              <span className="tl-stat__sub">
+                {finished.qualified === 1 ? 'Seat Won' : 'Seats Won'}
+              </span>
+            </div>
+          ) : (
+            <div className="tl-stat">
+              <span className="tl-stat__label">Places Paid</span>
+              <span className="tl-stat__value">{finishedPaid > 0 ? chips(finishedPaid) : '-'}</span>
+              <span className="tl-stat__sub">Final</span>
+            </div>
+          )}
         </div>
-        <div className="tl-stat">
-          <span className="tl-stat__label">Average Stack</span>
-          <span className="tl-stat__value">{chipsCompact(avgStack)}</span>
-          <span className="tl-stat__sub">
-            {bigBlind > 0 ? `${chips(Math.floor(avgStack / bigBlind))} BB` : 'Chips'}
-          </span>
+      ) : (
+        <div className="tl-stat-grid rk-stats">
+          <div className="tl-stat">
+            <span className="tl-stat__label">Remaining</span>
+            <span className="tl-stat__value tl-stat__value--accent">{chips(living.length)}</span>
+            <span className="tl-stat__sub">Of {chips(ordered.length)}</span>
+          </div>
+          <div className="tl-stat">
+            <span className="tl-stat__label">Average Stack</span>
+            <span className="tl-stat__value">{chipsCompact(avgStack)}</span>
+            <span className="tl-stat__sub">
+              {bigBlind > 0 ? `${chips(Math.floor(avgStack / bigBlind))} BB` : 'Chips'}
+            </span>
+          </div>
+          <div className="tl-stat">
+            <span className="tl-stat__label">Total Chips</span>
+            <span className="tl-stat__value">{chipsCompact(totalChips)}</span>
+            <span className="tl-stat__sub">In Play</span>
+          </div>
         </div>
-        <div className="tl-stat">
-          <span className="tl-stat__label">Total Chips</span>
-          <span className="tl-stat__value">{chipsCompact(totalChips)}</span>
-          <span className="tl-stat__sub">In Play</span>
-        </div>
-      </div>
+      )}
 
       {/* ── Distance to the money. Absent when no structure is published, so
              this can never claim a bubble that does not exist. ────────────── */}

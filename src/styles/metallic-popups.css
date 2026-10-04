@@ -212,7 +212,30 @@
 }
 
 /* Header plates sit slightly proud of the chassis. */
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+/*
+ * A FULL-SCREEN PAGE IS NOT A POPUP CARD (2026-10-04).
+ *
+ * Everything below reaches INTO a dialog and restyles what it finds there:
+ * headings, paragraphs, inputs, every button, anything labelled Close. That is
+ * right for a card with a title and two actions. It is wrong for the in-game
+ * tournament lobby, which is a whole page (a tab strip, eight tabs of rows and
+ * tables, a footer) that happens to be modal: the bevel landed on every tab
+ * and row button with !important, and the same page looked one way on its
+ * route and another inside the popup.
+ *
+ * `data-popup-chassis="none"` on the dialog element opts that dialog's
+ * CONTENT out. The `:not()` sits inside `:where()`, so every rule keeps the
+ * zero specificity it had. A real popup opened from inside such a page carries
+ * its own role and is styled as before.
+ */
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   > :where(
     header,
     .ca-modal-header,
@@ -235,7 +258,14 @@
     0 5px 12px rgba(0, 0, 0, 0.24) !important;
 }
 
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   :where(h1, h2, h3, [class*='title'], [class*='Title']) {
   color: var(--ca-popup-text);
   font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
@@ -246,13 +276,27 @@
     0 0 14px rgba(63, 140, 255, 0.18);
 }
 
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   :where(p, label, small, [class*='description'], [class*='hint'], [class*='Hint']) {
   color: var(--ca-popup-muted);
 }
 
 /* Recessed control wells. */
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
   background: var(--ca-popup-well) !important;
   background-image: none !important;
@@ -265,7 +309,14 @@
     0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
 
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   :where(input, select, textarea):focus-visible {
   border-color: var(--ca-popup-blue) !important;
   outline: 2px solid rgba(88, 166, 255, 0.28) !important;
@@ -277,7 +328,15 @@
 }
 
 /* Buttons inherit their semantic color while gaining a tangible metal bevel. */
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp) button {
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
+  button {
   border-color: #52647d !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
@@ -285,7 +344,14 @@
     0 4px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   button:active:not(:disabled) {
   box-shadow:
     inset 0 3px 6px rgba(0, 0, 0, 0.58),
@@ -294,7 +360,10 @@
 }
 
 /* Common primary and destructive actions stay instantly recognizable. */
-:where([role='dialog'], [aria-modal='true'])
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none'])
+  )
   :is(button, input[type='button'], input[type='submit']):where(
     [class*='primary'],
     [class*='Primary'],
@@ -316,7 +385,10 @@
   color: #fff !important;
 }
 
-:where([role='dialog'], [aria-modal='true'])
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none'])
+  )
   :is(button, input[type='button'], input[type='submit']):where(
     [class*='danger'],
     [class*='Danger'],
@@ -330,7 +402,14 @@
 }
 
 /* Close controls read like small steel hardware instead of bare glyphs. */
-:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+:where(
+    [role='dialog']:not([data-popup-chassis='none']),
+    [aria-modal='true']:not([data-popup-chassis='none']),
+    .drawer,
+    .side-panel,
+    .afx-sheet,
+    .glp
+  )
   :where(
     .ca-modal-close,
     .modal-close,

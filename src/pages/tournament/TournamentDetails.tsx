@@ -91,7 +91,7 @@ import { useTournamentRegistration, isLateStatus } from '../../hooks/useTourname
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { useTournamentStageView } from '../../hooks/useTournamentStageView';
 import { openTableAsObserver } from '../../utils/observeTable';
-import './PremiumTournamentConsole.css';
+import { titleCase } from '../../utils/titleCase';
 import { publicOrigin } from '../../lib/appBase';
 import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../../utils/multiDaySchedule';
 
@@ -106,6 +106,9 @@ interface TournamentSnapshotOwner {
   entryPatches: Array<(previous: TournamentEntry[]) => TournamentEntry[]> | null;
   tablePatches: Array<(previous: TournamentTable[]) => TournamentTable[]> | null;
 }
+
+/** Stable identity for "this event has no tables", so tab props do not churn. */
+const NO_TABLES: TournamentTable[] = [];
 
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
@@ -124,6 +127,8 @@ export default function TournamentDetails({
   tournamentIdOverride,
   suppressAutoOpenTable = false,
   searchOverride,
+  onClose,
+  currentTableId,
 }: {
   tournamentIdOverride?: string;
   suppressAutoOpenTable?: boolean;
@@ -142,6 +147,19 @@ export default function TournamentDetails({
    * that addressed THIS page", wherever the page is rendered.
    */
   searchOverride?: string;
+  /**
+   * Dan 2026-10-04: the in-game lobby is a FULL SCREEN popup with one frame.
+   * The popup used to wrap this page in a second chassis with its own head,
+   * its own Close row and its own foot, and on a phone that stack left the
+   * tab panel 52px tall: every tab switched and nothing a player could see
+   * changed. The popup now hands its close handler to this header instead of
+   * drawing chrome around it. Absent on the route and in the lobby tab, where
+   * there is nothing to close.
+   */
+  onClose?: () => void;
+  /** The table the popup was opened FROM, so the footer can tell "take your
+      seat" from "you are already in it". Only meaningful with `onClose`. */
+  currentTableId?: string;
 } = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
@@ -169,6 +187,18 @@ export default function TournamentDetails({
   const [activeTab, setActiveTab] = useState<TabId>(() => normaliseTabId(searchParams.get('tab')));
   /** One element per tab, so the roving-focus arrow keys can move focus. */
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  /* The strip is one row that scrolls sideways (it used to wrap onto a second
+     row and take the content's height with it). On a phone two of the seven
+     tabs start off the right edge, so whichever tab is selected - by a tap, an
+     arrow key, a `?tab=` link or another tab's `onOpenTab` - is brought into
+     view. `nearest` on both axes: it must never scroll the PAGE to do it. */
+  useEffect(() => {
+    const index = TABS.findIndex((tab) => tab.id === activeTab);
+    const el = tabRefs.current[index];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [activeTab, tournament?.id]);
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
@@ -1627,7 +1657,15 @@ export default function TournamentDetails({
         ? {
             tournament,
             entries,
-            tables,
+            /* A FINISHED EVENT HAS NO FELT (2026-10-04). Tables are only ever
+               READ while the event is dealing, and nothing cleared them when
+               it stopped, so a lobby left open across the finish - the in-game
+               popup stays mounted - kept quoting the last table rows it saw:
+               "Players Left 7, Average Stack 25.7K" beside a Ranking tab
+               saying nobody remained. The same event opened fresh showed no
+               tables at all. One rule for both: the table list exists exactly
+               while the tables do. */
+            tables: isWatchable ? tables : NO_TABLES,
             blindLevels,
             currentUserId: user?.id,
             isRegistered,
@@ -1672,9 +1710,33 @@ export default function TournamentDetails({
     </div>
   ) : null;
 
+  /* The way out of the popup. Drawn in EVERY state the shell can be in - a
+     full screen popup that is still loading, or failed to load, with no
+     visible way to leave it is a trap on a phone, where there is no Escape
+     key and no backdrop left to tap. */
+  const closeButton = onClose ? (
+    <button
+      className="details-close"
+      type="button"
+      onClick={onClose}
+      aria-label="Close Tournament Lobby"
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path
+          d="M6 6l12 12M18 6L6 18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  ) : null;
+
   if (isLoading) {
     return (
       <div className="tournament-details loading">
+        {closeButton}
         <div className="loader-spinner" />
         <p>Loading Tournament...</p>
       </div>
@@ -1682,7 +1744,12 @@ export default function TournamentDetails({
   }
 
   if (loadError && !snapshotOwnerRef.current?.hasSnapshot) {
-    return <div className="tournament-details error">{recoveryNotice}</div>;
+    return (
+      <div className="tournament-details error">
+        {closeButton}
+        {recoveryNotice}
+      </div>
+    );
   }
 
   // tabProps is null exactly when `tournament` is null, so this one guard
@@ -1690,6 +1757,7 @@ export default function TournamentDetails({
   if (!tournament || !tabProps) {
     return (
       <div className="tournament-details error">
+        {closeButton}
         <h2>Tournament Not Found</h2>
         {/* Dan 2026-08-28: "Back To Clubs" is a real anchor to a route OUTSIDE
             /table/*, so in the in-tab lobby it did the exact thing this whole
@@ -1710,14 +1778,60 @@ export default function TournamentDetails({
   const shortDescription = (tournament as unknown as { short_description?: string | null })
     .short_description;
 
+  /* What state the event is in, in the words the footer already uses for it.
+     One reading of `status`, so the pill in the header and the badge in the
+     footer cannot name two different states for one event. */
+  const lobbyStatus: { label: string; tone: 'open' | 'live' | 'done' | 'cancelled' } = (() => {
+    const raw = String(tournament.status || '').toUpperCase();
+    if (isBaggedStatus(raw)) return { label: DAY_COMPLETE_LABEL, tone: 'live' };
+    if (raw === 'COMPLETED') return { label: 'Completed', tone: 'done' };
+    if (raw === 'CANCELLED') return { label: 'Cancelled', tone: 'cancelled' };
+    if (isWatchable) {
+      return { label: lateRegCountdown ? 'Late Registration' : 'Running', tone: 'live' };
+    }
+    if (raw === 'REGISTERING' || raw === 'OPEN' || raw === 'PENDING') {
+      return { label: 'Registering', tone: 'open' };
+    }
+    return { label: titleCase(raw.replace(/_/g, ' ').toLowerCase()) || 'Scheduled', tone: 'open' };
+  })();
+
   return (
     <PageErrorBoundary pageName="TournamentDetails">
       <div className="tournament-details" ref={shellRef} data-active-tab={activeTab}>
         {recoveryNotice}
-        {/* Header */}
-        <div className="details-header">
-          <h1>Game Details</h1>
-        </div>
+        {/* THE HEADER (Dan 2026-10-04: "remove all these large frames, and make
+            it like a normal, industry standard tournament lobby"). One band:
+            what state the event is in, which event it is, what it costs, and
+            the way out. It replaces a "Game Details" plate, a framed title
+            strip and, in the popup, a third header above both. The rule
+            badges (Freezeout, Rebuy, Bounty ...) stay in DetailOverviewTab,
+            which is the only place they have ever been drawn. */}
+        <header className="details-header">
+          <div className="details-header__top">
+            <span className={`details-status details-status--${lobbyStatus.tone}`}>
+              {lobbyStatus.label}
+            </span>
+            <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
+            {closeButton}
+          </div>
+          <h1 className="tournament-name">
+            {tournament.guaranteed_prize && tournament.guaranteed_prize > 0
+              ? `${chipsCompact(tournament.guaranteed_prize)} GTD `
+              : ''}
+            {tournament.name}
+          </h1>
+          <div className="tournament-desc">
+            {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
+                total the player actually pays and never prints a decimal. */}
+            <p className="tournament-buyin">
+              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} Chips Buy-In
+            </p>
+            {/* Owner-written short description (2026-08-22). No tab renders it:
+                it is the event's own identity copy, not a figure, so it belongs
+                beside the name on every tab rather than inside one. */}
+            {shortDescription && <p className="tournament-blurb">{shortDescription}</p>}
+          </div>
+        </header>
 
         {/* Tabs */}
         {/* A tablist is a ROVING focus widget, not seven tab stops. Declaring
@@ -1757,43 +1871,6 @@ export default function TournamentDetails({
               {tab.label}
             </button>
           ))}
-        </div>
-
-        {/* Title strip. The name, the short id, the share button, the price and
-            the owner's own blurb. Everything else that used to sit here -
-            FREEZEOUT / REBUY / ADD-ON, the bounty line, MULTI-DAY, XMTT, SPIN,
-            the parity tag row and EARLY BIRD - is rendered as badges by
-            DetailOverviewTab. Printing both said the same thing twice and cost
-            about 120px of the one screen this page is supposed to fit in. */}
-        <div className="details-title">
-          <div className="tournament-title">
-            <h2>
-              {tournament.guaranteed_prize && tournament.guaranteed_prize > 0
-                ? `${chipsCompact(tournament.guaranteed_prize)} GTD `
-                : ''}
-              {tournament.name}
-            </h2>
-            <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
-            <button
-              className="qr-btn"
-              type="button"
-              onClick={() => void shareTournament()}
-              aria-label="Share This Tournament"
-            >
-              ⊞
-            </button>
-          </div>
-          <div className="tournament-desc">
-            {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
-                total the player actually pays and never prints a decimal. */}
-            <p className="tournament-buyin">
-              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} CHIPS BUY-IN
-            </p>
-            {/* Owner-written short description (2026-08-22). No tab renders it:
-                it is the event's own identity copy, not a figure, so it belongs
-                beside the name on every tab rather than inside one. */}
-            {shortDescription && <p className="tournament-blurb">{shortDescription}</p>}
-          </div>
         </div>
 
         {/* The only part of the shell that grows. Each tab scrolls inside
@@ -1873,10 +1950,30 @@ export default function TournamentDetails({
                 myEntry?.table_id &&
                 (myEntry.status === 'playing' || myEntry.status === 'registered')
               ) {
+                /* ALREADY AT THAT TABLE (2026-10-04). In the in-game popup the
+                   player is usually sitting at the very table this link names.
+                   Navigating to the route you are standing on changes nothing
+                   and leaves the popup open over the felt: a full-width blue
+                   button that, when pressed, does nothing at all. There the
+                   honest action is the way back to the seat. */
+                if (onClose && currentTableId && myEntry.table_id === currentTableId) {
+                  return (
+                    <button
+                      className="btn btn-enter-table btn-take-seat"
+                      type="button"
+                      onClick={onClose}
+                    >
+                      Back To Table
+                    </button>
+                  );
+                }
                 return (
                   <Link
                     to={`/table/${myEntry.table_id}`}
                     className="btn btn-enter-table btn-take-seat"
+                    /* Moved to another table while the popup was open: go
+                       there, and do not leave the popup covering it. */
+                    onClick={onClose}
                   >
                     TAKE SEAT
                   </Link>

@@ -246,3 +246,8 @@
 .tournament-dock__sublabel {
   opacity: 0.85;
 }
+
+/* The frame alone, while the tournament row is still being read. */
+.tournament-dock--loading .tournament-dock__status {
+  opacity: 0.6;
+}

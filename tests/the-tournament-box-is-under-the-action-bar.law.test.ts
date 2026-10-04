@@ -76,11 +76,13 @@ describe('the box is not on the felt', () => {
 });
 
 describe('it is collapsible, and collapsing it never resizes the felt', () => {
-  it('the page owns the flag, remembers it, and publishes it on its own root', () => {
+  it('the flag is shared by every table, remembered, and published on each page root', () => {
+    // ONE value for every table open in this tab, so collapsing the dock on
+    // one tournament tab collapses it on all of them.
     expect(PAGE).toMatch(
-      /const \[tournamentDockCollapsed, setTournamentDockCollapsed\] = useState/
+      /const tournamentDockCollapsed = useSyncExternalStore\(\s*subscribeTournamentDock,/
     );
-    expect(PAGE).toMatch(/localStorage\.setItem\(TOURNAMENT_DOCK_COLLAPSED_KEY/);
+    expect(read('src/lib/tournamentDockStore.ts')).toMatch(/localStorage\.setItem\(KEY/);
     expect(PAGE).toMatch(
       /data-tdock=\{\s*tableState\.isTournament && tableState\.tournamentId\s*\? tournamentDockCollapsed\s*\? 'collapsed'\s*: 'expanded'\s*: undefined\s*\}/
     );
@@ -130,5 +132,34 @@ describe('the corner holds the lobby button', () => {
     const btn = rule(DOCK_CSS, '.tournament-lobby-corner-btn {');
     expect(btn).toMatch(/width:\s*44px/);
     expect(btn).toMatch(/height:\s*44px/);
+  });
+});
+
+describe('the dock holds its band from first paint, and every table shares one toggle', () => {
+  it('draws its frame while the tournament row is still loading; only an off-screen table draws nothing', () => {
+    expect(HUD).toMatch(/if \(hidden\) return null;/);
+    expect(HUD).not.toMatch(/if \(hidden \|\| !row\) return null;/);
+    expect(HUD).toMatch(
+      /if \(!row\) \{\s*return \(\s*<div\s+className="tournament-dock tournament-dock--loading"/
+    );
+  });
+
+  it('one toggle moves every subscriber', async () => {
+    const store = await import('../src/lib/tournamentDockStore');
+    store.resetTournamentDockStoreForTests();
+    const before = store.tournamentDockCollapsed();
+    let aSaw = 0;
+    let bSaw = 0;
+    const offA = store.subscribeTournamentDock(() => aSaw++);
+    const offB = store.subscribeTournamentDock(() => bSaw++);
+    store.toggleTournamentDockCollapsed();
+    expect(store.tournamentDockCollapsed()).toBe(!before);
+    expect([aSaw, bSaw]).toEqual([1, 1]);
+    offA();
+    store.toggleTournamentDockCollapsed();
+    expect([aSaw, bSaw]).toEqual([1, 2]);
+    expect(store.tournamentDockCollapsed()).toBe(before);
+    offB();
+    store.resetTournamentDockStoreForTests();
   });
 });

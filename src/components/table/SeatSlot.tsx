@@ -1204,6 +1204,12 @@ export const SeatSlot = memo(
       elapsedAtPaintMs: number;
       /** Time left until 3s on the clock, frozen at this client's first paint of the turn. */
       holoDelayMs: number;
+      /**
+       * The ring's length when the engine sent NO start stamp, read from the
+       * deadline at this client's first paint of it. Unused when there is a
+       * stamp (deadline minus start is then the length, and may grow).
+       */
+      unstampedDurationMs: number;
     } | null>(null);
     useEffect(() => {
       return () => {
@@ -2535,7 +2541,31 @@ export const SeatSlot = memo(
       // honored: that is a genuine time-bank-extended turn.
       const MIN_PLAUSIBLE_TURN_MS = 15_000;
       const MAX_PLAUSIBLE_TURN_MS = 180_000;
-      const rawDurationMs = turnStartTimeMs ? turnDeadlineMs - turnStartTimeMs : 15_000;
+      /* The one identity of "this ring": the start stamp, or with none the
+         deadline. Read here because the unstamped length below is frozen
+         under it. */
+      const anchorKey = turnStartTimeMs || turnDeadlineMs;
+      const liveAnchor =
+        turnPaintAnchorRef.current?.key === anchorKey ? turnPaintAnchorRef.current : null;
+      /* NO START STAMP: THE LENGTH COMES FROM THE DEADLINE (2026-10-04).
+         This branch used to assume 15s. With no stamp the deadline is also
+         the React key, so a time-bank or grace extension remounts the plate -
+         and it then drew a FULL ring that emptied in fifteen seconds with the
+         new deadline thirty away. The time left at first paint is the only
+         engine fact available, so that is the length: never under the 15s
+         shot clock (a shorter figure is a mid-turn join, and is drawn as one
+         by the elapsed figure below), never over the plausible band. Frozen
+         in the anchor like the delay: recomputed per render it would shrink
+         every second and re-time the running animation. */
+      const unstampedDurationMs =
+        liveAnchor?.unstampedDurationMs ??
+        Math.min(
+          MAX_PLAUSIBLE_TURN_MS,
+          Math.max(MIN_PLAUSIBLE_TURN_MS, turnDeadlineMs - serverNow())
+        );
+      const rawDurationMs = turnStartTimeMs
+        ? turnDeadlineMs - turnStartTimeMs
+        : unstampedDurationMs;
       const durationMs =
         rawDurationMs >= MIN_PLAUSIBLE_TURN_MS && rawDurationMs <= MAX_PLAUSIBLE_TURN_MS
           ? rawDurationMs
@@ -2613,7 +2643,6 @@ export const SeatSlot = memo(
          player does not have and it never runs faster than the clock it
          represents. tests/seatslot-countdown-duration.test.tsx pins all of
          it, including the re-render case that was never tested before. */
-      const anchorKey = turnStartTimeMs || turnDeadlineMs;
       if (turnPaintAnchorRef.current?.key !== anchorKey) {
         /* The shine keeps its own first-paint allowance: "on the clock for at
            least 3 seconds" is about what THIS player has watched, so broadcast
@@ -2631,6 +2660,7 @@ export const SeatSlot = memo(
              more than three seconds already gone (base 0, elapsed large)
              lands at 0 and shines at once. */
           holoDelayMs: Math.max(0, HOLO_ON_CLOCK_MS - (rawElapsedMs - baseAtFirstPaint)),
+          unstampedDurationMs,
         };
       }
       const elapsedMs = turnPaintAnchorRef.current.elapsedAtPaintMs;

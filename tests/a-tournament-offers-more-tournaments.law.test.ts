@@ -26,6 +26,7 @@ import { resolve } from 'node:path';
 import {
   rankQuickJoinTournaments,
   rankQuickJoinTables,
+  quickJoinIsTournament,
   type QuickJoinTournamentCandidate,
 } from '../src/lib/quickJoinRanking';
 
@@ -300,10 +301,11 @@ describe('quickJoinTournamentRows', () => {
       dbRow({ id: 'full-sng', format_contract: 'sng-v1', max_players: 9, current_players: 9 }),
     ]);
 
-    const rows = await quickJoinTournamentRows(['club-1'], context, 'user-1');
+    const rows = (await quickJoinTournamentRows(['club-1'], context, 'user-1')) ?? [];
 
     expect(rows.map((r) => r.id)).toEqual(['same', 'near', 'far', 'plo']);
-    expect(h.getTournaments).toHaveBeenCalledWith('club-1');
+    // Asked to throw, so an unreadable list is never mistaken for an empty one.
+    expect(h.getTournaments).toHaveBeenCalledWith('club-1', { throwOnError: true });
     for (const r of rows) {
       // Every row is a TOURNAMENT and says where JOIN goes.
       expect(r.tournamentId).toBe(r.id);
@@ -324,7 +326,7 @@ describe('quickJoinTournamentRows', () => {
         buy_in_fee: 2,
       }),
     ]);
-    const rows = await quickJoinTournamentRows(['club-1'], context, 'user-1');
+    const rows = (await quickJoinTournamentRows(['club-1'], context, 'user-1')) ?? [];
     const by = Object.fromEntries(rows.map((r) => [r.id, r]));
 
     expect(by.paid.stakes).toBe('55');
@@ -358,7 +360,7 @@ describe('quickJoinTournamentRows', () => {
     );
     const rows = await quickJoinTournamentRows(['hub', 'club-1', 'hub'], context, 'user-1');
     expect(h.getTournaments).toHaveBeenCalledTimes(2);
-    expect(rows.map((r) => r.id).sort()).toEqual(['hub-only', 'shared']);
+    expect(rows?.map((r) => r.id).sort()).toEqual(['hub-only', 'shared']);
   });
 
   it('an empty club is an empty LIST, never null: it must not fall through to cash', async () => {
@@ -366,12 +368,23 @@ describe('quickJoinTournamentRows', () => {
     await expect(quickJoinTournamentRows(['club-1'], context, 'user-1')).resolves.toEqual([]);
   });
 
+  it('a list NOBODY could read is null, not "No Open Tournaments"; one readable club is a list', async () => {
+    h.getTournaments.mockRejectedValue({ message: 'timeout' });
+    await expect(quickJoinTournamentRows(['hub', 'club-1'], context, 'user-1')).resolves.toBeNull();
+    h.getTournaments.mockImplementation(async (clubId: string) => {
+      if (clubId === 'hub') throw new Error('timeout');
+      return [dbRow({ id: 'open' })];
+    });
+    const rows = await quickJoinTournamentRows(['hub', 'club-1'], context, 'user-1');
+    expect(rows?.map((r) => r.id)).toEqual(['open']);
+  });
+
   it('a failed registration read costs only the filter, not the sheet', async () => {
     h.registrationsError = { message: 'rls' };
     h.registrations = [];
     h.getTournaments.mockResolvedValue([dbRow({ id: 'open' })]);
     const rows = await quickJoinTournamentRows(['club-1'], context, 'user-1');
-    expect(rows.map((r) => r.id)).toEqual(['open']);
+    expect(rows?.map((r) => r.id)).toEqual(['open']);
   });
 
   it('entry is decided by the lobby rules, not by a second copy of them', () => {
@@ -384,15 +397,17 @@ describe('quickJoinTournamentRows', () => {
     const src = read('src/lib/quickJoinTournaments.ts');
     expect(src).toContain('isTournamentEntryUnavailable(t, entrants)');
     expect(src).toContain('tournamentStatus(t)');
-    expect(src).toContain('tournamentService.getTournaments(clubId)');
+    expect(src).toContain('tournamentService.getTournaments(clubId, { throwOnError: true })');
   });
 });
 
 describe('readTournamentContext', () => {
-  it('is null for a cash table', async () => {
+  it('says a cash table is a cash table, and is null only for what it could not read', async () => {
     h.tableRow = { id: 't1', tournament_id: null };
-    await expect(readTournamentContext('t1')).resolves.toBeNull();
+    await expect(readTournamentContext('t1')).resolves.toEqual({ format: 'cash' });
     await expect(readTournamentContext(null)).resolves.toBeNull();
+    h.tableRow = null;
+    await expect(readTournamentContext('t1')).resolves.toBeNull();
   });
 
   it('reads the event, its total price and its format', async () => {
@@ -447,10 +462,14 @@ describe('MultiTablePage', () => {
     expect(body.match(/\breturn;/g)?.length).toBe(2);
   });
 
-  it('either witness is enough, and a Spin keeps its own sheet', () => {
+  it('either witness is enough, a Spin keeps its own sheet, and a row read as cash is cash', () => {
     expect(HANDLER).toContain(
-      "const inTournament = tournamentCtx ? tournamentCtx.format !== 'spin' : tabSaysTournament;"
+      'const inTournament = quickJoinIsTournament(tableRead, tabSaysTournament);'
     );
+    expect(quickJoinIsTournament({ format: 'mtt' }, false)).toBe(true);
+    expect(quickJoinIsTournament(null, true)).toBe(true);
+    expect(quickJoinIsTournament({ format: 'spin' }, true)).toBe(false);
+    expect(quickJoinIsTournament({ format: 'cash' }, true)).toBe(false);
     expect(HANDLER).toMatch(/activeTab\?\.gameCode !== 'SPIN'/);
     // The spin branch is still asked first and still wins.
     expect(HANDLER.indexOf('if (spinRows) {')).toBeLessThan(HANDLER.indexOf('if (inTournament) {'));
@@ -493,7 +512,10 @@ describe('MultiTablePage', () => {
     expect(MULTI).toContain('initialGameType={table.lobbyGameType}');
     const home = read('src/pages/ClubHomePage.tsx');
     expect(home).toContain("useState<GameType>(initialGameType ?? 'ALL')");
-    expect(home).toContain("const tab = initialGameType ?? p.tab ?? 'ALL';");
+    // The landing is held for the mount it was requested for, and spent there:
+    // the strip clears the request once the page reports it applied.
+    expect(home).toContain("const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';");
+    expect(MULTI).toContain('onInitialGameTypeConsumed={() => consumeLobbyLanding(table.id)}');
   });
 
   it('nothing here moves the active tab without a tap (NO AUTO TABLE SWITCHING)', () => {

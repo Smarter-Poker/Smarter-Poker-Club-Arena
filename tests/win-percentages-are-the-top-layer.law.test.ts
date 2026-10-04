@@ -91,6 +91,11 @@ describe('the badges are one layer above every seat', () => {
 
   it('the layer measures layout size, checks every displayed card, and keeps the pop', () => {
     expect(LAYER).toMatch(/offsetWidth/);
+    /* 2026-10-04: and every measured rect is brought into those same layout
+       px (tile view scales the page 0.5), so the clamp width is the layer's
+       layout width, never its painted one. Behaviour pinned in
+       tests/unit/seatAndEquityFollowups.test.tsx. */
+    expect(LAYER).not.toMatch(/\{\s*width:\s*origin\.width\s*\}/);
     expect(LAYER).toMatch(/\.seat__cards--revealed \.seat__card/);
     expect(LAYER).toMatch(/\.seat__cards--hero \.seat__card/);
     expect(LAYER).toMatch(/\.community-cards__card/);

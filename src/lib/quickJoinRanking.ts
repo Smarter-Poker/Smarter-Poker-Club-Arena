@@ -531,4 +531,55 @@ export function rankQuickJoinTournaments(
   return ranked.slice(0, Math.max(0, limit));
 }
 
+/**
+ * IS THE "+" SHEET A TOURNAMENT SHEET? (2026-10-04)
+ *
+ * Two witnesses: the table's own row, and what the tab already believes (its
+ * `isTournament` flag or a game code that looks like one). The row outranks
+ * the tab whenever it could be READ:
+ *
+ *   - read, part of a tournament  -> tournament sheet, unless it is a Spin,
+ *     which answers through its own sheet;
+ *   - read, `tournament_id` null  -> a CASH table (`format: 'cash'`). The
+ *     tab's guess is ignored: a cash game whose name carries "MTT" or "SNG"
+ *     used to get the tournament sheet because "read as cash" and "could not
+ *     be read" were the same null;
+ *   - not readable (null)         -> the tab's guess decides.
+ */
+export function quickJoinIsTournament(
+  tableRead: { format: string } | null | undefined,
+  tabSaysTournament: boolean
+): boolean {
+  if (!tableRead) return tabSaysTournament;
+  return tableRead.format !== 'cash' && tableRead.format !== 'spin';
+}
+
+/**
+ * ONE ANNOUNCEMENT PER MOVE (2026-10-04)
+ *
+ * A tournament move reaches the multi-table page on two transports (the old
+ * table's socket and the hero's own seat row), and the player must be told
+ * once. `announced` holds the moves already spoken, keyed `from->to`.
+ *
+ * Returns true when the caller should announce, and records the move.
+ *
+ * The key is the MOVE, not the destination, and a move stops counting the
+ * moment the hero leaves the table it led to: announcing `from -> to` forgets
+ * every earlier move INTO `from`. So A to B, back to A, then to B again is
+ * three announcements, while the same move heard on both transports is one.
+ */
+export function claimMoveAnnouncement(
+  announced: Set<string>,
+  fromId: string,
+  toId: string
+): boolean {
+  const key = `${fromId}->${toId}`;
+  if (announced.has(key)) return false;
+  for (const earlier of Array.from(announced)) {
+    if (earlier.endsWith(`->${fromId}`)) announced.delete(earlier);
+  }
+  announced.add(key);
+  return true;
+}
+
 export default rankQuickJoinTables;

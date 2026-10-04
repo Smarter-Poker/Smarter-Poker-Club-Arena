@@ -29,7 +29,7 @@ const PAGE = strip(readFileSync(resolve(root, 'src/pages/TablePage.tsx'), 'utf8'
 
 describe('the reset that ends a hand records which hand ended', () => {
   it('names the hand when HAND_COMPLETE lands, not when the (movable) reset finally runs', () => {
-    const at = PAGE.indexOf('const completedHandNumber = tableStateRef.current.handNumber ?? 0;');
+    const at = PAGE.indexOf('const feltHandNumber = tableStateRef.current.handNumber ?? 0;');
     const fn = PAGE.indexOf('handCompleteResetFnRef.current = () => {');
     expect(at).toBeGreaterThan(-1);
     expect(fn).toBeGreaterThan(at);
@@ -41,6 +41,14 @@ describe('the reset that ends a hand records which hand ended', () => {
     );
     // Nothing else may ever mark a hand finished.
     expect(PAGE.match(/setFinishedHand\(/g)).toHaveLength(1);
+  });
+
+  it('an event about another hand than the one on the felt marks nothing', () => {
+    // A replayed or late hand_complete must never name the LIVE hand finished.
+    expect(PAGE).toMatch(
+      /const completedHandNumber =\s*eventHandNumber > 0 && feltHandNumber > 0 && eventHandNumber !== feltHandNumber\s*\? 0\s*: feltHandNumber;/
+    );
+    expect(PAGE).toMatch(/\?\.hand_number\) \|\| 0;/);
   });
 
   it('never clears the cards in state: the recovery reads and the snapshot merge keep what they had', () => {
@@ -60,19 +68,25 @@ describe('a hand is hidden only while it is provably the finished one', () => {
     );
   });
 
-  it('the break hides cards only once the tables are parked, and never while a seat is on the clock', () => {
+  it('the break hides cards only on a parked felt with nothing in the middle and nobody being paid', () => {
+    // `currentPlayerSeat === 0` alone is not "parked": it is 0 between every
+    // two actions, through every runout and for the whole result hold, and the
+    // countdown starts at :55 whether or not this table's hand has finished.
     const at = PAGE.indexOf('const breakHidesCards =');
     const rule = PAGE.slice(at, PAGE.indexOf(';', at));
     expect(rule).toMatch(/maintenanceBreak\.active/);
     expect(rule).toMatch(/maintenanceBreak\.phase !== 'last_hand'/);
     expect(rule).toMatch(/tableState\.currentPlayerSeat === 0/);
+    expect(rule).toMatch(/\(tableState\.pot \|\| 0\) === 0/);
+    expect(rule).toMatch(/tableState\.communityCards\.length === 0/);
+    expect(rule).toMatch(/winnerInfo\.playerIds\.length === 0/);
   });
 });
 
 describe('both surfaces obey it', () => {
   it('a seat is handed no cards for a finished hand or a parked break', () => {
     expect(PAGE).toMatch(
-      /\(breakHidesCards \|\| \(displayPlayer\.isHero \? heroHandIsOver : tableHandIsOver\)\)\s*\) \{\s*displayPlayer = \{ \.\.\.displayPlayer, holeCards: \[\], showCards: false \};/
+      /\(breakHidesCards \|\| \(displayPlayer\.isHero \? heroHandIsOver : tableHandIsOver\)\)\s*\) \{\s*displayPlayer = \{\s*\.\.\.displayPlayer,\s*holeCards: \[\],\s*showCards: false,/
     );
     // ...and that is the player the seat is given.
     const gate = PAGE.indexOf('displayPlayer.isHero ? heroHandIsOver : tableHandIsOver');
@@ -85,5 +99,20 @@ describe('both surfaces obey it', () => {
     const memo = PAGE.slice(at, PAGE.indexOf(']);', at));
     expect(memo).toMatch(/if \(heroHandIsOver \|\| breakHidesCards\) return '';/);
     expect(memo).toMatch(/heroHandIsOver,\s*breakHidesCards,/);
+  });
+});
+
+describe('the whole seat lets go of the hand, not only its two cards', () => {
+  it('no fan of card backs, no all-in pose and no hand label outlive it', () => {
+    expect(PAGE).toMatch(/const feltShowsNoHand = tableHandIsOver \|\| breakHidesCards;/);
+    expect(PAGE).toMatch(
+      /handInPlay=\{\s*\(tableState\.isHandInProgress \|\| \(tableState\.handNumber \?\? 0\) > 0\) &&\s*!feltShowsNoHand\s*\}/
+    );
+    expect(PAGE).toMatch(
+      /status: displayPlayer\.status === 'all_in' \? 'active' : displayPlayer\.status,/
+    );
+    expect(PAGE).toMatch(
+      /handStrength=\{\s*displayPlayer\?\.isHero && !heroHandIsOver && !breakHidesCards\s*\? heroHandStrength\s*: null\s*\}/
+    );
   });
 });

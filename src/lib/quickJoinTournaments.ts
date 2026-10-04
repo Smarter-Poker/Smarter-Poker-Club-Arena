@@ -75,6 +75,15 @@ export interface TournamentQuickJoinContext extends QuickJoinCurrentTournament {
   format: 'mtt' | 'sng' | 'spin' | 'unknown';
 }
 
+/**
+ * The table's row was READ and it belongs to no tournament: a cash table. A
+ * different answer from null on purpose, so the caller never mistakes "this is
+ * cash" for "could not tell" and falls back to a guess it does not need.
+ */
+export interface CashTableContext {
+  format: 'cash';
+}
+
 /** How many tournaments the sheet shows. Same five the cash path offers. */
 export const TOURNAMENT_QUICK_JOIN_LIMIT = 5;
 
@@ -82,19 +91,29 @@ export const TOURNAMENT_QUICK_JOIN_LIMIT = 5;
 const ENTRY_OPEN_KEYS = new Set(['registering', 'starting_soon', 'late_reg']);
 
 /**
- * Which tournament is this table part of? null for a cash table and for
- * anything unreadable: the caller then decides from what the tab itself knows.
+ * Which tournament is this table part of?
+ *
+ *   - the tournament, when the table is part of one and it could be read;
+ *   - `{ format: 'cash' }` when the table's row was read and has no tournament;
+ *   - null for anything unreadable (a failed read, a row this viewer cannot
+ *     see, a tournament that would not load). Only then does the caller decide
+ *     from what the tab itself knows.
  */
 export async function readTournamentContext(
   activeTableId: string | null
-): Promise<TournamentQuickJoinContext | null> {
+): Promise<TournamentQuickJoinContext | CashTableContext | null> {
   if (!activeTableId) return null;
   const { data: tbl, error: tblErr } = await supabase
     .from('tables')
     .select('id, tournament_id')
     .eq('id', activeTableId)
     .maybeSingle();
-  if (tblErr || !tbl?.tournament_id) return null;
+  if (tblErr) {
+    reportError(tblErr, 'QuickJoinTournaments.table_read_failed', { activeTableId });
+    return null;
+  }
+  if (!tbl) return null;
+  if (!tbl.tournament_id) return { format: 'cash' };
 
   const { data: t, error: tErr } = await supabase
     .from('tournaments')
@@ -103,7 +122,11 @@ export async function readTournamentContext(
     )
     .eq('id', tbl.tournament_id as string)
     .maybeSingle();
-  if (tErr || !t) return null;
+  if (tErr) {
+    reportError(tErr, 'QuickJoinTournaments.tournament_read_failed', { activeTableId });
+    return null;
+  }
+  if (!t) return null;
 
   /* The format contract first, then the same two-column test the Spin sheet
      uses: a row without a readable contract is still a Spin if either column
@@ -151,12 +174,18 @@ export function toQuickJoinTournamentCandidate(
 /**
  * The tournaments a player sitting in one can enter right now, ranked.
  *
- * Always an ARRAY, possibly empty. Empty is a real answer here ("No Open
- * Tournaments Right Now") and must not fall through to the cash sheet: the
- * owner's ruling is that a tournament player is never shown cash games by this
- * button. The reads below degrade rather than throw, so a failed registration
- * read costs only the "already entered" filter, and that row's own page still
- * says "You Are Registered".
+ * An ARRAY, possibly empty, whenever at least one club's list could be read.
+ * Empty is a real answer here ("No Open Tournaments Right Now") and must not
+ * fall through to the cash sheet: the owner's ruling is that a tournament
+ * player is never shown cash games by this button.
+ *
+ * NULL when EVERY club's list failed to read. "No Open Tournaments Right Now"
+ * would be a statement about the club that nobody was able to check, so the
+ * caller takes its stalled exit to the tournament lobby instead. One readable
+ * club is enough for a list: a partial answer is still true of what it shows.
+ *
+ * A failed registration read costs only the "already entered" filter, and
+ * that row's own page still says "You Are Registered".
  *
  * @param scopeClubIds the union hub AND the entry club, the same pair the cash
  *   and Spin paths scope to.
@@ -165,15 +194,15 @@ export async function quickJoinTournamentRows(
   scopeClubIds: string[],
   context: TournamentQuickJoinContext | null,
   userId: string | null | undefined
-): Promise<TournamentQuickJoinRow[]> {
+): Promise<TournamentQuickJoinRow[] | null> {
   const clubIds = Array.from(new Set((scopeClubIds || []).filter(Boolean)));
 
-  const [lists, regs] = await Promise.all([
+  const [reads, regs] = await Promise.all([
     Promise.all(
       clubIds.map((clubId) =>
-        tournamentService.getTournaments(clubId).catch((err: unknown) => {
+        tournamentService.getTournaments(clubId, { throwOnError: true }).catch((err: unknown) => {
           reportError(err, 'QuickJoinTournaments.list_read_failed', { clubId });
-          return [];
+          return null;
         })
       )
     ),
@@ -193,6 +222,9 @@ export async function quickJoinTournamentRows(
   const mine = ((regs.data ?? []) as Array<{ tournament_id: string | null }>)
     .map((r) => r.tournament_id)
     .filter((id): id is string => !!id);
+
+  const lists = reads.filter((list): list is NonNullable<typeof list> => list !== null);
+  if (clubIds.length > 0 && lists.length === 0) return null;
 
   const rows = lists.flat() as unknown as LobbyTournamentRow[];
   const ranked = rankQuickJoinTournaments(rows.map(toQuickJoinTournamentCandidate), {

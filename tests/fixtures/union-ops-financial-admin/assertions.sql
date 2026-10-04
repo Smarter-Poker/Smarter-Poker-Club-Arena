@@ -309,6 +309,11 @@ BEGIN
      OR position('l.to_entity_id = p.player_id' in fn_src) = 0
      OR position('l.from_entity_id = p.player_id' in fn_src) = 0
      OR position('comm_pairs AS MATERIALIZED' in fn_src) = 0
+     OR position('comm AS MATERIALIZED' in fn_src) = 0
+     OR position('ac.user_id = p.agent_user_id' in fn_src) = 0
+     OR position('ac.club_id = p.club_id' in fn_src) = 0
+     OR position('JOIN public.agent_commissions ac' in fn_src) > 0
+     OR position('GROUP BY ac.user_id, ac.club_id' in fn_src) > 0
      OR position('JOIN edge_windows' in fn_src) > 0
      OR NOT EXISTS (
        SELECT 1
@@ -318,7 +323,7 @@ BEGIN
           AND p.proconfig IS NOT DISTINCT FROM
               ARRAY['search_path=public','jit=off']::text[])
      OR position('LEFT JOIN LATERAL (' in fn_src) > 0 THEN
-    RAISE EXCEPTION 'risk report lost bounded facts or player-keyed flow reads';
+    RAISE EXCEPTION 'risk report lost bounded facts or pair-keyed flow/commission reads';
   END IF;
 
   d := public.fn_union_distribution_check(u,since_at);
@@ -369,6 +374,11 @@ BEGIN
   IF position('l.to_entity_id = p.player_id' in fn_src) = 0
      OR position('l.from_entity_id = p.player_id' in fn_src) = 0
      OR position('flow_legs AS MATERIALIZED' in fn_src) <> 0
+     OR position('comm AS MATERIALIZED' in fn_src) = 0
+     OR position('ac.user_id = p.agent_user_id' in fn_src) = 0
+     OR position('ac.club_id = p.club_id' in fn_src) = 0
+     OR position('JOIN public.agent_commissions ac' in fn_src) <> 0
+     OR position('GROUP BY ac.user_id, ac.club_id' in fn_src) <> 0
      OR NOT EXISTS (
        SELECT 1
          FROM pg_index i
@@ -381,7 +391,7 @@ BEGIN
         WHERE i.indexrelid =
               'public.idx_chip_ledger_risk_out_player_window'::regclass
           AND i.indisvalid AND i.indisready AND i.indislive) THEN
-    RAISE EXCEPTION 'risk report lost exact player-keyed chip flow reads';
+    RAISE EXCEPTION 'risk report lost exact pair-keyed chip flow or commission reads';
   END IF;
 
   d := public.fn_union_settlement_preview(u,since_at,since_at + interval '7 days');

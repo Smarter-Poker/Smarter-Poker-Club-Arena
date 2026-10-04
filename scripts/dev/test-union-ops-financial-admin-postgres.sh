@@ -20,12 +20,13 @@ required = {
     "supabase/migrations/20261004202942_union_ops_risk_reads_bounded_production_facts.sql",
     "supabase/migrations/20261004212118_union_distribution_check_reads_daily_commission_facts.sql",
     "supabase/migrations/20261004221303_union_risk_uses_player_keyed_chip_flow_indexes.sql",
+    "supabase/migrations/20261004230841_union_risk_uses_pair_keyed_commission_sums.sql",
     "tests/fixtures/union-ops-financial-admin/bootstrap.sql",
     "tests/fixtures/union-ops-financial-admin/assertions.sql",
 }
 pins = json.loads(binding.read_text()).get("repository_files")
 if not isinstance(pins, dict) or set(pins) != required:
-    raise SystemExit("Union Ops source binding must pin exactly five migrations, bootstrap, and assertions.")
+    raise SystemExit("Union Ops source binding must pin exactly six migrations, bootstrap, and assertions.")
 for relative, expected in sorted(pins.items()):
     actual = hashlib.sha256((repo / relative).read_bytes()).hexdigest()
     if actual != expected:
@@ -60,6 +61,7 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres
   -f "$repo/supabase/migrations/20261004202942_union_ops_risk_reads_bounded_production_facts.sql" \
   -f "$repo/supabase/migrations/20261004212118_union_distribution_check_reads_daily_commission_facts.sql" \
   -f "$repo/supabase/migrations/20261004221303_union_risk_uses_player_keyed_chip_flow_indexes.sql" \
+  -f "$repo/supabase/migrations/20261004230841_union_risk_uses_pair_keyed_commission_sums.sql" \
   -f "$repo/tests/fixtures/union-ops-financial-admin/assertions.sql"
 
 echo 'Union Ops Financial Admin PostgreSQL 17 fixture passed.'

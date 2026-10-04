@@ -37,12 +37,105 @@ interface HubStats {
 interface HubReading {
   stats: HubStats;
   revenue: { day: string; amount: number }[];
+  revenueTotal: number;
   windowStart: string;
   windowEnd: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+const REVENUE_CONTRACT = 'ca_financial_admin_revenue_series_v1';
+const REVENUE_BASIS = 'cash_rake_plus_tournament_fees';
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const STRICT_NUMERIC = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+
+function parseLedgerNumber(value: unknown): number {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error('Revenue Amount Could Not Be Verified');
+  }
+  if (typeof value === 'string' && !STRICT_NUMERIC.test(value)) {
+    throw new Error('Revenue Amount Could Not Be Verified');
+  }
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) throw new Error('Revenue Amount Could Not Be Verified');
+  return parsed;
+}
+
+function formatUtcDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function parseRevenueSeries(
+  value: unknown,
+  expectedClubId: string | null,
+  platformWide: boolean
+): Pick<HubReading, 'revenue' | 'revenueTotal' | 'windowStart' | 'windowEnd'> {
+  if (!isRecord(value)) throw new Error('Revenue Series Was Not Returned');
+  const expectedScope = platformWide ? 'platform' : 'club';
+  if (
+    value.contract !== REVENUE_CONTRACT ||
+    value.basis !== REVENUE_BASIS ||
+    value.includes_live_day !== false ||
+    value.scope !== expectedScope ||
+    value.club_id !== expectedClubId ||
+    value.range_days !== 7 ||
+    typeof value.range_start !== 'string' ||
+    typeof value.range_end !== 'string' ||
+    !Array.isArray(value.daily) ||
+    value.daily.length !== 7 ||
+    typeof value.generated_at !== 'string' ||
+    (value.data_updated_at !== null && typeof value.data_updated_at !== 'string')
+  ) {
+    throw new Error('Revenue Series Contract Could Not Be Verified');
+  }
+
+  const startMs = Date.parse(`${value.range_start}T00:00:00Z`);
+  const endMs = Date.parse(`${value.range_end}T00:00:00Z`);
+  const generatedMs = Date.parse(value.generated_at);
+  const updatedMs = value.data_updated_at === null ? null : Date.parse(value.data_updated_at);
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    !Number.isFinite(generatedMs) ||
+    (updatedMs !== null && !Number.isFinite(updatedMs)) ||
+    endMs !== startMs + 6 * 86400000
+  ) {
+    throw new Error('Revenue Series Window Could Not Be Verified');
+  }
+
+  let unroundedTotal = 0;
+  const revenue = value.daily.map((row, index) => {
+    if (!isRecord(row) || typeof row.d !== 'string')
+      throw new Error('Revenue Day Could Not Be Verified');
+    const expectedDate = new Date(startMs + index * 86400000).toISOString().slice(0, 10);
+    const cashRake = parseLedgerNumber(row.cash_rake);
+    const tournamentFees = parseLedgerNumber(row.tournament_fees);
+    const amount = parseLedgerNumber(row.revenue);
+    if (row.d !== expectedDate || Math.abs(cashRake + tournamentFees - amount) > 0.000001)
+      throw new Error('Revenue Day Could Not Be Verified');
+    unroundedTotal += amount;
+    const date = new Date(`${row.d}T00:00:00Z`);
+    return { day: `${DAY_LABELS[date.getUTCDay()]} ${date.getUTCDate()}`, amount };
+  });
+
+  const revenueTotal = parseLedgerNumber(value.period_total);
+  if (Math.abs(Math.round(unroundedTotal * 100) / 100 - revenueTotal) > 0.000001) {
+    throw new Error('Revenue Period Total Could Not Be Verified');
+  }
+
+  return {
+    revenue,
+    revenueTotal,
+    windowStart: value.range_start,
+    windowEnd: value.range_end,
+  };
 }
 
 /* staffOnly: shown to platform staff only (scope.isPlatformStaff); the route
@@ -66,6 +159,7 @@ const NAV_ITEMS: Array<{
     description: 'Critical Warnings And System Notifications',
     path: '/financial-alerts',
     tone: 'red',
+    staffOnly: true,
   },
   {
     label: 'Drift Incidents',
@@ -225,8 +319,6 @@ export default function FinancialAdminHub() {
       isMounted.current &&
       request === statsRequest.current &&
       statsScopeRef.current === requestScope;
-    const windowEnd = new Date();
-    const windowStart = new Date(windowEnd.getTime() - 7 * 86400000);
     setLoading(true);
     setStatsError(null);
     setReading(null);
@@ -273,17 +365,10 @@ export default function FinancialAdminHub() {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
-        clubScoped(
-          supabase
-            .from('rake_records')
-            .select('rake_amount, created_at')
-            .gte('created_at', windowStart.toISOString())
-            .lte('created_at', windowEnd.toISOString()),
-          /* error bound by rakeDataResult below */
-          scopeKey
-        )
-          .order('created_at', { ascending: true })
-          .limit(5000),
+        supabase.rpc('ca_financial_admin_revenue_series', {
+          p_club_id: scopePlatformWide ? null : scopeClubId,
+          p_days: 7,
+        }),
       ]);
       const named = [
         ['Disputes', disputeResult],
@@ -314,7 +399,11 @@ export default function FinancialAdminHub() {
         }
       }
       if (!Array.isArray(incidentResult.data)) throw new Error('Drift Incidents Were Not Returned');
-      if (!Array.isArray(rakeDataResult.data)) throw new Error('Revenue Rows Were Not Returned');
+      const revenueReading = parseRevenueSeries(
+        rakeDataResult.data,
+        scopePlatformWide ? null : scopeClubId,
+        scopePlatformWide
+      );
       const incidents = incidentResult.data;
       if (
         incidents.some(
@@ -337,33 +426,6 @@ export default function FinancialAdminHub() {
       const latestHealthPassed = latestHealth == null ? null : (latestHealth.passed as boolean);
       if (!isCurrent()) return;
 
-      // Process revenue sparkline
-      const revenue: { day: string; amount: number }[] = [];
-      const rakeRows = rakeDataResult.data;
-      if (rakeRows.length > 0) {
-        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const grouped: Record<string, number> = {};
-        rakeRows.forEach((row) => {
-          if (!isRecord(row)) throw new Error('Revenue Row Could Not Be Verified');
-          const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : NaN;
-          const d = new Date(createdAt);
-          const rakeAmount = Number(row.rake_amount);
-          if (
-            row.rake_amount === null ||
-            row.rake_amount === undefined ||
-            !Number.isFinite(rakeAmount) ||
-            !Number.isFinite(createdAt)
-          )
-            throw new Error('Revenue Amount Could Not Be Verified');
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          grouped[label] = (grouped[label] || 0) + rakeAmount;
-        });
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(windowEnd.getTime() - i * 86400000);
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          revenue.push({ day: label, amount: grouped[label] || 0 });
-        }
-      }
       setReading({
         stats: {
           totalAlerts: alertResult.count!,
@@ -377,9 +439,7 @@ export default function FinancialAdminHub() {
           healthChecks: healthCountResult.count!,
           lastCheckPassed: latestHealthPassed,
         },
-        revenue,
-        windowStart: windowStart.toISOString(),
-        windowEnd: windowEnd.toISOString(),
+        ...revenueReading,
       });
       setLoadedStatsScope(requestScope);
       setStatsError(null);
@@ -556,14 +616,14 @@ export default function FinancialAdminHub() {
             </section>
 
             {revenueData.length > 0 && (
-              <section className={styles.revenue} aria-label="Seven Day Revenue">
+              <section className={styles.revenue} aria-label="Seven Complete Days Revenue">
                 <div className={styles.sectionHeading}>
-                  <span className="sc-label sc-ink--blue">Seven Day Revenue</span>
+                  <span className="sc-label sc-ink--blue">Seven Complete Days Revenue</span>
                   <strong className="sc-ink--silver">
-                    {compactChips(revenueData.reduce((sum, day) => sum + day.amount, 0))} Chips
+                    {compactChips(reading?.revenueTotal ?? 0)} Chips
                   </strong>
                 </div>
-                <div className={styles.chart} aria-label="Seven Day Revenue Chart">
+                <div className={styles.chart} aria-label="Seven Complete Days Revenue Chart">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={revenueData} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
                       <XAxis
@@ -629,7 +689,7 @@ export default function FinancialAdminHub() {
                 <div className={styles.statusRow}>
                   <span>Reading Window</span>
                   <strong className="sc-ink--muted">
-                    Through {new Date(reading.windowEnd).toLocaleDateString()}
+                    Through {formatUtcDate(reading.windowEnd)} UTC
                   </strong>
                 </div>
               )}

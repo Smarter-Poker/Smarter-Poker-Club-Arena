@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 185780,
-      "sha256": "f512937ee0c90946fc41f8296849922c97c33c48098247bfe80a91043851a5d1"
+      "bytes": 185697,
+      "sha256": "60eb48077cf49681e5796dde168d140c2a9d841b289c81b423f2b0ecd70a19a1"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 29773,
-      "sha256": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+      "bytes": 30425,
+      "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1542,6 +1542,35 @@
         "current": {
           "bytes": 29773,
           "sha256": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+        }
+      }
+    ]
+  },
+  "dataConsoleNativePostgresIntegration20261004": {
+    "reason": "Replace the direct three-runner Stats shard-2 step with the exact nine-fixture Data console PostgreSQL 17 wrapper, which includes those three Stats contracts plus six connected Data contracts, and classify that wrapper, its fixtures and its wiring into the server-test verdict. The Diamond route remains additive. No cash qualification runner, fixture, financial input or assertion changes.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 185780,
+          "sha256": "f512937ee0c90946fc41f8296849922c97c33c48098247bfe80a91043851a5d1"
+        },
+        "current": {
+          "bytes": 185697,
+          "sha256": "60eb48077cf49681e5796dde168d140c2a9d841b289c81b423f2b0ecd70a19a1"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 29773,
+          "sha256": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+        },
+        "current": {
+          "bytes": 30425,
+          "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
         }
       }
     ]

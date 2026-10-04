@@ -4,21 +4,23 @@ export LC_ALL=C LANG=C
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 pgbin="${PG17_BINDIR:-/opt/homebrew/opt/postgresql@17/bin}"
+scratch_parent="${STATS_PG_SCRATCH_PARENT:-/Volumes/SmarterWork/agent-work}"
 migration="$repo/supabase/migrations/20261003140226_stats_owner_workspace.sql"
 fixture="$repo/tests/fixtures/stats-owner-workspace"
 
 [[ -x "$pgbin/initdb" && -x "$pgbin/postgres" ]] || {
   echo 'PostgreSQL 17 tools unavailable; set PG17_BINDIR.' >&2; exit 2;
 }
+[[ -d "$scratch_parent" ]] || { echo "Stats PostgreSQL scratch parent is unavailable: $scratch_parent" >&2; exit 2; }
 
-work="$(mktemp -d /Volumes/SmarterWork/agent-work/stats-owner-workspace-fixture.XXXXXX)"
+work="$(mktemp -d "$scratch_parent/stats-owner-workspace-fixture.XXXXXX")"
 data="$work/data"
 socket="$work/socket"
 port="$((57000 + ($$ % 7000)))"
 mkdir -p "$socket"
 cleanup() {
   "$pgbin/pg_ctl" -D "$data" -m immediate stop >/dev/null 2>&1 || true
-  [[ "$work" == /Volumes/SmarterWork/agent-work/stats-owner-workspace-fixture.* ]] && find "$work" -depth -delete
+  [[ "$work" == "$scratch_parent"/stats-owner-workspace-fixture.* ]] && find "$work" -depth -delete
 }
 trap cleanup EXIT
 

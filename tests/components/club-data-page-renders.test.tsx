@@ -305,6 +305,35 @@ describe('ClubDataPage', () => {
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
   });
 
+  it('reports a resolved club-name query error while keeping the ledger usable', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fromMock.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: null,
+            error: { message: 'club name unavailable', code: 'PGRST500' },
+          }),
+        }),
+      }),
+    }));
+
+    try {
+      render(<ClubDataPage />);
+
+      expect(await screen.findByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.getByText('Club Intelligence')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ClubDataPage.club_name]',
+          expect.objectContaining({ message: '[ClubDataPage.club_name] club name unavailable' })
+        )
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('exports the exact prepared game snapshot instead of only the visible page', async () => {
     const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
 

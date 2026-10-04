@@ -58,6 +58,7 @@ const ROUTES = [
   'players',
   'profile',
   'promotions',
+  `rate-audit?club=${process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'}`,
   'rakeback',
   'rakeback-dashboard',
   'search',

@@ -35,6 +35,7 @@ import { SpadeConsole } from '../../components/console/SpadeConsole';
 import { compactChips } from '../../utils/format';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useToast } from '../../components/common/Toast';
 
 interface ReportDay {
   day: string;
@@ -312,6 +313,7 @@ export default function ClubInsuranceReportPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthUser();
+  const toast = useToast();
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(30);
   const scopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}:${days}`;
   const [snapshot, setSnapshot] = useState<ReportSnapshot | null>(null);
@@ -426,8 +428,10 @@ export default function ClubInsuranceReportPage() {
     void load();
   }, [load]);
 
-  const exportCsv = useCallback(() => {
+  const exportCsv = useCallback(async () => {
     if (!report) return;
+    const exportScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === exportScope;
     const header =
       'day,offers,accepted,declined,timeouts,cashouts,contracts,bank_in,bank_out,bank_net';
     const rows = report.days.map((d) =>
@@ -446,11 +450,21 @@ export default function ClubInsuranceReportPage() {
         .map((v) => csvEscape(String(v)))
         .join(',')
     );
-    downloadCsv(
-      `insurance-report-${clubId}-${report.window_days}d.csv`,
-      [header, ...rows].join('\n')
-    );
-  }, [report, clubId]);
+    try {
+      const downloaded = await downloadCsv(
+        `insurance-report-${clubId}-${report.window_days}d.csv`,
+        [header, ...rows].join('\n'),
+        isCurrent
+      );
+      if (isCurrent() && !downloaded) {
+        toast.error('This Browser Could Not Start The Download');
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      reportError(error, 'ClubInsuranceReportPage.Export_failed');
+      toast.error('This Browser Could Not Start The Download');
+    }
+  }, [report, clubId, isMounted, scopeKey, toast]);
 
   if (notFound) {
     return (

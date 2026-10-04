@@ -84,6 +84,9 @@
   display: grid;
   gap: 3.4cqw;
   padding: 2cqw 10cqw 5cqw;
+  margin: 0;
+  min-inline-size: 0;
+  border: 0;
 }
 
 .stats-workspace-composer form {

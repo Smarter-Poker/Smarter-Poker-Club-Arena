@@ -57,11 +57,23 @@ describe('StatsEvidenceService', () => {
 
   it('uses the dedicated owner-only cash-session evidence contract', async () => {
     mocks.rpc.mockResolvedValue({
-      data: { hands: [{ hand_id: 'hand-1' }], has_more: false, next_cursor: null },
+      data: {
+        contract_version: 3,
+        hands: [{ hand_id: 'hand-1' }],
+        has_more: false,
+        next_cursor: null,
+        scope: {
+          target_user_id: 'user-1',
+          cash_session_id: '11111111-1111-4111-8111-111111111111',
+          asset: 'diamonds',
+          visibility: 'owner',
+        },
+      },
       error: null,
     });
     await StatsEvidenceService.listCashSession(
       'user-1',
+      'diamonds',
       '11111111-1111-4111-8111-111111111111',
       { played_at: '2026-10-03T11:00:00Z', hand_id: 'hand-2' },
       500
@@ -69,7 +81,7 @@ describe('StatsEvidenceService', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('ca_player_stats_hand_evidence', {
       p_user: 'user-1',
       p_club_id: null,
-      p_asset: 'chips',
+      p_asset: 'diamonds',
       p_variant: null,
       p_position: null,
       p_big_blind: null,

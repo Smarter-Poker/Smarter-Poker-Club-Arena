@@ -35,7 +35,6 @@ export type ClubComparisonSort =
   | 'bb100'
   | 'vpip'
   | 'pfr'
-  | 'hours'
   | 'rake'
   | 'tournaments'
   | 'lastPlay';
@@ -63,7 +62,6 @@ export const CLUB_SORTS: Array<{ key: ClubComparisonSort; label: string }> = [
   { key: 'bb100', label: 'BB/100' },
   { key: 'vpip', label: 'VPIP' },
   { key: 'pfr', label: 'PFR' },
-  { key: 'hours', label: 'Hours' },
   { key: 'rake', label: 'Rake' },
   { key: 'tournaments', label: 'Tournaments' },
   { key: 'lastPlay', label: 'Last Play' },
@@ -131,6 +129,31 @@ export const TAB_LABELS: Record<StatCategory, string> = {
   rake: 'Rake',
   workspace: 'Workspace',
 };
+
+/**
+ * A saved dashboard layout controls order, never feature availability. Older
+ * builds accepted arbitrary JSON strings, so treat preferences as untrusted:
+ * keep valid unique tabs, append every omitted available tab, and leave the
+ * owner-only Workspace tab last.
+ */
+export function normalizeDashboardLayout(
+  values: unknown,
+  available: readonly StatCategory[]
+): StatCategory[] {
+  const availableWithoutWorkspace = available.filter((tab) => tab !== 'workspace');
+  const allowed = new Set<StatCategory>(availableWithoutWorkspace);
+  const ordered: StatCategory[] = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    if (typeof value !== 'string' || value === 'workspace') continue;
+    const tab = value as StatCategory;
+    if (allowed.has(tab) && !ordered.includes(tab)) ordered.push(tab);
+  }
+  for (const tab of availableWithoutWorkspace) {
+    if (!ordered.includes(tab)) ordered.push(tab);
+  }
+  if (available.includes('workspace')) ordered.push('workspace');
+  return ordered;
+}
 
 export const EMPTY_OVERALL: OverallStats = {
   total_hands: 0,

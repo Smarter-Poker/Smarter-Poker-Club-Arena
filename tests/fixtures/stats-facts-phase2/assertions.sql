@@ -10,6 +10,13 @@ BEGIN
   RAISE EXCEPTION 'expected refusal: %',p_sql;
 END $$;
 
+INSERT INTO ca_hand_player_stat(hand_id,user_id,won_amt,profit,is_winner) VALUES
+ ('30000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001',0,-5,false),
+ ('30000000-0000-4000-8000-000000000002','40000000-0000-4000-8000-000000000001',6,-4,false);
+INSERT INTO ca_hand_player_idx(hand_id,user_id) VALUES
+ ('30000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001'),
+ ('30000000-0000-4000-8000-000000000002','40000000-0000-4000-8000-000000000001');
+
 INSERT INTO clubs(id,asset) VALUES('10000000-0000-4000-8000-000000000001','chips');
 INSERT INTO club_members VALUES(
  '10000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001','active'
@@ -81,6 +88,10 @@ DO $$ DECLARE v jsonb; k uuid:='50000000-0000-4000-8000-000000000001'; BEGIN
  IF (SELECT net FROM ca_hand_facts WHERE hand_id='30000000-0000-4000-8000-000000000001')<>7 THEN
    RAISE EXCEPTION 'correction not materialized';
  END IF;
+ IF NOT EXISTS(SELECT 1 FROM ca_hand_player_stat
+   WHERE hand_id='30000000-0000-4000-8000-000000000001' AND won_amt=17 AND profit=7 AND is_winner) THEN
+   RAISE EXCEPTION 'correction did not synchronize legacy projection';
+ END IF;
  v:=ca_append_hand_fact_revision('30000000-0000-4000-8000-000000000001',
   '40000000-0000-4000-8000-000000000001','correction',
   '{"returned":17,"net":7,"net_bb":3.5,"ev_net":7,"ev_net_bb":3.5}'::jsonb,'case-1',k);
@@ -98,6 +109,8 @@ SELECT ca_append_hand_fact_revision('30000000-0000-4000-8000-000000000002',
  '50000000-0000-4000-8000-000000000002');
 DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM ca_hand_facts WHERE hand_id='30000000-0000-4000-8000-000000000002')
+    OR EXISTS(SELECT 1 FROM ca_hand_player_stat WHERE hand_id='30000000-0000-4000-8000-000000000002')
+    OR EXISTS(SELECT 1 FROM ca_hand_player_idx WHERE hand_id='30000000-0000-4000-8000-000000000002')
     OR NOT EXISTS(SELECT 1 FROM ca_hand_fact_revisions WHERE hand_id='30000000-0000-4000-8000-000000000002' AND kind='void') THEN
    RAISE EXCEPTION 'void was not retained/excluded';
  END IF;
@@ -132,6 +145,53 @@ SELECT fixture_refuses($q$SELECT ca_append_hand_fact_revision(
  '30000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001',
  'void',NULL,'no','50000000-0000-4000-8000-000000000003')$q$,'42501');
 RESET ROLE;
+
+-- Hold the same advisory key outside both calls, then release the two
+-- simultaneous requests together. The function's transaction lock must make
+-- the second request observe the first receipt as a replay rather than race
+-- the unique idempotency key.
+CREATE EXTENSION dblink;
+DO $$
+DECLARE
+  v_conn text := format(
+    'host=%s port=%s dbname=%s user=%s',
+    current_setting('unix_socket_directories'),
+    current_setting('port'),
+    current_database(),
+    current_user
+  );
+  v_key uuid := '50000000-0000-4000-8000-000000000004';
+  v_sql text;
+BEGIN
+  v_sql := format(
+    'SELECT public.ca_append_hand_fact_revision(%L,%L,%L,%L::jsonb,%L,%L)',
+    '30000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    'refund',
+    '{"returned":18,"net":8,"net_bb":4,"ev_net":8,"ev_net_bb":4}',
+    'concurrent-case',
+    v_key
+  );
+  PERFORM pg_advisory_lock(hashtextextended('ca-hand-fact-revision:'||v_key::text,0));
+  PERFORM dblink_connect('revision-c1',v_conn);
+  PERFORM dblink_connect('revision-c2',v_conn);
+  PERFORM dblink_send_query('revision-c1',v_sql);
+  PERFORM dblink_send_query('revision-c2',v_sql);
+  PERFORM pg_sleep(0.1);
+  PERFORM pg_advisory_unlock(hashtextextended('ca-hand-fact-revision:'||v_key::text,0));
+  PERFORM result FROM dblink_get_result('revision-c1') AS t(result jsonb);
+  PERFORM result FROM dblink_get_result('revision-c2') AS t(result jsonb);
+  PERFORM dblink_disconnect('revision-c1');
+  PERFORM dblink_disconnect('revision-c2');
+  IF (SELECT count(*) FROM ca_hand_fact_revisions WHERE idempotency_key=v_key)<>1
+     OR NOT EXISTS(
+       SELECT 1 FROM ca_hand_player_stat
+       WHERE hand_id='30000000-0000-4000-8000-000000000001'
+         AND won_amt=18 AND profit=8 AND is_winner
+     ) THEN
+    RAISE EXCEPTION 'concurrent revision did not converge on one result';
+  END IF;
+END $$;
 
 DO $$ BEGIN
  IF position('ca_project_hand_stats_facts(v_h.id)' in

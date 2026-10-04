@@ -57,6 +57,7 @@ export interface StatsStudyCollection {
   description: string;
   updatedAt: string;
   hands: Array<{ handId: string; addedAt: string; note: HandNote | null }>;
+  handsCapped: boolean;
 }
 
 export interface StatsWorkspacePreferences {
@@ -87,6 +88,7 @@ export interface StatsWorkspaceSnapshot {
   collections: StatsStudyCollection[];
   preferences: StatsWorkspacePreferences;
   alerts: StatsAlertRule[];
+  coverage: { capped: boolean; rowLimit: number };
 }
 
 export type WorkspaceResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -95,6 +97,9 @@ const EMPTY_PREFERENCES: StatsWorkspacePreferences = {
   dashboardLayout: [],
   privacyPresentationMode: false,
 };
+const WORKSPACE_ROW_LIMIT = 100;
+const WORKSPACE_FETCH_LIMIT = WORKSPACE_ROW_LIMIT + 1;
+const dashboardLayout = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 function failure(error: unknown, operation: string): WorkspaceResult<never> {
   reportError(error, `StatsWorkspaceService.${operation}`);
@@ -105,74 +110,131 @@ function rpcValue<T>(value: unknown): T {
   return value as T;
 }
 
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  operation: (value: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (next < values.length) {
+        const index = next++;
+        results[index] = await operation(values[index]);
+      }
+    })
+  );
+  return results;
+}
+
 export const statsWorkspaceService = {
+  async loadPreferences(): Promise<WorkspaceResult<StatsWorkspacePreferences>> {
+    try {
+      const { data, error } = await supabase
+        .from('ca_stats_workspace_preferences')
+        .select('dashboard_layout, privacy_presentation_mode')
+        .maybeSingle();
+      if (error) throw error;
+      return {
+        ok: true,
+        data: data
+          ? {
+              dashboardLayout: dashboardLayout(data.dashboard_layout),
+              privacyPresentationMode: data.privacy_presentation_mode,
+            }
+          : EMPTY_PREFERENCES,
+      };
+    } catch (error) {
+      return failure(error, 'loadPreferences');
+    }
+  },
+
   async load(): Promise<WorkspaceResult<StatsWorkspaceSnapshot>> {
     try {
-      const [reports, leaks, goals, progress, collections, collectionHands, preferences, alerts] =
-        await Promise.all([
+      const [reports, leaks, goals, progress, collections, preferences, alerts] = await Promise.all(
+        [
           supabase
             .from('ca_stats_workspace_reports')
             .select('*')
-            .order('updated_at', { ascending: false }),
+            .order('updated_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
           supabase
             .from('ca_stats_workspace_leaks')
             .select('*')
-            .order('updated_at', { ascending: false }),
+            .order('updated_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
           supabase
             .from('ca_stats_workspace_goals')
             .select('*')
-            .order('updated_at', { ascending: false }),
+            .order('updated_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
           supabase
             .from('ca_stats_workspace_goal_progress')
             .select('*')
-            .order('measured_at', { ascending: false }),
+            .order('measured_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
           supabase
             .from('ca_stats_workspace_collections')
             .select('*')
-            .order('updated_at', { ascending: false }),
-          supabase
-            .from('ca_stats_workspace_collection_hands')
-            .select('*')
-            .order('added_at', { ascending: false }),
+            .order('updated_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
           supabase.from('ca_stats_workspace_preferences').select('*').maybeSingle(),
           supabase
             .from('ca_stats_workspace_alert_rules')
             .select('*')
-            .order('updated_at', { ascending: false }),
-        ]);
+            .order('updated_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT),
+        ]
+      );
 
-      const failed = [
-        reports,
-        leaks,
-        goals,
-        progress,
-        collections,
-        collectionHands,
-        preferences,
-        alerts,
-      ].find((result) => result.error);
+      const failed = [reports, leaks, goals, progress, collections, preferences, alerts].find(
+        (result) => result.error
+      );
       if (failed?.error) throw failed.error;
 
-      const handRows = collectionHands.data ?? [];
+      const collectionRows = (collections.data ?? []).slice(0, WORKSPACE_ROW_LIMIT);
+      const collectionHandResults = await mapWithConcurrency(
+        collectionRows,
+        6,
+        async (collection) =>
+          await supabase
+            .from('ca_stats_workspace_collection_hands')
+            .select('*')
+            .eq('collection_id', collection.id)
+            .order('added_at', { ascending: false })
+            .limit(WORKSPACE_FETCH_LIMIT)
+      );
+      const failedHands = collectionHandResults.find((result) => result.error);
+      if (failedHands?.error) throw failedHands.error;
+      const capped =
+        [reports, leaks, goals, progress, collections, alerts].some(
+          (result) => (result.data?.length ?? 0) > WORKSPACE_ROW_LIMIT
+        ) ||
+        collectionHandResults.some((result) => (result.data?.length ?? 0) > WORKSPACE_ROW_LIMIT);
+      const handRows = collectionHandResults.flatMap((result) =>
+        (result.data ?? []).slice(0, WORKSPACE_ROW_LIMIT)
+      );
       const notes = await handNotesService.listFor(handRows.map((row) => row.hand_id));
-      const collectionItems = (collections.data ?? []).map((row) => ({
+      const collectionItems = collectionRows.map((row, index) => ({
         id: row.id,
         name: row.name,
         description: row.description,
         updatedAt: row.updated_at,
-        hands: handRows
-          .filter((hand) => hand.collection_id === row.id)
+        hands: (collectionHandResults[index].data ?? [])
+          .slice(0, WORKSPACE_ROW_LIMIT)
           .map((hand) => ({
             handId: hand.hand_id,
             addedAt: hand.added_at,
             note: notes.get(hand.hand_id) ?? null,
           })),
+        handsCapped: (collectionHandResults[index].data?.length ?? 0) > WORKSPACE_ROW_LIMIT,
       }));
 
       return {
         ok: true,
         data: {
-          reports: (reports.data ?? []).map((row) => ({
+          reports: (reports.data ?? []).slice(0, WORKSPACE_ROW_LIMIT).map((row) => ({
             id: row.id,
             idempotencyKey: row.idempotency_key,
             title: row.title,
@@ -184,7 +246,7 @@ export const statsWorkspaceService = {
             rangeDays: row.range_days,
             updatedAt: row.updated_at,
           })),
-          leaks: (leaks.data ?? []).map((row) => ({
+          leaks: (leaks.data ?? []).slice(0, WORKSPACE_ROW_LIMIT).map((row) => ({
             id: row.id,
             reportId: row.report_id,
             leakKey: row.leak_key,
@@ -195,7 +257,7 @@ export const statsWorkspaceService = {
             evidenceHandIds: row.evidence_hand_ids,
             updatedAt: row.updated_at,
           })),
-          goals: (goals.data ?? []).map((row) => ({
+          goals: (goals.data ?? []).slice(0, WORKSPACE_ROW_LIMIT).map((row) => ({
             id: row.id,
             title: row.title,
             metricKey: row.metric_key,
@@ -206,7 +268,7 @@ export const statsWorkspaceService = {
             endsAt: row.ends_at,
             updatedAt: row.updated_at,
           })),
-          progress: (progress.data ?? []).map((row) => ({
+          progress: (progress.data ?? []).slice(0, WORKSPACE_ROW_LIMIT).map((row) => ({
             id: row.id,
             goalId: row.goal_id,
             measuredValue: Number(row.measured_value),
@@ -216,11 +278,11 @@ export const statsWorkspaceService = {
           collections: collectionItems,
           preferences: preferences.data
             ? {
-                dashboardLayout: preferences.data.dashboard_layout as unknown[],
+                dashboardLayout: dashboardLayout(preferences.data.dashboard_layout),
                 privacyPresentationMode: preferences.data.privacy_presentation_mode,
               }
             : EMPTY_PREFERENCES,
-          alerts: (alerts.data ?? []).map((row) => ({
+          alerts: (alerts.data ?? []).slice(0, WORKSPACE_ROW_LIMIT).map((row) => ({
             id: row.id,
             name: row.name,
             metricKey: row.metric_key,
@@ -234,6 +296,7 @@ export const statsWorkspaceService = {
             lastValue: row.last_value === null ? null : Number(row.last_value),
             lastTriggeredAt: row.last_triggered_at,
           })),
+          coverage: { capped, rowLimit: WORKSPACE_ROW_LIMIT },
         },
       };
     } catch (error) {

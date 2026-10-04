@@ -53,6 +53,14 @@ CREATE TABLE public.ca_hand_transfers(
   played_at timestamptz NOT NULL,club_id uuid,table_id uuid,
   PRIMARY KEY(hand_id,winner_id,loser_id)
 );
+CREATE TABLE public.ca_hand_player_stat(
+  hand_id uuid NOT NULL,user_id uuid NOT NULL,won_amt numeric,profit numeric,is_winner boolean,
+  PRIMARY KEY(hand_id,user_id)
+);
+CREATE TABLE public.ca_hand_player_idx(
+  hand_id uuid NOT NULL,user_id uuid NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,hand_id)
+);
 
 CREATE FUNCTION public.fn_project_hand_side_effects_after_post_commit_20260908(p_hand_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='public','pg_temp' AS $function$

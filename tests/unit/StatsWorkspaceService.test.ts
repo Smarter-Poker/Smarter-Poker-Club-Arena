@@ -1,18 +1,41 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { rpc, rows } = vi.hoisted(() => ({
+const { rpc, rows, queries } = vi.hoisted(() => ({
   rpc: vi.fn(),
   rows: {} as Record<string, unknown[]>,
+  queries: [] as Array<{
+    table: string;
+    columns: string;
+    limit?: number;
+    eq?: { column: string; value: unknown };
+  }>,
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc,
     from: (table: string) => ({
-      select: () => ({
-        order: async () => ({ data: rows[table] ?? [], error: null }),
-        maybeSingle: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-      }),
+      select: (columns = '*') => {
+        const query: (typeof queries)[number] = { table, columns };
+        queries.push(query);
+        const builder: any = {
+          order: () => builder,
+          eq: (column: string, value: unknown) => {
+            query.eq = { column, value };
+            return builder;
+          },
+          limit: async (limit: number) => {
+            query.limit = limit;
+            const source = rows[table] ?? [];
+            const filtered = query.eq
+              ? source.filter((row: any) => row[query.eq!.column] === query.eq!.value)
+              : source;
+            return { data: filtered.slice(0, limit), error: null };
+          },
+          maybeSingle: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
+        };
+        return builder;
+      },
     }),
   },
 }));
@@ -34,6 +57,7 @@ import { statsWorkspaceService } from '../../src/services/StatsWorkspaceService'
 
 beforeEach(() => {
   rpc.mockReset();
+  queries.length = 0;
   for (const key of Object.keys(rows)) delete rows[key];
 });
 
@@ -52,8 +76,58 @@ describe('StatsWorkspaceService', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.collections[0].hands[0].note?.tags).toEqual(['study']);
+      expect(result.data.collections[0].handsCapped).toBe(false);
       expect(result.data.preferences.privacyPresentationMode).toBe(true);
     }
+  });
+
+  it('boots preferences with one narrow read and bounds every workspace collection', async () => {
+    rows.ca_stats_workspace_preferences = [
+      { dashboard_layout: ['overview'], privacy_presentation_mode: true },
+    ];
+    const preferences = await statsWorkspaceService.loadPreferences();
+    expect(preferences).toEqual({
+      ok: true,
+      data: { dashboardLayout: ['overview'], privacyPresentationMode: true },
+    });
+    expect(queries).toEqual([
+      {
+        table: 'ca_stats_workspace_preferences',
+        columns: 'dashboard_layout, privacy_presentation_mode',
+      },
+    ]);
+
+    queries.length = 0;
+    rows.ca_stats_workspace_collections = [
+      { id: 'collection-1', name: 'One', description: '', updated_at: 'now' },
+      { id: 'collection-2', name: 'Two', description: '', updated_at: 'now' },
+    ];
+    await statsWorkspaceService.load();
+    expect(
+      queries.filter((query) => query.table !== 'ca_stats_workspace_preferences')
+    ).toHaveLength(8);
+    expect(
+      queries
+        .filter((query) => query.table !== 'ca_stats_workspace_preferences')
+        .every((query) => query.limit === 101)
+    ).toBe(true);
+    expect(
+      queries
+        .filter((query) => query.table === 'ca_stats_workspace_collection_hands')
+        .map((query) => query.eq?.value)
+    ).toEqual(['collection-1', 'collection-2']);
+  });
+
+  it('normalizes malformed legacy dashboard JSON at the service boundary', async () => {
+    rows.ca_stats_workspace_preferences = [
+      { dashboard_layout: { overview: true }, privacy_presentation_mode: false },
+    ];
+    await expect(statsWorkspaceService.loadPreferences()).resolves.toEqual({
+      ok: true,
+      data: { dashboardLayout: [], privacyPresentationMode: false },
+    });
+    const snapshot = await statsWorkspaceService.load();
+    expect(snapshot.ok && snapshot.data.preferences.dashboardLayout).toEqual([]);
   });
 
   it('saves immutable-provenance reports without accepting a user id', async () => {

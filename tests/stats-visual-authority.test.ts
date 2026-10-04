@@ -23,6 +23,8 @@ const ACTIVE_STATS_VIEWS = [
   'src/components/stats/BankrollTracker.tsx',
   'src/components/stats/BenchmarkPanel.tsx',
   'src/components/stats/EVLuckChart.tsx',
+  'src/components/stats/ExactCashSessionsPanel.tsx',
+  'src/components/stats/FinancialReportingPanel.tsx',
   'src/components/stats/HoleCardHeatmap.tsx',
   'src/components/stats/LeakPanel.tsx',
   'src/components/stats/NemesisPanel.tsx',
@@ -40,6 +42,8 @@ const MACHINED_PANEL_STYLES = [
   'src/components/stats/BankrollTracker.css',
   'src/components/stats/BenchmarkPanel.css',
   'src/components/stats/EVLuckChart.css',
+  'src/components/stats/ExactCashSessionsPanel.css',
+  'src/components/stats/FinancialReportingPanel.css',
   'src/components/stats/HoleCardHeatmap.css',
   'src/components/stats/LeakPanel.css',
   'src/components/stats/NemesisPanel.css',
@@ -91,5 +95,22 @@ describe('Stats visual authority', () => {
     expect(shareCard).toContain('function chamferRect(');
     expect(shareCard).toContain('Etched drafting grid');
     expect(shareCard).not.toContain('function roundRect(');
+  });
+
+  it('gives money and exact-session ledgers distinct approved physical chassis', () => {
+    const financial = read('src/components/stats/FinancialReportingPanel.tsx');
+    const sessions = read('src/components/stats/ExactCashSessionsPanel.tsx');
+    expect(financial).toContain('family="riveted"');
+    expect(sessions).toContain('family="shark"');
+    expect(financial).not.toContain('player-intelligence-dossier-v2.webp');
+    expect(sessions).not.toContain('player-intelligence-dossier-v2.webp');
+    expect(financial).not.toContain('stats-strategy-lab-v1.webp');
+    expect(sessions).not.toContain('stats-strategy-lab-v1.webp');
+    for (const asset of [
+      'public/assets/club-buttons/console/riveted-console-v2/top.png',
+      'public/assets/club-buttons/console/shark-console-v2/top.png',
+    ]) {
+      expect(statSync(resolve(__dirname, '..', asset)).size).toBeGreaterThan(10_000);
+    }
   });
 });

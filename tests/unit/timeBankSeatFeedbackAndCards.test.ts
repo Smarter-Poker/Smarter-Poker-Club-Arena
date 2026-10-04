@@ -150,13 +150,23 @@ describe('an already-granted bank must not be auto-folded away', () => {
   it('treats "already running" as a grant rather than a refusal', () => {
     expect(start).toBeGreaterThan(-1);
     const guardIdx = onTimeout.search(/already running/i);
-    const foldIdx = onTimeout.indexOf('handleTimerAutoFold()');
+    const dropIdx = onTimeout.indexOf('setTimeBankActive(false)');
     expect(guardIdx).toBeGreaterThan(-1);
-    expect(foldIdx).toBeGreaterThan(guardIdx); // the guard returns before the fold
+    // The guard returns before the bank is taken off the clock.
+    expect(dropIdx).toBeGreaterThan(guardIdx);
   });
 
-  it('still auto-folds on every other refusal', () => {
-    expect(onTimeout).toContain('handleTimerAutoFold()');
+  it('on every other refusal the clock stops claiming a bank, and the turn is left to the engine', () => {
+    /* 2026-10-04: this pinned `handleTimerAutoFold()` here - a CLIENT-side
+       fold after a refused bank. It is gone, deliberately. Every time that
+       fold was sent in production it was for a turn the engine had already
+       resolved (a refusal usually MEANS the turn is over), it carried no
+       decision context, and the engine's refusal told the player to reload.
+       The engine owns an expired turn: see the note above useTableTimer in
+       TablePage and tests/unit/theEngineOwnsAnExpiredTurn.test.ts. What must
+       still hold on a refusal is that the clock stops showing borrowed time. */
+    expect(onTimeout).toContain('setTimeBankActive(false)');
+    expect(onTimeout).not.toMatch(/AutoFold|submitAction/);
   });
 
   it('pins the exact server string the guard matches', () => {

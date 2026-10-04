@@ -69,3 +69,21 @@ describe('the table wires it', () => {
     expect(TABLE_PAGE).toContain('}, holdLeftMs + 30_000);');
   });
 });
+
+describe('the felt deals the moment the game does', () => {
+  it('a full board re-reads its row each second, bounded, instead of every 10 s', () => {
+    expect(TABLE_PAGE).toContain(
+      'if (seatRows.length >= seatFirstBuyIn.seats && fullRechecks < 15 && !fullRecheckTimer)'
+    );
+    expect(TABLE_PAGE).toContain('if (fullRecheckTimer) window.clearTimeout(fullRecheckTimer);');
+  });
+  it('the socket is asked to join when play begins, until it is up, for at most 30 s', () => {
+    expect(TABLE_PAGE).toContain('seatFirstDealtAtRef.current = Date.now();');
+    const at = TABLE_PAGE.indexOf('A SEAT-FIRST GAME THAT JUST DEALT IS JOINED NOW');
+    const effect = TABLE_PAGE.slice(at, at + 2400);
+    expect(effect).toContain("engineWsStatus === 'connected') return;");
+    expect(effect).toContain('reconnectEngineNow();');
+    expect(effect).toContain('}, 1_500);');
+    expect(effect).toContain('[playHasBegun, engineWsStatus, reconnectEngineNow]');
+  });
+});

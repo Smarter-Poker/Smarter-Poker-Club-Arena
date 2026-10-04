@@ -5202,6 +5202,8 @@ function LiveTablePage({
      therefore reading 0 and the player was told "Waiting For More Players"
      with no number. A ref is current by definition. */
   const seatFirstSeatsRef = useRef<number>(0);
+  /** When this page saw its pre-start seat-first game begin, ms, else null. */
+  const seatFirstDealtAtRef = useRef<number | null>(null);
   seatFirstSeatsRef.current = seatFirstBuyIn?.seats ?? 0;
   const [seatFirstPending, setSeatFirstPending] = useState(false);
   /**
@@ -20858,6 +20860,14 @@ function LiveTablePage({
 
     let cancelled = false;
     let reloadTimer = 0;
+    /* A FULL BOARD IS ABOUT TO DEAL (2026-10-04). The last seat sold means
+       the engine starts the game within about a second, but the row that
+       says so is only re-read on the 10 s poll (tournaments is not in the
+       realtime publication), so the felt sat still for up to ten seconds
+       after the table filled. While every seat is taken the row is re-read
+       each second, a bounded number of times. */
+    let fullRecheckTimer = 0;
+    let fullRechecks = 0;
     /* Whether the last roster read had the hero in a chair - the only proof
        this page has that a cancellation took THEIR buy-in back. */
     let heroHeldSeat = false;
@@ -20904,6 +20914,8 @@ function LiveTablePage({
       if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
         // The game left the selling state under us. Take the sheet down
         // now — the D8 effect clears seatFirstBuyIn off this latch.
+        // The socket is asked to join it now (see seatFirstDealtAtRef).
+        seatFirstDealtAtRef.current = Date.now();
         setPlayHasBegun(true);
         /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
            effect no longer fabricates a countdown for a REGISTERING
@@ -20965,6 +20977,13 @@ function LiveTablePage({
       }
       const seatRows = seats || [];
       heroHeldSeat = !!userId && seatRows.some((s) => s.user_id === userId);
+      if (seatRows.length >= seatFirstBuyIn.seats && fullRechecks < 15 && !fullRecheckTimer) {
+        fullRechecks += 1;
+        fullRecheckTimer = window.setTimeout(() => {
+          fullRecheckTimer = 0;
+          void reloadRoster();
+        }, 1_000);
+      }
       const userIds = seatRows.map((s) => s.user_id).filter(Boolean);
       let profileMap = new Map<string, Record<string, unknown>>();
       if (userIds.length > 0) {
@@ -21087,10 +21106,40 @@ function LiveTablePage({
     return () => {
       cancelled = true;
       if (reloadTimer) window.clearTimeout(reloadTimer);
+      if (fullRecheckTimer) window.clearTimeout(fullRecheckTimer);
       window.clearInterval(pollId);
       void supabase.removeChannel(channel);
     };
   }, [tableId, seatFirstBuyIn, playHasBegun, tableState.tournamentId, userId]);
+
+  /**
+   * ═══ A SEAT-FIRST GAME THAT JUST DEALT IS JOINED NOW (2026-10-04) ═══
+   *
+   * Dan: "IT JUST FROZE AND NEVER DEALT CARDS." While its seats are selling, a
+   * seat-first table has no engine game, so every socket attempt is answered
+   * 4404 and the reconnect ladder walks to its slow end (~30 s between tries).
+   * A player who waited a minute or more for an opponent is on that slow step
+   * when the last seat sells, so the game dealt on the server and the felt
+   * stayed empty until the next scheduled try. The moment the row says play
+   * has begun, ask for the attempt now, and again every 1.5 s until the socket
+   * is up (an attempt that still meets 4404 returns to its step, so this only
+   * ever shortens a pending wait - EngineStateClient.reconnectNow), for at
+   * most 30 s.
+   */
+  useEffect(() => {
+    const began = seatFirstDealtAtRef.current;
+    if (!playHasBegun || began === null || engineWsStatus === 'connected') return;
+    if (Date.now() - began > 30_000) return;
+    reconnectEngineNow();
+    const id = window.setInterval(() => {
+      if (Date.now() - began > 30_000) {
+        window.clearInterval(id);
+        return;
+      }
+      reconnectEngineNow();
+    }, 1_500);
+    return () => window.clearInterval(id);
+  }, [playHasBegun, engineWsStatus, reconnectEngineNow]);
 
   /**
    * ═══ EVERYONE AT THE TABLE CAN SEE WHO IS SITTING OUT (2026-08-28) ═══

@@ -205,7 +205,7 @@ test.describe('Watching a running tournament', () => {
     await expect(corner.locator('.mini-stats-card--tournament-stats')).toHaveCount(0);
     await expect(lobbyBtn).not.toContainText(/Stack|VPIP/i);
 
-    /* And it opens the LOBBY as a 3/4 popup — not TournamentInfoPanel, which
+    /* And it opens the LOBBY as a full-screen popup — not TournamentInfoPanel, which
        is what it used to open and is now reached from the hero avatar. */
     await lobbyBtn.click();
     const lobby = page.locator('.tlm-panel');
@@ -229,19 +229,36 @@ test.describe('Watching a running tournament', () => {
       page.getByRole('dialog', { name: /tournament lobby/i }),
       'the overlay that opened must be the Tournament Lobby, not the info panel'
     ).toBeVisible({ timeout: 20_000 });
-    /* And the name is PAINTED, both words, in the header the player reads. */
-    await expect(lobby.locator('.tlm-console')).toContainText(/Tournament/i);
-    await expect(lobby.locator('.tlm-console')).toContainText(/Lobby/i);
+    /* FULL SCREEN, ONE FRAME (Dan 2026-10-04: "it should be 'full screen pop
+       up' ... remove all these large frames"). The popup used to be a 3/4
+       sheet wearing a painted console; on a phone that stack left the tab
+       panel 52px tall and nothing a player tapped appeared to do anything.
+       It now covers the viewport and the lobby page inside it is usable:
+       the tab panel has real height at this viewport, whatever it is. */
+    const box = await lobby.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box && viewport && box.width >= viewport.width - 1).toBeTruthy();
+    expect(box && viewport && box.height >= viewport.height - 1).toBeTruthy();
+    await expect(lobby.locator('.sc')).toHaveCount(0);
 
-    /* Clicking off closes it — Dan's standing rule for every 3/4 popup: "when
-       it's 3/4 page you should be able to click off to close as well."
+    const panel = lobby.getByRole('tabpanel');
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    const panelBox = await panel.boundingBox();
+    expect(
+      panelBox && panelBox.height >= 200,
+      'the tab panel must have room to show a tab, on a phone as much as anywhere'
+    ).toBeTruthy();
 
-       The panel enters from the RIGHT on desktop, so the exposed quarter is on
-       the left. On a phone it is a 75dvh sheet at the BOTTOM, leaving the top
-       quarter exposed. The top-left corner is therefore backdrop in both
-       layouts; top-right is inside the desktop panel and correctly does not
-       bubble to the overlay. */
-    await page.locator('.tlm-overlay').click({ position: { x: 6, y: 6 } });
+    /* A tab does what it says: tapping Blinds selects it and changes the
+       panel. This is the assertion "zero functionality on mobile" was. */
+    const blinds = lobby.getByRole('tab', { name: 'Blinds', exact: true });
+    await blinds.click();
+    await expect(blinds).toHaveAttribute('aria-selected', 'true');
+    await expect(panel.locator('.blinds-tab')).toBeVisible({ timeout: 10_000 });
+
+    /* There is no backdrop left to click off, so the door out is the Close
+       control in the lobby's own header. */
+    await lobby.getByRole('button', { name: 'Close Tournament Lobby' }).click();
     await expect(lobby).toBeHidden({ timeout: 10_000 });
   });
 });

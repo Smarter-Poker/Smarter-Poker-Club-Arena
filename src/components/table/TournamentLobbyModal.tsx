@@ -22,34 +22,52 @@
  * prize pool — the exact failure mode CLAUDE.md documents for buy-in maths in
  * four places. There is one lobby.
  *
- * ─── GEOMETRY ───
- * Cloned from HandDetailModal, which is where Dan specified this shape:
- * "the previous hand table when opened should only be 3/4 page ... Also when
- * it's 3/4 page you should be able to click off to close as well."
- *   - desktop: a 75vw panel down the left, full height
- *   - phone:   a 75dvh sheet up from the bottom, grab handle, tappable backdrop
+ * ─── GEOMETRY: FULL SCREEN, ONE FRAME (Dan 2026-10-04) ───
+ * "when you click on the tournament lobby card, nothing work or is functional
+ * ... it should be 'full screen pop up' ... remove all these large frames, and
+ * make it like a normal, 'industry standard' tournament lobby card", and then,
+ * with screenshots: "things seem to 'appear' on desk top, but zero
+ * functionality on mobile".
  *
- * That geometry is load-bearing here rather than merely consistent.
- * TournamentDetails measures its own top against `window.innerHeight` and
- * writes the remainder into `--details-h`, then hangs a negative margin off the
- * overflow. Any container that does NOT reach the bottom of the viewport makes
- * it compute a height taller than its box and it overflows. Both layouts above
- * end flush with the viewport bottom, so the measurement lands correctly with
- * no override — which is why this is a clone and not a fresh sheet.
+ * This was a 3/4 sheet (75vw down the side on desktop, 75dvh up from the
+ * bottom on a phone) holding a painted console - head, a Close row, a foot -
+ * around the lobby page, which then drew its own framed header, framed tab
+ * rail, framed title strip and framed content well. Measured at 375x667 the
+ * stack left the tab panel 52px tall and pushed the footer off the sheet:
+ * every tab DID switch, and nothing a player could see changed. That is the
+ * whole of "zero functionality on mobile". On a desktop there was just enough
+ * room for a sliver of each tab, which is "things seem to appear".
+ *
+ * So the popup is the whole screen and draws nothing of its own. The lobby
+ * page fills it, and the page's own header carries the way out (`onClose`).
+ * TournamentDetails still measures its height against the viewport, which is
+ * exactly the box it now has.
+ *
+ * `.tlm-overlay` / `.tlm-panel` keep their 3/4 geometry in the stylesheet:
+ * MustMoveLobbyModal borrows it. The full-screen shape is the `--full`
+ * modifier on both.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type TouchEvent } from 'react';
 import TournamentDetails from '../../pages/tournament/TournamentDetails';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentLobbyModal.css';
 
 export interface TournamentLobbyModalProps {
   isOpen: boolean;
   tournamentId: string | undefined;
+  /** The table this popup is open over. See TournamentDetails `currentTableId`. */
+  currentTableId?: string;
   onClose: () => void;
 }
 
-export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: TournamentLobbyModalProps) {
+const stopTouch = (e: TouchEvent) => e.stopPropagation();
+
+export function TournamentLobbyModal({
+  isOpen,
+  tournamentId,
+  currentTableId,
+  onClose,
+}: TournamentLobbyModalProps) {
   // Escape closes, same as every other overlay at the table.
   useEffect(() => {
     if (!isOpen) return;
@@ -77,56 +95,46 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
 
   if ((!isOpen && !everOpenedRef.current) || !tournamentId) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole) inside the 3/4 sheet: the spade
-     master's head at the top, the lobby page on the black glass between the
-     rails, the flat cap at the bottom. The sheet's geometry (tlm-overlay /
-     tlm-panel) is Dan's and stays; only what it holds changed. A page of
-     content with one way out, so the foot carries no plate and CLOSE is a
-     lit word under the head. */
   return (
     <div
-      className="tlm-overlay"
-      onClick={onClose}
+      className="tlm-overlay tlm-overlay--full"
       role="presentation"
+      /* A SWIPE INSIDE THE LOBBY IS NOT A TABLE SWITCH. MultiTablePage listens
+         for horizontal touch drags on the container this popup renders inside
+         and turns them into "go to the next table". The lobby has a tab strip
+         that scrolls sideways and wide tables that do too, so without this a
+         player dragging the tabs on a phone with two tables open would drag
+         the felt out from under the popup. React bubbles synthetic events
+         through the component tree, so stopping them here is enough. */
+      onTouchStart={stopTouch}
+      onTouchMove={stopTouch}
+      onTouchEnd={stopTouch}
       style={isOpen ? undefined : { display: 'none' }}
     >
       <div
-        className="tlm-panel tlm-panel--console"
+        className="tlm-panel tlm-panel--full"
         role="dialog"
         aria-modal="true"
         aria-label="Tournament Lobby"
-        onClick={(e) => e.stopPropagation()}
+        /* The popup chassis sheet restyles every button, heading and paragraph
+           inside a dialog. This dialog holds a whole page, not a card; see
+           the note in styles/metallic-popups.css. */
+        data-popup-chassis="none"
       >
-        <SpadeConsole
-          onClose={onClose}
-          eyebrow="Tournament"
-          title="Lobby"
-          pill="In Game"
-          pillInk="blue"
-          foot="foot"
-          className="tlm-console"
-        >
-          <div className="tlm-console__bar">
-            <button
-              type="button"
-              className="tlm-word sc-ink--white"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="tlm-body">
-            {/* suppressAutoOpenTable: the player is ALREADY at this tournament's
-                table - that is where this overlay was opened from. Without it the
-                page's auto-seat effect fires `navigate('/table/...')` from inside
-                the overlay, which at best re-enters the route we are standing on
-                and at worst pulls a multi-tabling player off the table they were
-                watching. */}
-            <TournamentDetails tournamentIdOverride={tournamentId} suppressAutoOpenTable />
-          </div>
-        </SpadeConsole>
+        <div className="tlm-body">
+          {/* suppressAutoOpenTable: the player is ALREADY at this tournament's
+              table - that is where this overlay was opened from. Without it the
+              page's auto-seat effect fires `navigate('/table/...')` from inside
+              the overlay, which at best re-enters the route we are standing on
+              and at worst pulls a multi-tabling player off the table they were
+              watching. */}
+          <TournamentDetails
+            tournamentIdOverride={tournamentId}
+            suppressAutoOpenTable
+            onClose={onClose}
+            currentTableId={currentTableId}
+          />
+        </div>
       </div>
     </div>
   );

@@ -6,15 +6,18 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sliceCssRule } from '../helpers/sourceWindow';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ENTRIES = fs.readFileSync(
   path.join(ROOT, 'src/components/tournament/details/EntriesTab.tsx'),
   'utf8'
 );
-const PREMIUM = fs.readFileSync(
-  path.join(ROOT, 'src/pages/tournament/PremiumTournamentConsole.css'),
+/* 2026-10-04: PremiumTournamentConsole.css is deleted (Dan: "remove all these
+   large frames"). The shell has ONE stylesheet now, so the scroll contract
+   has one place to live and nothing at a higher specificity to restate it
+   against. The guarantee this case defends is unchanged: every tab scrolls. */
+const SHELL = fs.readFileSync(
+  path.join(ROOT, 'src/pages/tournament/TournamentDetails.css'),
   'utf8'
 );
 
@@ -27,9 +30,13 @@ describe('the entries stats never surface a Re-Entry field', () => {
   });
 });
 
-describe('the premium console restates the scroll contract at its own specificity', () => {
-  it('.tournament-details .details-content scrolls vertically', () => {
-    const rule = sliceCssRule(PREMIUM, '.tournament-details .details-content');
+describe('the lobby shell keeps the scroll contract', () => {
+  it('.details-content scrolls vertically', () => {
+    // Anchored on the rule's own opening line: the selector is also quoted in
+    // the comments above it, and a comment has no declarations to assert on.
+    const start = SHELL.search(/^\.details-content \{$/m);
+    expect(start).toBeGreaterThan(-1);
+    const rule = SHELL.slice(start, SHELL.indexOf('}', start));
     expect(rule).toMatch(/overflow-y: auto/);
     expect(rule).toMatch(/min-height: 0/);
     expect(rule).toMatch(/flex: 1 1 auto/);

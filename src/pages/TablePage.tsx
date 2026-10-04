@@ -27819,6 +27819,7 @@ function LiveTablePage({
       <TournamentLobbyModal
         isOpen={showTournamentLobby}
         tournamentId={tableState.tournamentId}
+        currentTableId={tableId}
         onClose={() => setShowTournamentLobby(false)}
       />
       {/* Dan 2026-08-28: the tabbed HERO HUB behind the hero's own avatar —

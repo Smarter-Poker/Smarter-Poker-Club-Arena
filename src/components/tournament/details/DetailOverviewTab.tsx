@@ -57,6 +57,7 @@ import {
   clockText,
   effectivePlaceLadderPool,
   effectivePrizePool,
+  finishedFieldSummary,
   isPlayerLive,
   lastPaidPlace,
   ordinal,
@@ -81,6 +82,7 @@ import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import MultiDayStagePanel from './MultiDayStagePanel';
 import { isBaggedStatus } from '../../../utils/multiDaySchedule';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
   activationStatusLine,
   formatCents,
@@ -404,9 +406,44 @@ export default function DetailOverviewTab({
     return 'Closed';
   }, [tournament?.late_reg_levels, tournament?.rebuy_levels, tournament?.late_reg_mins]);
 
+  /* A finished field, summarised once for this tab and Ranking alike. */
+  const finished = useMemo(
+    () => finishedFieldSummary(tournament, Array.isArray(entries) ? entries : []),
+    [tournament, entries]
+  );
+
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
     const maxPlayers = tournament ? getTournamentEntryCapacity(tournament) : null;
+    /* A FINISHED EVENT (2026-10-04). The nine tiles below describe an event in
+       progress. On a finished one they read "Remaining 7" (the seat winners,
+       who are not playing), "Tables 0", "Blinds Up -" and "Late Reg Closed":
+       four tiles of nothing and one that contradicted Ranking. A finished
+       event says what happened instead. */
+    if (isCompleted) {
+      const done: StatTile[] = [
+        { key: 'entries', label: 'Entries', value: chips(finished.entries) },
+        {
+          key: 'prize',
+          label: 'Prize Pool',
+          value: prize.effective > 0 ? chipsCompact(prize.effective) : '-',
+          sub: prize.guarantee > 0 ? `${chipsCompact(prize.guarantee)} GTD` : undefined,
+          tone: 'accent',
+        },
+      ];
+      if (finished.qualified > 0) {
+        done.push({
+          key: 'qualified',
+          label: 'Qualified',
+          value: chips(finished.qualified),
+          sub: finished.qualified === 1 ? 'Seat Won' : 'Seats Won',
+        });
+      } else {
+        const paid = finished.paid > 0 ? finished.paid : payoutStructure.length;
+        done.push({ key: 'paid', label: 'Places Paid', value: paid > 0 ? chips(paid) : '-' });
+      }
+      return done;
+    }
     return [
       {
         key: 'remaining',
@@ -452,7 +489,19 @@ export default function DetailOverviewTab({
       },
       { key: 'out', label: 'Eliminated', value: chips(field.eliminated) },
     ];
-  }, [field, tables, level, isRunning, isCompleted, clockPaused, lateRegText, prize, tournament]);
+  }, [
+    field,
+    tables,
+    level,
+    isRunning,
+    isCompleted,
+    clockPaused,
+    lateRegText,
+    prize,
+    tournament,
+    finished,
+    payoutStructure,
+  ]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
   const tags = useMemo(() => {
@@ -663,11 +712,37 @@ export default function DetailOverviewTab({
    */
   const finishers = useMemo(() => {
     if (!isCompleted) return [];
-    return (Array.isArray(entries) ? entries : [])
+    const list = Array.isArray(entries) ? entries : [];
+    /* "In The Money" has to mean it (2026-10-04). This listed the next ten
+       finishing positions whoever they were, so a satellite printed 10th,
+       11th and 12th - who won nothing - under "In The Money Behind Them".
+       Where prizes are recorded per player, only the paid ones are listed.
+       An event settled before prizes were recorded keeps the old list, since
+       there is nothing to tell paid from unpaid by. */
+    const prizesRecorded = list.some((e) => Number(e.prize) > 0);
+    return list
       .filter((e) => typeof e.position === 'number' && (e.position as number) > 3)
+      .filter((e) => !prizesRecorded || Number(e.prize) > 0)
       .sort((a, b) => (a.position || 999) - (b.position || 999))
       .slice(0, 10);
   }, [isCompleted, entries]);
+
+  /**
+   * A SATELLITE'S WINNERS ARE NOT A PODIUM (2026-10-04).
+   *
+   * A satellite ends when the seats are won, and everybody still holding chips
+   * at that moment wins one. The settlement records them as `winner` with NO
+   * finishing position - they tied - so a podium built from positions 1 to 3
+   * found nobody and this panel told a finished event's players that results
+   * were "Being Finalised", indefinitely. They are listed here as what they
+   * are, in name order: there is no rank among them to print.
+   */
+  const qualifiers = useMemo(() => {
+    if (!isCompleted) return [];
+    return (Array.isArray(entries) ? entries : [])
+      .filter((e) => isRecordedSatelliteQualifier(tournament, e))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [isCompleted, entries, tournament]);
 
   /* ── Final-table deal gate: one table left, on an FT-deal event. ── */
   const dealPanel = useMemo(() => {
@@ -784,7 +859,21 @@ export default function DetailOverviewTab({
             <h3>Final Results</h3>
             <span className="tl-section-note">{chips(field.entries)} Entries</span>
           </div>
-          {podium.length === 0 ? (
+          {podium.length === 0 && qualifiers.length > 0 ? (
+            <>
+              <span className="dov-finishers__label">
+                {qualifiers.length === 1 ? 'Won The Seat' : 'Won A Seat'}
+              </span>
+              <ul className="dov-finishers dov-finishers--all" aria-label="Players Who Won A Seat">
+                {qualifiers.map((player) => (
+                  <li key={player.user_id} className="dov-finisher dov-finisher--qualified">
+                    <span className="dov-finisher__pos">Seat</span>
+                    <span className="dov-finisher__name">{player.username}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : podium.length === 0 ? (
             <div className="tl-empty">
               Results Are Being Finalised
               <span className="tl-empty__hint">Check Back In A Moment</span>
@@ -807,7 +896,9 @@ export default function DetailOverviewTab({
           )}
           {finishers.length > 0 && (
             <>
-              <span className="dov-finishers__label">In The Money Behind Them</span>
+              <span className="dov-finishers__label">
+                {qualifiers.length > 0 ? 'Also In The Money' : 'In The Money Behind Them'}
+              </span>
               <ul
                 className="dov-finishers tl-scroll"
                 aria-label="Finishing Positions Below The Podium"

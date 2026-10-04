@@ -6,11 +6,11 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
 const PAGE = read('src/pages/tournament/TournamentDetails.tsx');
 const TYPES = read('src/components/tournament/details/types.ts');
-const PREMIUM = read('src/pages/tournament/PremiumTournamentConsole.css');
+const SHELL = read('src/pages/tournament/TournamentDetails.css');
 const GAME_PANEL = read('src/components/lobby/GameLobbyPanel.tsx');
 const GAME_PREMIUM = read('src/components/lobby/PremiumGameLobbyPanel.css');
 
-describe('approved premium tournament console contract', () => {
+describe('tournament lobby shell contract', () => {
   it('publishes exactly the seven approved tab labels', () => {
     for (const label of [
       'Details',
@@ -34,21 +34,36 @@ describe('approved premium tournament console contract', () => {
     expect(PAGE).toContain('data-active-tab={activeTab}');
   });
 
-  it('fills the complete tab rail instead of leaving a dead right side', () => {
-    const rail = PREMIUM.slice(
-      PREMIUM.indexOf('.tournament-details .details-tabs {'),
-      PREMIUM.indexOf('.tournament-details .details-tabs .tab.active')
+  /* THE CHASSIS IS GONE, AND THIS CONTRACT SAYS SO (Dan 2026-10-04).
+   *
+   * "remove all these large frames, and make it like a normal, 'industry
+   * standard' tournament lobby card ... this whole display REALLY SUCKS and is
+   * trash, it needs a 100% redesign."
+   *
+   * The two cases that stood here REQUIRED the frames: one pinned the tab
+   * rail to `flex-wrap: wrap` with a 110px basis (two rows of framed tabs on
+   * a phone), the other required lobby-command-chassis-v2.png,
+   * club-nav-shell.webp and action-primary-shell.webp to be painted behind
+   * the shell. Inside the in-game popup that stack left the tab panel 52px
+   * tall at 375x667. They are replaced by the opposite pins, deliberately, in
+   * the commit that replaces the behaviour (CLAUDE.md section 5 rule 8).
+   */
+  it('keeps the tab strip on ONE row that scrolls, so tabs never eat the content', () => {
+    const rail = SHELL.slice(
+      SHELL.indexOf('.details-tabs {'),
+      SHELL.indexOf('.details-tabs::-webkit-scrollbar')
     );
     expect(rail).toContain('display: flex');
-    expect(rail).toContain('flex-wrap: wrap');
-    expect(rail).toMatch(/flex:\s*1 1 110px/);
-    expect(rail).not.toMatch(/width:\s*(?:fit-content|max-content)/);
+    expect(rail).toMatch(/overflow-x:\s*auto/);
+    expect(rail).not.toMatch(/flex-wrap:\s*wrap/);
   });
 
-  it('uses the approved Club Arena chassis and hardware assets instead of a CSS imitation', () => {
-    expect(PREMIUM).toContain('lobby-command-chassis-v2.png');
-    expect(PREMIUM).toContain('club-nav-shell.webp');
-    expect(PREMIUM).toContain('action-primary-shell.webp');
+  it('paints no artwork and no machined frame around the shell', () => {
+    const code = SHELL.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code, 'the lobby shell must not load frame artwork').not.toMatch(/url\(/);
+    expect(code, 'chamfered frames are drawn with clip-path').not.toMatch(/clip-path/);
+    expect(PAGE).not.toContain('PremiumTournamentConsole');
+    expect(() => read('src/pages/tournament/PremiumTournamentConsole.css')).toThrow();
   });
 
   it('keeps every tab vertically scrollable inside the fixed chassis', () => {
@@ -85,10 +100,10 @@ describe('approved premium tournament console contract', () => {
     expect(css).not.toMatch(/\.details-content\s*>\s*\*\s*{[^}]*overflow-y:\s*auto/s);
   });
 
-  it('keeps dynamic blue, green and red action states in the machine footer', () => {
-    expect(PREMIUM).toContain('.details-footer .btn-register');
-    expect(PREMIUM).toContain('.details-footer .btn-unregister');
-    expect(PREMIUM).toContain('.details-footer .tournament-status-badge.running');
+  it('keeps the register, unregister and running states distinct in the footer', () => {
+    expect(SHELL).toContain('.details-footer .btn-register');
+    expect(SHELL).toContain('.details-footer .btn-unregister');
+    expect(SHELL).toContain('.tournament-status-badge.running');
   });
 });
 

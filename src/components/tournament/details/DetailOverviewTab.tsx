@@ -199,6 +199,13 @@ export default function DetailOverviewTab({
   const isRunning = status === 'RUNNING';
   const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
+  /* CANCELLED IS ITS OWN STATE (2026-10-04 review pass). It is neither running
+     nor completed, so it fell through to the pre-start branch: the hero band
+     counted down "Starts In" to an event that will never start (or sat on
+     0:00), ticking once a second, over tiles for Remaining, Blinds Up and
+     Late Reg. The header and the footer both said Cancelled; this tab said
+     the opposite. */
+  const isCancelled = status === 'CANCELLED';
   /* BAGGED (multi-day, between days): live, but no table and no clock. It is
      neither finished nor about to start, so it gets its own hero line and no
      one-second heartbeat. */
@@ -262,11 +269,11 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted || isBagged) return;
+    if (isCompleted || isBagged || isCancelled) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
-  }, [isCompleted, isBagged, isRunning, startsWithinADay]);
+  }, [isCompleted, isBagged, isCancelled, isRunning, startsWithinADay]);
 
   /* Who is still in, counted ONCE. `field` below builds its figures from this
      same list, so the deal gate and the displayed count cannot disagree -- and
@@ -444,6 +451,23 @@ export default function DetailOverviewTab({
       }
       return done;
     }
+    /* A cancelled event has no field in play and no clock. It says how many
+       had entered and what it would have cost, and nothing that implies it is
+       still going to happen. */
+    if (isCancelled) {
+      return [
+        { key: 'entries', label: 'Entries', value: chips(field.entries) },
+        {
+          key: 'buyin',
+          label: 'Buy-In',
+          value: formatBuyIn(
+            Number(tournament?.buy_in_amount) || 0,
+            Number(tournament?.buy_in_fee) || 0
+          ),
+        },
+        { key: 'state', label: 'Status', value: 'Cancelled', tone: 'warn' },
+      ];
+    }
     return [
       {
         key: 'remaining',
@@ -495,6 +519,7 @@ export default function DetailOverviewTab({
     level,
     isRunning,
     isCompleted,
+    isCancelled,
     clockPaused,
     lateRegText,
     prize,
@@ -542,9 +567,19 @@ export default function DetailOverviewTab({
         answers (prize pool, entries, late reg). ── */
   const info = useMemo<InfoItem[]>(() => {
     const t = tournament || ({} as Record<string, unknown>);
-    const rebuyThrough = Number(t.late_reg_levels ?? t.rebuy_levels ?? 8) || 8;
+    /* THE REBUY WINDOW IS READ, NOT ASSUMED (2026-10-04 review pass). This was
+       `late_reg_levels ?? rebuy_levels ?? 8, || 8`: an event that configured
+       neither column was advertised as "Rebuy thru Lv 8" and "Add-On Lv 8-9",
+       two figures nobody had set, on the same screen as a Late Reg tile that
+       (reading the same columns with no default) said Closed. It also read the
+       columns in the opposite order from the rule that decides a rebuy,
+       `TournamentService.canRebuy` (`rebuy_levels ?? late_reg_levels`), so an
+       event with both set quoted the late-registration level as the rebuy
+       level. Zero means the row does not say, and then no level is printed. */
+    const rebuyThrough = Math.max(0, Number(t.rebuy_levels ?? t.late_reg_levels) || 0);
     const addonFrom = rebuyThrough;
     const addonTo = rebuyThrough + (Number(t.addon_levels ?? 1) || 1);
+    const throughText = rebuyThrough > 0 ? ` thru Lv ${rebuyThrough}` : '';
     const structure = describeMttStructure(
       (blindLevels || []).map((row) => ({
         durationMinutes: row.duration,
@@ -586,21 +621,23 @@ export default function DetailOverviewTab({
         key: 'rebuy',
         label: 'Rebuy',
         value: t.is_rebuy
-          ? `${chipsCompact(Number(t.rebuy_chips) || Number(t.starting_chips) || 0)} thru Lv ${rebuyThrough}`
+          ? `${chipsCompact(Number(t.rebuy_chips) || Number(t.starting_chips) || 0)}${throughText}`
           : t.is_reentry
-            ? `Re-Entry thru Lv ${rebuyThrough}`
+            ? `Re-Entry${throughText}`
             : 'None',
       },
       {
         key: 'addon',
         label: 'Add-On',
         value: t.add_on_available
-          ? `${chipsCompact(Number(t.addon_chips) || Number(t.starting_chips) || 0)} Lv ${addonFrom}-${addonTo}`
+          ? `${chipsCompact(Number(t.addon_chips) || Number(t.starting_chips) || 0)}${
+              rebuyThrough > 0 ? ` Lv ${addonFrom}-${addonTo}` : ''
+            }`
           : 'None',
       },
       {
         key: 'when',
-        label: isRunning ? 'Started' : isCompleted ? 'Ended' : 'Starts',
+        label: isRunning ? 'Started' : isCompleted ? 'Ended' : isCancelled ? 'Was Due' : 'Starts',
         value: shortDate(
           isRunning ? t.started_at : isCompleted ? t.ended_at || t.started_at : t.start_time
         ),
@@ -672,6 +709,7 @@ export default function DetailOverviewTab({
     blindLevels,
     isRunning,
     isCompleted,
+    isCancelled,
     field.entries,
     mysteryBounty?.inventory,
     overviewUnitCents,
@@ -822,7 +860,7 @@ export default function DetailOverviewTab({
       : '-'
     : isRunning
       ? clockText(level.remaining)
-      : isCompleted || isBagged
+      : isCompleted || isBagged || isCancelled
         ? '-'
         : untilText(secondsToStart);
   const heroEyebrow = clockPaused
@@ -833,7 +871,9 @@ export default function DetailOverviewTab({
         : `Level ${level.index + 1} Ends In`
       : isBagged
         ? 'Day Complete'
-        : 'Starts In';
+        : isCancelled
+          ? 'Cancelled'
+          : 'Starts In';
   const heroNote = clockPaused
     ? `Level ${level.index + 1} Clock Paused`
     : maintenanceNote ||
@@ -841,7 +881,9 @@ export default function DetailOverviewTab({
         ? `Running Since ${shortDate(tournament.started_at)}`
         : isBagged
           ? 'Chips Are Bagged Until The Next Day Starts'
-          : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
+          : isCancelled
+            ? 'This Event Was Cancelled And Will Not Run'
+            : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -941,7 +983,9 @@ export default function DetailOverviewTab({
                       : 'Blinds'
                     : isBagged
                       ? 'Blinds'
-                      : 'Opening Blinds'}
+                      : isCancelled
+                        ? 'Planned Blinds'
+                        : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
                   {level.amountsKnown

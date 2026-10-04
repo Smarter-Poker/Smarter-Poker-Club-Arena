@@ -225,8 +225,9 @@
   display: inline-flex;
   gap: 1.4cqw;
   align-items: baseline;
-  /* A control on a phone still has to be hittable. */
-  min-height: 40px;
+  /* A control on a phone still has to be hittable: 44px, the same floor every
+     other control on this sheet keeps (it was 40). */
+  min-height: 44px;
   margin: 0;
   padding: 0;
   border: 0 !important;
@@ -995,7 +996,12 @@
     height: 100vh;
     height: 100dvh;
     max-height: 100dvh;
-    padding: 0 12px 12px !important;
+    /* THE FOOT PAYS THE BOTTOM INSET (2026-10-04 review pass). As a three
+       quarter sheet this only ever met the bottom edge by its 12px gutter. Full
+       screen, the Close and Replay plates are the last thing on the screen,
+       and on a phone with a home indicator they sat under it. The top strip
+       already pays its inset; this is the other end. */
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
     animation: hdmSlideUp calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
   }
 

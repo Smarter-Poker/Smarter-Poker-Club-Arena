@@ -1210,8 +1210,11 @@ export default function TournamentPage() {
    * it receives no handler.
    */
   const watchPlayerTable = useCallback(
-    (tableId: string) => {
-      openTableAsObserver(navigate, { tableId });
+    /* `tableName` labels the new screen's tab until the engine reports its
+       own. RankingTab used to pass it to `openTableAsObserver` itself; it now
+       opens through this handler (2026-10-04), so the name rides along here. */
+    (tableId: string, tableName?: string) => {
+      openTableAsObserver(navigate, { tableId, tableName });
     },
     [navigate]
   );

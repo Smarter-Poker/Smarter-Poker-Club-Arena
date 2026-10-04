@@ -223,7 +223,8 @@
 .hh-panel__search-input {
   width: 100%;
   min-width: 0;
-  min-height: 40px;
+  /* 44px, the touch floor (was 40). */
+  min-height: 44px;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -256,7 +257,8 @@
 
 .hh-panel__search-clear {
   appearance: none;
-  min-height: 40px;
+  /* 44px, the touch floor (was 40). */
+  min-height: 44px;
   margin: 0;
   padding: 0 1cqw;
   border: 0 !important;

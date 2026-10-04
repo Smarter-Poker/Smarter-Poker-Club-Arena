@@ -86,7 +86,9 @@ describe('Item 1 - a running tournament can be watched', () => {
 
   it('watching ADDS a screen rather than replacing the one in front of you', () => {
     const src = code(read(DETAILS));
-    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId \}\)/);
+    /* 2026-10-04: the tab's label rides along, because Ranking and Tables now
+       open through this one door instead of calling the helper themselves. */
+    expect(src).toMatch(/openTableAsObserver\(navigate, \{ tableId, tableName \}\)/);
     expect(src).not.toMatch(/navigate\(`\/table\/\$\{tableId\}`\)/);
   });
 
@@ -132,7 +134,7 @@ describe('Item 1 - a running tournament can be watched', () => {
     }
 
     const contract = code(read(TAB_TYPES));
-    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string\) => void/);
+    expect(contract).toMatch(/onWatchPlayer\?: \(tableId: string, tableName\?: string\) => void/);
 
     // Only rows that really have a table become buttons.
     const tab = code(read(RANKING_TAB));

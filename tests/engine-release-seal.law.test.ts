@@ -1283,7 +1283,7 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     ).toBe('sealed');
   });
 
-  it('reserves one recovery window only for an unshipped failed ancestor or an observed missed certificate', () => {
+  it('reserves one recovery window only for a named emergency, never for a failed or missed release', () => {
     expect(
       runSeal([
         'bootstrap-running',
@@ -1319,20 +1319,28 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
         'club-arena-engine',
       ]).status
     ).toBe(0);
-    const first = runSeal(reserve);
+    // ONE SCHEDULED BREAK AN HOUR (owner, 2026-10-04: "FIGURE OUT WHAT THE
+    // 2ND ONE IS FOR, AND REMOVE IT IF ITS NOT NECESSARY"). A failed release
+    // that has not shipped used to earn an off-cycle window here, and so did
+    // a release that watched a scheduled break admit nobody. Neither is an
+    // emergency: both wait for the next :55, and nothing is written for them.
+    expect(runSeal(reserve).stdout).toBe('unavailable');
+    expect(runSeal([...reserve, '--missed-window']).stdout).toBe('unavailable');
+    expect(existsSync(join(sandbox, 'state', 'engine-recovery-window-412-1.json'))).toBe(false);
+    // A named emergency still gets its window.
+    const urgent = [...reserve, '--cause', 'urgent'];
+    const first = runSeal(urgent);
     expect(first.status, first.stderr).toBe(0);
     expect(Number(first.stdout)).toBeGreaterThan(Date.now() - 10000);
     const receipt = join(sandbox, 'state', 'engine-recovery-window-412-1.json');
     const value = JSON.parse(readFileSync(receipt, 'utf8'));
-    expect(value.cause).toBe('failed-release:411-1');
+    expect(value.cause).toBe('urgent');
     // Replaying after completion keeps the expired original announcement;
     // it cannot pause players again or turn a lost response into a fresh end.
     value.announcedAt -= 600000;
     writeFileSync(receipt, JSON.stringify(value));
-    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
-    expect(runSeal([...reserve.slice(0, 2), A_SHA, ...reserve.slice(3)]).stdout).toBe(
-      'unavailable'
-    );
+    expect(runSeal(urgent).stdout).toBe(String(value.announcedAt));
+    expect(runSeal([...urgent.slice(0, 2), A_SHA, ...urgent.slice(3)]).stdout).toBe('unavailable');
     expect(
       runSeal(['reserve-recovery-window', '--sha', C_SHA, '--run-id', '413-1', '--repo', sandbox])
         .status
@@ -1341,27 +1349,35 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     // ONE OFF-CYCLE WINDOW PER ROLLING HOUR (2026-09-26). 412-1 announced ten
     // minutes ago, so a second release with a genuine cause is told to wait
     // for the scheduled break - and nothing is written for it.
-    const missed = [...reserve.slice(0, 4), '414-1', ...reserve.slice(5), '--missed-window'];
-    const limited = runSeal(missed);
+    const degraded = [
+      ...reserve.slice(0, 4),
+      '414-1',
+      ...reserve.slice(5),
+      '--missed-window',
+      '--cause',
+      'engine-degraded',
+    ];
+    const limited = runSeal(degraded);
     expect(limited.status, limited.stderr).toBe(0);
     expect(limited.stdout).toBe('rate-limited');
     expect(existsSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'))).toBe(false);
     // 412-1 replaying its own reservation is not limited by itself.
-    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
+    expect(runSeal(urgent).stdout).toBe(String(value.announcedAt));
     // An unreadable reservation still spends the hour, dated by its file.
     value.announcedAt -= 3600000;
     writeFileSync(receipt, JSON.stringify(value));
     writeFileSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'), '{not json');
-    expect(runSeal(missed).stdout).toBe('rate-limited');
+    expect(runSeal(degraded).stdout).toBe('rate-limited');
     rmSync(join(sandbox, 'state', 'engine-recovery-window-415-1.json'));
-    // Past the hour the next reservation with a cause is granted.
-    const granted = runSeal(missed);
+    // Past the hour the next reservation with a cause is granted, and the
+    // cause on record is the emergency, never the missed break beside it.
+    const granted = runSeal(degraded);
     expect(granted.status, granted.stderr).toBe(0);
     expect(Number(granted.stdout)).toBeGreaterThan(Date.now() - 10000);
     expect(
       JSON.parse(readFileSync(join(sandbox, 'state', 'engine-recovery-window-414-1.json'), 'utf8'))
         .cause
-    ).toBe('observed-missed-certificate');
+    ).toBe('engine-degraded');
     // Named causes: urgent, engine-degraded and deadline qualify on their
     // own and share the same hour; anything else is refused by name.
     const named = (run: string, cause: string) =>

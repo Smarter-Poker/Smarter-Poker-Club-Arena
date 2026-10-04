@@ -225,6 +225,17 @@ import {
 } from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
 import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
+import {
+  HERO_ACTED_FENCE_MS,
+  HERO_ACTED_FENCE_RELEASE_MARGIN_MS,
+  armHeroActedFence,
+  judgeSnapshotAgainstFence,
+  judgeTurnChangeAgainstFence,
+  releaseExpiredFence,
+  shouldHandBackTurn,
+  type HeroActedFence,
+} from '../lib/heroActedFence';
+import { syncPreActionToEngine } from '../lib/preActionSync';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -495,7 +506,6 @@ import {
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
-import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
@@ -2765,30 +2775,40 @@ function LiveTablePage({
           ? prev.lastBetAmounts[i]
           : amt
       );
-      /* THE ACTION BAR MUST NOT FLASH BACK AFTER YOU ACT (2026-08-27).
+      /* THE ACTION BAR MUST NOT FLASH BACK AFTER YOU ACT (2026-08-27), AND A
+         TURN HANDED BACK IS A TURN (2026-10-04).
          See heroActedFenceRef for the full account. A snapshot generated
          before the engine processed the hero's action still names them as the
          actor; applying it verbatim put the turn back and the bar reappeared
-         for exactly one round trip. While the fence is live for THIS hand and
-         THIS seat, the turn is not handed back.
+         for exactly one round trip. The fence withholds those frames.
 
-         Every other outcome releases it immediately, so the suppression can
+         It used to withhold by seat and by time alone, and that is also what
+         the engine handing the SAME seat the next street looks like. The
+         player who closed a street and was first to act on the next was shown
+         no turn at all, and was timed out. The rule now reads the decision
+         the frame carries and the engine's own turn clock, and it lives in
+         src/lib/heroActedFence.ts so the TURN_CHANGE handler applies the
+         identical one.
+
+         Every other outcome still releases it at once, so the suppression can
          never outlive its purpose: the engine naming a different actor is the
          success signal, a new hand invalidates it, and a rejected action
-         clears it in revert(). The time bound is only the last-resort case
-         where none of those arrive. */
-      const fence = heroActedFenceRef.current;
+         clears it in revert(). The time bound is the last resort, and a turn
+         still withheld when it passes is delivered by the release timer. */
       const snapHand = mapped.handNumber > 0 ? mapped.handNumber : prev.handNumber;
-      let nextCurrentSeat = mapped.currentPlayerSeat;
-      if (fence) {
-        if (fence.hand !== snapHand || Date.now() >= fence.until) {
-          heroActedFenceRef.current = null; // stale or expired - never sticky
-        } else if (mapped.currentPlayerSeat === fence.seat) {
-          nextCurrentSeat = 0; // the engine has not caught up yet; hold the bar down
-        } else {
-          heroActedFenceRef.current = null; // the engine moved on - job done
-        }
-      }
+      const fenceVerdict = judgeSnapshotAgainstFence(
+        heroActedFenceRef.current,
+        {
+          hand: snapHand,
+          actorSeat: mapped.currentPlayerSeat,
+          decision: mapped.actionContext,
+          clock: mapped.actionTimerStartTime,
+          actorFolded: mapped.players[mapped.currentPlayerSeat - 1]?.status === 'folded',
+        },
+        Date.now()
+      );
+      heroActedFenceRef.current = fenceVerdict.fence;
+      const nextCurrentSeat = fenceVerdict.currentPlayerSeat;
 
       return {
         ...prev,
@@ -3166,6 +3186,21 @@ function LiveTablePage({
    * restore-on-failed-clear dead code — see the mirror effect.
    */
   const lastArmedPreActionRef = useRef<'fold' | 'check' | 'call' | 'callAny' | null>(null);
+  /**
+   * A PRE-ACTION NEVER ARMS ITSELF (2026-10-04). Two more facts the engine
+   * sync needs, both read only by src/lib/preActionSync.ts:
+   *
+   *  - `preActionHeldByEngineRef` is a one-shot marker. Whoever is about to
+   *    put a value on the bar that the ENGINE already holds (the engine's own
+   *    pre_action frame, the restore after an undelivered clear) writes it
+   *    here first, and the sync then shows it without sending it. Until this
+   *    existed, showing was arming: one armed fold was sent back to the engine
+   *    hand after hand and folded thirteen of them.
+   *  - `preActionSendSeqRef` is bumped by every run of the sync, so a retry or
+   *    an answer that belongs to an earlier choice stands down.
+   */
+  const preActionHeldByEngineRef = useRef<'fold' | 'check' | 'call' | 'callAny' | null>(null);
+  const preActionSendSeqRef = useRef(0);
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
@@ -3569,138 +3604,41 @@ function LiveTablePage({
   }, [toast]);
 
   // Bible V8 §4.15: Pre-actions are server-managed — notify server when player sets/clears a pre-action
+  /* The whole rule lives in src/lib/preActionSync.ts (2026-10-04), where it
+     can be driven with the engine's real replies: what is sent, what is
+     retried, what an answer means, and what is only ever SHOWN. This effect
+     hands it the page's refs and nothing else. */
   useEffect(() => {
-    if (tableId) {
-      if (preAction) {
-        const serverAction =
-          preAction === 'fold'
-            ? preActionCanCheckRef.current
-              ? 'auto_check_fold'
-              : 'auto_fold'
-            : preAction === 'check'
-              ? 'auto_check'
-              : preAction === 'call'
-                ? 'auto_call' // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
-                : 'auto_call_any';
-        // Tell server about pre-action so it can auto-execute on player's turn
-        hadPreActionRef.current = true;
-        lastArmedPreActionRef.current = preAction;
-        /* RETRIED FOR REAL THIS TIME (Dan 2026-08-28: "pre action buttons
-           still have a slight glitch").
-
-           `serverSetPreAction` NEVER throws — it resolves `{success:false}`
-           on a non-OK status, on an unreachable engine, and for a full 30s
-           whenever GameServerAPI's circuit breaker is open. The previous
-           `retryAsync(() => serverSetPreAction(...))` therefore resolved its
-           FIRST falsy result and retried nothing: the comment said "three
-           bounded attempts" while the code made one. The wrapper below turns
-           a falsy result into a thrown, retryable error ("network" marks it
-           retryable for retryAsync's filter), so the three attempts are now
-           real; the terminal failure lands in `.catch`, which disarms the
-           bar rather than letting it claim something the engine never armed.
-
-           Dan 2026-08-28 (CRITICAL): `auto_call` now carries the PRICE THE
-           PLAYER WAS LOOKING AT when they armed it (snapshotted in
-           onPreActionChange, same place the canCheck snapshot lives). The
-           engine also records its own price at set time, so this cap is
-           belt on top of the server's braces — either alone stops "Call 15"
-           from calling a raise to 65. */
-        const armCap = serverAction === 'auto_call' ? preActionCallAmountRef.current : undefined;
-        void retryAsync(
-          async () => {
-            /* LIGHTNING PHASE 6: in a Lightning room the arm names its hand. */
-            const lightningArmHandId = lightningRoomRef.current
-              ? lightningHandId(engineSnapshotRef.current as LightningSnapshotFields)
-              : null;
-            const res = lightningArmHandId
-              ? await serverSetPreAction(tableId, serverAction, armCap, lightningArmHandId)
-              : await serverSetPreAction(tableId, serverAction, armCap);
-            if (!res?.success) {
-              throw new Error(`network/preaction-arm: ${res?.error || 'engine refused'}`);
-            }
-            /* ADOPT THE ENGINE'S OWN NUMBER (2026-08-30). The engine records
-               `toCallAtSet` from its authoritative state and now returns it.
-               Until this line the panel-suppression rule judged "can the
-               engine still honour this?" against a price the BROWSER
-               snapshotted at tap time — two snapshots of one number, taken at
-               two moments on two machines. They agree almost always, and the
-               "almost" is a visible flash on a hand the engine was going to
-               act, or no panel on a hand where the arm was already dead.
-               There is now one number, and it is the engine's. */
-            if (typeof res.armedToCall === 'number' && Number.isFinite(res.armedToCall)) {
-              preActionCallAmountRef.current = res.armedToCall;
-            }
-            return res;
-          },
-          2,
-          400
-        ).catch((err: unknown) => {
-          reportError(err, 'TablePage.PreAction_set_refused');
-          hadPreActionRef.current = false;
-          setPreAction(null); // the bar must not claim something the engine has not armed
-          toast?.error?.('Could Not Arm That Pre-Action, Play It Manually.');
-        });
-        // Also emit to MasterBus for local telemetry
+    syncPreActionToEngine({
+      tableId,
+      preAction,
+      refs: {
+        hadPreActionRef,
+        lastArmedPreActionRef,
+        preActionCanCheckRef,
+        preActionCallAmountRef,
+        preActionHeldByEngineRef,
+        preActionSendSeqRef,
+        lightningRoomRef,
+      },
+      handNumber: () => tableStateRef.current.handNumber ?? 0,
+      /* LIGHTNING PHASE 6: in a Lightning room the arm names its hand. */
+      lightningArmHandId: () =>
+        lightningRoomRef.current
+          ? lightningHandId(engineSnapshotRef.current as LightningSnapshotFields)
+          : null,
+      serverSetPreAction,
+      setPreAction,
+      toastError: (message) => toast?.error?.(message),
+      reportError,
+      // Also emit to MasterBus for local telemetry
+      onArmSent: (serverAction) =>
         masterBus.emit('PRE_ACTION_SET', {
-          tableId,
+          tableId: tableId as string,
           playerId: userId || '',
           action: serverAction,
-        });
-      } else if (hadPreActionRef.current) {
-        // Clear pre-action on server (only if one was previously armed —
-        // P2-1: avoids a junk clear request on initial mount when null).
-        hadPreActionRef.current = false;
-        /* THE DIRECTION THAT COSTS A HAND (Dan 2026-08-27: pre-actions
-           "sometimes stay engaged on future streets").
-
-           The engine disposes pre-actions only at HAND END, while the client's
-           rule is one action and one street - so every street boundary sends a
-           clear, and a clear that fails leaves the ENGINE armed while the BAR
-           GOES DARK. The player sees nothing engaged, and the engine folds or
-           calls for them on a later street. That is precisely the reported
-           symptom, and the old code knew it: its own comment said "the engine
-           still holds the old pre-action and WILL execute it".
-
-           Two changes. It RETRIES for real (the falsy result is thrown as a
-           retryable error — the bare `retryAsync(() => serverSetPreAction…)`
-           shape resolved its first `{success:false}` and retried nothing).
-           And when the clear genuinely fails it puts the bar BACK to what the
-           engine is actually holding instead of leaving it dark — a visible
-           armed control the player can cancel again beats an invisible one
-           that acts for them.
-
-           Dan 2026-08-28: `armed` used to be `const armed = preAction` HERE,
-           inside the else-branch where `preAction` is null by definition —
-           so the restore was dead code and a failed clear left the bar dark
-           while the engine stayed armed (the exact "it acts again later"
-           glitch). The value now comes from lastArmedPreActionRef, written
-           on every successful arm. */
-        const armed = lastArmedPreActionRef.current;
-        void retryAsync(
-          async () => {
-            const res = await serverSetPreAction(tableId, 'clear');
-            if (!res?.success) {
-              throw new Error(`network/preaction-clear: ${res?.error || 'engine refused'}`);
-            }
-            return res;
-          },
-          2,
-          400
-        ).catch((err: unknown) => {
-          reportError(err, 'TablePage.PreAction_clear_refused');
-          hadPreActionRef.current = true;
-          // Show what the engine is still holding, rather than nothing.
-          /* Never in a Lightning room: by the time a clear has failed the
-             next hand may already be on the felt, and an arm restored here
-             would belong to it. The engine drops the old one at the hand's
-             end on its own. */
-          if (lightningRoomRef.current) {
-            // Lightning: left disarmed (see above).
-          } else if (armed) setPreAction(armed);
-          toast?.error?.('Could Not Cancel Your Pre-Action, It May Still Run This Hand.');
-        });
-      }
-    }
+        }),
+    });
   }, [preAction, tableId, userId, toast]);
 
   // Bible V8 §6.3: Heartbeat every 5 seconds while at the table
@@ -10878,6 +10816,18 @@ function LiveTablePage({
       const reason = typeof ev.reason === 'string' ? ev.reason : null;
       if (mapped === null && reason === null && preActionArmedRef.current !== null) return;
       if (mapped === null) hadPreActionRef.current = false;
+      /* THE ENGINE'S COPY IS SHOWN, NOT SENT BACK (2026-10-04). This frame is
+         the engine saying what it holds. Adopting it with setPreAction ran
+         the arm effect, which sent the same pre-action to the engine again -
+         from every other tab and device the player had open, for every arm,
+         and into whatever hand was on the felt by the time each request
+         landed. Marked as the engine's own, the sync shows it and sends
+         nothing; the player can still cancel it from any of them. Only when
+         the bar is about to change, so the marker is always consumed by the
+         run that change causes. */
+      if (mapped !== null && preActionArmedRef.current !== mapped) {
+        preActionHeldByEngineRef.current = mapped;
+      }
       setPreAction((cur) => (cur === mapped ? cur : mapped));
     }
     // tableId and the trackers are refs / stable; the frame is the trigger.
@@ -17068,21 +17018,29 @@ function LiveTablePage({
                was consulted in exactly one place - the snapshot mapper - and
                this event is the one that lands LAST (the engine broadcasts
                the snapshot, THEN emits turn_change), so the snapshot beside
-               it could not correct what this wrote. The two comments above
-               claiming this "beats waiting for the snapshot" and that "the
-               snapshot still self-corrects later" are both inverted, and that
-               is how the fence came to be applied to the frame that did not
-               need it. */
-            const f = heroActedFenceRef.current;
-            if (
-              f &&
-              f.seat === newSeat &&
-              f.hand === prev.handNumber &&
-              Date.now() < f.until &&
-              newSeat === prev.heroSeat
-            ) {
-              return prev;
-            }
+               it could not correct what this wrote.
+
+               A TURN HANDED BACK IS A TURN (2026-10-04). The check written
+               here on 2026-09-09 refused EVERY turn_change naming the seat
+               that had just acted, for 1500ms. The engine emits this event
+               only after it has armed a turn, so the one it refused was the
+               engine giving the same seat the next street: the player who
+               closed a street and opened the next got no action bar and was
+               timed out. The rule now asks which DECISION the event carries.
+               The one already answered is still refused; a different one is
+               the new turn and is applied. src/lib/heroActedFence.ts. */
+            const verdict = judgeTurnChangeAgainstFence(
+              heroActedFenceRef.current,
+              {
+                hand: prev.handNumber,
+                seat: newSeat,
+                heroSeat: prev.heroSeat,
+                decision: actionContext,
+              },
+              Date.now()
+            );
+            heroActedFenceRef.current = verdict.fence;
+            if (!verdict.accept) return prev;
             return { ...prev, currentPlayerSeat: newSeat, actionContext };
           });
           // Bible V8 §5.4: medium haptic when it's hero's turn
@@ -21726,10 +21684,28 @@ function LiveTablePage({
    * The same file already guards two other fields this way - `nextStage` never
    * goes backwards within a hand, and a bet is held through its collect
    * animation - so this is the established shape here, not a new idea.
+   *
+   * A TURN HANDED BACK IS A TURN (2026-10-04). "A snapshot may not hand the
+   * turn BACK to the seat that just acted" was judged by seat and by time
+   * alone, and the engine legitimately does exactly that when the seat that
+   * closes a street is first to act on the next one. Those players were shown
+   * no action bar and no clock, and were timed out: Dan, after a human-versus
+   * -human match, "MY HUMAN OPPONENT [WAS] CONSTANTLY BEING TIMED OUT OR
+   * DISCONNECTED." The fence now records the DECISION the hero answered and
+   * the engine clock it ran on, and the rule that reads them is
+   * src/lib/heroActedFence.ts - one copy, used by the snapshot merge, the
+   * TURN_CHANGE handler and the release timer below.
    */
-  const heroActedFenceRef = useRef<{ hand: number; seat: number; until: number } | null>(null);
-  /** How long the turn may be withheld from a stale snapshot. */
-  const HERO_ACTED_FENCE_MS = 1500;
+  const heroActedFenceRef = useRef<HeroActedFence | null>(null);
+  /** Timers that deliver a still-withheld turn when its window closes. */
+  const heroFenceReleaseTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = heroFenceReleaseTimersRef.current;
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const applyOptimisticHeroAction = useCallback(
     (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number): (() => void) => {
@@ -21762,6 +21738,11 @@ function LiveTablePage({
       let captured = false;
       let priorDecision: string | undefined;
       let priorHand: number | undefined;
+      // The same purity rule applies to the fence. The instant is read once,
+      // out here, and the fence is armed once: a pass React re-runs must not
+      // move the deadline or forget the frames judged since the first pass.
+      const actedAt = Date.now();
+      let fenceArmed = false;
 
       setTableState((prev) => {
         const players = [...prev.players];
@@ -21787,14 +21768,19 @@ function LiveTablePage({
           players[idx] = { ...hero, status: 'folded' as any };
         }
 
-        if (prev.currentPlayerSeat === heroSeat) {
+        if (prev.currentPlayerSeat === heroSeat && !fenceArmed) {
           // Arm the fence in the same breath as hiding the bar, so the two can
-          // never disagree about whether this seat has acted.
-          heroActedFenceRef.current = {
+          // never disagree about whether this seat has acted. It records WHICH
+          // decision was answered and the engine clock it ran on: a later
+          // frame offering this seat a different decision is a new turn.
+          fenceArmed = true;
+          heroActedFenceRef.current = armHeroActedFence({
             hand: prev.handNumber ?? 0,
             seat: heroSeat,
-            until: Date.now() + HERO_ACTED_FENCE_MS,
-          };
+            decision: prev.actionContext,
+            clockAtAct: prev.actionTimerStartTime,
+            now: actedAt,
+          });
         }
 
         return {
@@ -21805,6 +21791,35 @@ function LiveTablePage({
           ...(prev.currentPlayerSeat === heroSeat ? { currentPlayerSeat: 0 } : {}),
         };
       });
+
+      /* A TURN STILL WITHHELD WHEN THE WINDOW CLOSES IS DELIVERED THEN
+         (2026-10-04). The fence used to simply lapse, which helps only if
+         another frame arrives afterwards - and when the engine has handed
+         this seat its next turn, none does until the clock runs out. So when
+         the window closes the rule is asked once more, and a turn it was
+         still holding is put on the clock. It hands back nothing when the
+         engine's last word was the answered decision or no decision at all
+         (a showdown), when the action was refused (revert() cleared the
+         fence), when somebody else or a new hand has the table, or when the
+         hero has folded (the engine keeps naming a folder whose fold ended
+         the hand until it deals the next one). */
+      const releaseTimer = setTimeout(() => {
+        heroFenceReleaseTimersRef.current.delete(releaseTimer);
+        const released = releaseExpiredFence(heroActedFenceRef.current, Date.now());
+        heroActedFenceRef.current = released.fence;
+        if (released.handBackSeat === null) return;
+        setTableState((prev) =>
+          shouldHandBackTurn(released, {
+            currentPlayerSeat: prev.currentPlayerSeat,
+            heroSeat: prev.heroSeat,
+            hand: prev.handNumber,
+            heroFolded: prev.players[prev.heroSeat - 1]?.status === 'folded',
+          })
+            ? { ...prev, currentPlayerSeat: prev.heroSeat }
+            : prev
+        );
+      }, HERO_ACTED_FENCE_MS + HERO_ACTED_FENCE_RELEASE_MARGIN_MS);
+      heroFenceReleaseTimersRef.current.add(releaseTimer);
 
       return () => {
         /* A REFUSED ACTION MUST GIVE THE CONTROLS BACK (2026-08-27).
@@ -21846,49 +21861,33 @@ function LiveTablePage({
   );
 
   /**
+   * THE PAGE DOES NOT FOLD FOR THE PLAYER. THE ENGINE OWNS AN EXPIRED TURN.
+   *
    * Dan 2026-08-21 (bug list item 2): "time banks are auto enabled but don't
-   * grant 20 additional seconds when used."
+   * grant 20 additional seconds when used." A CLIENT-side fold lived here
+   * (`handleTimerAutoFold`), fired when the local ring hit zero, two seconds
+   * before the engine even considered the bank. It was fenced that day into a
+   * "last resort": act only when the engine's deadline is more than six
+   * seconds past.
    *
-   * This function was the reason. It is a CLIENT-side fold, fired the instant
-   * the local ring hit zero — and the local ring hits zero BEFORE the engine
-   * does anything at all:
+   * 2026-10-04: it is gone, because the last resort only ever fired when it
+   * was wrong. The page knows LESS about the clock than the engine does. The
+   * engine extends a turn for a time bank without publishing a new deadline,
+   * a hidden tab's timers run late, and a hand can end between this page
+   * asking for a bank and hearing "no". Every time this fold was actually
+   * sent in production it was for a turn the engine had already resolved:
+   * the "The Table View Is Out Of Date. Reload To Continue." popups in the
+   * hands Dan reported that day each follow the engine's own forced fold of
+   * the same seat, the first by 106ms and the second by 16ms, and they
+   * appeared on whatever page he was looking at (the table was mounted behind
+   * the lobby). The fold carried no decision context, so the engine refused
+   * it; with a correct context the same code folds a player in the middle of
+   * a time bank the engine has just granted.
    *
-   *   t = 15.0s  client ring reaches 0 → onTimeout
-   *   t = 17.0s  engine's deadline (15s + the §6.1 2s network grace) fires and
-   *              auto-activates the 20s time bank
-   *
-   * So the fold landed two full seconds before the engine ever considered the
-   * bank. And on the path where the client DID ask for a bank first, any
-   * refusal — including "time bank already activated this turn", which means
-   * the engine had just granted one — dropped straight through to this fold.
-   * The bank was granted and the hand was thrown away anyway.
-   *
-   * The engine owns the fold. It force-resolves an expired seat itself
-   * (`forceResolveSeat`, check when free / fold when not) and its clock is the
-   * only one that can see the bank. So this now refuses to act while the
-   * authoritative deadline is still ahead of us, and only fires as a genuine
-   * last-resort failsafe: the deadline is well past AND nothing has moved,
-   * which means the engine is unreachable rather than merely slower than us.
+   * The engine checks or folds an expired seat itself (forceResolveSeat: its
+   * primary clock, the 2s grace, then the bank). Nothing here second-guesses
+   * it. tests/unit/theEngineOwnsAnExpiredTurn.test.ts keeps it that way.
    */
-  const handleTimerAutoFold = useCallback(() => {
-    if (actionLockRef.current) return; // Prevent race with manual fold
-    const deadline = tableStateRef.current.actionTimerDeadline;
-    // §6.1 grace (2s) + a margin for the engine's own resolve round-trip.
-    const FAILSAFE_GRACE_MS = 6000;
-    if (deadline && serverNow() < deadline + FAILSAFE_GRACE_MS) {
-      // The engine still has time on its clock — it may be running a time bank
-      // for us right now. Folding here would throw the hand away.
-      return;
-    }
-    // Bible V8 §1.4: Server is authoritative — only send HTTP action, no Realtime broadcast
-    try {
-      soundService.playFold();
-      if (tableId)
-        submitActionWithToast(tableId, userId || 'guest', 'fold', undefined, 'auto-fold');
-    } catch (err) {
-      reportError(err, 'TablePage.Error_during_autofold');
-    }
-  }, [tableState.heroSeat, tableId, userId]);
 
   /* PERF 2026-08-25 — `actionTimeRemaining` and `actionTimerProgress` are gone.
      They were React state IN THIS COMPONENT, so the whole table re-rendered for
@@ -21940,42 +21939,40 @@ function LiveTablePage({
         if (!v8Settings.auto_time_bank) {
           toast?.info?.('Time Bank Used');
         }
-        // 2026-08-20: this was `.catch(() => handleTimerAutoFold())`, and the
-        // comment on it said "Server rejected — fall back to auto-fold".
-        // That fallback could NEVER run. GameServerAPI.activateTimeBank does
-        // not throw: every failure — non-OK status, unreachable server, a
-        // thrown fetch — is converted into a resolved `{ success: false }`.
+        // 2026-08-20: this was a `.catch(...)` that could NEVER run.
+        // GameServerAPI.activateTimeBank does not throw: every failure
+        // (non-OK status, unreachable server, a thrown fetch) is converted
+        // into a resolved `{ success: false }`.
         //
         // So on the one path where the player is by definition not watching —
         // their shot clock just expired — a refused time bank left the client
-        // showing borrowed time it did not have, and the auto-fold the code
-        // intended never happened. Check the result.
+        // showing borrowed time it did not have. Check the result.
         void GameServerAPI.activateTimeBank(tableId, userId).then((result) => {
           if (result?.success) return;
-          /* NOT every refusal means "no time left" — and folding on the wrong
-             one throws away a live hand.
+          /* NOT every refusal means "no time left".
 
              When hero ARMED a bank earlier in the turn, the engine redeems it
              the instant the primary clock expires. Our RAF hits zero at the
              same moment and POSTs again, so the engine answers
              'Your Time Bank Is Already Running' — a refusal that means the
              opposite of what this branch assumes: the bank was granted and
-             there are ~20 fresh seconds on the clock. Folding there burned a
-             hand the player had just paid to keep. Only the 6-second failsafe
-             grace hid how often it happened.
+             there are ~20 fresh seconds on the clock. The client-side fold
+             that used to follow a refusal burned a hand the player had just
+             paid to keep.
 
              Treat that one answer as success and let the engine's new deadline
-             drive the ring; every other refusal still auto-folds. */
+             drive the ring. */
           if (/already running/i.test(result?.error || '')) {
             setTimeBankArmed(false);
             return;
           }
+          /* Refused for any other reason: there is no bank, so the clock must
+             stop claiming one. That is all. The turn is the engine's to
+             resolve, and by the time a refusal arrives it usually has. */
           setTimeBankActive(false);
-          handleTimerAutoFold();
         });
-      } else {
-        handleTimerAutoFold();
       }
+      // No bank to ask for: nothing to do. The engine resolves the seat.
     },
     initialTime: actionTimeSeconds,
   });

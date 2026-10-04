@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 import { AUTH_STORAGE_KEY, parseJwtPayload, readLocalSession } from '../lib/authUtils';
 import { captureClientError, isClientErrorSinkEnabled, reportError } from '../utils/errorReporter';
 import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from './heartbeatCodes';
+import { PRE_ACTION_REFUSED, PRE_ACTION_TABLE_NOT_RUNNING } from '../lib/preActionSync';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -955,16 +956,47 @@ export async function setPreAction(
         handId ? { tableId, action, maxCallAmount, handId } : { tableId, action, maxCallAmount }
       ),
     });
+    if (response.status === 400 || response.status === 404) {
+      /* THE ENGINE ANSWERED, AND ITS ANSWER IS KEPT (2026-10-04).
+         A 400 is the engine refusing this pre-action for this player right
+         now - "No active hand", "Player not found at this table" - and a 404
+         is the engine running no game for this table. Both come from a server
+         that is plainly reachable, and both are an expected state rather than
+         a fault.
+
+         This used to return `Server error (400)` and drop the engine's
+         sentence, so a caller could not tell "there is no hand, nothing is
+         armed" from "the request never arrived". TablePage read every refused
+         clear as the second, restored the pre-action and re-armed it into the
+         next hand: one armed fold folded thirteen hands (src/lib/preActionSync.ts
+         has the account). The sentence now travels with a code that says the
+         engine answered.
+
+         And the 404 used to be counted toward the breaker that means "the
+         server is unreachable". That breaker is shared by every table the
+         player has open, and a clear is attempted three times, so one closed
+         table was enough to pause every live table's heartbeat for thirty
+         seconds. Same finding, and the same treatment, as the heartbeat's own
+         404 above: reachable, so the breaker is told so. */
+      if (response.status === 404) circuitBreaker.recordSuccess();
+      const refusal = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        code?: unknown;
+      } | null;
+      const sentence =
+        typeof refusal?.error === 'string' && refusal.error
+          ? refusal.error
+          : `Server error (${response.status})`;
+      return {
+        success: false,
+        error: sentence,
+        code: response.status === 404 ? PRE_ACTION_TABLE_NOT_RUNNING : PRE_ACTION_REFUSED,
+        ...(typeof refusal?.code === 'string' && refusal.code
+          ? { hint: { engineCode: refusal.code } }
+          : {}),
+      };
+    }
     if (!response.ok) {
-      // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
-      // this is an expected user-state mismatch, NOT a server bug. Do not
-      // report to error reporting; just return the error for the caller to handle.
-      if (response.status === 400) {
-        console.debug(
-          `[GameServerAPI] setPreAction rejected (HTTP 400) - player not in hand or not their turn`
-        );
-        return { success: false, error: `Server error (${response.status})` };
-      }
       circuitBreaker.recordFailure(
         new Error(`HTTP ${response.status}`),
         'GameServerAPI.setPreAction'

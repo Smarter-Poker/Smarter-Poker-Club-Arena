@@ -99,13 +99,15 @@ export const p11Street = (
   eligible = 200,
   workBudget = 0,
   samplerBudgetExhausted = 0,
-  sampleUnavailable = 0
+  sampleUnavailable = 0,
+  governorReduced = 0
 ): HorsePhase11StreetCompletion => ({
   eligible,
-  completed: eligible - workBudget - samplerBudgetExhausted - sampleUnavailable,
+  completed: eligible - workBudget - samplerBudgetExhausted - sampleUnavailable - governorReduced,
   workBudget,
   samplerBudgetExhausted,
   sampleUnavailable,
+  governorReduced,
 });
 
 /** A `horse-phase11-completion-v1` record that clears the floor. */

@@ -2733,7 +2733,8 @@ export class HorseLogic {
               decision,
               phase10EquityEvidence,
               opts.phase10Plo4 ?? 'shadow',
-              opts.phase10EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase10EvidenceMode && !tele ? () => 0 : undefined,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
       if (phase10) {
@@ -2758,7 +2759,9 @@ export class HorseLogic {
               null,
               opts.phase11Omaha ?? 'shadow',
               opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
-              phase11DecisionEquityCeiling ?? 1
+              phase11DecisionEquityCeiling ?? 1,
+              true,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
       if (phase11) {

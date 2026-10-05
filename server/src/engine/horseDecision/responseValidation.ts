@@ -516,6 +516,10 @@ function packSelectionIsValid(
   const packVersion = packVersionOf(value.variant);
   const authority = value.authority;
   if (
+    // Audit 2026-10-05: every receipt that carries a selection is newer than
+    // its phase's input binding (P11.1, P12.1), so it carries the binding
+    // field (null when nothing was bound); a selection without it is forged.
+    !Object.hasOwn(value, 'inputs') ||
     packVersion === null ||
     value.version !== packVersion ||
     !['none', 'shadow_change', 'selected'].includes(value.selection as string) ||

@@ -1229,6 +1229,7 @@ describe('private retained-hand journal consumer', () => {
       executionStatus: 'pending',
       executedAction: null,
       executedAmount: null,
+      inputs: null,
     });
     function selectedCase(variant: 'plo5' | 'plo6' | 'plo8' = 'plo6', selected = true) {
       const f = fixture(variant);
@@ -1434,6 +1435,7 @@ describe('private retained-hand journal consumer', () => {
       executionStatus: 'pending',
       executedAction: null,
       executedAmount: null,
+      inputs: null,
     });
     function selectedCase(
       variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8' = 'short_deck',

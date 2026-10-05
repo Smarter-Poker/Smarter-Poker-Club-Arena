@@ -44,6 +44,7 @@ import {
 } from './HorseQualifiedAuthority.js';
 import {
   isOmahaPolicyVariant,
+  OMAHA_VARIANT_DOMAIN,
   OMAHA_VARIANT_PACKS,
   type OmahaPolicyVariant,
 } from './omaha/OmahaVariantPolicyPack.js';
@@ -100,15 +101,22 @@ export const HORSE_PHASE11_COMPLETION_SCHEMA = 'horse-phase11-completion-v1';
  * the policy the P11.2 matrix measured, which ran on a fixed clock with every
  * sample complete. Two live outcomes are not that policy and are counted
  * separately, so `eligible = completed + workBudget + samplerBudgetExhausted +
- * sampleUnavailable`:
+ * sampleUnavailable + governorReduced`:
  *  - `workBudget`: the policy exceeded `OMAHA_VARIANT_DOMAIN.liveBudgetMs` and
  *    fell back to the reference action (reason `work_budget`);
  *  - `samplerBudgetExhausted`: the proposal finished inside the budget but
  *    consumed a live range sample the sampler cut short at its own 3 ms
  *    budget (`inputs.range.provenance.work.budgetExhausted`), so it priced a
  *    smaller sample than the matrix did.
+ *  - `sampleUnavailable` (v2): a postflop proposal priced with no consumed live
+ *    sample at all;
+ *  - `governorReduced` (v3, audit 2026-10-05): a complete live sample of fewer
+ *    than the pack's full `OMAHA_VARIANT_DOMAIN.defaultSamples` draws, because
+ *    the equity load governor scaled the request down. The P11.2 matrix ran
+ *    with the governor off (every request the full count), so such a proposal
+ *    priced a smaller sample than the matrix did, although none was cut short.
  */
-export const HORSE_PHASE11_COMPLETION_DEFINITION = 'horse-phase11-completion-definition-v2';
+export const HORSE_PHASE11_COMPLETION_DEFINITION = 'horse-phase11-completion-definition-v3';
 
 /**
  * THE COMPLETION FLOOR, per street: 0.95, judged on the 99% lower confidence
@@ -163,6 +171,8 @@ export interface HorsePhase11StreetCompletion {
   readonly samplerBudgetExhausted: number;
   /** v2: a postflop decision priced with no complete live sample at all. */
   readonly sampleUnavailable: number;
+  /** v3: a complete sample the load governor reduced below the full count. */
+  readonly governorReduced: number;
 }
 
 /** A committed `horse-phase11-completion-v1` record (exact keys). */
@@ -193,7 +203,8 @@ export type HorsePhase11CompletionOutcome =
   | 'completed'
   | 'work_budget'
   | 'sampler_budget_exhausted'
-  | 'sample_unavailable';
+  | 'sample_unavailable'
+  | 'governor_reduced';
 
 const objectOf = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -233,6 +244,14 @@ export function horsePhase11CompletionOutcome(
   // branches the matrix never played: not completed.
   if (receipt.street !== 'preflop' && !(objectOf(range) && range.status === 'consumed'))
     return 'sample_unavailable';
+  // v3 (audit 2026-10-05): a consumed sample the governor scaled below the full
+  // count is complete but smaller than every sample the matrix priced.
+  if (
+    objectOf(range) &&
+    range.status === 'consumed' &&
+    !(objectOf(work) && work.requestedSamples === OMAHA_VARIANT_DOMAIN.defaultSamples)
+  )
+    return 'governor_reduced';
   return 'completed';
 }
 
@@ -244,7 +263,14 @@ export function horsePhase11CompletionCounts(
   const counts = Object.fromEntries(
     HORSE_PHASE11_COMPLETION_STREETS.map((street) => [
       street,
-      { eligible: 0, completed: 0, workBudget: 0, samplerBudgetExhausted: 0, sampleUnavailable: 0 },
+      {
+        eligible: 0,
+        completed: 0,
+        workBudget: 0,
+        samplerBudgetExhausted: 0,
+        sampleUnavailable: 0,
+        governorReduced: 0,
+      },
     ])
   ) as Record<
     HorsePhase11CompletionStreet,
@@ -254,6 +280,7 @@ export function horsePhase11CompletionCounts(
       workBudget: number;
       samplerBudgetExhausted: number;
       sampleUnavailable: number;
+      governorReduced: number;
     }
   >;
   for (const receipt of receipts) {
@@ -264,7 +291,8 @@ export function horsePhase11CompletionCounts(
     if (outcome === 'completed') street.completed += 1;
     else if (outcome === 'work_budget') street.workBudget += 1;
     else if (outcome === 'sampler_budget_exhausted') street.samplerBudgetExhausted += 1;
-    else street.sampleUnavailable += 1;
+    else if (outcome === 'sample_unavailable') street.sampleUnavailable += 1;
+    else street.governorReduced += 1;
   }
   return counts;
 }
@@ -424,6 +452,7 @@ const STREET_KEYS = [
   'workBudget',
   'samplerBudgetExhausted',
   'sampleUnavailable',
+  'governorReduced',
 ] as const;
 
 /** Schema, shape and internal consistency of a completion record. */
@@ -455,7 +484,8 @@ function completionIsWellFormed(value: unknown): value is HorsePhase11Completion
       (s.completed as number) +
         (s.workBudget as number) +
         (s.samplerBudgetExhausted as number) +
-        (s.sampleUnavailable as number) ===
+        (s.sampleUnavailable as number) +
+        (s.governorReduced as number) ===
         s.eligible
     );
   });

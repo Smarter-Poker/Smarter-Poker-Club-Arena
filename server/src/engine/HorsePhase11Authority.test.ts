@@ -57,6 +57,7 @@ import { horsePhase11PolicyDigest } from './HorsePhase11PolicyDigest.js';
 import { OMAHA_VARIANT_PACKS, type OmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
 import { evaluateOmahaVariantPolicy } from './omaha/OmahaVariantLivePolicy.js';
+import { equityGovernor } from './EquityLoadGovernor.js';
 import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
 
 const V: OmahaPolicyVariant = 'plo6';
@@ -156,7 +157,7 @@ describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
     }
   });
 
-  it('while the selections are null, no committed Phase 11 qualification says qualified:true and no completion record exists', () => {
+  it('while the selections are null, no committed Phase 11 qualification says qualified:true', () => {
     expect(Object.values(PHASE11_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
@@ -166,7 +167,10 @@ describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA)
         expect(parsed.qualified, file).not.toBe(true);
-      expect(parsed.schema, file).not.toBe(HORSE_PHASE11_COMPLETION_SCHEMA);
+      // Completion records are measurements and may exist (the October 5
+      // closure committed three); alone they admit nothing.
+      if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA)
+        expect(typeof parsed.variant, file).toBe('string');
     }
   });
 });
@@ -432,6 +436,7 @@ describe('P11.3 admission refuses by name unless the pack qualifies and complete
               workBudget: 1,
               samplerBudgetExhausted: 0,
               sampleUnavailable: 0,
+              governorReduced: 0,
             },
           },
         }),
@@ -763,7 +768,10 @@ describe('P11.3 natural completion share: what a record counts', () => {
     street: 'river',
     reason: 'split_price_call',
     inputs: {
-      range: { status: 'consumed', provenance: { work: { budgetExhausted: false } } },
+      range: {
+        status: 'consumed',
+        provenance: { work: { budgetExhausted: false, requestedSamples: 32 } },
+      },
     },
     ...overrides,
   });
@@ -777,6 +785,18 @@ describe('P11.3 natural completion share: what a record counts', () => {
         inputs: { range: { status: 'consumed', provenance: { work: { budgetExhausted: true } } } },
       }),
       'sampler_budget_exhausted',
+    ],
+    [
+      'a complete sample the governor reduced',
+      receipt({
+        inputs: {
+          range: {
+            status: 'consumed',
+            provenance: { work: { budgetExhausted: false, requestedSamples: 16 } },
+          },
+        },
+      }),
+      'governor_reduced',
     ],
     ['a preflop decision (no sample)', receipt({ street: 'preflop', inputs: null }), 'completed'],
     ['an ineligible decision', receipt({ eligible: false }), 'not_counted'],
@@ -823,9 +843,45 @@ describe('P11.3 natural completion share: what a record counts', () => {
         workBudget: 1,
         samplerBudgetExhausted: 0,
         sampleUnavailable: 0,
+        governorReduced: 0,
       });
     // Another pack's counting reads none of them.
     expect(horsePhase11CompletionCounts('plo6', seen).river.eligible).toBe(0);
+  });
+
+  it('v3: a complete sample the load governor reduced is not completed', () => {
+    const input = omahaVariantSpot('plo5', 'river', 3);
+    const decide = () =>
+      evaluateOmahaVariantPolicy(
+        input.hero,
+        input.state,
+        { action: 'call', amount: input.state.toCall, thinkTime: 0 },
+        null,
+        'shadow',
+        () => 0
+      ).receipt;
+    try {
+      equityGovernor.__setScaleForTest(0.5);
+      const reduced = decide();
+      const work = (
+        reduced.inputs?.range as unknown as { provenance: { work: Record<string, unknown> } }
+      ).provenance.work;
+      expect(work).toMatchObject({ requestedSamples: 16, completedSamples: 16 });
+      expect(work.budgetExhausted).toBe(false);
+      expect(horsePhase11CompletionOutcome('plo5', reduced)).toBe('governor_reduced');
+      expect(horsePhase11CompletionCounts('plo5', [reduced]).river).toEqual({
+        eligible: 1,
+        completed: 0,
+        workBudget: 0,
+        samplerBudgetExhausted: 0,
+        sampleUnavailable: 0,
+        governorReduced: 1,
+      });
+      equityGovernor.__setScaleForTest(1);
+      expect(horsePhase11CompletionOutcome('plo5', decide())).toBe('completed');
+    } finally {
+      equityGovernor.__setScaleForTest(null);
+    }
   });
 
   it('v2: a postflop decision priced with no complete live sample is not completed', () => {
@@ -855,6 +911,7 @@ describe('P11.3 natural completion share: what a record counts', () => {
       workBudget: 0,
       samplerBudgetExhausted: 0,
       sampleUnavailable: 1,
+      governorReduced: 0,
     });
     // Preflop never samples: an eligible preflop proposal inside the budget
     // is the measured policy.

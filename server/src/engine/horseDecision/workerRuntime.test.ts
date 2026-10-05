@@ -2849,6 +2849,12 @@ it.each(['plo5', 'plo6', 'plo8'] as const)(
       expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
       const legacy = structuredClone(result.decision) as any;
       delete legacy.omahaVariantPolicy.inputs;
+      // Audit 2026-10-05: a receipt that carries a selection is newer than
+      // its binding and must carry the field; a pre-binding receipt (no
+      // selection either) stays valid.
+      expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(false);
+      for (const key of ['selection', 'selectionRefusal', 'authority', 'authorityVerdict'])
+        delete legacy.omahaVariantPolicy[key];
       expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(true);
     } finally {
       clock.mockRestore();
@@ -2917,6 +2923,12 @@ it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
       expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
       const legacy = structuredClone(result.decision) as any;
       delete legacy.remainingVariantPolicy.inputs;
+      // Audit 2026-10-05: a receipt that carries a selection is newer than
+      // its binding and must carry the field; a pre-binding receipt (no
+      // selection either) stays valid.
+      expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(false);
+      for (const key of ['selection', 'selectionRefusal', 'authority', 'authorityVerdict'])
+        delete legacy.remainingVariantPolicy[key];
       expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(true);
     } finally {
       clock.mockRestore();

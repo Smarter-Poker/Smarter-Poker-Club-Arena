@@ -41,6 +41,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useDebounce } from '../hooks/useDebounce';
+import { useOnlineNow } from '../hooks/useProfilePresence';
 import { COUNT_UNKNOWN } from '../lib/countFigure';
 import {
   DIAMOND_ARENA_COUNTS_PENDING,
@@ -354,10 +355,14 @@ function Figure({ label, value, modifier }: { label: string; value: string; modi
 
 function PlayerRow({ player }: { player: DiamondRosterPlayer }) {
   const initial = (player.alias || '?')[0]?.toUpperCase() ?? '?';
-  const presence = player.is_seated ? 'At A Table' : player.is_online ? 'Online' : null;
+  /* The roster's is_online is "seated OR fresh presence"; off a seat it is the
+     presence door's answer, re-asked every minute while the row is shown so
+     it goes dark when the heartbeat does (presence-has-one-definition law). */
+  const online = useOnlineNow(player.user_id, player.is_online);
+  const presence = player.is_seated ? 'At A Table' : online ? 'Online' : null;
   return (
     <div
-      className={`member-row${player.is_seated ? ' member-row--seated' : player.is_online ? ' member-row--online' : ''}`}
+      className={`member-row${player.is_seated ? ' member-row--seated' : online ? ' member-row--online' : ''}`}
       role="listitem"
       aria-label={presence ? `${player.alias}, ${presence}` : player.alias}
     >
@@ -391,7 +396,7 @@ function PlayerRow({ player }: { player: DiamondRosterPlayer }) {
             )}
             {player.is_seated ? (
               <span className="member-seated">At Table</span>
-            ) : player.is_online ? (
+            ) : online ? (
               <span className="member-online">Online</span>
             ) : null}
           </span>

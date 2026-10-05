@@ -13,6 +13,7 @@ import {
   type FriendSuggestion,
 } from '../../services/FriendSuggestionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useProfilePresence } from '../../hooks/useProfilePresence';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
@@ -26,6 +27,8 @@ export default function FriendSuggestions() {
   const toast = useToast();
 
   const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
+  // Re-asked every minute while shown, so a dot goes dark when its heartbeat does.
+  const livePresence = useProfilePresence(suggestions.map((s) => s.userId));
   const [loading, setLoading] = useState(true);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [sendingRequest, setSendingRequest] = useState<string | null>(null);
@@ -151,7 +154,9 @@ export default function FriendSuggestions() {
             <span className={styles.reason}>
               {suggestion.reasons[0]?.label || 'Suggested For You'}
             </span>
-            {suggestion.isOnline && <span className={styles.onlineDot} />}
+            {(livePresence.get(suggestion.userId) ?? suggestion.isOnline) && (
+              <span className={styles.onlineDot} />
+            )}
             <button
               className={styles.addBtn}
               onClick={() => handleAddFriend(suggestion.userId)}

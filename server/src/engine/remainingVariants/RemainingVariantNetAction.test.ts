@@ -8,6 +8,7 @@ import { horseDecisionReceiptIsValid } from '../horseDecision/responseValidation
 import { horsePolicyOwnership } from '../HorsePolicyRegistry.js';
 import {
   evaluateRemainingVariantPolicy,
+  remainingVariantUnfiredBudgetRefusalIsValid,
   remainingVariantReceiptBindingIsValid,
 } from './RemainingVariantLivePolicy.js';
 import { REMAINING_VARIANT_DOMAIN } from './RemainingVariantPolicyPack.js';
@@ -30,7 +31,7 @@ function expectUnpricedBudgetFallback(
   result: ReturnType<typeof evaluateRemainingVariantPolicy>,
   baseline: ReturnType<typeof remainingVariantSpot>['baseline']
 ) {
-  expect(['equity_budget_unavailable', 'work_budget']).toContain(result.receipt.reason);
+  expect(remainingVariantUnfiredBudgetRefusalIsValid(result.receipt.reason)).toBe(true);
   if (result.receipt.reason === 'equity_budget_unavailable') {
     expect(result.receipt.equity).toBeNull();
     expect(result.receipt.inputs?.range.status).toBe('unavailable');

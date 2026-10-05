@@ -1260,7 +1260,7 @@ try:
         FROM generate_series(1,450) n;
       CREATE TABLE public.fixture_updates(id uuid);
       CREATE FUNCTION public.fixture_count_update() RETURNS trigger LANGUAGE plpgsql AS
-        $$ BEGIN INSERT INTO public.fixture_updates VALUES(NEW.id); RETURN NEW; END $$;
+        $$ BEGIN IF current_setting('fixture.slow',true)='true' THEN PERFORM pg_sleep(1); END IF; INSERT INTO public.fixture_updates VALUES(NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER fixture_update AFTER UPDATE ON public.tournaments
         FOR EACH ROW EXECUTE FUNCTION public.fixture_count_update();
     """)
@@ -1277,6 +1277,12 @@ try:
     expect_error("batch-refuses-service-role",as_service("SET statement_timeout='5s';"+call),"42501")
     expect_error("batch-refuses-platform-freeze","SET statement_timeout='5s'; SET fixture.frozen='true';"+call,"55000")
     expect_value("refused-batches-have-no-receipt","SELECT count(*)=0 FROM public.final_table_cleanup_receipts;")
+    expect_error("statement-deadline-rolls-back-entire-page",
+      "SET statement_timeout='100ms'; SET fixture.slow='true';"+call,"57014")
+    expect_value("deadline-preserves-cursor-receipts-and-triggers",
+      "SELECT (SELECT last_id IS NULL FROM public.final_table_cleanup_progress) "
+      "AND NOT EXISTS (SELECT 1 FROM public.final_table_cleanup_receipts) "
+      "AND NOT EXISTS (SELECT 1 FROM public.fixture_updates);")
     # A locked row refuses the whole page. A cursor must never skip it.
     locker = subprocess.Popen([str(x) for x in PSQL], stdin=subprocess.PIPE,
       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=ENV)

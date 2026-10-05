@@ -441,15 +441,24 @@ export const FREE_BUY_HOSTS: FreeBuyHost[] = [
  * running inside of deep stack society until further notice", then "disable any
  * and all games now"). Deep Stack Society's Spin and SNG boards were stopped at
  * source with fn_spin_deactivate, which drops the club from
- * activatedSpinOwners(). This board has no such database gate: FREE_BUY_HOSTS is
- * a constant and checkAndCreateFreeBuys walks it every FREE_BUY_TICK_MS, so DSS
+ * activatedSpinOwners(). This board had no such database gate: FREE_BUY_HOSTS is
+ * a constant and checkAndCreateFreeBuys walked it every FREE_BUY_TICK_MS, so DSS
  * kept gaining a Free Buy MTT per due slot after everything else had stopped.
+ *
+ * IT HAS ONE NOW (2026-10-05). checkAndCreateFreeBuys reads each host's
+ * effective fleet policy and declines to publish for a held club, failing
+ * CLOSED on an unreadable policy - so holding a club no longer needs a
+ * release. This list is still the HARD hold: a constant no database write can
+ * undo, and the one place a host is taken off the board for good. The two
+ * brakes are independent on purpose, and neither weakens the other.
  *
  * THE REGRESSION THIS LIST EXISTS FOR. Taking the club out of FREE_BUY_HOSTS
  * alone was not enough, because that list answers TWO different questions and
  * only one of them changes under a hold:
  *
- *   who do we PUBLISH a board for?   -> FREE_BUY_HOSTS, active hosts only
+ *   who do we PUBLISH a board for?   -> FREE_BUY_HOSTS, active hosts only,
+ *                                       and of those, only the ones whose
+ *                                       fleet policy is not held
  *   whose rows are LEGITIMATE?       -> FREE_BUY_KNOWN_HOSTS, held included
  *
  * auditFreeBuyRow resolves every row's club against the host list and reports

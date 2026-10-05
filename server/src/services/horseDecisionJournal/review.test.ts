@@ -1204,7 +1204,8 @@ describe('private retained-hand journal consumer', () => {
     const omahaReceipt = (
       variant: 'plo5' | 'plo6' | 'plo8',
       authority: unknown,
-      selected: boolean
+      selected: boolean,
+      inputs: unknown
     ) => ({
       version: OMAHA_VARIANT_PACKS[variant].version,
       variant,
@@ -1229,10 +1230,15 @@ describe('private retained-hand journal consumer', () => {
       executionStatus: 'pending',
       executedAction: null,
       executedAmount: null,
-      inputs: null,
+      inputs,
     });
     function selectedCase(variant: 'plo5' | 'plo6' | 'plo8' = 'plo6', selected = true) {
-      const f = fixture(variant);
+      const f = fixture(variant, [], false, false, true);
+      // The real binding the policy recorded on this snapshot (P11.1/P12.1): a
+      // receipt that carries a selection carries its binding (audit 2026-10-05).
+      const inputs = (f.d.decision as unknown as Record<string, { inputs?: unknown }>)
+        .omahaVariantPolicy?.inputs;
+      if (!inputs) throw Error('fixture did not bind the omahaVariantPolicy inputs');
       const s = f.d.snapshot;
       const version = OMAHA_VARIANT_PACKS[variant].version;
       const worker = new HorseQualifiedAuthorityHolder('review-p11-worker', version);
@@ -1249,14 +1255,15 @@ describe('private retained-hand journal consumer', () => {
       f.d.decision = {
         ...act,
         thinkTime: 50,
-        omahaVariantPolicy: omahaReceipt(variant, journaled, selected),
+        omahaVariantPolicy: omahaReceipt(variant, journaled, selected, inputs),
       } as unknown as HorseDecision;
       const delivered = {
         ...f.d.decision,
         omahaVariantPolicy: omahaReceipt(
           variant,
           journaled ? gate.stamp(worker.receipt()) : null,
-          selected
+          selected,
+          inputs
         ),
       } as unknown as HorseDecision;
       const w = createHorseExecutionWitness(s, delivered, {
@@ -1410,7 +1417,8 @@ describe('private retained-hand journal consumer', () => {
     const remainingReceipt = (
       variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8',
       authority: unknown,
-      selected: boolean
+      selected: boolean,
+      inputs: unknown
     ) => ({
       version: REMAINING_VARIANT_PACKS[variant].version,
       variant,
@@ -1435,13 +1443,18 @@ describe('private retained-hand journal consumer', () => {
       executionStatus: 'pending',
       executedAction: null,
       executedAmount: null,
-      inputs: null,
+      inputs,
     });
     function selectedCase(
       variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8' = 'short_deck',
       selected = true
     ) {
-      const f = fixture(variant);
+      const f = fixture(variant, [], false, false, false, true);
+      // The real binding the policy recorded on this snapshot (P11.1/P12.1): a
+      // receipt that carries a selection carries its binding (audit 2026-10-05).
+      const inputs = (f.d.decision as unknown as Record<string, { inputs?: unknown }>)
+        .remainingVariantPolicy?.inputs;
+      if (!inputs) throw Error('fixture did not bind the remainingVariantPolicy inputs');
       const s = f.d.snapshot;
       const version = REMAINING_VARIANT_PACKS[variant].version;
       const worker = new HorseQualifiedAuthorityHolder('review-p12-worker', version);
@@ -1458,14 +1471,15 @@ describe('private retained-hand journal consumer', () => {
       f.d.decision = {
         ...act,
         thinkTime: 50,
-        remainingVariantPolicy: remainingReceipt(variant, journaled, selected),
+        remainingVariantPolicy: remainingReceipt(variant, journaled, selected, inputs),
       } as unknown as HorseDecision;
       const delivered = {
         ...f.d.decision,
         remainingVariantPolicy: remainingReceipt(
           variant,
           journaled ? gate.stamp(worker.receipt()) : null,
-          selected
+          selected,
+          inputs
         ),
       } as unknown as HorseDecision;
       const w = createHorseExecutionWitness(s, delivered, {

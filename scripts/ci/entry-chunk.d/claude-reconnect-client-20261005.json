@@ -1,0 +1,4 @@
+{
+  "_owner": "claude/reconnect-client-20261005 - nativeShell is mounted at app start and must announce a native foreground resume to both table transports, so the 21-line event-name module it dispatches through is first-paint by design; it has no imports and lazy-loading it would drop the resume signal that arrives before the table chunk.",
+  "modules": ["src/lib/nativeResume.ts"]
+}

@@ -51,7 +51,12 @@ describe('Phase 8 captured public-line reconstruction', () => {
     expect(gs.legalActions).toContain(candidate.action);
     expect(['call', 'all_in', 'bet']).toContain(recorded);
     expect(candidate.tournamentPostflop).toBeDefined();
-    expect(['all_in', 'bet', 'raise']).toContain(baseline.action);
+    // V51 (2026-10-05): in 400340 the villain jammed the river for less than
+    // hero's stack, so hero's recorded all_in was a call (the excess came
+    // back at showdown). The committed river one-pair branch now names that
+    // decision `call`; the chips it puts in are identical.
+    if (hand.reviewId === 400340) expect(baseline.action).toBe('call');
+    else expect(['all_in', 'bet', 'raise']).toContain(baseline.action);
     expect(candidate.action).toBe(hand.reviewId === 400615 ? 'check' : 'fold');
     console.info(
       JSON.stringify({

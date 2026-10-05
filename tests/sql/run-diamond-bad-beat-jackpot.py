@@ -113,9 +113,14 @@ def main():
 
         def load(script, label):
             r = run(psql + ['-d', DB, '-f', script], cwd=SQL)
+            # THE PREFIX IS KEPT. scripts/ci/run-diamond-sql-acceptance.py counts
+            # the stdout lines that start with PASS and files the count as this
+            # runner's evidence, so stripping it reported one assertion for a
+            # hundred - a fixture that looks like it did nothing is the thing
+            # CLAUDE.md 10.86 is about, even when it did.
             for line in (r.stdout + r.stderr).splitlines():
                 if 'PASS:' in line:
-                    print(line.split('PASS:', 1)[1].strip(), flush=True)
+                    print('PASS: ' + line.split('PASS:', 1)[1].strip(), flush=True)
             print('loaded ' + label, flush=True)
 
         # The base's own port guard, rewritten to this run's private port. The

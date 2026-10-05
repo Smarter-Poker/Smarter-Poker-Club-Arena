@@ -215,30 +215,21 @@
 --        players: CLAUDE.md 10.9 condition 3, and rule R1 of the design, under
 --        which nothing player-owned may be parked in the house.
 --
---   B12  NO RAKEBACK on Diamond rake or Diamond tournament fees.
---        The database already refuses every rakeback, agent and commission
---        record for the Diamond Arena - trigger poker_arena_no_hierarchy over
---        eleven tables, "Diamond Arena Has No Agents Or Commissions" - and
---        ruling 16 says "No unions, agents, commissions, chip wallets, chip
---        ledgers or chip conversion". Chip rakeback is computed by the union
---        weekly close out of the union rake wallet, a counterparty that does
---        not exist here and is never going to. Answering yes would mean
---        inventing a Diamond rakeback period, accrual and payout door with no
---        counterparty to pay from; answering no leaves eleven live refusals
---        CORRECT rather than absent.
---
---   B13  NO VIP POINTS from Diamond rake or a Diamond tournament fee.
---        Chip VIP points are awarded by trg_award_vip_points_from_rake, one of
---        eighteen triggers on rake_records - a chip money table that a Diamond
---        rake must never write and that this migration's fence makes refuse a
---        Diamond Arena row by name. The leg is not disabled for Diamonds; it
---        was never connected, and now it cannot be.
---
---        B12 and B13 were read for first: no open pull request and no branch
---        decides them, and ca_diamond_economics did not exist in the schema or
---        anywhere in the repository when this was written. They are recorded
---        here with their derivation, and the rake lane should read this rather
---        than decide them twice.
+--   B12 AND B13 ARE NOT RECORDED HERE, BECAUSE THE RAKE LANE DECIDED THEM
+--        FIRST AND THIS LANE READ IT RATHER THAN DUPLICATE IT. When this work
+--        started, no pull request and no branch decided either. While it was
+--        being written, 20261005151712_diamond_cash_rake_economics_and_accrual
+--        landed on main (PR #6163) answering B4 to B13: its
+--        `cash_rakeback_percent` is 0 and its `cash_rake_vip_points` is 0, with
+--        the derivation this lane had reached independently - eleven tables
+--        already refuse a Diamond rakeback, agent or commission row and ruling
+--        16 forbids the hierarchy, so there is no counterparty a rakeback could
+--        be paid from; and chip VIP points come from
+--        trg_award_vip_points_from_rake, a trigger on rake_records, which a
+--        Diamond rake will never write. Recording the same two answers again
+--        under the shared table's own names would put one decision in two
+--        vocabularies, which is the thing a single table of answers exists to
+--        prevent. So they are NAMED here and RECORDED there.
 --
 -- WHAT THIS DOES NOT DO. It does not open cash_games_enabled - that is held
 -- elsewhere and comes after this is live. It does not touch
@@ -296,8 +287,7 @@ END $before$;
 -- their names and their units: bbj_enabled, bbj_drop_per_hand,
 -- bbj_qualifying_hand, bbj_excluded_games, bbj_min_pot, bbj_min_dealt_in,
 -- bbj_pool_split, bbj_hit_shares, bbj_seed, bbj_pool_ceiling,
--- bbj_withdrawal_destination, rakeback_percent and rake_earns_vip_points. The
--- readers are theirs too: fn_ca_diamond_economic for a number,
+-- bbj_withdrawal_destination. The readers are theirs too: fn_ca_diamond_economic for a number,
 -- fn_ca_diamond_economic_text for a word, fn_ca_diamond_economic_on for a
 -- switch, each refusing an unset value by name under SQLSTATE PDE01.
 --
@@ -325,8 +315,7 @@ BEGIN
     SELECT 1 FROM unnest(ARRAY[
       'bbj_enabled', 'bbj_drop_per_hand', 'bbj_qualifying_hand', 'bbj_excluded_games',
       'bbj_min_pot', 'bbj_min_dealt_in', 'bbj_pool_split', 'bbj_hit_shares',
-      'bbj_seed', 'bbj_pool_ceiling', 'bbj_withdrawal_destination',
-      'rakeback_percent', 'rake_earns_vip_points']) n
+      'bbj_seed', 'bbj_pool_ceiling', 'bbj_withdrawal_destination']) n
      WHERE public.fn_ca_diamond_economics_units_of(n) IS NULL) THEN
     RAISE EXCEPTION 'a B14 to B22 name this lane records is not on the shared closed list';
   END IF;
@@ -1403,23 +1392,16 @@ BEGIN
     'B18 = THREE POOLS, from ca_bbj_policy row 1 read on production 2026-10-05: standard_main 0.50, standard_backup 0.25, promo the remainder; pivot_threshold 100000, above which pivot_main 0.25, pivot_backup 0.25 and promo 0.50. Three pools are load-bearing and not decoration: fn_bbj_reseed_main_from_backup is what lets a jackpot survive a 100 percent hit, so a one-pool product would restart at zero on every hit. The pivot threshold is the one figure cloned by UNIT COUNT rather than by economic equivalence - 100,000 of the asset, where the asset is now the Diamond - and it is one appended row to change. THE REMAINDER RULE, because a 1 Diamond drop cannot split 50/25/25: the chip allocator''s own carried residue (fn_bbj_allocate(numeric,numeric,uuid) with ca_bbj_alloc_state) at the Diamond''s unit. main and backup each take floor(exact share + carried residue) and carry what is left; promotional takes the remainder, so the three re-sum to the drop EXACTLY every hand. Flooring rather than rounding keeps each residue in [0,1), so no bank is ever credited ahead of its exact cumulative share: main and backup are each at most one Diamond behind theirs, promotional at most two ahead.',
     v_by);
 
-  -- B20, B21, B12, B13.
+  -- B20 and B21.
   INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
   VALUES
    ('bbj_seed', 'all', 0, 'diamonds', v_quote, v_on,
     'B20 = NO SEED, and no account funds it, so bbj_seed_account is deliberately not recorded: with a seed of 0 the question does not arise, and the reader refusing that name is the correct behaviour. Measured on production 2026-10-05, not reasoned: of the 402 rows in bbj_pools, the count whose main+backup+promo exceeds total_contributed less total_paid_out is ZERO. The chip estate has never seeded a pool in its history, and the backup reserve is why it does not have to. Consequences: no house earmark, no Mint issuance for a jackpot, design rule R3 never engages, and the pool is player-side from its first hand - which is just as well, since ca_diamond_house holds 0 Diamonds.',
     v_by),
    ('bbj_pool_ceiling', 'all', 0, 'diamonds', v_quote, v_on,
-    'B21 = NO MAXIMUM, so no drop is ever turned away, and 0 in this unit is read as "no ceiling" by the only door that could enforce one - which never turns a drop away at all. bbj_pool_ceiling_destination is therefore deliberately not recorded: with no ceiling there is nowhere for a turned-away drop to go. The chip estate has no maximum either; what it has is the pivot above, which steers the larger share of every drop into promotional once main reaches the threshold and is the mechanism that bounds main. A maximum would have to send a drop somewhere, and under ruling 21 a platform pot never refuses a player.',
-    v_by),
-   ('rakeback_percent', 'all', 0, 'percent', v_quote, v_on,
-    'B12 = NO, and rakeback_period is therefore not recorded: a period for a rakeback of zero would be a setting no door reads. The database already refuses every rakeback, agent and commission record for the Diamond Arena (trigger poker_arena_no_hierarchy over eleven tables, "Diamond Arena Has No Agents Or Commissions"), and ruling 16 says "No unions, agents, commissions, chip wallets, chip ledgers or chip conversion". Chip rakeback is computed by the union weekly close out of the UNION RAKE WALLET, a counterparty that does not exist here and is never going to. Answering yes would mean inventing a Diamond rakeback period, accrual and payout door with no counterparty to pay from; answering no leaves eleven live refusals CORRECT rather than absent. Read for first: no open pull request and no branch had decided B12 or B13.',
-    v_by);
+    'B21 = NO MAXIMUM, so no drop is ever turned away, and 0 in this unit is read as "no ceiling" by the only door that could enforce one - which never turns a drop away at all. bbj_pool_ceiling_destination is therefore deliberately not recorded: with no ceiling there is nowhere for a turned-away drop to go. The chip estate has no maximum either; what it has is the pivot above, which steers the larger share of every drop into promotional once main reaches the threshold and is the mechanism that bounds main. A maximum would have to send a drop somewhere, and under ruling 21 a platform pot never refuses a player.',     v_by);
   INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
   VALUES
-   ('rake_earns_vip_points', 'all', 'no', 'boolean', v_quote, v_on,
-    'B13 = NO. Chip VIP points are awarded by trg_award_vip_points_from_rake, one of eighteen triggers on rake_records - a chip money table a Diamond rake must never write and which this migration''s own fence makes refuse a Diamond Arena row by name. The leg is not disabled for Diamonds; it was never connected, and now it cannot be.',
-    v_by),
    -- B22. The account this names did not exist on the shared closed list
    -- before this migration, and must not have been the house.
    ('bbj_withdrawal_destination', 'all', 'surviving_diamond_jackpot_pool', 'account', v_quote, v_on,

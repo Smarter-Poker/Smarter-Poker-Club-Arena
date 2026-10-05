@@ -80,9 +80,10 @@ describe('the wallet page honours the three outcomes', () => {
     expect(page).toContain('partial: Boolean(data.partial)');
   });
 
-  it('checks the user before flipping the transfer busy flag', () => {
-    const i = page.indexOf('if (!user?.id) return;\n    setIsTransferring(true);');
-    expect(i).toBeGreaterThan(0);
+  it('routes chip management to the club cashier without a retired transfer state', () => {
+    expect(page).toContain("currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier'");
+    expect(page).not.toContain('setIsTransferring');
+    expect(page).not.toContain('internalTransfer');
   });
 });
 

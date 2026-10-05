@@ -1,0 +1,236 @@
+#!/bin/bash
+# THE ONLY HOOK THAT FIRES BEFORE `git reset --hard origin/main` LANDS.
+#
+# Antigravity runs that reset on a background schedule to sync the tree. For
+# uncommitted files that is intended. For LOCAL COMMITS it is destruction, and
+# once the reflog ages out they are unrecoverable. It took the trivia phase-4
+# audit doc and the [mode].js edits on 2026-08-12.
+#
+# git has no `pre-reset` hook — the file of that name in some of these clones
+# has never once run — and `post-checkout` fires after the damage, and not on
+# `git reset` at all.
+# `reference-transaction` fires on "prepared", before any ref update is
+# committed to disk, and returning non-zero aborts the whole transaction.
+#
+# This version differs from the untracked one it replaces in three ways, each
+# of which had to change before it could be tracked and rolled to every repo:
+#
+#   1. IT SAVES BEFORE IT REFUSES. The commits about to be orphaned are written
+#      to refs/wip/orphan-guard/<stamp> first. A ref is not reachable from any
+#      branch but it is not garbage either, so even an override or a --no-verify
+#      now leaves the work recoverable. Blocking and saving are different jobs
+#      and only one of them was being done.
+#   2. IT HAS AN ESCAPE HATCH. scripts/agent-workspace.sh legitimately runs
+#      `git checkout -B <branch> origin/main`, which moves a ref backwards on
+#      purpose. Without AGENT_REF_GUARD_OK=1 this hook would wedge the one
+#      command every agent is told to start with.
+#   3. IT IS TRACKED. The version this replaces lives in .git/hooks/, which is
+#      untracked — so ten days of protection covered exactly one machine and
+#      died on every fresh clone.
+#   4. IT TELLS THE TRUTH ABOUT ORIGIN (2026-09-21). It used to print "They are
+#      NOT on origin" about any commit in NEW..OLD, having never looked at a
+#      single origin ref. See the block above the check itself.
+#
+# stdin is one line per ref update:  <old> SP <new> SP <ref-name> LF
+STATE="$1"
+[ "$STATE" = "prepared" ] || exit 0
+
+# "I COULD NOT TELL" IS AN OUTCOME WITH ITS OWN NAME AND ITS OWN EXIT CODE.
+# CLAUDE.md 10.86, rule 1: never fold it into clean, empty or silence. 1 is
+# LOST (commits provably on no origin ref), 3 is UNKNOWN. git aborts the
+# transaction on either, which is the point - refusing is the safe answer when
+# the question could not be answered.
+ref_guard_unknown() {
+    _old="$1"; _why="$2"
+    _stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    _snap="refs/wip/orphan-guard/${_stamp}"
+    git update-ref "$_snap" "$_old" 2>/dev/null
+    {
+      echo ""
+      echo "  UNKNOWN: this ref update may or may not orphan local commits."
+      echo ""
+      echo "    $_why"
+      echo ""
+      echo "  That is not the same as \"nothing would be lost\", so this is"
+      echo "  refused rather than waved through. The old tip is saved at:"
+      echo "    $_snap"
+      echo ""
+      echo "  Try:  git fetch origin     then run the command again."
+      echo ""
+      echo "  If you genuinely mean to discard whatever is there:"
+      echo "    AGENT_REF_GUARD_OK=1 <your command>"
+      echo ""
+    } >&2
+    exit 3
+}
+
+# Deliberate, announced ref rewinds. Set by scripts/agent-workspace.sh and
+# scripts/git-safe-push.sh, which move refs backwards as part of their job.
+[ "${AGENT_REF_GUARD_OK:-}" = "1" ] && exit 0
+[ -n "${CI:-}${GITHUB_ACTIONS:-}" ] && exit 0
+
+ZERO=0000000000000000000000000000000000000000
+
+while read -r OLD NEW REF; do
+    case "$REF" in
+        HEAD|refs/heads/main|refs/heads/master) ;;
+        *) continue ;;
+    esac
+    [ "$OLD" = "$ZERO" ] && continue
+    [ "$NEW" = "$ZERO" ] && continue
+
+    # OLD == NEW IS NOT NOTHING. It is `git reset --hard` with no argument:
+    # history does not move, so this hook used to `continue` past it - and
+    # discarding the WORKING TREE is that command's entire effect. It is the
+    # exact shape that wiped a full Club Bank Cashier session twice on
+    # 2026-08-23, and every guard in this repo scored a pass on it because they
+    # all look for orphaned COMMITS and correctly found none.
+    #
+    # Nothing here can PREVENT it. By the time reference-transaction fires at
+    # "prepared", git has already reset the index and the working tree -
+    # verified by running `git status` from inside this hook mid-reset and
+    # getting a clean tree back. There is no earlier hook; git has no
+    # pre-reset. So this says what just happened and points at the snapshots,
+    # which is the difference between losing an hour and losing a session.
+    if [ "$OLD" = "$NEW" ]; then
+        # DO NOT ASK THE REFLOG. At "prepared" the entry for this operation
+        # has not been written yet, so `git reflog -1` returns the PREVIOUS
+        # action and the match never fires - the same class of mistake as the
+        # dead string test this commit removes from post-checkout.
+        #
+        # Measured instead: across reset(dirty), reset(clean), commit,
+        # checkout, fetch and tag, OLD == NEW on HEAD/main occurs ONLY for
+        # `git reset` and for `git branch -M <same-name>`. A freshly written
+        # ORIG_HEAD separates those two, because reset writes it and a rename
+        # does not.
+        GD=$(git rev-parse --git-dir 2>/dev/null || echo .git)
+        IS_RESET=no
+        if [ -f "$GD/ORIG_HEAD" ]; then
+            # GNU stat first (see the note in the commit): on Linux `stat -f`
+            # is --file-system and %m is the MOUNT POINT, a path, which would
+            # make the arithmetic below fail. macOS rejects -c and falls through.
+            NOW=$(date +%s)
+            MOD=$(stat -c %Y "$GD/ORIG_HEAD" 2>/dev/null || stat -f %m "$GD/ORIG_HEAD" 2>/dev/null || echo 0)
+            [ $((NOW - MOD)) -le 5 ] && IS_RESET=yes
+        fi
+        case "$IS_RESET" in
+            yes)
+                RECENT=$(git for-each-ref --sort=-creatordate --count=3 \
+                           --format='    %(refname)  (%(creatordate:relative))' \
+                           refs/wip 2>/dev/null)
+                {
+                  echo ""
+                  echo "  A hard reset just discarded uncommitted changes in this tree."
+                  echo "  History did not move, so nothing was orphaned - but tracked"
+                  echo "  modifications are gone. Untracked files are untouched."
+                  echo ""
+                  if [ -n "$RECENT" ]; then
+                    echo "  Most recent working-tree snapshots (launchd, every 10 min):"
+                    echo "$RECENT"
+                    echo ""
+                    echo "  Recover with:  git stash apply <ref>"
+                  else
+                    echo "  No refs/wip snapshots exist. If that work mattered, check"
+                    echo "  \`git fsck --lost-found\` now, before the objects are pruned."
+                  fi
+                  echo ""
+                } >&2
+                ;;
+        esac
+        continue
+    fi
+
+    # WHAT THIS UPDATE DROPS, AND WHETHER ANY OF IT IS ACTUALLY LOST.
+    #
+    # `git log NEW..OLD` answers "reachable from OLD, not from NEW". That is
+    # the right question for what the update DROPS and the wrong one for
+    # whether it is GONE, which is what this hook used to claim in the same
+    # breath: "They are NOT on origin", printed having never read an origin
+    # ref. A commit on a branch this clone already pushed is in NEW..OLD and
+    # is also sitting on origin, and the message called it lost anyway.
+    #
+    # Measured 2026-09-21 in this repository: a45bc57c, which
+    # `git branch -r --contains` lists on
+    # origin/rescue/world-hub-news-search-2026-09-21, was reported NOT on
+    # origin by exactly this code. It is CLAUDE.md 10.86 in one line - a check
+    # answering confidently when it has not asked - and it is worse than a
+    # cosmetic lie, because the recovery it then prescribes is the wrong one.
+    #
+    # THREE OUTCOMES, NEVER TWO:
+    #   LOST    at least one commit is reachable from no origin ref  -> exit 1
+    #   SAFE    every one of them is on an origin ref                -> allowed
+    #   UNKNOWN the question could not be answered                   -> exit 3
+    #
+    # The scope of the SAFE claim is stated rather than implied: it is the
+    # remote-tracking refs THIS CLONE holds. A commit pushed from another
+    # machine and never fetched here is correctly reported as LOST, and the
+    # message says `git fetch origin` refreshes the view.
+    #
+    # 2>/dev/null WITHOUT CHECKING STATUS IS HOW A GUARD GOES BLIND (10.86,
+    # rule 2): an unreadable rev-list becomes an EMPTY one, and empty here
+    # reads as "nothing to orphan" - the hook waving through the exact update
+    # it exists to stop. Every read below is status-checked.
+    ORPHANED=$(git log "$NEW..$OLD" --oneline 2>/dev/null); RC=$?
+    [ $RC -eq 0 ] || ref_guard_unknown "$OLD" "git log $NEW..$OLD could not be read (status $RC)."
+    [ -n "$ORPHANED" ] || continue
+
+    # A clone that has never fetched holds no refs/remotes/origin/* at all, so
+    # "on no origin ref" would be trivially true of every commit in it. That is
+    # the absence of an answer, not an answer.
+    if [ -z "$(git for-each-ref --count=1 --format='%(refname)' refs/remotes/origin 2>/dev/null)" ]; then
+        ref_guard_unknown "$OLD" "this clone holds no refs/remotes/origin/* to compare against."
+    fi
+
+    UNPUSHED=$(git rev-list "$NEW..$OLD" --not --remotes=origin 2>/dev/null); RC=$?
+    [ $RC -eq 0 ] || ref_guard_unknown "$OLD" "git rev-list could not enumerate what origin already holds (status $RC)."
+
+    # SAVE FIRST, on every path. update-ref inside a reference-transaction hook
+    # is a separate transaction and does not recurse into this hook for
+    # refs/wip/*, because the loop above only inspects HEAD and main.
+    STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    SNAP="refs/wip/orphan-guard/${STAMP}"
+    git update-ref "$SNAP" "$OLD" 2>/dev/null
+
+    if [ -z "$UNPUSHED" ]; then
+        DROPPED=$(printf '%s\n' "$ORPHANED" | grep -c .)
+        {
+          echo ""
+          echo "  This ref update drops $DROPPED local commit(s) from this branch."
+          echo "  Every one of them is already on an origin ref, so nothing is lost:"
+          echo ""
+          git branch -r --contains "$OLD" 2>/dev/null | sed 's/^[ *]*/    /' | head -5
+          echo ""
+          echo "  Saved anyway at $SNAP. Allowed."
+          echo ""
+        } >&2
+        continue
+    fi
+
+    UNPUSHED_LOG=$(git log --no-walk --oneline $UNPUSHED 2>/dev/null | head -20)
+    UNPUSHED_N=$(printf '%s\n' "$UNPUSHED" | grep -c .)
+    ORPHANED_N=$(printf '%s\n' "$ORPHANED" | grep -c .)
+    {
+      echo ""
+      echo "  BLOCKED: this ref update would orphan local commits."
+      echo ""
+      echo "$UNPUSHED_LOG" | sed 's/^/    /'
+      echo ""
+      echo "  $UNPUSHED_N of the $ORPHANED_N commit(s) it drops are on no ref under"
+      echo "  refs/remotes/origin/ in this clone. Nothing has been lost — the old"
+      echo "  tip is saved at:"
+      echo "    $SNAP"
+      echo ""
+      echo "  Recover with:   git log $SNAP     /     git checkout -b rescue $SNAP"
+      echo "  Ship them by:   docs in PUBLISHING.md - branch off current origin/main,"
+      echo "                  push, open the pull request, let the protected merge run."
+      echo ""
+      echo "  If this clone is simply behind, git fetch origin may make them known."
+      echo ""
+      echo "  If you genuinely mean to discard them:"
+      echo "    AGENT_REF_GUARD_OK=1 git reset --hard origin/main"
+      echo ""
+    } >&2
+    exit 1
+done
+
+exit 0

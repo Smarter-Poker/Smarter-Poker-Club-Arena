@@ -15,12 +15,15 @@
  * proposal, changed or not. Fixed-limit wagers must also equal the
  * controller's canonical bet, raise or completion amount.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HorseDecision, SeatPlayer } from '../../types.js';
 import { HorseLogic, type HorseGameStateV2 } from '../HorseLogic.js';
 import { seedFastRandom, variantInfo, type VariantInfo } from '../HorseEval.js';
 import { evaluateRemainingVariantPolicy } from './RemainingVariantLivePolicy.js';
-import { forEachControllerSpot } from './RemainingVariantControllerSpots.test-support.js';
+import {
+  controllerSpotRandom,
+  forEachControllerSpot,
+} from './RemainingVariantControllerSpots.test-support.js';
 
 const legalize = (
   HorseLogic as unknown as {
@@ -38,10 +41,27 @@ const cases = [
   ['flo8', 'tournament', 40],
 ] as const;
 
+function pinDeckEntropy(seed: number) {
+  const random = controllerSpotRandom(seed);
+  vi.stubGlobal('crypto', {
+    getRandomValues(target: Uint32Array) {
+      for (let i = 0; i < target.length; i++) target[i] = Math.floor(random() * 0x100000000) >>> 0;
+      return target;
+    },
+  });
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
 describe('P12.1 every Phase 12 proposal is in the legalizer form', () => {
   it.each(cases)(
     '%s %s: the real legalizer never rewrites a proposal (%i real hands)',
     (variant, mode, hands) => {
+      // Card dealing must stay cryptographically random in production, but a
+      // release gate cannot set a fixed coverage floor against fresh entropy.
+      // Pin only this test's WebCrypto stream so every natural hand and every
+      // coverage tally is reproducible without weakening the assertions.
+      pinDeckEntropy(0xd3c00000 ^ hands ^ variant.length ^ (mode.length << 8));
       const limit = variant === 'flh' || variant === 'flo8';
       const tally = { spots: 0, eligible: 0, changed: 0, wagers: 0, allIns: 0, calls: 0 };
       const rewrites: unknown[] = [];
@@ -117,6 +137,7 @@ describe('P12.1 every Phase 12 proposal is in the legalizer form', () => {
     // A cent big blind keeps the cent step.
     ['short_deck', 0.1, 0.01],
   ] as const)('%s with a %s big blind sizes on a %s chip step', (variant, bigBlind, step) => {
+    pinDeckEntropy(0xd3c05121 ^ Math.round(bigBlind * 100));
     let wagers = 0;
     forEachControllerSpot(variant, 'cash', 120, 0x2a17, (spot) => {
       if (spot.state.bigBlind !== bigBlind) return;

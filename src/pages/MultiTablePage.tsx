@@ -344,6 +344,15 @@ const popLobbyTournament = (t: TableInstance): TableInstance => {
 };
 
 /** Drop the whole drill-in history — the tab shows the club lobby again. */
+/**
+ * Is this tab a tournament table? The flag TablePage reports, or the game code
+ * the tab was opened with when the flag has not arrived yet (a deep-linked
+ * tab moved before its first snapshot). The same test the tab bar, the buy-in
+ * read and Quick Join use.
+ */
+const tabIsTournament = (t: TableInstance | undefined): boolean =>
+  !!t && (t.isTournament === true || isTournamentGameCode(t.gameCode));
+
 const clearLobbyTournaments = (t: TableInstance): TableInstance => ({
   ...t,
   lobbyTournamentStack: undefined,
@@ -1356,6 +1365,7 @@ export default function MultiTablePage() {
               if (rowsErr) {
                 /* Cannot identify the move - the rebuild path re-reads server
                    truth with its own guards rather than guessing here. */
+                reportError(rowsErr, 'MultiTablePage.heroSeatMoveRead');
                 requestSeatResync();
                 return;
               }
@@ -1374,7 +1384,7 @@ export default function MultiTablePage() {
                 requestSeatResync();
                 return;
               }
-              const name = formatGameTitle(newRow.name as string) || 'Your New Table';
+              const name = formatGameTitle(newRow.name as string) || 'A New Table';
               const stakes =
                 newRow.small_blind != null && newRow.big_blind != null
                   ? `${newRow.small_blind}/${newRow.big_blind}`
@@ -1412,7 +1422,8 @@ export default function MultiTablePage() {
                 )
               );
               announceTournamentMove(oldTab.id, newId, name);
-            } catch {
+            } catch (err) {
+              reportError(err, 'MultiTablePage.heroSeatMove');
               requestSeatResync();
             } finally {
               heroSeatMoveBusyRef.current = false;
@@ -2798,6 +2809,7 @@ export default function MultiTablePage() {
                 active.map((t) => t.id)
               )
           );
+          if (res?.error) reportError(res.error, 'MultiTablePage.quickJoin_club_lookup');
           const data = res?.data;
           for (const row of (data ?? []) as { id: string; club_id: string | null }[]) {
             if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
@@ -3047,6 +3059,9 @@ export default function MultiTablePage() {
         masterBus.emit('OPEN_LOBBY_TAB', {});
         return;
       }
+      /* A read that FAILED is not an empty club: the catch below reports it
+         and takes the lobby exit instead of "No Open Seats Right Now". */
+      if (res.error) throw res.error;
       const all = res.data ?? [];
       /* The table you are AT, read from this same result set rather than from
          the open tab. TableInstance carries only a stakes label, so the variant -
@@ -3077,6 +3092,7 @@ export default function MultiTablePage() {
             .maybeSingle()
         ).catch(() => null);
         if (stale()) return;
+        if (one?.error) reportError(one.error, 'MultiTablePage.quickJoin_active_row');
         if (one?.data) activeRow = one.data as CandidateRow;
       }
 
@@ -3156,8 +3172,9 @@ export default function MultiTablePage() {
         };
       });
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
-    } catch {
+    } catch (err) {
       if (stale()) return;
+      reportError(err, 'MultiTablePage.quickJoin_read_failed');
       // Query failed - fall back to the lobby tab rather than a dead sheet.
       // A tournament sheet falls to the tournament list, as its stalled exit does.
       setQuickJoin({ open: false, loading: false, rows: [] });
@@ -3300,7 +3317,7 @@ export default function MultiTablePage() {
            (see announceTournamentMove). A cash must-move has its own notice on
            the felt ("Seat Open On Main 2. Moving After This Hand.") and says
            nothing more here. */
-        if (before?.isTournament) {
+        if (tabIsTournament(before)) {
           announceTournamentMoveRef.current(tableId, updates.movedToTableId);
         }
       }
@@ -3349,7 +3366,7 @@ export default function MultiTablePage() {
                open one IS the moved seat. A tournament move stamps it exactly
                as the re-point below does, or its felt says "Reconnecting Your
                Seat" for a seat the tournament just moved there. */
-            if (!current.isTournament) return prev.filter((t) => t.id !== tableId);
+            if (!tabIsTournament(current)) return prev.filter((t) => t.id !== tableId);
             return prev
               .filter((t) => t.id !== tableId)
               .map((t) =>
@@ -3371,14 +3388,14 @@ export default function MultiTablePage() {
              ~74px sideways, at the exact moment the player was being moved. */
             clusterId: current.clusterId,
             gameCode: current.gameCode,
-            isTournament: current.isTournament,
+            isTournament: tabIsTournament(current),
             /* A balance move stays inside ONE tournament, so its price moves
                with the chair. Without this the tab would drop to a bare code
                until the buy-in was read again. */
             tournamentBuyIn: current.tournamentBuyIn,
             /* Only a TOURNAMENT move is something done to the player without
                their asking; the table page reads this to say so on the felt. */
-            ...(current.isTournament ? { arrivedByMoveAt: Date.now() } : {}),
+            ...(tabIsTournament(current) ? { arrivedByMoveAt: Date.now() } : {}),
           } as TableInstance;
           return next;
         }
@@ -4487,9 +4504,11 @@ export default function MultiTablePage() {
       open.find((t) => t.id === lastActiveTableIdRef.current && isTableTab(t)) ??
       open.find((t) => isTableTab(t));
     if (!returnTo) return;
-    masterBus.emit('OPEN_LOBBY_TAB', {});
+    /* On the tournament LIST, not the player's saved lobby tab (which may be
+       Cash): the request was for tournaments. */
+    openLobbyTabOn('MTT');
     navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, openLobbyTabOn]);
 
   /**
    * ─── MAKE ROOM FOR THE PINNED BAR (round 3) ──────────────────────────────

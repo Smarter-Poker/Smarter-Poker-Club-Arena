@@ -26,6 +26,27 @@ import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
 
 const PINNED_RNG = 0x5f3759df;
 
+function expectUnpricedBudgetFallback(
+  result: ReturnType<typeof evaluateRemainingVariantPolicy>,
+  baseline: ReturnType<typeof remainingVariantSpot>['baseline']
+) {
+  expect(['equity_budget_unavailable', 'work_budget']).toContain(result.receipt.reason);
+  if (result.receipt.reason === 'equity_budget_unavailable') {
+    expect(result.receipt.equity).toBeNull();
+    expect(result.receipt.inputs?.range.status).toBe('unavailable');
+    expect(result.receipt.latencyMs).toBeLessThanOrEqual(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
+  } else {
+    expect(result.receipt.latencyMs).toBeGreaterThan(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
+  }
+  expect(result.receipt.fired).toBe(false);
+  expect(result.receipt.applied).toBe(false);
+  expect(result.decision).toEqual(baseline);
+  expect(result.proposal).toEqual(baseline);
+  expect(result.receipt.actionEconomics).toBeUndefined();
+  expect(result.receipt.features).not.toContain('net_action_economics');
+  expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
+}
+
 function evaluate(
   variant: 'flh' | 'flo8' | 'short_deck' | 'pineapple',
   street: 'preflop' | 'flop' | 'turn' | 'river' = 'river',
@@ -186,6 +207,21 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
     expect(REMAINING_VARIANT_DOMAIN.samplingDeadlineMs).toBe(2.5);
   });
 
+  it.each([
+    [3, 'equity_budget_unavailable'],
+    [5, 'work_budget'],
+  ] as const)('keeps the baseline when the clock advances to %s ms (%s)', (elapsed, reason) => {
+    // Exhaust the 2.5 ms sampler before its first sample. Finishing below the
+    // separate 4 ms policy limit retains the sampler refusal; crossing that
+    // limit names work_budget instead. No scheduler speed is involved.
+    let reads = 0;
+    const { spot, result } = evaluate('flo8', 'river', {
+      now: () => (reads++ === 0 ? 0 : elapsed),
+    });
+    expect(result.receipt.reason).toBe(reason);
+    expectUnpricedBudgetFallback(result, spot.baseline);
+  });
+
   it('reports a result or one of a CLOSED set of named refusals', () => {
     // A real clock on an unknown host. What is pinned is that every outcome is
     // NAMED and comes from a closed set: a starved pass must not come back as
@@ -216,12 +252,12 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
           1,
           true
         );
-        // On a starved host the policy itself can cross its own 4 ms budget
-        // and fall back (reason work_budget): a node that did not fire is
-        // never priced, by design, and that outcome is named too.
+        // The sampler can exhaust 2.5 ms while the policy still finishes
+        // within 4 ms (equity_budget_unavailable), or the whole policy can
+        // exceed 4 ms (work_budget). Both preserve the baseline and have no
+        // priced node. Assert each reason's evidence, not host speed.
         if (!result.receipt.fired) {
-          expect(result.receipt.reason).toBe('work_budget');
-          expect(result.receipt.actionEconomics).toBeUndefined();
+          expectUnpricedBudgetFallback(result, spot.baseline);
           continue;
         }
         const economics = result.receipt.actionEconomics!;

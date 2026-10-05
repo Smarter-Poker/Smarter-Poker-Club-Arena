@@ -193,3 +193,28 @@ after the compatible client and engine are proven live.
   observe the terminal cutover seal, install/read back `20261005111523`, then
   run the fresh authenticated production commerce/realtime/gameplay certificate
   and verify cleanup plus affected live behavior.
+
+## Final Browser-Certificate Correction — 2026-10-05
+
+- Current owner policy was reread at `2026-10-05T23:13:03Z`: version 2.9,
+  manifest `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+  The canonical and portable copies match. This correction is owned in
+  `/Volumes/SmarterWork/agent-work/menu-cert-final` on branch
+  `agent/codex-menu-cert-final-20261005`.
+- Authenticated run `37381227013` proved the hamburger 35 of 35 and Leaderboard
+  at 393px and 1440px with zero page, request, subresource, or console
+  failures. It exposed two harness defects rather than product regressions:
+  routed gameplay asked for visible copy instead of the button's accessible
+  name, and the nine-surface Table Management phone audit retained a 30-second
+  outer budget even though one cold route may take 45 seconds.
+- The gameplay locator now uses `Open Table Studio`, the shipped accessible
+  name. The phone audit derives its outer budget from all nine route allowances. The
+  private appearance certificate also proves both receiving channels have
+  acknowledged their owner-scoped joins before the durable profile write, so
+  a pre-subscription race cannot masquerade as a lost broadcast.
+- No application, database, engine, authorization, checkout, settlement, or
+  realtime implementation changed. Local proof is 19 of 19 focused unit
+  contracts, client TypeScript, targeted ESLint, Prettier, `git diff --check`,
+  and 12 of 12 affected Playwright journeys discovered. Protected merge,
+  publication, authenticated execution, and fixture cleanup remain required
+  before this correction can close the production certificate.

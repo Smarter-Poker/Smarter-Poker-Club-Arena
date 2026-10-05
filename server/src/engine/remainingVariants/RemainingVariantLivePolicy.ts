@@ -19,14 +19,68 @@ import {
   remainingVariantHandShape,
   remainingVariantEntryBars,
 } from './RemainingVariantPolicyPack.js';
-import { sampleRemainingVariantEquity } from './RemainingVariantSampler.js';
+import {
+  sampleRemainingVariantEquity,
+  type RemainingVariantTerminalShowdowns,
+} from './RemainingVariantSampler.js';
+import {
+  remainingVariantActionEconomics,
+  remainingVariantActionEconomicsIsValid,
+  type RemainingVariantActionEconomics,
+} from './RemainingVariantActionEconomics.js';
 
 // Receipt shape and public geometry are common contracts. Hand shape, ranges,
 // thresholds, card rules and wager sizing are supplied by the actual variant.
 export type RemainingVariantMode = OmahaVariantMode;
-export type RemainingVariantReceipt = OmahaVariantReceipt;
+/** Phase 12's own widening of the shared receipt. Phase 11 owns
+ * `OmahaVariantReceipt`; this adds the P12.1 field without touching it. */
+export type RemainingVariantReceipt = OmahaVariantReceipt & {
+  /**
+   * P12.1: the explicit per-action net chip economics of this node, or a
+   * NAMED unavailable result. Present only on the FLH/FLO8 river node this
+   * slice prices; absent everywhere else and on retained receipts.
+   *
+   * Diagnostic in this round: the proposal below is still chosen by the
+   * structural pot-share path, and nothing reads this field to decide. It is
+   * verified rather than merely carried - `remainingVariantReceiptBindingIsValid`
+   * re-checks it against the running module at the worker response boundary.
+   */
+  actionEconomics?: RemainingVariantActionEconomics | null;
+};
 const same = (a: HorseDecision, b: HorseDecision) =>
   a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
+
+/**
+ * P12.1: the Phase 12 receipt's own binding, re-checked at the worker response
+ * boundary against THIS running module.
+ *
+ * Phase 10 shipped a runtime policy digest that nothing ever compared with the
+ * code it described, and the mistake took two follow-up pull requests to find.
+ * So the net-action field is not merely carried: an eligible FLH/FLO8 river
+ * receipt must declare the same variant as the receipt, the same street, and a
+ * result the economics validator accepts, and the `net_action_economics`
+ * feature must be present exactly when a result is available. A receipt
+ * without the field claims no economics and is not refused, which keeps every
+ * retained and legacy receipt valid.
+ */
+export function remainingVariantReceiptBindingIsValid(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  const features = Array.isArray(receipt.features) ? (receipt.features as unknown[]) : [];
+  const tagged = features.includes('net_action_economics');
+  if (!Object.hasOwn(receipt, 'actionEconomics')) return !tagged;
+  const economics = receipt.actionEconomics;
+  if (economics === null) return receipt.eligible === false && !tagged;
+  if (!remainingVariantActionEconomicsIsValid(economics)) return false;
+  const bound = economics as RemainingVariantActionEconomics;
+  return (
+    receipt.eligible === true &&
+    bound.variant === receipt.variant &&
+    bound.street === receipt.street &&
+    receipt.street === 'river' &&
+    tagged === (bound.unavailable === null)
+  );
+}
 
 export function evaluateRemainingVariantPolicy(
   hero: SeatPlayer,
@@ -333,12 +387,16 @@ export function evaluateRemainingVariantPolicy(
   // sampler's deadline on wide flops and discarded otherwise valid reads.
   const splitFacts =
     variant === 'flo8' ? omahaCardFacts(hero.cards, s.communityCards, true, true) : null;
+  let terminal: RemainingVariantTerminalShowdowns | null = null;
   if (!evidence && sampleWhenMissing) {
     evidence = sampleRemainingVariantEquity(
       variant,
       hero,
       s,
-      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs
+      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs,
+      (showdowns) => {
+        terminal = showdowns;
+      }
     );
     if (evidence) evidence.decisionEquityCeiling = decisionEquityCeiling;
   }
@@ -367,6 +425,40 @@ export function evaluateRemainingVariantPolicy(
   const equity = Math.min(e.equity, ceiling),
     lower = Math.min(e.confidence99[0], ceiling),
     upper = Math.min(e.confidence99[1], ceiling);
+  // P12.1. The pot-share price above cannot express a side pot hero is not
+  // eligible for, an uncalled-bet refund, the BBJ fee or an FLO8 quarter, so
+  // the fixed-limit river node also carries an explicit net chip result. It
+  // runs on the showdowns the sampler ALREADY scored - no extra sample, card
+  // or deck draw - and stops at netActionDeadlineMs, inside liveBudgetMs, so
+  // it can never be the reason `finish` falls back on work_budget.
+  if (s.stage === 'river' && (variant === 'flh' || variant === 'flo8')) {
+    const showdowns = terminal as RemainingVariantTerminalShowdowns | null;
+    receipt.actionEconomics = remainingVariantActionEconomics({
+      variant,
+      stage: s.stage,
+      hero,
+      players: seats,
+      opponentIds: showdowns ? showdowns.opponentIds : [],
+      samples: showdowns ? showdowns.samples : [],
+      currentBet: s.currentBet,
+      betSize: fixedSize,
+      actionHistory: s.actionHistory ?? [],
+      legalActions: s.legalActions,
+      wagersCapped: Boolean(s.wagersCapped),
+      minRaiseTo: s.minRaiseTo ?? null,
+      maxRaiseTo: s.maxRaiseTo ?? null,
+      chipUnit: s.chipUnit === 1 ? 1 : 0.01,
+      asset: s.asset === 'diamonds' ? 'diamonds' : 'chips',
+      gameMode: s.gameMode === 'tournament' ? 'tournament' : 'cash',
+      bigBlind: s.bigBlind,
+      dealerSeat: s.dealerSeat!,
+      rakeConfig: rake,
+      bbjConfig: s.bbjConfig ?? null,
+      withinBudget: () => now() - start + externalMs < REMAINING_VARIANT_DOMAIN.netActionDeadlineMs,
+      now,
+    });
+    if (receipt.actionEconomics.unavailable === null) receipt.features.push('net_action_economics');
+  }
   const pressure =
     Math.max(0, active.length - 1) * pack.multiway +
     Number(receipt.role === 'facing_raise') * (limit ? 0.01 : 0.04);

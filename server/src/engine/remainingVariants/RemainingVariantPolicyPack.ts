@@ -103,6 +103,10 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   liveBudgetMs: 4,
   // Leave headroom for completing a physical sample, pot receipts and GC.
   samplingDeadlineMs: 2.5,
+  // P12.1: the net-action economics stop here, inside liveBudgetMs, so a
+  // diagnostic pass can never be the reason the policy falls back to the
+  // baseline on work_budget. Checked before every terminal settlement.
+  netActionDeadlineMs: 3.4,
   defaultSamples: 32,
   maxSamples: 128,
   maxActionsPerHand: 256,

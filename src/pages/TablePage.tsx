@@ -28097,9 +28097,9 @@ function LiveTablePage({
       />
       {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the
           upper-right button on every tournament - MTT, Spin, SNG and heads-up
-          alike, since `isTournament` is one test covering all of them. Mounted
-          only while open, so a cash table pays nothing for it and the lobby's
-          own realtime subscriptions do not exist until somebody asks. */}
+          alike, since `isTournament` is one test covering all of them. Stays
+          mounted after first open, so a cash table pays nothing for it initially
+          and the lobby's own realtime subscriptions do not exist until somebody asks. */}
       <TournamentLobbyModal
         isOpen={showTournamentLobby}
         tournamentId={tableState.tournamentId}

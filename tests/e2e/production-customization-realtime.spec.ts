@@ -224,7 +224,10 @@ async function installOverlaySafety(page: Page) {
   );
 }
 
-async function openStudio(page: Page) {
+async function openStudio(
+  page: Page,
+  { expectedLook = 'coordinated' }: { expectedLook?: 'coordinated' | 'custom' } = {}
+) {
   await installOverlaySafety(page);
   await page.goto('./', { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (page.url().includes('/auth')) {
@@ -263,10 +266,42 @@ async function openStudio(page: Page) {
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   await expectPreviewAvatarsLoaded(studio);
-  await expect(grid.locator('.theme-asset[aria-pressed="true"]')).toHaveCount(1, {
-    timeout: PRODUCTION_RESPONSE_TIMEOUT,
-  });
+  const selectedLooks = grid.locator('.theme-asset[aria-pressed="true"]');
+  if (expectedLook === 'coordinated') {
+    await expect(selectedLooks).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  } else {
+    // A player can start from a coordinated Look and then replace individual
+    // table, scene, button or card choices. That durable state is intentionally
+    // a Custom Mix: no coordinated Look tile may claim to be selected.
+    await expect(selectedLooks).toHaveCount(0, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+    await expect(
+      studio
+        .locator('[aria-label="Current Table Configuration"]')
+        .getByText('Custom Mix', { exact: true })
+    ).toBeVisible({ timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  }
   return studio;
+}
+
+async function expectSelectedAppearanceTiles(studio: Locator, appearance: Appearance) {
+  for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
+    await activateCategory(studio, category);
+    if (category === 'Scenes') {
+      await studio.getByRole('button', { name: /^Places & Rooms/ }).click();
+    }
+    const field = CATEGORY_APPEARANCE_FIELD[category];
+    const expectedName = Object.entries(FREE_ASSET_ID_BY_NAME).find(
+      ([, id]) => id === appearance[field]
+    )?.[0];
+    if (!expectedName) {
+      throw new Error(`No certification asset name maps to ${category} ${appearance[field]}.`);
+    }
+    const selected = studio.locator('.theme-modal__grid .theme-asset[aria-pressed="true"]');
+    await expect(selected).toHaveCount(1, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+    await expect(selected).toHaveAttribute('aria-label', expectedName, {
+      timeout: PRODUCTION_RESPONSE_TIMEOUT,
+    });
+  }
 }
 
 async function signIn(
@@ -622,8 +657,9 @@ test.describe('production Table Studio realtime contract', () => {
       // leave Playwright waiting forever for a lifecycle event even though the
       // production page had already rendered. The navigation below remains a
       // genuine cold rehydrate from the persisted account settings.
-      mobileStudio = await openStudio(mobilePage);
+      mobileStudio = await openStudio(mobilePage, { expectedLook: 'custom' });
       await expectAppearance(mobileStudio, finalPrimary);
+      await expectSelectedAppearanceTiles(mobileStudio, finalPrimary);
       console.log('[customization-realtime] persisted appearance survived a device reload');
 
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));

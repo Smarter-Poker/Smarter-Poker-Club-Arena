@@ -61,6 +61,15 @@ type RealtimeEvidence = {
   accountThemeSignal: boolean;
 };
 
+type TableAuthorizationAnchor = {
+  id: string;
+  club_id: string;
+  union_id: string | null;
+  arena:
+    | { id: string; asset: string; is_platform: boolean; union_id: string | null }
+    | Array<{ id: string; asset: string; is_platform: boolean; union_id: string | null }>;
+};
+
 class OneShotRequestGate {
   private armed = false;
   private seenResolve: (() => void) | null = null;
@@ -669,24 +678,70 @@ test.describe('production routed gameplay customization', () => {
         .eq('id', account.id);
       if (baselineProfile.error) throw baselineProfile.error;
 
-      const tables = await readServiceRows<Record<string, unknown>>(
+      // Private `table-appearance:<id>` authorization requires an existing,
+      // readable tables row. Use one retained row from the joined club only as
+      // that authorization anchor, then project deterministic cash metadata,
+      // seats and hand state in-browser. No production game is woken, seated,
+      // mutated or required to be live for this certificate.
+      const anchors = await readServiceRows<TableAuthorizationAnchor>(
         environment,
         'tables',
         new URLSearchParams({
-          select: '*',
+          select:
+            'id,club_id,union_id,arena:clubs!fk_tables_club_id(id,asset,is_platform,union_id)',
           club_id: `eq.${CLUB_ID}`,
-          tournament_id: 'is.null',
-          game_type: 'eq.cash',
-          status: 'in.(waiting,running,active)',
-          is_deleted: 'eq.false',
+          order: 'created_at.desc',
           limit: '1',
         })
       );
-      const tableRow = tables[0];
-      const tableId = String(tableRow?.id || '');
-      if (!/^[0-9a-f-]{36}$/i.test(tableId)) {
-        throw new Error('The certification club has no readable live cash table for routed proof.');
+      const anchor = anchors[0];
+      if (!anchor || !/^[0-9a-f-]{36}$/i.test(anchor.id)) {
+        throw new Error('The certification club has no readable table authorization anchor.');
       }
+      const tableId = anchor.id;
+      const arena = Array.isArray(anchor.arena) ? anchor.arena[0] : anchor.arena;
+      if (!arena || arena.id !== anchor.club_id) {
+        throw new Error('The table authorization anchor has no valid arena identity.');
+      }
+      const tableRow: Record<string, unknown> = {
+        id: tableId,
+        club_id: anchor.club_id,
+        union_id: anchor.union_id,
+        arena,
+        name: 'Customization Certification Table',
+        game_variant: 'nlh',
+        game_type: 'cash',
+        tournament_id: null,
+        stakes: '1/2',
+        small_blind: 1,
+        big_blind: 2,
+        min_buy_in: 40,
+        max_buy_in: 400,
+        max_players: 6,
+        current_players: 2,
+        status: 'running',
+        settings: {},
+        is_deleted: false,
+        is_private: true,
+        straddle_enabled: false,
+        bomb_pot_enabled: false,
+        bomb_pot_frequency: null,
+        bomb_pot_ante_multiplier: null,
+        bomb_pot_double_board: false,
+        bomb_pot_board_count: null,
+        bomb_pot_trigger_mode: null,
+        bomb_pot_interval_seconds: null,
+        bomb_pot_variant: null,
+        bomb_pot_announce_seconds: null,
+        bomb_pot_ante_fixed: null,
+        bomb_pot_min_players: null,
+        bomb_pot_button_policy: null,
+        cluster_id: null,
+        nit_game: false,
+        maintain_percent_min: null,
+        maintain_hands: null,
+        created_at: '2026-10-05T00:00:00.000Z',
+      };
 
       const runtime: RuntimeProfile = { avatar: HERO_AVATAR, frame: null, aura: null };
       const writerThemeGate = new OneShotRequestGate();

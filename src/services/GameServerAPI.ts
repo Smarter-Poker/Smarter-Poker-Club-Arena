@@ -568,6 +568,13 @@ export async function submitAction(
     // custom request header would fail preflight in every browser.
     const idempotencyKey = newActionKey();
 
+    /* ONLY A DECISION-BOUND ACTION IS RE-SENT (2026-10-05). The engine
+       refuses a re-send whose turn has moved on only when the action carries
+       its decision context. A context-less action (the Lightning fast fold:
+       the pool session id outlives the hand) would otherwise be delivered to
+       whichever hand that seat is in NOW, and fold a hand the player has not
+       seen. Those are sent once; an undelivered one is reported, not repeated. */
+    const canResend = typeof actionContext === 'string' && actionContext.length > 0;
     const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
     const startedAt = Date.now();
     let undelivered = 0;
@@ -603,7 +610,7 @@ export async function submitAction(
       } catch (err) {
         // A changed login is a refusal by this client, never a lost request.
         if (err instanceof Error && err.message === 'Engine request login changed') throw err;
-        if (await waitToResendUndelivered(undelivered++, startedAt)) {
+        if (canResend && (await waitToResendUndelivered(undelivered++, startedAt))) {
           attempt--;
           continue;
         }
@@ -611,7 +618,7 @@ export async function submitAction(
         return actionNotDelivered();
       }
       if (response.status === 502 || response.status === 503 || response.status === 504) {
-        if (await waitToResendUndelivered(undelivered++, startedAt)) {
+        if (canResend && (await waitToResendUndelivered(undelivered++, startedAt))) {
           attempt--;
           continue;
         }
@@ -715,9 +722,10 @@ export function __resetActionSpacingForTests(): void {
 export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    // Posted at the instant the clock runs out: a request that hangs here
-    // leaves the felt showing a bank the engine never heard about.
-    const response = await engineFetchWithin(`${GAME_SERVER_URL}/timebank`, {
+    // No client deadline (2026-10-05): this call carries no idempotency key,
+    // so aborting a slow grant turned "outcome unknown" into "refused" and
+    // the ring hid a bank the engine had already spent.
+    const response = await engineFetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),

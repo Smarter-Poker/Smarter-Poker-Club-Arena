@@ -569,6 +569,13 @@ import { getAnimationSpeed } from '../utils/animationSpeed';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
+import {
+  MYSTERY_BOUNTIES_LIVE_TEXT,
+  claimMysteryLiveAnnouncement,
+  mysteryChestsLiveFromRow,
+  seatBountyBadge,
+  seatedPlayersSignature,
+} from '../utils/mysteryBountyTable';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
 import { MastheadGameLine } from '../components/table/MastheadGameLine';
@@ -1834,6 +1841,14 @@ function LiveTablePage({
    * snapshot and enqueue the chest twice.
    */
   const chestSeenRef = useRef<Set<string>>(new Set());
+  /* THE CHESTS ARE LIVE (2026-10-05). Read from the tournament row on load and
+     flipped by the engine's `mystery_bounty_activated`; drives the seat badges
+     and the one popup per event per table. See utils/mysteryBountyTable. */
+  const [mysteryChestsLive, setMysteryChestsLive] = useState(false);
+  const mysteryLiveAnnouncedRef = useRef<Set<string>>(new Set());
+  /* The bounty re-read the load effect publishes; the seat-list effect calls it
+     when the set of seated players changes (utils/mysteryBountyTable rule 3). */
+  const bountyMapRefreshRef = useRef<(() => Promise<void>) | null>(null);
 
   /**
    * The chest on screen, with whatever is known about it right now.
@@ -4668,7 +4683,6 @@ function LiveTablePage({
     addOnPeriod,
     setAddOnPeriod,
     addOnChannelRef,
-    bountyChannelRef,
     tournamentWinner,
     setTournamentWinner,
   } = useTableTournament();
@@ -13103,7 +13117,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'format_contract, is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13380,6 +13394,7 @@ function LiveTablePage({
             setSeatFirstBuyIn(null);
           }
 
+          if (isMounted) setMysteryChestsLive(mysteryChestsLiveFromRow(tournData));
           if (
             tournData &&
             (tournData.is_bounty || tournData.is_pko || tournData.is_mystery_bounty)
@@ -13413,47 +13428,13 @@ function LiveTablePage({
               spinPrizePool: Number(tournData.prize_pool) || undefined,
             }));
 
-            // Subscribe to real-time bounty updates (store in ref for cleanup)
-            const bountyChannelKey = `bounty-${table.tournament_id}`;
-
             if (!isMounted) return;
-            const bountyChannel = masterBus.getOrCreateChannel(bountyChannelKey);
-            bountyChannel
-              .on(
-                'postgres_changes',
-                {
-                  event: 'UPDATE',
-                  schema: 'public',
-                  table: 'tournament_players',
-                  filter: `tournament_id=eq.${table.tournament_id}`,
-                },
-                (payload: any) => {
-                  if (payload.new) {
-                    const { user_id, current_bounty } = payload.new;
-                    setTableState((prev) => ({
-                      ...prev,
-                      bountyMap: {
-                        ...prev.bountyMap,
-                        [user_id]: current_bounty || 0,
-                      },
-                    }));
-                  }
-                }
-              )
-              .subscribe((status: string, err?: Error) => {
-                if (status === 'CHANNEL_ERROR') {
-                  console.debug('[TablePage] Realtime channel error:', err?.message || err);
-                }
-                if (status === 'TIMED_OUT') {
-                  console.debug('[TablePage] Realtime channel timed out');
-                }
-              });
-            bountyChannelRef.current = bountyChannel;
 
             /* ═══ THE BOUNTY BADGES ARE RE-READ, NOT ONLY HEARD (2026-10-01) ═══
                `tournament_players` is not in the realtime publication (removed
                by measurement on 2026-09-19 - the most written table on the
-               platform), so the UPDATE listener above never fires. The engine's
+               platform), so a postgres_changes listener on it never fires; the
+               dead one that sat here was removed on 2026-10-05. The engine's
                `bounty_collected` broadcast moves the heads of a knockout on this
                table, but a head that changes anywhere else - a re-entry buying a
                fresh head, a player balanced in from another table after this
@@ -13482,6 +13463,11 @@ function LiveTablePage({
                 return same ? prev : { ...prev, bountyMap: next };
               });
             };
+            /* AND WHEN THE SEATS CHANGE (2026-10-05). A player balanced in
+               from another table arrives in the engine's seat list; the
+               seat-list effect below calls this on that change, so the new
+               head shows on the next snapshot rather than up to 30s later. */
+            bountyMapRefreshRef.current = refreshBountyMap;
             if (bountyMapPollTimer) clearInterval(bountyMapPollTimer);
             bountyMapPollTimer = setInterval(() => void refreshBountyMap(), 30_000);
           } else if (tournData?.spin_multiplier) {
@@ -14486,6 +14472,16 @@ function LiveTablePage({
                   queueTotal: Number(p.queueTotal) || 1,
                 });
                 setChestRemoteOpened(false);
+              } else if (data?.type === 'mystery_bounty_activated') {
+                /* THE CHESTS ARE LIVE (2026-10-05). Only the lobby listened to
+                   this, so the table learned the phase had changed from its
+                   first chest. Every seat's badge turns to the mystery prize,
+                   and the table is told once per event. */
+                setMysteryChestsLive(true);
+                const tid = tableStateRef.current.tournamentId || table.tournament_id;
+                if (claimMysteryLiveAnnouncement(mysteryLiveAnnouncedRef.current, tid)) {
+                  toast.info(MYSTERY_BOUNTIES_LIVE_TEXT, 4000);
+                }
               } else if (data?.type === 'mystery_bounty_complete') {
                 // SECTION 63: reveal, animation done, UI clears, button moves,
                 // next hand. The queue at this table is empty, so nothing more
@@ -15050,6 +15046,8 @@ function LiveTablePage({
         clearInterval(bountyMapPollTimer);
         bountyMapPollTimer = null;
       }
+      bountyMapRefreshRef.current = null;
+      setMysteryChestsLive(false);
       addOnPresentationEpochRef.current += 1;
       refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
@@ -15079,14 +15077,19 @@ function LiveTablePage({
          a hold released after teardown would otherwise navigate a page that has
          already moved on. Cleared here, published where it is declared. */
       goToLobbyWithResultRef.current = null;
-      if (bountyChannelRef.current) {
-        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
-        const tournId = tableStateRef.current.tournamentId || tableId;
-        masterBus.removeRegisteredChannel(`bounty-${tournId}`);
-        bountyChannelRef.current = null;
-      }
     };
   }, [tableId, userId]);
+
+  /* THE BOUNTY BADGES FOLLOW THE SEATS (2026-10-05). The seat list is pushed
+     by the engine; when the set of seated players changes (a player balanced
+     in from another table, a seat vacated), re-read the heads once. This
+     replaces a postgres_changes listener on a table that is not in the
+     realtime publication and so never fired. No new timer. */
+  const seatedSignature = seatedPlayersSignature(tableState.players);
+  useEffect(() => {
+    if (!tableState.isBountyTournament || !seatedSignature) return;
+    void bountyMapRefreshRef.current?.();
+  }, [seatedSignature, tableState.isBountyTournament]);
 
   // The engine socket is replaceable. Its broadcasts are not. Whenever a
   // replacement becomes authoritative, recover any still-open add-on window
@@ -25771,9 +25774,22 @@ function LiveTablePage({
                   }
                   isTournament={tableState.isTournament}
                   bountyValue={
-                    tableState.isBountyTournament && player
-                      ? tableState.bountyMap[player.id]
-                      : undefined
+                    seatBountyBadge({
+                      isBountyTournament: Boolean(tableState.isBountyTournament),
+                      mysteryChestsLive,
+                      playerId: player?.id,
+                      playerStatus: player?.status,
+                      bountyMap: tableState.bountyMap,
+                    }).value
+                  }
+                  bountyIsMystery={
+                    seatBountyBadge({
+                      isBountyTournament: Boolean(tableState.isBountyTournament),
+                      mysteryChestsLive,
+                      playerId: player?.id,
+                      playerStatus: player?.status,
+                      bountyMap: tableState.bountyMap,
+                    }).mystery
                   }
                   /* THE GRID THIS TABLE PAYS ON (2026-09-20). `arenaAsset` has
                      been through `parseArenaIdentity`, which writes 'diamonds'

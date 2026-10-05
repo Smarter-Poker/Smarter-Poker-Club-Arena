@@ -64,7 +64,6 @@ import { signInUrl } from '../../lib/signIn';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
 import { menuOffersCreateUnion } from './menuUnionDoor';
 import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
-import { useUnionRouteId } from '../../hooks/useUnionRouteId';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -264,7 +263,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return match[1];
     }
   }, [location.pathname]);
-  const { unionId: routeUnionId } = useUnionRouteId(unionRouteRef);
   const gameAuthorityScopeKey = user?.id
     ? unionRouteRef
       ? `user:${user.id}:union:${unionRouteRef}`
@@ -368,7 +366,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const resolveGameAuthority = async () => {
       try {
         if (unionRouteRef) {
-          if (!routeUnionId) return;
+          /* The drawer is part of the global first-paint shell. Resolve a
+             union slug only when this async authority path is actually used;
+             a static resolver import would make every player download the
+             union lookup and its Supabase dependency before first paint. */
+          const { resolveUnionUUID } = await import('../../utils/unionIdResolver');
+          const routeUnionId = await resolveUnionUUID(unionRouteRef);
+          if (cancelled) return;
           const operator = await unionService.isUnionAdmin(routeUnionId, user.id);
           if (cancelled) return;
           setUnionManageId(operator ? unionRouteRef : null);
@@ -402,15 +406,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       cancelled = true;
     };
-  }, [
-    gameAccessRevision,
-    gameAuthorityKey,
-    isOpen,
-    routeUnionId,
-    unionRouteRef,
-    user?.id,
-    workspace.clubUUID,
-  ]);
+  }, [gameAccessRevision, gameAuthorityKey, isOpen, unionRouteRef, user?.id, workspace.clubUUID]);
 
   useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
     if (!payload.clubId || payload.clubId === workspace.clubUUID) {

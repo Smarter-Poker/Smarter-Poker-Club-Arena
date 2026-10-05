@@ -182,4 +182,9 @@ describe('5. A union operator has a Table Management door', () => {
       /setCanManageGames\(false\);\s*\n\s*setUnionManageId\(null\);\s*\n\s*setGameAuthorityContext\(''\);/
     );
   });
+
+  it('keeps the union route resolver outside the global first-paint chunk', () => {
+    expect(MENU).toContain("await import('../../utils/unionIdResolver')");
+    expect(MENU).not.toContain('import { useUnionRouteId }');
+  });
 });

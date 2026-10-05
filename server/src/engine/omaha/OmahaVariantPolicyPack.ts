@@ -215,6 +215,35 @@ export function omahaVariantHandShape(variant: OmahaPolicyVariant, cards: Card[]
 }
 
 const SUIT_INDEX: Record<string, number> = { clubs: 0, diamonds: 1, hearts: 2, spades: 3 };
+const RANK_VALUE: Record<string, number> = Object.fromEntries(
+  ranks.split('').map((rank, index) => [rank, index + 2])
+);
+/** The connected-core reading depends only on the set of distinct ranks, so
+ * it is computed once per rank set: [coreMask, connectedCores], -1 unset. */
+const CORE_BY_RANK_SET = new Int32Array(2 * (1 << 15)).fill(-1);
+function connectedCoresOf(rankSet: number, distinct: readonly number[]) {
+  if (CORE_BY_RANK_SET[2 * rankSet] < 0) {
+    let coreMask = 0;
+    let connectedCores = 0;
+    const n = distinct.length;
+    for (let a = 0; a < n; a++)
+      for (let b = a + 1; b < n; b++)
+        for (let c = b + 1; c < n; c++)
+          for (let d = c + 1; d < n; d++) {
+            const g0 = distinct[a],
+              g3 = distinct[d];
+            // The wheel reading moves an ace (only ever g3) to 1.
+            const span = g3 === 14 ? Math.min(g3 - g0, distinct[c] - 1) : g3 - g0;
+            if (span <= 4) {
+              connectedCores++;
+              coreMask |= (1 << g0) | (1 << distinct[b]) | (1 << distinct[c]) | (1 << g3);
+            }
+          }
+    CORE_BY_RANK_SET[2 * rankSet] = coreMask;
+    CORE_BY_RANK_SET[2 * rankSet + 1] = connectedCores;
+  }
+  return CORE_BY_RANK_SET;
+}
 
 /**
  * omahaVariantHandShape(variant, cards).quality, computed without the
@@ -225,21 +254,32 @@ const SUIT_INDEX: Record<string, number> = { clubs: 0, diamonds: 1, hearts: 2, s
  * bit-identical (pinned against omahaVariantHandShape by test). Cards are the
  * sampler's own deck draws, already valid and distinct; no validation here.
  */
+const qualityRankCount = new Int32Array(15);
+const qualitySuitCount = new Int32Array(4);
+const qualityAceSuit = new Int32Array(4);
+const qualityDistinct: number[] = [];
 export function omahaVariantHandQuality(variant: OmahaPolicyVariant, cards: Card[]): number {
-  const rankCount = new Array<number>(15).fill(0);
-  const suitCount = [0, 0, 0, 0];
-  const aceSuit = [false, false, false, false];
+  // Module scratch, cleared on entry: the function is synchronous.
+  const rankCount = qualityRankCount.fill(0);
+  const suitCount = qualitySuitCount.fill(0);
+  const aceSuit = qualityAceSuit.fill(0);
   let broadway = 0;
   for (const c of cards) {
-    const v = ranks.indexOf(c.rank) + 2;
+    const v = RANK_VALUE[c.rank];
     const s = SUIT_INDEX[c.suit];
     rankCount[v]++;
     suitCount[s]++;
-    if (v === 14) aceSuit[s] = true;
+    if (v === 14) aceSuit[s] = 1;
     if (v >= 10) broadway++;
   }
-  const distinct: number[] = [];
-  for (let v = 2; v <= 14; v++) if (rankCount[v]) distinct.push(v);
+  const distinct = qualityDistinct;
+  distinct.length = 0;
+  let rankSet = 0;
+  for (let v = 2; v <= 14; v++)
+    if (rankCount[v]) {
+      distinct.push(v);
+      rankSet |= 1 << v;
+    }
   let pairCount = 0,
     highPair = false,
     tripleCount = 0;
@@ -258,22 +298,9 @@ export function omahaVariantHandQuality(variant: OmahaPolicyVariant, cards: Card
     if (suitCount[s] >= 2) suitedPairs++;
     suitWaste += Math.max(0, suitCount[s] - 2);
   }
-  let coreMask = 0;
-  let connectedCores = 0;
-  const n = distinct.length;
-  for (let a = 0; a < n; a++)
-    for (let b = a + 1; b < n; b++)
-      for (let c = b + 1; c < n; c++)
-        for (let d = c + 1; d < n; d++) {
-          const g0 = distinct[a],
-            g3 = distinct[d];
-          // The wheel reading moves an ace (only ever g3) to 1.
-          const span = g3 === 14 ? Math.min(g3 - g0, distinct[c] - 1) : g3 - g0;
-          if (span <= 4) {
-            connectedCores++;
-            coreMask |= (1 << g0) | (1 << distinct[b]) | (1 << distinct[c]) | (1 << g3);
-          }
-        }
+  const cores = connectedCoresOf(rankSet, distinct);
+  const coreMask = cores[2 * rankSet];
+  const connectedCores = cores[2 * rankSet + 1];
   let coreSize = 0;
   for (let bits = coreMask; bits; bits &= bits - 1) coreSize++;
   const connectivity = coreSize / cards.length;

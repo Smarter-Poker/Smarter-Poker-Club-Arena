@@ -25,6 +25,7 @@ import {
   chicagoParts,
   chicagoDayKey,
   slotForChicagoHour,
+  FREE_BUY_BOARD_NAMES,
 } from '../services/FreeBuy.js';
 
 async function main(): Promise<void> {
@@ -37,6 +38,8 @@ async function main(): Promise<void> {
         'max_rebuys, late_reg_mins, late_reg_levels, current_players, prize_pool'
     )
     .eq('free_buy', true)
+    // The board's own rows only: every freeroll carries free_buy.
+    .in('name', [...FREE_BUY_BOARD_NAMES])
     .gte('start_time', new Date(Date.now() - 24 * 60 * 60_000).toISOString())
     .order('start_time', { ascending: true });
 

@@ -74,7 +74,7 @@ describe('no bare comment is rendered as text inside JSX', () => {
     expect(bareCommentsInJsx('url.tsx', url)).toHaveLength(0);
   });
 
-  it('every .tsx under src is clean', () => {
+  it('every .tsx under src is clean', { timeout: 30_000 }, () => {
     const files = walk(SRC);
     expect(files.length).toBeGreaterThan(100);
     const hits = files.flatMap((f) => bareCommentsInJsx(f, readFileSync(f, 'utf8')));

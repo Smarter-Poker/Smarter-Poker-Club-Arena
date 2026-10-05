@@ -116,6 +116,35 @@ export function mayReloadForShell(opts: {
 export const STALE_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
 /**
+ * ── A VISIBLE TAB THAT NEVER NAVIGATES (2026-10-05) ───────────────────────
+ *
+ * Every trigger above needs the page to navigate, resume or change
+ * visibility. A desktop tab left open on a club page - visible the whole
+ * time on a second monitor, nobody clicking - does none of those, so it ran
+ * the 2026-10-04 build into 2026-10-05 and, once table_seats.horse_id
+ * stopped being readable by a browser, asked for it once a minute and was
+ * refused (50 permission-denied reports from one account in an hour). The
+ * check also runs when the window regains focus, when the in-app route
+ * changes, and at most every STALE_CHECK_IDLE_MS while the page is visible.
+ * None of these reload anything by themselves: a stale result arms the same
+ * gate, which still never reloads at a table, hidden, or inside the
+ * cooldown.
+ */
+export const STALE_CHECK_IDLE_MS = 15 * 60 * 1000;
+
+/** Should the 5 s poll ask the server for the deployed shell now? */
+export function staleCheckDue(opts: {
+  pathname: string;
+  lastPathname: string;
+  visible: boolean;
+  lastCheckAt: number;
+  now: number;
+}): boolean {
+  if (opts.pathname !== opts.lastPathname) return true;
+  return opts.visible && opts.now - opts.lastCheckAt >= STALE_CHECK_IDLE_MS;
+}
+
+/**
  * The entry chunk named by a shell document. Vite writes exactly one
  * `assets/index-<hash>.js` module script into index.html per build, so the
  * name IS the build identity — two shells naming different entries are two
@@ -338,16 +367,35 @@ export function useShellUpdateGate(): void {
     /* pageshow fires when a PWA or bfcache page resumes without a real
        navigation — the exact case the probe exists for. */
     const onPageShow = () => checkStaleness();
+    /* Focus returns without a visibility change on a desktop window that was
+       merely behind another one. */
+    const onFocus = () => checkStaleness();
+    let lastPathname = window.location.pathname;
     /* Leaving a table is the single most likely moment for this to become
        safe, and it produces no event of its own — the router replaces the
        path without touching the SW. Poll cheaply instead of reaching into
        the router from the app root. */
-    const poll = window.setInterval(attempt, 5000);
+    const poll = window.setInterval(() => {
+      if (
+        staleCheckDue({
+          pathname: window.location.pathname,
+          lastPathname,
+          visible: document.visibilityState === 'visible',
+          lastCheckAt: lastStaleCheckAt,
+          now: Date.now(),
+        })
+      ) {
+        lastPathname = window.location.pathname;
+        checkStaleness();
+      }
+      attempt();
+    }, 5000);
 
     navigator.serviceWorker.addEventListener('message', onMessage);
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onFocus);
 
     // Home Screen startup can finish pageshow before React mounts this hook.
     // Check once now as well as on later resumes; the existing throttle and
@@ -360,6 +408,7 @@ export function useShellUpdateGate(): void {
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onFocus);
       window.clearInterval(poll);
       window.clearTimeout(timer);
     };

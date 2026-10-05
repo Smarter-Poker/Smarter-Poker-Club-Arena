@@ -109,12 +109,6 @@ interface WalletState {
 
   // Wallet operations
   lockForBuyIn: (userId: string, amount: number, tableId: string) => Promise<boolean>;
-  internalTransfer: (
-    userId: string,
-    fromWallet: WalletType,
-    toWallet: WalletType,
-    amount: number
-  ) => Promise<boolean>;
   mintChips: (
     clubId: string,
     chips: number
@@ -438,62 +432,6 @@ export const useWalletStore = create<WalletState>()(
             balances: previousBalances,
           });
           reportError(error, 'useWalletStore.Lock_for_buyin_failed');
-          return false;
-        }
-      },
-
-      internalTransfer: async (
-        userId: string,
-        fromWallet: WalletType,
-        toWallet: WalletType,
-        amount: number
-      ) => {
-        // Mutex: prevent concurrent wallet operations from racing
-        if (get()._operationInFlight) {
-          console.warn('[Store] Wallet operation already in flight, skipping internalTransfer');
-          return false;
-        }
-
-        const { balances } = get();
-        if (balances[fromWallet].available < amount) {
-          reportError(
-            new Error('[Store] Insufficient balance for transfer'),
-            'useWalletStore.Insufficient_balance_for_transfer'
-          );
-          return false;
-        }
-
-        // Deep copy for safe rollback (shallow spread shares nested object refs)
-        const previousBalances = JSON.parse(JSON.stringify(balances));
-        set({
-          _operationInFlight: true,
-          balances: {
-            ...balances,
-            [fromWallet]: {
-              ...balances[fromWallet],
-              available: balances[fromWallet].available - amount,
-              total: balances[fromWallet].total - amount,
-            },
-            [toWallet]: {
-              ...balances[toWallet],
-              available: balances[toWallet].available + amount,
-              total: balances[toWallet].total + amount,
-            },
-          },
-        });
-
-        try {
-          await WalletService.internalTransfer(userId, {
-            fromWallet,
-            toWallet,
-            amount,
-          });
-          set({ _operationInFlight: false });
-          return true;
-        } catch (error) {
-          // Revert on failure + release mutex
-          set({ _operationInFlight: false, balances: previousBalances });
-          reportError(error, 'useWalletStore.Internal_transfer_failed');
           return false;
         }
       },

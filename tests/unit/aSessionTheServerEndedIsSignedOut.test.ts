@@ -35,6 +35,17 @@ const b64url = (o: unknown) =>
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
 
+function storeActiveSession(userId: string): void {
+  const now = Math.floor(Date.now() / 1000);
+  const accessToken = `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({
+    sub: userId,
+    role: 'authenticated',
+    aud: 'authenticated',
+    exp: now + 3600,
+  })}.signature`;
+  localStorage.setItem('smarter-poker-auth', JSON.stringify({ access_token: accessToken }));
+}
+
 function clientWhoseServerEndedTheSession() {
   const stored = new Map<string, string>();
   const storage = {
@@ -188,6 +199,7 @@ describe('IdentityDNA.logout()', () => {
      scrubbed account, lobby and all. Its profile says 'deleted'; that ends it. */
   it('signs a closed account out when its profile says so, and never shows the tombstone', async () => {
     vi.useFakeTimers();
+    const { useUserStore } = await import('../../src/stores/useUserStore');
     try {
       h.signOut.mockResolvedValue({ error: new AuthSessionMissingError() });
       const tombstone = { id: USER_ID, username: 'deleted-4344d850bcd6', status: 'deleted' };
@@ -197,7 +209,8 @@ describe('IdentityDNA.logout()', () => {
         }),
       });
       const { identityDNA } = await import('../../src/core/IdentityDNA');
-      const { useUserStore } = await import('../../src/stores/useUserStore');
+      storeActiveSession(USER_ID);
+      useUserStore.getState().setUser({ id: USER_ID, username: 'a-player' });
       const shown = vi.spyOn(useUserStore.getState(), 'setUser');
       (
         identityDNA as unknown as { loadProfileInBackground(id: string): void }
@@ -207,19 +220,24 @@ describe('IdentityDNA.logout()', () => {
       expect(h.removeSession).toHaveBeenCalledTimes(1);
       expect(shown).not.toHaveBeenCalled();
     } finally {
+      vi.restoreAllMocks();
+      localStorage.removeItem('smarter-poker-auth');
+      useUserStore.getState().logout();
       vi.useRealTimers();
     }
   });
 
   it('shows an open account as it always did', async () => {
     vi.useFakeTimers();
+    const { useUserStore } = await import('../../src/stores/useUserStore');
     try {
       const open = { id: USER_ID, username: 'a-player', status: 'active' };
       h.from.mockReturnValue({
         select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: open, error: null }) }) }),
       });
       const { identityDNA } = await import('../../src/core/IdentityDNA');
-      const { useUserStore } = await import('../../src/stores/useUserStore');
+      storeActiveSession(USER_ID);
+      useUserStore.getState().setUser({ id: USER_ID, username: 'a-player' });
       const shown = vi.spyOn(useUserStore.getState(), 'setUser');
       (
         identityDNA as unknown as { loadProfileInBackground(id: string): void }
@@ -228,6 +246,9 @@ describe('IdentityDNA.logout()', () => {
       expect(h.signOut).not.toHaveBeenCalled();
       expect(shown).toHaveBeenCalledTimes(1);
     } finally {
+      vi.restoreAllMocks();
+      localStorage.removeItem('smarter-poker-auth');
+      useUserStore.getState().logout();
       vi.useRealTimers();
     }
   });

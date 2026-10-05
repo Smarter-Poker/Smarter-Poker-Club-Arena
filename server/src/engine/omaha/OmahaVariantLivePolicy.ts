@@ -366,8 +366,8 @@ function copyEvidence(e: OmahaVariantEquityEvidence): OmahaVariantEquityEvidence
 }
 
 /** Worker-boundary shape check of a returned Phase 11 binding. It does not
- * recompute the proposal; the journal reviewer binds it to the original
- * request. Positions must be the canonical positions of the recorded button,
+ * recompute the proposal or the census; the journal reviewer checks that the
+ * execution witness commits to this binding (`phase11Inputs`). Positions must be the canonical positions of the recorded button,
  * census and posted blind seats. */
 export function omahaVariantInputBindingIsValid(value: unknown): value is OmahaVariantInputBinding {
   if (
@@ -735,7 +735,12 @@ export function evaluateOmahaVariantPolicy(
   mode: OmahaVariantMode = 'shadow',
   now = () => performance.now(),
   decisionEquityCeiling = 1,
-  sampleWhenMissing = true
+  sampleWhenMissing = true,
+  /** The owner's legalizer (HorseLogic passes its own). A changed proposal is
+   * recorded and executed in the exact legal form the owner will give it, so
+   * a unit or all-in rewrite never turns a measured proposal into an
+   * `illegal_candidate` refusal (audit 2026-10-05). */
+  legalForm?: (decision: HorseDecision) => HorseDecision
 ) {
   const start = now();
   const externalAnalysisMs = evidence
@@ -786,6 +791,8 @@ export function evaluateOmahaVariantPolicy(
   const finish = (reason: string, proposal = baseline) => {
     // Bound inside the timed region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
+    if (legalForm && proposal !== baseline)
+      proposal = { ...legalForm(proposal), thinkTime: proposal.thinkTime };
     const elapsed = Math.max(0, now() - start) + externalAnalysisMs;
     if (elapsed > OMAHA_VARIANT_DOMAIN.liveBudgetMs) {
       reason = 'work_budget';

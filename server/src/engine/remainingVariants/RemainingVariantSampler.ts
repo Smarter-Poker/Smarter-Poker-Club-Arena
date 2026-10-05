@@ -10,12 +10,88 @@ import {
 } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
-import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
 import {
+  variantEquityFromShowdowns,
+  type OmahaVariantEquityEvidence,
+} from '../omaha/OmahaVariantEquity.js';
+import {
+  REMAINING_VARIANT_DOMAIN,
   REMAINING_VARIANT_PACKS,
   remainingVariantHandShape,
   type RemainingPolicyVariant,
 } from './RemainingVariantPolicyPack.js';
+
+/**
+ * P12.3: the samples one live draw requests at equity-governor scale `scale`.
+ * At scale 1 (the governor off, as in the P12.2 matrix) it is the pack's full
+ * count, `REMAINING_VARIANT_DOMAIN.defaultSamples`; under load it falls
+ * proportionally, never below four. The P12.3 completion record counts a
+ * consumed sample that requested fewer than the full count as
+ * governor-reduced, never as completed.
+ */
+export function remainingVariantRequestedSamples(scale: number): number {
+  return Math.max(
+    4,
+    Math.floor(REMAINING_VARIANT_DOMAIN.defaultSamples * Math.min(1, Math.max(0, scale)))
+  );
+}
+
+/** P12.1: where the opponent holdings behind a live remaining-variant sample
+ * came from. Each dealt opponent is drawn from one physical deck (36 cards for
+ * Short Deck) under a sequential prior conditioned only on that opponent's
+ * public raise and call counts, with a declared uniform escape on the third
+ * attempt. For Crazy Pineapple every opponent's retained pair is chosen by the
+ * declared flop-only structural prior (`choosePineappleFlopPair`), never by an
+ * actual discard, and the hero's own accepted discard is excluded from the
+ * deck: only its count is recorded here, never a card value. Nothing here is
+ * calibrated or solver input. */
+export interface RemainingVariantRangeProvenance {
+  readonly version: 'remaining-variant-range-provenance-v1';
+  readonly source: 'variant_public_line_sequential_prior';
+  readonly calibration: 'uncalibrated';
+  readonly solverInput: false;
+  readonly reads: 'public_action_line_only';
+  readonly prior: Readonly<{
+    attemptsPerSeat: 3;
+    finalAttempt: 'uniform_escape';
+    /** Dealt-opponent draws inside completed samples. */
+    seatDraws: number;
+    /** Of those, draws accepted by the uniform escape (third attempt). */
+    uniformEscapes: number;
+  }>;
+  readonly deck: Readonly<{
+    physical: 'single_deck_excluding_hero_known_and_board';
+    size: 36 | 52;
+    /** Every dealt opponent consumes unknown cards, folded seats included. */
+    dealtOpponents: number;
+    /** The hero's private accepted discard excluded from the deck (Pineapple
+     * after the discard: 1; otherwise 0). A count, never the card. */
+    heroKnownDeadCards: 0 | 1;
+  }>;
+  /** Crazy Pineapple only; null for the other three packs. */
+  readonly discard: Readonly<{
+    opponents: 'declared_flop_only_structural_prior';
+    /** The hero's pair: the accepted private discard after the flop, or the
+     * same declared prior when sampled before it. */
+    hero: 'accepted_private_discard' | 'declared_flop_only_structural_prior';
+    actualOpponentDiscardsRead: false;
+  }> | null;
+  readonly work: Readonly<{
+    requestedSamples: number;
+    completedSamples: number;
+    budgetExhausted: boolean;
+  }>;
+  /** The contesting opponents scored at showdown, with the public counts read. */
+  readonly opponents: ReadonlyArray<
+    Readonly<{ userId: string; seat: number; raises: number; calls: number }>
+  >;
+}
+
+/** The shared pot-share evidence with the Phase 12 sampler's own provenance. */
+export type RemainingVariantEquityEvidence = Omit<OmahaVariantEquityEvidence, 'range'> & {
+  /** P12.1: the live sampler's range provenance; absent on external evidence. */
+  range?: RemainingVariantRangeProvenance;
+};
 
 /** A bounded flop-only public prior for the opponent's Crazy Pineapple
  * discard. The final board is deliberately not an input. All three original
@@ -80,7 +156,7 @@ export function sampleRemainingVariantEquity(
   state: HorseGameStateV2,
   withinBudget: () => boolean,
   retain?: (showdowns: RemainingVariantTerminalShowdowns) => void
-) {
+): RemainingVariantEquityEvidence | null {
   const started = performance.now(),
     pack = REMAINING_VARIANT_PACKS[variant];
   const postDiscard = variant === 'pineapple' && state.communityCards.length >= 3;
@@ -157,15 +233,16 @@ export function sampleRemainingVariantEquity(
       ];
     })
   );
-  const requested = Math.max(
-    4,
-    Math.floor(32 * Math.min(1, Math.max(0, equityGovernor.current())))
-  );
+  const requested = remainingVariantRequestedSamples(equityGovernor.current());
   const samples: HorseEquityOutcomeSample[] = [];
+  // P12.1: what the prior actually did, recorded with the sample it produced.
+  let seatDraws = 0;
+  let uniformEscapes = 0;
   sampleLoop: for (let iteration = 0; iteration < requested; iteration++) {
     if (!withinBudget()) break;
     let remaining = deck.slice();
     const hands = new Map<string, Card[]>();
+    let iterationEscapes = 0;
     for (const p of dealt) {
       if (!withinBudget()) break sampleLoop;
       const read = reads.get(p.user_id)!;
@@ -180,6 +257,7 @@ export function sampleRemainingVariantEquity(
           Math.min(4, 1 + read.raises * 0.6 + read.calls * 0.1)
         );
         if (attempt === 2 || random() <= weight) {
+          if (attempt === 2) iterationEscapes++;
           remaining = trial;
           hands.set(p.user_id, cards);
           break;
@@ -208,6 +286,10 @@ export function sampleRemainingVariantEquity(
       const v = pack.splitLow ? scoreOmahaLow(cards, board) : Infinity;
       return Number.isFinite(v) ? v : null;
     };
+    // Counted only for a completed sample: an iteration cut by the budget
+    // contributes no showdown and no draw.
+    seatDraws += dealt.length;
+    uniformEscapes += iterationEscapes;
     samples.push({
       heroHigh: high(heroHand),
       heroLow: low(heroHand),
@@ -227,12 +309,58 @@ export function sampleRemainingVariantEquity(
     callCost: Math.min(hero.stack, Math.max(0, state.currentBet - hero.bet)),
     opponentIds: active.map((p) => p.user_id),
     samples,
-  });
+  }) as RemainingVariantEquityEvidence | null;
   if (evidence) {
     evidence.analysisMs = performance.now() - started;
     evidence.provenance = 'variant_public_line_joint_deck';
     evidence.requestedSamples = requested;
     evidence.sampleBudgetExhausted = samples.length < requested;
+    evidence.range = Object.freeze({
+      version: 'remaining-variant-range-provenance-v1',
+      source: 'variant_public_line_sequential_prior',
+      calibration: 'uncalibrated',
+      solverInput: false,
+      reads: 'public_action_line_only',
+      prior: Object.freeze({
+        attemptsPerSeat: 3,
+        finalAttempt: 'uniform_escape',
+        seatDraws,
+        uniformEscapes,
+      }),
+      deck: Object.freeze({
+        physical: 'single_deck_excluding_hero_known_and_board',
+        size: pack.deck as 36 | 52,
+        dealtOpponents: dealt.length,
+        heroKnownDeadCards: dead.length as 0 | 1,
+      }),
+      discard:
+        variant === 'pineapple'
+          ? Object.freeze({
+              opponents: 'declared_flop_only_structural_prior',
+              hero:
+                hero.cards.length === 3
+                  ? 'declared_flop_only_structural_prior'
+                  : 'accepted_private_discard',
+              actualOpponentDiscardsRead: false,
+            })
+          : null,
+      work: Object.freeze({
+        requestedSamples: requested,
+        completedSamples: samples.length,
+        budgetExhausted: samples.length < requested,
+      }),
+      opponents: Object.freeze(
+        active.map((p) => {
+          const read = reads.get(p.user_id)!;
+          return Object.freeze({
+            userId: p.user_id,
+            seat: p.seat,
+            raises: read.raises,
+            calls: read.calls,
+          });
+        })
+      ),
+    } satisfies RemainingVariantRangeProvenance);
   }
   return evidence;
 }

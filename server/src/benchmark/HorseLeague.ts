@@ -897,13 +897,20 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // honestly: both arms see the same shapes, only one reads them.
   { name: 'plo4_v46_classes', variant: 'plo4', pairs: 6000, a: {}, b: { v46Charts: false } },
   { name: 'plo6_v46_classes', variant: 'plo6', pairs: 6000, a: {}, b: { v46Charts: false } },
+  // 2026-10-05: the short-deck chart resolved NEGATIVE (-0.51 +/- 0.15 over
+  // 960k hands) and is default OFF behind v46ShortDeck. Same matchup, same
+  // sign: arm A is still "chart on", so the nightly series stays continuous.
   {
     name: 'shortdeck_v46_classes',
     variant: 'short_deck',
     pairs: 6000,
-    a: {},
-    b: { v46Charts: false },
+    a: { v46ShortDeck: true },
+    b: {},
   },
+  // V51 (2026-10-05): a committed river one-pair hand calls instead of
+  // jamming. Measured on the standard NLH card, where the committed river
+  // spot arises from ordinary 100bb raise wars.
+  { name: 'v51_river_flat', pairs: 6000, a: {}, b: { v51RiverFlat: false } },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -955,6 +962,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v41Leaks: false,
       v43Tempo: false,
       v46Charts: false,
+      v46ShortDeck: false,
+      v51RiverFlat: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -1009,7 +1009,10 @@ export function evaluatePlo4LivePolicy(
   baseline: HorseDecision,
   evidence: Plo4EquityEvidence | null,
   mode: Plo4LiveMode = 'shadow',
-  now = () => performance.now()
+  now = () => performance.now(),
+  /** The owner's legalizer (HorseLogic passes its own): a changed proposal is
+   * recorded and executed in its exact legal form (audit 2026-10-05). */
+  legalForm?: (decision: HorseDecision) => HorseDecision
 ) {
   const start = now();
   const receipt: Plo4LiveReceipt = {
@@ -1051,6 +1054,8 @@ export function evaluatePlo4LivePolicy(
   const finish = (reason: string, proposal = baseline) => {
     // Bound inside the timed region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
+    if (legalForm && proposal !== baseline)
+      proposal = { ...legalForm(proposal), thinkTime: proposal.thinkTime };
     const elapsed = Math.max(0, now() - start);
     if (elapsed > PLO4_POLICY_PACK.liveBudgetMs) {
       reason = 'work_budget';

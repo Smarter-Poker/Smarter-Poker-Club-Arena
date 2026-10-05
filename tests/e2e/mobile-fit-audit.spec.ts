@@ -173,7 +173,9 @@ test.describe('Club Arena Responsive Fit At Mobile, Tablet, And Desktop', () => 
         return;
       }
 
-      if (/^messages(?:\/|$)/.test(route)) {
+      const isMessengerHandoff =
+        /^messages(?:\/|$)/.test(route) || /^clubs\/[^/]+\/messages(?:\/|$)/.test(route);
+      if (isMessengerHandoff) {
         await expect(page).toHaveURL(/\/hub\/(?:social-media\/)?messenger(?:[/?#]|$)/, {
           timeout: 15_000,
         });

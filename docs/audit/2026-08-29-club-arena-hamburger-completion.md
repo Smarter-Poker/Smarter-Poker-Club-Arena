@@ -8,20 +8,24 @@ Scope: the hamburger drawer, every destination it advertises, the contextual sec
 
 ## Current Delivery State
 
-This document describes the current release candidate, not a completed production release.
+This document records the delivered information-architecture candidate and the focused live-contract
+follow-up required by its first complete production browser run. It does not treat source or merge
+state as production success.
 
-| Delivery stage                                       | Current state                                                                       |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Source implementation                                | Implemented in the owned external-SSD worktree                                      |
-| Focused local validation                             | Menu/navigation selections and changed fixture's 195-test wrapper pass              |
-| Commit and pull request                              | PR #6147 open; rollover repair pushed at `5f608ca16a` and exact-head checks pending |
-| Protected merge                                      | Pending                                                                             |
-| Database migration installation and catalog readback | Pending                                                                             |
-| Club Arena client publication                        | Pending                                                                             |
-| Post-deploy browser certification                    | Pending                                                                             |
-| Public build identity and affected live behavior     | Pending                                                                             |
+| Delivery stage                                       | Current state                                                                                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source implementation                                | Main implementation merged through PR #6147; focused live-contract follow-up implemented in the owned external-SSD worktree                                |
+| Focused local validation                             | Follow-up unit contract 41 of 41, TypeScript, targeted lint, and 171-case browser discovery pass                                                           |
+| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`; follow-up PR #6155 open with protected checks pending                                                                     |
+| Protected merge                                      | Main implementation complete; follow-up pending                                                                                                            |
+| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                |
+| Club Arena client publication                        | Main implementation published by run `37314428036`; a newer protected-main descendant containing it is serving                                             |
+| Post-deploy browser certification                    | Live-table lane passed; client lane exposed three focused navigation-contract failures now repaired in the follow-up candidate                             |
+| Public build identity and affected live behavior     | Both build endpoints served a protected descendant containing `1dae7a2fb0`; final corrected browser behavior remains pending until the follow-up publishes |
 
-Production success must not be inferred from this source audit. Final delivery still requires the protected repository route, exact migration installation/readback, successful `publish-club-arena.yml`, both public `build-info.json` endpoints, post-deploy checks, and live behavior proof.
+Production success must not be inferred from this source audit. The remaining delivery is the
+follow-up's protected merge, successful `publish-club-arena.yml`, both public `build-info.json`
+endpoints, authenticated post-deploy browser checks, and isolated-fixture cleanup.
 
 Exact-head run `37307605805` passed the Club Arena client, server, navigation,
 route, and migration checks but its accounting PostgreSQL shard 1 refused an
@@ -409,3 +413,19 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Required-check baseline repair: exact-head run `37306433361` reproduced the stale current-main Horse Phase 11 null-proof after its completion evidence landed. The already-authored upstream fix `9946e57fb8` was carried unchanged as a test-and-changelog-only repair, and its focused server selection passed 95 of 95 tests.
 - Exact-head required-check repair: run `37307605805` passed all other relevant jobs but accounting PostgreSQL shard 1 refused the self-expired archived-spin recognition window. Read-only production evidence captured at `2026-10-05T12:40:08.506687Z` proves the current two-scope state and zero overlapping runs; the bounded fixture/hash chain is refreshed without changing production data or behavior.
 - Rollover pre-push receipt: source candidate `5f608ca16a674a8f51b35d2829764cf2b04703a0` passed policy bundle validation, migration/live-schema guards, changed-file contracts, and 653 of 653 selected tests. Remaining evidence at that push was protected checks, publication, and live verification.
+
+## Policy Receipt For The Live-Contract Follow-Up
+
+- Canonical policy read: `2026-10-05T14:47:46.830Z`
+- Policy version: `2.9`
+- Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
+- Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
+- Operating law: `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`
+- Hardening standard: `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`
+- Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
+- Portable policy comparison: exact match to the canonical policy bundle
+- Owned worktree: `/Volumes/SmarterWork/agent-work/club-arena-menu-finish-20261005`
+- Follow-up branch: `fix/club-arena-navigation-live-contracts-20261005`
+- Protected-main base at follow-up start: `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`
+- Demonstrated blockers: canonical slashless home rejected by the browser matcher; controlling-member Invite Players action targeted the membership-refused join page; club-scoped Messenger handoff was treated as a Club Arena document by the responsive audit
+- Follow-up boundary: one action target and two exact browser contracts; no engine, database, financial, or World Hub source change

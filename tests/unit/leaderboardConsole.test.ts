@@ -84,6 +84,21 @@ describe('Leaderboard Painted Console Contract', () => {
       "getByRole('region', { name: 'Leaderboards' })"
     );
   });
+  it('title-cases player names in the podium, ranking, and tournament-stat views', () => {
+    const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    expect(page).toContain('name={displayName}');
+    expect(page.match(/leaderboardDisplayName\(entry\.username\)/g)).toHaveLength(7);
+    expect(page.match(/leaderboardDisplayName\(stat\.username\)/g)).toHaveLength(3);
+    expect(page).not.toContain('{entry.username}');
+    expect(page).not.toContain('{stat.username}');
+    expect(page).toContain('enumToTitleCase(settings.funding_label)');
+    expect(readFileSync('src/components/leaderboard/LeaderboardPrizeWizard.tsx', 'utf8')).toContain(
+      'enumToTitleCase(setup.club_name)'
+    );
+    expect(
+      readFileSync('src/components/leaderboard/LeaderboardSettlementCard.tsx', 'utf8')
+    ).toContain('enumToTitleCase(ownerMessage)');
+  });
   it('keeps promotion row feedback when reduced motion is requested', () => {
     const css = readFileSync('src/components/leaderboard/LeaderboardCard.module.css', 'utf8');
     expect(css).not.toMatch(/(?:animation|transition):\s*none/);

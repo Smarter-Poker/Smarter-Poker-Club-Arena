@@ -1823,7 +1823,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'phase10_shadow_receipt_binding_dropped',
     'horseDecision/client (P10 audit F8)',
-    'a shadow-only PLO4 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'a shadow-only PLO4 receipt whose binding (P12.1 inputs or the P12-B net-action economics) failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
     'Phase10'
   ),
   receipt(
@@ -2036,12 +2036,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase12_execution_*',
     'ServerTableEngineTurns',
     'authoritative action or retired decision accounting',
-    'Phase12'
-  ),
-  receipt(
-    'phase12_shadow_receipt_binding_dropped',
-    'horseDecision/client (P12.1, the P10 audit F8 rule)',
-    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose net-action binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
     'Phase12'
   ),
   receipt(

@@ -48,6 +48,7 @@ import { p12CompletionBytes } from '../engine/HorsePhase12Authority.test-support
 const exec = promisify(execFile);
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const RUN_TIMEOUT_MS = 60_000;
+const DEV_SHARD_TIMEOUT_MS = 240_000;
 const C = REMAINING_VARIANT_STRENGTH_CONTRACT;
 const VARIANT: RemainingPolicyVariant = 'flh';
 const PACK = remainingVariantStrengthPack(VARIANT);
@@ -150,11 +151,11 @@ function writeAttempt(
   });
 }
 
-async function runScript(script: string, args: string[]) {
+async function runScript(script: string, args: string[], timeout = RUN_TIMEOUT_MS) {
   try {
     const { stdout } = await exec(process.execPath, ['--import', 'tsx', script, ...args], {
       cwd: process.cwd(),
-      timeout: RUN_TIMEOUT_MS,
+      timeout,
     });
     return { code: 0, stdout, stderr: '' };
   } catch (error) {
@@ -620,14 +621,23 @@ describe('remainingVariantStrengthEvaluate refusals', () => {
     async () => {
       const script = 'src/scripts/remainingVariantStrengthEvaluate.ts';
       const output = path.join(root, 'dev-out');
-      const r = await runScript(script, [
-        '--variant=pineapple',
-        '--profile=p12c-pineapple-6max-2dealt-100bb',
-        `--output=${output}`,
-        '--seed=12101101',
-        '--shard=0',
-        '--pairs=8',
-      ]);
+      const r = await runScript(
+        script,
+        [
+          '--variant=pineapple',
+          '--profile=p12c-pineapple-6max-2dealt-100bb',
+          `--output=${output}`,
+          '--seed=12101101',
+          '--shard=0',
+          '--pairs=8',
+        ],
+        // This one loads and plays the engine (the refusals above exit before
+        // it loads); on a loaded two-CPU host inside the full suite the load
+        // alone has exceeded a minute.
+        DEV_SHARD_TIMEOUT_MS
+      );
+      if (r.code !== 0 && !existsSync(path.join(output, 'manifest.json')))
+        throw new Error(`development shard did not start: ${r.code} ${r.stderr}`);
       const key = 'p12c-pineapple-6max-2dealt-100bb-12101101-s0';
       const manifest = readJson(path.join(output, 'manifest.json'));
       expect(manifest).toMatchObject({
@@ -658,6 +668,6 @@ describe('remainingVariantStrengthEvaluate refusals', () => {
         expect.arrayContaining([`${key}:not_contract_mode`, `${key}:not_holdout_seed`])
       );
     },
-    RUN_TIMEOUT_MS * 2
+    DEV_SHARD_TIMEOUT_MS + 30_000
   );
 });

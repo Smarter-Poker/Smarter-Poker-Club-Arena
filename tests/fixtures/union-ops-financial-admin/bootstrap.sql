@@ -69,7 +69,7 @@ CREATE TABLE public.agents(
 CREATE TABLE public.table_seats(user_id uuid, club_id uuid, left_at timestamptz);
 CREATE TABLE public.rake_attributions(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), hand_id uuid, rake_record_id uuid,
-  player_id uuid, club_id uuid, rake_amount numeric NOT NULL CHECK (rake_amount >= 0),
+  player_id uuid NOT NULL, club_id uuid, rake_amount numeric NOT NULL CHECK (rake_amount >= 0),
   eligible_contribution numeric, contribution_weight numeric,
   weighted_rake_credit numeric, rake_method text,
   created_at timestamptz NOT NULL);

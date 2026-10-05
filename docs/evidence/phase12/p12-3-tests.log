@@ -1,0 +1,84 @@
+# P12.3 test evidence
+# All runs: cd server && npx vitest run <files> on a 2-CPU container. HEAD of the change: 06388b57 plus the order-independence fix to one client assertion (same branch).
+
+## Before: the new and extended test files copied into a git archive copy of the unmodified base 4fe703f8 (no P12.3 source change)
+
+      Tests  4 failed | 34 passed (38)
+ FAIL  src/benchmark/phase12StrengthAssemble.test.ts [ src/benchmark/phase12StrengthAssemble.test.ts ]
+ FAIL  src/engine/HorseDecisionEffectCommit.test.ts [ src/engine/HorseDecisionEffectCommit.test.ts ]
+ FAIL  src/engine/HorseExecutionWitness.test.ts > private execution witness > P12.3 binds the flh turn selection: selected proposal, shadow baseline and the accepted action
+ FAIL  src/engine/HorseExecutionWitness.test.ts > private execution witness > P12.3 binds the flo8 flop selection: selected proposal, shadow baseline and the accepted action
+ FAIL  src/engine/HorseExecutionWitness.test.ts > private execution witness > P12.3 binds the pineapple preflop selection: selected proposal, shadow baseline and the accepted action
+ FAIL  src/engine/HorseExecutionWitness.test.ts > private execution witness > P12.3 binds the short_deck preflop selection: selected proposal, shadow baseline and the accepted action
+ FAIL  src/engine/HorsePhase12Authority.test.ts [ src/engine/HorsePhase12Authority.test.ts ]
+ FAIL  src/engine/horseDecision/client.test.ts [ src/engine/horseDecision/client.test.ts ]
+ FAIL  src/engine/horseDecision/workerRuntime.test.ts [ src/engine/horseDecision/workerRuntime.test.ts ]
+ FAIL  src/engine/remainingVariants/RemainingVariantPhase12Selection.test.ts [ src/engine/remainingVariants/RemainingVariantPhase12Selection.test.ts ]
+ FAIL  src/scripts/phase12CompletionRecord.test.ts [ src/scripts/phase12CompletionRecord.test.ts ]
+ FAIL  src/services/horseDecisionJournal/review.test.ts [ src/services/horseDecisionJournal/review.test.ts ]
+ Test Files  9 failed (9)
+ ❯ src/benchmark/phase12StrengthAssemble.test.ts (0 test)
+ ❯ src/engine/HorseDecisionEffectCommit.test.ts (0 test)
+ ❯ src/engine/HorseExecutionWitness.test.ts (38 tests | 4 failed) 652ms
+ ❯ src/engine/HorsePhase12Authority.test.ts (0 test)
+ ❯ src/engine/horseDecision/client.test.ts (0 test)
+ ❯ src/engine/horseDecision/workerRuntime.test.ts (0 test)
+ ❯ src/engine/remainingVariants/RemainingVariantPhase12Selection.test.ts (0 test)
+ ❯ src/scripts/phase12CompletionRecord.test.ts (0 test)
+ ❯ src/services/horseDecisionJournal/review.test.ts (0 test)
+Error: Failed to load url ../HorsePhase12Authority.js (resolved id: ../HorsePhase12Authority.js) in server/src/engine/horseDecision/workerRuntime.test.ts. Does the file exist?
+Error: Failed to load url ../engine/HorsePhase12Authority.js (resolved id: ../engine/HorsePhase12Authority.js) in server/src/benchmark/phase12StrengthAssemble.test.ts. Does the file exist?
+Error: Failed to load url ./HorsePhase12Authority.js (resolved id: ./HorsePhase12Authority.js) in server/src/engine/HorseDecisionEffectCommit.test.ts. Does the file exist?
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+## After: new, touched and reused suites on the P12.3 branch
+
+ ✓ src/engine/horseDecision/workerRuntime.test.ts (246 tests) 2432ms
+ ✓ src/engine/horseDecision/client.test.ts (115 tests) 674ms
+ ✓ src/engine/HorseDecisionEffectCommit.test.ts (159 tests) 450ms
+ ✓ src/services/horseDecisionJournal/review.test.ts (168 tests) 1418ms
+ ✓ src/engine/HorsePhase12Authority.test.ts (129 tests) 219ms
+ ✓ src/engine/remainingVariants/RemainingVariantInputBinding.test.ts (138 tests) 1147ms
+ ❯ src/engine/HorsePhase11Authority.test.ts (95 tests | 1 failed) 155ms
+ ✓ src/benchmark/RemainingVariantStrengthContract.test.ts (26 tests) 2033ms
+ ✓ src/engine/HorseExecutionWitness.test.ts (38 tests) 584ms
+ ✓ src/benchmark/phase12StrengthAssemble.test.ts (12 tests) 13341ms
+ ✓ src/engine/HorsePhase10Authority.test.ts (36 tests) 89ms
+ ✓ src/engine/horseDecision/responseValidation.test.ts (79 tests) 1325ms
+ ✓ src/benchmark/RemainingVariantStrengthLeague.test.ts (17 tests) 37962ms
+ ✓ src/engine/HorseDataLedger.test.ts (10 tests) 600ms
+ ✓ src/engine/remainingVariants/RemainingVariantLivePolicy.test.ts (40 tests) 5597ms
+ ✓ src/engine/HorseQualifiedAuthority.test.ts (26 tests) 17ms
+ ✓ src/scripts/phase12CompletionRecord.test.ts (17 tests) 1475ms
+ ✓ src/engine/HorsePhase8Replay.test.ts (10 tests) 1281ms
+ ✓ src/engine/remainingVariants/RemainingVariantPhase12Selection.test.ts (13 tests) 719ms
+ ✓ src/engine/remainingVariants/RemainingVariantDimensions.test.ts (5 tests) 4261ms
+ ✓ src/engine/omaha/OmahaVariantPhase11Selection.test.ts (13 tests) 934ms
+ ✓ src/engine/HorsePolicyRegistry.test.ts (35 tests) 549ms
+ ✓ src/engine/plo4/Plo4Phase10Selection.test.ts (4 tests) 407ms
+ ✓ src/engine/HorsePolicyGraphTelemetry.test.ts (6 tests) 47ms
+ ✓ src/engine/horseDecision/replay/HorseDecisionReplay.test.ts (8 tests) 675ms
+ ✓ src/engine/HorsePolicyGraph.test.ts (23 tests) 357ms
+ ✓ src/engine/remainingVariants/FixedLimitDeepPolicy.test.ts (8 tests) 7290ms
+ ✓ src/engine/HorsePhase12PolicyDigest.test.ts (3 tests) 470ms
+ ✓ src/engine/remainingVariants/RemainingVariantLegalForm.test.ts (9 tests) 18941ms
+ ✓ src/engine/remainingVariants/RemainingVariantSelectionGuard.test.ts (5 tests) 4193ms
+ ✓ src/benchmark/RemainingVariantSettlement.test.ts (5 tests) 627ms
+ ✓ src/engine/remainingVariants/RemainingVariantPolicyPack.test.ts (5 tests) 5565ms
+ ✓ src/benchmark/RemainingVariantReference.test.ts (3 tests) 2197ms
+ ✓ src/engine/remainingVariants/RemainingVariantCompletion.test.ts (12 tests) 56ms
+ ✓ src/benchmark/RemainingVariantPolicyLeague.test.ts (26 tests) 24829ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/engine/HorsePhase11Authority.test.ts > P11.3 null proof: no Phase 11 authority is selected today > while the selections are null, no committed Phase 11 qualification says qualified:true and no completion record exists
+ Test Files  1 failed | 34 passed (35)
+      Tests  1 failed | 1543 passed (1544)
+
+# The one failure after is HorsePhase11Authority.test.ts 'null proof' (committed Phase 11 evidence exists on main since the Phase 11 closure); it is unrelated to P12.3, fixed on a separate branch, and fails identically without this change.
+
+## Also run after (other suites that read Phase 12 receipts or the worker lifecycle)
+
+ ✓ src/engine/horseDecision/workerLifecycle.test.ts (21 tests)
+ ✓ src/engine/PineappleDiscardJoinContrast.test.ts (11 tests)
+ ✓ src/engine/horseDecision/workerPreparation.test.ts (3 tests)
+ Test Files  3 passed (3)
+      Tests  35 passed (35)

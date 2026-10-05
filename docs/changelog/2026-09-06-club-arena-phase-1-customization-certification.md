@@ -80,12 +80,11 @@ after the compatible client and engine are proven live.
   worktree
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
-  plus its six-file uncommitted regression patch. Current protected base at
-  final-candidate integration: `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`.
-  Protected main later advanced three commits to
-  `40e8dd9d04d2caebb3534d7afd52c006bbc0455a`; the ten changed paths have no
-  overlap with the Phase 1 branch delta, so the protected squash can retain
-  both without a candidate-changing conflict merge.
+  plus its six-file uncommitted regression patch. The candidate first
+  integrated protected main `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`.
+  After the final visual correction, protected main advanced to
+  `27174382f2ad44aedb775474af05a69175640354`; it is now integrated without a
+  conflict or an overlapping Phase 1 path.
 - Policy receipt refreshed after the latest resumption at 2026-10-05T15:27:51.455Z:
   version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
@@ -126,10 +125,10 @@ after the compatible client and engine are proven live.
   The live function hashes, owners, grants, RLS, realtime publication, ten face
   decks, and ten-frame/ten-aura catalog contract match the qualified post-image.
 - The final candidate integrates protected main
-  `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc` with Phase 1 head
-  `bc48d1165e5d2719d1d57b6e347b6a05b7d8c90a`, preserving both the MTT-only
-  Final Table/realtime/face-deck work and the concurrent protected-main gameplay
-  and horse-identity privacy fixes. Protected/prerequisite paths are byte-identical to current main and
+  `27174382f2ad44aedb775474af05a69175640354` with the Phase 1 commits,
+  preserving the MTT-only Final Table/realtime/face-deck work and every
+  concurrent protected-main gameplay, navigation, Diamond, and horse-policy
+  change. Protected/prerequisite paths are byte-identical to current main and
   `git diff --check` is clean. Client/server typechecks,
   production builds, 309 focused client tests, 33 focused engine tests, 16
   production browser journeys discovered by Playwright, policy classification,
@@ -157,6 +156,15 @@ after the compatible client and engine are proven live.
   passed 13/13, including purchase charge-once/auto-apply, two-tab realtime,
   accessibility/keyboard/zoom/forced-colors, and all thirty screenshots at
   the unchanged two-percent threshold.
+- Exact pushed correction `541d6be52ed982bb5f983ac8420c932be5f8ac0e`
+  repeated that proof on hosted Linux Chromium in run `37333729197`, job
+  `111843933274`: shared CSS beats, the real purchase/realtime/accessibility
+  gate, and all thirty Table Studio images passed with no retry or failure
+  artifact. Its server shard exposed that the branch still carried an older
+  protected-main horse test which did not name the already-supported
+  `work_budget` outcome on a loaded host. Protected main `27174382f2` contains
+  that exact correction and its connected Phase 12 implementation, so the
+  branch integrated it rather than weakening or blindly rerunning the test.
 - The same final-diff audit found that one account's unresolved collection RPC
   could block another account and that an old account lifecycle could update a
   new lifecycle's cache or sync status. The collection writer is now isolated

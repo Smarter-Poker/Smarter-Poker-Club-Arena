@@ -27,7 +27,7 @@ import {
 } from './omaha/OmahaVariantPolicyPack.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v2';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v3';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -43,7 +43,10 @@ export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-dige
  * value sources v1 left out: the five-card scorer every Omaha showdown score
  * reduces to (HorseFiveCardScore.ts), the rake specification the pot
  * arithmetic charges (config/rakeSpec.ts), and the seating tables the live
- * policy reads positions from (config/tableSeating.ts).
+ * policy reads positions from (config/tableSeating.ts). v3 (audit 2026-10-05)
+ * adds the betting-structure rules (BettingStructure.ts) that decide whether
+ * HorseLogic legalizes a proposal as pot limit, which the candidate's legal form
+ * and the `illegal_candidate` guard depend on.
  */
 export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freeze([
   'src/engine/omaha/OmahaVariantPolicyPack.ts',
@@ -66,6 +69,7 @@ export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/HorseFiveCardScore.ts',
   'src/config/rakeSpec.ts',
   'src/config/tableSeating.ts',
+  'src/engine/BettingStructure.ts',
 ]);
 
 /** Reads a server-relative source path. Throws on failure. */

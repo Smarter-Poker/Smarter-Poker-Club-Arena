@@ -526,6 +526,32 @@ describe('each Table Management section is its own page on its own frame', () =>
       'When A Club Joins A Union, Its Staff Can No Longer Create'
     );
   });
+
+  it('identifies an insufficient standalone-club role without claiming union affiliation', async () => {
+    mocks.access = async () => ({
+      allowed: false,
+      unionId: null,
+      reason: 'not_owner_or_admin',
+    });
+    renderAt(BASE);
+    expect(await screen.findByRole('heading', { name: 'Club Staff Access Required' })).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.'
+    );
+    expect(screen.queryByText(/Managed By Its Union/i)).toBeNull();
+  });
+
+  it('reports an unverifiable access check without inventing a union affiliation', async () => {
+    mocks.access = async () => ({ allowed: false, unionId: null, reason: 'check_failed' });
+    renderAt(BASE);
+    expect(
+      await screen.findByRole('heading', { name: 'Management Access Could Not Be Verified' })
+    ).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The Authoritative Game-Management Access Check Is Unavailable'
+    );
+    expect(screen.queryByText(/Managed By Its Union/i)).toBeNull();
+  });
 });
 
 describe('the dialogs over the board wear their own families', () => {

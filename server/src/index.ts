@@ -127,6 +127,11 @@ const engineWs = new EngineWebSocketServer({
     gameServer.getTableEngine(tableId)?.heartbeat(userId);
     gameServer.lightningRooms.connect(tableId, userId);
   },
+  // 2026-10-05: a PONG or RESYNC on an admitted table socket is proof of
+  // life, the same as an HTTP /heartbeat (presence only, never strikes).
+  onAlive: (tableId, userId) => {
+    gameServer.getTableEngine(tableId)?.heartbeat(userId);
+  },
   onDisconnect: (tableId, userId) => {
     gameServer.getTableEngine(tableId)?.notifyTransportDisconnect(userId);
     gameServer.lightningRooms.disconnect(tableId, userId);

@@ -242,6 +242,16 @@ export interface EngineWebSocketServerOptions {
    */
   onConnect?: (tableId: string, userId: string) => void;
   onDisconnect?: (tableId: string, userId: string) => void;
+  /**
+   * PROOF OF LIFE FROM THE SOCKET (2026-10-05). A PONG or a RESYNC on an
+   * admitted table socket is the same evidence an HTTP /heartbeat is: the
+   * page is running and answering. Before this only onConnect fed presence,
+   * so a player whose HTTP beats were being lost (a proxy, a flaky request
+   * path) while their socket answered every PING was concluded gone after
+   * thirty seconds of HTTP silence. Presence only, never strikes (a beat
+   * is proof of a socket, not of a player; DisconnectEngine.heartbeat).
+   */
+  onAlive?: (tableId: string, userId: string) => void;
 }
 
 interface ConnectionState {
@@ -420,6 +430,7 @@ export class EngineWebSocketServer {
   ) => Promise<TableConnectionAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onAlive?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
   private accessCompleted = 0;
@@ -455,6 +466,7 @@ export class EngineWebSocketServer {
     };
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
+    this.onAlive = opts.onAlive;
     this.onDisconnect = opts.onDisconnect;
     this.wss = new WebSocketServer({ noServer: true });
   }
@@ -930,6 +942,15 @@ export class EngineWebSocketServer {
   }
 
   /** A private-state replay failure must not abort transport recovery or presence. */
+  private notifyAlive(tableId: string, userId: string): void {
+    if (!tableId || !userId) return;
+    try {
+      this.onAlive?.(tableId, userId);
+    } catch (error) {
+      reportError(error, 'EngineWS.proof_of_life');
+    }
+  }
+
   private resyncPlayer(tableId: string, userId: string): void {
     try {
       this.onResync?.(tableId, userId);
@@ -1194,6 +1215,11 @@ export class EngineWebSocketServer {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        if (conn.subs && this.connectionCanWrite(conn)) {
+          for (const [subTableId, sub] of conn.subs) {
+            if (typeof sub !== 'symbol') this.notifyAlive(subTableId, conn.userId);
+          }
+        }
         return;
       case 'SUBSCRIBE':
         if (!tableId) return;
@@ -1211,7 +1237,10 @@ export class EngineWebSocketServer {
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
           this.hub.resync(tableId, sub);
-          if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
+          if (this.connectionCanWrite(conn)) {
+            this.notifyAlive(tableId, conn.userId);
+            this.resyncPlayer(tableId, conn.userId);
+          }
         }
         return;
       }
@@ -1270,13 +1299,17 @@ export class EngineWebSocketServer {
       case 'PONG':
         conn.lastPongAt = Date.now();
         conn.heartbeatGraceAt = 0;
+        this.notifyAlive(conn.tableId, conn.userId);
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
         this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        if (this.connectionCanWrite(conn)) this.resyncPlayer(conn.tableId, conn.userId);
+        if (this.connectionCanWrite(conn)) {
+          this.notifyAlive(conn.tableId, conn.userId);
+          this.resyncPlayer(conn.tableId, conn.userId);
+        }
         return;
       }
       default:

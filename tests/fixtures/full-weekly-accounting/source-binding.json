@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "cc161efbcbd11dd8e9a55991259b707b2cf64ce40e92abb14c7f3e1f69bf5aab",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -2669,6 +2669,13 @@
       "to": "1ea43ed9d36a1ea3705e1e618db1e836faf48797010dfe736ac1b93b95ef8b21",
       "on": "2026-10-05",
       "why": "Cascade of the reviewed Phase 1 customization classifier restamp. The nested binding changes only its active classifier pin and append-only audit row; every Spin custody source, fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+      "to": "cc161efbcbd11dd8e9a55991259b707b2cf64ce40e92abb14c7f3e1f69bf5aab",
+      "on": "2026-10-05",
+      "why": "HorseOrchestrator's dead browser-side horse seating methods (ensureHorsesAt4Tables, enforceMinimumPlayers, smartSeatSelection, dynamicPersonaRotation) are removed, so its discarded-read allowance tightens from 8 to 2; no baseline is widened and no financial source, fixture or assertion changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {

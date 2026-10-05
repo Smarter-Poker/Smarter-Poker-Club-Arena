@@ -524,6 +524,13 @@ const PER_TABLE_LIVENESS_SAMPLE_CAP = 40;
 // GAME SERVER — Main Orchestrator
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Consecutive short fills before a horse-only seat-first board is reported
+ * stuck: 12 s, 24 s ... 384 s of backoff, about 12 minutes in all. See the
+ * alarm in topUpPartialSeatFirst.
+ */
+export const SEAT_FIRST_STUCK_AFTER_MISSES = 6;
+
 /** Who sits at a REGISTERING seat-first game, as the fast lane needs it. */
 interface SeatFirstOccupancy {
   paid: number;
@@ -9929,7 +9936,7 @@ export class GameServer {
           // prize_pool_finalized: a board whose pool is finalized has left
           // registration (see the fill gate below), whatever its status says.
           .select(
-            'format_contract, id, name, max_players, variant, start_time, prize_pool_finalized'
+            'format_contract, id, name, max_players, variant, start_time, created_at, prize_pool_finalized'
           )
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
@@ -10024,7 +10031,14 @@ export class GameServer {
               const startMs = t.start_time ? Date.parse(String(t.start_time)) : NaN;
               const windowClosed = Number.isFinite(startMs) && startMs <= Date.now();
               this.launchDiscoveryJob(
-                this.fillPartialSeatFirstGame(id, seats, paid, windowClosed, startMs),
+                this.fillPartialSeatFirstGame(
+                  id,
+                  seats,
+                  paid,
+                  windowClosed,
+                  startMs,
+                  Date.parse(String((t as { created_at?: string | null }).created_at ?? ''))
+                ),
                 'GameServer.human_seat_first_fill_error',
                 { tournamentId: id }
               );
@@ -10416,6 +10430,8 @@ export class GameServer {
   private seatFirstFillMisses = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
+  /** Horse-only boards already reported stuck (once each; cleared when filled). */
+  private seatFirstStuckReported = new Set<string>();
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -10443,7 +10459,8 @@ export class GameServer {
     seats: number,
     paid: number,
     windowClosed: boolean,
-    startMs: number = NaN
+    startMs: number = NaN,
+    createdAtMs: number = NaN
   ): Promise<void> {
     /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
 
@@ -10487,7 +10504,8 @@ export class GameServer {
       const holdUntil = seatFirstHumanPartnerHoldUntilMs(
         startMs,
         occupancy.firstHumanAtMs,
-        seatFirstHumanPartnerHoldJitterMs(tournamentId)
+        seatFirstHumanPartnerHoldJitterMs(tournamentId),
+        createdAtMs
       );
       const now = Date.now();
       if (holdUntil > now) {
@@ -10671,6 +10689,7 @@ export class GameServer {
     // misses, a short one counts another.
     if (added >= shortfall) {
       this.seatFirstFillMisses.delete(tournamentId);
+      this.seatFirstStuckReported.delete(tournamentId);
       this.seatFirstOccupancy.delete(tournamentId);
       this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
     } else
@@ -10685,16 +10704,42 @@ export class GameServer {
       );
     }
     if (added < shortfall) {
+      /* THE ALARM IS FOR A PERSON WHO IS WAITING (2026-10-05). It was raised
+         for every short board, and almost all of them have nobody in them:
+         measured after the 02:03 UTC break on 2026-10-05, 7-10 "CANNOT FILL"
+         a minute, every one a horse-only board whose window had closed while
+         the fleet was still re-seating ("the pool is thin"), not one with a
+         human seated. Those boards are not failing - they wait, backed off,
+         for the next free horse and fill within minutes. A human in a seat
+         keeps the once-a-minute alarm. A horse-only board says so ONCE, and
+         only when it has stayed short through the whole backoff ladder
+         (SEAT_FIRST_STUCK_AFTER_MISSES, about 12 minutes) - the shape of the
+         2026-09-02 boards stuck for hours, which is the case worth a line. */
       const now = Date.now();
-      const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
-      if (now - lastReport >= 60_000) {
-        this.lastHumanWaitReportAt.set(tournamentId, now);
+      if (forHuman) {
+        const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
+        if (now - lastReport >= 60_000) {
+          this.lastHumanWaitReportAt.set(tournamentId, now);
+          reportError(
+            new Error(
+              `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
+                `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            ),
+            'GameServer.seat_first_human_waiting'
+          );
+        }
+      } else if (
+        (this.seatFirstFillMisses.get(tournamentId) ?? 0) >= SEAT_FIRST_STUCK_AFTER_MISSES &&
+        !this.seatFirstStuckReported.has(tournamentId)
+      ) {
+        if (this.seatFirstStuckReported.size > 1000) this.seatFirstStuckReported.clear();
+        this.seatFirstStuckReported.add(tournamentId);
         reportError(
           new Error(
-            `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
-              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            `[GameServer] SEAT-FIRST BOARD STUCK ${tournamentId.slice(0, 8)}: ` +
+              `${paid}/${seats} paid, still short after ${SEAT_FIRST_STUCK_AFTER_MISSES} backed-off fills (${why})`
           ),
-          'GameServer.seat_first_human_waiting'
+          'GameServer.seat_first_board_stuck'
         );
       }
     }

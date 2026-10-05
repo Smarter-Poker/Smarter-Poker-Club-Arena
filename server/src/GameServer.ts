@@ -103,6 +103,7 @@ import {
   seatFirstStartStalled,
   SEAT_FIRST_START_STALL_MS,
   seatFirstHumanPartnerHoldUntilMs,
+  seatFirstHumanPartnerHoldJitterMs,
   firstHumanSeatedAtMs,
   HUMAN_SEAT_DEMAND_TTL_MS,
 } from './services/TournamentRecurringService.js';
@@ -7813,9 +7814,14 @@ export class GameServer {
                     target,
                     { pass: topUpPass }
                   );
+                  /* A partner hold refusing the ask is a deliberate wait,
+                     not an empty pool: it does not back the event off. */
+                  const held =
+                    added === 0 &&
+                    this.tournamentRecurring.seatFirstPartnerHoldUntil(tournament.id) > Date.now();
                   this.pastStartTopUpClock.set(tournament.id, {
                     at: now,
-                    misses: added > 0 ? 0 : misses + 1,
+                    misses: added > 0 ? 0 : held ? misses : misses + 1,
                   });
                   if (added > 0) {
                     console.log(
@@ -9990,7 +9996,9 @@ export class GameServer {
              * from the first seconds of boot — now owns the human case too:
              * a partially-paid seat-first game with a HUMAN in a seat is
              * topped up immediately, per Dan's 2026-08-26 rule ("the moment
-             * one does, topUpWithHorses fills the remaining seats"). A
+             * one does, topUpWithHorses fills the remaining seats") - since
+             * 2026-10-04 the moment that human's partner hold ends, so two
+             * people can meet at one table (seatFirstHumanPartnerHoldUntilMs). A
              * partial game with only horses is left alone on purpose: that
              * is the horse-opened board holding its last seat for a human
              * (60-150s window), and the held-empty rotation — filling those
@@ -10476,7 +10484,11 @@ export class GameServer {
        last HUMAN_SEAT_DEMAND_TTL_MS the seats are declared, so the horses
        this human will need are still free the moment the hold ends. */
     if (hasHuman) {
-      const holdUntil = seatFirstHumanPartnerHoldUntilMs(startMs, occupancy.firstHumanAtMs);
+      const holdUntil = seatFirstHumanPartnerHoldUntilMs(
+        startMs,
+        occupancy.firstHumanAtMs,
+        seatFirstHumanPartnerHoldJitterMs(tournamentId)
+      );
       const now = Date.now();
       if (holdUntil > now) {
         if (holdUntil - now <= HUMAN_SEAT_DEMAND_TTL_MS) {
@@ -10621,6 +10633,22 @@ export class GameServer {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats, {
       forHuman,
     });
+    /* THE HOLD REFUSED IT, THE POOL DID NOT (2026-10-04 audit). This lane's
+       "who is seated" answer is cached per paid count, so it can be stale -
+       a human who left and another who sat at the same count, or a board
+       first read as horse-only. topUpWithHorses always reads the seats fresh
+       and refuses inside a running partner hold. That refusal is a
+       deliberate wait: forget the cached answer so the next pass re-reads
+       who is here, and neither count a miss (which backs the board off for
+       minutes) nor raise CANNOT FILL. */
+    if (
+      added === 0 &&
+      this.tournamentRecurring.seatFirstPartnerHoldUntil(tournamentId) > Date.now()
+    ) {
+      this.seatFirstOccupancy.delete(tournamentId);
+      this.seatFirstFillMisses.delete(tournamentId);
+      return;
+    }
     let shortfall = seats - paid;
     /* THE ALARM IS JUDGED ON WHAT THE TOP-UP SAW, NOT ON THE COUNT THIS LANE
        READ A SECOND EARLIER (2026-09-11). `paid` is this lane's read; the

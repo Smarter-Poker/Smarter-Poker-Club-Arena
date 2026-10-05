@@ -25,14 +25,17 @@ const SERVER = readFileSync(
 
 describe('seatFirstPartnerHoldEndsAtMs', () => {
   const sat = 1_000_000;
-  it('is the later of the window and 90 s after the seat, capped at 350 s', () => {
-    expect(seatFirstPartnerHoldEndsAtMs(sat + 15_000, sat)).toBe(sat + 90_000);
-    expect(seatFirstPartnerHoldEndsAtMs(sat + 200_000, sat)).toBe(sat + 200_000);
+  it('is the later of the window and 90 s after the seat, plus the 30 s spread, capped at 350 s', () => {
+    expect(seatFirstPartnerHoldEndsAtMs(sat + 15_000, sat)).toBe(sat + 120_000);
+    expect(seatFirstPartnerHoldEndsAtMs(sat + 200_000, sat)).toBe(sat + 230_000);
     expect(seatFirstPartnerHoldEndsAtMs(sat + 999_000, sat)).toBe(sat + 350_000);
   });
-  it('falls back to the window alone after a reload (no seat time)', () => {
-    expect(seatFirstPartnerHoldEndsAtMs(sat, null)).toBe(sat);
+  it('with no seat time at all it is still an upper bound on the window', () => {
+    expect(seatFirstPartnerHoldEndsAtMs(sat, null)).toBe(sat + 30_000);
     expect(seatFirstPartnerHoldEndsAtMs(null, null)).toBe(-Infinity);
+  });
+  it('uses the same spread as the engine', () => {
+    expect(SERVER).toContain('export const SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS = 30_000;');
   });
   it('uses the same constants as the engine', () => {
     expect(SERVER).toContain(
@@ -67,11 +70,37 @@ describe('the table wires it', () => {
   it('the footer shows the hold, and the stall alarm starts only after it', () => {
     expect(TABLE_PAGE).toContain('return seatFirstPartnerHoldLabel(left);');
     expect(TABLE_PAGE).toContain('seatFirstPartnerHoldStatus(holdEnds - seatFillClock)');
-    expect(TABLE_PAGE).toContain('}, holdLeftMs + 30_000);');
+  });
+});
+
+describe('the hold is measured from the seat the database holds', () => {
+  it('the roster sync reads the hero joined_at and every hold read prefers it', () => {
+    expect(TABLE_PAGE).toContain(
+      ".select('seat_number, user_id, stack, is_sitting_out, horse_id, joined_at')"
+    );
+    expect(TABLE_PAGE).toContain(
+      'heroSeatJoinedAtRef.current = Number.isFinite(joined) ? joined : null;'
+    );
+    const reads =
+      TABLE_PAGE.split('heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current').length - 1;
+    expect(reads).toBe(4);
+    expect(TABLE_PAGE).not.toMatch(
+      /seatFirstPartnerHoldEndsAtMs\([^)]*,\s*seatAcquiredAtRef\.current\s*\)/
+    );
+  });
+  it('the stall timer re-measures the hold when it fires and re-arms while it runs', () => {
+    expect(TABLE_PAGE).toContain('timer = window.setTimeout(fire, stillHolding + 30_000);');
+    expect(TABLE_PAGE).toContain('timer = window.setTimeout(fire, holdLeftMs() + 30_000);');
+  });
+  it('the countdown clock decides its pace on every tick', () => {
+    expect(TABLE_PAGE).toContain('if (counting || ticks % 15 === 0) setSeatFillClock(Date.now());');
   });
 });
 
 describe('the felt deals the moment the game does', () => {
+  it('every pre-start path that learns play has begun asks the socket to join', () => {
+    expect(TABLE_PAGE.split('seatFirstDealtAtRef.current = Date.now();').length - 1).toBe(3);
+  });
   it('a full board re-reads its row each second, bounded, instead of every 10 s', () => {
     expect(TABLE_PAGE).toContain(
       'if (seatRows.length >= seatFirstBuyIn.seats && fullRechecks < 15 && !fullRecheckTimer)'

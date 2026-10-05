@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
@@ -90,18 +91,29 @@ class PlayerStatusServiceClass {
        * name as if they had written it. The column exists now
        * (20260828034000_profiles_status_text.sql), so read the real one.
        */
-      .select('id, status_text, is_online')
+      .select('id, status_text')
       .eq('id', userId)
       .maybeSingle();
 
     if (error || !data) return null;
+
+    /* Online-now is the presence door's answer (the flag AND a heartbeat
+       under five minutes old), never the raw is_online flag, which stays true
+       long after somebody leaves. One definition for every surface:
+       tests/presence-has-one-definition.law.test.ts. */
+    let isOnline = false;
+    try {
+      isOnline = (await readPresence([data.id])).get(data.id) === true;
+    } catch (e) {
+      reportError(e, 'PlayerStatusService.getPlayerStatus.presence');
+    }
 
     return {
       userId: data.id,
       statusText: data.status_text || null,
       playingAt: null,
       playingAtTableId: null,
-      isOnline: data.is_online || false,
+      isOnline,
     };
   }
 
@@ -132,12 +144,23 @@ class PlayerStatusServiceClass {
 
     if (friendIds.size === 0) return [];
 
-    // Step 2: Batch-fetch profiles for all friend IDs
+    // Step 2: who of them is online now, by the presence door - not a filter
+    // on the raw is_online flag, which stays true long after somebody leaves.
+    let presence: Map<string, boolean>;
+    try {
+      presence = await readPresence(Array.from(friendIds));
+    } catch (e) {
+      reportError(e, 'PlayerStatusService.getFriendsStatus.presence');
+      return [];
+    }
+    const onlineIds = Array.from(friendIds).filter((id) => presence.get(id) === true);
+    if (onlineIds.length === 0) return [];
+
+    // Step 3: their public status lines.
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, status_text, is_online')
-      .in('id', Array.from(friendIds))
-      .eq('is_online', true);
+      .select('id, status_text')
+      .in('id', onlineIds);
 
     if (error || !profiles) return [];
 

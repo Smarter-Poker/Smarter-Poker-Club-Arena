@@ -82,8 +82,9 @@ after the compatible client and engine are proven live.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. The candidate first
   integrated protected main `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`.
-  After the final visual correction, protected main advanced to
-  `27174382f2ad44aedb775474af05a69175640354`; it is now integrated without a
+  After the final visual correction, protected main advanced through
+  `27174382f2ad44aedb775474af05a69175640354` to
+  `e187377e21eb0f408d2287e8022821a1f83f58c1`; it is now integrated without a
   conflict or an overlapping Phase 1 path.
 - Policy receipt refreshed after the latest resumption at 2026-10-05T15:27:51.455Z:
   version 2.9, manifest
@@ -125,7 +126,7 @@ after the compatible client and engine are proven live.
   The live function hashes, owners, grants, RLS, realtime publication, ten face
   decks, and ten-frame/ten-aura catalog contract match the qualified post-image.
 - The final candidate integrates protected main
-  `27174382f2ad44aedb775474af05a69175640354` with the Phase 1 commits,
+  `e187377e21eb0f408d2287e8022821a1f83f58c1` with the Phase 1 commits,
   preserving the MTT-only Final Table/realtime/face-deck work and every
   concurrent protected-main gameplay, navigation, Diamond, and horse-policy
   change. Protected/prerequisite paths are byte-identical to current main and

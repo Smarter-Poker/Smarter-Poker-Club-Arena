@@ -1,0 +1,38 @@
+# P12.1 evidence: legal-form-main (see docs/horse-brain-phase12-1-input-binding-2026-10-05.md)
+{"variant":"short_deck","mode":"cash","spots":820,"eligible":759,"changed":574,"wagers":37,"allIns":1,"calls":56,"rewrites":46}
+  {"proposal":{"action":"call","amount":53},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":2,"stack":53,"bet":0,"currentBet":76.66,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"raise","amount":0.25},"legal":{"action":"all_in"},"reason":"preflop_entry","stage":"preflop","bigBlind":0.1,"stack":0.25,"bet":0,"currentBet":0.1,"minRaiseTo":0.2,"maxRaiseTo":0.25,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"call","amount":0.01},"legal":{"action":"all_in"},"reason":"preflop_call_off","stage":"preflop","bigBlind":0.1,"stack":0.01,"bet":0.24,"currentBet":12.11,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"short_deck","mode":"tournament","spots":601,"eligible":587,"changed":458,"wagers":19,"allIns":1,"calls":49,"rewrites":20}
+  {"proposal":{"action":"call","amount":203},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"river","bigBlind":20,"stack":203,"bet":0,"currentBet":231,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":566},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"river","bigBlind":100,"stack":566,"bet":240,"currentBet":1012,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":860},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":20,"stack":860,"bet":0,"currentBet":1027,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"pineapple","mode":"cash","spots":1037,"eligible":983,"changed":708,"wagers":34,"allIns":0,"calls":86,"rewrites":69}
+  {"proposal":{"action":"raise","amount":28.75},"legal":{"action":"raise","amount":28},"reason":"preflop_entry","stage":"preflop","bigBlind":10,"stack":395.46,"bet":0,"currentBet":10,"minRaiseTo":20,"maxRaiseTo":395.46,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"raise","amount":51.25},"legal":{"action":"raise","amount":51},"reason":"preflop_entry","stage":"preflop","bigBlind":10,"stack":118.07,"bet":0,"currentBet":10,"minRaiseTo":20,"maxRaiseTo":118.07,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"call","amount":11.68},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":10,"stack":11.68,"bet":76.45,"currentBet":1600.14,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"flh","mode":"cash","spots":1975,"eligible":1975,"changed":944,"wagers":50,"allIns":2,"calls":581,"rewrites":92}
+  {"proposal":{"action":"call","amount":0.19999999999999998},"legal":{"action":"call","amount":0.2},"reason":"variant_price_call","stage":"flop","bigBlind":0.1,"stack":7.08,"bet":0.1,"currentBet":0.3,"minRaiseTo":0.4,"maxRaiseTo":0.4,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"call","amount":0.09999999999999998},"legal":{"action":"call","amount":0.1},"reason":"variant_price_call","stage":"flop","bigBlind":0.1,"stack":24.23,"bet":0.2,"currentBet":0.3,"minRaiseTo":0.4,"maxRaiseTo":0.4,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"call","amount":0.22},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":0.1,"stack":0.22,"bet":0,"currentBet":0.3,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"flh","mode":"tournament","spots":1393,"eligible":1393,"changed":707,"wagers":25,"allIns":0,"calls":363,"rewrites":25}
+  {"proposal":{"action":"call","amount":17},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":20,"stack":17,"bet":20,"currentBet":40,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":75},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":600,"stack":75,"bet":1800,"currentBet":2400,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":289},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"flop","bigBlind":600,"stack":289,"bet":0,"currentBet":600,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"flo8","mode":"cash","spots":1532,"eligible":1532,"changed":654,"wagers":37,"allIns":0,"calls":537,"rewrites":71}
+  {"proposal":{"action":"call","amount":0.16},"legal":{"action":"all_in"},"reason":"variant_price_call","stage":"turn","bigBlind":0.1,"stack":0.16,"bet":0.2,"currentBet":0.6,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":0.19999999999999996},"legal":{"action":"call","amount":0.2},"reason":"variant_price_call","stage":"turn","bigBlind":0.1,"stack":8.81,"bet":0.4,"currentBet":0.6,"minRaiseTo":0.8,"maxRaiseTo":0.8,"legalActions":["fold","call","raise","all_in"]}
+  {"proposal":{"action":"call","amount":0.20000000000000007},"legal":{"action":"call","amount":0.2},"reason":"split_price_call","stage":"turn","bigBlind":0.1,"stack":3.59,"bet":0.6,"currentBet":0.8,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+{"variant":"flo8","mode":"tournament","spots":1201,"eligible":1201,"changed":610,"wagers":15,"allIns":0,"calls":351,"rewrites":27}
+  {"proposal":{"action":"call","amount":69},"legal":{"action":"all_in"},"reason":"split_price_call","stage":"flop","bigBlind":100,"stack":69,"bet":0,"currentBet":100,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":224},"legal":{"action":"all_in"},"reason":"split_price_call","stage":"turn","bigBlind":100,"stack":224,"bet":0,"currentBet":249,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+  {"proposal":{"action":"call","amount":590},"legal":{"action":"all_in"},"reason":"preflop_call_off","stage":"preflop","bigBlind":600,"stack":590,"bet":1800,"currentBet":2400,"minRaiseTo":null,"maxRaiseTo":null,"legalActions":["fold","call","all_in"]}
+   × P12.1 every Phase 12 proposal is in the legalizer form > short_deck cash: the real legalizer never rewrites a proposal (70 real hands) 1058ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > short_deck tournament: the real legalizer never rewrites a proposal (50 real hands) 474ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > pineapple cash: the real legalizer never rewrites a proposal (90 real hands) 3564ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > flh cash: the real legalizer never rewrites a proposal (70 real hands) 3228ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > flh tournament: the real legalizer never rewrites a proposal (50 real hands) 1831ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > flo8 cash: the real legalizer never rewrites a proposal (60 real hands) 6312ms
+   × P12.1 every Phase 12 proposal is in the legalizer form > flo8 tournament: the real legalizer never rewrites a proposal (40 real hands) 5417ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  7 failed | 2 skipped (9)

@@ -551,7 +551,10 @@ async function openTableSettings(page: Page) {
 }
 
 async function openStudio(settings: Locator) {
-  await tapReady(settings.getByRole('button', { name: 'Open Studio' }));
+  // Playwright resolves a button by its accessible name. SettingsPanel's
+  // visible copy is "Open Studio", but its deliberate aria-label is the more
+  // specific "Open Table Studio" used by every other production certificate.
+  await tapReady(settings.getByRole('button', { name: 'Open Table Studio', exact: true }));
   const studio = settings.page().getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 30_000 });
   await expect(studio.locator('.theme-modal__grid')).toHaveAttribute('aria-busy', 'false', {

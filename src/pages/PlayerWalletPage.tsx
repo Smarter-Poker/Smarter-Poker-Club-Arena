@@ -13,7 +13,7 @@
  *             bays) - useWalletStore -> WalletService / DiamondService.
  *    SEND     Diamonds to an accepted friend: POST /api/store/diamond-transfer
  *             (World Hub, server-authoritative, friend + age + velocity gated).
- *             Chips between your own wallets: rpc fn_wallet_type_transfer.
+ *             Chips: the selected club cashier, with club-scoped authority.
  *    RECEIVE  Your player number and profile link, plus every credit that
  *             landed in your diamond ledger (`diamond_transactions`, RLS-scoped
  *             to the caller).
@@ -101,18 +101,6 @@ const PLATE = {
  * invention that refused sends the platform allows.
  */
 const MIN_DIAMOND_SEND = 1;
-
-/**
- * In-page messages are not toasts, so `formatPopupText` (which the Toast layer
- * applies for every popup in the app) never touched them. Dan's casing law is
- * about what the PLAYER reads, not about which component renders it, so the
- * strings below are written in the same Title Case the toasts come out in.
- */
-const MSG = {
-  invalidAmount: 'Please Enter A Valid Amount',
-  sameWallet: 'Cannot Transfer To The Same Wallet',
-  transferFailed: 'Transfer Failed. Please Try Again',
-} as const;
 
 const fmtNum = (n: number) => (Number.isFinite(n) ? n : 0).toLocaleString();
 
@@ -519,7 +507,7 @@ export default function PlayerWalletPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuthUser();
-  const { balances, diamonds, loadBalances, loadDiamonds, internalTransfer } = useWalletStore();
+  const { balances, diamonds, loadBalances, loadDiamonds } = useWalletStore();
   /**
    * A dispute is filed AGAINST A CLUB, and this page is not club-scoped, so
    * the Dispute button used to open a modal hard-wired to `clubId=""`.
@@ -591,11 +579,6 @@ export default function PlayerWalletPage() {
   const heldCollateral = walletSummary ? walletSummary.collateral : 0;
 
   const [activeTab, setActiveTab] = useState<WalletTab>('overview');
-  const [transferFrom, setTransferFrom] = useState<WalletType>('PLAYER');
-  const [transferTo, setTransferTo] = useState<WalletType>('BUSINESS');
-  const [transferAmount, setTransferAmount] = useState('');
-  const [isTransferring, setIsTransferring] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -649,15 +632,6 @@ export default function PlayerWalletPage() {
   /* Three outcomes, three shapes: `undefined` still reading, `null` the read
      failed (10.86: never a zero that means "unknown"), an object the truth. */
   const [lifetime, setLifetime] = useState<DiamondLifetimeStats | null | undefined>(undefined);
-
-  // Auto-dismiss messages after 8s
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => {
-      if (isMounted.current) setMessage(null);
-    }, 8000);
-    return () => clearTimeout(t);
-  }, [message, isMounted]);
 
   // Load wallet data
   useEffect(() => {
@@ -756,64 +730,6 @@ export default function PlayerWalletPage() {
   const totalBalance = balances.BUSINESS.total + balances.PLAYER.total + balances.PROMO.total;
   const animatedTotal = useAnimatedNumber(totalBalance, 1000);
   const animatedDiamonds = useAnimatedNumber(diamonds, 800);
-
-  // ═══════════════════ INTERNAL CHIP TRANSFER (own wallets) ═══════════════════
-  const handleTransfer = async () => {
-    const amount = parseFloat(transferAmount);
-    // `parseFloat` accepts Infinity and, on a `type="number"` field, whatever a
-    // paste puts there. A non-finite amount reached the RPC as `Infinity`.
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMessage({ type: 'error', text: MSG.invalidAmount });
-      return;
-    }
-    if (transferFrom === transferTo) {
-      setMessage({ type: 'error', text: MSG.sameWallet });
-      return;
-    }
-    if (amount > balances[transferFrom].available) {
-      setMessage({
-        type: 'error',
-        text: `Insufficient Balance. Available: ${balances[transferFrom].available.toLocaleString()}`,
-      });
-      return;
-    }
-    /* Before `setIsTransferring(true)`, not inside the try: a `return` there
-       skipped the reset at the bottom and left the button on "Transferring..."
-       for the life of the page. */
-    if (!user?.id) return;
-    setIsTransferring(true);
-    setMessage(null);
-    try {
-      // 2026-08-27: internalTransfer NEVER throws - it returns false on the
-      // store mutex skip, on insufficient balance, and on every RPC failure
-      // (the store swallows those into reportError). This success message used
-      // to fire unconditionally after the await, so a REFUSED transfer told
-      // the player it succeeded, cleared their input and emitted
-      // BALANCE_UPDATED. The catch below was dead for every store-level
-      // failure. Honour the boolean.
-      const transferred = await internalTransfer(user.id, transferFrom, transferTo, amount);
-      if (!transferred) {
-        if (isMounted.current) {
-          setMessage({ type: 'error', text: MSG.transferFailed });
-          setIsTransferring(false);
-        }
-        return;
-      }
-      if (isMounted.current) {
-        setMessage({
-          type: 'success',
-          text: `Transferred ${amount.toLocaleString()} Chips Successfully`,
-        });
-        setTransferAmount('');
-      }
-      loadBalances(user.id, { force: true });
-      masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
-    } catch (e) {
-      reportError(e, 'PlayerWalletPage.handleTransfer');
-      if (isMounted.current) setMessage({ type: 'error', text: MSG.transferFailed });
-    }
-    if (isMounted.current) setIsTransferring(false);
-  };
 
   // ═══════════════════ SEND DIAMONDS TO A FRIEND ═══════════════════
   /*
@@ -1423,81 +1339,23 @@ export default function PlayerWalletPage() {
               </div>
             </section>
 
-            <section className="vault-panel" aria-labelledby="internal-transfer-title">
-              <h3 id="internal-transfer-title" className="vault-panel__title">
-                Move Chips Between My Wallets
+            <section className="vault-panel" aria-labelledby="club-chip-transfer-title">
+              <h3 id="club-chip-transfer-title" className="vault-panel__title">
+                Manage Club Chips
               </h3>
               <p className="vault-panel__sub">
-                Business, Player And Promo Are Separate Accounts. Move Funds Between Them Instantly.
+                Chips Belong To Their Club. Open The Club Cashier To View Your Balance And Available
+                Transfers.
               </p>
-              <div className="vault-form">
-                <label className="vault-field">
-                  <span className="vault-field__label">From</span>
-                  <select
-                    className="vault-select"
-                    value={transferFrom}
-                    onChange={(e) => setTransferFrom(e.target.value as WalletType)}
-                    aria-label="Transfer From Wallet"
-                  >
-                    {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
-                      <option key={type} value={type}>
-                        {WALLET_CONFIG[type].icon} {WALLET_CONFIG[type].label} (
-                        {balances[type].available.toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span className="vault-field__label">To</span>
-                  <select
-                    className="vault-select"
-                    value={transferTo}
-                    onChange={(e) => setTransferTo(e.target.value as WalletType)}
-                    aria-label="Transfer To Wallet"
-                  >
-                    {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
-                      <option key={type} value={type}>
-                        {WALLET_CONFIG[type].icon} {WALLET_CONFIG[type].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span className="vault-field__label">Amount</span>
-                  <input
-                    className="vault-input"
-                    type="number"
-                    placeholder="0.00"
-                    value={transferAmount}
-                    onChange={(e) => setTransferAmount(e.target.value)}
-                    aria-label="Transfer Amount"
-                    inputMode="decimal"
-                    min="0"
-                  />
-                </label>
-                {message && (
-                  <div
-                    className={`message ${message.type}`}
-                    role={message.type === 'error' ? 'alert' : 'status'}
-                  >
-                    {message.text}
-                  </div>
-                )}
-                <div className="vault-form__row">
-                  <span className="vault-form__hint">
-                    Available In {WALLET_CONFIG[transferFrom].label}:{' '}
-                    {balances[transferFrom].available.toLocaleString()}
-                  </span>
-                  <button
-                    type="button"
-                    className="vault-btn primary"
-                    onClick={handleTransfer}
-                    disabled={isTransferring || !transferAmount}
-                  >
-                    {isTransferring ? 'Transferring...' : 'Transfer'}
-                  </button>
-                </div>
-              </div>
+              <button
+                type="button"
+                className="vault-btn primary"
+                onClick={() =>
+                  navigate(currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier')
+                }
+              >
+                Open Club Cashier
+              </button>
             </section>
 
             {/* THE SEND CONFIRMS ITSELF.

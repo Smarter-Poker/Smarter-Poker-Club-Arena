@@ -9,6 +9,7 @@ import FriendChallengesPanel from '../components/social/FriendChallengesPanel';
 import FriendSuggestions from '../components/social/FriendSuggestions';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useProfilePresence } from '../hooks/useProfilePresence';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -141,7 +142,6 @@ export default function FriendsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnostics>({
     unavailableProfiles: 0,
   });
@@ -204,36 +204,13 @@ export default function FriendsPage() {
     if (user?.id) loadFriendsRef.current();
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const presenceKey = 'global-presence';
-    const channel = masterBus.getOrCreateChannel(presenceKey);
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const onlineIds = new Set<string>();
-        Object.values(state).forEach((presences) => {
-          (presences as unknown as Array<{ user_id: string }>).forEach((presence) => {
-            if (presence.user_id) onlineIds.add(presence.user_id);
-          });
-        });
-        setOnlineUserIds(onlineIds);
-      })
-      .subscribe(async (status: string, error?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
-        } else if (status === 'CHANNEL_ERROR' && error) {
-          reportError(error.message || error, 'FriendsPage._Presence_channel_error');
-        } else if (status === 'TIMED_OUT') {
-          console.warn('[FriendsPage] Presence channel timed out');
-        }
-      });
-
-    return () => {
-      masterBus.removeRegisteredChannel(presenceKey);
-    };
-  }, [user?.id]);
+  /* NO SECOND DEFINITION OF ONLINE (2026-10-05). A Realtime presence channel
+     ('global-presence') used to mark a friend online whenever they had this
+     page open, ahead of the presence door. Only people can ever join that
+     channel - a house player never opens a browser - so "online here but
+     offline everywhere else" said exactly who was a person. Online-now is the
+     presence door's answer alone, re-asked every minute while shown
+     (useProfilePresence; tests/presence-has-one-definition.law.test.ts). */
 
   /* THE ANNOUNCEMENT MATCHES WHAT HAPPENED (2026-09-05).
      This listened for INSERT only and toasted "New friend request received!"
@@ -418,11 +395,7 @@ export default function FriendsPage() {
             avatar_url: resolved.avatarUrl,
             source_online: resolved.sourceOnline,
             profile_available: resolved.available,
-            is_online: isSocialProfileOnline(
-              friendship.friendId,
-              onlineUserIds,
-              resolved.sourceOnline
-            ),
+            is_online: resolved.sourceOnline,
           });
         });
 
@@ -453,11 +426,7 @@ export default function FriendsPage() {
                 avatar_url: resolved.avatarUrl,
                 source_online: resolved.sourceOnline,
                 profile_available: resolved.available,
-                is_online: isSocialProfileOnline(
-                  requestUserId,
-                  onlineUserIds,
-                  resolved.sourceOnline
-                ),
+                is_online: resolved.sourceOnline,
               };
             })
         );
@@ -473,7 +442,7 @@ export default function FriendsPage() {
         if ((!getIsMounted || getIsMounted()) && isMounted.current) setLoading(false);
       }
     },
-    [isMounted, onlineUserIds, toast, user?.id]
+    [isMounted, toast, user?.id]
   );
 
   useEffect(() => {
@@ -550,9 +519,19 @@ export default function FriendsPage() {
     }
   };
 
+  /* The load's presence answer, superseded by the same door re-asked every
+     minute while shown, so a friend goes offline when their heartbeat does. */
+  const livePresence = useProfilePresence([
+    ...friends.map((friend) => friend.user_id),
+    ...pendingRequests.map((request) => request.user_id),
+  ]);
   const friendsWithStatus = friends.map((friend) => ({
     ...friend,
-    is_online: isSocialProfileOnline(friend.user_id, onlineUserIds, friend.source_online),
+    is_online: isSocialProfileOnline(friend.user_id, livePresence, friend.source_online),
+  }));
+  const requestsWithStatus = pendingRequests.map((request) => ({
+    ...request,
+    is_online: isSocialProfileOnline(request.user_id, livePresence, request.source_online),
   }));
   const filteredFriends = friendsWithStatus.filter((friend) =>
     friend.username.toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -803,7 +782,7 @@ export default function FriendsPage() {
               </div>
             ) : (
               <div className="friends-request-list">
-                {pendingRequests.map((request) => (
+                {requestsWithStatus.map((request) => (
                   <article className="friends-request-row" key={request.id}>
                     <button
                       className="friends-request-profile"

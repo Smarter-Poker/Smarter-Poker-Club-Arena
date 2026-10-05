@@ -932,38 +932,37 @@ export function TournamentHUD({
          once a second for the entire tournament (2026-08-26 audit). The
          countdown itself is hidden from the accessibility tree below, since a
          value that changes every second is noise there. */
-      role={toggle ? 'button' : 'group'}
-      tabIndex={toggle ? 0 : undefined}
-      aria-expanded={toggle ? !collapsed : undefined}
-      aria-label={
-        toggle
-          ? collapsed
-            ? 'Tournament Info - Show'
-            : 'Tournament Info - Hide'
-          : 'Tournament Info'
-      }
+      /* A GROUP, not a button (2026-10-05). Everything inside a `role="button"`
+         is presentational to a screen reader, so level, blinds, rank, Left and
+         Avg were never read. The toggle is the real <button> line below; a tap
+         anywhere on the dock still toggles, since that click reaches here. */
+      role="group"
+      aria-label="Tournament Info"
       onClick={toggle}
-      onKeyDown={
-        toggle
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                toggle();
-              }
-            }
-          : undefined
-      }
     >
-      <div className="tournament-dock__line">
-        <span className="tournament-dock__status" aria-hidden={collapsed ? 'true' : undefined}>
-          {statusLine}
-        </span>
-        {toggle && (
+      {toggle ? (
+        <button
+          type="button"
+          className="tournament-dock__line tournament-dock__line--toggle"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Show Tournament Info' : 'Hide Tournament Info'}
+          /* No onClick of its own: the click (Enter and Space included)
+             bubbles to the dock, so it toggles exactly once. */
+        >
+          <span className="tournament-dock__status" aria-hidden="true">
+            {statusLine}
+          </span>
           <span className="tournament-dock__chevron" aria-hidden="true">
             {collapsed ? '\u25B4' : '\u25BE'}
           </span>
-        )}
-      </div>
+        </button>
+      ) : (
+        <div className="tournament-dock__line">
+          <span className="tournament-dock__status" aria-hidden={collapsed ? 'true' : undefined}>
+            {statusLine}
+          </span>
+        </div>
+      )}
 
       {!collapsed && (
         <div className="tournament-dock__row">

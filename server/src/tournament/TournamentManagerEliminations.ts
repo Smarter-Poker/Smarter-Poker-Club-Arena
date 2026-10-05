@@ -21,7 +21,7 @@ import {
 } from '../config/mysteryChestSpec.js';
 import { MYSTERY_BOUNTY_REVEAL_DELAY_MS, formatBountyTier } from '../config/mysteryBountySpec.js';
 import { buildRecipientClaims } from './mysteryBountyDraw.js';
-import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPrizeLadder.js';
+import { buildPrizeLadder, prizeRankOf } from './mysteryPrizeLadder.js';
 import {
   acceptedZeroStackSettlement,
   persistedKnockoutEvidence,
@@ -3049,19 +3049,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             }))
           : undefined;
 
-      // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
-      // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
-      // the mystery ladder would report a rung nobody pulled.
-      //
-      // RESOLVED — Dan 2026-08-26, verbatim: "no, never pko+mystery bounty
-      // ever." The hybrid is now IMPOSSIBLE to configure: the DB constraint
-      // `tournaments_never_pko_and_mystery` (migration 20260826210000,
-      // applied and probe-verified) refuses any row carrying both flags.
-      // This branch is therefore defense-in-depth for a state the schema
-      // forbids, and a PKO knockout correctly gets no mystery prize rank.
-      const prizeRank = isMysteryCollectMode(res.mode)
-        ? await this.preMysteryPrizeRank(res.paid_cash)
-        : undefined;
+      /* NO RANK ON A HEAD (2026-10-05). A `bounty_collected` knockout is a
+         head - a pko half, a regular head, or a mystery event's flat
+         pre-phase head (`mystery_pre`). None of them is a draw from a prize
+         ladder: the pre-phase heads were all the same flat figure, so ranking
+         one against the others made every routine knockout "rank 1", and the
+         table announced "X Just Pulled The Top Mystery Bounty" for the
+         ordinary bounty on every bust before the chests opened. A rank
+         belongs to the chest (settleMysteryBountyAward / chestPrizeRank), and
+         only there. */
 
       // ── THE EVENT NAME IS A CONSTANT, AND THAT IS THE FIX ────────────────
       //
@@ -3086,12 +3082,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       await this.broadcast('bounty_collected', {
         mode: res.mode,
         amount: res.paid_cash,
-        // THE RANK, FROM THE SERVER (Dan 2026-08-25). Which rung of this
-        // event's prize ladder was just pulled, 1 being the largest. Only a
-        // mystery pull gets one: on a pko knockout `paid_cash` is half the
-        // head, and half a head has no rung. Undefined drops off the wire,
-        // and the client falls back to deriving it, exactly as it does today.
-        prizeRank,
         addedToHead: res.added_to_head,
         // playerName = whose head was revealed/claimed
         playerName: nameOf(eliminatedUserId),
@@ -3599,62 +3589,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    *  HOW BIG WAS THAT, COMPARED TO EVERYTHING ELSE IN THE EVENT
    * ═════════════════════════════════════════════════════════════════════════
    *
-   * Two ladders, because a mystery event has two prize pools in sequence and
-   * they are stored in different tables and different units:
+   * Only a chest has a rung. Before the mystery phase opens a knockout pays
+   * the flat head, and a flat head ranked against a ladder of flat heads is
+   * "rank 1" every time, which is how every routine pre-phase knockout was
+   * announced as the top mystery bounty. The pre-phase ladder was removed on
+   * 2026-10-05; `bounty_collected` carries no rank.
    *
-   *   - BEFORE the mystery phase opens, the prize is the head drawn at
-   *     registration, in whole currency, living on `tournament_players.
-   *     current_bounty` until it is claimed and on `tournament_bounties.
-   *     bounty_amount` afterwards;
-   *   - AFTER it opens, the prize is a chest from the sealed inventory, in
-   *     cents, on `tournament_bounty_chests.amount_cents`.
-   *
-   * Both return `undefined` rather than a number they are not sure of, and
-   * both swallow their own errors: a missing rank costs a celebration, and a
-   * thrown lookup would cost a knockout its broadcast.
-   *
-   * THE TOP SLICE. Each read is ordered largest-first and capped, rather than
+   * THE TOP SLICE. The read is ordered largest-first and capped, rather than
    * pulling a whole field. PostgREST caps an uncapped select at 1,000 rows in
-   * an unspecified order, so a big field could have hidden the largest prize
-   * from a query that looked complete. Ordering makes the slice the TOP of the
-   * ladder by construction, which is the only part any of this decides on: a
-   * prize outside the slice comes back ranked past the end of it, and every
-   * consumer reads that as "not the top three".
-   */
-  private async preMysteryPrizeRank(amount: number | undefined): Promise<number | undefined> {
-    try {
-      const [live, claimed] = await Promise.all([
-        supabase
-          .from('tournament_players')
-          .select('current_bounty')
-          .eq('tournament_id', this.tournamentId)
-          .order('current_bounty', { ascending: false })
-          .limit(200),
-        supabase
-          .from('tournament_bounties')
-          .select('bounty_amount')
-          .eq('tournament_id', this.tournamentId)
-          .order('bounty_amount', { ascending: false })
-          .limit(200),
-      ]);
-
-      // The head just pulled is on this ladder either way: fn_collect_bounty
-      // zeroes `current_bounty` and writes `tournament_bounties` in the same
-      // transaction, which has committed by the time this runs.
-      const ladder = buildPrizeLadder([
-        ...((live.data ?? []) as Array<{ current_bounty: unknown }>).map((r) => r.current_bounty),
-        ...((claimed.data ?? []) as Array<{ bounty_amount: unknown }>).map((r) => r.bounty_amount),
-      ]);
-
-      const rank = prizeRankOf(amount, ladder);
-      return rank > 0 ? rank : undefined;
-    } catch {
-      /* no rank is a quiet celebration; a throw would be a lost knockout */
-      return undefined;
-    }
-  }
-
-  /**
+   * an unspecified order, so ordering makes the slice the TOP of the ladder by
+   * construction: a prize outside it comes back ranked past the end of it,
+   * which every consumer reads as "not the top three".
+   *
    * The chest's rung, in CENTS, against the inventory seeded at activation.
    *
    * The inventory is immutable once seeded — `fn_mystery_bounty_reserve` only

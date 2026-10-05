@@ -45,10 +45,13 @@ const reportErrorMock = vi.fn();
 vi.mock('./errorReporter.js', () => ({ reportError: (...a: unknown[]) => reportErrorMock(...a) }));
 
 import {
+  HUMAN_SEATED_AT_UNKNOWN,
   SEAT_FIRST_HUMAN_PARTNER_HOLD_MS,
+  SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS,
   SEAT_FIRST_HUMAN_WINDOW_MAX_MS,
   TournamentRecurringService,
   firstHumanSeatedAtMs,
+  seatFirstHumanPartnerHoldJitterMs,
   seatFirstHumanPartnerHoldUntilMs,
 } from './TournamentRecurringService.js';
 
@@ -60,7 +63,7 @@ const HORSE_TOOK_IT = Date.parse('2026-10-04T19:37:22.994Z');
 
 describe('the rule', () => {
   it('replays 2026-10-04: the horse that sat 3.8 s after KingFish is refused', () => {
-    const until = seatFirstHumanPartnerHoldUntilMs(WINDOW, SAT);
+    const until = seatFirstHumanPartnerHoldUntilMs(WINDOW, SAT, 0);
     expect(until).toBe(SAT + SEAT_FIRST_HUMAN_PARTNER_HOLD_MS);
     expect(until).toBeGreaterThan(HORSE_TOOK_IT);
     expect(SEAT_FIRST_HUMAN_PARTNER_HOLD_MS).toBe(90_000);
@@ -83,6 +86,56 @@ describe('the rule', () => {
 
   it('no seated human holds nothing', () => {
     expect(seatFirstHumanPartnerHoldUntilMs(WINDOW, NaN)).toBe(-Infinity);
+  });
+
+  it('a human with no readable seat time is held to the FIXED window, never to the clock', () => {
+    const seats = [{ user_id: 'a', joined_at: null }];
+    const first = firstHumanSeatedAtMs(seats, () => true);
+    expect(first).toBe(HUMAN_SEATED_AT_UNKNOWN);
+    expect(seatFirstHumanPartnerHoldUntilMs(WINDOW, first, 12_345)).toBe(WINDOW);
+    expect(
+      seatFirstHumanPartnerHoldUntilMs(
+        WINDOW,
+        firstHumanSeatedAtMs(seats, () => true)
+      )
+    ).toBe(WINDOW);
+  });
+
+  it('the per-board spread is deterministic, inside 0-30 s, and never beyond the ceiling', () => {
+    const ids = Array.from(
+      { length: 200 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+    );
+    const jitters = ids.map(seatFirstHumanPartnerHoldJitterMs);
+    for (const j of jitters) {
+      expect(j).toBeGreaterThanOrEqual(0);
+      expect(j).toBeLessThan(SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS);
+    }
+    expect(new Set(jitters).size).toBeGreaterThan(150);
+    expect(seatFirstHumanPartnerHoldJitterMs(ids[7])).toBe(jitters[7]);
+    expect(seatFirstHumanPartnerHoldUntilMs(WINDOW, SAT, 20_000)).toBe(SAT + 110_000);
+    expect(seatFirstHumanPartnerHoldUntilMs(SAT + 999_999, SAT, 29_999)).toBe(
+      SAT + SEAT_FIRST_HUMAN_WINDOW_MAX_MS
+    );
+  });
+
+  it('the table countdown is never earlier than the engine hold, for any spread', () => {
+    // Mirrors src/utils/seatFirstPartnerHold.ts (pinned there against these constants).
+    const tableLatest = (start: number, sat: number) =>
+      Math.min(sat + 350_000, Math.max(start, sat + 90_000) + 30_000);
+    for (const [start, sat] of [
+      [SAT + 15_000, SAT],
+      [SAT + 200_000, SAT],
+      [SAT + 999_000, SAT],
+      [SAT - 60_000, SAT],
+    ] as const) {
+      const engineLatest = seatFirstHumanPartnerHoldUntilMs(
+        start,
+        sat,
+        SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS
+      );
+      expect(tableLatest(start, sat)).toBeGreaterThanOrEqual(engineLatest);
+    }
   });
 
   it('measures from the FIRST human to sit, ignoring horses', () => {
@@ -169,6 +222,28 @@ describe('topUpWithHorses honours the hold', () => {
     expect(await svc.topUpWithHorses(T, 2)).toBe(1);
   });
 
+  it('a NULL joined_at cannot hold a board for ever: past its window it fills', async () => {
+    board(4_000, -1_000);
+    (tableResults.table_seats.data as Array<{ joined_at: string | null }>)[0].joined_at = null;
+    expect(await svc.topUpWithHorses(T, 2, { forHuman: true })).toBe(1);
+  });
+
+  it('a NULL joined_at inside the window still holds, to the window only', async () => {
+    board(4_000, 20_000);
+    (tableResults.table_seats.data as Array<{ joined_at: string | null }>)[0].joined_at = null;
+    expect(await svc.topUpWithHorses(T, 2, { forHuman: true })).toBe(0);
+    expect(svc.seatFirstPartnerHoldUntil(T)).toBeGreaterThan(Date.now());
+  });
+
+  it('tells its callers a refusal was the hold, and forgets it once the hold is over', async () => {
+    board(4_000, 11_000);
+    expect(await svc.topUpWithHorses(T, 2, { forHuman: true })).toBe(0);
+    expect(svc.seatFirstPartnerHoldUntil(T)).toBeGreaterThan(Date.now());
+    board(200_000, -60_000);
+    expect(await svc.topUpWithHorses(T, 2, { forHuman: true })).toBe(1);
+    expect(svc.seatFirstPartnerHoldUntil(T)).toBe(-Infinity);
+  });
+
   it('an unreadable occupant read is reported and holds nothing', async () => {
     board(4_000, 11_000);
     tableResults.profiles = { data: null, error: { message: 'boom' } };
@@ -185,7 +260,8 @@ describe('the fast lane waits out the hold quietly', () => {
   const fill = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  private ', start + 10));
 
   it('does not ask, count a miss or alarm while the hold runs', () => {
-    expect(fill).toContain('seatFirstHumanPartnerHoldUntilMs(startMs, occupancy.firstHumanAtMs)');
+    expect(fill).toContain('seatFirstHumanPartnerHoldJitterMs(tournamentId)');
+    expect(fill).toContain('occupancy.firstHumanAtMs');
     const hold = fill.indexOf('if (holdUntil > now)');
     const ask = fill.indexOf('await this.topUpPartialSeatFirst(');
     expect(hold).toBeGreaterThan(-1);
@@ -195,5 +271,23 @@ describe('the fast lane waits out the hold quietly', () => {
   it("declares the human's seats in the hold's last stretch so horses are free when it ends", () => {
     expect(fill).toContain('holdUntil - now <= HUMAN_SEAT_DEMAND_TTL_MS');
     expect(fill).toContain('noteHumanSeatDemand(tournamentId, seats - paid)');
+  });
+});
+
+describe('a refusal by the hold is never a miss or an alarm (stale occupancy cache)', () => {
+  const start = GAME_SERVER.indexOf('private async topUpPartialSeatFirst(');
+  const topUp = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  private ', start + 10));
+
+  it('asks the engine whether the hold refused it, before any miss or alarm', () => {
+    const held = topUp.indexOf('seatFirstPartnerHoldUntil(tournamentId) > Date.now()');
+    expect(held).toBeGreaterThan(-1);
+    expect(held).toBeLessThan(topUp.indexOf('seatFirstFillMisses.set('));
+    expect(held).toBeLessThan(topUp.indexOf('seat_first_human_waiting'));
+    expect(topUp).toContain('this.seatFirstOccupancy.delete(tournamentId);');
+    expect(topUp).toContain('this.tournamentRecurring.clearHumanSeatDemand(tournamentId);');
+  });
+
+  it('the past-start lane does not back an event off for a hold', () => {
+    expect(GAME_SERVER).toContain('misses: added > 0 ? 0 : held ? misses : misses + 1,');
   });
 });

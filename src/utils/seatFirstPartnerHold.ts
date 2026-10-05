@@ -12,16 +12,22 @@
  * counts it down instead of showing a felt that looks frozen.
  *
  * The page cannot know whether another person sat before the hero (who is a
- * horse is never sent to a client), so it measures from the hero's own seat.
- * If someone sat earlier the engine's hold ends sooner, never later: the
- * countdown is an upper bound and the game can only deal early.
+ * horse is never sent to a client), so it measures from the hero's own seat
+ * (table_seats.joined_at, or the moment this page bought it). If someone sat
+ * earlier the engine's hold ends sooner, never later: the countdown is an
+ * upper bound and the game can only deal early.
  */
 export const SEAT_FIRST_PARTNER_HOLD_MS = 90_000;
 export const SEAT_FIRST_PARTNER_HOLD_MAX_MS = 350_000;
+/* The engine ends each board's hold somewhere in this spread after the
+   rule's instant (SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS), so the opponent
+   seat is never filled on the countdown's bell. The table counts down to the
+   END of the spread, which is what makes "at the latest" true. */
+export const SEAT_FIRST_PARTNER_HOLD_SPREAD_MS = 30_000;
 
 /**
- * When the open seats stop being kept for people, in ms, or -Infinity when
- * nothing is known (no start time and no seat time).
+ * When the open seats stop being kept for people at the latest, in ms, or
+ * -Infinity when nothing is known (no start time and no seat time).
  */
 export function seatFirstPartnerHoldEndsAtMs(
   startTimeMs: number | null | undefined,
@@ -29,10 +35,12 @@ export function seatFirstPartnerHoldEndsAtMs(
 ): number {
   const start =
     typeof startTimeMs === 'number' && Number.isFinite(startTimeMs) ? startTimeMs : -Infinity;
-  if (typeof heroSeatedAtMs !== 'number' || !Number.isFinite(heroSeatedAtMs)) return start;
+  if (typeof heroSeatedAtMs !== 'number' || !Number.isFinite(heroSeatedAtMs)) {
+    return Number.isFinite(start) ? start + SEAT_FIRST_PARTNER_HOLD_SPREAD_MS : start;
+  }
   return Math.min(
     heroSeatedAtMs + SEAT_FIRST_PARTNER_HOLD_MAX_MS,
-    Math.max(start, heroSeatedAtMs + SEAT_FIRST_PARTNER_HOLD_MS)
+    Math.max(start, heroSeatedAtMs + SEAT_FIRST_PARTNER_HOLD_MS) + SEAT_FIRST_PARTNER_HOLD_SPREAD_MS
   );
 }
 

@@ -5082,6 +5082,11 @@ function LiveTablePage({
    * before their first heartbeat lands.
    */
   const seatAcquiredAtRef = useRef<number | null>(null);
+  /* The hero's own seat time from table_seats.joined_at, read by the
+     pre-start seat-first roster sync. seatAcquiredAtRef is only set by a
+     buy-in made on THIS page, so after a reload or a rejoin the partner-hold
+     countdown would otherwise have no seat time (2026-10-04 audit). */
+  const heroSeatJoinedAtRef = useRef<number | null>(null);
 
   // ── Tournament masthead data (Dan 2026-08-20, from a seat at a live table:
   //    "1st line Date, (game type) Poker Spins, Club Name, Union Name. 2nd
@@ -5181,12 +5186,23 @@ function LiveTablePage({
     /* A DELIBERATE WAIT IS NOT A STALL (2026-10-04). While the engine keeps
        the open seats for other people (seatFirstPartnerHold) the footer counts
        that down; "still filling" and its telemetry start 30 s after it ends. */
-    const holdEnds = seatFirstPartnerHoldEndsAtMs(
-      seatFirstBuyIn?.startTimeMs,
-      seatAcquiredAtRef.current
-    );
-    const holdLeftMs = Number.isFinite(holdEnds) ? Math.max(0, holdEnds - Date.now()) : 0;
-    const timer = window.setTimeout(() => {
+    /* The seat time can arrive after this effect ran (the roster sync reads
+       it), so the hold is re-measured when the timer fires and the timer
+       re-arms while the hold is still running. */
+    const holdLeftMs = () => {
+      const holdEnds = seatFirstPartnerHoldEndsAtMs(
+        seatFirstBuyIn?.startTimeMs,
+        heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
+      );
+      return Number.isFinite(holdEnds) ? Math.max(0, holdEnds - Date.now()) : 0;
+    };
+    let timer = 0;
+    const fire = () => {
+      const stillHolding = holdLeftMs();
+      if (stillHolding > 0) {
+        timer = window.setTimeout(fire, stillHolding + 30_000);
+        return;
+      }
       setSeatFirstWaitLong(true);
       if (!seatFirstWaitReportedRef.current) {
         seatFirstWaitReportedRef.current = true;
@@ -5201,7 +5217,8 @@ function LiveTablePage({
           }
         );
       }
-    }, holdLeftMs + 30_000);
+    };
+    timer = window.setTimeout(fire, holdLeftMs() + 30_000);
     return () => window.clearTimeout(timer);
     // Re-arms whenever the roster moves, so the 30s measures STALLED time,
     // not merely elapsed time - a game filling normally never trips it.
@@ -5217,13 +5234,18 @@ function LiveTablePage({
     if (!holding) return;
     setSeatFillClock(Date.now());
     /* Once a second while the partner hold is counting down, so the clock on
-       the footer moves; every 15 s otherwise, as before. */
-    const holdEnds = seatFirstPartnerHoldEndsAtMs(
-      seatFirstBuyIn?.startTimeMs,
-      seatAcquiredAtRef.current
-    );
-    const counting = Number.isFinite(holdEnds) && holdEnds > Date.now();
-    const timer = window.setInterval(() => setSeatFillClock(Date.now()), counting ? 1_000 : 15_000);
+       the footer moves; every 15 s otherwise, as before. Decided on every
+       tick, because the hero's seat time can arrive after this effect ran. */
+    let ticks = 0;
+    const timer = window.setInterval(() => {
+      ticks += 1;
+      const holdEnds = seatFirstPartnerHoldEndsAtMs(
+        seatFirstBuyIn?.startTimeMs,
+        heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
+      );
+      const counting = Number.isFinite(holdEnds) && holdEnds + 1_000 > Date.now();
+      if (counting || ticks % 15 === 0) setSeatFillClock(Date.now());
+    }, 1_000);
     return () => window.clearInterval(timer);
   }, [seatFirstBuyIn, tableState.heroSeat, playHasBegun]);
   /**
@@ -20365,6 +20387,8 @@ function LiveTablePage({
           const gameAlreadyStarted = /already_started/.test(reason);
           if (gameAlreadyStarted) {
             // The felt was showing a pre-start table. It is not one any more.
+            // The socket is asked to join it now (seatFirstDealtAtRef).
+            seatFirstDealtAtRef.current = Date.now();
             setPlayHasBegun(true);
             setSeatFirstBuyIn(null);
           }
@@ -20451,7 +20475,9 @@ function LiveTablePage({
           toast?.success?.('Seats Full, Game Starting');
           /* D8: the seats are no longer for sale from this instant. Say so
              here rather than waiting for a broadcast, so the buy-in sheet
-             cannot be reopened on a seat in a game that is starting. */
+             cannot be reopened on a seat in a game that is starting. The
+             socket is asked to join it now (seatFirstDealtAtRef). */
+          seatFirstDealtAtRef.current = Date.now();
           setPlayHasBegun(true);
         } else {
           // Dan 2026-08-21: "THEY ARE SIMPLY SECURING A SEAT." Say exactly
@@ -20953,7 +20979,7 @@ function LiveTablePage({
       if (cancelled) return;
       const { data: seats, error } = await supabase
         .from('table_seats')
-        .select('seat_number, user_id, stack, is_sitting_out, horse_id')
+        .select('seat_number, user_id, stack, is_sitting_out, horse_id, joined_at')
         .eq('table_id', tableId)
         .is('left_at', null);
       if (cancelled) return;
@@ -20964,6 +20990,11 @@ function LiveTablePage({
       }
       const seatRows = seats || [];
       heroHeldSeat = !!userId && seatRows.some((s) => s.user_id === userId);
+      {
+        const heroRow = userId ? seatRows.find((s) => s.user_id === userId) : undefined;
+        const joined = heroRow ? Date.parse(String(heroRow.joined_at ?? '')) : NaN;
+        heroSeatJoinedAtRef.current = Number.isFinite(joined) ? joined : null;
+      }
       if (seatRows.length >= seatFirstBuyIn.seats && fullRechecks < 15 && !fullRecheckTimer) {
         fullRechecks += 1;
         fullRecheckTimer = window.setTimeout(() => {
@@ -26347,7 +26378,7 @@ function LiveTablePage({
                   left > 0 &&
                   seatFirstPartnerHoldEndsAtMs(
                     seatFirstBuyIn.startTimeMs,
-                    seatAcquiredAtRef.current
+                    heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
                   ) > seatFillClock
                 ) {
                   return seatFirstPartnerHoldLabel(left);
@@ -26365,7 +26396,7 @@ function LiveTablePage({
               {(() => {
                 const holdEnds = seatFirstPartnerHoldEndsAtMs(
                   seatFirstBuyIn.startTimeMs,
-                  seatAcquiredAtRef.current
+                  heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
                 );
                 const openSeats = seatFirstBuyIn.seats - tableState.players.filter(Boolean).length;
                 if (openSeats > 0 && holdEnds > seatFillClock) {

@@ -16,6 +16,10 @@ const gameplayCertification = readFileSync(
   resolve(__dirname, '../e2e/gameplay-customization-runtime.spec.ts'),
   'utf8'
 );
+const appearanceObservation = readFileSync(
+  resolve(__dirname, '../e2e/support/appearanceRealtimeObservation.ts'),
+  'utf8'
+);
 
 describe('post-deploy E2E concurrency', () => {
   it('runs only after exact publish proof or a successful safe stand-down', () => {
@@ -210,9 +214,21 @@ describe('post-deploy E2E concurrency', () => {
     expect(realtimeCertification).toContain(
       'await expectSelectedAppearanceTiles(mobileStudio, finalPrimary)'
     );
+    expect(realtimeCertification).toContain('observeAppearanceRealtime(page, account.id)');
+    expect(realtimeCertification).toContain(
+      'The primary appearance channel never completed its private join.'
+    );
+    expect(appearanceObservation).toContain("frame.event === 'phx_join' && frame.ref");
+    expect(appearanceObservation).toContain('socketState.pendingJoinRefs.has(frame.ref)');
+    expect(appearanceObservation).toContain("page.on('request'");
+    expect(appearanceObservation).toContain('request.isNavigationRequest()');
   });
 
   it('projects routed gameplay without depending on a currently live production game', () => {
+    expect(gameplayCertification).toContain(
+      "getByRole('button', { name: 'Open Table Studio', exact: true })"
+    );
+    expect(gameplayCertification).not.toContain("getByRole('button', { name: 'Open Studio' })");
     expect(gameplayCertification).toContain('readable table authorization anchor');
     expect(gameplayCertification).toContain(
       'arena:clubs!fk_tables_club_id(id,asset,is_platform,union_id)'

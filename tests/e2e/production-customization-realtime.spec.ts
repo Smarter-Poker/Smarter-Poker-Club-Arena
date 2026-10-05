@@ -14,6 +14,10 @@ import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { observeAccountRealtime } from './support/accountRealtimeObservation';
 import { installAccountRealtimeInterruption } from './support/accountRealtimeInterruption';
+import {
+  observeAppearanceRealtime,
+  type AppearanceRealtimeObservationState,
+} from './support/appearanceRealtimeObservation';
 import { createReservedPresenceTransport } from './support/reservedPresenceTransport';
 import {
   cleanupTemporaryCustomizationAccount,
@@ -93,11 +97,9 @@ const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
 const PRESENCE_TOPIC_PREFIX = 'cert-presence:';
 const accountObservations = new WeakMap<Page, ReturnType<typeof observeAccountRealtime>>();
-// Record only the expected cosmetic signal, never session/auth websocket frames.
-const appearanceSignalReceived = new WeakMap<Page, boolean>();
+const appearanceObservations = new WeakMap<Page, AppearanceRealtimeObservationState>();
 const accountSignalReceived = new WeakMap<Page, boolean>();
-function observeAppearanceSignal(page: Page, userId: string) {
-  appearanceSignalReceived.set(page, false);
+function observeAccountSignal(page: Page, userId: string) {
   accountSignalReceived.set(page, false);
   page.on('websocket', (socket) =>
     socket.on('framereceived', ({ payload }) => {
@@ -105,12 +107,6 @@ function observeAppearanceSignal(page: Page, userId: string) {
         const frame = JSON.parse(String(payload));
         const event = Array.isArray(frame) ? frame[3] : frame.event;
         const body = Array.isArray(frame) ? frame[4] : frame.payload;
-        if (
-          event === 'broadcast' &&
-          body?.event === 'appearance_changed' &&
-          body?.payload?.user_id === userId
-        )
-          appearanceSignalReceived.set(page, true);
         if (
           event === 'broadcast' &&
           body?.event === 'account_changed' &&
@@ -311,7 +307,8 @@ async function signIn(
 ) {
   const page = await context.newPage();
   accountObservations.set(page, observeAccountRealtime(page, account.id, ''));
-  observeAppearanceSignal(page, account.id);
+  appearanceObservations.set(page, observeAppearanceRealtime(page, account.id));
+  observeAccountSignal(page, account.id);
   // The public landing page deliberately does not redirect signed-out visitors.
   // These contexts are empty: enter a protected route and require real sign-in.
   const protectedURL = new URL('notifications', baseURL).toString();
@@ -572,20 +569,41 @@ test.describe('production Table Studio realtime contract', () => {
       await expectHeaderPortrait(primaryPage, originalPortrait);
       await expectHeaderPortrait(mobilePage, originalPortrait);
       await expectHeaderPortrait(otherPage, originalPortrait);
-      appearanceSignalReceived.set(primaryPage, false);
-      appearanceSignalReceived.set(mobilePage, false);
+      const primaryAppearance = appearanceObservations.get(primaryPage);
+      const mobileAppearance = appearanceObservations.get(mobilePage);
+      if (!primaryAppearance || !mobileAppearance) {
+        throw new Error('Appearance realtime observation was not installed before sign-in.');
+      }
+      // Do not race a durable write against a private channel that is still
+      // joining. A missing signal after a proven join is a product/runtime
+      // verdict; writing before either receiver has joined is only a harness
+      // race and cannot certify realtime delivery.
+      await expect
+        .poll(() => primaryAppearance.subscribed, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+          message: 'The primary appearance channel never completed its private join.',
+        })
+        .toBe(true);
+      await expect
+        .poll(() => mobileAppearance.subscribed, {
+          timeout: PRODUCTION_RESPONSE_TIMEOUT,
+          message: 'The mobile appearance channel never completed its private join.',
+        })
+        .toBe(true);
+      primaryAppearance.signalReceived = false;
+      mobileAppearance.signalReceived = false;
       const edited = await primaryAccount.client
         .from('profiles')
         .update({ arena_avatar_url: changedPortrait, use_avatar_as_profile_pic: true })
         .eq('id', primaryUserId);
       if (edited.error) throw edited.error;
       await expect
-        .poll(() => appearanceSignalReceived.get(primaryPage!), {
+        .poll(() => primaryAppearance.signalReceived, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
         .toBe(true);
       await expect
-        .poll(() => appearanceSignalReceived.get(mobilePage), {
+        .poll(() => mobileAppearance.signalReceived, {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         })
         .toBe(true);

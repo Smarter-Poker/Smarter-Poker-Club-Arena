@@ -55,4 +55,14 @@ describe('the live Table Management certificate cannot go blind', () => {
     expect(boardPaths.length).toBeGreaterThanOrEqual(5);
     expect(source).toMatch(/function mustSeeBoard\([\s\S]*?\.toBe\('board'\)/);
   });
+
+  it('gives the nine-surface phone sweep an explicit sequential budget', () => {
+    expect(source).toContain('const MOBILE_SURFACE_COUNT = 9');
+    expect(source).toContain(
+      'MOBILE_SURFACE_COUNT * (ROUTE_NAVIGATION_TIMEOUT_MS + ROUTE_OUTCOME_TIMEOUT_MS) + 15_000'
+    );
+    expect(source).toMatch(
+      /no surface scrolls sideways[\s\S]*?setTimeout\(MOBILE_SWEEP_TIMEOUT_MS\)/
+    );
+  });
 });

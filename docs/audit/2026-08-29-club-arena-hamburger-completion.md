@@ -8,24 +8,25 @@ Scope: the hamburger drawer, every destination it advertises, the contextual sec
 
 ## Current Delivery State
 
-This document records the delivered information-architecture candidate and the focused live-contract
-follow-up required by its first complete production browser run. It does not treat source or merge
-state as production success.
+This document records the delivered information architecture and the final
+production-certificate correction identified by its complete authenticated
+browser sweep. It does not treat source or merge state as production success.
 
-| Delivery stage                                       | Current state                                                                                                                                              |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source implementation                                | Main implementation merged through PR #6147; focused live-contract follow-up implemented in the owned external-SSD worktree                                |
-| Focused local validation                             | Follow-up unit contract 41 of 41, TypeScript, targeted lint, and 171-case browser discovery pass                                                           |
-| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`; follow-up PR #6155 open with protected checks pending                                                                     |
-| Protected merge                                      | Main implementation complete; follow-up pending                                                                                                            |
-| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                |
-| Club Arena client publication                        | Main implementation published by run `37314428036`; a newer protected-main descendant containing it is serving                                             |
-| Post-deploy browser certification                    | Live-table lane passed; client lane exposed three focused navigation-contract failures now repaired in the follow-up candidate                             |
-| Public build identity and affected live behavior     | Both build endpoints served a protected descendant containing `1dae7a2fb0`; final corrected browser behavior remains pending until the follow-up publishes |
+| Delivery stage                                       | Current state                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source implementation                                | Main implementation and live-contract repair merged through PRs #6147 and #6155; customization-certificate correction merged through PR #6183                                                                                                          |
+| Focused local validation                             | Final certificate hardening: 19 of 19 unit contracts, client TypeScript, targeted lint, formatting, and all 12 affected production-browser journeys discovered                                                                                         |
+| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`, PR #6155 as `abb1948`, and PR #6183 as `e2ed8ac`; the last test-only certificate correction is being delivered from `agent/codex-menu-cert-final-20261005`                                                            |
+| Protected merge                                      | Product and IA implementation complete; final test-only certificate correction pending protected merge                                                                                                                                                 |
+| Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                                                                                                            |
+| Club Arena client publication                        | The implementation published successfully; both public endpoints serve a protected descendant whose hamburger, Leaderboard, and customization trees match the certified source                                                                         |
+| Post-deploy browser certification                    | Run `37381227013` executed 462 cases: 457 passed, two skipped, five failed. Hamburger passed 35 of 35 and Leaderboard passed both viewports. Two failures were certificate defects corrected here; three were transient release/realtime interruptions |
+| Public build identity and affected live behavior     | Product behavior is live; final completion remains pending until the corrected certificate itself merges, publishes through the protected route, executes against production, and proves fixture cleanup                                               |
 
-Production success must not be inferred from this source audit. The remaining delivery is the
-follow-up's protected merge, successful `publish-club-arena.yml`, both public `build-info.json`
-endpoints, authenticated post-deploy browser checks, and isolated-fixture cleanup.
+Production success must not be inferred from this source audit. The remaining
+delivery is the final correction's protected merge, successful
+`publish-club-arena.yml`, both public `build-info.json` endpoints,
+authenticated post-deploy browser checks, and isolated-fixture cleanup.
 
 Exact-head run `37307605805` passed the Club Arena client, server, navigation,
 route, and migration checks but its accounting PostgreSQL shard 1 refused an

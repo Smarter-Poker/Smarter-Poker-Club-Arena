@@ -100,6 +100,67 @@ describe('the five-minute sit-out limit keeps the minutes the break froze', () =
   });
 });
 
+describe('a sit-out stamp read from the database is credited once (2026-10-05)', () => {
+  /* fn_thaw_platform shifts table_seats.sit_out_at by the frozen interval. An
+     engine that restores the sit-out from that row after the thaw holds an
+     already-credited stamp; it must not be credited again. */
+  it('a stamp seeded after the thaw is not moved a second time', () => {
+    clock();
+    const satOutAt = now;
+    now += 4 * MINUTE; // four minutes sat out, then the break
+    const freezeStart = now;
+    now += 5 * MINUTE;
+    completeReconnectFreeze(freezeStart, 5 * MINUTE);
+    const shiftedByThaw = satOutAt + 5 * MINUTE; // what fn_thaw_platform wrote
+    now += 1_000;
+    const booted = engine();
+    booted.sitOut('t', 'u', 'voluntary', shiftedByThaw);
+
+    expect(booted.getFsmState('t', 'u')!.sitOutSinceMs).toBe(shiftedByThaw);
+    // One minute of the five is left: 4 before the break, 0 during it.
+    now = shiftedByThaw + 5 * MINUTE - 1;
+    expect(booted.tickSitOutsAndCollectEvictions('t', ['u'])).toEqual([]);
+    now += 1;
+    expect(booted.tickSitOutsAndCollectEvictions('t', ['u'])).toEqual(['u']);
+    // And the marker travels: a park and restore does not credit it either.
+    const again = engine();
+    again.restoreFsmStates('t', booted.getFsmStatesForTable('t'));
+    expect(again.getFsmState('t', 'u')!.sitOutSinceMs).toBe(shiftedByThaw);
+  });
+
+  it('a stamp seeded during the break (not yet shifted) is credited once', () => {
+    clock();
+    const satOutAt = now;
+    now += 4 * MINUTE;
+    const freezeStart = now;
+    now += 2 * MINUTE;
+    const booted = engine();
+    booted.sitOut('t', 'u', 'voluntary', satOutAt); // read before the thaw
+    now += 3 * MINUTE;
+    completeReconnectFreeze(freezeStart, 5 * MINUTE);
+    expect(booted.getFsmState('t', 'u')!.sitOutSinceMs).toBe(satOutAt + 5 * MINUTE);
+    now = satOutAt + 10 * MINUTE;
+    expect(booted.tickSitOutsAndCollectEvictions('t', ['u'])).toEqual(['u']);
+  });
+
+  it('seeding the sit-out does not cost an older disconnect stamp its credit', () => {
+    clock();
+    const booted = engine();
+    booted.registerPlayer('t', 'u');
+    booted.markDisconnected('t', 'u');
+    const goneAt = now;
+    now += MINUTE;
+    const freezeStart = now;
+    now += 5 * MINUTE;
+    completeReconnectFreeze(freezeStart, 5 * MINUTE);
+    booted.sitOut('t', 'u', 'voluntary', now);
+    booted.sitBack('t', 'u');
+    const entry = booted.getFsmState('t', 'u')!;
+    expect(entry.state).not.toBe('CONNECTED');
+    expect(entry.sinceMs).toBe(goneAt + 5 * MINUTE);
+  });
+});
+
 describe('the five-minute abandoned-seat limit keeps the minutes the break froze', () => {
   it.each(['page left', 'socket lost'])('%s two minutes before the break', (how) => {
     clock();

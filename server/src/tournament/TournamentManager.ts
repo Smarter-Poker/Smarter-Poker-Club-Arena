@@ -59,6 +59,10 @@ import {
   type VerifiedTournamentSeatMoveReceipt,
 } from './tournamentSeatMoveRpc.js';
 import {
+  depositTournamentMovePresence,
+  withdrawTournamentMovePresence,
+} from '../engine/SeatMovePresence.js';
+import {
   CLOSED_ORPHAN_RESEAT_REASON,
   planOrphanReseats,
   describeUnmovableOrphans,
@@ -3314,9 +3318,32 @@ export class TournamentManager extends TournamentManagerEliminations {
     ) {
       return Promise.reject(new Error('live-source engine generation changed before move RPC'));
     }
-    return boundary.engine.executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
-      moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
-    );
+    /* PRESENCE CROSSES WITH THE PLAYER (2026-10-05). Snapshotted here, with
+       the source parked at its hand boundary, and deposited BEFORE the RPC so
+       the destination can never see the new chair first. A refused move
+       withdraws it; see engine/SeatMovePresence.ts. Never blocks a move. */
+    try {
+      const presence = boundary.engine.presenceForTournamentMove?.(input.userId);
+      if (presence) {
+        depositTournamentMovePresence(input.userId, input.destinationTableId, {
+          requestId: input.requestId,
+          fromTableId: input.sourceTableId,
+          fsm: presence,
+        });
+      }
+    } catch {
+      /* presence is a courtesy to the destination, never a precondition */
+    }
+    return boundary.engine
+      .executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
+        moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
+      )
+      .catch((error: unknown) => {
+        if (!(error instanceof TournamentSeatMoveOutcomeUnknownError)) {
+          withdrawTournamentMovePresence(input.userId, input.destinationTableId, input.requestId);
+        }
+        throw error;
+      });
   }
 
   /**

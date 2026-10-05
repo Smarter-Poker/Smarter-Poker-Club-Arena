@@ -952,6 +952,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // timeout too — count it toward the auto-sit-out cap.
             this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
             this.noteHorseTurnTimeout(userId, 'timebank');
+            this.notePlayerTurnTimeout(userId, 'timebank');
 
             this.engineTelemetry.recordTimerExpired(this.tableId);
             const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -1087,6 +1088,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // disconnect path — an app-open-but-idle player never got sat out).
       this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
       this.noteHorseTurnTimeout(userId, 'timer');
+      this.notePlayerTurnTimeout(userId, 'timer');
 
       this.engineTelemetry.recordTimerExpired(this.tableId);
       const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -1313,6 +1315,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
            aHorseActionReleasesItsClocks pins that counter to the two expiry
            sites a horse can reach. */
         this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+        this.notePlayerTurnTimeout(userId, 'timebank');
 
         // FIX 149: Wire telemetry — manual time bank expiry
         this.engineTelemetry.recordTimerExpired(this.tableId);
@@ -3010,6 +3013,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     try {
       if (!this.seatedPlayers.find((p) => p.user_id === userId)?.is_horse) return;
       EngineMetrics.horseTurnTimeoutsTotal.inc(1, { kind });
+    } catch {
+      /* metrics must never affect gameplay */
+    }
+  }
+
+  /**
+   * Every seat's clock running out, human or horse (2026-10-05). Counted at
+   * the same three expiry sites that record the strike, so the series and
+   * the ladder cannot disagree about what a timeout is. Observation only.
+   */
+  protected notePlayerTurnTimeout(userId: string, kind: 'timer' | 'timebank'): void {
+    try {
+      const seat = this.seatedPlayers.find((p) => p.user_id === userId);
+      const format = this.tableFormat();
+      EngineMetrics.turnTimeoutsTotal.inc(1, {
+        kind,
+        audience: seat?.is_horse ? 'horse' : 'human',
+        format,
+      });
     } catch {
       /* metrics must never affect gameplay */
     }

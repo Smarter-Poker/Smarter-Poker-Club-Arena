@@ -1487,11 +1487,17 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
     async (reason) => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      // Only the journal's own lines are counted: under a loaded runner another
-      // module in this worker can warn during the fake-timer advance, and that
-      // is not the journal pausing or resuming twice (2026-10-05, seen once).
-      const journalWarns = () =>
-        warn.mock.calls.filter((c) => String(c[0]).startsWith('[HorseDecisionJournal]'));
+      // Count THIS publisher's pause/resume lines, not every journal line in
+      // the worker. A publisher left by an earlier test keeps a real 1 s
+      // watchdog that reads real performance.now(); on a loaded runner more
+      // than 5 real seconds pass and it logs its own "capture stopped" inside
+      // this test (seen twice on 2026-10-05). This publisher cannot: its
+      // watchdog was created under fake timers and is advanced only while it
+      // is paused, and the health/replay checks below catch it stopping.
+      const pauseResumeWarns = () =>
+        warn.mock.calls.filter((c) =>
+          /^\[HorseDecisionJournal\] capture (paused|resumed) /.test(String(c[0]))
+        );
       try {
         const w = new FakeWorker(),
           notes: string[] = [],
@@ -1510,7 +1516,7 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           failedSince: null,
           queued: 1,
         });
-        expect(journalWarns()).toHaveLength(1);
+        expect(pauseResumeWarns()).toHaveLength(1);
         expect(warn).toHaveBeenCalledWith(
           `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
         );
@@ -1549,8 +1555,8 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           pausedSince: null,
           lastFailureReason: null,
         });
-        expect(journalWarns()).toHaveLength(2);
-        expect(journalWarns().at(-1)).toEqual([
+        expect(pauseResumeWarns()).toHaveLength(2);
+        expect(pauseResumeWarns().at(-1)).toEqual([
           `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`,
         ]);
         expect(notes).toContain('phase15_journal_capacity_resumed');

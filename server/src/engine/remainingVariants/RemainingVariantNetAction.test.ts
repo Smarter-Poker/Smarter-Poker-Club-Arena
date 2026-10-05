@@ -219,8 +219,11 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
         // On a starved host the policy itself can cross its own 4 ms budget
         // and fall back (reason work_budget): a node that did not fire is
         // never priced, by design, and that outcome is named too.
+        // 2026-10-05: one step earlier, the equity sample itself can miss its
+        // budget, so no evidence exists and the policy names that instead
+        // (equity_budget_unavailable). Seen in the full suite on a loaded host.
         if (!result.receipt.fired) {
-          expect(result.receipt.reason).toBe('work_budget');
+          expect(['work_budget', 'equity_budget_unavailable']).toContain(result.receipt.reason);
           expect(result.receipt.actionEconomics).toBeUndefined();
           continue;
         }

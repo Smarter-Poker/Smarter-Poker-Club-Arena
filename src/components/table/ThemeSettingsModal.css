@@ -407,7 +407,10 @@
   gap: 1.2cqw;
   align-items: center;
   min-width: 0;
-  padding: 2cqw 0 1cqw;
+  /* The compact one-line ledger has a shorter line box than the former
+     wrapping caption. Keep deliberate breathing room below it while every
+     card, face-deck, and game label remains on one line. */
+  padding: 2cqw 0 calc(1cqw + 3px);
 }
 
 .tsc__ledger {

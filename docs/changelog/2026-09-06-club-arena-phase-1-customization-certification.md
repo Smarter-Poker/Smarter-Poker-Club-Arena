@@ -82,7 +82,11 @@ after the compatible client and engine are proven live.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. Current protected base at
   final-candidate integration: `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`.
-- Policy receipt refreshed after the latest resumption at 2026-10-05T14:25:47.579Z:
+  Protected main later advanced three commits to
+  `40e8dd9d04d2caebb3534d7afd52c006bbc0455a`; the ten changed paths have no
+  overlap with the Phase 1 branch delta, so the protected squash can retain
+  both without a candidate-changing conflict merge.
+- Policy receipt refreshed after the latest resumption at 2026-10-05T15:27:51.455Z:
   version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
   Canonical and portable hashes matched. Required repository, publication,
@@ -136,6 +140,23 @@ after the compatible client and engine are proven live.
   face-deck, and game caption wrapped onto a second line. The corrected caption
   keeps all facts in one accessible sentence, prints a compact one-line visual
   label, and leaves the 9:13 gameplay canvas unchanged.
+- Follow-up head `de85adab2dbe89ade196f1d78f223d95c823667d` then reached
+  hosted run `37329786178`. Its server, client, TypeScript, production-build,
+  WebGL, source-contract, and Table Studio purchase/realtime/accessibility
+  assertions passed. The remaining visual failure exposed a harness defect:
+  Playwright's `iPhone 13` descriptor silently selected WebKit even though the
+  project and workflow contract named Chromium. The project now overrides
+  `browserName` after the descriptor spread, and a maintained law pins that
+  ordering. The intentional face-deck cards and compact three-part caption
+  made the old WebKit images stale; all thirty baselines were regenerated with
+  actual Chromium at consistent 296-by-465 mobile and 595-by-918 tablet
+  geometry. Independent review of every Standard, Final Table, and Light-mode
+  image found no clipping, ellipsis, missing table/avatar/action content, or
+  second-table artifact. Final Table remains the real table and seated avatars
+  over the premium broadcast arena. The exact settled-source browser run
+  passed 13/13, including purchase charge-once/auto-apply, two-tab realtime,
+  accessibility/keyboard/zoom/forced-colors, and all thirty screenshots at
+  the unchanged two-percent threshold.
 - The same final-diff audit found that one account's unresolved collection RPC
   could block another account and that an old account lifecycle could update a
   new lifecycle's cache or sync status. The collection writer is now isolated
@@ -152,10 +173,10 @@ after the compatible client and engine are proven live.
   with 93 tests, client TypeScript, the four copy/title gates, Prettier, targeted
   ESLint with zero errors (one pre-existing Fast Refresh warning), 805 source
   pins across 17 binding files, canonical policy comparison, and
-  `git diff --check`. The local Playwright WebKit binary aborted during browser launch
-  with exit 134 before any assertion, so it supplies no product verdict and is
-  not being retried unchanged; the matching hosted Linux CSS Beat lane remains
-  the authoritative browser proof for the corrected commit.
+  `git diff --check`. The earlier local WebKit launch abort supplies no product
+  verdict and is superseded by the intentional Chromium correction and clean
+  13/13 settled-source Chromium run above. Hosted Linux Chromium remains the
+  final cross-platform browser gate for the corrected commit.
 - Remaining proof: commit this checkpoint, push the exact candidate, complete
   protected PR checks/merge, verify client publication and exact engine release,
   observe the terminal cutover seal, install/read back `20261005111523`, then

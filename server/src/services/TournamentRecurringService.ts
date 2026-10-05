@@ -1156,13 +1156,24 @@ export const HUMAN_SEATED_AT_UNKNOWN = -Infinity;
 export function seatFirstHumanPartnerHoldUntilMs(
   startTimeMs: number,
   firstHumanSeatedAtMs: number,
-  jitterMs: number = 0
+  jitterMs: number = 0,
+  createdAtMs: number = NaN
 ): number {
   const windowEnd = Number.isFinite(startTimeMs) ? startTimeMs : -Infinity;
   /* A seated human whose seat time is unknown is held to the board's own
      window only - a FIXED instant. Never the current clock: a time derived
-     from "now" moves on every pass and the hold would never end. */
-  if (firstHumanSeatedAtMs === HUMAN_SEATED_AT_UNKNOWN) return windowEnd;
+     from "now" moves on every pass and the hold would never end. And never
+     past the longest hold any board can have, counted from when the board was
+     created (2026-10-05 audit): a malformed far-future start_time must not
+     hold a person's opponent seat for hours. */
+  if (firstHumanSeatedAtMs === HUMAN_SEATED_AT_UNKNOWN) {
+    return Number.isFinite(createdAtMs)
+      ? Math.min(
+          windowEnd,
+          createdAtMs + SEAT_FIRST_HUMAN_WINDOW_MAX_MS + SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS
+        )
+      : windowEnd;
+  }
   if (!Number.isFinite(firstHumanSeatedAtMs)) return -Infinity;
   const partnerFloor = firstHumanSeatedAtMs + SEAT_FIRST_HUMAN_PARTNER_HOLD_MS;
   const ceiling = firstHumanSeatedAtMs + SEAT_FIRST_HUMAN_WINDOW_MAX_MS;
@@ -5867,7 +5878,8 @@ export class TournamentRecurringService {
   private async seatFirstHumanPartnerHold(
     tournamentId: string,
     seats: ReadonlyArray<{ user_id?: string | null; joined_at?: string | null }>,
-    startTimeMs: number
+    startTimeMs: number,
+    createdAtMs: number = NaN
   ): Promise<number> {
     const now = Date.now();
     let latestJoin = -Infinity;
@@ -5916,7 +5928,8 @@ export class TournamentRecurringService {
     const holdUntil = seatFirstHumanPartnerHoldUntilMs(
       startTimeMs,
       first,
-      seatFirstHumanPartnerHoldJitterMs(tournamentId)
+      seatFirstHumanPartnerHoldJitterMs(tournamentId),
+      createdAtMs
     );
     if (!(holdUntil > now)) {
       this.partnerHolds.delete(tournamentId);
@@ -5978,7 +5991,7 @@ export class TournamentRecurringService {
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
           .select(
-            'variant, max_players, format_contract, club_id, start_time, prize_pool_finalized, current_players'
+            'variant, max_players, format_contract, club_id, start_time, created_at, prize_pool_finalized, current_players'
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -6197,7 +6210,8 @@ export class TournamentRecurringService {
           const holdUntil = await this.seatFirstHumanPartnerHold(
             tournamentId,
             liveSeatRows,
-            heldStartMs
+            heldStartMs,
+            Date.parse(String((tRow as { created_at?: string | null }).created_at ?? ''))
           );
           if (holdUntil > Date.now()) return 0;
         }

@@ -189,6 +189,17 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect(constant).toBe(job.name.replace('${{ matrix.shard }}', '1'));
   });
 
+  it('runs the Phase 1 customization database contract on portable PG17 scratch', () => {
+    const phaseOne = steps.find(
+      (s) => s.name === 'Phase 1 customization ownership and cutover remain atomic'
+    );
+    expect(phaseOne).toBeDefined();
+    expect(shardsOf(phaseOne!)).toEqual([1]);
+    expect(phaseOne!.env!.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(phaseOne!.env!.PHASE1_PG_WORK_ROOT).toBe('${{ runner.temp }}');
+    expect(phaseOne!.run).toBe('python3 scripts/ci/test-phase1-customization-postgres.py');
+  });
+
   it('still feeds the required Server Engine aggregate, which needs every shard', () => {
     expect(ci.jobs.server.name).toBe('Server Engine (typecheck + tests)');
     expect(ci.jobs.server.needs).toContain('accounting_postgres');

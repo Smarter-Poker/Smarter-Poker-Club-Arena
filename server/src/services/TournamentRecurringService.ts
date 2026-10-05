@@ -58,6 +58,7 @@ import {
 } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
+  FREE_BUY_BOARD_NAMES,
   FREE_BUY_HOSTS,
   FREE_BUY_TIERS,
   auditFreeBuyBoard,
@@ -3355,6 +3356,9 @@ export class TournamentRecurringService {
             'add_on_available, is_rebuy, max_rebuys, late_reg_mins, late_reg_levels, rebuy_levels'
         )
         .eq('free_buy', true)
+        // The board's own rows only: every freeroll carries free_buy
+        // (FREE_BUY_BOARD_NAMES in FreeBuy.ts says why).
+        .in('name', [...FREE_BUY_BOARD_NAMES])
         .gte('start_time', new Date(now - 24 * 60 * 60_000).toISOString());
       // An unreadable board is not a wrong board.
       if (error) return;

@@ -33,6 +33,26 @@ describe('the ALL IN button', () => {
     expect(PAGE).not.toMatch(/action === 'allin'\) heroPfrThisHandRef\.current = true/);
   });
 
+  it('the optimistic all_in label does not count a preflop raise; only bet or raise does', () => {
+    expect(PAGE).toMatch(
+      /if \(act === 'bet' \|\| act === 'raise'\) heroPfrThisHandRef\.current = true;/
+    );
+    expect(PAGE).not.toMatch(/if \(act !== 'call'\) heroPfrThisHandRef\.current = true;/);
+  });
+
+  it("the hero's own all_in echo preflop counts the shove as a raise only when it raises", () => {
+    expect(PAGE).toMatch(
+      /if \(actionSeat === st\.heroSeat && st\.boardStage === 'preflop'\) \{\s*const othersTopBet = st\.lastBetAmounts\.reduce\(/
+    );
+    expect(PAGE).toMatch(
+      /if \(actionAmount > othersTopBet \+ 0\.005\) heroPfrThisHandRef\.current = true;/
+    );
+  });
+
+  it('a finished hand does not keep the showing lift', () => {
+    expect(PAGE).toMatch(/!feltShowsNoHand &&\s*player\?\.holeCards\?\.length &&/);
+  });
+
   it("the engine's own echo is what turns all-in mode on", () => {
     expect(PAGE).toMatch(/if \(!heroStillHasAction\) setIsAllInMode\(true\);/);
   });

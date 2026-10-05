@@ -131,6 +131,11 @@ esac
     cwd: ROOT,
     encoding: 'utf8',
     env: {
+      ESTATE_INJECT_REPO: 'Smarter-Poker-Diamond-Arena',
+      ESTATE_INJECT_RETIRED_PATH1:
+        '.github/workflows/agent-autopilot.yml|Smarter-Poker-Diamond-Arena|test',
+      ESTATE_INJECT_RETIRED_PATH2:
+        '.github/workflows/agent-open-pr.yml|Smarter-Poker-Diamond-Arena|test',
       ...process.env,
       ESTATE_FIXTURE_MODE: mode,
       ESTATE_REAL_SHASUM: REAL_SHASUM,

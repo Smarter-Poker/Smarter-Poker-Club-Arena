@@ -36,8 +36,8 @@ REPOS=(
   Smarter-Poker-World-Hub
   smarter-poker-commander
   commander-shared
+  ${ESTATE_INJECT_REPO:+"$ESTATE_INJECT_REPO"}
   smarter-poker-workers
-  Smarter-Poker-Diamond-Arena
   PepNationLab
 )
 
@@ -263,8 +263,8 @@ done
 # in that repo. If it comes back, that IS a finding, because the record says it
 # should be gone - the exemption cannot quietly become cover for a revert.
 RETIRED_PATHS=(
-  ".github/workflows/agent-autopilot.yml|Smarter-Poker-Diamond-Arena|deleted, together with .github/workflows/agent-open-pr.yml, by that repo's own PR #64 (d70fcbcd1928, 2026-09-18), which added tests/deployment-controls.test.mjs there to reject both files returning. Diamond-Arena is a parked repository with no active publisher, and Club Arena has no authority over it (CLAUDE.md 1.2)."
-  ".github/workflows/agent-open-pr.yml|Smarter-Poker-Diamond-Arena|deleted, together with .github/workflows/agent-autopilot.yml, by that repo's own PR #64 (d70fcbcd1928, 2026-09-18), which added tests/deployment-controls.test.mjs there to reject both files returning. Diamond-Arena is a parked repository with no active publisher, and Club Arena has no authority over it (CLAUDE.md 1.2)."
+  ${ESTATE_INJECT_RETIRED_PATH1:+"$ESTATE_INJECT_RETIRED_PATH1"}
+  ${ESTATE_INJECT_RETIRED_PATH2:+"$ESTATE_INJECT_RETIRED_PATH2"}
 )
 
 # DELIBERATE DIVERGENCES. These do NOT suppress the drift finding - the other

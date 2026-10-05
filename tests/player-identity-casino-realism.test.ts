@@ -144,7 +144,8 @@ describe('the public credential is the felt view of a player', () => {
 
 describe('settings round-trip and the account door', () => {
   it('reads the server copy back before it can overwrite it', () => {
-    expect(SETTINGS).toContain(".select('settings').eq('id', authUser.id)");
+    expect(SETTINGS).toContain('const ownerId = authUser.id');
+    expect(SETTINGS).toContain(".select('settings').eq('id', ownerId)");
     expect(SETTINGS).toContain(".select('tournament_reminders, friend_activity, club_updates')");
   });
 

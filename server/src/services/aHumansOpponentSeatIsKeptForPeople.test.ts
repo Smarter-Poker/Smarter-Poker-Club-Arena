@@ -101,6 +101,17 @@ describe('the rule', () => {
     ).toBe(WINDOW);
   });
 
+  it('an unknown seat time never holds past the longest hold, counted from the board creation', () => {
+    const created = SAT - 60_000;
+    const farFuture = SAT + 86_400_000;
+    expect(seatFirstHumanPartnerHoldUntilMs(farFuture, HUMAN_SEATED_AT_UNKNOWN, 0, created)).toBe(
+      created + SEAT_FIRST_HUMAN_WINDOW_MAX_MS + SEAT_FIRST_HUMAN_PARTNER_HOLD_SPREAD_MS
+    );
+    expect(seatFirstHumanPartnerHoldUntilMs(WINDOW, HUMAN_SEATED_AT_UNKNOWN, 0, created)).toBe(
+      WINDOW
+    );
+  });
+
   it('the per-board spread is deterministic, inside 0-30 s, and never beyond the ceiling', () => {
     const ids = Array.from(
       { length: 200 },
@@ -289,5 +300,28 @@ describe('a refusal by the hold is never a miss or an alarm (stale occupancy cac
 
   it('the past-start lane does not back an event off for a hold', () => {
     expect(GAME_SERVER).toContain('misses: added > 0 ? 0 : held ? misses : misses + 1,');
+  });
+});
+
+describe('CANNOT FILL is said for a person waiting, and a horse-only board says STUCK once', () => {
+  const start = GAME_SERVER.indexOf('private async topUpPartialSeatFirst(');
+  const topUp = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  private ', start + 10));
+
+  it('the once-a-minute alarm is raised only for a board a human sits in', () => {
+    const human = topUp.indexOf('if (forHuman) {');
+    const alarm = topUp.indexOf("'GameServer.seat_first_human_waiting'");
+    expect(human).toBeGreaterThan(-1);
+    expect(alarm).toBeGreaterThan(human);
+    expect(alarm).toBeLessThan(topUp.indexOf('} else if ('));
+  });
+
+  it('a horse-only board is reported once, after the whole backoff ladder, and forgotten when it fills', () => {
+    expect(GAME_SERVER).toContain('export const SEAT_FIRST_STUCK_AFTER_MISSES = 6;');
+    expect(topUp).toContain(
+      '(this.seatFirstFillMisses.get(tournamentId) ?? 0) >= SEAT_FIRST_STUCK_AFTER_MISSES'
+    );
+    expect(topUp).toContain('!this.seatFirstStuckReported.has(tournamentId)');
+    expect(topUp).toContain("'GameServer.seat_first_board_stuck'");
+    expect(topUp).toContain('this.seatFirstStuckReported.delete(tournamentId);');
   });
 });

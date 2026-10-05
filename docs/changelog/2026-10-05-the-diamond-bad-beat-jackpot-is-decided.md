@@ -1,6 +1,6 @@
 # The Diamond bad beat jackpot is decided, and its pool is player side
 
-2026-10-05. Migration `20261005152000_diamond_bad_beat_jackpot_is_decided_and_its_pool_is_player_side`.
+2026-10-05. Migration `20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side`.
 Law: `tests/the-diamond-jackpot-is-decided-and-never-a-chip-pool.law.test.ts`.
 Fixture: `tests/sql/run-diamond-bad-beat-jackpot.py`, on isolated PostgreSQL 17.
 

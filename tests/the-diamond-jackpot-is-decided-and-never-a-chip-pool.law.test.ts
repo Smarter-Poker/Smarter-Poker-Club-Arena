@@ -32,7 +32,7 @@ const ROOT = join(__dirname, '..');
 const MIGRATION = join(
   ROOT,
   'supabase/migrations',
-  '20261005152000_diamond_bad_beat_jackpot_is_decided_and_its_pool_is_player_side.sql'
+  '20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side.sql'
 );
 const sql = readFileSync(MIGRATION, 'utf8');
 

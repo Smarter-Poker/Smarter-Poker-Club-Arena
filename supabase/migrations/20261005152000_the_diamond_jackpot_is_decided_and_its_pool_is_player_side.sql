@@ -511,6 +511,12 @@ CREATE TABLE IF NOT EXISTS public.poker_diamond_jackpot_pools (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS poker_diamond_jackpot_one_active_pool_per_arena
   ON public.poker_diamond_jackpot_pools (arena_id) WHERE status = 'active';
+-- The partial index above cannot answer the foreign key: deleting a club
+-- checks every key into clubs, and a partial index or one where the column is
+-- not first does not count, so this is a sequential scan of the child table
+-- without a full index leading on arena_id.
+CREATE INDEX IF NOT EXISTS idx_poker_diamond_jackpot_pools_arena_id_fk
+  ON public.poker_diamond_jackpot_pools (arena_id);
 
 CREATE TABLE IF NOT EXISTS public.poker_diamond_jackpot_ledger (
   id             bigserial PRIMARY KEY,
@@ -1191,7 +1197,7 @@ BEGIN
   EXECUTE $q$SELECT 'fn_ca_arena_diamonds' = ANY (public.fn_ca_guard_watchlist())$q$ INTO v_watched;
   IF v_watched THEN
     EXECUTE format('SELECT public.fn_ca_declare_guard_redefinition(%L, %L)', 'fn_ca_arena_diamonds',
-      'migration 20261005152000_diamond_bad_beat_jackpot_is_decided_and_its_pool_is_player_side');
+      'migration 20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side');
   END IF;
 END $declare$;
 
@@ -1323,7 +1329,7 @@ BEGIN
   EXECUTE $q$SELECT 'fn_poker_diamond_settle_cash_hand' = ANY (public.fn_ca_guard_watchlist())$q$ INTO v_watched;
   IF v_watched THEN
     EXECUTE format('SELECT public.fn_ca_declare_guard_redefinition(%L, %L)', 'fn_poker_diamond_settle_cash_hand',
-      'migration 20261005152000_diamond_bad_beat_jackpot_is_decided_and_its_pool_is_player_side');
+      'migration 20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side');
   END IF;
 END $declare$;
 

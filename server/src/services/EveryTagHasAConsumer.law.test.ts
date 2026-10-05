@@ -100,7 +100,9 @@ describe('LAW: every tag has a consumer', () => {
   });
 
   it('every registered SQL tag has a source migration (installation is a separate gate)', () => {
-    expect(sqlTags.length, 'the V49 frequency tags are registered').toBeGreaterThanOrEqual(9);
+    // 8, not 9: freq_no_3bet was retired 2026-10-05 (horses it flagged won
+    // MORE, not less; see migration 20261005190000_the_audit_stops_crying_wolf_on_mix_and_on_three_bets).
+    expect(sqlTags.length, 'the V49 frequency tags are registered').toBeGreaterThanOrEqual(8);
     const migDir = join(process.cwd(), '..', 'supabase', 'migrations');
     const sql = readdirSync(migDir)
       .filter((f) => f.endsWith('.sql'))

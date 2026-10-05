@@ -1487,6 +1487,11 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
     async (reason) => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // Only the journal's own lines are counted: under a loaded runner another
+      // module in this worker can warn during the fake-timer advance, and that
+      // is not the journal pausing or resuming twice (2026-10-05, seen once).
+      const journalWarns = () =>
+        warn.mock.calls.filter((c) => String(c[0]).startsWith('[HorseDecisionJournal]'));
       try {
         const w = new FakeWorker(),
           notes: string[] = [],
@@ -1505,7 +1510,7 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           failedSince: null,
           queued: 1,
         });
-        expect(warn).toHaveBeenCalledTimes(1);
+        expect(journalWarns()).toHaveLength(1);
         expect(warn).toHaveBeenCalledWith(
           `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
         );
@@ -1544,10 +1549,10 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           pausedSince: null,
           lastFailureReason: null,
         });
-        expect(warn).toHaveBeenCalledTimes(2);
-        expect(warn).toHaveBeenLastCalledWith(
-          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`
-        );
+        expect(journalWarns()).toHaveLength(2);
+        expect(journalWarns().at(-1)).toEqual([
+          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`,
+        ]);
         expect(notes).toContain('phase15_journal_capacity_resumed');
         const replay = sentOf(w, 'APPEND')[1]!.records;
         expect(identities(replay)).toEqual(identities(probed));

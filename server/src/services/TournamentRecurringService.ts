@@ -43,6 +43,7 @@ import {
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
+import { getFleetPolicy } from './HorseFleetPolicy.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
@@ -2940,6 +2941,8 @@ export class TournamentRecurringService {
    * number of such rows a process ever meets (40 measured, see topUpWithHorses).
    */
   private finalizedPoolTopUpsRefused = new Set<string>();
+  /** Tournaments whose club fleet hold has already been reported. */
+  private fleetHeldTopUpsRefused = new Set<string>();
   /* Last counter/roster disagreement said per event, so a top-up that finds
      nothing to add because the field is already there says so once per
      distinct disagreement rather than every backoff. */
@@ -6240,6 +6243,66 @@ export class TournamentRecurringService {
           }
           // No seat changed. Canonical seat transactions already commit the
           // exact count, so an idle sweep has no write authority here.
+          return 0;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           A PAUSED FLEET TAKES NO NEW SEAT - IN CASH OR IN A TOURNAMENT.
+           ═══════════════════════════════════════════════════════════════════
+
+           The Fleet Command Center is the platform's one answer to "how many
+           horses take seats, where and when", and HorseFleetPolicy's own
+           contract words `enabled: false` as "stops NEW seatings" and
+           `pauseNewSeatings: true` as "stops NEW seatings without disabling
+           the fleet". Until this gate existed that contract was only honoured
+           by HorseFleetManager, which seats CASH tables. Nothing on the
+           tournament side read it, so a club held in the console kept being
+           handed a full field: the MTT pre-start ramp asks this function for
+           one every 45 seconds, for every REGISTERING event inside
+           MTT_PRESTART_RAMP_MS (72 hours).
+
+           Measured on 2026-10-05, Deep Stack Society under an operator hold
+           with `pause_new_seatings` true on its club row: cash was dark and no
+           new game could be created, yet 689 horse registrations sat across 49
+           scheduled MTTs and the ramp replaced any that were refunded - 68 in
+           two minutes - because this path had never been told the club was
+           held. An operator could stop the club being SOLD new games and still
+           not stop it PLAYING them.
+
+           A hold is a hold in both lanes. This refuses the fill; it never
+           unseats a horse already in a game and never cancels an event, which
+           is the same promise HorseFleetPolicy makes for cash and keeps the
+           owner's "TOURNAMENTS RUN. THEY DO NOT CANCEL." rule intact: a held
+           club's existing events still run to their own end, they simply stop
+           being refilled.
+
+           getFleetPolicy never throws and never returns null, and an
+           unreadable row yields FLEET_POLICY_DEFAULTS with `degraded` set -
+           enabled true, pause false - so a database blip fails OPEN and tops
+           up exactly as today. That is HorseFleetPolicy's documented choice
+           and this gate inherits it rather than inventing a stricter one.
+
+           PLACED AFTER EVERY CHEAP REFUSAL ON PURPOSE. A board that is already
+           full, past its generation, frozen or finalized adds nobody whatever
+           the policy says, so asking for the policy there would spend an RPC
+           to reach the same zero - and aPastStartEventCountsItsRoster pins
+           that an idle top-up touches the database not at all. The read
+           happens only where a seat was actually about to be taken. */
+        const fleetPolicy = await getFleetPolicy(
+          (tRow as { club_id?: string | null }).club_id ?? null
+        );
+        if (!fleetPolicy.enabled || fleetPolicy.pauseNewSeatings) {
+          if (!this.fleetHeldTopUpsRefused.has(tournamentId)) {
+            this.fleetHeldTopUpsRefused.add(tournamentId);
+            reportError(
+              new Error(
+                `[TournamentRecurring] top-up refused for ${tournamentId.slice(0, 8)}: its club's fleet policy is held ` +
+                  `(enabled=${fleetPolicy.enabled}, pauseNewSeatings=${fleetPolicy.pauseNewSeatings}` +
+                  `${fleetPolicy.degraded ? ', degraded read' : ''}) - a paused fleet takes no new seat in a tournament either`
+              ),
+              'TournamentRecurring.top_up_refused_fleet_held'
+            );
+          }
           return 0;
         }
 

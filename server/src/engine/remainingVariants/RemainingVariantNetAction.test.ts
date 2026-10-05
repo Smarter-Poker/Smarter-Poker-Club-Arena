@@ -8,6 +8,7 @@ import { horseDecisionReceiptIsValid } from '../horseDecision/responseValidation
 import { horsePolicyOwnership } from '../HorsePolicyRegistry.js';
 import {
   evaluateRemainingVariantPolicy,
+  remainingVariantUnfiredBudgetRefusalIsValid,
   remainingVariantReceiptBindingIsValid,
 } from './RemainingVariantLivePolicy.js';
 import { REMAINING_VARIANT_DOMAIN } from './RemainingVariantPolicyPack.js';
@@ -216,11 +217,12 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
           1,
           true
         );
-        // On a starved host the policy itself can cross its own 4 ms budget
-        // and fall back (reason work_budget): a node that did not fire is
-        // never priced, by design, and that outcome is named too.
+        // On a loaded host the sampler can exhaust its earlier deadline before
+        // producing equity, or the policy can cross its own 4 ms deadline.
+        // Neither path fires or gets priced; both return the reference action
+        // with one source-owned, closed, named budget refusal.
         if (!result.receipt.fired) {
-          expect(result.receipt.reason).toBe('work_budget');
+          expect(remainingVariantUnfiredBudgetRefusalIsValid(result.receipt.reason)).toBe(true);
           expect(result.receipt.actionEconomics).toBeUndefined();
           continue;
         }

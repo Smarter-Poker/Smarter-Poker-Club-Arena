@@ -382,7 +382,7 @@ describe('a tournament move onto a table already open as a tab', () => {
   it('closes the old tab and stamps the open one as moved and seated', () => {
     // A cash must-move closes the old tab and says nothing more, as before.
     expect(branch).toContain(
-      'if (!current.isTournament) return prev.filter((t) => t.id !== tableId);'
+      'if (!tabIsTournament(current)) return prev.filter((t) => t.id !== tableId);'
     );
     expect(branch).toMatch(/return prev\s*\.filter\(\(t\) => t\.id !== tableId\)\s*\.map\(/);
     expect(branch).toMatch(

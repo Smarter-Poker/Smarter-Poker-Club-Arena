@@ -43,6 +43,7 @@ import { supabase } from '../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
@@ -268,6 +269,10 @@ export default function MemberManagementPage() {
 
   const identity = detail?.identity;
   const found = !notFound && !!identity?.user_id;
+  /* ca_club_member_detail answers "seated OR fresh presence"; off a seat it is
+     the presence door's answer, re-asked every minute while shown so it goes
+     dark when the heartbeat does (presence-has-one-definition law). */
+  const onlineNow = useOnlineNow(identity?.user_id, detail?.presence.is_online === true);
 
   const shownDownline = downline.slice(0, downlineShown);
 
@@ -347,7 +352,7 @@ export default function MemberManagementPage() {
         <div className="mm-credential__content">
           <span className="mm-eyebrow">Audited Player Credential</span>
           <div className="mm-identity">
-            <div className={`mm-avatar${detail!.presence.is_online ? ' mm-avatar--online' : ''}`}>
+            <div className={`mm-avatar${onlineNow ? ' mm-avatar--online' : ''}`}>
               {identity!.avatar_url ? (
                 <img
                   src={sizedStorageUrl(identity!.avatar_url!, 96)}
@@ -373,16 +378,12 @@ export default function MemberManagementPage() {
                   className={`mm-presence${
                     detail!.presence.is_seated
                       ? ' mm-presence--seated'
-                      : detail!.presence.is_online
+                      : onlineNow
                         ? ' mm-presence--online'
                         : ''
                   }`}
                 >
-                  {detail!.presence.is_seated
-                    ? 'At A Table'
-                    : detail!.presence.is_online
-                      ? 'Online Now'
-                      : 'Offline'}
+                  {detail!.presence.is_seated ? 'At A Table' : onlineNow ? 'Online Now' : 'Offline'}
                 </span>
               </div>
               <h2 id="mm-player-name" className="mm-alias">

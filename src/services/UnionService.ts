@@ -455,6 +455,23 @@ class UnionServiceClass {
     return data === true;
   }
 
+  /**
+   * Whether the current authenticated player may open this union's operational
+   * and financial workspace. This is intentionally broader than
+   * isUnionAdmin(): house-club overseers and platform staff are admitted by the
+   * same database predicate used by UnionOverseerGuard, while Table Management
+   * continues to require fn_is_union_operator.
+   */
+  async canOverseeUnion(unionId: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('ca_can_oversee_union', {
+      p_union_id: unionId,
+    });
+
+    if (error) throw error;
+
+    return data === true;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // UNION CLUBS
   // ─────────────────────────────────────────────────────────────────────────────

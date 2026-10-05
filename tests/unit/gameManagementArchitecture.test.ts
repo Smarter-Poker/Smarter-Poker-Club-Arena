@@ -41,11 +41,14 @@ describe('canonical table management architecture', () => {
     expect(unionDetail).toContain('to={`/unions/${unionRef}/table-management`}');
   });
 
-  it('fails closed for a club after it joins a union', () => {
+  it('fails closed locally and routes a union club through operator authority', () => {
     expect(page).toContain('const standaloneAccess = access.allowed && !access.unionId');
     expect(page).toContain('This Club Is Managed By Its Union');
     expect(navigation).toContain('if (canManageGames)');
-    expect(hamburger).toContain('setCanManageGames(access.allowed && !access.unionId)');
+    expect(hamburger).toContain('if (!access.unionId)');
+    expect(hamburger).toContain('setCanManageGames(access.allowed)');
+    expect(hamburger).toContain('unionService.isUnionAdmin(access.unionId, user.id)');
+    expect(hamburger).toContain('setUnionManageId(operator ? access.unionId : null)');
     expect(hamburger).toContain('Table Management');
   });
 

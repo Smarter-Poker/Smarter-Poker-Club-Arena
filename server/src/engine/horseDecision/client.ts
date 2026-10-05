@@ -34,6 +34,7 @@ import { HORSE_PHASE11_VARIANTS, liveHorsePhase11Authorities } from '../HorsePha
 import { isOmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
+import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -1298,6 +1299,23 @@ export class LiveHorseDecisionWorkerClient {
         if (message.decision.policyOwnership?.owner === 'phase11')
           delete message.decision.policyOwnership;
         noteFire('phase11_shadow_receipt_binding_dropped');
+      }
+      // P12.1, the same rule for Short Deck/Pineapple/FLH/FLO8: a shadow-only
+      // receipt whose net-action binding fails never owned the action, so it
+      // goes with its ownership record rather than taking the worker down.
+      // An applied one still fails closed below.
+      const phase12Shadow = message.decision.remainingVariantPolicy;
+      if (
+        phase12Shadow &&
+        typeof phase12Shadow === 'object' &&
+        phase12Shadow.mode === 'shadow' &&
+        phase12Shadow.applied === false &&
+        !remainingVariantReceiptBindingIsValid(phase12Shadow)
+      ) {
+        delete message.decision.remainingVariantPolicy;
+        if (message.decision.policyOwnership?.owner === 'phase12')
+          delete message.decision.policyOwnership;
+        noteFire('phase12_shadow_receipt_binding_dropped');
       }
       if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));

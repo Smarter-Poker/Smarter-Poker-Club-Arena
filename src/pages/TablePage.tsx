@@ -12679,11 +12679,9 @@ function LiveTablePage({
             min_buy_in: table.min_buy_in,
             max_buy_in: table.max_buy_in,
           }).max,
-          // Reconnects happen after the one-shot event. TournamentService
-          // canonically names the consolidated table "Final Table".
-          isFinalTable:
-            (table.game_type === 'tournament' || !!table.tournament_id) &&
-            /\bfinal table\b/i.test(table.name || ''),
+          // Final Table is restored from the persisted MTT flag below. A table
+          // name is presentation copy and cannot grant a tournament lifecycle.
+          isFinalTable: false,
           /**
            * ═══════════════════════════════════════════════════════════════════
            *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
@@ -13119,18 +13117,13 @@ function LiveTablePage({
           /**
            * FINAL TABLE IS ASKED FOR, NOT INFERRED (Dan 2026-08-28, bug 7).
            *
-           * `isFinalTable` above falls back to a regex on the table NAME,
-           * because the engine's `final_table` broadcast is one-shot and a
-           * reconnecting client misses it. That fallback assumed the
-           * consolidated table gets renamed "Final Table"; production names it
-           * "Union PKO Afternoon (PLO4) - Table 2", so it matched nothing and
-           * the final-table background never loaded.
-           *
-           * The engine now persists `final_table_triggered`, so ask. Only ever
-           * turns the theme ON: the name regex and the live broadcast stay as
-           * they were, and an unreadable row leaves whatever they decided.
+           * The engine persists `final_table_triggered`, so reconnects ask the
+           * durable lifecycle row. Table names are presentation copy and do
+           * not grant this state; the persisted tournament format must also
+           * be MTT. An unreadable row therefore leaves the theme off until the
+           * authoritative event or a later successful read arrives.
            */
-          if (tournData?.final_table_triggered) {
+          if (tournData?.final_table_triggered && getTournamentFormatKind(tournData) === 'mtt') {
             setTableState((prev) => (prev.isFinalTable ? prev : { ...prev, isFinalTable: true }));
           }
 
@@ -13762,6 +13755,21 @@ function LiveTablePage({
              authoritative result on initial load and whenever the tournament
              row becomes COMPLETED. `goToLobbyWithResult` is already one-shot,
              so this safely races the normal broadcast without two exits. */
+          function applyDurableFinalTableState(row: unknown): void {
+            if (!isMounted || !row || typeof row !== 'object') return;
+            const durable = row as {
+              final_table_triggered?: unknown;
+              format_contract?: unknown;
+            };
+            if (
+              durable.final_table_triggered !== true ||
+              getTournamentFormatKind(durable) !== 'mtt'
+            ) {
+              return;
+            }
+            setTableState((prev) => (prev.isFinalTable ? prev : { ...prev, isFinalTable: true }));
+          }
+
           let durableCompletionLookupInFlight = false;
           let durableCompletionHandled = false;
           function scheduleDurableCompletionRetry(): void {
@@ -13872,7 +13880,7 @@ function LiveTablePage({
             if (!isMounted || durableCompletionHandled) return;
             const { data: terminal, error: terminalError } = await supabase
               .from('tournaments')
-              .select('status')
+              .select('status, format_contract, final_table_triggered')
               .eq('id', durableTournamentId)
               .maybeSingle();
             if (!isMounted) return;
@@ -13888,6 +13896,7 @@ function LiveTablePage({
               scheduleDurableCompletionRetry();
               return;
             }
+            applyDurableFinalTableState(terminal);
             if (terminal.status === 'COMPLETED') {
               await exitFromDurableCompletion();
               return;
@@ -13914,9 +13923,25 @@ function LiveTablePage({
                 filter: `id=eq.${table.tournament_id}`,
               },
               (payload: any) => {
+                applyDurableFinalTableState(payload.new);
                 if (payload.new?.status === 'COMPLETED') {
                   void exitFromDurableCompletion();
                 }
+              }
+            )
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'tournament_final_table_events',
+                filter: `tournament_id=eq.${durableTournamentId}`,
+              },
+              () => {
+                applyDurableFinalTableState({
+                  final_table_triggered: true,
+                  format_contract: 'mtt-v1',
+                });
               }
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
@@ -23682,6 +23707,7 @@ function LiveTablePage({
       }
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={activeCardBack}
+      data-face-deck={v8Theme.faceDeckId}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
       /* Dan 2026-08-18: 2 or 3 when the hand is run multiple times — CSS
          shifts the felt masthead down by one board height per extra run so

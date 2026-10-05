@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { masterBus } from '../../src/core/MasterBus';
+import { readSettingsPageCache, writeSettingsPageCache } from '../../src/lib/settingsPageCache';
 import { useSettingsStore } from '../../src/stores/useSettingsStore';
 import { useUserStore } from '../../src/stores/useUserStore';
 
@@ -29,6 +30,15 @@ beforeEach(() => {
     configurable: true,
     value: FakeBroadcastChannel,
   });
+  localStorage.clear();
+  useUserStore.setState({ user: null, isAuthenticated: false });
+  useSettingsStore.setState({
+    theme: 'dark',
+    themePreference: 'dark',
+    interfaceThemeUserId: null,
+    interfaceThemeScopeReady: false,
+    interfaceThemeHydrationState: 'idle',
+  });
 });
 
 afterEach(() => {
@@ -40,27 +50,30 @@ describe('live customization bus', () => {
   it('applies a cross-tab light/dark event to Zustand and the DOM', async () => {
     masterBus.reset();
     masterBus.init();
-    useSettingsStore.setState({ theme: 'dark' });
-    localStorage.setItem(
-      'club-arena-user-settings',
-      JSON.stringify({ theme: 'dark', soundEnabled: false })
-    );
+    useSettingsStore.getState().bindInterfaceThemeScope('user-1');
+    useUserStore.setState({ user: { id: 'user-1' } as never });
+    writeSettingsPageCache('user-1', { theme: 'dark', soundEnabled: false });
 
-    masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: 'light' });
+    masterBus.emit('UI_THEME_CHANGED', {
+      key: 'theme',
+      value: 'light',
+      userId: 'user-1',
+    });
 
     expect(useSettingsStore.getState().theme).toBe('light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     expect(document.documentElement.style.colorScheme).toBe('light');
-    expect(JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')).toEqual({
+    expect(readSettingsPageCache('user-1')).toEqual({
       theme: 'light',
       soundEnabled: false,
     });
+    expect(localStorage.getItem('club-arena-user-settings')).toBeNull();
   });
 
   it("does not apply another account's light/dark event", async () => {
     masterBus.reset();
     masterBus.init();
-    useSettingsStore.setState({ theme: 'dark' });
+    useSettingsStore.getState().bindInterfaceThemeScope('user-1');
     useUserStore.setState({ user: { id: 'user-1' } as never });
 
     masterBus.emit('UI_THEME_CHANGED', {
@@ -114,11 +127,12 @@ it('preserves Auto across a cross-device theme event and persistence', async () 
   masterBus.reset();
   masterBus.init();
   useUserStore.setState({ user: { id: 'user-1' } as never });
+  useSettingsStore.getState().bindInterfaceThemeScope('user-1');
+  writeSettingsPageCache('user-1', { theme: 'dark', soundVolume: 42 });
   masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: 'auto', userId: 'user-1' });
   expect(useSettingsStore.getState()).toMatchObject({ theme: 'light', themePreference: 'auto' });
-  expect(JSON.parse(localStorage.getItem('club-arena-user-settings')!).theme).toBe('auto');
-  await useSettingsStore.persist.rehydrate();
-  expect(useSettingsStore.getState().themePreference).toBe('auto');
+  expect(readSettingsPageCache('user-1')).toEqual({ theme: 'auto', soundVolume: 42 });
+  expect(localStorage.getItem('club-arena-user-settings')).toBeNull();
 });
 
 it.each(['PROFILE_UPDATED', 'SETTINGS_UPDATED', 'DIAMOND_BALANCE_CHANGED'] as const)(

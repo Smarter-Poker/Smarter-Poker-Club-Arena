@@ -140,6 +140,8 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     '15c563ea1f9e45bc686e78ea27b86bac4446316a73c31a22856540382555203a',
   'assets/club-buttons/console/spade-console-v1/source/crest-diamond.png':
     '656d18fdcbc2619f5970e0df252464bd0996e0863355efaa66f6a68b0e56b182',
+  'assets/club-buttons/console/spade-console-v1/source/crest-vip-v2.png':
+    '50e25524958374c9f694bb5aaf7498a1dd52338210f3c23ff1d5f73b0d5f0d91',
   'assets/club-buttons/console/spade-console-v1/source/crest-vip.png':
     '195264e6007882c36fe0d90b9eec421548901affee6d266c7a61c9b14bcbfe5b',
   'assets/club-buttons/console/spade-console-v1/top-club.png':
@@ -148,6 +150,8 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     'd0d9b42c039842028d2405a2c5e10e15332d2cd2ebf301f92ab1fa6b9b11818f',
   'assets/club-buttons/console/spade-console-v1/top-flat.png':
     '394a32af66be7c269e7b73454224e60b2e6e110f4b2195f9e90982c334d032c8',
+  'assets/club-buttons/console/spade-console-v1/top-vip-v2.png':
+    'a7a25e9d9234b91a9459b0aee5d77e049cc465e895f4aac990b5eff77224c18f',
   'assets/club-buttons/console/spade-console-v1/top-vip.png':
     'c4911fe3e10f94e242d9f52d411fb66932f6a5d7dcceb618aaa7ef7713930e4c',
   'assets/club-buttons/console/spade-console-v1/top.png':

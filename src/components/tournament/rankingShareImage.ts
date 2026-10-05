@@ -8,7 +8,7 @@
  * system sheet an image of the result alongside that sentence.
  *
  * THE IMAGE IS PAINTED FROM THE SAME MASTER AS THE CARD. The head is the VIP
- * console's own top-vip.png, the body is mid.png repeated, the foot is the flat
+ * console's own top-vip-v2.png, the body is mid.png repeated, the foot is the flat
  * cap - the approved art at its native 1000px width, never redrawn - and every
  * line is printed in the inks the console prints in (SpadeConsole.css). Only
  * the medal is drawn, exactly as it is on the card, with the card's own trophy
@@ -253,7 +253,7 @@ export async function paintRankingShareImage(input: RankingShareInput): Promise<
   let top: HTMLImageElement, mid: HTMLImageElement, foot: HTMLImageElement;
   try {
     [top, mid, foot] = await Promise.all([
-      loadImage(`${ART}top-vip.png`),
+      loadImage(`${ART}top-vip-v2.png`),
       loadImage(`${ART}mid.png`),
       loadImage(`${ART}bottom-foot.png`),
     ]);

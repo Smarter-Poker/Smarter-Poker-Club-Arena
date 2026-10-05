@@ -9391,12 +9391,18 @@ export abstract class TournamentManagerBase {
     // Persist the level clock (wall-clock start of THIS level's remaining
     // window) so a restart resumes the level mid-flight. Detached from the
     // caller, but still drained by this exact lifecycle before replacement.
+    // Fenced like the break release and the publication RPC: the anchor
+    // belongs to the level this process armed, on a RUNNING event, and can
+    // never land on a level the row has since moved past.
+    const armedLevel = this.currentLevel;
     void this.trackLifecycleJob(
       Promise.resolve(
         supabase
           .from('tournaments')
           .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
           .eq('id', this.tournamentId)
+          .eq('status', 'RUNNING')
+          .eq('current_level', armedLevel)
       )
         .then(({ error }: { error: { message?: string } | null }) => {
           if (error && !/column|schema/i.test(error.message || '')) {
@@ -10217,11 +10223,64 @@ export abstract class TournamentManagerBase {
 
     if (ownsLevelClock && !this.onBreak && !this.stageEndPause) {
       const blindStructure = this.tournamentCache?.blind_structure || [];
-      const remaining = this.savedBlindTimerRemaining;
+      const measured = this.savedBlindTimerRemaining;
       this.savedBlindTimerRemaining = 0;
-      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+      this.rearmLevelClockFromThawedAnchor(blindStructure, measured);
     }
     this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A WITHDRAWN BREAK GIVES THE LEVEL CLOCK BACK FROM THE THAWED ROW (2026-10-05)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break that was withdrawn above suspended the level clock when it
+   * began, INSIDE the freeze. suspendLevelClock measured the remaining time
+   * against the pre-freeze anchor, so every minute from the freeze start to the
+   * break start was counted as played. Re-arming from that measurement through
+   * startBlindTimer burned those minutes, and startBlindTimer also persisted
+   * the burned anchor with an unfenced, detached write. The thaw re-read in
+   * GameServer runs resyncLevelClockAfterMaintenanceThaw straight after this:
+   * when its read beat the detached write, memory followed the correctly
+   * thawed anchor and the row was then overwritten with the burned one, so the
+   * next restart resumed the level up to the whole freeze short.
+   *
+   * The add-on break never moved the durable anchor (suspendLevelClock is
+   * memory only) and fn_thaw_platform has already shifted it by the frozen
+   * duration, so the row IS the correct clock. Nothing is written here. The
+   * measured remainder only arms a provisional local wake, and the thaw-resync
+   * flag makes the clock follow the durable anchor: the thaw re-read re-arms
+   * from it at once, and if that read does not land, the wake itself rereads
+   * the anchor before it may publish a level (advanceBlindLevel).
+   */
+  private rearmLevelClockFromThawedAnchor(
+    blindStructure: any[],
+    measuredRemainingMs: number
+  ): void {
+    if (this.blindClockTerminalCommitted || blindStructure.length === 0) return;
+    // A publication retry and a booked future start keep their own clocks and
+    // never persist an anchor from startBlindTimer.
+    if (
+      this.pendingBlindTransition ||
+      Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()
+    ) {
+      this.startBlindTimer(
+        blindStructure,
+        measuredRemainingMs > 0 ? measuredRemainingMs : undefined
+      );
+      return;
+    }
+    const current = this.resolveBlindLevel(blindStructure, this.currentLevel) || blindStructure[0];
+    const durationMs = this.levelDurationMs(current);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    const armMs =
+      measuredRemainingMs > 0
+        ? Math.min(Math.max(1000, measuredRemainingMs), durationMs)
+        : durationMs;
+    this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
+    this.blindClockNeedsThawResync = true;
+    this.scheduleBlindLevelWake(blindStructure, armMs);
   }
 
   /**

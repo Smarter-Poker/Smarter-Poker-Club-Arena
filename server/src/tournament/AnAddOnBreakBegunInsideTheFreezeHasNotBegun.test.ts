@@ -34,7 +34,10 @@ class AddOnBreakHarness extends TournamentManagerBase {
     super('e51546f6-0000-4000-8000-000000000001', {} as GameServer);
     (this as any).lifecycleEpoch.begin();
     this.running = true;
-    this.tournamentCache = { addon_break_minutes: 1, blind_structure: [] } as any;
+    this.tournamentCache = {
+      addon_break_minutes: 1,
+      blind_structure: [{ smallBlind: 25, bigBlind: 50, durationMinutes: 10 }],
+    } as any;
     (this as any).prizePoolFinalized = false;
     (this as any).requestEliminationSweep = () => {};
     (this as any).scheduleAddOnRetry = () => {};
@@ -68,6 +71,7 @@ class AddOnBreakHarness extends TournamentManagerBase {
   protected override startBlindTimer(_structure: any[], remainingOverrideMs?: number): void {
     this.levelClockStarts.push(remainingOverrideMs);
   }
+  protected override async advanceBlindLevel(): Promise<void> {}
   protected override suspendLevelClock(): void {
     this.savedBlindTimerRemaining = 240_000;
   }
@@ -148,8 +152,13 @@ describe('an add-on break whose start fell inside the maintenance freeze', () =>
       // The maintenance break is still the owner of the table until it resumes.
       expect(t.held()).toBe(true);
     }
-    // The level clock the withdrawn break suspended is running again.
-    expect(manager.levelClockStarts).toEqual([240_000]);
+    // The level clock the withdrawn break suspended is running again, from a
+    // local wake that rereads the thawed durable anchor. startBlindTimer is
+    // not used: it would persist the anchor measured inside the freeze.
+    // (AWithdrawnAddOnBreakKeepsTheThawedLevelClock.test.ts pins the clock.)
+    expect(manager.levelClockStarts).toEqual([]);
+    expect((manager as any).blindTimer).not.toBeNull();
+    expect((manager as any).blindClockNeedsThawResync).toBe(true);
 
     setMaintenanceFrozen(false);
     a.engine.resumeFromMaintenance();

@@ -423,7 +423,7 @@
     "scripts/ci/classify-ci-changes.mjs": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "1c55b93f5c7b6e35b0b7ad8b41a30ddf6cf49a396678b03f961d6d30f5a57d28",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ee0adf6a76392a1e3e5a7eedf9f4ea3098eed9f7bce9d0372c02be4f2ff7ec74",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "1ea43ed9d36a1ea3705e1e618db1e836faf48797010dfe736ac1b93b95ef8b21",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "3ff9c25bfc14eb2349a65f27939e3063cfc2cf3470a68fdf1e94d2c85a57999f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -3607,6 +3607,7 @@
   "finalTableBoundedCleanupRouting20261005": {
     "changed": "scripts/ci/classify-ci-changes.mjs",
     "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
-    "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
+    "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+    "nested_bindings": "Refresh the two reviewed nested classifier-only binding documents in the parent binding; runtime and historical fixture data unchanged."
   }
 }

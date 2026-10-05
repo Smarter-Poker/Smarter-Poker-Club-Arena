@@ -34,7 +34,7 @@ import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
 import { TimeBankEngine, type TimeBankEvent } from './TimeBankEngine.js';
-import { DisconnectEngine } from './DisconnectEngine.js';
+import { DisconnectEngine, type DisconnectFsmEntry } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
@@ -155,7 +155,12 @@ import {
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  claimMovedPresence,
+  claimTournamentMovePresence,
+  depositMovedPresence,
+  hasMovedPresence,
+} from './SeatMovePresence.js';
 import {
   readCashMoveArrivals,
   type CashMoveArrival,
@@ -4794,6 +4799,58 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * The source half of a tournament move's presence handoff (2026-10-05).
+   * Read by the tournament manager while the source is parked at the hand
+   * boundary, before the move RPC. See SeatMovePresence.ts.
+   */
+  presenceForTournamentMove(playerId: string): DisconnectFsmEntry | null {
+    if (!this.isTournamentTable()) return null;
+    return this.disconnectEngine.getFsmState(this.tableId, playerId);
+  }
+
+  /**
+   * The destination half: a player the roster now seats here, with presence
+   * deposited by the move that brought them, keeps it. Runs ahead of every
+   * registration (see adoptMovedPresence), so the arriving entry is never
+   * pre-empted by a fresh CONNECTED one. A carried sit-out is written back to
+   * the new chair, which the move RPC opened with is_sitting_out=false, so the
+   * felt and the engine agree.
+   */
+  protected adoptTournamentMovePresence(): void {
+    for (const p of this.seatedPlayers) {
+      if (this.disconnectEngine.getFsmState(this.tableId, p.user_id)) continue;
+      const carried = claimTournamentMovePresence(p.user_id, this.tableId);
+      if (!carried) continue;
+      this.disconnectEngine.restoreFsmStates(this.tableId, { [p.user_id]: carried.fsm });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] presence followed ${p.user_id} from ` +
+          `${carried.fromTableId} (tournament move): ${carried.fsm.state}`
+      );
+      if (carried.fsm.state !== 'SAT_OUT' || p.is_sitting_out === true || !p.occupancy_id) continue;
+      void Promise.resolve(
+        supabase
+          .from('table_seats')
+          .update({ is_sitting_out: true })
+          .eq('table_id', this.tableId)
+          .eq('user_id', p.user_id)
+          .eq('occupancy_id', p.occupancy_id)
+          .is('left_at', null)
+      )
+        .then(({ error }) => {
+          if (error) {
+            reportError(
+              new Error(`persist carried sit-out failed: ${error.message}`),
+              'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_failed'
+            );
+          }
+        })
+        .catch((err) => {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_threw');
+        });
+    }
+  }
+
+  /**
    * ADOPT WHAT ARRIVED WITH THE PLAYER (2026-09-05).
    *
    * Called on every seat sweep, from BOTH the start-up wait loop and the
@@ -4814,6 +4871,7 @@ export abstract class ServerTableEngineBase {
    */
   protected async adoptMovedPresence(): Promise<boolean> {
     if (!this.lifecycleCanMutate()) return false;
+    if (this.isTournamentTable()) this.adoptTournamentMovePresence();
     const candidates = this.seatedPlayers
       .filter((p) => hasMovedPresence(p.user_id, this.tableId))
       .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));

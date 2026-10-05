@@ -28,6 +28,10 @@ DECLARE
   house_cash_hand constant uuid := '80000000-0000-4000-8000-000000000005';
   p5_record constant uuid := '70000000-0000-4000-8000-000000000006';
   p5_hand constant uuid := '80000000-0000-4000-8000-000000000006';
+  gap_record constant uuid := '70000000-0000-4000-8000-000000000007';
+  gap_hand constant uuid := '80000000-0000-4000-8000-000000000007';
+  missing_gap_record constant uuid := '70000000-0000-4000-8000-000000000008';
+  missing_gap_hand constant uuid := '80000000-0000-4000-8000-000000000008';
   since_at constant timestamptz := '2026-09-28 12:30:00+00';
   r record;
   d jsonb;
@@ -65,6 +69,11 @@ BEGIN
     -- still win the inherited canonical attribution rule.
     (u,p1,a1,0,'2026-01-01 00:00:00+00'),
     (c1,p2,a1,5,'2026-01-02 00:00:00+00'),
+    -- This second agent receives one exact share of a positive hand-backed
+    -- unsealed gap record. The JSON and rake-attribution allocations below
+    -- are deliberately identical so the successor path proves player/agent
+    -- parity rather than merely preserving the club-wide total.
+    (c1,p4,a2,0,'2026-01-02 12:00:00+00'),
     (c2,p3,a2,7,'2026-01-03 00:00:00+00'),
     (u,p5,a1,2,'2026-01-04 00:00:00+00'),
     (outsider_club,p4,a1,500,'2026-01-05 00:00:00+00');
@@ -88,6 +97,11 @@ BEGIN
     (p5_hand,p5_record,p5,u,0.50,since_at + interval '4 hours'),
     (house_cash_hand,house_hand,p2,c1,1.00,since_at + interval '3 hours'),
     (gen_random_uuid(),gen_random_uuid(),p1,outsider_club,100,since_at + interval '4 hours');
+  INSERT INTO public.rake_attributions(
+    hand_id,rake_record_id,player_id,club_id,rake_amount,
+    eligible_contribution,created_at) VALUES
+    (gap_hand,gap_record,p1,c1,4.50,3,'2026-09-29 06:30:00+00'),
+    (gap_hand,gap_record,p4,c1,1.50,1,'2026-09-29 06:30:00+00');
   INSERT INTO public.chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,amount,status,created_at) VALUES
     (c1,'player_wallet',p1,'table_stack',gen_random_uuid(),20,'posted',since_at + interval '1 hour'),
     (c1,'table_stack',gen_random_uuid(),'player_wallet',p1,30,'posted',since_at + interval '2 hours'),
@@ -140,6 +154,12 @@ BEGIN
     (gen_random_uuid(),cash_hand,c1,-1,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours'),
     (gen_random_uuid(),cash_hand,c1,-0.5,jsonb_build_object(p1::text,1),false,'2026-10-10 01:00:00+00'),
     (p5_record,p5_hand,u,0.5,jsonb_build_object(p5::text,1),false,since_at + interval '4 hours'),
+    (gap_record,gap_hand,c1,6,jsonb_build_object(p1::text,3,p4::text,1),false,
+     '2026-09-29 06:30:00+00'),
+    -- A hand-backed row without rake_attributions must retain the historical
+    -- JSON allocation instead of disappearing from the report.
+    (missing_gap_record,missing_gap_hand,c1,2,jsonb_build_object(p2::text,1),false,
+     '2026-09-29 06:45:00+00'),
     (gen_random_uuid(),gen_random_uuid(),outsider_club,100,jsonb_build_object(p1::text,1),false,since_at + interval '4 hours');
   -- Production cancellations retain the original contribution map and link
   -- the signed reversal to the positive tournament rake row. This pair nets
@@ -268,9 +288,16 @@ BEGIN
   SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
    WHERE agent_user_id=a1 AND club_name='Club One';
   IF r.players IS DISTINCT FROM 2 OR r.seated_now IS DISTINCT FROM 1
-     OR r.rake_generated IS DISTINCT FROM 3.50 OR r.player_net IS DISTINCT FROM 3.00
+     OR r.rake_generated IS DISTINCT FROM 10.00 OR r.player_net IS DISTINCT FROM 3.00
      OR r.commission_accrued IS DISTINCT FROM 4.25 OR r.credit_extended IS DISTINCT FROM 15.00 THEN
     RAISE EXCEPTION 'risk report changed exact Club One accounting: %', to_jsonb(r);
+  END IF;
+  SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
+   WHERE agent_user_id=a2 AND club_name='Club One';
+  IF r.players IS DISTINCT FROM 1 OR r.seated_now IS DISTINCT FROM 0
+     OR r.rake_generated IS DISTINCT FROM 1.50 OR r.player_net IS DISTINCT FROM 0.00
+     OR r.commission_accrued IS DISTINCT FROM 77.00 OR r.credit_extended IS DISTINCT FROM 0.00 THEN
+    RAISE EXCEPTION 'risk report changed gap-hand eligible allocation: %', to_jsonb(r);
   END IF;
   SELECT * INTO r FROM public.fn_union_agent_risk_report(u,since_at)
    WHERE agent_user_id=a1 AND club_name='Midway Union';
@@ -279,11 +306,11 @@ BEGIN
      OR r.commission_accrued IS DISTINCT FROM 1.00 OR r.credit_extended IS DISTINCT FROM 2.00 THEN
     RAISE EXCEPTION 'risk report changed exact house-club accounting: %', to_jsonb(r);
   END IF;
-  IF (SELECT count(*) FROM public.fn_union_agent_risk_report(u,since_at)) <> 2 THEN
+  IF (SELECT count(*) FROM public.fn_union_agent_risk_report(u,since_at)) <> 3 THEN
     RAISE EXCEPTION 'risk report lost canonical/house membership or admitted mirror-only/outsider rows';
   END IF;
   IF (SELECT SUM(x.rake_generated) FROM public.fn_union_agent_risk_report(u,since_at) x)
-       IS DISTINCT FROM 4.00 THEN
+       IS DISTINCT FROM 12.00 THEN
     RAISE EXCEPTION 'house-hosted multi-membership rake was lost or duplicated';
   END IF;
   EXECUTE format(
@@ -304,6 +331,15 @@ BEGIN
      OR position('club_rake_rollup_complete' in fn_src) = 0
      OR position('edge_attribution_rake AS' in fn_src) = 0
      OR position('gap_days AS MATERIALIZED' in fn_src) = 0
+     OR position('gap_hand_records AS MATERIALIZED' in fn_src) = 0
+     OR position('gap_hand_fallback_records AS MATERIALIZED' in fn_src) = 0
+     OR position('gap_hand_rake AS' in fn_src) = 0
+     OR position('PARTITION BY a.rake_record_id' in fn_src) = 0
+     OR position('JOIN public.rake_records r ON r.id = x.id' in fn_src) = 0
+     OR position('UNION ALL SELECT * FROM gap_hand_rake' in fn_src) = 0
+     OR position(E'FROM gap_days gd\n      JOIN public.rake_records r' in fn_src) > 0
+     OR (length(fn_src) - length(replace(fn_src, 'OFFSET 0', '')))
+        / length('OFFSET 0') IS DISTINCT FROM 3
      OR position('flow_legs AS MATERIALIZED' in fn_src) > 0
      OR position('flows AS MATERIALIZED' in fn_src) = 0
      OR position('l.to_entity_id = p.player_id' in fn_src) = 0
@@ -379,6 +415,9 @@ BEGIN
      OR position('ac.club_id = p.club_id' in fn_src) = 0
      OR position('JOIN public.agent_commissions ac' in fn_src) <> 0
      OR position('GROUP BY ac.user_id, ac.club_id' in fn_src) <> 0
+     OR position('gap_hand_records AS MATERIALIZED' in fn_src) = 0
+     OR position('gap_hand_fallback_records AS MATERIALIZED' in fn_src) = 0
+     OR position('gap_hand_rake AS' in fn_src) = 0
      OR NOT EXISTS (
        SELECT 1
          FROM pg_index i
@@ -390,7 +429,19 @@ BEGIN
          FROM pg_index i
         WHERE i.indexrelid =
               'public.idx_chip_ledger_risk_out_player_window'::regclass
-          AND i.indisvalid AND i.indisready AND i.indislive) THEN
+          AND i.indisvalid AND i.indisready AND i.indislive)
+     OR pg_get_indexdef(
+          'public.idx_rake_records_union_gap_hand_window'::regclass)
+        IS DISTINCT FROM
+          'CREATE INDEX idx_rake_records_union_gap_hand_window ON public.rake_records USING btree (club_id, created_at) INCLUDE (id, rake_amount) WHERE ((hand_id IS NOT NULL) AND (rake_amount > (0)::numeric) AND (player_contributions IS NOT NULL))'
+     OR pg_get_indexdef(
+          'public.idx_rake_records_union_gap_handless_window'::regclass)
+        IS DISTINCT FROM
+          'CREATE INDEX idx_rake_records_union_gap_handless_window ON public.rake_records USING btree (club_id, created_at) INCLUDE (id, rake_amount, player_contributions) WHERE ((hand_id IS NULL) AND (rake_amount > (0)::numeric) AND (player_contributions IS NOT NULL))'
+     OR pg_get_indexdef(
+          'public.idx_rake_attributions_union_gap_record_player'::regclass)
+        IS DISTINCT FROM
+          'CREATE INDEX idx_rake_attributions_union_gap_record_player ON public.rake_attributions USING btree (rake_record_id, player_id) INCLUDE (eligible_contribution) WHERE (eligible_contribution > (0)::numeric)' THEN
     RAISE EXCEPTION 'risk report lost exact pair-keyed chip flow or commission reads';
   END IF;
 
@@ -531,6 +582,111 @@ BEGIN
 END
 $fixture$;
 
+-- Exercise the recent unsealed-gap branches against yesterday on every run.
+-- The three records are inserted one at a time so each successor path has an
+-- exact observable delta: attribution weights, missing-attribution JSON
+-- fallback, then the retained handless JSON allocation.
+DO $recent_gap_paths$
+DECLARE
+  recent_union constant uuid := 'fade0000-0000-4000-8000-000000000002';
+  recent_club constant uuid := 'abababab-abab-4bab-8bab-abababababab';
+  admin constant uuid := '90000000-0000-4000-8000-000000000001';
+  a1 constant uuid := 'd0000000-0000-4000-8000-000000000001';
+  a2 constant uuid := 'e0000000-0000-4000-8000-000000000002';
+  p1 constant uuid := '10000000-0000-4000-8000-000000000001';
+  p2 constant uuid := '10000000-0000-4000-8000-000000000002';
+  p3 constant uuid := '10000000-0000-4000-8000-000000000003';
+  p4 constant uuid := '10000000-0000-4000-8000-000000000004';
+  attributed_record constant uuid := '70000000-0000-4000-8000-000000000107';
+  attributed_hand constant uuid := '80000000-0000-4000-8000-000000000107';
+  fallback_record constant uuid := '70000000-0000-4000-8000-000000000108';
+  fallback_hand constant uuid := '80000000-0000-4000-8000-000000000108';
+  handless_record constant uuid := '70000000-0000-4000-8000-000000000109';
+  recent_start timestamptz := date_trunc('day', now()) - interval '1 day';
+  a1_rake numeric;
+  a2_rake numeric;
+  total_rake numeric;
+BEGIN
+  INSERT INTO public.unions(id,name,owner_id)
+  VALUES (recent_union,'Recent Gap Union',admin);
+  INSERT INTO public.clubs(id,name,union_id,owner_id,is_union) VALUES
+    (recent_union,'Recent Gap Union',recent_union,admin,true),
+    (recent_club,'Recent Gap Club',NULL,NULL,false);
+  INSERT INTO public.union_clubs(union_id,club_id)
+  VALUES (recent_union,recent_club);
+  INSERT INTO public.agents(user_id,club_id,role) VALUES
+    (a1,recent_club,'agent'),(a2,recent_club,'agent');
+  INSERT INTO public.club_members(club_id,user_id,agent_id,joined_at) VALUES
+    (recent_club,p1,a1,recent_start - interval '30 days'),
+    (recent_club,p2,a1,recent_start - interval '30 days'),
+    (recent_club,p3,a2,recent_start - interval '30 days'),
+    (recent_club,p4,a2,recent_start - interval '30 days');
+
+  INSERT INTO public.rake_records(
+    id,hand_id,club_id,rake_amount,player_contributions,is_tournament,created_at)
+  VALUES (
+    attributed_record,attributed_hand,recent_club,8,
+    jsonb_build_object(p1::text,3,p4::text,1),false,
+    recent_start + interval '6 hours');
+  INSERT INTO public.rake_attributions(
+    hand_id,rake_record_id,player_id,club_id,rake_amount,
+    eligible_contribution,created_at) VALUES
+    (attributed_hand,attributed_record,p1,recent_club,6,3,
+     recent_start + interval '6 hours'),
+    (attributed_hand,attributed_record,p4,recent_club,2,1,
+     recent_start + interval '6 hours');
+
+  PERFORM set_config('app.engine','on',false);
+  SELECT MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a1),
+         MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a2),
+         SUM(r.rake_generated)
+    INTO a1_rake,a2_rake,total_rake
+    FROM public.fn_union_agent_risk_report(recent_union,recent_start) r;
+  IF a1_rake IS DISTINCT FROM 6.00
+     OR a2_rake IS DISTINCT FROM 2.00
+     OR total_rake IS DISTINCT FROM 8.00 THEN
+    RAISE EXCEPTION 'recent gap attributed split changed: a1 %, a2 %, total %',
+      a1_rake,a2_rake,total_rake;
+  END IF;
+
+  INSERT INTO public.rake_records(
+    id,hand_id,club_id,rake_amount,player_contributions,is_tournament,created_at)
+  VALUES (
+    fallback_record,fallback_hand,recent_club,3,
+    jsonb_build_object(p2::text,1),false,
+    recent_start + interval '6 hours 10 minutes');
+  SELECT MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a1),
+         MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a2),
+         SUM(r.rake_generated)
+    INTO a1_rake,a2_rake,total_rake
+    FROM public.fn_union_agent_risk_report(recent_union,recent_start) r;
+  IF a1_rake IS DISTINCT FROM 9.00
+     OR a2_rake IS DISTINCT FROM 2.00
+     OR total_rake IS DISTINCT FROM 11.00 THEN
+    RAISE EXCEPTION 'recent gap missing-attribution fallback changed: a1 %, a2 %, total %',
+      a1_rake,a2_rake,total_rake;
+  END IF;
+
+  INSERT INTO public.rake_records(
+    id,hand_id,club_id,rake_amount,player_contributions,is_tournament,created_at)
+  VALUES (
+    handless_record,NULL,recent_club,5,
+    jsonb_build_object(p3::text,1),false,
+    recent_start + interval '6 hours 20 minutes');
+  SELECT MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a1),
+         MAX(r.rake_generated) FILTER (WHERE r.agent_user_id=a2),
+         SUM(r.rake_generated)
+    INTO a1_rake,a2_rake,total_rake
+    FROM public.fn_union_agent_risk_report(recent_union,recent_start) r;
+  IF a1_rake IS DISTINCT FROM 9.00
+     OR a2_rake IS DISTINCT FROM 7.00
+     OR total_rake IS DISTINCT FROM 16.00 THEN
+    RAISE EXCEPTION 'recent gap handless JSON allocation changed: a1 %, a2 %, total %',
+      a1_rake,a2_rake,total_rake;
+  END IF;
+END
+$recent_gap_paths$;
+
 -- Match the production roster dimension without changing the small-data
 -- parity case above: 587 roster rows / 586 distinct players in the union.
 INSERT INTO public.club_members(club_id,user_id,agent_id,joined_at)
@@ -538,7 +694,7 @@ SELECT 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
        ('20000000-0000-4000-8000-' || lpad(g::text,12,'0'))::uuid,
        'd0000000-0000-4000-8000-000000000001'::uuid,
        '2026-01-01 00:00:00+00'::timestamptz
-  FROM generate_series(1,583) g;
+  FROM generate_series(1,582) g;
 
 -- Production-shaped Risk qualification. One million selected cash rows are
 -- represented by the exact completed-day per-player facts the production
@@ -609,8 +765,8 @@ BEGIN
   END IF;
   -- Baseline Player Net is +4.00. The scaled p1 ledger adds 150,000 *
   -- (+0.02) inbound and 150,000 * (-0.01) outbound = +1,500.00.
-  IF v_rows IS DISTINCT FROM 2
-     OR v_total IS DISTINCT FROM 20004.00
+  IF v_rows IS DISTINCT FROM 3
+     OR v_total IS DISTINCT FROM 20012.00
      OR v_net IS DISTINCT FROM 1504.00 THEN
     RAISE EXCEPTION 'scaled risk result changed signed allocation/flow: rows %, rake %, net %',
       v_rows, v_total, v_net;
@@ -667,7 +823,7 @@ BEGIN
     FROM public.fn_union_agent_risk_report(
       'fade0000-0000-0000-0000-000000000001'::uuid,
       '2026-09-28 12:30:00+00'::timestamptz) r;
-  IF v_risk_rows IS DISTINCT FROM 2
+  IF v_risk_rows IS DISTINCT FROM 3
      OR v_commission IS DISTINCT FROM 5004.25 THEN
     RAISE EXCEPTION 'scaled Risk commission pair filter changed: rows %, commission %',
       v_risk_rows, v_commission;

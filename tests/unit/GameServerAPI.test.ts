@@ -208,3 +208,66 @@ describe('GameServerAPI', () => {
     });
   });
 });
+
+/**
+ * A refused top-up is an answer, not a lost connection (launch audit 2026-10-05).
+ * `addChips` threw on every non-2xx, so the catch labelled an engine refusal
+ * TRANSPORT and the table said "The Connection Dropped ... Your Chips May Have
+ * Been Added" about a request the engine had declined in words.
+ */
+describe('GameServerAPI.addChips tells a refusal from an unknown outcome', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.setItem(
+      'smarter-poker-auth',
+      JSON.stringify({
+        access_token: `e30.${btoa(JSON.stringify({ sub: 'user-1', session_id: 'login-1', exp: 4102444800 }))}.sig`,
+      })
+    );
+  });
+
+  it.each([
+    [400, 'Already at the maximum buy-in'],
+    [400, 'Scheduled Maintenance Is In Progress'],
+    [404, 'Table engine not found'],
+    [401, 'Authentication required'],
+  ])('a %i the engine explained is a refusal carrying its sentence', async (status, sentence) => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status,
+      json: async () => ({ success: false, error: sentence }),
+    });
+    const result = await GameServerAPI.addChips('table', 50, 'op-1');
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(sentence);
+    expect(result.code).toBeUndefined();
+  });
+
+  it('a 500 is an outcome nobody can state, so it stays TRANSPORT', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ success: false, error: 'Failed to add chips' }),
+    });
+    const result = await GameServerAPI.addChips('table', 50, 'op-1');
+    expect(result).toMatchObject({ success: false, code: 'TRANSPORT' });
+  });
+
+  it('a 4xx with no sentence stays TRANSPORT rather than claiming nothing was charged', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => {
+        throw new Error('not json');
+      },
+    });
+    const result = await GameServerAPI.addChips('table', 50, 'op-1');
+    expect(result).toMatchObject({ success: false, code: 'TRANSPORT' });
+  });
+
+  it('a request that never got an answer stays TRANSPORT', async () => {
+    mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const result = await GameServerAPI.addChips('table', 50, 'op-1');
+    expect(result).toMatchObject({ success: false, code: 'TRANSPORT' });
+  });
+});

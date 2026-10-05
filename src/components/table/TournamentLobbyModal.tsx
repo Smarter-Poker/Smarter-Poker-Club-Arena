@@ -99,7 +99,7 @@ export function TournamentLobbyModal({
     restoreFocusTo.current = document.activeElement as HTMLElement | null;
     panelRef.current?.focus({ preventScroll: true });
     const FOCUSABLE =
-      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     /* A dialog stacked on top of this one (Sign Up, Watch This Player Live,
        a deal review) owns the keyboard while it is open. Those are portalled
        to <body>, so "inside another dialog that is not ours" is the test. */

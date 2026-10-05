@@ -10,16 +10,16 @@ Scope: the hamburger drawer, every destination it advertises, the contextual sec
 
 This document describes the current release candidate, not a completed production release.
 
-| Delivery stage                                       | Current state                                                                |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Source implementation                                | Implemented in the owned external-SSD worktree                               |
-| Focused local validation                             | Menu/navigation selections and changed fixture's 195-test wrapper pass       |
-| Commit and pull request                              | PR #6147 open; rollover repair is local, focused-passing, and not yet pushed |
-| Protected merge                                      | Pending                                                                      |
-| Database migration installation and catalog readback | Pending                                                                      |
-| Club Arena client publication                        | Pending                                                                      |
-| Post-deploy browser certification                    | Pending                                                                      |
-| Public build identity and affected live behavior     | Pending                                                                      |
+| Delivery stage                                       | Current state                                                                       |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Source implementation                                | Implemented in the owned external-SSD worktree                                      |
+| Focused local validation                             | Menu/navigation selections and changed fixture's 195-test wrapper pass              |
+| Commit and pull request                              | PR #6147 open; rollover repair pushed at `5f608ca16a` and exact-head checks pending |
+| Protected merge                                      | Pending                                                                             |
+| Database migration installation and catalog readback | Pending                                                                             |
+| Club Arena client publication                        | Pending                                                                             |
+| Post-deploy browser certification                    | Pending                                                                             |
+| Public build identity and affected live behavior     | Pending                                                                             |
 
 Production success must not be inferred from this source audit. Final delivery still requires the protected repository route, exact migration installation/readback, successful `publish-club-arena.yml`, both public `build-info.json` endpoints, post-deploy checks, and live behavior proof.
 
@@ -408,3 +408,4 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Active blocker recovered at resumption: production-build entry-chunk gate found `useUnionRouteId.ts` and `unionIdResolver.ts` through the always-mounted section rail. The rail now resolves union identity lazily, remains fail-closed across resolution and authority races, and the focused tests plus exact entry-chunk gate pass locally.
 - Required-check baseline repair: exact-head run `37306433361` reproduced the stale current-main Horse Phase 11 null-proof after its completion evidence landed. The already-authored upstream fix `9946e57fb8` was carried unchanged as a test-and-changelog-only repair, and its focused server selection passed 95 of 95 tests.
 - Exact-head required-check repair: run `37307605805` passed all other relevant jobs but accounting PostgreSQL shard 1 refused the self-expired archived-spin recognition window. Read-only production evidence captured at `2026-10-05T12:40:08.506687Z` proves the current two-scope state and zero overlapping runs; the bounded fixture/hash chain is refreshed without changing production data or behavior.
+- Rollover pre-push receipt: source candidate `5f608ca16a674a8f51b35d2829764cf2b04703a0` passed policy bundle validation, migration/live-schema guards, changed-file contracts, and 653 of 653 selected tests. Remaining evidence at that push was protected checks, publication, and live verification.

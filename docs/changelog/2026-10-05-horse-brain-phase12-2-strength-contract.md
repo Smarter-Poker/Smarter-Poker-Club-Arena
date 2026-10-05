@@ -56,6 +56,14 @@ closure, each with its reason; the 7 excluded closure files named with theirs;
 a test recomputes the closure). PLO4 and Phase 11 outputs are byte-identical to
 the base commit; the Phase 12 league's off and shadow arms are identical.
 
-Tests: TESTS_NEW new; the affected existing suites pass (TESTS_OLD). Every pack
-stays shadow; nothing is activated. The held-out matrix is not yet run.
+Tests: 62 new (contract 26, league 17, assembler and CLI 11, policy digest 3,
+selection guard 5), all passing. Affected existing suites: 436 pass across 21
+files (PLO4, Phase 10 and 11 contracts, leagues and assemblers, Omaha and
+remaining-variant leagues, joint league, the remaining-variant policy, pack,
+dimension, completion and deep suites, references and settlement, registry,
+graph, the Phase 10 and 11 selection suites, Phase 11 authority). One existing test fails, on the
+base commit and on origin/main alike, independent of this change: the
+HorsePhase11Authority "null proof" still asserts that no Phase 11 completion
+record exists, and #6134 committed three. Every pack stays shadow; nothing is
+activated. The held-out matrix is not yet run.
 Record: `docs/horse-brain-phase12-2-strength-contract-2026-10-05.md`.

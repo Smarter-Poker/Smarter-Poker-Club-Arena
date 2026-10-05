@@ -265,8 +265,9 @@ The assembler writes `docs/evidence/phase12/strength-YYYY-MM-DD-<variant>/streng
 
 ## Verification For This Record
 
-From `server/` in the task worktree:
+From `server/` in the task worktree, at the commit carrying this record:
 
-- `npx vitest run src/benchmark/RemainingVariantStrengthContract.test.ts src/benchmark/RemainingVariantStrengthLeague.test.ts src/benchmark/phase12StrengthAssemble.test.ts src/engine/HorsePhase12PolicyDigest.test.ts src/engine/remainingVariants/RemainingVariantSelectionGuard.test.ts`: counts in the changelog.
-- The affected existing suites: counts in the changelog.
+- `npx vitest run src/benchmark/RemainingVariantStrengthContract.test.ts src/benchmark/RemainingVariantStrengthLeague.test.ts src/benchmark/phase12StrengthAssemble.test.ts src/engine/HorsePhase12PolicyDigest.test.ts src/engine/remainingVariants/RemainingVariantSelectionGuard.test.ts`: 62 tests pass (26, 17, 11, 3, 5).
+- `npx vitest run src/benchmark/Plo4StrengthContract.test.ts src/benchmark/Plo4PolicyLeague.test.ts src/benchmark/phase10StrengthAssemble.test.ts src/benchmark/OmahaVariantStrengthContract.test.ts src/benchmark/OmahaVariantStrengthLeague.test.ts src/benchmark/phase11StrengthAssemble.test.ts src/benchmark/OmahaVariantPolicyLeague.test.ts src/benchmark/RemainingVariantPolicyLeague.test.ts src/benchmark/JointPolicyLeague.test.ts`: 189 tests pass.
+- `npx vitest run` over the five remaining-variant engine suites, `HorsePolicyRegistry`, `HorsePolicyGraph`, `OmahaVariantPhase11Selection`, `Plo4Phase10Selection`, `RemainingVariantReference`, `RemainingVariantSettlement` and `HorsePhase11Authority`: 247 pass, 1 fails. The failure is defective on the base commit and on origin/main alike and is independent of this change: `HorsePhase11Authority.test.ts`, "while the selections are null, no committed Phase 11 qualification says qualified:true and no completion record exists", still asserts that no Phase 11 completion record exists, and #6134 committed `docs/evidence/phase11/phase11-completion-2026-10-05-<variant>.json` for all three packs. Its owner is Phase 11; it is not changed here.
 - `npx tsc --noEmit -p .`: clean. Prettier 3.8.1 on the changed files: clean.

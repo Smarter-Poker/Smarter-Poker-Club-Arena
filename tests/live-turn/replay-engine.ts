@@ -21,6 +21,7 @@
  * page that would have been refused by the engine is refused here.
  */
 import type { Page, Request, Route, WebSocketRoute } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import jsonPatch from 'fast-json-patch';
 
 export interface RecordedEntry {
@@ -41,6 +42,15 @@ export interface Recording {
   hero: string;
   villain: string;
   out: RecordedEntry[];
+}
+
+/** Read a recording: JSON Lines, the header then one frame per line. */
+export function readRecording(path: string): Recording {
+  const [head, ...out] = readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+  return { ...head, out } as Recording;
 }
 
 interface Segment {

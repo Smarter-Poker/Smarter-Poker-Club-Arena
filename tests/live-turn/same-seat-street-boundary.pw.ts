@@ -14,14 +14,13 @@
  * predates the fix: the witness that this test can fail.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PLAYER, newBackend, signIn } from '../stale-client/mock-backend';
-import { ReplayEngine, type Recording } from './replay-engine';
+import { ReplayEngine, readRecording, type Recording } from './replay-engine';
 
 const FRAMES =
   process.env.LIVE_TURN_FRAMES ||
-  fileURLToPath(new URL('./wire/same-seat-street-boundary.json', import.meta.url));
+  fileURLToPath(new URL('./wire/same-seat-street-boundary.jsonl', import.meta.url));
 const EXPECT_DEFECT = process.env.LIVE_TURN_EXPECT_DEFECT === '1';
 const CLUB = 'c1ab0000-0000-4000-8000-0000000000c1';
 
@@ -32,7 +31,7 @@ test.skip(
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
 function recording(): Recording {
-  const rec = JSON.parse(readFileSync(FRAMES, 'utf8')) as Recording;
+  const rec = readRecording(FRAMES);
   expect(rec.hero, 'the recording was made for the signed-in fixture player').toBe(PLAYER);
   return rec;
 }

@@ -53,8 +53,13 @@ interface Recording {
   out: Entry[];
 }
 
-const WIRE = join(__dirname, '../live-turn/wire/same-seat-street-boundary.json');
-const recording = JSON.parse(readFileSync(WIRE, 'utf8')) as Recording;
+const WIRE = join(__dirname, '../live-turn/wire/same-seat-street-boundary.jsonl');
+/** JSON Lines: the header, then one recorded frame per line. */
+const [head, ...out] = readFileSync(WIRE, 'utf8')
+  .split('\n')
+  .filter((line) => line.trim() !== '')
+  .map((line) => JSON.parse(line));
+const recording = { ...head, out } as Recording;
 
 /** What TablePage holds of the turn. */
 interface Page {

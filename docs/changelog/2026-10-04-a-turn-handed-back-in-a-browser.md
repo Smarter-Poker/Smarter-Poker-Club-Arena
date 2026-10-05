@@ -19,7 +19,7 @@ moves without the other.
 
 ## What is here
 
-1. **The engine's wire, recorded.** `tests/live-turn/wire/same-seat-street-boundary.json`
+1. **The engine's wire, recorded.** `tests/live-turn/wire/same-seat-street-boundary.jsonl`
    is one heads-up hand as one subscriber received it from the real
    `ServerTableEngine`, `HandController` and `TableStateHub`: the SNAPSHOT,
    every DELTA and EVENT, with their sequence numbers and spacing. Seat 2 is
@@ -64,7 +64,7 @@ Chromium, 390x844, three builds:
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `5ffbeeae`, before the fix    | No action bar for the six seconds watched. Engine had sent the armed frame and `turn_change` 500ms after the call. |
 | `cac4a707`, the fix's branch  | Action bar back 568ms and 583ms after the tap                                                                      |
-| `005ca564`, main with the fix | Action bar back 600 to 664ms after the tap, over two runs                                                          |
+| `005ca564`, main with the fix | Action bar back 581 to 706ms after the tap, over three runs                                                        |
 
 Measured on the page's own clock, from the tap to the bar reappearing. The
 engine arms the street 500ms after the action reaches it, so the bar is back

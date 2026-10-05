@@ -38,7 +38,7 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import { TableStateHub } from '../transport/TableStateHub.js';
 
-const WIRE = resolve(__dirname, '../../../tests/live-turn/wire/same-seat-street-boundary.json');
+const WIRE = resolve(__dirname, '../../../tests/live-turn/wire/same-seat-street-boundary.jsonl');
 const TABLE = '7ab1e000-0000-4000-8000-0000000000aa';
 /** The fixture player of the browser suites (tests/stale-client/mock-backend). */
 const HERO = '5ca1ab1e-0000-4000-8000-000000000011';
@@ -199,13 +199,20 @@ async function playTheHand(): Promise<Recording> {
 }
 
 /**
- * One frame per line, so a re-recording reads as a diff of frames. The file
- * is in .prettierignore: a second formatter would only fight this one.
+ * JSON Lines: the header, then one frame per line, so a re-recording reads as
+ * a diff of frames (and no formatter has an opinion about the file).
  */
 function serialize(recording: Recording): string {
   const { out, ...head } = recording;
-  const lines = out.map((entry) => `  ${JSON.stringify(entry)}`);
-  return `${JSON.stringify(head).slice(0, -1)},"out":[\n${lines.join(',\n')}\n]}\n`;
+  return `${[head, ...out].map((line) => JSON.stringify(line)).join('\n')}\n`;
+}
+
+function parse(text: string): Recording {
+  const [head, ...out] = text
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+  return { ...head, out } as Recording;
 }
 
 interface StateFrame {
@@ -353,7 +360,7 @@ describe('a seat that closes a street is handed the next one', () => {
 
     // The recording the page is proved against is this hand, frame for frame.
     expect(existsSync(WIRE), `the recorded wire is missing: ${WIRE}`).toBe(true);
-    const recorded = JSON.parse(readFileSync(WIRE, 'utf8')) as Recording;
+    const recorded = parse(readFileSync(WIRE, 'utf8'));
     expect(
       shapeOf(recorded),
       'The engine no longer sends the frames the page was proved against. Record them again ' +

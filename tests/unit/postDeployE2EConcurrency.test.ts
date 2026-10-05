@@ -217,7 +217,9 @@ describe('post-deploy E2E concurrency', () => {
     expect(gameplayCertification).toContain(
       'arena:clubs!fk_tables_club_id(id,asset,is_platform,union_id)'
     );
-    expect(gameplayCertification).toContain("order: 'created_at.asc'");
+    expect(gameplayCertification).toContain("is_deleted: 'eq.false'");
+    expect(gameplayCertification).toContain("deleted_at: 'is.null'");
+    expect(gameplayCertification).toContain("order: 'created_at.asc,id.asc'");
     expect(gameplayCertification).not.toContain("order: 'created_at.desc'");
     expect(gameplayCertification).toContain("name: 'Customization Certification Table'");
     expect(gameplayCertification).toContain("status: 'running'");

@@ -81,8 +81,8 @@ after the compatible client and engine are proven live.
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. Current protected base at
-  resumption: `1a95cbe9127639ff221d7831ce5348e147334a12`.
-- Policy receipt refreshed after the latest resumption at 2026-10-05T12:38:35.793Z:
+  final-candidate integration: `942943e7c99a52e4278b0711a9b570f3d5bd6454`.
+- Policy receipt refreshed before final validation at 2026-10-05T13:40:03.490Z:
   version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
   Canonical and portable hashes matched. Required repository, publication,
@@ -101,7 +101,7 @@ after the compatible client and engine are proven live.
   post-cutover authority/constraint readback. Qualified migration SHA-256s are
   `79107c24c0da4af4ae6a203e7e8090b7da2d38cdd91b26b85fb8e535a36fa661`
   (`20261005111453`) and
-  `ef20159dea9ae10ebf4886b6f4f10ee43f1d43999ddc4578c3d4dcd8aaef18e0`
+  `01f55a655705900be5c31d9ab88f3efa29d5728107ce73f2802ab5e2aeed0d6f`
   (`20261005111523`). Current-main integration invalidates other
   source-dependent portions, so the exact final candidate receives only the
   affected required checks once.
@@ -111,8 +111,25 @@ after the compatible client and engine are proven live.
   exact certificate outputs, and only a terminal same-client/same-engine job
   may write the append-only cutover seal after both lanes finish. Forward
   supersession is a named non-verdict; NULL or off-lineage identity is refused.
-- Remaining proof: semantic current-main reconciliation, focused and required
-  exact-candidate checks, migration installation/readback where missing,
-  protected PR/merge, publisher and any required engine release, both public
-  build-info endpoints, production browser/commerce/realtime results, and
-  affected live behavior.
+- Prerequisite delivery is durable: PR #6152 exact head
+  `43a84fb26c6c8cc7ee580de9b15ee6306200a917` passed core run `37315022620`
+  and all ancillary gates, then protected-squash merged as
+  `926e19c871d2fdd20177b895e6fa0c18aa8b2e30`. Apply run `37317569025`
+  committed and recorded `20261005111453` as `APPLIED`. A separate read-only
+  production readback proved one globally unique ledger row, one 90,236-byte
+  statement, and exact SHA-256
+  `79107c24c0da4af4ae6a203e7e8090b7da2d38cdd91b26b85fb8e535a36fa661`.
+  The live function hashes, owners, grants, RLS, realtime publication, ten face
+  decks, and ten-frame/ten-aura catalog contract match the qualified post-image.
+- Exact candidate integration commit `406dfa1e0416f990cbf91105219a146f124132b7`
+  preserves both the Phase 1 MTT-only Final Table/realtime/face-deck work and
+  protected-main gameplay fixes. Protected/prerequisite paths are byte-identical
+  to current main and `git diff --check` is clean. Client/server typechecks,
+  production builds, 309 focused client tests, 33 focused engine tests, 16
+  production browser journeys discovered by Playwright, policy classification,
+  source bindings, and script syntax all pass.
+- Remaining proof: commit this checkpoint, push the exact candidate, complete
+  protected PR checks/merge, verify client publication and exact engine release,
+  observe the terminal cutover seal, install/read back `20261005111523`, then
+  run the fresh authenticated production commerce/realtime/gameplay certificate
+  and verify cleanup plus affected live behavior.

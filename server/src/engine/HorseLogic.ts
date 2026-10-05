@@ -1901,6 +1901,20 @@ export interface HorseDecideOpts {
    *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
    *  (default: enabled). Hold'em is unaffected either way. */
   v46Charts?: boolean;
+  /** V46 short deck, DEFAULT OFF since 2026-10-05. The short-deck half of the
+   *  chart lost: shortdeck_v46_classes measured -0.51 +/- 0.15 bb/100 over
+   *  960,000 duplicate-deal hands (80 seeds, equity governor off), and the
+   *  nightly league's 30 runs agreed in sign (-0.24 +/- 0.24). The Omaha half
+   *  is unaffected and stays on under v46Charts. Set true to measure the
+   *  short-deck chart (league arm A of shortdeck_v46_classes). */
+  v46ShortDeck?: boolean;
+  /** V51 (2026-10-05): a committed river one-pair hand calls instead of
+   *  jamming. On the river a jam has no card left to deny and no worse hand
+   *  that pays it, so with one pair (or two pair where one pair is the
+   *  board's) the committed branch flats. Audit hand 1039665 re-jammed QJ on
+   *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
+   *  (default: enabled; league matchup v51_river_flat). */
+  v51RiverFlat?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -4161,7 +4175,11 @@ export class HorseLogic {
       // read, so this is byte-identical outside Omaha and short deck.
       ...(() => {
         if ((opts.v46Charts ?? true) === false) return {};
-        const read46 = handClassRead(player.cards, vi.isOmaha, vi.isShortDeck);
+        const read46 = handClassRead(
+          player.cards,
+          vi.isOmaha,
+          vi.isShortDeck && opts.v46ShortDeck === true
+        );
         if (read46.cls === 'other' || read46.cls === 'sd_other') return {};
         if (telemetryOn(opts)) {
           noteFire('v46_class_read');
@@ -6962,9 +6980,27 @@ export class HorseLogic {
           (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
-        return toCall >= stack || preferFlat15
-          ? { action: 'call', amount: toCall, thinkTime: 0 }
-          : { action: 'all_in', thinkTime: 0 };
+        // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
+        // earlier line: it denies equity and can fold out a draw. On the
+        // river there is nothing to deny, and the only hands that call a jam
+        // over a raise (or fold to one after betting) are the ones one pair
+        // already loses to or already beats. The 2026-10-04 audit's
+        // one_pair_river_stackoff hands were this branch: QJ on 6-5-Q-9-3
+        // bet, was raised to 15,656 and re-jammed 27,885. Two pair counts as
+        // one pair when one of its pairs is the board's.
+        const riverOnePair51 =
+          (opts.v51RiverFlat ?? true) !== false &&
+          isRiver &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard));
+        if (toCall >= stack || preferFlat15) {
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        if (riverOnePair51) {
+          if (tele15) noteFire('v51_river_flat');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        return { action: 'all_in', thinkTime: 0 };
       }
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.

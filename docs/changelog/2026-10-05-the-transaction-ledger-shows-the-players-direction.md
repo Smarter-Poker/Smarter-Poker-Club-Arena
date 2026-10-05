@@ -20,3 +20,9 @@ and invalid values. Existing first-page refresh coverage remains intact.
 
 This changes presentation and export only. No stored balance, transaction,
 rake rule, fee, or payout is rewritten.
+
+A connected request race is also fixed: changing filters during a refresh no
+longer drops the new query. Each replacement owns a generation; late rows,
+errors and loading cleanup from earlier requests cannot overwrite it. The
+component regression starts both requests, resolves the filtered result first,
+and confirms that the older response cannot restore the unfiltered rows.

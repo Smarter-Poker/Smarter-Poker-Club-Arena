@@ -1,0 +1,49 @@
+{
+  "schema": "horse-phase12-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "flh",
+  "sourceSha": "27174382f2ad44aedb775474af05a69175640354",
+  "packVersion": "fixed-limit-holdem-round1-v3",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "d85d7569c31a1cd583a2397c2f598e448859ff66b417ba8e549ba00bcc6e19f1",
+  "domain": "flh-cash-single-board-after-rake-horse-population",
+  "policyDigest": "4b7f4b9b09a02917c8c2728e4f58be428725060379da1505ac2dac92c8cd3f75",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v1",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured", "regressionMarginBbPer100": -4 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:flh_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_flh_tournament_reference_population_unavailable",
+        "tournament:flh_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the pack: on the release under admission, the share of eligible live candidate-path betting decisions that complete without the work_budget fallback, per street, measured from natural decisions with the release unchanged throughout the window (Pineapple discard receipts counted apart from betting receipts); P12.3 must state and meet its own floor for that share before admitting the pack, because this contract measures strength only for decisions that complete"
+  ],
+  "evidencePath": "docs/evidence/phase12/strength-2026-10-05-flh/strength.json",
+  "evidenceSha256": "d0f757f36c369a4a12948119a617d7c02517223f13b9228d975f5fdec76741c4",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:12401129:point_estimate_not_above_zero",
+    "cash:seed:12402257:point_estimate_not_above_zero",
+    "cash:seed:12403381:point_estimate_not_above_zero",
+    "cash:profile:p12c-flh-6max-2dealt-100bb:regression_margin_exceeded",
+    "cash:profile:p12c-flh-6max-4dealt-100bb:regression_margin_exceeded",
+    "cash:profile:p12c-flh-6max-40bb:regression_margin_exceeded",
+    "cash:profile:p12c-flh-6max-100bb:regression_margin_exceeded",
+    "cash:profile:p12c-flh-6max-200bb:regression_margin_exceeded",
+    "cash:profile:p12c-flh-6max-1000bb:regression_margin_exceeded",
+    "cash:position:button:regression_margin_exceeded",
+    "cash:position:small_blind:regression_margin_exceeded",
+    "cash:position:big_blind:regression_margin_exceeded",
+    "cash:depth:short:regression_margin_exceeded",
+    "cash:depth:standard:regression_margin_exceeded",
+    "cash:depth:deep:regression_margin_exceeded",
+    "cash:depth:legacy_deep:regression_margin_exceeded"
+  ]
+}

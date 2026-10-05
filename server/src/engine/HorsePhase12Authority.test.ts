@@ -196,7 +196,14 @@ describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
     }
   });
 
-  it('while the selections are null, no committed Phase 12 qualification says qualified:true and no completion record exists', () => {
+  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05), as Phase 11 learned
+  // the same day. This case first pinned "no completion record at all", the
+  // state before the P12.3 window was read. The closure commits a completion
+  // record for every pack, each below the floor. The hazard was never a record
+  // existing; it is a pack being SELECTED without review. So a completion
+  // record is admitted only while its own variant is unpromoted: select one and
+  // this case fails until somebody updates it deliberately.
+  it('while the selections are null, nothing is promoted: no qualification says qualified:true, and a completion record exists only for an unpromoted pack', () => {
     expect(Object.values(PHASE12_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
@@ -206,7 +213,11 @@ describe('P12.3 null proof: no Phase 12 authority is selected today', () => {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE12_QUALIFICATION_SCHEMA)
         expect(parsed.qualified, file).not.toBe(true);
-      expect(parsed.schema, file).not.toBe(HORSE_PHASE12_COMPLETION_SCHEMA);
+      if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA) {
+        const variant = parsed.variant as keyof typeof PHASE12_PROTECTED_RELEASE_SELECTIONS;
+        expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(variant);
+        expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+      }
     }
   });
 });

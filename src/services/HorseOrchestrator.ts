@@ -2029,7 +2029,14 @@ class HorseOrchestrator {
      nothing else ever did. They seated and swapped horses from the BROWSER and
      read table_seats.horse_id, the column that marks a seat as a horse - which
      no browser role may read any more (horse identity is not readable by a
-     player). Horse seating is server-authoritative (HorseFleetManager). */
+     player). Horse seating is server-authoritative (HorseFleetManager).
+     ensureHorsesAt4Tables also carried the browser-side tournament entry that
+     must never come back: a raw tournament_players INSERT skips the wallet
+     debit, the rake row and the prize-pool contribution while pools still pay
+     in full - roughly 27,000 to 30,000 chips a day minted from nothing before
+     the engine closed it on 2026-08-19. Horses enter events only through
+     fn_register_horse_for_tournament (service_role, engine-side), which does
+     the same entry split, debit, rake row and pool updates as a person. */
 
   /**
    * Start the proactive allocation loop (60-second interval)

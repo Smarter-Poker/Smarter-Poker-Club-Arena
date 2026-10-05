@@ -16,7 +16,7 @@ state as production success.
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source implementation                                | Main implementation merged through PR #6147; focused live-contract follow-up implemented in the owned external-SSD worktree                                |
 | Focused local validation                             | Follow-up unit contract 41 of 41, TypeScript, targeted lint, and 171-case browser discovery pass                                                           |
-| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`; follow-up PR #6155 open at `0c412c6f4e` with protected checks pending                                                     |
+| Commit and pull request                              | PR #6147 merged as `1dae7a2fb0`; follow-up PR #6155 open with protected checks pending                                                                     |
 | Protected merge                                      | Main implementation complete; follow-up pending                                                                                                            |
 | Database migration installation and catalog readback | `20261005111546` installed once by run `37314453207`; exact ledger, RLS policy, function security, owner, and grants read back successfully                |
 | Club Arena client publication                        | Main implementation published by run `37314428036`; a newer protected-main descendant containing it is serving                                             |

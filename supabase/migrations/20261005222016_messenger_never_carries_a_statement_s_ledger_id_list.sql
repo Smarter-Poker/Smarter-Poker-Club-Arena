@@ -1,4 +1,5 @@
 -- 20261005222016_messenger_never_carries_a_statement_s_ledger_id_list.sql
+-- @live-proof: position('''private_bank_ledger_ids''' in pg_get_functiondef('public.fn_deliver_accounting_invoice(uuid)'::regprocedure)) > 0 AND position('{lines,private_bank_ledger_ids}' in pg_get_functiondef('public.fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)'::regprocedure)) > 0 AND position('{lines,private_bank_ledger_ids}' in pg_get_functiondef('public.fn_messenger_search_messages(uuid,uuid[],text,integer)'::regprocedure)) > 0
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

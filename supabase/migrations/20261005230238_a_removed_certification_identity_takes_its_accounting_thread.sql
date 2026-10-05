@@ -1,4 +1,5 @@
 -- 20261005230238_a_removed_certification_identity_takes_its_accounting_thread.sql
+-- @live-proof: position('WITH unmapped AS' in pg_get_functiondef('public.cleanup_reserved_certification_account(uuid)'::regprocedure)) > 0
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

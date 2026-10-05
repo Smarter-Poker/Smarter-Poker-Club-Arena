@@ -69,21 +69,10 @@ export default function EngineDashboard() {
       },
       500
     );
-    // Phase 3: Refresh Hydra stats when horses are seated or removed
-    const unsubHorseSeated = masterBus.subscribeDebounced(
-      'HORSE_SEATED',
-      () => {
-        loadHydraStats();
-      },
-      500
-    );
-    const unsubHorseRemoved = masterBus.subscribeDebounced(
-      'HORSE_REMOVED',
-      () => {
-        loadHydraStats();
-      },
-      500
-    );
+    // HORSE_SEATED / HORSE_REMOVED listeners removed 2026-10-05: their only
+    // publisher was the browser-side persona rotation in HorseOrchestrator,
+    // removed with the rest of the client horse seating (horse seating is
+    // server-authoritative). Nothing emits them, so the refresh never ran.
     // TABLE_BREAK_COMPLETED listener removed 2026-08-28: the server emits it
     // only on the engine channel; it is never relayed onto the client bus, so
     // this refresh never fired. Revive via a relay if wanted.
@@ -99,8 +88,6 @@ export default function EngineDashboard() {
       unsubTable();
       unsubHand();
       unsubTournament();
-      unsubHorseSeated();
-      unsubHorseRemoved();
       unsubBombPot();
     };
   }, []);

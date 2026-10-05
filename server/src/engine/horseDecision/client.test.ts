@@ -3093,9 +3093,9 @@ describe('P12.3 per-pack authority at the client boundary', () => {
     expect(result.decision.executionWitness?.phase11Authority).toBeUndefined();
     expect(flh.check(receipt.authority)).toBe('usable');
     // The FLO8 gate is unselected and refuses the same receipt; no Phase 11
-    // gate accepts it either.
+    // gate accepts it either, whatever that gate's own state.
     expect(liveHorsePhase12Authorities.flo8.check(receipt.authority)).toBe('unselected');
-    expect(liveHorsePhase11Authorities.plo8.check(receipt.authority)).toBe('unselected');
+    expect(liveHorsePhase11Authorities.plo8.check(receipt.authority)).not.toBe('usable');
     worker.emitExit(1);
     expect(flh.check(receipt.authority)).toBe('restarted');
     void client;

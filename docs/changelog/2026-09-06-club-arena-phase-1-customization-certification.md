@@ -2,7 +2,7 @@
 
 2026-09-06. Phase 1 closes the gap between a design appearing in a picker and
 that design being owned, saved, rendered on the real table, and delivered to
-every open device through the authenticated engine channel.
+every open device through its authenticated realtime path.
 
 ## Product Surface
 
@@ -41,26 +41,31 @@ every open device through the authenticated engine channel.
   collection, avatar, frame, and aura mutations repaint optimistically, persist
   with ordered mutation receipts, and recover without an older response
   overwriting a newer choice.
-- Cross-device changes use named authenticated engine events. Seated avatar
-  fanout is table-scoped and account-authenticated; browser profile WAL,
-  snapshot diffs, and polling are not the live product path.
+- Account appearance changes use owner-filtered Postgres Realtime plus named
+  authenticated client signals. Seated avatar fanout is table-scoped and
+  account-authenticated; polling is only a bounded repair path while the
+  Studio is open, never the primary live path.
 - Per-game theme buckets reconcile independently, so an event for one game type
   cannot suppress a newer snapshot for another.
 
 ## Database Changes
 
-- `20260906093222_phase_one_customization_authority_closure`
-- `20260906152652_ten_face_decks_are_owned_saved_and_live`
-- `20260906153403_ten_avatar_frames_and_ten_avatar_auras`
-- `20260906093432_short_formats_are_never_final_tables`
+- `20261005111453_phase_one_customization_ownership_face_decks_and_avatar_styl`
+- `20261005111523_short_formats_never_reach_final_table`
 
-The first three are backward-compatible client prerequisites. The short-format
-constraint is applied only after the compatible engine is proven live.
+The first migration is the backward-compatible client and engine prerequisite:
+it installs the durable Final Table receipt, public event projection, and
+claim/read/ack RPCs without constraining legacy short-format rows. Install it
+before releasing the compatible client and engine; it deliberately preserves
+the write paths used by the currently served client. The second migration is
+post-cutover cleanup only: it retires those legacy customization writes and
+applies Final Table cleanup, default/NOT NULL, and the MTT-only constraint only
+after the compatible client and engine are proven live.
 
 ## Certification Checkpoint
 
 - Scope: recover and finish the Phase 1 customization delivery only. This
-  includes its client, existing named engine-event support, four migrations,
+  includes its client, named engine-event support, two ordered migrations,
   required workflow wiring, protected merge, publication, and live proof.
 - Acceptance: mobile-first layout; table and avatars remain primary; premium
   scenes frame the table; coherent Light/Dark modes; White D default; the
@@ -76,20 +81,36 @@ constraint is applied only after the compatible engine is proven live.
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. Current protected base at
-  resumption: `1157cf081a3586e6007ce80813ce24c1988ae5a6`.
-- Policy receipt refreshed after resumption at 2026-10-05T11:03:37Z: version 2.9, manifest
+  resumption: `1a95cbe9127639ff221d7831ce5348e147334a12`.
+- Policy receipt refreshed after the latest resumption at 2026-10-05T12:38:35.793Z:
+  version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
   Canonical and portable hashes matched. Required repository, publication,
   storage, deployment, hardening, and Club Arena Console references were read.
-- Delivery classification: client + existing engine implementation + database
-  migrations + workflow. Client publication has no hourly gate. Engine
-  activation is required only if the recovered server changes remain necessary
-  after current-main reconciliation.
+- Delivery classification: client + engine implementation + database
+  migrations + workflow. Client publication has no hourly gate. The Final
+  Table transition change is an actual engine dependency, so the compatible
+  client and engine must be live before legacy-write retirement and the
+  short-format database constraint.
 - Previous evidence is retained only as historical input: 1,118 client files
-  and 15,488 tests passed; 444 server files and 6,373 tests passed; all four
-  migrations replayed twice in disposable PostgreSQL. Current-main integration
-  invalidates source-dependent portions, so the exact final candidate receives
-  only the affected required checks once.
+  and 15,488 tests passed; 444 server files and 6,373 tests passed; the earlier
+  migration shape replayed twice in disposable PostgreSQL. The final two-step
+  migration candidate then passed 102/102 assertions on PostgreSQL 17.11 with
+  exact production-shaped eight-character heartbeats, NULL/foreign/stale and
+  absent-seal refusal, service-role-only sealing, idempotent retry, replay, and
+  post-cutover authority/constraint readback. Qualified migration SHA-256s are
+  `79107c24c0da4af4ae6a203e7e8090b7da2d38cdd91b26b85fb8e535a36fa661`
+  (`20261005111453`) and
+  `ef20159dea9ae10ebf4886b6f4f10ee43f1d43999ddc4578c3d4dcd8aaef18e0`
+  (`20261005111523`). Current-main integration invalidates other
+  source-dependent portions, so the exact final candidate receives only the
+  affected required checks once.
+- The prerequisite/post-cutover order is mechanically enforced: a protected
+  schema promise names the new objects, the native PostgreSQL 17 harness is a
+  blocking accounting shard input, both authenticated browser lanes publish
+  exact certificate outputs, and only a terminal same-client/same-engine job
+  may write the append-only cutover seal after both lanes finish. Forward
+  supersession is a named non-verdict; NULL or off-lineage identity is refused.
 - Remaining proof: semantic current-main reconciliation, focused and required
   exact-candidate checks, migration installation/readback where missing,
   protected PR/merge, publisher and any required engine release, both public

@@ -8,7 +8,13 @@
  * again.
  */
 
-export type TableStudioCheckoutTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
+export type TableStudioCheckoutTab =
+  | 'themes'
+  | 'table'
+  | 'button'
+  | 'background'
+  | 'cards'
+  | 'decks';
 
 export interface TableStudioCheckoutIntent {
   userId: string;
@@ -27,6 +33,7 @@ const VALID_TABS = new Set<TableStudioCheckoutTab>([
   'button',
   'background',
   'cards',
+  'decks',
 ]);
 
 function storage(): Storage | null {

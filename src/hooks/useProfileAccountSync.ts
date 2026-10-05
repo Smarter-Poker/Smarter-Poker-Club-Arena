@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ownProfile } from '../lib/ownProfile';
-import { STORAGE_KEYS } from '../lib/storage';
+import { readSettingsPageCache, writeSettingsPageCache } from '../lib/settingsPageCache';
 import { PROFILE_PREFERENCE_DEFAULTS as defaults } from '../lib/profilePreferenceDefaults';
 import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
@@ -105,14 +105,7 @@ export function ProfileAccountSync() {
           }
         }
         if (domains.includes('settings') && current('settings')) {
-          let parsed: unknown = {};
-          try {
-            parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}');
-          } catch {
-            /* Replace a corrupt local cache with the authoritative preferences. */
-          }
-          const saved =
-            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          const saved = readSettingsPageCache(userId) || {};
           const next: Record<string, unknown> = { ...saved };
           const preference =
             row.profile_theme === 'light' ||
@@ -129,10 +122,11 @@ export function ProfileAccountSync() {
             typeof row.settlement_alerts === 'boolean'
               ? row.settlement_alerts
               : defaults.settlementAlerts;
-          try {
-            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
-          } catch (error) {
-            reportError(error, 'ProfileAccountSync.Preference_cache_failed');
+          if (!writeSettingsPageCache(userId, next)) {
+            reportError(
+              new Error('Account settings cache is unavailable'),
+              'ProfileAccountSync.Preference_cache_failed'
+            );
           }
           useSettingsStore.getState().receiveTheme(preference, userId);
           masterBus.emit('SETTINGS_UPDATED', { userId, settings: next, source: SOURCE });

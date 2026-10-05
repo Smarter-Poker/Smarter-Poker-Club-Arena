@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizeFaceDeckId } from '../lib/faceDeck';
 import { reportError } from '../utils/errorReporter';
 
 export interface TableStudioLoadout {
@@ -8,6 +9,7 @@ export interface TableStudioLoadout {
   button_id: string;
   background_id: string;
   cards_id: string;
+  face_deck_id: string;
   /** Player-facing label stored inside the JSONB loadout cartridge. */
   name?: string;
   /** ISO timestamp used for honest "saved" context in the locker. */
@@ -67,6 +69,7 @@ function normalizeLoadout(value: unknown): TableStudioLoadout | null {
     button_id: row.button_id as string,
     background_id: row.background_id as string,
     cards_id: row.cards_id as string,
+    face_deck_id: normalizeFaceDeckId(row.face_deck_id),
     ...(name ? { name } : {}),
     ...(savedAt ? { saved_at: savedAt } : {}),
   };
@@ -177,10 +180,10 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
       while (pendingCloudWritesRef.current.length > 0) {
         const queued = pendingCloudWritesRef.current.shift();
         if (!queued) continue;
-        const { data, error } = await supabase.rpc(
-          'fn_mutate_table_studio_preferences',
-          mutationRpcArgs(queued.mutation)
-        );
+        const { data, error } = await supabase.rpc('fn_mutate_table_studio_preferences', {
+          p_expected_user_id: queued.owner,
+          ...mutationRpcArgs(queued.mutation),
+        });
         if (error) {
           failedCloudWritesRef.current.push(queued);
           reportError(error, 'TableStudio.Collections_sync_failed');
@@ -276,6 +279,7 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
         // between this read and the write.
         if (local.favorites.length || local.loadouts.some(Boolean)) {
           const seeded = await supabase.rpc('fn_seed_table_studio_preferences', {
+            p_expected_user_id: userId,
             p_favorites: local.favorites,
             p_loadouts: local.loadouts,
           });
@@ -413,7 +417,9 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
   const saveLoadout = useCallback(
     (slot: number, value: TableStudioLoadout) => {
       if (slot < 0 || slot > 2) return;
-      const mutation: CollectionMutation = { kind: 'loadout', slot, value };
+      const normalized = normalizeLoadout(value);
+      if (!normalized) return;
+      const mutation: CollectionMutation = { kind: 'loadout', slot, value: normalized };
       const next = applyMutation(
         { favorites: favoritesRef.current, loadouts: loadoutsRef.current },
         mutation

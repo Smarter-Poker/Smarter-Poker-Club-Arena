@@ -9,10 +9,10 @@ import { useState, useEffect, useId, useRef, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ownProfile } from '../lib/ownProfile';
-import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { readLocalSession } from '../lib/authUtils';
 /**
  * Push, 2026-08-27. This page used to call
  * `notificationService.requestPermission()`, which does nothing but await
@@ -38,7 +38,7 @@ import {
   sendTestPush,
 } from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { useSettingsStore } from '../stores/useSettingsStore';
+import { effectiveInterfaceTheme, useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
 import {
   DEFAULT_SETTINGS,
@@ -56,6 +56,13 @@ import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
 import { getAnalyticsConsent, setAnalyticsConsent } from '../lib/consent';
+import { persistAccountSettings } from '../lib/persistAccountSettings';
+import {
+  readSettingsPageCache,
+  removeSettingsPageCache,
+  retireLegacyGlobalSettingsPageCache,
+  writeSettingsPageCache,
+} from '../lib/settingsPageCache';
 
 /**
  * The system share sheet (src/lib/native/share.ts). App build only, and a
@@ -172,6 +179,7 @@ export default function SettingsPage() {
   const { settings: tableSettings, updateSettings: updateTableSettings } = useTableSettings();
   const tableSettingsRef = useRef(tableSettings);
   tableSettingsRef.current = tableSettings;
+  const initialSettingsOwnerId = authUser?.id || readLocalSession()?.userId || null;
 
   /**
    * LAZY INITIALIZER (2026-08-28, first-paint flash sweep): this began at
@@ -184,17 +192,21 @@ export default function SettingsPage() {
    */
   const [settings, setSettings] = useState<UserSettings>(() => {
     let initial = DEFAULT_SETTINGS;
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      if (saved) initial = validateSettings(JSON.parse(saved));
-    } catch {
-      /* hostile storage: defaults */
-    }
+    const saved = readSettingsPageCache(initialSettingsOwnerId);
+    if (saved) initial = validateSettings(saved);
     return fromTableSettings(tableSettingsRef.current, initial);
   });
   const [hasChanges, setHasChanges] = useState(false);
   const hasChangesRef = useRef(hasChanges);
   hasChangesRef.current = hasChanges;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const formEditRevisionRef = useRef(0);
+  const markSettingsEdited = () => {
+    formEditRevisionRef.current += 1;
+    hasChangesRef.current = true;
+    setHasChanges(true);
+  };
   useEffect(() => {
     hasChangesRef.current = false;
     setHasChanges(false);
@@ -274,10 +286,12 @@ export default function SettingsPage() {
     target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // Load settings from localStorage on mount
+  // Bind the first-paint snapshot to the authenticated account on every
+  // identity transition. The retired device-global cache is never read.
   useEffect(() => {
     let isMounted = true;
-    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    retireLegacyGlobalSettingsPageCache();
+    const saved = readSettingsPageCache(authUser?.id);
     // The table's own store wins for the keys the two share: it is what the
     // table is actually using right now, and it can be changed from the
     // in-table settings panel while this page is closed. Opening this page must
@@ -285,12 +299,14 @@ export default function SettingsPage() {
     let initial = DEFAULT_SETTINGS;
     if (saved) {
       try {
-        initial = validateSettings(JSON.parse(saved));
+        initial = validateSettings(saved);
       } catch (e) {
         reportError(e, 'SettingsPage.Failed_to_load_settings');
       }
     }
     setSettings(fromTableSettings(tableSettingsRef.current, initial));
+    setHasChanges(false);
+    setUserEmail('');
     // Get current user email from auth session (avoid redundant getUser() call)
     if (authUser?.id) {
       supabase.auth
@@ -343,66 +359,72 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!authUser?.id) return;
     let mounted = true;
-    const hasLocal = (() => {
-      try {
-        return !!localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      } catch {
-        return false;
-      }
-    })();
+    const ownerId = authUser.id;
     Promise.all([
-      supabase.from('profiles').select('settings').eq('id', authUser.id).maybeSingle(),
+      supabase.from('profiles').select('settings').eq('id', ownerId).maybeSingle(),
       supabase
         .from('user_notification_preferences')
         .select('tournament_reminders, friend_activity, club_updates')
-        .eq('user_id', authUser.id)
+        .eq('user_id', ownerId)
         .maybeSingle(),
     ]).then(([profileRes, prefsRes]) => {
       if (!mounted) return;
       if (profileRes.error) reportError(profileRes.error, 'SettingsPage.server_settings_read');
       if (prefsRes.error) reportError(prefsRes.error, 'SettingsPage.notification_prefs_read');
       const serverSettings =
-        !hasLocal && profileRes.data?.settings && typeof profileRes.data.settings === 'object'
+        profileRes.data?.settings && typeof profileRes.data.settings === 'object'
           ? validateSettings(profileRes.data.settings)
           : null;
       const prefs = prefsRes.data;
       if (!serverSettings && !prefs) return;
-      setSettings((prev) => {
-        const base = serverSettings
-          ? fromTableSettings(tableSettingsRef.current, serverSettings)
-          : prev;
-        if (!prefs) return base;
-        return {
-          ...base,
-          tournamentReminders: prefs.tournament_reminders ?? base.tournamentReminders,
-          friendAlerts: prefs.friend_activity ?? base.friendAlerts,
-          clubActivity: prefs.club_updates ?? base.clubActivity,
-        };
-      });
+      // An authoritative read may not replace controls the player touched
+      // while it was in flight.
+      if (hasChangesRef.current) return;
+      const base = serverSettings
+        ? fromTableSettings(tableSettingsRef.current, serverSettings)
+        : settingsRef.current;
+      const next = prefs
+        ? {
+            ...base,
+            tournamentReminders: prefs.tournament_reminders ?? base.tournamentReminders,
+            friendAlerts: prefs.friend_activity ?? base.friendAlerts,
+            clubActivity: prefs.club_updates ?? base.clubActivity,
+          }
+        : base;
+      writeSettingsPageCache(ownerId, next as unknown as Record<string, unknown>);
+      setSettings(next);
     });
     return () => {
       mounted = false;
     };
   }, [authUser?.id]);
 
-  // Bus listeners: re-read settings from localStorage when profile/settings change externally
+  // Bus listeners re-read only the active account's first-paint cache.
   useEffect(() => {
     let isMounted = true;
     const reloadSettings = () => {
       if (hasChangesRef.current) return;
-      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      const saved = readSettingsPageCache(authUser?.id);
       if (saved) {
         try {
-          setSettings(validateSettings(JSON.parse(saved)));
+          setSettings(fromTableSettings(tableSettingsRef.current, validateSettings(saved)));
         } catch {
           /* parse error */
         }
       }
     };
-    const unsub1 = masterBus.subscribeDebounced('SETTINGS_UPDATED', reloadSettings, 300);
+    const unsub1 = masterBus.subscribeDebounced(
+      'SETTINGS_UPDATED',
+      (event) => {
+        if (event.payload.userId && event.payload.userId !== authUser?.id) return;
+        reloadSettings();
+      },
+      300
+    );
     const unsub2 = masterBus.subscribeDebounced(
       'PROFILE_UPDATED',
-      () => {
+      (event) => {
+        if (event.payload.userId && event.payload.userId !== authUser?.id) return;
         getAuthUser().then(({ data }) => {
           if (isMounted && data?.user?.email) setUserEmail(data.user.email);
         });
@@ -414,14 +436,14 @@ export default function SettingsPage() {
       unsub1();
       unsub2();
     };
-  }, []);
+  }, [authUser?.id]);
 
   // Refresh data when user returns to tab
   useVisibilityRefresh(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const saved = readSettingsPageCache(authUser?.id);
     if (saved) {
       try {
-        setSettings(validateSettings(JSON.parse(saved)));
+        setSettings(fromTableSettings(tableSettingsRef.current, validateSettings(saved)));
       } catch {
         /* parse error */
       }
@@ -622,7 +644,7 @@ export default function SettingsPage() {
           keys.forEach((k) => {
             if (k.startsWith('profile_cache_')) sessionStorage.removeItem(k);
           });
-          localStorage.removeItem(STORAGE_KEYS.SETTINGS);
+          removeSettingsPageCache(authUser?.id);
         } catch {
           /* cleanup best-effort */
         }
@@ -662,7 +684,7 @@ export default function SettingsPage() {
 
          Everything else genuinely is a preference and resets. */
       setSettings((current) => ({ ...DEFAULT_SETTINGS, cardBack: current.cardBack }));
-      setHasChanges(true);
+      markSettingsEdited();
     }
   };
 
@@ -865,46 +887,24 @@ export default function SettingsPage() {
 
   const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    setHasChanges(true);
+    markSettingsEdited();
   };
 
   const saveSettings = async () => {
+    const ownerId = authUser?.id;
+    if (!ownerId) {
+      toast.error('Your Session Expired. Sign In Again To Save These Settings.');
+      return;
+    }
+    const settingsToPersist = settingsRef.current;
+    const saveRevision = formEditRevisionRef.current;
+    const requestedTheme = settingsToPersist.theme;
+    let previousTheme: UserSettings['theme'] | null = null;
+    let optimisticThemeApplied = false;
     setSaving(true);
     try {
-      const settingsToPersist = settings;
-      // Save to localStorage
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-
-      // …and into the store the TABLE reads. updateSettings persists to
-      // club-arena-table-settings and emits SETTINGS_CHANGED per key, which the
-      // useTableSettings instance inside an open TablePage subscribes to — so a
-      // table already on screen picks these up without a reload.
-      /* Pass the CURRENT table settings so a speed this page cannot name (2, in
-         a scale of 0.5|1|1.5|2 rendered as three labels) survives a Save that
-         never touched the animation control. */
-      updateTableSettings(toTableSettings(settings, tableSettingsRef.current));
-
-      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
-         the sound engine. It persisted soundEnabled into
-         club-arena-table-settings, but the gate that actually silences
-         playback (utils/soundGate, consulted by SoundService.shouldPlay)
-         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
-         this page wrote. So muting here said "Settings saved!", the felt
-         kept playing, and the in-table switch still read ON: two switches
-         permanently disagreeing. setEnabled() updates the live engine AND
-         persists BOTH gate keys (the HamburgerMenu path); volume is applied
-         live for the same reason rather than waiting for a table mount. */
-      /* Neither volume nor the sound gate is applied here any more.
-         `updateTableSettings` above commits both to the store, and the store's
-         `applyGateChanges` (useTableSettings.ts) is the one caller of
-         soundService.setEnabled and writes both gate keys. The second block
-         this comment used to sit beside was a byte-for-byte duplicate. */
-
-      // Preserve Auto as the account preference; the theme owner resolves it
-      // against the current device and keeps following system changes.
-      useSettingsStore.getState().setTheme(settings.theme, authUser?.id);
-
-      // Sync to Supabase profiles table
+      // Resolve auth before touching device state. A form opened by A may not
+      // become a save for B if the account switches while it is on screen.
       const {
         data: { user },
       } = await getAuthUser();
@@ -917,17 +917,33 @@ export default function SettingsPage() {
          player then navigated away believing their controls were stored.
          Local state (the theme store and the table settings above) is real and
          survives, so this is not a bare throw: it says what actually happened. */
-      if (!user) {
+      if (!user || user.id !== ownerId) {
         toast.error('Your Session Expired. Sign In Again To Save These Settings.');
         return;
       }
 
+      const themeStore = useSettingsStore.getState();
+      if (!themeStore.interfaceThemeScopeReady) themeStore.bindInterfaceThemeScope(ownerId);
+      if (useSettingsStore.getState().interfaceThemeUserId !== ownerId) {
+        toast.error('Your Session Expired. Sign In Again To Save These Settings.');
+        return;
+      }
+      previousTheme = useSettingsStore.getState().themePreference;
+      useSettingsStore.getState().setTheme(requestedTheme, ownerId);
+      optimisticThemeApplied =
+        useSettingsStore.getState().interfaceThemeUserId === ownerId &&
+        useSettingsStore.getState().themePreference === requestedTheme;
+
       {
-        const { error: profileErr } = await supabase
-          .from('profiles')
-          .update({ settings: settingsToPersist })
-          .eq('id', user.id);
-        if (profileErr) throw profileErr;
+        /* Merge only the controls this page owns. Replacing the whole JSON
+           document let an older client erase preferences introduced by a
+           newer build and raced Table Studio's atomic interface writer. */
+        const profileSave = await persistAccountSettings(
+          ownerId,
+          settingsToPersist as unknown as Record<string, unknown>,
+          effectiveInterfaceTheme(settingsToPersist.theme)
+        );
+        if (!profileSave.ok) throw profileSave.error;
 
         /* PHANTOM COLUMN FIX 2026-08-27: this upsert named FIVE columns that
            do not exist on user_notification_preferences (table_alerts,
@@ -969,24 +985,68 @@ export default function SettingsPage() {
            so it is inert rather than harmful. */
         const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
           {
-            user_id: user.id,
-            tournament_reminders: settings.tournamentReminders ?? true,
-            friend_activity: settings.friendAlerts ?? true,
-            club_updates: settings.clubActivity ?? true,
+            user_id: ownerId,
+            tournament_reminders: settingsToPersist.tournamentReminders ?? true,
+            friend_activity: settingsToPersist.friendAlerts ?? true,
+            club_updates: settingsToPersist.clubActivity ?? true,
           },
           { onConflict: 'user_id' }
         );
         if (notifErr) reportError(notifErr, 'SettingsPage.notification_prefs_upsert');
       }
 
+      // The owner can move while either network write is in flight. A durable
+      // A save remains valid, but it must never repaint or cache itself as B.
+      if (
+        readLocalSession()?.userId !== ownerId ||
+        useSettingsStore.getState().interfaceThemeUserId !== ownerId
+      ) {
+        return;
+      }
+
+      // The persisted snapshot is still valid, but it is no longer the form's
+      // current draft if the player changed another control while the writes
+      // were in flight. Never let that older success clear, cache, repaint or
+      // broadcast over the newer unsaved values.
+      if (
+        formEditRevisionRef.current !== saveRevision ||
+        settingsRef.current !== settingsToPersist
+      ) {
+        return;
+      }
+
+      if (
+        !writeSettingsPageCache(ownerId, settingsToPersist as unknown as Record<string, unknown>)
+      ) {
+        reportError(
+          new Error('Account settings cache is unavailable'),
+          'SettingsPage.Settings_cache_failed'
+        );
+      }
+
+      // Commit into the store the live table reads only after the account
+      // merge succeeds. The table store emits every changed key immediately.
+      updateTableSettings(toTableSettings(settingsToPersist, tableSettingsRef.current));
+      hasChangesRef.current = false;
       setHasChanges(false);
 
       // Notify other components that settings changed
       masterBus.emit('SETTINGS_UPDATED', {
         settings: settingsToPersist as unknown as Record<string, unknown>,
+        userId: ownerId,
+        source: 'settings-page',
       });
       toast.success('Settings saved!');
     } catch (error) {
+      const themeState = useSettingsStore.getState();
+      if (
+        optimisticThemeApplied &&
+        previousTheme &&
+        themeState.interfaceThemeUserId === ownerId &&
+        themeState.themePreference === requestedTheme
+      ) {
+        themeState.setTheme(previousTheme, ownerId);
+      }
       reportError(error, 'SettingsPage.Failed_to_sync_settings');
       toast.error('Failed to save settings. Please try again.');
     } finally {

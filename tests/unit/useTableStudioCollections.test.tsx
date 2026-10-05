@@ -51,6 +51,7 @@ const loadout = {
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
+  face_deck_id: 'house-classic',
 };
 
 function Harness() {
@@ -60,6 +61,7 @@ function Harness() {
       <output data-testid="favorites">{value.favorites.join(',')}</output>
       <output data-testid="loadout">{value.loadouts[0]?.table_id || 'empty'}</output>
       <output data-testid="loadout-name">{value.loadouts[0]?.name || 'unnamed'}</output>
+      <output data-testid="face-deck">{value.loadouts[0]?.face_deck_id || 'empty'}</output>
       <output data-testid="state">{value.syncState}</output>
       <output data-testid="realtime-state">{value.realtimeState}</output>
       <button onClick={() => value.toggleFavorite('table:classic_green')}>Favorite</button>
@@ -127,6 +129,33 @@ describe('useTableStudioCollections', () => {
     ]);
   });
 
+  it('upgrades a legacy saved look to House Classic without discarding it', async () => {
+    const legacyLoadout = {
+      theme_id: loadout.theme_id,
+      table_id: loadout.table_id,
+      button_id: loadout.button_id,
+      background_id: loadout.background_id,
+      cards_id: loadout.cards_id,
+    };
+    localStorage.setItem(
+      'table-studio-loadouts:user-1',
+      JSON.stringify([legacyLoadout, null, null])
+    );
+
+    render(<Harness />);
+
+    expect(await screen.findByTestId('face-deck')).toHaveTextContent('house-classic');
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        'fn_seed_table_studio_preferences',
+        expect.objectContaining({
+          p_expected_user_id: 'user-1',
+          p_loadouts: [expect.objectContaining({ face_deck_id: 'house-classic' }), null, null],
+        })
+      )
+    );
+  });
+
   it('persists favorites and loadouts with the authenticated owner id', async () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
@@ -134,6 +163,7 @@ describe('useTableStudioCollections', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
     await waitFor(() =>
       expect(mocks.rpc).toHaveBeenCalledWith('fn_mutate_table_studio_preferences', {
+        p_expected_user_id: 'user-1',
         p_favorite_enabled: true,
         p_favorite_key: 'table:classic_green',
         p_loadout: null,
@@ -144,6 +174,7 @@ describe('useTableStudioCollections', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save Loadout' }));
     await waitFor(() =>
       expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+        p_expected_user_id: 'user-1',
         p_favorite_enabled: null,
         p_favorite_key: null,
         p_loadout: loadout,
@@ -163,6 +194,7 @@ describe('useTableStudioCollections', () => {
 
     await waitFor(() =>
       expect(mocks.rpc).toHaveBeenCalledWith('fn_seed_table_studio_preferences', {
+        p_expected_user_id: 'user-1',
         p_favorites: ['table:carbon_red'],
         p_loadouts: [{ ...loadout, table_id: 'carbon_red' }, null, null],
       })
@@ -255,6 +287,7 @@ describe('useTableStudioCollections', () => {
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
     expect(screen.getByTestId('favorites')).toHaveTextContent('table:classic_green,cards:gold');
     expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+      p_expected_user_id: 'user-1',
       p_favorite_enabled: true,
       p_favorite_key: 'table:classic_green',
       p_loadout: null,

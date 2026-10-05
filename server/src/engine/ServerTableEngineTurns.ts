@@ -776,7 +776,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     userId: string,
     seat: number,
     durationSeconds: number,
-    clockKind: 'primary' | 'time_bank' = 'primary'
+    clockKind: 'primary' | 'time_bank' = 'primary',
+    graceMs: number = 2000
   ): void {
     // Deliberately does NOT call clearTurnTimer(). Now that clearTurnTimer
     // actually cancels every turn deadline on the table, calling it on each
@@ -816,7 +817,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // The auto-fold/check logic runs as the onExpiry callback via DeadlineScheduler.
     // Bible V8 §6.1: 2-second grace period for network latency is baked into the
     // timer duration so the scheduler fires after the grace window.
-    const GRACE_PERIOD_MS = 2000;
+    // A restored clock whose display deadline has already passed keeps only
+    // the grace it had left (restoreTurnClockAfterRejectedAction), so a
+    // refusal inside the grace window can never buy a fresh two seconds.
+    const GRACE_PERIOD_MS = Number.isFinite(graceMs) ? Math.max(0, Math.min(2000, graceMs)) : 2000;
     const totalDurationMs = safeDurationSeconds * 1000 + GRACE_PERIOD_MS;
 
     // ── Law 1.16 `timer_countdown` (roadmap batch 6, 2026-08-21) ─────────
@@ -2271,8 +2275,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.rearmTurnTimerIfCurrent(userId);
       return;
     }
-    const remainingSeconds = Math.max(0.001, (displayDeadlineMs - Date.now()) / 1000);
-    this.startTurnTimer(userId, seat, remainingSeconds);
+    // Keep the ORIGINAL enforcement instant (display deadline + 2s grace).
+    // Before the display deadline that is the remaining time plus the full
+    // grace. Inside the grace window only the grace still owed is given back
+    // (2026-10-05): re-arming with a fresh two-second grace let a refused
+    // action sent every two seconds hold the turn open indefinitely.
+    const displayRemainingMs = displayDeadlineMs - Date.now();
+    if (displayRemainingMs > 0) {
+      this.startTurnTimer(userId, seat, Math.max(0.001, displayRemainingMs / 1000));
+      return;
+    }
+    // The published display deadline is the one already passed: keep it, so
+    // a second refusal measures its grace from the same instant.
+    const publishedStart = this.playerTurnStartTime;
+    const publishedDuration = this.playerTurnDuration;
+    this.startTurnTimer(userId, seat, 0.001, 'primary', Math.max(0, 2000 + displayRemainingMs));
+    if (publishedStart + publishedDuration * 1000 === displayDeadlineMs) {
+      this.playerTurnStartTime = publishedStart;
+      this.playerTurnDuration = publishedDuration;
+    }
   }
 
   /** Transfer the current decision to the unspent, server-owned outage deadline. */

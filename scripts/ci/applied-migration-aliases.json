@@ -36,6 +36,16 @@
       "file": "supabase/migrations/20261004133333_a_union_wallet_side_always_names_its_column.sql",
       "by": "20261004144116",
       "reason": "Never installed. Its reader preimages were 20261004124640's results, which never ran; 20261004144116 is the same change with the two snapshot readers patched where 20261004135607 left them."
+    },
+    {
+      "file": "supabase/migrations/20260929071925_a_tournament_start_locks_the_bank_without_blocking_foreign_k.sql",
+      "by": "20261005111115",
+      "reason": "Never installed. Its start-readiness half reached production through 20261002083400; its overlay half is 20261005111115, a lock-mode-only patch on the live fn_ca_fund_overlay_on_lock, because this file's full-body replacement would revert later work."
+    },
+    {
+      "file": "supabase/migrations/20260926151328_prune_e2e_certification_hand_history_fixtures.sql",
+      "by": "20261005111120",
+      "reason": "Never installed. Its full-body replacement of sp_prune_hand_history would revert 20261002082452, and it admitted an unattached fixture only to classify its empty player list as human and keep it for ever. 20261005111120 patches the live function and fixes both lines."
     }
   ],
   "_superseded": "A merged migration that must never run, because a later file replaced it, is marked by a first line `-- SUPERSEDED BY <version>` or, when the file is byte-pinned and cannot be edited, by a row here. Either way the named version must have a file in this tree, or the mark is ignored."

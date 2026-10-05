@@ -115,6 +115,10 @@ export function ledgerWrites(source) {
     }
   }
   for (const match of source.matchAll(LEDGER_REST_PATH)) {
+    // Playwright route registration installs a browser interception; it does
+    // not send a request. Exempt only the literal selector, never its callback.
+    const prefix = source.slice(0, match.index);
+    if (/\bcontext\.route\(\s*['"]\*\*$/.test(prefix)) continue;
     if (LEDGER_TABLES.has(match[1])) {
       writes.push({ kind: 'REST path', table: match[1], line: lineOf(source, match.index) });
     }
@@ -295,4 +299,11 @@ test('a change to either proof, a production spec or a migration runs the workfl
     'supabase/migrations/**',
     WORKFLOW,
   ]);
+});
+
+
+test('browser interception selectors are not writes, but callback writes still fail', () => {
+  assert.deepEqual(ledgerWrites("await context.route('**/rest/v1/table_seats*', async route => route.fulfill({body: '[]'}));"), []);
+  const found = ledgerWrites("await context.route('**/rest/v1/table_seats*', async route => { await fetch('/rest/v1/table_seats', {method: 'PATCH'}); });");
+  assert.deepEqual(found.map(({kind, table}) => `${kind}:${table}`), ['REST path:table_seats']);
 });

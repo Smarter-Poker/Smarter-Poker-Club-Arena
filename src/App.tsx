@@ -25,7 +25,7 @@ import WaitlistBanner from './components/common/WaitlistBanner';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
-import { useSettingsStore } from './stores/useSettingsStore';
+import { useInterfaceThemeHydration } from './hooks/useInterfaceThemeHydration';
 import { useShellUpdateGate } from './hooks/useShellUpdateGate';
 import { startShellTelemetry } from './services/ShellTelemetryService';
 
@@ -352,6 +352,10 @@ function ClubFooterProbe() {
 
 function FullApp() {
   const location = useLocation();
+  // Fence the interface mode to the authenticated account before route
+  // children paint, then reconcile the durable profile preference. The
+  // deterministic customization harness supplies its own isolated identity.
+  useInterfaceThemeHydration(location.pathname !== '/dev/customization');
   const inTabLobbyActive = useInTabLobbyActive();
   const inTabLobbyClubId = useInTabLobbyClubId();
   /* A signed-out visitor on a public page (landing, Help Center, legal) is

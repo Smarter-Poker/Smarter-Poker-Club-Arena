@@ -63,7 +63,14 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'mobile-chromium', use: { ...devices['iPhone 13'] } }],
+  projects: [
+    {
+      name: 'mobile-chromium',
+      // The iPhone descriptor defaults to WebKit. This reviewed visual lane is
+      // intentionally Chromium on every host, as its name and baseline contract say.
+      use: { ...devices['iPhone 13'], browserName: 'chromium' },
+    },
+  ],
   // No server to start when CI has already built one with the harness on.
   ...(SHARED_PREVIEW
     ? {}

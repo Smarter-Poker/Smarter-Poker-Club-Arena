@@ -19,6 +19,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  STALE_CHECK_IDLE_MS,
+  staleCheckDue,
   mayReloadForShell,
   isAtTable,
   extractEntryScript,
@@ -179,5 +181,36 @@ describe('the probe is throttled', () => {
     // shell fetch on the wire. If someone lowers it below 30s, they should be
     // doing it here, on purpose, with a reason.
     expect(STALE_CHECK_MIN_INTERVAL_MS).toBeGreaterThanOrEqual(30 * 1000);
+  });
+});
+
+describe('staleCheckDue — a visible tab that never navigates still learns it is stale (2026-10-05)', () => {
+  const base = {
+    pathname: '/hub/club-arena/clubs/shark-club',
+    lastPathname: '/hub/club-arena/clubs/shark-club',
+    visible: true,
+    lastCheckAt: 1_000_000,
+    now: 1_000_000,
+  };
+  it('checks when the in-app route changes', () => {
+    expect(staleCheckDue({ ...base, pathname: '/hub/club-arena/clubs/x' })).toBe(true);
+  });
+  it('checks a visible, idle page once the idle interval has passed, not before', () => {
+    expect(staleCheckDue({ ...base, now: base.lastCheckAt + STALE_CHECK_IDLE_MS - 1 })).toBe(false);
+    expect(staleCheckDue({ ...base, now: base.lastCheckAt + STALE_CHECK_IDLE_MS })).toBe(true);
+  });
+  it('a hidden page waits for visibility (the visibility handler checks then)', () => {
+    expect(
+      staleCheckDue({ ...base, visible: false, now: base.lastCheckAt + STALE_CHECK_IDLE_MS })
+    ).toBe(false);
+  });
+  it('the hook wires focus and the poll to the probe, and still reloads only through the gate', () => {
+    const src = readFileSync(path.join(__dirname, '../../src/hooks/useShellUpdateGate.ts'), 'utf8');
+    expect(src).toContain("window.addEventListener('focus', onFocus);");
+    expect(src).toContain("window.removeEventListener('focus', onFocus);");
+    expect(src).toMatch(
+      /staleCheckDue\(\{[\s\S]*?\}\)\s*\)\s*\{\s*lastPathname = window\.location\.pathname;\s*checkStaleness\(\);/
+    );
+    expect(STALE_CHECK_IDLE_MS).toBe(15 * 60 * 1000);
   });
 });

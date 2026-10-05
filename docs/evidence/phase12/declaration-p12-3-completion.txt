@@ -49,3 +49,16 @@ pass. A record is used for admission only together with that pack's
 qualification measured at the same policy digest. A pack whose variant has too
 few natural decisions in the window to reach 127 per street is reported as
 such, not extended.
+
+4. Amendment, committed before any qualifying window has opened
+--------------------------------------------------------------
+Counted records are DECIDE_FAST decision records only (snapshot.type ==
+'DECIDE_FAST'). The worker journals a DEEP second look as a second 'decision'
+record for the same turn; it is counted and excluded by name
+(excluded_deep_second_look), never counted as another natural decision. Pineapple
+discard records (kind 'discard_decision') are counted and excluded by name in
+the window by their own request time. Both completion readers are read at the
+first main commit that carries this rule (the fix to
+server/scripts/phase11-completion-extract.py and phase12-completion-extract.py),
+which must be on main before the window is read; if it is not, the window moves
+to the next qualifying hour.

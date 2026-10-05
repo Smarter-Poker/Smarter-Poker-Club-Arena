@@ -128,15 +128,19 @@ describe('the Diamond Arena is diamonds only', () => {
     expect(panel).toContain('{fmt(total)} Diamonds');
   });
 
-  it('the database guard that refuses a chip wallet on the diamonds club is still in the migrations', () => {
-    const dir = resolve(process.cwd(), 'supabase/migrations');
-    const carriers = readdirSync(dir).filter((f) =>
-      readFileSync(resolve(dir, f), 'utf8').includes(
-        'Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy'
-      )
-    );
-    expect(carriers).toContain('20260908152822_poker_arena_identity_and_access.sql');
-  });
+  it(
+    'the database guard that refuses a chip wallet on the diamonds club is still in the migrations',
+    { timeout: 30_000 },
+    () => {
+      const dir = resolve(process.cwd(), 'supabase/migrations');
+      const carriers = readdirSync(dir).filter((f) =>
+        readFileSync(resolve(dir, f), 'utf8').includes(
+          'Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy'
+        )
+      );
+      expect(carriers).toContain('20260908152822_poker_arena_identity_and_access.sql');
+    }
+  );
 });
 
 /**

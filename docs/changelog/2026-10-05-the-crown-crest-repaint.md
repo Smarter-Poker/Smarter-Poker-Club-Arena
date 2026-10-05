@@ -26,3 +26,8 @@ Development evidence and the continuation checkpoint are retained under
 Protected merge, provider publication, and live verification are recorded in
 that checkpoint when observed. Physical iOS share-sheet testing after a real
 free tournament remains a device-specific verification item.
+
+Pixel comparison also found that the seating script reconstructed the entire
+head from an older flat slice. It now restores exact master pixels outside
+the crest, its shadow, and its rail junctions. Existing sealed heads are never
+regenerated. The new head was re-seated and its unpublished seal updated.

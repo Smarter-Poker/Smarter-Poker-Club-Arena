@@ -13,7 +13,7 @@ bevels and a dark quilted body, and a blue LED at the base of the well. The
 seating step re-mitres the master rails into this housing. The console and
 the tournament share painter both load `top-vip-v2.png`.
 
-Source generated with the built-in imagegen tool, 1440 x 1088 RGBA.
+Source generated with the built-in imagegen tool, 1440 x 1092 RGBA.
 Prompt: compact keystone, thin polished rim, solid sculpted three-point chrome
 crown with dark quilted faces, bright upper bevels, blue LED at the base;
 front elevation, black/silver/blue only, isolated transparent background.

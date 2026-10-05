@@ -151,7 +151,7 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
   'assets/club-buttons/console/spade-console-v1/top-flat.png':
     '394a32af66be7c269e7b73454224e60b2e6e110f4b2195f9e90982c334d032c8',
   'assets/club-buttons/console/spade-console-v1/top-vip-v2.png':
-    'a7a25e9d9234b91a9459b0aee5d77e049cc465e895f4aac990b5eff77224c18f',
+    '5df365b8220b0322f246569cf518dc264fd3c22aba565e04fc19b9486ce158b9',
   'assets/club-buttons/console/spade-console-v1/top-vip.png':
     'c4911fe3e10f94e242d9f52d411fb66932f6a5d7dcceb618aaa7ef7713930e4c',
   'assets/club-buttons/console/spade-console-v1/top.png':

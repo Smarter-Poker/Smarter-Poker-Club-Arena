@@ -125,6 +125,11 @@ interface Props {
    * used - never a transport word, because nothing is wrong with the link.
    */
   accessRefusal?: TableAccessRefusal | null;
+  /**
+   * Test seam: the browser's own offline verdict. Omitted, the banner reads
+   * `navigator.onLine` and follows the window's online/offline events.
+   */
+  offline?: boolean;
 }
 
 /**
@@ -155,10 +160,19 @@ const ACCESS_REFUSED_LABELS: Record<TableAccessRefusal | 'default', string> = {
   default: 'You Do Not Have Access To This Table',
 };
 
+/**
+ * What a player whose device has no network is told (2026-10-05). The
+ * reconnect ladder is waiting on the browser's 'online' event, not on the
+ * table, so "Reconnecting To The Table" sent people to refresh a page that
+ * could not load. This names the cause and what happens next.
+ */
+export const OFFLINE_LABEL = 'You Are Offline. Reconnecting When Your Connection Returns';
+
 export function labelFor(
   status: TableConnectionState,
   authRefused = false,
-  accessRefusal: TableAccessRefusal | null = null
+  accessRefusal: TableAccessRefusal | null = null,
+  offline = false
 ): string | null {
   /* An access verdict outranks everything, including a stale auth flag: it is
      the engine's last word on this viewer and this table, reached only after
@@ -176,12 +190,12 @@ export function labelFor(
     case 'connecting':
       return 'Connecting To The Table';
     case 'reconnecting':
-      return 'Reconnecting To The Table';
+      return offline ? OFFLINE_LABEL : 'Reconnecting To The Table';
     case 'failed':
       // Say what happens next. "Disconnected" alone invites a hard refresh,
       // which is what Dan reached for, and a refresh mid-hand is the worst
       // available move.
-      return 'Connection Lost. Trying To Get You Back';
+      return offline ? OFFLINE_LABEL : 'Connection Lost. Trying To Get You Back';
     case 'auth_failed':
       // 2026-09-04: this said "Signing You In Again" through a 22-hour outage
       // in which nobody was being signed in. It now says what is happening:
@@ -195,14 +209,34 @@ export function labelFor(
   }
 }
 
+/** navigator.onLine, kept current by the window's online/offline events. */
+function useBrowserOffline(): boolean {
+  const read = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+  const [offline, setOffline] = useState(read);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => setOffline(read());
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return offline;
+}
+
 export function TableConnectionBanner({
   status,
   isActive = true,
   authRefused = false,
   hasLiveState = false,
   accessRefusal = null,
+  offline,
 }: Props): React.ReactElement | null {
-  const label = labelFor(status, authRefused, accessRefusal);
+  const browserOffline = useBrowserOffline();
+  const label = labelFor(status, authRefused, accessRefusal, offline ?? browserOffline);
   /* THE SUPPRESSION IS HERE, NOT IN labelFor (law, tests/a-reload-cannot-fix-
      a-sign-in): that function maps a status to WHAT IT IS CALLED and must stay
      a pure translation - it is read by the popup-copy laws, and a branch that

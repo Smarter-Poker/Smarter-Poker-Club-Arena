@@ -9,6 +9,7 @@
 -- legacy customization write paths, clears Final Table false positives,
 -- reconciles any MTT transition won by the old engine during rollout, and then
 -- enforces the durable MTT-only contract.
+-- @live-proof: EXISTS (SELECT 1 FROM pg_catalog.pg_constraint c WHERE c.conrelid = 'public.tournaments'::regclass AND c.conname = 'tournaments_final_table_requires_mtt_check' AND c.convalidated)
 
 BEGIN;
 

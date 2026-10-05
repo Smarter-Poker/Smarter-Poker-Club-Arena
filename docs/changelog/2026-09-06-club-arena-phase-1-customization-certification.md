@@ -81,8 +81,8 @@ after the compatible client and engine are proven live.
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. Current protected base at
-  final-candidate integration: `a72cb154fedec2664d5827dd8683d57a07b59c3c`.
-- Policy receipt refreshed after resumption at 2026-10-05T14:03:11.751Z:
+  final-candidate integration: `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc`.
+- Policy receipt refreshed after the latest resumption at 2026-10-05T14:25:47.579Z:
   version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
   Canonical and portable hashes matched. Required repository, publication,
@@ -122,14 +122,40 @@ after the compatible client and engine are proven live.
   The live function hashes, owners, grants, RLS, realtime publication, ten face
   decks, and ten-frame/ten-aura catalog contract match the qualified post-image.
 - The final candidate integrates protected main
-  `a72cb154fedec2664d5827dd8683d57a07b59c3c` with Phase 1 head
+  `cef7530aea7b5ede5166f7b75d1bbda50c3c4cdc` with Phase 1 head
   `bc48d1165e5d2719d1d57b6e347b6a05b7d8c90a`, preserving both the MTT-only
   Final Table/realtime/face-deck work and the concurrent protected-main gameplay
-  fixes. Protected/prerequisite paths are byte-identical to current main and
+  and horse-identity privacy fixes. Protected/prerequisite paths are byte-identical to current main and
   `git diff --check` is clean. Client/server typechecks,
   production builds, 309 focused client tests, 33 focused engine tests, 16
   production browser journeys discovered by Playwright, policy classification,
   source bindings, and script syntax all pass.
+- Hosted run `37322052713` proved every completed lane green except the Table
+  Studio visual lane. Its ten mobile coordinated-look screenshots were 290 by
+  474 instead of the approved 290 by 455 because the newly complete card-back,
+  face-deck, and game caption wrapped onto a second line. The corrected caption
+  keeps all facts in one accessible sentence, prints a compact one-line visual
+  label, and leaves the 9:13 gameplay canvas unchanged.
+- The same final-diff audit found that one account's unresolved collection RPC
+  could block another account and that an old account lifecycle could update a
+  new lifecycle's cache or sync status. The collection writer is now isolated
+  per owner and lifecycle, failed mutations remain in exact tap order, stale
+  hydration/retry/realtime work is rejected, and a monotonic per-owner revision
+  floor replaces signature-based echo suppression. Newer realtime truth is
+  retained while writes settle and drained afterward; invalid mutation, seed,
+  read, and realtime receipts cannot claim success or poison the revision
+  floor. The 40-test hook suite covers two accounts, logout, A to B to A
+  lifecycle reuse, failure and retry ordering, canonical cache ownership,
+  revision zero, malformed receipts, delayed echoes, and the exact final-write
+  versus newer-remote-state race.
+- Exact corrected-worktree checks passed: five directly affected Vitest files
+  with 93 tests, client TypeScript, the four copy/title gates, Prettier, targeted
+  ESLint with zero errors (one pre-existing Fast Refresh warning), 805 source
+  pins across 17 binding files, canonical policy comparison, and
+  `git diff --check`. The local Playwright WebKit binary aborted during browser launch
+  with exit 134 before any assertion, so it supplies no product verdict and is
+  not being retried unchanged; the matching hosted Linux CSS Beat lane remains
+  the authoritative browser proof for the corrected commit.
 - Remaining proof: commit this checkpoint, push the exact candidate, complete
   protected PR checks/merge, verify client publication and exact engine release,
   observe the terminal cutover seal, install/read back `20261005111523`, then

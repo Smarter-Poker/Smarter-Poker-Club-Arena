@@ -2224,11 +2224,16 @@ export function ThemeSettingsModal({
                   />
                 </div>
                 <div className="theme-modal__live-caption">
-                  <span className="tsc__label sc-ink--blue">
-                    {previewFinalTable ? 'Automatic MTT Event' : 'Live Gameplay Preview'}
+                  <span className="sr-only">
+                    {previewFinalTable ? 'Automatic MTT Event' : 'Live Gameplay Preview'}; Card
+                    Back: {selectedCardName}; Face Deck: {selectedFaceDeckName}; Game Type:{' '}
+                    {gameTypeLabel}
                   </span>
-                  <strong className="tsc__caption sc-ink--silver">
-                    {selectedCardName} Back · {selectedFaceDeckName} Faces · {gameTypeLabel}
+                  <span aria-hidden="true" className="tsc__label sc-ink--blue">
+                    {previewFinalTable ? 'MTT Auto' : 'Live'}
+                  </span>
+                  <strong aria-hidden="true" className="tsc__caption sc-ink--silver">
+                    {selectedCardName} · {selectedFaceDeckName} · {gameTypeLabel}
                   </strong>
                 </div>
               </div>

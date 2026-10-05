@@ -159,10 +159,15 @@
 }
 
 .tsc__caption {
-  font-size: min(3.4cqw, 16px);
+  min-width: 0;
+  overflow: hidden;
+  font-size: min(2.65cqw, 11px);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  line-height: 1;
+  letter-spacing: 0.01em;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tsc__linkword {
@@ -397,10 +402,10 @@
 }
 
 .theme-modal__live-caption {
-  display: flex;
-  gap: 3cqw;
-  align-items: baseline;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.2cqw;
+  align-items: center;
   min-width: 0;
   padding: 2cqw 0 1cqw;
 }

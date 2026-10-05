@@ -407,6 +407,17 @@ export class DisconnectEngine {
     state.pageLeftAt = null;
 
     if (wasDisconnected) {
+      // Observation only: how long this absence lasted (2026-10-05).
+      try {
+        const goneSince = state.disconnectedAt;
+        if (typeof goneSince === 'number' && Number.isFinite(goneSince)) {
+          EngineMetrics.disconnectSeconds.observe(
+            Math.max(0, state.lastHeartbeat - goneSince) / 1000
+          );
+        }
+      } catch {
+        /* metrics must never affect gameplay */
+      }
       state.disconnectedAt = undefined;
       /* A HEARTBEAT IS PROOF OF A SOCKET, NOT PROOF OF A PLAYER (2026-09-09).
 
@@ -1384,6 +1395,12 @@ export class DisconnectEngine {
         this.reportSuspectedSilentClient(tableId, playerId, state);
         this.sitOut(tableId, playerId, 'forced');
       }
+    }
+
+    try {
+      EngineMetrics.disconnectAutoActionsTotal.inc(1, { action, reason });
+    } catch {
+      /* metrics must never affect gameplay */
     }
 
     const disconnectAction: DisconnectAction = {

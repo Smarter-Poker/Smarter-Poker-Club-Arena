@@ -2847,6 +2847,16 @@ export abstract class ServerTableEngineBase {
            cash seat is evicted after 2 orbits / 5 minutes and a tournament
            seat is blinded off. Counted fleet-wide so it can page (Dan
            2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced') {
+          try {
+            EngineMetrics.forcedSitOutsTotal.inc(1, {
+              audience: satPlayer?.is_horse ? 'horse' : 'human',
+              format: this.tableFormat(),
+            });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
         if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
           try {
             EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });

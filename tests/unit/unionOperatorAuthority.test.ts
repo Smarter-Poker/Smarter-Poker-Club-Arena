@@ -73,8 +73,10 @@ describe('appointed union operator authority', () => {
 
     expect(rail).toContain('unionService.canOverseeUnion(unionId)');
     expect(rail).toContain('unionService.isUnionAdmin(unionId, user.id)');
+    expect(rail).toContain("await import('../../utils/unionIdResolver')");
+    expect(rail).not.toContain('import { useUnionRouteId }');
     expect(rail).toContain('setUnionAuthority(null)');
-    expect(rail).toContain('unionAuthority.unionId === unionId');
+    expect(rail).toContain('unionAuthority.unionRef === unionRouteRef');
     expect(rail).toContain('unionAuthority.userId === user?.id');
     expect(rail).toContain('unionAuthority.revision === authorityRevision');
     expect(rail).toContain("useMasterBusSubscription('UNION_UPDATED'");

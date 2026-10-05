@@ -8,7 +8,6 @@ import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { withClubContext } from '../../utils/clubScopedPath';
 import styles from './ArenaSectionRail.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
-import { useUnionRouteId } from '../../hooks/useUnionRouteId';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { unionService } from '../../services/UnionService';
 import { reportError } from '../../utils/errorReporter';
@@ -16,6 +15,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 interface UnionRailAuthority {
   unionId: string;
+  unionRef: string;
   userId: string;
   revision: number;
   canOversee: boolean;
@@ -36,7 +36,6 @@ export default function ArenaSectionRail() {
       return match[1];
     }
   }, [location.pathname]);
-  const { unionId, unionRef } = useUnionRouteId(unionRouteRef);
   const [unionAuthority, setUnionAuthority] = useState<UnionRailAuthority | null>(null);
   const [authorityRevision, setAuthorityRevision] = useState(0);
   /* This is the rail in Dan's 2026-09-02 screenshot — PLAY RECORDS / OVERVIEW
@@ -48,51 +47,73 @@ export default function ArenaSectionRail() {
   const { routeClubId } = useClubWorkspace();
 
   useMasterBusSubscription('UNION_UPDATED', (payload) => {
-    if (unionId && (!payload.unionId || payload.unionId === unionId)) {
+    if (
+      unionRouteRef &&
+      (!unionAuthority ||
+        unionAuthority.unionRef !== unionRouteRef ||
+        !payload.unionId ||
+        payload.unionId === unionAuthority.unionId ||
+        payload.unionId === unionRouteRef)
+    ) {
       setAuthorityRevision((current) => current + 1);
     }
   });
   useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', () => {
-    if (unionId) setAuthorityRevision((current) => current + 1);
+    if (unionRouteRef) setAuthorityRevision((current) => current + 1);
   });
 
   useEffect(() => {
     let live = true;
     setUnionAuthority(null);
-    if (!user?.id || !unionRef || !unionId) {
+    if (!user?.id || !unionRouteRef) {
       return () => {
         live = false;
       };
     }
 
-    void Promise.allSettled([
-      unionService.canOverseeUnion(unionId),
-      unionService.isUnionAdmin(unionId, user.id),
-    ]).then(([overseer, gameManager]) => {
-      if (!live) return;
-      if (overseer.status === 'rejected') {
-        reportError(overseer.reason, 'ArenaSectionRail.union_overseer_authority', { unionId });
+    const resolveAuthority = async () => {
+      try {
+        const { resolveUnionUUID } = await import('../../utils/unionIdResolver');
+        const unionId = await resolveUnionUUID(unionRouteRef);
+        if (!live) return;
+
+        const [overseer, gameManager] = await Promise.allSettled([
+          unionService.canOverseeUnion(unionId),
+          unionService.isUnionAdmin(unionId, user.id),
+        ]);
+        if (!live) return;
+        if (overseer.status === 'rejected') {
+          reportError(overseer.reason, 'ArenaSectionRail.union_overseer_authority', { unionId });
+        }
+        if (gameManager.status === 'rejected') {
+          reportError(gameManager.reason, 'ArenaSectionRail.union_game_authority', { unionId });
+        }
+        setUnionAuthority({
+          unionId,
+          unionRef: unionRouteRef,
+          userId: user.id,
+          revision: authorityRevision,
+          canOversee: overseer.status === 'fulfilled' && overseer.value,
+          canManageGames: gameManager.status === 'fulfilled' && gameManager.value,
+        });
+      } catch (error) {
+        if (live) {
+          reportError(error, 'ArenaSectionRail.union_route_authority', {
+            unionRef: unionRouteRef,
+          });
+        }
       }
-      if (gameManager.status === 'rejected') {
-        reportError(gameManager.reason, 'ArenaSectionRail.union_game_authority', { unionId });
-      }
-      setUnionAuthority({
-        unionId,
-        userId: user.id,
-        revision: authorityRevision,
-        canOversee: overseer.status === 'fulfilled' && overseer.value,
-        canManageGames: gameManager.status === 'fulfilled' && gameManager.value,
-      });
-    });
+    };
+    void resolveAuthority();
 
     return () => {
       live = false;
     };
-  }, [authorityRevision, unionId, unionRef, user?.id]);
+  }, [authorityRevision, unionRouteRef, user?.id]);
 
   const authorityForCurrentUnion =
     unionAuthority &&
-    unionAuthority.unionId === unionId &&
+    unionAuthority.unionRef === unionRouteRef &&
     unionAuthority.userId === user?.id &&
     unionAuthority.revision === authorityRevision
       ? unionAuthority

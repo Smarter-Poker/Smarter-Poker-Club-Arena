@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const UNION_A = '11111111-1111-4111-8111-111111111111';
 const UNION_B = '22222222-2222-4222-8222-222222222222';
+const UNION_A_SLUG = 'midway-union';
 
 const mocks = vi.hoisted(() => ({
   canOverseeUnion: vi.fn(),
   isUnionAdmin: vi.fn(),
+  resolveUnionUUID: vi.fn(),
   reportError: vi.fn(),
   userId: 'player-1',
   subscriptions: new Map<string, (payload: Record<string, unknown>) => void>(),
@@ -31,6 +33,10 @@ vi.mock('../../src/services/UnionService', () => ({
     canOverseeUnion: mocks.canOverseeUnion,
     isUnionAdmin: mocks.isUnionAdmin,
   },
+}));
+
+vi.mock('../../src/utils/unionIdResolver', () => ({
+  resolveUnionUUID: mocks.resolveUnionUUID,
 }));
 
 vi.mock('../../src/utils/errorReporter', () => ({
@@ -90,6 +96,7 @@ describe('ArenaSectionRail union authority', () => {
     mocks.subscriptions.clear();
     mocks.canOverseeUnion.mockResolvedValue(false);
     mocks.isUnionAdmin.mockResolvedValue(false);
+    mocks.resolveUnionUUID.mockImplementation(async (unionRef: string) => unionRef);
   });
 
   it('uses the layout-level route ref and keeps every privileged link hidden while authority resolves', async () => {
@@ -97,12 +104,13 @@ describe('ArenaSectionRail union authority', () => {
     const gameManagement = deferred<boolean>();
     mocks.canOverseeUnion.mockReturnValue(oversight.promise);
     mocks.isUnionAdmin.mockReturnValue(gameManagement.promise);
+    mocks.resolveUnionUUID.mockResolvedValue(UNION_A);
 
-    renderAt(`/unions/${UNION_A}/operations`);
+    renderAt(`/unions/${UNION_A_SLUG}/operations`);
 
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'href',
-      `/unions/${UNION_A}`
+      `/unions/${UNION_A_SLUG}`
     );
     expect(screen.getByRole('link', { name: 'Games' })).toBeInTheDocument();
     for (const label of [...oversightLinks, 'Table Management']) {
@@ -110,6 +118,7 @@ describe('ArenaSectionRail union authority', () => {
     }
 
     await waitFor(() => {
+      expect(mocks.resolveUnionUUID).toHaveBeenCalledWith(UNION_A_SLUG);
       expect(mocks.canOverseeUnion).toHaveBeenCalledWith(UNION_A);
       expect(mocks.isUnionAdmin).toHaveBeenCalledWith(UNION_A, 'player-1');
     });
@@ -119,6 +128,33 @@ describe('ArenaSectionRail union authority', () => {
       gameManagement.resolve(false);
       await Promise.all([oversight.promise, gameManagement.promise]);
     });
+  });
+
+  it('cannot start authority reads for a route whose resolver finishes after navigation', async () => {
+    const unionAResolution = deferred<string>();
+    mocks.resolveUnionUUID.mockImplementation((unionRef: string) =>
+      unionRef === UNION_A_SLUG ? unionAResolution.promise : Promise.resolve(unionRef)
+    );
+
+    renderAt(`/unions/${UNION_A_SLUG}/operations`);
+    await waitFor(() => expect(mocks.resolveUnionUUID).toHaveBeenCalledWith(UNION_A_SLUG));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Union B' }));
+    await waitFor(() => {
+      expect(mocks.canOverseeUnion).toHaveBeenCalledWith(UNION_B);
+      expect(mocks.isUnionAdmin).toHaveBeenCalledWith(UNION_B, 'player-1');
+    });
+
+    await act(async () => {
+      unionAResolution.resolve(UNION_A);
+      await unionAResolution.promise;
+    });
+
+    expect(mocks.canOverseeUnion).not.toHaveBeenCalledWith(UNION_A);
+    expect(mocks.isUnionAdmin).not.toHaveBeenCalledWith(UNION_A, 'player-1');
+    for (const label of [...oversightLinks, 'Table Management']) {
+      expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument();
+    }
   });
 
   it.each([

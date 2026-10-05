@@ -103,6 +103,13 @@ const certificationRetirement =
 const certificationPlayerIndex =
   /^(scripts\/(?:ci\/(?:test-certification-player-index-postgres\.py$|fixtures\/certification-player-index\/)|ops\/build-certification-player-index-concurrently\.sql$)|tests\/certificationPlayerIndexRegression\.test\.ts$)/;
 
+// Phase 1 customization has a two-step database cutover. Its native harness,
+// loaded fixtures, durable marker and service-role sealer are one qualification
+// unit with both migrations; changing any one of them must admit the existing
+// PostgreSQL accounting lane even when no application source changed.
+const phase1CustomizationPostgres =
+  /^(scripts\/ci\/(?:test-phase1-customization-postgres\.py$|fixtures\/phase1-customization\/|phase1-customization-cutover-v1\.json$|seal-phase1-customization-cutover\.mjs$|schema-manifest\.d\/phase-one-customization\.json$)|supabase\/migrations\/2026100511(?:1453_phase_one_customization_ownership_face_decks_and_avatar_styl|1523_short_formats_never_reach_final_table)\.sql$)/;
+
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
   // calls must also discard inherited index/object/config overrides so a
@@ -301,6 +308,7 @@ export function classifyChangedPaths(paths) {
       matches(strandedPlayerRead) ||
       matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
+      matches(phase1CustomizationPostgres) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||
@@ -349,6 +357,7 @@ export function classifyChangedPaths(paths) {
       matches(strandedPlayerRead) ||
       matches(contractIndexRecovery) ||
       matches(settlementConservationIndex) ||
+      matches(phase1CustomizationPostgres) ||
       matches(certificationRetirement) ||
       matches(satelliteAuditIndex) ||
       matches(satelliteLedgerAuditIndex) ||

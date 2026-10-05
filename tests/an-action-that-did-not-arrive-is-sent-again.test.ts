@@ -126,7 +126,7 @@ describe('submitAction re-sends an action nobody answered', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(status(code)).mockResolvedValueOnce(ok());
     vi.stubGlobal('fetch', fetchMock);
 
-    const res = await settle(api.submitAction('table-1', 'u1', 'fold'));
+    const res = await settle(api.submitAction('table-1', 'u1', 'fold', undefined, 'ctx-1'));
 
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -138,7 +138,7 @@ describe('submitAction re-sends an action nobody answered', () => {
     vi.stubGlobal('fetch', fetchMock);
     const started = Date.now();
 
-    const res = await settle(api.submitAction('table-1', 'u1', 'check'));
+    const res = await settle(api.submitAction('table-1', 'u1', 'check', undefined, 'ctx-1'));
 
     expect(res.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -150,7 +150,7 @@ describe('submitAction re-sends an action nobody answered', () => {
     vi.stubGlobal('fetch', fetchMock);
     const started = Date.now();
 
-    const res = await settle(api.submitAction('table-1', 'u1', 'raise', 40));
+    const res = await settle(api.submitAction('table-1', 'u1', 'raise', 40, 'ctx-1'));
 
     expect(res).toEqual({
       success: false,
@@ -171,6 +171,19 @@ describe('submitAction re-sends an action nobody answered', () => {
     );
     expect(api.ACTION_NOT_DELIVERED_MESSAGE).not.toContain(String.fromCharCode(0x2014));
     expect(api.ACTION_NOT_DELIVERED_MESSAGE).not.toMatch(/\d{3}/);
+  });
+
+  it('an action with no decision context is sent once: a re-send could land on the next hand', async () => {
+    // The Lightning fast fold carries no context and its table id is the pool
+    // session, which outlives the hand. Re-sent, it would fold whatever hand
+    // that seat was in by the time it arrived.
+    const fetchMock = vi.fn().mockImplementationOnce(dropped).mockResolvedValue(ok());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await settle(api.submitAction('table-1', 'u1', 'fast_fold'));
+
+    expect(res).toMatchObject({ success: false, code: 'ACTION_NOT_DELIVERED' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('an answer from the engine is never re-sent: a rejection is final', async () => {
@@ -209,14 +222,24 @@ describe('submitAction re-sends an action nobody answered', () => {
 });
 
 describe('the calls that answer a clock cannot wait for ever', () => {
-  it('a time bank request with no answer fails at its deadline instead of hanging', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(silent));
-    const started = Date.now();
+  it('a slow time bank grant is not abandoned: the engine may already have spent it', async () => {
+    // 2026-10-05: /timebank carries no idempotency key, so a client deadline
+    // turned "outcome unknown" into "refused" and the ring hid a bank the
+    // engine had granted. The call now waits for the engine's answer.
+    const late = api.ENGINE_CLOCKED_CALL_TIMEOUT_MS + 2_000;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve(ok({ success: true, newDeadline: 1 })), late)
+          )
+      )
+    );
 
     const res = await settle(api.activateTimeBank('table-1'));
 
-    expect(res.success).toBe(false);
-    expect(Date.now() - started).toBeLessThan(api.ENGINE_CLOCKED_CALL_TIMEOUT_MS + 500);
+    expect(res.success).toBe(true);
   });
 
   it('a heartbeat with no answer is a counted miss before the next beat is due', async () => {

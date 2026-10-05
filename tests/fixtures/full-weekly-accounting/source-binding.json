@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "4a93b4d0c6accb48973518276c1bba022cc20238733f5f6ca79f542dbc3d59d7",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -3569,5 +3569,19 @@
       }
     ],
     "verification": "The exact classifier and nested-binding diffs were reviewed. Focused routing passes, the Union Operations PostgreSQL 17 fixture passes, and verify-source-bindings.py must re-read the complete pin graph after this targeted cascade."
+  },
+  "phaseOneCustomizationErrorRatchet20261005": {
+    "source_pr": 6153,
+    "failed_run": 37320143447,
+    "failed_job": 111796833294,
+    "reason": "Phase 1 customization closes AvatarService's last discarded VIP-profile read: the service now binds and reports the PostgREST failure instead of treating an unreadable account as non-VIP. The reviewed ratchet moves only that allowance from one to zero; no accounting SQL image, financial fixture, or existing assertion is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+        "sha256": "4a93b4d0c6accb48973518276c1bba022cc20238733f5f6ca79f542dbc3d59d7"
+      }
+    ],
+    "verification": "The exact one-line threshold tightening and its explanatory comment were reviewed. The focused ratchet test and complete source-binding verifier must pass on the corrected candidate."
   }
 }

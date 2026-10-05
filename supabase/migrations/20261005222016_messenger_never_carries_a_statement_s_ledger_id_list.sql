@@ -49,6 +49,10 @@
 -- No money moves, no invoice, ledger, delivery or message row is written.
 -- Each patch asserts its exact pre-image fragment occurs once and its post-image
 -- is installed, so the migration aborts if either function moved underneath it.
+-- A function already carrying its post-image is left as it is, so the file is
+-- safe to send through apply-merged-migration.yml after the same body was
+-- installed by hand on 2026-10-05 22:45 UTC to restore the thread (that
+-- installation wrote no history row; the applier records it).
 --
 -- Wrap ALL DDL for one change in ONE transaction (club-arena CLAUDE.md,
 -- production DDL policy).
@@ -69,10 +73,12 @@ BEGIN
   v_old := $$'lines',inv.breakdown-'source_ledger_ids')$$;
   v_new := $$'lines',inv.breakdown-ARRAY['source_ledger_ids','private_bank_ledger_ids'])$$;
   v_def := pg_get_functiondef(v_fn);
-  IF (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old) <> 1 THEN
-    RAISE EXCEPTION 'fn_deliver_accounting_invoice pre-image moved: lines fragment not found exactly once';
+  IF position(v_new IN v_def) = 0 THEN
+    IF (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old) <> 1 THEN
+      RAISE EXCEPTION 'fn_deliver_accounting_invoice pre-image moved: lines fragment not found exactly once';
+    END IF;
+    EXECUTE replace(v_def, v_old, v_new);
   END IF;
-  EXECUTE replace(v_def, v_old, v_new);
   IF position(v_new IN pg_get_functiondef(v_fn)) = 0 THEN
     RAISE EXCEPTION 'fn_deliver_accounting_invoice post-image not installed';
   END IF;
@@ -85,10 +91,12 @@ BEGIN
     'public.fn_messenger_search_messages(uuid,uuid[],text,integer)'::regprocedure
   ] LOOP
     v_def := pg_get_functiondef(v_fn);
-    IF (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old) <> 1 THEN
-      RAISE EXCEPTION '% pre-image moved: metadata projection not found exactly once', v_fn;
+    IF position(v_new IN v_def) = 0 THEN
+      IF (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old) <> 1 THEN
+        RAISE EXCEPTION '% pre-image moved: metadata projection not found exactly once', v_fn;
+      END IF;
+      EXECUTE replace(v_def, v_old, v_new);
     END IF;
-    EXECUTE replace(v_def, v_old, v_new);
     IF position(v_new IN pg_get_functiondef(v_fn)) = 0 THEN
       RAISE EXCEPTION '% post-image not installed', v_fn;
     END IF;

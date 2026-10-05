@@ -24,20 +24,20 @@
     },
     "0|preflop": {
       "n": 3042,
-      "s1": "-199090",
-      "s2": "17005512050",
-      "s3": "51639648206750",
-      "s4": "4549825757107291250"
+      "s1": "-202070",
+      "s2": "16155040450",
+      "s3": "44358618892750",
+      "s4": "4305571583943651250"
     },
     "1|flop": {
-      "n": 12,
-      "s1": "-19600",
-      "s2": "197007400",
-      "s3": "-1734764308000",
-      "s4": "16343308796980000"
+      "n": 13,
+      "s1": "-14110",
+      "s2": "165236300",
+      "s3": "-1275124819000",
+      "s4": "12560836065470000"
     },
     "1|none": {
-      "n": 3572,
+      "n": 3567,
       "s1": "0",
       "s2": "0",
       "s3": "0",
@@ -45,33 +45,33 @@
     },
     "1|preflop": {
       "n": 1300,
-      "s1": "-194570",
-      "s2": "19106220450",
-      "s3": "2983626674500",
-      "s4": "5140938563755218750"
+      "s1": "-163820",
+      "s2": "19561756750",
+      "s3": "10080538049500",
+      "s4": "5268692271647248750"
     },
     "1|river": {
-      "n": 4,
-      "s1": "-11560",
-      "s2": "66593600",
-      "s3": "-428295616000",
-      "s4": "2895997544960000"
+      "n": 7,
+      "s1": "-11060",
+      "s2": "66843600",
+      "s3": "-428170616000",
+      "s4": "2896060044960000"
     },
     "1|turn": {
-      "n": 8,
-      "s1": "4720",
-      "s2": "47786200",
-      "s3": "299643742000",
-      "s4": "2017632303220000"
+      "n": 9,
+      "s1": "-3900",
+      "s2": "122090600",
+      "s3": "-340860186000",
+      "s4": "7538776162580000"
     }
   },
-  "pairDigest": "9d56c29923249d93cd43aa0a6bf8426ee10cbd09cecf866bb1dfc03003d3f53a",
-  "candidateNetCents": -862980,
+  "pairDigest": "9356501e3db90f5b3524c81b33421ed017b96a167029f3bc0d30096c6db82623",
+  "candidateNetCents": -837840,
   "referenceNetCents": -442880,
-  "changedPairs": 4366,
-  "decisions": 46463,
-  "eligible": 8961,
-  "changed": 4649,
+  "changedPairs": 4371,
+  "decisions": 46475,
+  "eligible": 8959,
+  "changed": 4772,
   "illegalActions": 0,
   "conservationErrors": 0,
   "cardErrors": 0,
@@ -79,44 +79,45 @@
   "settlementMismatches": 0,
   "deductionMismatches": 0,
   "pairedReplayMismatches": 0,
-  "showdownsChecked": 1214,
-  "foldWinsChecked": 18370,
+  "showdownsChecked": 1216,
+  "foldWinsChecked": 18368,
   "lowHalvesChecked": 0,
-  "totalRake": 3550.7,
+  "totalRake": 3570.1,
   "totalBbj": 0,
   "nodeCounts": {
     "cash/preflop/rfi": 4896,
     "cash/preflop/defense": 3046,
     "cash/preflop/isolation": 21,
     "cash/flop/checked_to": 300,
-    "cash/turn/checked_to": 192,
-    "cash/river/checked_to": 182,
-    "cash/turn/facing_bet": 151,
-    "cash/river/facing_bet": 74,
+    "cash/turn/checked_to": 191,
+    "cash/river/checked_to": 184,
+    "cash/turn/facing_bet": 149,
+    "cash/river/facing_bet": 70,
     "cash/preflop/four_bet": 17,
-    "cash/flop/facing_bet": 67,
-    "cash/river/call_off": 5,
-    "cash/turn/facing_raise": 5,
-    "cash/flop/facing_raise": 4,
-    "cash/river/facing_raise": 1
+    "cash/flop/facing_bet": 64,
+    "cash/river/call_off": 3,
+    "cash/turn/facing_raise": 7,
+    "cash/turn/call_off": 1,
+    "cash/river/facing_raise": 2,
+    "cash/flop/facing_raise": 8
   },
   "reasons": {
     "preflop_entry_declined": 4453,
     "preflop_defense": 3012,
-    "variant_protected_check": 499,
+    "variant_protected_check": 497,
     "preflop_entry": 464,
-    "variant_value_bet": 117,
+    "variant_value_bet": 120,
     "preflop_reraise": 51,
-    "variant_price_call": 234,
+    "variant_price_call": 237,
     "variant_draw_pressure": 58,
     "variant_bluff_catcher_fold": 32,
     "variant_dominated_draw_fold": 11,
-    "variant_value_raise": 9,
+    "variant_value_raise": 4,
     "variant_price_fold": 18,
-    "variant_scoop_raise": 3
+    "variant_scoop_raise": 2
   },
   "equityWork": {
-    "170": 16724
+    "170": 16736
   },
   "fixedWork": {
     "governor": "off",
@@ -124,7 +125,7 @@
     "policyClock": "fixed_work_no_wall_clock_branch",
     "moodClock": "deal_seed_time_of_day"
   },
-  "durationMs": 83532,
+  "durationMs": 67049,
   "promotionEligible": false,
   "sourceUnchanged": true,
   "cancelled": false

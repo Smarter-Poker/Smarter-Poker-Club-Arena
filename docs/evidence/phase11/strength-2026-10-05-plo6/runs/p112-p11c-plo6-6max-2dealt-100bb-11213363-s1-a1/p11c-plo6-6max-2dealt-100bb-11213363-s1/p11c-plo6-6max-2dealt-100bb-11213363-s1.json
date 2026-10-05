@@ -24,20 +24,20 @@
     },
     "0|preflop": {
       "n": 3502,
-      "s1": "-427365",
-      "s2": "24308022325",
-      "s3": "-24033540955875",
-      "s4": "7072903320911385625"
+      "s1": "-416510",
+      "s2": "24406418800",
+      "s3": "-25210342090250",
+      "s4": "7053145026824245000"
     },
     "1|flop": {
-      "n": 11,
-      "s1": "17365",
-      "s2": "193442525",
-      "s3": "966730789375",
-      "s4": "10533576968140625"
+      "n": 16,
+      "s1": "15735",
+      "s2": "140108625",
+      "s3": "314280756375",
+      "s4": "3750080674550625"
     },
     "1|none": {
-      "n": 3585,
+      "n": 3576,
       "s1": "0",
       "s2": "0",
       "s3": "0",
@@ -45,33 +45,33 @@
     },
     "1|preflop": {
       "n": 1566,
-      "s1": "-278750",
-      "s2": "25689050350",
-      "s3": "-18653448640250",
-      "s4": "7322445587030113750"
+      "s1": "-273500",
+      "s2": "25783566450",
+      "s3": "-24346287955250",
+      "s4": "7247903294802843750"
     },
     "1|river": {
-      "n": 4,
+      "n": 7,
       "s1": "-13000",
       "s2": "51560000",
       "s3": "-218824000000",
       "s4": "961332800000000"
     },
     "1|turn": {
-      "n": 18,
-      "s1": "4760",
-      "s2": "30740000",
-      "s3": "2919098000",
-      "s4": "241194011240000"
+      "n": 19,
+      "s1": "13840",
+      "s2": "67623400",
+      "s3": "190438702000",
+      "s4": "1228641089500000"
     }
   },
-  "pairDigest": "2aba6caae76bfade7767e59f40ded3c38c5bf6e3c707c82f5c7a9c96c50222cf",
-  "candidateNetCents": -724170,
+  "pairDigest": "28faef87b64e071680681d8a4d49cec73d21f86c906227fe684d5c3da2042e53",
+  "candidateNetCents": -700615,
   "referenceNetCents": -27180,
-  "changedPairs": 5101,
-  "decisions": 54998,
-  "eligible": 10450,
-  "changed": 5630,
+  "changedPairs": 5110,
+  "decisions": 54990,
+  "eligible": 10420,
+  "changed": 5852,
   "illegalActions": 0,
   "conservationErrors": 0,
   "cardErrors": 0,
@@ -79,44 +79,44 @@
   "settlementMismatches": 0,
   "deductionMismatches": 0,
   "pairedReplayMismatches": 0,
-  "showdownsChecked": 1629,
-  "foldWinsChecked": 19107,
+  "showdownsChecked": 1618,
+  "foldWinsChecked": 19118,
   "lowHalvesChecked": 0,
-  "totalRake": 4649.8,
+  "totalRake": 4696.6,
   "totalBbj": 0,
   "nodeCounts": {
     "cash/preflop/rfi": 5184,
     "cash/flop/checked_to": 543,
-    "cash/turn/checked_to": 356,
-    "cash/river/checked_to": 326,
+    "cash/turn/checked_to": 357,
+    "cash/river/checked_to": 333,
     "cash/preflop/defense": 3456,
-    "cash/flop/facing_bet": 117,
-    "cash/turn/facing_bet": 241,
-    "cash/river/facing_bet": 137,
+    "cash/flop/facing_bet": 100,
+    "cash/turn/facing_bet": 225,
+    "cash/river/facing_bet": 128,
     "cash/preflop/four_bet": 59,
-    "cash/river/call_off": 8,
-    "cash/flop/facing_raise": 11,
+    "cash/flop/facing_raise": 15,
+    "cash/river/facing_raise": 6,
     "cash/preflop/isolation": 5,
-    "cash/river/facing_raise": 2,
-    "cash/turn/facing_raise": 5
+    "cash/turn/facing_raise": 7,
+    "cash/river/call_off": 2
   },
   "reasons": {
     "preflop_entry": 895,
-    "variant_protected_check": 877,
+    "variant_protected_check": 876,
     "preflop_defense": 3448,
-    "variant_price_call": 378,
+    "variant_price_call": 350,
     "preflop_entry_declined": 4294,
     "variant_draw_pressure": 109,
-    "variant_value_bet": 239,
-    "variant_bluff_catcher_fold": 65,
+    "variant_value_bet": 248,
+    "variant_bluff_catcher_fold": 66,
     "preflop_reraise": 67,
-    "variant_value_raise": 9,
+    "variant_value_raise": 3,
     "variant_price_fold": 23,
     "variant_dominated_draw_fold": 28,
-    "variant_scoop_raise": 18
+    "variant_scoop_raise": 13
   },
   "equityWork": {
-    "120": 22325
+    "120": 22317
   },
   "fixedWork": {
     "governor": "off",
@@ -124,7 +124,7 @@
     "policyClock": "fixed_work_no_wall_clock_branch",
     "moodClock": "deal_seed_time_of_day"
   },
-  "durationMs": 110838,
+  "durationMs": 108392,
   "promotionEligible": false,
   "sourceUnchanged": true,
   "cancelled": false

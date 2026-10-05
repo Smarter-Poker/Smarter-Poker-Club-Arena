@@ -89,7 +89,10 @@ def validate_recognition_capture(files):
     start,observed,end=(stamp(e[k]) for k in ('week_start','observed_at','week_end'))
     require(start<=observed<end, 'recognition observation outside bounds')
     require(type(e['runs_blocking_now']) is int and e['runs_blocking_now']==0 and e['runs_overlapping_week']==[], 'recognition overlaps settlement')
-    require(e['scopes']==[{'club_id':'fade0000-0000-0000-0000-000000000001','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'}], 'recognition scope differs')
+    require(e['scopes']==[
+        {'club_id':'a41434bb-8d0c-400a-8f0d-e8b3d65afed4','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'},
+        {'club_id':'fade0000-0000-0000-0000-000000000001','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'},
+    ], 'recognition scope differs')
     for p in (BASE+'first-temporal-refusal.sql',BASE+'first-connected-probe.sql',BASE+'first-atomic-failures.sql',PRODUCTION_PROBE_SQL,COMPLETION_SQL,LOCKS,CONCURRENCY):
         text=files[p].decode()
         require(start.strftime('%Y-%m-%dT%H:%M:%SZ') in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') in text, 'recognition source bounds differ: '+p)

@@ -156,7 +156,26 @@ describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
     }
   });
 
-  it('while the selections are null, no committed Phase 11 qualification says qualified:true and no completion record exists', () => {
+  // A MEASURED PACK IS NOT A PROMOTED PACK (2026-10-05).
+  //
+  // This case was written while Phase 11 had measured nothing, so it pinned the
+  // state of that moment: no qualification claiming qualified:true, and no
+  // completion record AT ALL. On 2026-10-05 Phase 11 finished measuring plo5,
+  // plo6 and plo8 and committed their completion records under
+  // docs/evidence/phase11/, exactly as Phase 10 left PLO4 bound and measured
+  // without promoting it. The final assertion then refused the evidence of the
+  // work it was meant to be waiting for, and main went red on it.
+  //
+  // The hazard was never a completion record existing. It is a pack being
+  // SELECTED without review, because a selection is what the admission path
+  // turns into a live authority. That is asserted here and still reads null for
+  // every variant, so every measured pack remains in shadow.
+  //
+  // So a completion record is admitted, and tied to the invariant that matters:
+  // a record may exist only while its OWN variant is unpromoted. Promote plo5
+  // and this case fails until somebody updates it deliberately, which is the
+  // point of a null proof.
+  it('while the selections are null, nothing is promoted: no qualification says qualified:true, and a completion record exists only for an unpromoted pack', () => {
     expect(Object.values(PHASE11_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
@@ -166,7 +185,11 @@ describe('P11.3 null proof: no Phase 11 authority is selected today', () => {
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === HORSE_PHASE11_QUALIFICATION_SCHEMA)
         expect(parsed.qualified, file).not.toBe(true);
-      expect(parsed.schema, file).not.toBe(HORSE_PHASE11_COMPLETION_SCHEMA);
+      if (parsed.schema === HORSE_PHASE11_COMPLETION_SCHEMA) {
+        const variant = parsed.variant as keyof typeof PHASE11_PROTECTED_RELEASE_SELECTIONS;
+        expect(HORSE_PHASE11_VARIANTS as readonly string[], file).toContain(variant);
+        expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+      }
     }
   });
 });

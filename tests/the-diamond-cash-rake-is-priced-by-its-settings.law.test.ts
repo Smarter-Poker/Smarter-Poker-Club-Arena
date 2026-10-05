@@ -77,9 +77,20 @@ describe('the Diamond cash rake is priced by its settings and by nothing else', 
   });
 
   it('keeps the superseded first attempt marked, and never lets it run', () => {
-    const head = read(SUPERSEDED).slice(0, 400);
-    expect(head).toMatch(/^--\s*SUPERSEDED BY\s+20261005183028\b/m);
-    expect(head).toContain('THIS FILE MUST NEVER RUN');
+    const lines = read(SUPERSEDED).split('\n');
+    /* THE MARKER IS THE FIRST LINE, and the version on it is BARE.
+       check-migrations-are-live reads it with /^--\s*SUPERSEDED BY\s+(\d{14})\b/m,
+       and \b between a digit and an underscore never matches - both are word
+       characters. A marker that read "SUPERSEDED BY 20261005183028_diamond_..."
+       would look correct to a reader and be invisible to the checker, so the
+       law holds the exact expression the checker uses. */
+    expect(lines[0]).toMatch(/^--\s*SUPERSEDED BY\s+20261005183028\b/);
+    /* "must never run" belongs in the leading comment block, which ends at the
+       first line that is neither a comment nor blank. Bounded by that
+       structure, never by a byte count. */
+    const firstStatement = lines.findIndex((l) => l.trim() !== '' && !l.startsWith('--'));
+    expect(firstStatement).toBeGreaterThan(0);
+    expect(lines.slice(0, firstStatement).join('\n')).toContain('THIS FILE MUST NEVER RUN');
   });
 
   it('uses the shared closed list own names for every answer', () => {

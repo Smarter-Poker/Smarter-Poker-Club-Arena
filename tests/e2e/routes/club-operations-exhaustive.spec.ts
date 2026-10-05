@@ -155,6 +155,9 @@ test.describe('Reserved Admin - conditional club hamburger doors', () => {
         await expect(page.getByRole('heading', { name: 'Share Club' })).toBeVisible({
           timeout: 15_000,
         });
+        const copyInviteLink = page.getByRole('button', { name: 'Copy Invite Link' });
+        await expect(copyInviteLink).toBeVisible({ timeout: 15_000 });
+        await expect(copyInviteLink).toBeEnabled();
       }
     });
   }

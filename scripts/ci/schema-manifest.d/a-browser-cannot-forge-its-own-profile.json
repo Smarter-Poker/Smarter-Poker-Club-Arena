@@ -1,0 +1,6 @@
+{
+  "_owner": "launch/profiles-insert-and-dblink-are-closed. Migration 20261005220434_a_browser_cannot_delete_or_forge_its_own_profile declares the profile insert guard; installed through apply-merged-migration after merge.",
+  "tables": [],
+  "functions": ["fn_guard_profile_privileged_columns_on_insert"],
+  "columns": {}
+}

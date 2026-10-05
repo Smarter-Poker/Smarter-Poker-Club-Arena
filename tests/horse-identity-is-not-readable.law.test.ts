@@ -290,3 +290,131 @@ describe('LAW: exactly one god account', () => {
     expect(sql).toMatch(/refusing to demote anyone/);
   });
 });
+
+describe('LAW: the bot roster is not readable by a browser', () => {
+  /* public.content_authors is the roster itself - 1,000 of 1,000 profile_ids
+     were horses on 2026-10-05 - and it was readable logged out through
+     "Public can read authors" and a table-level grant of everything to anon
+     and authenticated. clip_usage_log says which clip each horse posted. The
+     World Hub stopped reading either from a browser (#2127); this migration
+     closes them in the database. */
+  const ROSTER = '20261005162843_the_bot_roster_is_not_readable_by_a_browser.sql';
+  const strip = (sql: string) => sql.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('the closing migration exists', () => {
+    expect(files, `${ROSTER} is missing - the roster is readable again`).toContain(ROSTER);
+  });
+
+  it('drops every open policy and revokes both tables, the sequence and the roster RPCs', () => {
+    const sql = strip(read(ROSTER));
+    for (const p of [
+      'Public can read authors',
+      'Admins manage authors',
+      'Anyone can view clip usage',
+    ]) {
+      expect(sql).toContain(`DROP POLICY IF EXISTS "${p}"`);
+    }
+    expect(sql).toContain(
+      'REVOKE ALL ON TABLE public.content_authors FROM PUBLIC, anon, authenticated;'
+    );
+    expect(sql).toContain(
+      'REVOKE ALL ON TABLE public.clip_usage_log FROM PUBLIC, anon, authenticated;'
+    );
+    expect(sql).toContain('REVOKE ALL ON SEQUENCE %s FROM PUBLIC, anon, authenticated');
+    expect(sql).toContain('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated');
+    for (const fn of [
+      'fn_horses_without_social_identity',
+      'fn_horses_not_social_ready',
+      'fn_mint_social_alias',
+      'get_random_clip',
+      'mark_clip_used',
+    ]) {
+      expect(sql).toContain(`'${fn}'`);
+    }
+  });
+
+  it('asserts its own effect and keeps the service role whole', () => {
+    const sql = strip(read(ROSTER));
+    expect(sql).toContain('a browser role still holds a privilege');
+    expect(sql).toContain('a roster RPC is still callable by a browser');
+    expect(sql).toContain('a policy is still open on a roster table');
+    expect(sql).toContain('the service role lost the roster');
+  });
+
+  it('nothing after the close hands the roster back to a browser', () => {
+    const offenders = files
+      .filter((f) => f > ROSTER)
+      .filter((f) => {
+        const sql = strip(read(f));
+        return (
+          /GRANT\s+[^;]*ON\s+(TABLE\s+)?(public\.)?(content_authors|clip_usage_log)\b[^;]*TO[^;]*\b(anon|authenticated|PUBLIC)\b/i.test(
+            sql
+          ) ||
+          /CREATE\s+POLICY[^;]*ON\s+(public\.)?(content_authors|clip_usage_log)\b[^;]*TO[^;]*\b(anon|authenticated|public)\b/i.test(
+            sql
+          ) ||
+          /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+(public\.)?(fn_horses_without_social_identity|fn_horses_not_social_ready|fn_mint_social_alias|get_random_clip|mark_clip_used)\b[^;]*TO[^;]*\b(anon|authenticated|PUBLIC)\b/i.test(
+            sql
+          )
+        );
+      });
+    expect(offenders, 'a later migration re-opens the roster to a browser role').toEqual([]);
+  });
+});
+
+describe('LAW: a post does not say who wrote it', () => {
+  /* social_posts.origin_type ('horse' on a horse's clips) and metadata (the
+     publishing pipeline's notes, only ever on pipeline posts) were readable by
+     both browser roles through a table-level SELECT. World Hub #2130 stopped
+     every browser read of them; this migration grants the browser roles every
+     column but those two and proves it as each role. */
+  const POSTS = '20261005174015_a_post_does_not_say_who_wrote_it.sql';
+  const strip = (sql: string) => sql.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('the closing migration exists and withholds exactly the two label columns', () => {
+    expect(files).toContain(POSTS);
+    const sql = strip(read(POSTS));
+    expect(sql).toContain('REVOKE SELECT ON TABLE public.social_posts FROM anon, authenticated;');
+    expect(sql).toContain("a.attname NOT IN ('origin_type', 'metadata')");
+    expect(sql).toContain('GRANT SELECT (%s) ON TABLE public.social_posts TO anon, authenticated');
+    expect(sql).toContain('anon still reads origin_type');
+    expect(sql).toContain('authenticated still reads metadata');
+  });
+
+  it('nothing after the close hands either label column back to a browser', () => {
+    const offenders = files
+      .filter((f) => f > POSTS)
+      .filter((f) => {
+        const sql = strip(read(f));
+        return (
+          /GRANT\s+(SELECT|ALL)[^;(]*ON\s+(TABLE\s+)?public\.social_posts\b[^;]*TO[^;]*\b(anon|authenticated|PUBLIC)\b/i.test(
+            sql
+          ) ||
+          /GRANT\s+SELECT\s*\([^)]*\b(origin_type|metadata)\b[^)]*\)\s*ON\s+(TABLE\s+)?public\.social_posts/i.test(
+            sql
+          )
+        );
+      });
+    expect(offenders, 'a later migration re-grants the post labels to a browser role').toEqual([]);
+  });
+});
+
+describe('LAW: a horse keeps a heartbeat like a person', () => {
+  /* Presence has one definition: is_online with last_seen under five minutes.
+     A horse has no browser, so a pg_cron tick keeps the same two columns the
+     way a person's tab does. Without it every horse read offline forever on
+     every surface; with a schedule instead it read online half the day. */
+  const BEAT = '20261005174041_a_horse_keeps_a_heartbeat_like_a_person.sql';
+
+  it('the heartbeat migration exists, writes only the presence columns, and is not browser-callable', () => {
+    expect(files).toContain(BEAT);
+    const sql = read(BEAT);
+    expect(sql).toContain("cron.schedule('horse-presence-heartbeat', '* * * * *'");
+    expect(sql).toContain('UPDATE public.profiles p SET is_online = true, last_seen = v_now');
+    expect(sql).toContain('UPDATE public.profiles p SET is_online = false');
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION smarter_private.fn_horse_presence_tick() FROM PUBLIC, anon, authenticated;'
+    );
+    expect(sql).toContain('a browser role can run the horse heartbeat');
+  });
+});

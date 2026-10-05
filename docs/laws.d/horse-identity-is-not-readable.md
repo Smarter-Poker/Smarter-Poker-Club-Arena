@@ -37,3 +37,13 @@ therefore also requires every later `ADD COLUMN` on `table_seats` or
 `club_members` to carry its own `GRANT SELECT (column)` to `anon` and
 `authenticated` in the same migration, or to say `WITHHELD` beside it.
 
+2026-10-05: the sixth door. `content_authors` is the roster itself (1,000 of
+1,000 profile ids are horses) and was readable logged out through "Public can
+read authors" plus a table-level grant of every privilege to `anon` and
+`authenticated`; `clip_usage_log` says which clip each horse posted. The World
+Hub stopped reading either from a browser (World Hub #2127: presence and the
+operator roster moved behind server routes). Migration 20261005162843 drops
+every policy on both tables, revokes them, their sequence and the five roster
+RPCs from every browser role, keeps the service role whole, and asserts the
+result. The law pins the migration and that no later migration re-opens any of
+them to `anon`, `authenticated` or `PUBLIC`.

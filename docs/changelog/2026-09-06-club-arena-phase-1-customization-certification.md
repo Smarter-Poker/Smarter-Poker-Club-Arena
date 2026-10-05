@@ -81,8 +81,8 @@ after the compatible client and engine are proven live.
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
   plus its six-file uncommitted regression patch. Current protected base at
-  final-candidate integration: `942943e7c99a52e4278b0711a9b570f3d5bd6454`.
-- Policy receipt refreshed before final validation at 2026-10-05T13:40:03.490Z:
+  final-candidate integration: `a72cb154fedec2664d5827dd8683d57a07b59c3c`.
+- Policy receipt refreshed after resumption at 2026-10-05T14:03:11.751Z:
   version 2.9, manifest
   `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
   Canonical and portable hashes matched. Required repository, publication,
@@ -121,10 +121,12 @@ after the compatible client and engine are proven live.
   `79107c24c0da4af4ae6a203e7e8090b7da2d38cdd91b26b85fb8e535a36fa661`.
   The live function hashes, owners, grants, RLS, realtime publication, ten face
   decks, and ten-frame/ten-aura catalog contract match the qualified post-image.
-- Exact candidate integration commit `406dfa1e0416f990cbf91105219a146f124132b7`
-  preserves both the Phase 1 MTT-only Final Table/realtime/face-deck work and
-  protected-main gameplay fixes. Protected/prerequisite paths are byte-identical
-  to current main and `git diff --check` is clean. Client/server typechecks,
+- The final candidate integrates protected main
+  `a72cb154fedec2664d5827dd8683d57a07b59c3c` with Phase 1 head
+  `bc48d1165e5d2719d1d57b6e347b6a05b7d8c90a`, preserving both the MTT-only
+  Final Table/realtime/face-deck work and the concurrent protected-main gameplay
+  fixes. Protected/prerequisite paths are byte-identical to current main and
+  `git diff --check` is clean. Client/server typechecks,
   production builds, 309 focused client tests, 33 focused engine tests, 16
   production browser journeys discovered by Playwright, policy classification,
   source bindings, and script syntax all pass.

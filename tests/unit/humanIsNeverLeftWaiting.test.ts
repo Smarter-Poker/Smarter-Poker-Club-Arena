@@ -37,7 +37,9 @@ describe('the fast lane owns the human case', () => {
 
   it('hands every partially-paid seat-first game to the human fill', () => {
     expect(lane).toContain('paid > 0 && paid < seats');
-    expect(lane).toContain('fillPartialSeatFirstGame(id, seats, paid, windowClosed, startMs)');
+    expect(lane).toMatch(
+      /fillPartialSeatFirstGame\(\s*id,\s*seats,\s*paid,\s*windowClosed,\s*startMs,/
+    );
   });
 
   it('still fast-starts full games exactly as before', () => {

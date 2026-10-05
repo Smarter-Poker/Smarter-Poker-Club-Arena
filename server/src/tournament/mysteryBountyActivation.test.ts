@@ -18,6 +18,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  totalEntriesFromRows,
   shouldActivateMysteryBounty,
   mysteryBountyThresholdReached,
   mysteryPoolCents,
@@ -178,5 +179,19 @@ describe('mysteryPoolCents', () => {
     expect(mysteryPoolCents(0, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
     expect(mysteryPoolCents(-5, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
     expect(mysteryPoolCents(100_000, 0, 0, 0, CHIP_UNIT_CENTS)).toBe(0);
+  });
+});
+
+describe('totalEntriesFromRows', () => {
+  it('counts one entry per row plus every rebuy and re-entry on it', () => {
+    expect(totalEntriesFromRows([{ rebuys: 0 }, { rebuys: 2 }, { rebuys: null }, {}])).toBe(6);
+  });
+
+  it('never lets a bad rebuy figure shrink the field', () => {
+    expect(totalEntriesFromRows([{ rebuys: -3 }, { rebuys: 'x' }, { rebuys: 1.7 }])).toBe(4);
+  });
+
+  it('an empty field is zero entries, which the threshold refuses', () => {
+    expect(totalEntriesFromRows([])).toBe(0);
   });
 });

@@ -45,6 +45,15 @@ function fixture(
     /** The unit the manager read from the club: a cent, a Diamond, or null
      *  when the club could not be read (Diamond Phase 9). */
     unit?: number | null;
+    /** Activation mode and its value (default at_the_money). */
+    mode?: string;
+    modeValue?: number | null;
+    /** tournaments.current_players - the engine drains it to survivors. */
+    currentPlayers?: number;
+    /** readMysteryTotalEntries' answer: every entry, rebuys included. */
+    totalEntries?: number | null;
+    /** readUnrecordedKnockoutCount's answer (busts played, not recorded). */
+    unrecordedKnockouts?: number | null;
   } = {}
 ) {
   const fresh = {
@@ -55,11 +64,11 @@ function fixture(
     mystery_bounty_pool_percent: 50,
     mystery_bounty_regular_pool_percent: 50,
     mystery_bounty_profile: 'classic',
-    mystery_bounty_activation: 'at_the_money',
-    mystery_bounty_activation_value: null,
+    mystery_bounty_activation: options.mode ?? 'at_the_money',
+    mystery_bounty_activation_value: options.modeValue ?? null,
     mystery_bounty_top_percent: 30,
     payout_structure: Array.from({ length: 27 }, (_, i) => ({ place: i + 1, percentage: 1 })),
-    current_players: 180,
+    current_players: options.currentPlayers ?? 180,
   };
   const query = {
     select: vi.fn(() => query),
@@ -112,6 +121,13 @@ function fixture(
     // a chip event unless the case says otherwise, null when not read.
     tournamentUnit: vi.fn(() => (options.unit === undefined ? CHIP_UNIT_CENTS : options.unit)),
     broadcast: vi.fn(async () => undefined),
+    mysteryTotalEntries: null as number | null,
+    readMysteryTotalEntries: vi.fn(async () =>
+      options.totalEntries === undefined ? 180 : options.totalEntries
+    ),
+    readUnrecordedKnockoutCount: vi.fn(async () =>
+      options.unrecordedKnockouts === undefined ? 0 : options.unrecordedKnockouts
+    ),
   });
   return { subject, rpc, query, reportError, seedCalls };
 }
@@ -256,6 +272,76 @@ describe('mystery activation uses the closed entry pool', () => {
       expect.any(Error),
       'Tournament.mystery_bounty_unit_unknown'
     );
+  });
+
+  it('measures a percent_field threshold against total entries, not the drained current_players', async () => {
+    // 180 entries, chests open at the last 20% = 36 players. 27 remain, and
+    // current_players has drained to 27: the old read compared 27 with 20% of
+    // 27 (6) and never opened.
+    const f = fixture({
+      finalized: true,
+      mode: 'percent_field',
+      modeValue: 20,
+      currentPlayers: 27,
+      totalEntries: 180,
+    });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.subject.readMysteryTotalEntries).toHaveBeenCalledOnce();
+    expect(f.seedCalls()).toHaveLength(1);
+    expect(f.subject.mysteryBountyStage).toBe('active');
+    expect(f.subject.mysteryTotalEntries).toBe(180);
+  });
+
+  it('does not open a percent_field event above its threshold', async () => {
+    const f = fixture({
+      finalized: true,
+      mode: 'percent_field',
+      modeValue: 10,
+      currentPlayers: 27,
+      totalEntries: 180,
+    });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+  });
+
+  it('an unreadable entry count is not the survivors: percent_field waits and seeds nothing', async () => {
+    const f = fixture({
+      finalized: true,
+      mode: 'percent_field',
+      modeValue: 20,
+      currentPlayers: 27,
+      totalEntries: null,
+    });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+  });
+
+  it('draws no chest for a bust already played but not yet recorded (b5102d84)', async () => {
+    // 27 still recorded as playing, 2 of them already busted in a committed
+    // hand and paid flat from the regular half: 25 can still be knocked out
+    // for a chest, so 24 chests, and the seed is told 25.
+    const f = fixture({ finalized: true, unrecordedKnockouts: 2 });
+    await f.subject.maybeActivateMysteryBounty(27);
+    const [, args] = f.seedCalls()[0] as unknown as [
+      string,
+      { p_players_remaining: number; p_chests: unknown[] },
+    ];
+    expect(args.p_players_remaining).toBe(25);
+    expect(args.p_chests).toHaveLength(24);
+    expect(f.subject.broadcast).toHaveBeenCalledWith(
+      'mystery_bounty_activated',
+      expect.objectContaining({ chests: 24 })
+    );
+  });
+
+  it('an unreadable unrecorded-bust count waits and seeds nothing', async () => {
+    const f = fixture({ finalized: true, unrecordedKnockouts: null });
+    await f.subject.maybeActivateMysteryBounty(27);
+    expect(f.seedCalls()).toHaveLength(0);
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+    expect(f.subject.mysteryBountySeeding).toBe(false);
   });
 
   it('adopts an already stored active stage without another seed or announcement', async () => {

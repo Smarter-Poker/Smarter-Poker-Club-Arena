@@ -235,6 +235,25 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The toggle line is a real <button>; it must look exactly like the plain line. */
+.tournament-dock__line--toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tournament-dock__line--toggle:focus-visible,
+.tournament-lobby-corner-btn:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: 2px;
+}
+
 .tournament-lobby-corner-btn__img {
   width: 100%;
   height: 100%;

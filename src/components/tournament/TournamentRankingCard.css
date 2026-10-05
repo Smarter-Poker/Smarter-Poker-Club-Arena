@@ -93,9 +93,44 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26cqw;
-  height: 26cqw;
-  margin: 2cqw auto 0;
+  width: 27cqw;
+  height: 27cqw;
+  margin: 5cqw auto 1cqw;
+}
+
+/* The starburst, cast in the finish's own light (2026-10-05). Beams are the
+   medal's glow token at full strength fading to nothing, so the podium burns
+   bright and cool and a 47th place gets a faint steel wash. A slow turn, so
+   the card is alive while it is read; reduced motion holds it still. */
+.trc2__medal-rays {
+  position: absolute;
+  inset: -15cqw;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    var(--trc2-medal-glow) 0deg 4deg,
+    transparent 4deg 15deg
+  );
+  -webkit-mask-image: radial-gradient(
+    circle closest-side,
+    #000 40%,
+    rgba(0, 0, 0, 0.45) 70%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle closest-side,
+    #000 40%,
+    rgba(0, 0, 0, 0.45) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: trc2Rays 48s linear infinite;
+}
+
+/* Off the podium the burst is a wash, not a celebration: the same light at
+   under half strength, so 47th never reads like a trophy finish. */
+.trc2__medal--steel .trc2__medal-rays {
+  opacity: 0.45;
 }
 
 .trc2__medal-ring {
@@ -112,7 +147,22 @@
   box-shadow:
     inset 0 4px 12px rgba(255, 255, 255, 0.45),
     inset 0 -6px 14px rgba(0, 0, 0, 0.35),
+    0 0 0 0.5cqw rgba(0, 0, 0, 0.55),
     0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+/* The struck inner rim of a real medal: a cut line just inside the edge, dark
+   below a lit lip, so the face reads as metal pressed in a die rather than a
+   flat disc. Same technique as the engraved rules on the glass. */
+.trc2__medal-ring::before {
+  content: '';
+  position: absolute;
+  inset: 1.6cqw;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0.25cqw 0 rgba(0, 0, 0, 0.28),
+    0 0.25cqw 0 rgba(255, 255, 255, 0.55);
+  pointer-events: none;
 }
 
 /* PODIUM TROPHY (Dan 2026-08-23). currentColor is the medal ink, so the cup
@@ -175,23 +225,88 @@
 }
 
 /* ── Place band ──
-   The one solid field on the glass, because it IS the result: the metal of the
-   finish, spelled out in words. It carries no corner and no rim. */
+   The result, set as the result (2026-10-05). It was a solid slab of colour
+   with "1ST" centred in it - the generic part of the card. Now: the finish
+   named in lit blue between two engraved rules, then the place itself in the
+   master's engraved silver at the biggest size on the sheet, the numeral full
+   height and its suffix raised and smaller. The band colour is still the
+   finish's metal, and still the only field on the glass that carries it - as
+   the light the numeral stands in, fading out before it reaches the rails,
+   with a lit hairline beneath. */
 .trc2__placeband {
-  margin-top: 2.4cqw;
-  padding: 2.4cqw 3cqw;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6cqw;
+  margin-top: 1cqw;
+  padding: 1.6cqw 3cqw 2.6cqw;
   text-align: center;
-  font-size: 5cqw;
+  background: radial-gradient(
+    ellipse 52% 72% at 50% 62%,
+    color-mix(in srgb, var(--trc2-band, #233355) 62%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.trc2__placeband::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--trc2-band, #233355), transparent);
+  box-shadow: 0 0 1.4cqw var(--trc2-band, #233355);
+}
+
+.trc2__place-title {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+  font-size: 3cqw;
   font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  /* The letter-spacing trails the last letter; this puts it back in the middle. */
+  margin-right: -0.32em;
+}
+
+.trc2__place-title::before,
+.trc2__place-title::after {
+  content: '';
+  width: 10cqw;
+  height: 1px;
+  background: #000;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.trc2__place-ordinal {
+  display: inline-flex;
+  align-items: flex-start;
+  line-height: 0.92;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.trc2__place-num {
+  font-size: 17cqw;
+  letter-spacing: -0.02em;
+}
+
+.trc2__place-suffix {
+  margin: 1.4cqw 0 0 0.6cqw;
+  font-size: 6.4cqw;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #fff;
-  text-shadow: 0 0.25cqw 0.4cqw rgba(0, 0, 0, 0.7);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
-    /* The default was #7a3a1f - the brown band Dan photographed on a 4th
-       place. Out-of-the-money now reads as deep house blue. */
-    var(--trc2-band, #233355);
+}
+
+.trc2__place-word {
+  font-size: 9cqw;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .trc2__placeband.trc2__medal--gold {
@@ -210,11 +325,12 @@
   --trc2-band: #33435a;
 }
 
-/* ── Player row: a line on the glass, under an engraved rule ── */
+/* ── Player row: who this was, centred under what it paid ── */
 .trc2__player {
   display: flex;
   align-items: center;
-  gap: 3cqw;
+  justify-content: center;
+  gap: 2.6cqw;
   padding-top: 2.6cqw;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -225,8 +341,8 @@
    frame that appears invisible rather than a ring around the face. */
 .trc2__avatar {
   flex: 0 0 auto;
-  width: 11cqw;
-  height: 11cqw;
+  width: 10cqw;
+  height: 10cqw;
   border-radius: 50%;
   object-fit: cover;
   background: #05080d;
@@ -235,7 +351,7 @@
 
 .trc2__identity {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   min-width: 0;
 }
@@ -254,18 +370,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── What it paid: centred, directly under the place ── */
 .trc2__reward {
   display: flex;
-  flex: 0 0 auto;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4cqw;
+  align-items: center;
+  gap: 0.6cqw;
+  margin-top: 1.2cqw;
 }
 
 .trc2__reward-label {
   font-size: 2.6cqw;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   /* Was #ffb800 - "gold for money" was the last yellow on the card. Cyan is
      the house accent and already marks live values everywhere else. */
@@ -274,7 +391,8 @@
 }
 
 .trc2__reward-value {
-  font-size: 4.4cqw;
+  font-size: 8.4cqw;
+  line-height: 1;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -345,6 +463,12 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+/* An engraved vertical rule between the pair, the same cut as the rows. */
+.trc2__session-stat + .trc2__session-stat {
+  border-left: 1px solid #000;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
 .trc2__session-stat {
   display: flex;
   flex: 1 1 0;
@@ -362,7 +486,7 @@
 }
 
 .trc2__session-value {
-  font-size: 3.8cqw;
+  font-size: 4.4cqw;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -459,6 +583,11 @@
     opacity: 1;
   }
 }
+@keyframes trc2Rays {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @keyframes trc2Rise {
   from {
     opacity: 0;
@@ -471,7 +600,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .trc2__backdrop,
-  .trc2__card {
+  .trc2__card,
+  .trc2__medal-rays {
     animation: none;
   }
 }

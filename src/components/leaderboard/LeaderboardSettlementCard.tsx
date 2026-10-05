@@ -4,6 +4,7 @@ import type {
   LeaderboardSettlementStatus,
 } from '../../services/LeaderboardService';
 import { compactChips } from '../../utils/format';
+import { enumToTitleCase } from '../../utils/titleCase';
 import './LeaderboardSettlementCard.css';
 
 /**
@@ -135,7 +136,7 @@ export function LeaderboardSettlementCard({
         <div>
           <span className="lb-settlement-kicker">Settlement Desk</span>
           <h2>Settlement Status Could Not Be Verified</h2>
-          <p>{error}</p>
+          <p>{enumToTitleCase(error)}</p>
         </div>
         <button type="button" onClick={onRetry}>
           Retry Status
@@ -164,7 +165,7 @@ export function LeaderboardSettlementCard({
           </div>
           <span className="lb-settlement-state">{copy.label}</span>
         </div>
-        <p>{ownerMessage || copy.body}</p>
+        <p>{ownerMessage ? enumToTitleCase(ownerMessage) : copy.body}</p>
         <span className="lb-settlement-window">
           {formatUtcDate(status.period_start)} To {formatUtcDate(status.period_end)} · UTC
         </span>

@@ -147,11 +147,25 @@ const sig = (types: string[]) => types.join(',');
  * has neither parameter, so no named-argument set is accepted by both. The
  * engine calls only the v3 door (GameServer: runMaintenanceThawV3).
  * 20261002165326 replaces the v3 body in place.
+ *
+ * Phase 1 customization: the four owner-bound doors require
+ * p_expected_user_id (and the theme door also requires p_mutation_id). The
+ * legacy doors declare neither name, so an old call cannot match the new door
+ * and a new call cannot match the old one. The old doors remain only through
+ * the measured compatible-client cutover, after which 20261005111523 revokes
+ * their browser execution.
  */
 const DELIBERATE_OVERLOADS: Record<string, string[]> = {
   fn_thaw_platform: [
     'timestamp with time zone,numeric,text',
     'timestamp with time zone,timestamp with time zone,numeric,uuid,text',
+  ],
+  fn_set_interface_theme: ['text', 'uuid,uuid,text'],
+  fn_mark_table_setting_touched: ['text[]', 'uuid,text[]'],
+  fn_seed_table_studio_preferences: ['text[],jsonb', 'uuid,text[],jsonb'],
+  fn_mutate_table_studio_preferences: [
+    'text,boolean,integer,jsonb',
+    'uuid,text,boolean,integer,jsonb',
   ],
 };
 const deliberatePair = (name: string, a: string, b: string): boolean =>
@@ -253,6 +267,33 @@ describe('a door the engine calls by name has one overload', () => {
       expect(args).toMatch(/p_ownership_token uuid,/);
       expect(args).not.toMatch(/p_announced_at[^,]*default/i);
       expect(args).not.toMatch(/p_ownership_token[^,]*default/i);
+    }
+
+    const ownerBoundDoors = [
+      'fn_set_interface_theme',
+      'fn_mark_table_setting_touched',
+      'fn_seed_table_studio_preferences',
+      'fn_mutate_table_studio_preferences',
+    ];
+    for (const name of ownerBoundDoors) {
+      const definitions = parsed
+        .flatMap(({ sql }) => [
+          ...sql.matchAll(
+            new RegExp(
+              `create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\s*\\(([\\s\\S]*?)\\)\\s*returns`,
+              'gi'
+            )
+          ),
+        ])
+        .map((match) => match[1]);
+      expect(
+        definitions.some((args) => !/p_expected_user_id/i.test(args)),
+        `${name} has no legacy definition`
+      ).toBe(true);
+      const ownerBound = definitions.find((args) => /p_expected_user_id/i.test(args));
+      expect(ownerBound, `${name} has no owner-bound definition`).toBeDefined();
+      expect(ownerBound).toMatch(/p_expected_user_id uuid,/i);
+      expect(ownerBound).not.toMatch(/p_expected_user_id[^,]*default/i);
     }
   });
 });

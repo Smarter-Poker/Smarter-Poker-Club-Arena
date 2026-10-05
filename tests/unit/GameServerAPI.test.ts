@@ -72,7 +72,8 @@ describe('GameServerAPI', () => {
       // after the last re-send nothing is healing. See
       // tests/an-action-that-did-not-arrive-is-sent-again.test.ts.
       mockFetch.mockRejectedValue(new Error('Network error'));
-      const result = await submitAction('table-1', 'user-1', 'fold');
+      // Only a decision-bound action is re-sent (2026-10-05).
+      const result = await submitAction('table-1', 'user-1', 'fold', undefined, 'ctx-1');
       expect(result.success).toBe(false);
       expect(result.error).toBe(GameServerAPI.ACTION_NOT_DELIVERED_MESSAGE);
       expect(result.code).toBe('ACTION_NOT_DELIVERED');

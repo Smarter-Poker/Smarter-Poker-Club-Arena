@@ -1596,9 +1596,6 @@ function warmSeatToPlayer(seat: WarmSeat, heroUserId: string): SeatPlayer {
     status: 'active',
     holeCards: [],
     showCards: false,
-    // is_horse is not client-readable; horse_id off the seat is the flag, and
-    // the engine snapshot is the authority that follows.
-    isHorse: !!(seat as { horse_id?: string | null }).horse_id,
   } as SeatPlayer;
 }
 
@@ -5087,6 +5084,24 @@ function LiveTablePage({
      buy-in made on THIS page, so after a reload or a rejoin the partner-hold
      countdown would otherwise have no seat time (2026-10-04 audit). */
   const heroSeatJoinedAtRef = useRef<number | null>(null);
+  /**
+   * When the partner hold ends, on THIS DEVICE's clock (2026-10-05 audit).
+   * start_time and joined_at are database times; a device whose clock is
+   * wrong would count the hold down off by its error. The pre-start roster
+   * sync measures this device's offset from the DATABASE clock (fn_db_now)
+   * into its own ref - not the shared serverClock, which the engine socket
+   * feeds and the turn timers read - so the end is computed on the database's
+   * clock and handed back in device time, which every timer here runs on.
+   */
+  const dbClockOffsetMsRef = useRef(0);
+  const partnerHoldEndsLocalMs = (startTimeMs: number | null | undefined): number => {
+    const offset = dbClockOffsetMsRef.current;
+    const seatedServerMs =
+      heroSeatJoinedAtRef.current ??
+      (seatAcquiredAtRef.current !== null ? seatAcquiredAtRef.current - offset : null);
+    const endsServerMs = seatFirstPartnerHoldEndsAtMs(startTimeMs, seatedServerMs);
+    return Number.isFinite(endsServerMs) ? endsServerMs + offset : endsServerMs;
+  };
 
   // ── Tournament masthead data (Dan 2026-08-20, from a seat at a live table:
   //    "1st line Date, (game type) Poker Spins, Club Name, Union Name. 2nd
@@ -5190,10 +5205,7 @@ function LiveTablePage({
        it), so the hold is re-measured when the timer fires and the timer
        re-arms while the hold is still running. */
     const holdLeftMs = () => {
-      const holdEnds = seatFirstPartnerHoldEndsAtMs(
-        seatFirstBuyIn?.startTimeMs,
-        heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
-      );
+      const holdEnds = partnerHoldEndsLocalMs(seatFirstBuyIn?.startTimeMs);
       return Number.isFinite(holdEnds) ? Math.max(0, holdEnds - Date.now()) : 0;
     };
     let timer = 0;
@@ -5239,10 +5251,7 @@ function LiveTablePage({
     let ticks = 0;
     const timer = window.setInterval(() => {
       ticks += 1;
-      const holdEnds = seatFirstPartnerHoldEndsAtMs(
-        seatFirstBuyIn?.startTimeMs,
-        heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
-      );
+      const holdEnds = partnerHoldEndsLocalMs(seatFirstBuyIn?.startTimeMs);
       const counting = Number.isFinite(holdEnds) && holdEnds + 1_000 > Date.now();
       if (counting || ticks % 15 === 0) setSeatFillClock(Date.now());
     }, 1_000);
@@ -14806,7 +14815,7 @@ function LiveTablePage({
         const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
-            'seat_number, user_id, stack, status, horse_id, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
+            'seat_number, user_id, stack, status, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
           )
           .eq('table_id', table.id)
           .is('left_at', null);
@@ -14828,8 +14837,8 @@ function LiveTablePage({
           /* No is_horse / horse_profile: `authenticated` cannot read either
              (platform lockdown + horse-name law), so naming them made the
              WHOLE read 403 and every restored seat degraded to "Player" with
-             no avatar. horse_id off the seat rows carries the flag; the engine
-             snapshot carries the resolved name. */
+             no avatar. The engine snapshot carries the resolved name. (No
+             horse_id either: a browser may not learn which seat is a horse.) */
           const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
             .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
@@ -14911,7 +14920,6 @@ function LiveTablePage({
                     : ('active' as const),
                 isHero,
                 showCards: isHero,
-                isHorse: !!seat.horse_id,
                 horseProfile: undefined,
               } as any;
 
@@ -16565,6 +16573,21 @@ function LiveTablePage({
             heroP.status !== 'folded' &&
             (heroP.stack || 0) > 0;
           if (!heroStillHasAction) setIsAllInMode(true);
+          /* The hero's own shove, as the engine executed it, is a preflop
+             raise when it puts in more than anyone else has. The lastActions
+             effect no longer counts `all_in` because that label can be the
+             optimistic paint of a press the engine played as a call. A short
+             stack's all-in that only calls (the engine still echoes
+             `all_in`) is not a raise. `amount` is the seat's total street
+             bet; the other seats' bets are untouched by the hero's own
+             optimistic update. */
+          if (actionSeat === st.heroSeat && st.boardStage === 'preflop') {
+            const othersTopBet = st.lastBetAmounts.reduce(
+              (top, bet, i) => (i === seatIdx ? top : Math.max(top, bet || 0)),
+              0
+            );
+            if (actionAmount > othersTopBet + 0.005) heroPfrThisHandRef.current = true;
+          }
         }
         // Dan 2026-08-20 (pot redesign): NO chip flight to the pot on the
         // action itself. Chips belong IN FRONT of the player (ChipPhysics bet
@@ -19597,7 +19620,11 @@ function LiveTablePage({
     if (act === 'call' || act === 'bet' || act === 'raise' || act === 'allin' || act === 'all_in') {
       if (!heroVpipThisHandRef.current) vpipCountRef.current++;
       heroVpipThisHandRef.current = true;
-      if (act !== 'call') heroPfrThisHandRef.current = true;
+      /* Bet/raise only. `all_in` here can be the optimistic label an ALL IN
+         press paints before the engine answers, and the engine may execute
+         that press as a call. A real shove is counted as a preflop raise from
+         the hero's own PLAYER_ACTION echo, which carries the executed verb. */
+      if (act === 'bet' || act === 'raise') heroPfrThisHandRef.current = true;
     }
   }, [tableState.lastActions, tableState.boardStage, tableState.heroSeat]);
 
@@ -20881,6 +20908,7 @@ function LiveTablePage({
        each second, a bounded number of times. */
     let fullRecheckTimer = 0;
     let fullRechecks = 0;
+    let clockMeasured = false;
     /* Whether the last roster read had the hero in a chair - the only proof
        this page has that a cancellation took THEIR buy-in back. */
     let heroHeldSeat = false;
@@ -20979,7 +21007,7 @@ function LiveTablePage({
       if (cancelled) return;
       const { data: seats, error } = await supabase
         .from('table_seats')
-        .select('seat_number, user_id, stack, is_sitting_out, horse_id, joined_at')
+        .select('seat_number, user_id, stack, is_sitting_out, joined_at')
         .eq('table_id', tableId)
         .is('left_at', null);
       if (cancelled) return;
@@ -20990,6 +21018,27 @@ function LiveTablePage({
       }
       const seatRows = seats || [];
       heroHeldSeat = !!userId && seatRows.some((s) => s.user_id === userId);
+      /* The database clock, once per roster sync, so the hold countdown is
+         right on a device whose clock is not (see partnerHoldEndsLocalMs).
+         Half the round trip is credited to the answer; a failed read keeps
+         whatever offset the clock already has. */
+      if (!clockMeasured) {
+        clockMeasured = true;
+        const askedAt = Date.now();
+        // Not awaited: the seats paint now, the offset lands when it lands.
+        void Promise.resolve(supabase.rpc('fn_db_now')).then(
+          ({ data: dbNow, error: dbNowErr }) => {
+            if (cancelled || dbNowErr || typeof dbNow !== 'string') return;
+            const at = Date.parse(dbNow);
+            const answeredAt = Date.now();
+            if (!Number.isFinite(at) || answeredAt - askedAt > 5_000) return;
+            const offset = answeredAt - (at + (answeredAt - askedAt) / 2);
+            // A wildly wrong answer is not a clock; ignore anything past a day.
+            if (Math.abs(offset) < 86_400_000) dbClockOffsetMsRef.current = offset;
+          },
+          () => undefined
+        );
+      }
       {
         const heroRow = userId ? seatRows.find((s) => s.user_id === userId) : undefined;
         const joined = heroRow ? Date.parse(String(heroRow.joined_at ?? '')) : NaN;
@@ -21007,7 +21056,7 @@ function LiveTablePage({
       if (userIds.length > 0) {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
-          // is_horse omitted - not client-readable; seat.horse_id is the flag.
+          // is_horse omitted - not client-readable.
           .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', userIds);
         if (profErr) {
@@ -21072,7 +21121,6 @@ function LiveTablePage({
             status: 'active' as const,
             isHero,
             showCards: isHero,
-            isHorse: !!seat.horse_id,
             horseProfile: undefined,
           } as unknown as (typeof prev.players)[number];
         }
@@ -22596,8 +22644,8 @@ function LiveTablePage({
         // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
         heroVpipThisHandRef.current = true;
         /* `raise` only. An ALL IN press may be executed as a call (see the
-           'allin' case below); the engine's echo counts a real shove as a
-           preflop raise in the lastActions effect. */
+           'allin' case below); the hero's PLAYER_ACTION echo counts a real
+           shove as a preflop raise, using the verb the engine executed. */
         if (action === 'raise') heroPfrThisHandRef.current = true;
       }
 
@@ -22742,8 +22790,9 @@ function LiveTablePage({
    * see the note in `handleInsuranceDeclineForHand` above.
    *
    * Everything `handleAllIn` did that MATTERED is in the panel path already: the
-   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound,
-   * `setIsAllInMode(true)`, the optimistic update and the revert-on-refusal. The
+   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound, the
+   * optimistic update and the revert-on-refusal. All-in mode now follows the
+   * engine's `all_in` echo, not the press. The
    * only behaviour deleted is the drift.
    */
 
@@ -25571,7 +25620,9 @@ function LiveTablePage({
                      cards is tabling its hand by definition (the same rule
                      heroHandIsTabled applies), so it holds the lift for the
                      whole runout regardless of merge jitter. */
-                  player?.holeCards?.length && (player?.showCards || player?.status === 'all_in')
+                  !feltShowsNoHand &&
+                  player?.holeCards?.length &&
+                  (player?.showCards || player?.status === 'all_in')
                     ? ' seat-wrapper--showing'
                     : ''
                 }${
@@ -26376,10 +26427,7 @@ function LiveTablePage({
                    second player never reads as a frozen one. */
                 if (
                   left > 0 &&
-                  seatFirstPartnerHoldEndsAtMs(
-                    seatFirstBuyIn.startTimeMs,
-                    heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
-                  ) > seatFillClock
+                  partnerHoldEndsLocalMs(seatFirstBuyIn.startTimeMs) > seatFillClock
                 ) {
                   return seatFirstPartnerHoldLabel(left);
                 }
@@ -26394,10 +26442,7 @@ function LiveTablePage({
               {seatFillDots(tableState.players.filter(Boolean).length, seatFirstBuyIn.seats)}
               {' · '}
               {(() => {
-                const holdEnds = seatFirstPartnerHoldEndsAtMs(
-                  seatFirstBuyIn.startTimeMs,
-                  heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current
-                );
+                const holdEnds = partnerHoldEndsLocalMs(seatFirstBuyIn.startTimeMs);
                 const openSeats = seatFirstBuyIn.seats - tableState.players.filter(Boolean).length;
                 if (openSeats > 0 && holdEnds > seatFillClock) {
                   return seatFirstPartnerHoldStatus(holdEnds - seatFillClock);

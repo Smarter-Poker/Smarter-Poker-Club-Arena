@@ -298,6 +298,14 @@ interface TableInstance {
    * cleared, so clearing the stamp remounts nothing.
    */
   lobbyLandingNonce?: number;
+  /**
+   * The page in this tab was put on a list by a Browse Full Lobby request and
+   * has not been remounted since. Consuming the landing does NOT clear it: the
+   * page keeps the landed list in its own state while it stays mounted, so a
+   * later plain lobby request (a cash table's "+") must remount it to open on
+   * the player's saved tab instead.
+   */
+  lobbyLandedList?: boolean;
   /** undefined uses the home club; null displays the shared arena selector. */
   lobbyClubId?: string | null;
   lobbyArenaStack?: (string | null)[];
@@ -1578,6 +1586,9 @@ export default function MultiTablePage() {
     [hidden, navigate]
   );
 
+  /** One counter for every lobby-page remount request (see `openLobbyTabOn`). */
+  const lobbyLandingNonceRef = useRef(0);
+
   useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
@@ -1594,6 +1605,20 @@ export default function MultiTablePage() {
        * them the lobby.
        */
       setTables((cur) => cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t)));
+      /* A page still showing a list an earlier request landed it on is
+         remounted, so a plain request opens on the player's own saved tab.
+         `openLobbyTabOn` emits BEFORE it stamps, so its own request is
+         re-stamped with a newer nonce and the marker right after this. */
+      if (prev[existingLobby]?.lobbyLandedList === true) {
+        const nonce = ++lobbyLandingNonceRef.current;
+        setTables((cur) =>
+          cur.map((t) =>
+            isLobbyTab(t) && t.lobbyLandedList
+              ? { ...t, lobbyLandedList: undefined, lobbyLandingNonce: nonce }
+              : t
+          )
+        );
+      }
       setActiveIndex(existingLobby);
       revealPageTabOffRoute(existingLobby, prev);
       return;
@@ -2559,7 +2584,15 @@ export default function MultiTablePage() {
     activeTableId: string | null;
   } | null>(null);
 
+  /**
+   * Which "+" press the sheet is answering. Every press takes a new number and
+   * every close bumps it, so a press whose reads finish after the sheet was
+   * dismissed, or after a newer press, writes nothing and moves nothing.
+   */
+  const quickJoinRunRef = useRef(0);
+
   const closeQuickJoin = useCallback(() => {
+    quickJoinRunRef.current += 1;
     setQuickJoin((q) => (q.open ? { ...q, open: false } : q));
     /* And forget which spin the sheet was answering for. Leaving it set meant
        the NEXT press re-opened the sheet with a stale scope still live (the
@@ -2690,7 +2723,6 @@ export default function MultiTablePage() {
    *
    * It follows a tap on the sheet and moves nothing by itself.
    */
-  const lobbyLandingNonceRef = useRef(0);
   const openLobbyTabOn = useCallback((list: 'MTT' | 'SNG') => {
     masterBus.emit('OPEN_LOBBY_TAB', {});
     /* A fresh nonce per REQUEST, taken outside the updater so the updater
@@ -2701,7 +2733,9 @@ export default function MultiTablePage() {
     setTables((cur) =>
       cur.some(isLobbyTab)
         ? cur.map((t) =>
-            isLobbyTab(t) ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce } : t
+            isLobbyTab(t)
+              ? { ...t, lobbyGameType: list, lobbyLandingNonce: nonce, lobbyLandedList: true }
+              : t
           )
         : cur
     );
@@ -2728,6 +2762,10 @@ export default function MultiTablePage() {
       notifyCapReached('add');
       return;
     }
+    /* Checked after every await: a stale press must neither paint into a
+       newer sheet nor take a lobby exit the player no longer asked for. */
+    const run = ++quickJoinRunRef.current;
+    const stale = () => run !== quickJoinRunRef.current;
     /**
      * `homeClubIdRef` is filled by an ASYNC lookup of the open tables' club_id
      * (see the effect below). Press "+" before that round trip lands - which is
@@ -2773,6 +2811,7 @@ export default function MultiTablePage() {
       // UNION LAW: the table's club_id is the UNION on any union game, so it is
       // a candidate here, never the answer. See commitHomeClub.
       if (!club) club = await commitHomeClub(tableClubId);
+      if (stale()) return;
     }
     if (!club && !tableClubId) {
       // Genuinely nothing to pick from — no club behind any open table.
@@ -2887,10 +2926,14 @@ export default function MultiTablePage() {
             }))
           ).catch(() => null)
         : Promise.resolve(null);
+      /* Timed like every other read here: a stalled spin read left the sheet
+         on "Finding Games" for good, on a cash table too. Null already means
+         "not a spin, or unreadable", so the cash and tournament paths run. */
       const [spinRows, tournamentAnswer] = await Promise.all([
-        quickJoinSpinRows(scopeClubIds, activeTableId, openIds),
+        withTimeout(quickJoinSpinRows(scopeClubIds, activeTableId, openIds)).catch(() => null),
         tournamentAsk,
       ]);
+      if (stale()) return;
       if (spinRows) {
         setSpinSheetScope({ scopeClubIds, activeTableId });
         setQuickJoin((q) => (q.open ? { open: true, loading: false, rows: spinRows } : q));
@@ -2946,6 +2989,7 @@ export default function MultiTablePage() {
             return mod.quickJoinTournamentRows(tournamentScope, tournamentCtx, user?.id);
           })()
         );
+        if (stale()) return;
         if (tournamentRows === null) {
           // Stalled or unreadable, not empty: the same exit the cash path
           // takes, except that the lobby it lands on is the tournament list.
@@ -2995,6 +3039,7 @@ export default function MultiTablePage() {
         ),
         withTimeout(fetchFavoriteTableIds(user?.id)).catch(() => null),
       ]);
+      if (stale()) return;
       if (res === null) {
         // Stalled, not empty. "No Open Seats Right Now" would be a lie and a
         // spinner would be worse: take the same exit as a failed query.
@@ -3031,6 +3076,7 @@ export default function MultiTablePage() {
             .eq('id', activeTableId)
             .maybeSingle()
         ).catch(() => null);
+        if (stale()) return;
         if (one?.data) activeRow = one.data as CandidateRow;
       }
 
@@ -3111,6 +3157,7 @@ export default function MultiTablePage() {
       });
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
     } catch {
+      if (stale()) return;
       // Query failed - fall back to the lobby tab rather than a dead sheet.
       // A tournament sheet falls to the tournament list, as its stalled exit does.
       setQuickJoin({ open: false, loading: false, rows: [] });

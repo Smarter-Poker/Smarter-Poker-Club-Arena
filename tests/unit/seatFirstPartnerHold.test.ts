@@ -76,16 +76,27 @@ describe('the table wires it', () => {
 describe('the hold is measured from the seat the database holds', () => {
   it('the roster sync reads the hero joined_at and every hold read prefers it', () => {
     expect(TABLE_PAGE).toContain(
-      ".select('seat_number, user_id, stack, is_sitting_out, horse_id, joined_at')"
+      ".select('seat_number, user_id, stack, is_sitting_out, joined_at')"
     );
     expect(TABLE_PAGE).toContain(
       'heroSeatJoinedAtRef.current = Number.isFinite(joined) ? joined : null;'
     );
-    const reads =
-      TABLE_PAGE.split('heroSeatJoinedAtRef.current ?? seatAcquiredAtRef.current').length - 1;
-    expect(reads).toBe(4);
+    // Every hold read goes through the one helper that prefers the database
+    // seat time and works on the database clock.
+    expect(TABLE_PAGE.split('partnerHoldEndsLocalMs(seatFirstBuyIn').length - 1).toBe(4);
+    expect(TABLE_PAGE).toContain('heroSeatJoinedAtRef.current ??');
     expect(TABLE_PAGE).not.toMatch(
       /seatFirstPartnerHoldEndsAtMs\([^)]*,\s*seatAcquiredAtRef\.current\s*\)/
+    );
+  });
+  it('the countdown runs on the database clock, measured once per roster sync', () => {
+    expect(TABLE_PAGE).toContain("void Promise.resolve(supabase.rpc('fn_db_now')).then(");
+    expect(TABLE_PAGE).toContain('const offset = answeredAt - (at + (answeredAt - askedAt) / 2);');
+    expect(TABLE_PAGE).toContain('const offset = dbClockOffsetMsRef.current;');
+    // Its own offset: the engine's serverClock is not fed from the database.
+    expect(TABLE_PAGE).not.toContain('recordServerTime(');
+    expect(TABLE_PAGE).toContain(
+      'return Number.isFinite(endsServerMs) ? endsServerMs + offset : endsServerMs;'
     );
   });
   it('the stall timer re-measures the hold when it fires and re-arms while it runs', () => {

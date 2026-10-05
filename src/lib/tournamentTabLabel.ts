@@ -69,7 +69,10 @@ export async function readTournamentBuyIns(
     .from('tables')
     .select('id, tournament_id')
     .in('id', ids);
-  if (tblErr || !tbls) return out;
+  // A failed read is thrown, not answered with "no buy-ins": the caller
+  // reports it (tournament_buy_in_read_failed).
+  if (tblErr) throw tblErr;
+  if (!tbls) return out;
 
   const tournamentOf = new Map<string, string>();
   for (const row of tbls as Array<{ id: string; tournament_id: string | null }>) {
@@ -82,7 +85,8 @@ export async function readTournamentBuyIns(
     .from('tournaments')
     .select('id, buy_in_amount, buy_in_fee')
     .in('id', tournamentIds);
-  if (tourErr || !tours) return out;
+  if (tourErr) throw tourErr;
+  if (!tours) return out;
 
   const totalOf = new Map<string, number>();
   for (const t of tours as Array<{

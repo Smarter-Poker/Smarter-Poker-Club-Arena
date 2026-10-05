@@ -145,7 +145,7 @@ describe('the move is announced once, whichever transport hears it first', () =>
     expect(MTP).toMatch(/toast\.info\(`You've Been Moved To \$\{name\}`, 6000\)/);
     // The socket path (the tab re-point) ...
     expect(MTP).toMatch(
-      /if \(before\?\.isTournament\) \{\s*announceTournamentMoveRef\.current\(tableId, updates\.movedToTableId\);\s*\}/
+      /if \(tabIsTournament\(before\)\) \{\s*announceTournamentMoveRef\.current\(tableId, updates\.movedToTableId\);\s*\}/
     );
     // ... and the seat-row path.
     expect(MTP).toMatch(/announceTournamentMove\(oldTab\.id, newId, name\);/);

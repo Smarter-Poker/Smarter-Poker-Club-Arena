@@ -26,10 +26,36 @@ export function tournamentDockCollapsed(): boolean {
   return collapsed;
 }
 
+/**
+ * Another browser tab changed the choice: adopt it, so two open tabs agree on
+ * one dock. Installed with the first subscriber and removed with the last.
+ */
+function onStorage(e: StorageEvent): void {
+  if (e.key !== KEY) return;
+  const next = e.newValue === '1';
+  if (next === collapsed) return;
+  collapsed = next;
+  for (const listener of Array.from(listeners)) listener();
+}
+
 export function subscribeTournamentDock(listener: () => void): () => void {
+  if (listeners.size === 0) {
+    try {
+      window.addEventListener('storage', onStorage);
+    } catch {
+      /* No window (prerender): nothing to sync with. */
+    }
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) {
+      try {
+        window.removeEventListener('storage', onStorage);
+      } catch {
+        /* No window (prerender). */
+      }
+    }
   };
 }
 
@@ -47,4 +73,9 @@ export function toggleTournamentDockCollapsed(): void {
 export function resetTournamentDockStoreForTests(): void {
   collapsed = null;
   listeners.clear();
+  try {
+    window.removeEventListener('storage', onStorage);
+  } catch {
+    /* No window. */
+  }
 }

@@ -236,3 +236,69 @@ describe('LAW: every surface that shows a person online asks the door', () => {
     );
   });
 });
+
+describe('LAW: a person in the arena has the same heartbeat a horse has', () => {
+  const BEAT = read('src/lib/presenceHeartbeat.ts');
+  const HOOK = read('src/hooks/usePresenceHeartbeat.ts');
+
+  it('nothing in src writes profiles.is_online directly', () => {
+    const writes = calls(['update', 'upsert', 'insert']);
+    expect(writes.length).toBeGreaterThan(100);
+    const offending = writes
+      .filter((w) => IS_ONLINE.test(withoutComments(w.text)))
+      .map((w) => w.where);
+    expect(
+      offending,
+      'a flag without a fresh last_seen is the stale row the one definition ignores: beat through fn_update_presence'
+    ).toEqual([]);
+  });
+
+  it('only the heartbeat calls fn_update_presence', () => {
+    const writers = FILES.filter(({ src }) => /rpc\(\s*['"`]fn_update_presence['"`]/.test(src)).map(
+      (f) => f.file
+    );
+    expect(writers).toEqual(['src/lib/presenceHeartbeat.ts']);
+    expect(sliceMethod(BEAT, 'async function sendPresence(')).toContain('p_is_online: online');
+  });
+
+  it('beats inside the five-minute window, only while visible, and again on return', () => {
+    const m = BEAT.match(/export const PRESENCE_HEARTBEAT_MS = ([0-9_]+);/);
+    expect(m, 'PRESENCE_HEARTBEAT_MS must be a literal').not.toBeNull();
+    const ms = Number((m as RegExpMatchArray)[1].replace(/_/g, ''));
+    expect(ms).toBeGreaterThanOrEqual(60_000);
+    expect(ms).toBeLessThan(5 * 60_000);
+    const hook = blankNonCode(sliceMethod(HOOK, 'export function usePresenceHeartbeat('));
+    expect(hook).toContain('setInterval(beat, PRESENCE_HEARTBEAT_MS)');
+    expect(hook).toContain('if (stopped || tabHidden()) return;');
+    expect(sliceMethod(HOOK, 'export function usePresenceHeartbeat(')).toContain(
+      "document.addEventListener('visibilitychange', onVisibility)"
+    );
+  });
+
+  it('is mounted exactly once, at the app root', () => {
+    const mounts = FILES.flatMap(({ file, blank }) =>
+      [...blank.matchAll(/<PresenceHeartbeat\b/g)].map(() => file)
+    );
+    expect(mounts).toEqual(['src/App.tsx']);
+    const hookUsers = FILES.filter(
+      ({ file, blank }) =>
+        file !== 'src/hooks/usePresenceHeartbeat.ts' &&
+        file !== 'src/components/common/PresenceHeartbeat.tsx' &&
+        blank.includes('usePresenceHeartbeat(')
+    ).map((f) => f.file);
+    expect(hookUsers).toEqual([]);
+  });
+
+  it('sign-out sends the last beat before the session ends', () => {
+    const logout = blankNonCode(sliceMethod(read('src/core/IdentityDNA.ts'), 'async logout()'));
+    const off = logout.indexOf('signalOffline(');
+    expect(off).toBeGreaterThan(-1);
+    expect(off).toBeLessThan(logout.indexOf('supabase.auth.signOut()'));
+  });
+
+  it('a union online figure never comes from a channel only people can join', () => {
+    const page = blankNonCode(read('src/pages/UnionDetailPage.tsx'));
+    expect(page).not.toContain('presenceService');
+    expect(page).not.toContain('union.onlineCount');
+  });
+});

@@ -82,6 +82,8 @@ const PushSubscriptionSync = lazyWithRetry(
 const FirstRunPushPrompt = lazyWithRetry(
   () => import('./components/notifications/FirstRunPushPrompt')
 );
+// The presence heartbeat: lazy for the same reason, it is not first paint.
+const PresenceHeartbeat = lazyWithRetry(() => import('./components/common/PresenceHeartbeat'));
 // The ticker is another application-root overlay, but it renders only on a
 // live table or club lobby and does not contribute to the first paint. Load it
 // after the shell so its polling, settings, and announcement graph is paid for
@@ -602,6 +604,12 @@ function FullApp() {
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
         <ProfileAccountSync />
+        {/* The signed-in player's presence heartbeat, mounted once: without it a
+          person using only the arena read offline everywhere while a horse could
+          read online (src/lib/presenceHeartbeat.ts). */}
+        <Suspense fallback={null}>
+          <PresenceHeartbeat />
+        </Suspense>
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
           should ever see the union skins." A union is a `clubs` row, so every

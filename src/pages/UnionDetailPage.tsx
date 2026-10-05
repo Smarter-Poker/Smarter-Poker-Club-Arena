@@ -16,8 +16,8 @@ import { tableService } from '../services/TableService';
 import { getUserMemberships } from '../services/ClubsService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { presenceService } from '../services/PresenceService';
-import { supabase, getAuthUser } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { COUNT_UNKNOWN_TEXT } from '../lib/countFigure';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Tournament } from '../types/database.types';
@@ -165,7 +165,6 @@ export default function UnionDetailPage() {
     sharedPlayerPool: true,
     crossClubTournaments: false,
   });
-  const [onlineCount, setOnlineCount] = useState(0);
 
   // ── Recurring tournament schedules (2026-08-22): the union owner's compact
   // manager over tournament_schedules. Loaded when the Tournaments tab opens. ──
@@ -216,36 +215,13 @@ export default function UnionDetailPage() {
     prevLevelRef.current = currentLevel;
   }, [union?.level]);
 
-  // Real-time presence tracking (non-blocking)
-  useEffect(() => {
-    if (!unionId) return;
-
-    const setupPresence = async () => {
-      try {
-        // Use getAuthUser() which has built-in 6s timeout + getSession() fallback
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser) return;
-
-        await presenceService.joinUnion(unionId, authUser.id, {
-          onSync: (state) => {
-            setOnlineCount(Object.keys(state).length);
-          },
-        });
-
-        setOnlineCount(presenceService.getUnionOnlineCount(unionId));
-      } catch (err) {
-        // Non-critical: presence setup failed
-      }
-    };
-
-    setupPresence();
-
-    return () => {
-      presenceService.leave(`union:${unionId}`);
-    };
-  }, [unionId]);
+  /* ONLINE NOW IS THE DATABASE'S ANSWER OR NONE (2026-10-05). This counted
+     the people holding this page open on a Realtime presence channel - only
+     people can join one, never a house player - and the header read
+     unions.online_count, a column that does not exist, so it was always 0.
+     "Online" has one definition (fn_profile_presence: the flag AND a heartbeat
+     under five minutes old) and no database function yet answers it for a
+     union, so the figure says Unavailable rather than inventing a number. */
 
   const loadingRef = useRef(false);
 
@@ -257,7 +233,6 @@ export default function UnionDetailPage() {
     setConfirmJoin({ show: false, club: null });
     setIsUpdatingSettings(false);
     setShowXmttModal(false);
-    setOnlineCount(0);
     setLoadError(null);
     loadingRef.current = false;
   }, [unionId]);
@@ -767,7 +742,7 @@ export default function UnionDetailPage() {
         metrics={[
           { label: 'Clubs', value: union.clubCount },
           { label: 'Players', value: union.memberCount.toLocaleString(), tone: 'live' },
-          { label: 'Online', value: union.onlineCount.toLocaleString(), tone: 'attention' },
+          { label: 'Online', value: COUNT_UNKNOWN_TEXT, tone: 'attention' },
         ]}
       />
       <div className={styles.header}>
@@ -866,9 +841,7 @@ export default function UnionDetailPage() {
                 <span className={styles.statLabel}>Total Players</span>
               </div>
               <div className={styles.statCard}>
-                <span className={`${styles.statValue} ${styles.online}`}>
-                  {onlineCount.toLocaleString()}
-                </span>
+                <span className={`${styles.statValue} ${styles.online}`}>{COUNT_UNKNOWN_TEXT}</span>
                 <span className={styles.statLabel}>Online Now</span>
               </div>
               {financialSummary && (

@@ -501,6 +501,21 @@ class IdentityDNACore {
    */
   async logout(): Promise<void> {
     try {
+      /* The last heartbeat, sent while the session can still send it: a
+         player who signs out reads offline now, not five minutes from now.
+         Bounded and never fatal (src/lib/presenceHeartbeat.ts). */
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          // Lazy: sign-out is rare, and the entry chunk is every player's first paint.
+          const { signalOffline } = await import('../lib/presenceHeartbeat');
+          await signalOffline(session.user.id);
+        }
+      } catch {
+        // Never let the last heartbeat stand between a player and sign-out.
+      }
       const { error } = await supabase.auth.signOut();
       if (error && isAuthSessionMissingError(error)) {
         // Rare, so loaded when needed rather than in first paint.

@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sliceMethod } from '../helpers/sourceWindow';
 import {
   MYSTERY_BOUNTIES_LIVE_TEXT,
   claimMysteryLiveAnnouncement,
@@ -39,9 +40,7 @@ describe('the chests going live is announced at the table', () => {
   });
 
   it('TablePage handles mystery_bounty_activated through the Toast layer', () => {
-    const at = tablePage.indexOf("data?.type === 'mystery_bounty_activated'");
-    expect(at).toBeGreaterThan(-1);
-    const branch = tablePage.slice(at, at + 900);
+    const branch = sliceMethod(tablePage, "data?.type === 'mystery_bounty_activated'");
     expect(branch).toContain('setMysteryChestsLive(true)');
     expect(branch).toContain('claimMysteryLiveAnnouncement(mysteryLiveAnnouncedRef.current');
     expect(branch).toContain('toast.info(MYSTERY_BOUNTIES_LIVE_TEXT');

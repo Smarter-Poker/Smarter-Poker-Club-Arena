@@ -252,3 +252,9 @@ scripts/qualification/spin-first-archived.manifest.json
 # Preserve original current-owner catalog response bytes.
 scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json
 scripts/qualification/fixtures/archived-spin/first-fee-owner-operation-absence.json
+
+# Written one frame per line by
+# server/src/engine/aSeatThatClosesAStreetIsHandedTheNext.test.ts
+# (WRITE_LIVE_TURN_WIRE=1), so a re-recording reads as a diff of frames.
+# Prettier would expand every frame and the two would never agree.
+tests/live-turn/wire/*.json

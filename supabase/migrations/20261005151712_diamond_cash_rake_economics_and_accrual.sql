@@ -285,13 +285,10 @@ BEGIN
 END $function$;
 
 -- A money setting is not a public read.
-REVOKE ALL ON TABLE public.ca_diamond_economics FROM PUBLIC;
-REVOKE ALL ON TABLE public.ca_diamond_economics FROM anon, authenticated;
+REVOKE ALL ON TABLE public.ca_diamond_economics FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.ca_diamond_economics TO service_role;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(text,text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(text,text) FROM anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_text(text,text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_text(text,text) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(text,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_text(text,text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic(text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic_text(text,text) TO service_role;
 -- The table itself is readable by nobody through RLS and has no policy; the two
@@ -559,8 +556,7 @@ CREATE TRIGGER zz_ca_diamond_rake_accrual_guard
   BEFORE UPDATE OR DELETE ON public.ca_diamond_rake_accrual
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_diamond_rake_accrual_guard();
 
-REVOKE ALL ON TABLE public.ca_diamond_rake_accrual FROM PUBLIC;
-REVOKE ALL ON TABLE public.ca_diamond_rake_accrual FROM anon, authenticated;
+REVOKE ALL ON TABLE public.ca_diamond_rake_accrual FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.ca_diamond_rake_accrual TO service_role;
 ALTER TABLE public.ca_diamond_rake_accrual ENABLE ROW LEVEL SECURITY;
 
@@ -602,8 +598,7 @@ $function$;
 -- before this migration and cannot read it after. No RLS policy calls it
 -- (checked against pg_policy on production: none), and its six callers are all
 -- server-side functions that reach it as the owner.
-REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_arena_diamonds() TO service_role;
 
 -- ----------------------------------------------------------------------------
@@ -1032,8 +1027,7 @@ END $function$;
 -- private only by inherited state is private by luck. No service_role grant is
 -- added: production does not have one, and widening a settler to match a
 -- checker's suggested shape would be the opposite of the point.
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM PUBLIC, anon, authenticated;
 
 SELECT public.fn_ca_declare_guard_redefinition(
   'fn_poker_diamond_settle_cash_hand',
@@ -1174,8 +1168,7 @@ BEGIN
                             'house_balance_after',v_after);
 END $function$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) TO service_role;
 
 -- ----------------------------------------------------------------------------
@@ -1550,8 +1543,7 @@ COMMENT ON FUNCTION public.fn_diamond_kind_bucket(text, text, text, bigint) IS
 -- service_role=X}. A signed-in player reads their own wallet flow through it,
 -- an anonymous caller does not, and a fresh database would default it to
 -- PUBLIC. Restated, so a replay cannot widen it.
-REVOKE ALL ON FUNCTION public.fn_diamond_kind_bucket(text, text, text, bigint) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_diamond_kind_bucket(text, text, text, bigint) FROM anon;
+REVOKE ALL ON FUNCTION public.fn_diamond_kind_bucket(text, text, text, bigint) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_diamond_kind_bucket(text, text, text, bigint) TO authenticated, service_role;
 
 

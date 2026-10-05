@@ -55,7 +55,7 @@ Machinery: `runRemainingVariantStrengthShard`,
 `remainingVariantStrengthEvaluate.ts` (npm
 `horse:remaining-variant-strength-evaluate`), `phase12-strength-assemble.mjs`,
 `horse-phase12-strength-league.yml` (manual, main only, one pack per dispatch)
-and `HorsePhase12PolicyDigest.ts` (21 files from the policy's runtime import
+and `HorsePhase12PolicyDigest.ts` (22 files, after the merge with the P12-B net-action economics (#6151), from the policy's runtime import
 closure, each with its reason; the 7 excluded closure files named with theirs;
 a test recomputes the closure). PLO4 and Phase 11 outputs are byte-identical to
 the base commit; the Phase 12 league's off and shadow arms are identical.

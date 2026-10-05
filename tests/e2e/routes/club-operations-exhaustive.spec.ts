@@ -119,6 +119,11 @@ test.describe('Reserved Admin - conditional club hamburger doors', () => {
       target: `/clubs/${CLUB_ID}/operations`,
     },
     {
+      group: 'Club Operations',
+      label: 'Advertise Your Club',
+      target: `/clubs/${CLUB_ID}/advertise`,
+    },
+    {
       group: 'Wallet & Rewards',
       label: 'Cashier',
       target: `/clubs/${CLUB_ID}/cashier`,
@@ -152,6 +157,8 @@ test.describe('Reserved Admin - conditional club hamburger doors', () => {
   test('keeps the direct canonical union rail and hamburger Table Management door wired', async ({
     page,
   }) => {
+    test.setTimeout(90_000);
+
     /* This is a served-bundle wiring proof, not a production-authority mutation.
        The isolated account already owns zero-balance membership in a union
        member club. Intercept only the two boolean authority observations so

@@ -95,6 +95,7 @@ const CLUB_SUBROUTES = Array.from(
     'create-table',
     'dashboard',
     'cashier-classic',
+    'advertise',
     'jackpot',
     'lobby',
     'messages',

@@ -876,7 +876,18 @@ export function HandDetailModal({
               aria-label="Older Hand"
               onClick={() => goTo(index + 1)}
             >
-              &#9664;
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
             </button>
             <div className="hdm-nav__track">
               <span className="hdm-nav__label">
@@ -902,7 +913,18 @@ export function HandDetailModal({
               aria-label="Newer Hand"
               onClick={() => goTo(index - 1)}
             >
-              &#9654;
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
             </button>
           </div>
 

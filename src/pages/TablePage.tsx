@@ -16566,11 +16566,19 @@ function LiveTablePage({
             (heroP.stack || 0) > 0;
           if (!heroStillHasAction) setIsAllInMode(true);
           /* The hero's own shove, as the engine executed it, is a preflop
-             raise. The lastActions effect no longer counts `all_in` because
-             that label can be the optimistic paint of a press the engine
-             played as a call. */
+             raise when it puts in more than anyone else has. The lastActions
+             effect no longer counts `all_in` because that label can be the
+             optimistic paint of a press the engine played as a call. A short
+             stack's all-in that only calls (the engine still echoes
+             `all_in`) is not a raise. `amount` is the seat's total street
+             bet; the other seats' bets are untouched by the hero's own
+             optimistic update. */
           if (actionSeat === st.heroSeat && st.boardStage === 'preflop') {
-            heroPfrThisHandRef.current = true;
+            const othersTopBet = st.lastBetAmounts.reduce(
+              (top, bet, i) => (i === seatIdx ? top : Math.max(top, bet || 0)),
+              0
+            );
+            if (actionAmount > othersTopBet + 0.005) heroPfrThisHandRef.current = true;
           }
         }
         // Dan 2026-08-20 (pot redesign): NO chip flight to the pot on the

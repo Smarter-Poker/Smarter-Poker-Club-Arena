@@ -12545,6 +12545,7 @@ function LiveTablePage({
     let durableCompletionFailureReported = false;
     async function loadTableInfo() {
       if (!tableId) return;
+      const bootstrapBlinds = tableStateRef.current.blinds;
       /* LIGHTNING PHASE 6: a pool session has no `tables` row to read. Its
          felt is described from its Cluster (seeded below) and then by the
          engine snapshot, so there is nothing to bootstrap and nothing to
@@ -12719,7 +12720,7 @@ function LiveTablePage({
             }).max,
             // Final Table is restored from the persisted MTT flag below. A table
             // name is presentation copy and cannot grant a tournament lifecycle.
-            isFinalTable: false,
+            isFinalTable: prev.tableId === table.id ? prev.isFinalTable : false,
             /**
              * ═══════════════════════════════════════════════════════════════════
              *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
@@ -12745,18 +12746,20 @@ function LiveTablePage({
              * the authored display value and it does not drift.
              */
             blinds:
-              (table.game_type === 'tournament' || !!table.tournament_id) &&
-              table.small_blind != null &&
-              table.big_blind != null
-                ? formatBlindPair(table.small_blind, table.big_blind)
-                : table.stakes &&
-                    table.stakes !== 'undefined/undefined' &&
-                    !table.stakes.includes('undefined') &&
-                    table.stakes.includes('/')
-                  ? table.stakes
-                  : table.small_blind != null && table.big_blind != null
-                    ? formatBlindPair(table.small_blind, table.big_blind)
-                    : '?/?',
+              prev.tableId === table.id && prev.blinds !== bootstrapBlinds
+                ? prev.blinds
+                : (table.game_type === 'tournament' || !!table.tournament_id) &&
+                    table.small_blind != null &&
+                    table.big_blind != null
+                  ? formatBlindPair(table.small_blind, table.big_blind)
+                  : table.stakes &&
+                      table.stakes !== 'undefined/undefined' &&
+                      !table.stakes.includes('undefined') &&
+                      table.stakes.includes('/')
+                    ? table.stakes
+                    : table.small_blind != null && table.big_blind != null
+                      ? formatBlindPair(table.small_blind, table.big_blind)
+                      : '?/?',
             maxPlayers: engineOwnsRoster ? prev.maxPlayers : table.max_players || 6,
             /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
              a floor of 0 is no floor. Same columns fn_nit_evictions judges by. */
@@ -13349,11 +13352,14 @@ function LiveTablePage({
             setTableState((prev) => ({
               ...prev,
               currentLevel,
-              blinds: tableHasLiveBlinds
-                ? formatBlindPair(table.small_blind, table.big_blind)
-                : sb > 0 && bbl > 0
-                  ? formatBlindPair(sb, bbl)
-                  : prev.blinds,
+              blinds:
+                prev.tableId === table.id && prev.blinds !== bootstrapBlinds
+                  ? prev.blinds
+                  : tableHasLiveBlinds
+                    ? formatBlindPair(table.small_blind, table.big_blind)
+                    : sb > 0 && bbl > 0
+                      ? formatBlindPair(sb, bbl)
+                      : prev.blinds,
             }));
 
             /**
@@ -15058,8 +15064,9 @@ function LiveTablePage({
           // No second setTableState needed — avoids unnecessary re-render
         }
 
+        // Bootstrap only; a newer engine snapshot/event owns the live allowance.
         // ─── Initialize Time Bank state from DB (server-authoritative) ───
-        if (userId && userId !== 'guest') {
+        if (isMounted && engineSnapshotRef.current === null && userId && userId !== 'guest') {
           const heroSeatData = existingSeats?.find((s) => s.user_id === userId);
           const dbRemaining = (heroSeatData as any)?.time_bank_remaining;
           const dbUses = (heroSeatData as any)?.time_bank_uses_remaining;

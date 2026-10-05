@@ -29,11 +29,13 @@ function bootstrapHarness() {
     lastBetAmounts: [],
   };
   const engineSnapshotRef = { current: null as unknown };
+  const tableStateRef = { current: state };
   const query: any = { select: () => query, eq: () => query, maybeSingle: () => response };
   const env = {
     tableId: 'table-a',
     lightningRoomRef: { current: null },
     engineSnapshotRef,
+    tableStateRef,
     supabase: { from: () => query },
     setTableState: (update: any) => {
       state = update(state);
@@ -62,6 +64,8 @@ function bootstrapHarness() {
         lastActions: ['call', 'check'],
         lastBetAmounts: [15, 30],
         maxPlayers: 2,
+        blinds: '150/300',
+        isFinalTable: true,
       };
       return state;
     },
@@ -92,6 +96,8 @@ describe('late table bootstrap cannot erase a live engine roster', () => {
       expect(h.read()[key], key).toBe(live[key]);
     }
     expect(h.read().tableName).toBe('Heads Up');
+    expect(h.read().blinds).toBe('150/300');
+    expect(h.read().isFinalTable).toBe(true);
   });
 
   it('ignores the answer of an effect cancelled during identity hydration', async () => {
@@ -168,3 +174,30 @@ it('a seat/profile restore already in flight cannot replace a newer engine roste
   expect(await restoring).toBe(live);
   expect(heroSeatRef.current).toBe(2);
 });
+
+it.each([true, false])(
+  'late time-bank restoration cannot overwrite a live allowance (mounted=%s)',
+  async (isMounted) => {
+    const start = source.indexOf('// ─── Initialize Time Bank state from DB');
+    const end = source.indexOf('      }\n    }\n    loadTableInfo();', start);
+    expect(end).toBeGreaterThan(start);
+    const code = ts.transpileModule(source.slice(start, end), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const setTimeBankTimeRemaining = vi.fn();
+    const setTimeBanksRemaining = vi.fn();
+    const env = {
+      isMounted,
+      engineSnapshotRef: { current: { players: [] } },
+      userId: 'hero',
+      existingSeats: [{ user_id: 'hero', time_bank_remaining: 80, time_bank_uses_remaining: 4 }],
+      setTimeBankTimeRemaining,
+      setTimeBanksRemaining,
+    };
+    await Promise.resolve().then(() =>
+      new Function(...Object.keys(env), code)(...Object.values(env))
+    );
+    expect(setTimeBanksRemaining).not.toHaveBeenCalled();
+    expect(setTimeBankTimeRemaining).not.toHaveBeenCalled();
+  }
+);

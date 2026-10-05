@@ -1043,6 +1043,23 @@ export async function addChips(
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      /* A REFUSAL IS AN ANSWER, NOT A LOST CONNECTION (launch audit 2026-10-05).
+         The engine answers every refusal it makes - the maintenance break, the
+         table maximum, a wallet that cannot cover it - with 4xx and its own
+         sentence. Throwing here sent all of them down the catch below, which
+         labels the outcome TRANSPORT, and the table then told the player "The
+         Connection Dropped ... Your Chips May Have Been Added" about a request
+         the engine had plainly declined. Only a refusal the engine explained
+         is treated as one; a 5xx, or a 4xx with no sentence, is still an
+         outcome nobody can state and stays TRANSPORT. */
+      if (
+        res.status >= 400 &&
+        res.status < 500 &&
+        typeof errorData?.error === 'string' &&
+        errorData.error
+      ) {
+        return { success: false, error: errorData.error };
+      }
       throw new Error(errorData.error || 'Failed to add chips via GameServerAPI');
     }
 

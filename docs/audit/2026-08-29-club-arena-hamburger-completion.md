@@ -354,8 +354,12 @@ The following evidence is local candidate evidence only. It is not merge, instal
 | Focused navigation Vitest selection                               | 9 files, 98 tests passed                                                                                                                                                             |
 | Dedicated layout-level union authority regression                 | 6 of 6 tests passed, including pending fail-closed behavior, separate authority tiers, stale union A to union B response rejection, account switching, and access-event invalidation |
 | Final settlement, migration-law, and union-rail focused selection | 7 files, 61 tests passed                                                                                                                                                             |
+| Final integrated affected Vitest selection                        | 10 files, 107 tests passed                                                                                                                                                           |
+| Post-review browser-contract selection                            | 2 files, 40 tests passed                                                                                                                                                             |
 | TypeScript                                                        | `npx tsc --noEmit -p tsconfig.app.json` passed                                                                                                                                       |
-| Browser-spec discovery                                            | Hamburger, responsive-fit, and exhaustive Club Operations specs parsed successfully; 169 tests listed                                                                                |
+| Navigation and UI copy gates                                      | Title case, painted text, navigation labels, and UI text all passed                                                                                                                  |
+| Production build                                                  | `npm run build` passed at `3c84d94b27`, with build provenance reporting `behind-main=0`                                                                                              |
+| Browser-spec discovery                                            | Hamburger, responsive-fit, and exhaustive Club Operations specs parsed successfully; 171 tests listed                                                                                |
 
 Browser discovery proves that the cases are registered, not that they passed against production. The 27 positive club routes, conditional menu actions, query-aware hamburger destinations, and 375x812, 834x1194, and 1440x900 overflow checks still require the configured authenticated post-deploy execution.
 
@@ -372,7 +376,7 @@ Browser discovery proves that the cases are registered, not that they passed aga
 
 ## Policy Receipt For This Resumption
 
-- Canonical policy read: `2026-10-05T11:24:32.039Z`
+- Canonical policy read: `2026-10-05T11:31:50.607Z`
 - Policy version: `2.9`
 - Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
 - Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
@@ -382,3 +386,5 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Owned worktree: `/Volumes/SmarterWork/agent-work/club-arena-menu-finish-20261005`
 - Branch: `fix/club-arena-hamburger-final-certification-20261005`
 - Candidate base at resumption: `1157cf081a3586e6007ce80813ce24c1988ae5a6`
+- Latest protected main integrated for local validation: `6404ce0235`
+- Validated source candidate before this receipt-only documentation update: `3c84d94b27`

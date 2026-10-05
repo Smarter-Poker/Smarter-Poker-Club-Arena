@@ -716,6 +716,9 @@ describe('P11.1 through the real brain, witness and boundary', () => {
       // A retained receipt without the field claims nothing and stays readable.
       const legacy = clone(decision) as any;
       delete legacy.omahaVariantPolicy.inputs;
+      expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(false);
+      for (const key of ['selection', 'selectionRefusal', 'authority', 'authorityVerdict'])
+        delete legacy.omahaVariantPolicy[key];
       expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(true);
     }
   );

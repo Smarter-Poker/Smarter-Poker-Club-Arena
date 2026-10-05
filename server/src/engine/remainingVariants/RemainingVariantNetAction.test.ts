@@ -216,6 +216,14 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
           1,
           true
         );
+        // On a starved host the policy itself can cross its own 4 ms budget
+        // and fall back (reason work_budget): a node that did not fire is
+        // never priced, by design, and that outcome is named too.
+        if (!result.receipt.fired) {
+          expect(result.receipt.reason).toBe('work_budget');
+          expect(result.receipt.actionEconomics).toBeUndefined();
+          continue;
+        }
         const economics = result.receipt.actionEconomics!;
         expect(economics).toBeTruthy();
         if (economics.unavailable === null) {

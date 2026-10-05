@@ -57,11 +57,13 @@ import {
   recordHorsePhase8Verdict,
   recordHorsePhase10Verdict,
   recordHorsePhase11Verdict,
+  recordHorsePhase12Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
   withdrawHorsePhase8Selection,
   withdrawHorsePhase10Selection,
   withdrawHorsePhase11Selection,
+  withdrawHorsePhase12Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
@@ -69,6 +71,8 @@ import { liveHorsePhase8Authority } from './HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
 import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import { liveHorsePhase12Authorities } from './HorsePhase12Authority.js';
+import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -3795,6 +3799,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('phase11_selection_withdrawn_before_acceptance');
             }
           }
+          // P12.3: the same acceptance law for a selected Short Deck,
+          // Pineapple, FLH or FLO8 candidate, at its own pack's gate. Only
+          // usable authority for that pack NOW lets it act; otherwise the
+          // shadow baseline is executed.
+          if (remainingLedger?.applied) {
+            const verdict = isRemainingPolicyVariant(remainingLedger.variant)
+              ? liveHorsePhase12Authorities[remainingLedger.variant].check(
+                  remainingLedger.authority
+                )
+              : 'mismatched';
+            remainingLedger.authorityVerdict = verdict;
+            noteFire(`phase12_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase12Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase12Selection(decision.executionWitness, decisionSnapshot, verdict);
+              remainingLedger.applied = false;
+              remainingLedger.selection = 'withdrawn_before_acceptance';
+              remainingLedger.finalAction = remainingLedger.baselineAction;
+              remainingLedger.finalAmount = remainingLedger.baselineAmount;
+              decision = {
+                ...decision,
+                action: remainingLedger.baselineAction,
+                amount: remainingLedger.baselineAmount ?? undefined,
+              };
+              noteFire('phase12_selection_withdrawn_before_acceptance');
+            }
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
@@ -4158,6 +4190,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire(
                 `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
               );
+              if (remainingLedger.selection === 'selected') {
+                if (remainingLedger.executionStatus === 'intended') {
+                  remainingLedger.selection = 'controller_accepted';
+                  noteFire('phase12_selection_controller_accepted');
+                } else if (
+                  (remainingLedger.executionStatus === 'fallback' ||
+                    remainingLedger.executionStatus === 'coerced') &&
+                  isRemainingPolicyVariant(remainingLedger.variant)
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable of that pack, local to this
+                  // process (Phase 8 law).
+                  liveHorsePhase12Authorities[remainingLedger.variant].withdraw(
+                    `controller_${remainingLedger.executionStatus}_candidate`
+                  );
+                  noteFire('phase12_authority_controller_withdrawn');
+                }
+              }
             }
             if (jointLedger) {
               jointLedger.executedAction = executedAction;

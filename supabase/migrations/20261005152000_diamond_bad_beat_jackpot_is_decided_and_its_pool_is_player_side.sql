@@ -718,6 +718,9 @@ BEGIN
   RETURN 'bb:' || trunc(p_big_blind)::bigint::text;
 END $fn$;
 
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_stake_scope(numeric)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 -- The drop a qualifying hand owes at this table, in whole Diamonds. Zero is a
 -- real answer: the three lowest Diamond stakes owe nothing, and by the chip
 -- estate's own symmetry a stake that drops nothing can never hit.
@@ -740,6 +743,13 @@ BEGIN
   RETURN public.fn_ca_diamond_economic('bbj_drop_diamonds',
            public.fn_poker_diamond_jackpot_stake_scope(v_bb))::bigint;
 END $fn$;
+
+-- A SECURITY DEFINER READER IS NOT HARMLESS BECAUSE IT IS A READER. This one
+-- runs past RLS and never asks who is calling, so no pre-login role and no
+-- logged-in player may reach it: what a stake owes the jackpot is published on
+-- the table, not read out of a money door.
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_drop_due(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- THE DROP ITSELF. Called by the settler in the settler's own transaction,
 -- after the stacks have been written, because the Diamonds have already left
@@ -849,6 +859,9 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $fn$
     ELSE NULL
   END;
 $fn$;
+
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_qualifying_hand(text)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- THE PAYOUT. Pool to wallet is player-side to player-side, exactly as a
 -- Diamond tournament prize is: the arena float falls by what the pool paid,
@@ -1543,6 +1556,7 @@ DECLARE
   v_settler text; v_arena text; v_pool uuid; v_n integer;
   v_cash boolean; v_tourn boolean; v_diff numeric;
   v_main bigint; v_backup bigint; v_promo bigint;
+  v_fn record;
 BEGIN
   -- THE SWITCHES ARE EXACTLY AS THEY WERE FOUND. cash_games_enabled is held
   -- elsewhere and opening it is not this migration's to do;
@@ -1714,6 +1728,24 @@ BEGIN
      OR has_function_privilege('service_role', 'public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'a non-owner role can execute a Diamond jackpot money door';
   END IF;
+
+  -- AND NO ROLE A BROWSER CAN HOLD REACHES ANY OF THEM. Asserted over every
+  -- function this migration creates, rather than over a list somebody has to
+  -- remember to extend: a SECURITY DEFINER reader runs past RLS and never asks
+  -- who is calling, so being read-only is not the same as being harmless.
+  FOR v_fn IN
+    SELECT p.oid, p.oid::regprocedure::text AS sig
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND (p.proname LIKE 'fn_poker_diamond_jackpot%'
+            OR p.proname LIKE 'fn_ca_diamond_economic%'
+            OR p.proname = 'fn_poker_reject_diamond_chip_jackpot')
+  LOOP
+    IF has_function_privilege('anon', v_fn.oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_fn.oid, 'EXECUTE') THEN
+      RAISE EXCEPTION 'a browser role can execute %', v_fn.sig;
+    END IF;
+  END LOOP;
 
   -- THE MONEY IDENTITY IS WHOLE. This is the assertion every Diamond
   -- migration ends on, and the pool joining the arena float is exactly the

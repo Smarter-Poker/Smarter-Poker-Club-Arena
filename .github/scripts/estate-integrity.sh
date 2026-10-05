@@ -267,14 +267,39 @@ RETIRED_PATHS=(
   ${ESTATE_INJECT_RETIRED_PATH2:+"$ESTATE_INJECT_RETIRED_PATH2"}
 )
 
-# DELIBERATE DIVERGENCES. These do NOT suppress the drift finding - the other
-# repos still have to agree with each other, and that repair still belongs to
-# their owners. What this adds is the one thing a digest cannot say: WHICH
-# variant must not be "corrected", so the next reader does not copy a
-# newer-dated file into the one repo whose own tests forbid it.
+# DELIBERATE DIVERGENCES. A record is <path>|<repo>|<reason>. It is printed
+# under the drift finding so the next reader does not "correct" the wrong
+# repo. On its own it does NOT change the verdict.
+#
+# EXPECTED VARIANTS (2026-10-05). A record becomes an expectation when the
+# reviewed copy of that repo's file is stored in this repository at
+#
+#     .github/estate-variants/<repo>/<path>
+#
+# That repo's copy is then held to the stored copy instead of to the other
+# repos: while the two are byte-identical the copy leaves the agreement set
+# and is noted; the moment they differ the record is STALE, the audit says so,
+# and the copy goes straight back into the comparison - fail closed, exactly
+# like a reversed retirement in RETIRED_PATHS. The other repos still have to
+# agree with each other, and a stored copy with no reason on file below is
+# itself a finding.
+#
+# Why a stored copy and not a note. From 2026-09-23 every record here was a
+# note, on purpose: "these do NOT suppress the drift finding". The result was
+# issue #3931 open for 27 days over a divergence the owner had already
+# accepted and this file already explained, re-raised every four hours until
+# nobody read the report - the failure 10.83 names. A bare exemption would be
+# the opposite failure, cover for anything that repo ever commits to that
+# path. The stored copy is neither: it is the exact bytes that were reviewed,
+# it diffs in the pull request that changes it, and it can be served back to
+# this audit's own tests, which a digest typed into a shell array cannot.
+VARIANTS_DIR=".github/estate-variants"
+
 DELIBERATE_VARIANTS=(
   ".husky/reference-transaction|Smarter-Poker-Club-Arena|Club Arena's copy is preventive and read-only ON PURPOSE. CLAUDE.md 10.12 forbids recovery machinery, and tests/unit/resetGuardCannotSaveTheWorktree.test.ts fails on any \`git update-ref\` or \`refs/wip\` inside this hook. The newer World Hub variant writes rescue refs and adds an AGENT_REF_GUARD_OK bypass, which CLAUDE.md 12 rule 3 separately forbids here. Do not copy it into Club Arena; it would ship a red test and a banned band-aid."
-  ".github/workflows/agent-open-pr.yml|Smarter-Poker-Club-Arena|Club Arena moved to the split-privilege design in PR #4189 (2026-09-11): an unprivileged \`Agent Branch Proposal\` signal plus this trusted \`workflow_run\` consumer, which mints a short-lived GitHub App token and never holds a PAT. The other repos still carry the older create/push opener with a GH_PAT fallback. Converging means they adopt this one, not that Club Arena goes back."
+  ".husky/reference-transaction|Smarter-Poker-World-Hub|World Hub keeps its own hook ON PURPOSE, reviewed 2026-10-05 when every other shared guard in the estate converged on Club Arena's copy. Its scripts/git-safe-push.sh rebases and force-pushes under the announced AGENT_REF_GUARD_OK hatch, and its __tests__/ref-guard-tells-the-truth-about-origin.test.mjs asserts the refs/wip/orphan-guard snapshot; Club Arena's read-only hook would wedge the first and fail the second. The reviewed copy is stored at .github/estate-variants/Smarter-Poker-World-Hub/.husky/reference-transaction: if World Hub changes the hook, re-read it and update that copy in the same pull request."
+  ".github/workflows/agent-open-pr.yml|Smarter-Poker-Club-Arena|Club Arena moved to the split-privilege design in PR #4189 (2026-09-11): an unprivileged \`Agent Branch Proposal\` signal plus this trusted \`workflow_run\` consumer, which mints a short-lived GitHub App token and never holds a PAT. The rest of the estate converged on it on 2026-10-05. If a repo drifts from it again, converge it onto this one; do not reintroduce the create/push opener with its GH_PAT fallback, and do not take Club Arena back."
+  ${ESTATE_INJECT_VARIANT_NOTE:+"$ESTATE_INJECT_VARIANT_NOTE"}
 )
 
 # Both records are <path>|<repo>|<reason>. Kept as plain arrays rather than
@@ -301,6 +326,40 @@ deliberate_notes_for() {
     printf '  Recorded deliberate variant: **%s** - %s\n' "$repo" "${rest#*|}"
   done
 }
+
+has_deliberate_note() {
+  local path="$1" repo="$2" e rest
+  for e in "${DELIBERATE_VARIANTS[@]}"; do
+    [ "${e%%|*}" = "$path" ] || continue
+    rest="${e#*|}"
+    [ "${rest%%|*}" = "$repo" ] && return 0
+  done
+  return 1
+}
+
+# Prints the stored reviewed copy's path when <path> in <repo> is an EXPECTED
+# variant, and returns 1 when it is not.
+expected_variant_file() {
+  local f="$VARIANTS_DIR/$2/$1"
+  [ -f "$f" ] || return 1
+  printf '%s' "$f"
+}
+
+# A stored copy that names a repo or a path this audit does not compare is
+# dead weight at best and a typo hiding a real drift at worst.
+if [ -d "$VARIANTS_DIR" ]; then
+  while IFS= read -r stored; do
+    rel="${stored#"$VARIANTS_DIR"/}"
+    repo="${rel%%/*}"
+    path="${rel#*/}"
+    ok_repo=0; ok_path=0
+    for r in "${REPOS[@]}"; do [ "$r" = "$repo" ] && ok_repo=1; done
+    for f in "${SHARED_FILES[@]}"; do [ "$f" = "$path" ] && ok_path=1; done
+    [ "$ok_repo" = 1 ] || add "\`$stored\` is a stored expected variant for **$repo**, which is not a repo this audit compares. Remove it or fix the name; it expects nothing as it stands."
+    [ "$ok_path" = 1 ] || add "\`$stored\` is a stored expected variant for \`$path\`, which is not a shared file this audit compares. Remove it or fix the path; it expects nothing as it stands."
+    has_deliberate_note "$path" "$repo" || add "\`$stored\` is a stored expected variant with NO reason on file: nothing in \`DELIBERATE_VARIANTS\` says why **$repo** is allowed its own \`$path\`. Record the reason there in the same pull request, or remove the copy."
+  done < <(find "$VARIANTS_DIR" -type f | LC_ALL=C sort)
+fi
 
 # One shared file, one repo, ONE of four answers. Prints "<state>TAB<payload>";
 # payload is the base64 content when present, and the first line of the error
@@ -368,6 +427,21 @@ for f in "${SHARED_FILES[@]}"; do
       else
         add "\`$f\` in **$r** — COULD NOT TELL: could not decode or hash the returned content; no digest is verified for this repository."
         continue
+      fi
+    fi
+    # An EXPECTED variant is held to its stored copy, not to the other repos.
+    # Matching: noted, and out of the agreement set. Not matching: a finding,
+    # AND back into the comparison, so a stale record is never cover. A copy
+    # this cannot hash is COULD NOT TELL and exempts nothing (10.86 rule 1).
+    if VF=$(expected_variant_file "$f" "$r"); then
+      if VD=$(shasum -a256 < "$VF" | cut -c1-12) && [[ "$VD" =~ ^[0-9a-f]{12}$ ]]; then
+        if [ "$D" = "$VD" ]; then
+          note "$f: $r carries its recorded deliberate variant ($VD, stored at $VF), so it is held to that record rather than to the other repos"
+          continue
+        fi
+        add "\`$f\` in **$r** is RECORDED AS A DELIBERATE VARIANT (stored copy \`$VF\`, \`$VD\`), and the repo now carries \`$D\`. The record is stale: either that copy changed without the record, or the record was never right. Re-read the file and update the stored copy in the same pull request, or converge it. Until then it is compared like any other copy."
+      else
+        add "\`$f\` in **$r** — COULD NOT TELL whether it matches its recorded deliberate variant: hashing the stored copy \`$VF\` failed. It is compared like any other copy until that reads."
       fi
     fi
     # A date this cannot read is reported as `unknown`, never as an old one:

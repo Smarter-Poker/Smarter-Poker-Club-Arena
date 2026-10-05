@@ -32,6 +32,7 @@ import {
   type MuxAccessRefusalCode,
 } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
+import { NATIVE_RESUME_EVENT } from '../lib/nativeResume';
 const { applyPatch } = jsonPatch;
 
 /** The socket watchdog cannot run until authentication has returned a token. */
@@ -641,7 +642,8 @@ export class EngineStateClient {
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
-          if (event.type === 'pageshow') this.onVisibility?.();
+          if (event.type === 'pageshow' || event.type === NATIVE_RESUME_EVENT)
+            this.onVisibility?.();
           return;
         }
         // Browser wake does not necessarily produce an online event. Do not
@@ -650,6 +652,7 @@ export class EngineStateClient {
         this.onOnline?.();
       };
       window.addEventListener('pageshow', this.onResume);
+      window.addEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.addEventListener('visibilitychange', this.onResume);
     }
     await this.openOnce();
@@ -674,6 +677,7 @@ export class EngineStateClient {
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
+      window.removeEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.removeEventListener('visibilitychange', this.onResume);
       this.onResume = null;
     }
@@ -2082,7 +2086,8 @@ export class EngineChannelClient {
         if (this.status === 'connected') {
           // pageshow can be the only wake event after Home Screen/BFCache
           // restoration. A healthy link keeps its existing bounded resync.
-          if (event.type === 'pageshow') this.onVisibility?.();
+          if (event.type === 'pageshow' || event.type === NATIVE_RESUME_EVENT)
+            this.onVisibility?.();
           return;
         }
         // Browser wake does not necessarily produce an online event. Do not
@@ -2091,6 +2096,7 @@ export class EngineChannelClient {
         this.onOnline?.();
       };
       window.addEventListener('pageshow', this.onResume);
+      window.addEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.addEventListener('visibilitychange', this.onResume);
     }
     await this.openOnce();
@@ -2114,6 +2120,7 @@ export class EngineChannelClient {
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
+      window.removeEventListener(NATIVE_RESUME_EVENT, this.onResume);
       document.removeEventListener('visibilitychange', this.onResume);
       this.onResume = null;
     }

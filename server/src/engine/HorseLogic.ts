@@ -2784,7 +2784,21 @@ export class HorseLogic {
               phase12DecisionEquityCeiling ?? 1
             )
           : null;
-      if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+      if (phase12) {
+        const legal = this.legalize(phase12.decision, player, gs, vi);
+        // P12.2, the P10.3 law (as P11.3 applies it to Phase 11): an applied
+        // candidate the legalizer would rewrite is illegal as proposed. It
+        // never reaches the table: the reference is retained. Candidate mode
+        // is offline only (the worker refuses it), so no live decision moves.
+        if (
+          phase12.receipt.applied &&
+          (legal.action !== phase12.decision.action ||
+            (legal.amount ?? null) !== (phase12.decision.amount ?? null))
+        ) {
+          phase12.receipt.applied = false;
+          phase12.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       return { decision, phase10, phase11, phase12 };
     });
     decision = variants.decision;

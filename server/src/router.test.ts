@@ -81,3 +81,57 @@ describe('the router answers /health with a query string', () => {
     expect(getStatus).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * ONE REQUEST CANNOT RESTART THE ENGINE (launch audit 2026-10-05).
+ *
+ * The router is handed straight to `http.createServer`, which does not await
+ * it. A handler that throws became an unhandledRejection, and index.ts treats
+ * that as fatal: drain, restart, every hand in flight voided. The router now
+ * answers 500 and resolves.
+ */
+describe('a handler that throws is a 500, never a rejected listener', () => {
+  it('answers 500 and resolves when the handler throws before writing', async () => {
+    const router = createRouter({
+      gameServer: {
+        getStatus: () => {
+          throw new Error('boom');
+        },
+        getPrometheusMetrics: () => {
+          throw new Error('boom');
+        },
+      },
+    } as never);
+    const { res, captured } = fakeRes();
+    await expect(
+      router({ method: 'GET', url: '/metrics', headers: {} } as unknown as IncomingMessage, res)
+    ).resolves.toBeUndefined();
+    expect(captured.statusCode).toBe(500);
+    expect(JSON.parse(captured.body)).toEqual({ error: 'Internal Server Error' });
+  });
+
+  it('destroys the response instead of writing twice when headers already went out', async () => {
+    const router = createRouter({
+      gameServer: {
+        getPrometheusMetrics: () => {
+          throw new Error('boom');
+        },
+      },
+    } as never);
+    const destroy = vi.fn();
+    const res = {
+      headersSent: true,
+      writeHead: vi.fn(),
+      setHeader: vi.fn(),
+      end: vi.fn(),
+      destroy,
+    } as unknown as ServerResponse;
+    await expect(
+      router({ method: 'GET', url: '/metrics', headers: {} } as unknown as IncomingMessage, res)
+    ).resolves.toBeUndefined();
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(
+      (res as unknown as { writeHead: ReturnType<typeof vi.fn> }).writeHead
+    ).not.toHaveBeenCalled();
+  });
+});

@@ -30,6 +30,7 @@
  */
 
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { parseUpgradeTarget } from './upgradeTarget.js';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
@@ -83,6 +84,14 @@ const TERMINATE_GRACE_MS = 250;
 const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
+/* The library's own ceiling, enforced while a message is still being received.
+   The MAX_INBOUND_MESSAGE_BYTES check runs on the `message` event, which
+   never fires for a frame that is still arriving or for an unfinished run of
+   fragments, so by itself it bounds nothing: `ws` defaults to 100 MiB per
+   message. This closes the socket (1009) long before that, and sits above
+   MAX_INBOUND_MESSAGE_BYTES so an oversized but complete message is still
+   answered by that check. */
+const MAX_FRAME_PAYLOAD_BYTES = 64 * 1024;
 
 // Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
 export const CLOSE_AUTH_FAILED = 4401;
@@ -468,7 +477,7 @@ export class EngineWebSocketServer {
     this.onConnect = opts.onConnect;
     this.onAlive = opts.onAlive;
     this.onDisconnect = opts.onDisconnect;
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_PAYLOAD_BYTES });
   }
 
   /**
@@ -478,8 +487,15 @@ export class EngineWebSocketServer {
    */
   attach(httpServer: HttpServer): void {
     httpServer.on('upgrade', (req, socket, head) => {
-      // Parse URL relative to a dummy host — `req.url` is path+query only.
-      const url = new URL(req.url || '/', 'http://localhost');
+      // A target that cannot be parsed is refused here, for both WebSocket
+      // servers: this listener is attached first, and an exception thrown in
+      // an upgrade listener restarts the whole engine (see upgradeTarget.ts).
+      const url = parseUpgradeTarget(req.url);
+      if (!url) {
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
 
       /* ═══ PROTOCOL GATE (Phase 4, 2026-09-05) ═══════════════════════════
          Before auth and before any table work, because it is cheaper than

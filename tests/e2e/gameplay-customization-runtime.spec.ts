@@ -690,7 +690,10 @@ test.describe('production routed gameplay customization', () => {
           select:
             'id,club_id,union_id,arena:clubs!fk_tables_club_id(id,asset,is_platform,union_id)',
           club_id: `eq.${CLUB_ID}`,
-          order: 'created_at.desc',
+          // Prefer the oldest retained row: short-lived Spin rows are recycled
+          // aggressively, while this id must survive until the private channel
+          // has joined and received its signal.
+          order: 'created_at.asc',
           limit: '1',
         })
       );

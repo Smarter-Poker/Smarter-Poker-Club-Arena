@@ -3572,6 +3572,8 @@ function LiveTablePage({
   const [diamondBalance, setDiamondBalance] = useState<number | null>(null);
   // Bible V8 §6.2: one bank = 20 seconds, not the 15s decision clock.
   const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(20);
+  const timeBankTimeRemainingRef = useRef(timeBankTimeRemaining);
+  timeBankTimeRemainingRef.current = timeBankTimeRemaining;
   /**
    * Seconds the CURRENT bank granted. The TimeBank panel's progress bar is
    * `timeRemaining / totalTime`, and totalTime used to be the 15s action clock
@@ -12546,6 +12548,7 @@ function LiveTablePage({
     async function loadTableInfo() {
       if (!tableId) return;
       const bootstrapBlinds = tableStateRef.current.blinds;
+      const bootstrapTimeBankSeconds = timeBankTimeRemainingRef.current;
       /* LIGHTNING PHASE 6: a pool session has no `tables` row to read. Its
          felt is described from its Cluster (seeded below) and then by the
          engine snapshot, so there is nothing to bootstrap and nothing to
@@ -15064,14 +15067,19 @@ function LiveTablePage({
           // No second setTableState needed — avoids unnecessary re-render
         }
 
-        // Bootstrap only; a newer engine snapshot/event owns the live allowance.
+        // Bootstrap only: preserve a known allowance and any timer change
+        // since this request began, even when the snapshot omitted time-bank fields.
         // ─── Initialize Time Bank state from DB (server-authoritative) ───
-        if (isMounted && engineSnapshotRef.current === null && userId && userId !== 'guest') {
+        if (isMounted && userId && userId !== 'guest') {
           const heroSeatData = existingSeats?.find((s) => s.user_id === userId);
           const dbRemaining = (heroSeatData as any)?.time_bank_remaining;
           const dbUses = (heroSeatData as any)?.time_bank_uses_remaining;
-          if (dbRemaining != null) setTimeBankTimeRemaining(dbRemaining);
-          if (dbUses != null) setTimeBanksRemaining(dbUses);
+          if (dbRemaining != null)
+            setTimeBankTimeRemaining((current) =>
+              isMounted && current === bootstrapTimeBankSeconds ? dbRemaining : current
+            );
+          if (dbUses != null)
+            setTimeBanksRemaining((current) => (isMounted && current === null ? dbUses : current));
         }
       }
     }

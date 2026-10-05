@@ -36,6 +36,7 @@ function bootstrapHarness() {
     lightningRoomRef: { current: null },
     engineSnapshotRef,
     tableStateRef,
+    timeBankTimeRemainingRef: { current: 20 },
     supabase: { from: () => query },
     setTableState: (update: any) => {
       state = update(state);
@@ -175,29 +176,39 @@ it('a seat/profile restore already in flight cannot replace a newer engine roste
   expect(heroSeatRef.current).toBe(2);
 });
 
-it.each([true, false])(
-  'late time-bank restoration cannot overwrite a live allowance (mounted=%s)',
-  async (isMounted) => {
+it.each([
+  { mounted: true, seconds: 5, uses: 2, expectedSeconds: 5, expectedUses: 2 },
+  { mounted: false, seconds: 20, uses: null, expectedSeconds: 20, expectedUses: null },
+  { mounted: true, seconds: 20, uses: null, expectedSeconds: 80, expectedUses: 4 },
+])(
+  'time-bank bootstrap preserves live changes and keeps missing-field fallback: %j',
+  async (input) => {
     const start = source.indexOf('// ─── Initialize Time Bank state from DB');
     const end = source.indexOf('      }\n    }\n    loadTableInfo();', start);
     expect(end).toBeGreaterThan(start);
     const code = ts.transpileModule(source.slice(start, end), {
       compilerOptions: { target: ts.ScriptTarget.ES2022 },
     }).outputText;
-    const setTimeBankTimeRemaining = vi.fn();
-    const setTimeBanksRemaining = vi.fn();
+    let seconds = input.seconds;
+    let uses = input.uses;
     const env = {
-      isMounted,
-      engineSnapshotRef: { current: { players: [] } },
+      isMounted: input.mounted,
       userId: 'hero',
+      bootstrapTimeBankSeconds: 20,
+      // A snapshot without time-bank fields must not suppress the DB fallback.
+      engineSnapshotRef: { current: { players: [] } },
       existingSeats: [{ user_id: 'hero', time_bank_remaining: 80, time_bank_uses_remaining: 4 }],
-      setTimeBankTimeRemaining,
-      setTimeBanksRemaining,
+      setTimeBankTimeRemaining: (update: (value: number) => number) => {
+        seconds = update(seconds);
+      },
+      setTimeBanksRemaining: (update: (value: number | null) => number | null) => {
+        uses = update(uses);
+      },
     };
     await Promise.resolve().then(() =>
       new Function(...Object.keys(env), code)(...Object.values(env))
     );
-    expect(setTimeBanksRemaining).not.toHaveBeenCalled();
-    expect(setTimeBankTimeRemaining).not.toHaveBeenCalled();
+    expect(seconds).toBe(input.expectedSeconds);
+    expect(uses).toBe(input.expectedUses);
   }
 );

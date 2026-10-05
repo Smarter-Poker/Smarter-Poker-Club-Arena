@@ -133,4 +133,14 @@ $n$, $n$          WHEN c.unattached THEN false
           WHEN jsonb_typeof(c.players) IS DISTINCT FROM 'array' THEN true
 $n$]);
 
+
+-- The window stays the owner's config row (CLAUDE.md 10.5): the patched pass
+-- must still read hand_history_retention_policy.horse_retention_days.
+DO $post$
+BEGIN
+  IF position('horse_retention_days' IN pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'the retention pass no longer reads hand_history_retention_policy.horse_retention_days';
+  END IF;
+END $post$;
+
 COMMIT;

@@ -507,7 +507,7 @@ import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
-import { clockOffsetMs, recordServerTime, serverNow } from '../utils/serverClock';
+import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
 import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
@@ -5088,12 +5088,14 @@ function LiveTablePage({
    * When the partner hold ends, on THIS DEVICE's clock (2026-10-05 audit).
    * start_time and joined_at are database times; a device whose clock is
    * wrong would count the hold down off by its error. The pre-start roster
-   * sync measures the offset against the database clock (fn_db_now) into the
-   * shared serverClock, so the end is computed on the server's clock and
-   * handed back in device time, which is what every timer here runs on.
+   * sync measures this device's offset from the DATABASE clock (fn_db_now)
+   * into its own ref - not the shared serverClock, which the engine socket
+   * feeds and the turn timers read - so the end is computed on the database's
+   * clock and handed back in device time, which every timer here runs on.
    */
+  const dbClockOffsetMsRef = useRef(0);
   const partnerHoldEndsLocalMs = (startTimeMs: number | null | undefined): number => {
-    const offset = clockOffsetMs();
+    const offset = dbClockOffsetMsRef.current;
     const seatedServerMs =
       heroSeatJoinedAtRef.current ??
       (seatAcquiredAtRef.current !== null ? seatAcquiredAtRef.current - offset : null);
@@ -21023,12 +21025,19 @@ function LiveTablePage({
       if (!clockMeasured) {
         clockMeasured = true;
         const askedAt = Date.now();
-        const { data: dbNow, error: dbNowErr } = await supabase.rpc('fn_db_now');
-        if (!dbNowErr && typeof dbNow === 'string') {
-          const at = Date.parse(dbNow);
-          if (Number.isFinite(at)) recordServerTime(at + (Date.now() - askedAt) / 2);
-        }
-        if (cancelled) return;
+        // Not awaited: the seats paint now, the offset lands when it lands.
+        void Promise.resolve(supabase.rpc('fn_db_now')).then(
+          ({ data: dbNow, error: dbNowErr }) => {
+            if (cancelled || dbNowErr || typeof dbNow !== 'string') return;
+            const at = Date.parse(dbNow);
+            const answeredAt = Date.now();
+            if (!Number.isFinite(at) || answeredAt - askedAt > 5_000) return;
+            const offset = answeredAt - (at + (answeredAt - askedAt) / 2);
+            // A wildly wrong answer is not a clock; ignore anything past a day.
+            if (Math.abs(offset) < 86_400_000) dbClockOffsetMsRef.current = offset;
+          },
+          () => undefined
+        );
       }
       {
         const heroRow = userId ? seatRows.find((s) => s.user_id === userId) : undefined;

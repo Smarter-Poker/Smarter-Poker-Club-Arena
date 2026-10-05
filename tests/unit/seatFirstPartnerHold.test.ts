@@ -90,8 +90,11 @@ describe('the hold is measured from the seat the database holds', () => {
     );
   });
   it('the countdown runs on the database clock, measured once per roster sync', () => {
-    expect(TABLE_PAGE).toContain("await supabase.rpc('fn_db_now')");
-    expect(TABLE_PAGE).toContain('recordServerTime(at + (Date.now() - askedAt) / 2)');
+    expect(TABLE_PAGE).toContain("void Promise.resolve(supabase.rpc('fn_db_now')).then(");
+    expect(TABLE_PAGE).toContain('const offset = answeredAt - (at + (answeredAt - askedAt) / 2);');
+    expect(TABLE_PAGE).toContain('const offset = dbClockOffsetMsRef.current;');
+    // Its own offset: the engine's serverClock is not fed from the database.
+    expect(TABLE_PAGE).not.toContain('recordServerTime(');
     expect(TABLE_PAGE).toContain(
       'return Number.isFinite(endsServerMs) ? endsServerMs + offset : endsServerMs;'
     );

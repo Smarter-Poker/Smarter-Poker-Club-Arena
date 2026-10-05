@@ -72,10 +72,11 @@ const CHAMPION: TournamentResult = {
 
 /**
  * THE UNIT IS EXPLICIT HERE (2026-09-20), because the card no longer guesses.
- * Every assertion below is a CHIP event and every expected string is unchanged:
- * `moneyAtUnit` returns the card's own `formatMoney` at the chip unit, so the
- * two-place contract these tests were written about is identical. The Diamond
- * half of the same card is pinned at the bottom of this file.
+ * Every assertion below is a CHIP event. (2026-10-05: a whole chip figure now
+ * prints whole - "120", not "120.00" - see the last test in this file.)
+ * `moneyAtUnit` is `formatPrizeCentsAtUnit`, the estate's one prize rule in the
+ * cents domain. The Diamond half of the same card is pinned at the bottom of
+ * this file.
  */
 function renderCard(result: TournamentResult, unitCents: number = CHIP_UNIT_CENTS) {
   return render(
@@ -96,23 +97,23 @@ describe('41 to 43. the result card carries prize, bounty and total', () => {
   it('shows the regular tournament prize (41)', () => {
     renderCard(LOWER_FINISHER);
     expect(screen.getByText(/Prize/)).toBeInTheDocument();
-    expect(screen.getByText('120.00')).toBeInTheDocument();
+    expect(screen.getByText('120')).toBeInTheDocument();
   });
 
   it('shows the bounty winnings, separately from the prize (42)', () => {
     renderCard(LOWER_FINISHER);
-    expect(screen.getAllByText('5,350.00').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('5,350').length).toBeGreaterThan(0);
   });
 
   it('shows a total that is exactly prize plus bounty (43)', () => {
     renderCard(LOWER_FINISHER);
     /* 120 + 5,350. Not the prize, not the bounty, the sum. */
-    expect(screen.getByText('5,470.00')).toBeInTheDocument();
+    expect(screen.getByText('5,470')).toBeInTheDocument();
   });
 
   it('does not render the split line at all when there is no bounty half', () => {
     renderCard({ ...LOWER_FINISHER, bountyWinnings: 0, mysteryBountyCents: 0, mysteryBounties: 0 });
-    expect(screen.queryByText('5,350.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('5,350')).not.toBeInTheDocument();
   });
 });
 
@@ -136,9 +137,9 @@ describe('44. a lower finisher can out-earn the champion', () => {
     renderCard(CHAMPION);
     expect(screen.getByText('Total Payout:')).toBeInTheDocument();
     /* 4,200 + 150 = 4,350, and the split beneath names both halves. */
-    expect(screen.getByText('4,350.00')).toBeInTheDocument();
-    expect(screen.getByText('4,200.00')).toBeInTheDocument();
-    expect(screen.getAllByText('150.00').length).toBeGreaterThan(0);
+    expect(screen.getByText('4,350')).toBeInTheDocument();
+    expect(screen.getByText('4,200')).toBeInTheDocument();
+    expect(screen.getAllByText('150').length).toBeGreaterThan(0);
   });
 });
 
@@ -157,14 +158,14 @@ describe('45 to 47. mystery bounty count, winnings and largest', () => {
     renderCard(LOWER_FINISHER);
     /* 530000 cents is 5,300 chips. A card that forgot to divide would print
        530,000 and report a 5,300 night as a half-million one. */
-    expect(screen.getByText('5,300.00')).toBeInTheDocument();
-    expect(screen.queryByText('530,000.00')).not.toBeInTheDocument();
+    expect(screen.getByText('5,300')).toBeInTheDocument();
+    expect(screen.queryByText('530,000')).not.toBeInTheDocument();
   });
 
   it('shows the largest single mystery bounty', () => {
     renderCard(LOWER_FINISHER);
     expect(screen.getByText('Largest Mystery Bounty')).toBeInTheDocument();
-    expect(screen.getByText('5,000.00')).toBeInTheDocument();
+    expect(screen.getByText('5,000')).toBeInTheDocument();
   });
 
   it('says "Bounty" not "Bounties" for a single one', () => {
@@ -189,7 +190,7 @@ describe('45 to 47. mystery bounty count, winnings and largest', () => {
     expect(screen.queryByText('Largest Mystery Bounty')).not.toBeInTheDocument();
     /* The ordinary bounty line is untouched: an old PKO result still reads the
        way it always did. */
-    expect(screen.getAllByText('5,350.00').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('5,350').length).toBeGreaterThan(0);
   });
 });
 
@@ -233,13 +234,22 @@ describe('a Diamond event is denominated in Diamonds on the result card', () => 
     expect(text).toContain('5,470 Diamonds');
   });
 
-  it('leaves the chip card exactly as it reads today, which is the whole constraint', () => {
+  it('prints whole chip figures whole, and keeps real cents to the penny (2026-10-05)', () => {
+    /* Every chip figure on this card used to be forced to two places, so a
+       5,470 total read "5,470.00": decimal points with nothing after them but
+       zeros, on a forward-facing page. A whole amount now prints whole, and an
+       amount that really has cents keeps them, so nothing is understated. */
     const view = renderCard(LOWER_FINISHER, CHIP_UNIT_CENTS);
     const text = cardText();
     view.unmount();
-    expect(text).toContain('5,470.00');
-    expect(text).toContain('120.00');
-    expect(text).toContain('5,350.00');
+    expect(text).toContain('5,470');
+    expect(text).toContain('120');
+    expect(text).toContain('5,350');
+    expect(text).not.toMatch(/\.00(?!\d)/);
+    const cents = renderCard({ ...CHAMPION, prize: 1.9, bountyWinnings: 0 }, CHIP_UNIT_CENTS);
+    const centsText = cardText();
+    cents.unmount();
+    expect(centsText).toContain('1.90');
     // And no noun is ADDED to a chip surface that never carried one.
     expect(text).not.toContain('Diamonds');
   });

@@ -183,7 +183,8 @@ describe('Tournament result card delivery', () => {
       const card = screen.getByRole('dialog', { name: /tournament ranking/i });
       expect(card.textContent).toContain('Qualified');
       expect(card.textContent).toContain(label);
-      expect(card.textContent).toContain('50.00');
+      // A whole amount prints whole: no decimal point with only zeros after it.
+      expect(card.textContent).toMatch(/:\s*50(?![\d.,])/);
       expect(card.textContent).not.toMatch(/#1|1st|2nd|3rd|Finished/);
       expect(screen.queryByRole('img', { name: /Place Trophy/ })).toBeNull();
     }
@@ -204,7 +205,7 @@ describe('Tournament result card delivery', () => {
     });
 
     const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
-    expect(card.textContent).toContain('60.00');
+    expect(card.textContent).toMatch(/Total Payout:\s*60(?![\d.,])/);
   });
 
   it('never renders a chip summary for a tournament seat', async () => {

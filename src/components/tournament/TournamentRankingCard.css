@@ -96,6 +96,11 @@
   width: 27cqw;
   height: 27cqw;
   margin: 5cqw auto 1cqw;
+  /* THE REVEAL (2026-10-05): the medal lands, then the place, then what it
+     paid, which counts up (TournamentRankingCard's useCountUp, same clock).
+     Reduced motion collapses all of it to the final frame globally
+     (src/styles/reducedMotion.css); nothing here carries meaning in motion. */
+  animation: trc2MedalLand 0.55s cubic-bezier(0.2, 1.35, 0.4, 1) 0.18s both;
 }
 
 /* The starburst, cast in the finish's own light (2026-10-05). Beams are the
@@ -124,7 +129,9 @@
     transparent 100%
   );
   pointer-events: none;
-  animation: trc2Rays 48s linear infinite;
+  animation:
+    trc2RaysIn 0.7s ease-out 0.35s both,
+    trc2Rays 48s linear 0.35s infinite;
 }
 
 /* Off the podium the burst is a wash, not a celebration: the same light at
@@ -235,6 +242,7 @@
    with a lit hairline beneath. */
 .trc2__placeband {
   position: relative;
+  animation: trc2Lift 0.45s cubic-bezier(0.17, 0.84, 0.44, 1) 0.5s both;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -290,6 +298,8 @@
 }
 
 .trc2__place-num {
+  display: inline-block;
+  animation: trc2Strike 0.5s cubic-bezier(0.2, 1.3, 0.4, 1) 0.55s both;
   font-size: 17cqw;
   letter-spacing: -0.02em;
 }
@@ -326,6 +336,14 @@
 }
 
 /* ── Player row: who this was, centred under what it paid ── */
+.trc2__player,
+.trc2__payout-split,
+.trc2__winning-hand,
+.trc2__extras,
+.trc2__session {
+  animation: trc2Lift 0.4s ease-out 0.95s both;
+}
+
 .trc2__player {
   display: flex;
   align-items: center;
@@ -372,6 +390,7 @@
 
 /* ── What it paid: centred, directly under the place ── */
 .trc2__reward {
+  animation: trc2Lift 0.4s ease-out 0.75s both;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -390,7 +409,26 @@
   text-shadow: 0 0 0.9cqw rgba(0, 212, 255, 0.5);
 }
 
+/* The running count prints over the held final figure, which keeps the
+   width so the line never shifts when the count lands. */
+.trc2__reward-final.is-counting {
+  visibility: hidden;
+}
+
+.trc2__reward-count::after {
+  content: attr(data-count);
+}
+
+.trc2__reward-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .trc2__reward-value {
+  position: relative;
   font-size: 8.4cqw;
   line-height: 1;
   font-weight: 800;
@@ -521,66 +559,45 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 }
 
-/* ── The way out ──
-   Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop is
-   scenery; this control and Escape are the only ways out. It was a round steel
-   button with a glyph in it; it is a lit word now, which says what it does. */
-.trc2__exit {
-  display: flex;
-  justify-content: center;
-  padding-top: 2.6cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.trc2__close {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 0 3cqw;
-  border: 0;
-  background: transparent;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3.1cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #9fb6da;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.trc2__close:active {
-  filter: brightness(1.25);
-}
-
-.trc2__close:focus-visible {
-  outline: 2px solid #00d4ff;
-  outline-offset: 2px;
-}
-
-/* metallic-popups.css bevels every button inside a dialog with `!important`
-   from a `:where()` at specificity 0, and paints steel hardware on anything
-   labelled Close. A lit word paints nothing: the longhands are restated at
-   0,2,1. */
-[role='dialog'] .trc2__close.trc2__close {
-  min-width: 0;
-  min-height: 44px;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  color: #9fb6da !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
 @keyframes trc2Fade {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes trc2MedalLand {
+  from {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes trc2RaysIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes trc2Lift {
+  from {
+    opacity: 0;
+    transform: translateY(2.4cqw);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes trc2Strike {
+  from {
+    transform: scale(1.35);
+  }
+  to {
+    transform: scale(1);
   }
 }
 @keyframes trc2Rays {

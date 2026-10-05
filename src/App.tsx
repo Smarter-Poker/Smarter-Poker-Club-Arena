@@ -48,6 +48,7 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import { HeaderAppearanceSync } from './hooks/useHeaderAppearanceSync';
 import { ProfileAccountSync } from './hooks/useProfileAccountSync';
+import { PresenceHeartbeat } from './hooks/usePresenceHeartbeat';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import {
   shouldShowClubFooterForVisitor,
@@ -602,6 +603,10 @@ function FullApp() {
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
         <ProfileAccountSync />
+        {/* The signed-in player's presence heartbeat, mounted once: without it a
+          person using only the arena read offline everywhere while a horse could
+          read online (src/lib/presenceHeartbeat.ts). */}
+        <PresenceHeartbeat />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
           should ever see the union skins." A union is a `clubs` row, so every

@@ -15,6 +15,7 @@
 import { Session, AuthChangeEvent, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
+import { signalOffline } from '../lib/presenceHeartbeat';
 import { readLocalSession as readLocalSessionShared, SPA_AUTH_BREADCRUMB } from '../lib/authUtils';
 import { masterBus } from './MasterBus';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
@@ -501,6 +502,17 @@ class IdentityDNACore {
    */
   async logout(): Promise<void> {
     try {
+      /* The last heartbeat, sent while the session can still send it: a
+         player who signs out reads offline now, not five minutes from now.
+         Bounded and never fatal (src/lib/presenceHeartbeat.ts). */
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user?.id) await signalOffline(session.user.id);
+      } catch {
+        // Never let the last heartbeat stand between a player and sign-out.
+      }
       const { error } = await supabase.auth.signOut();
       if (error && isAuthSessionMissingError(error)) {
         // Rare, so loaded when needed rather than in first paint.

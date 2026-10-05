@@ -1,0 +1,41 @@
+{
+  "schema": "horse-phase11-qualification-v1",
+  "qualified": false,
+  "mode": "contract",
+  "variant": "plo6",
+  "sourceSha": "90ffa0f24832839e9529011d9fd3d54e5814ffe0",
+  "packVersion": "plo6-high-round1-v2",
+  "contractVersion": "omaha-variant-strength-contract-v1",
+  "contractDigest": "0e58a56ab8d123e32d474f23f154e4026a9a2f1a6119b06e449b2a3039c10326",
+  "domain": "plo6-cash-single-board-after-rake-horse-population",
+  "policyDigest": "9501a3eb5834510f10f27882e4a29fc515e9ea2b10ca12c57eec21b1b999348a",
+  "policyDigestDefinition": "horse-phase11-policy-digest-v2",
+  "objectives": {
+    "cash": { "qualified": false, "status": "measured" },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:plo6_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_plo6_tournament_reference_population_unavailable",
+        "tournament:plo6_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the pack: on the release under admission, the share of eligible live candidate-path decisions that complete without the work_budget fallback, per street, measured from natural decisions with the release unchanged throughout the window; P11.3 must state and meet its own floor for that share before admitting the pack, because this contract measures strength only for decisions that complete"
+  ],
+  "evidencePath": "docs/evidence/phase11/strength-2026-10-05-plo6/strength.json",
+  "evidenceSha256": "1570bc0386cd1c55ff09a1760be52d73538e5f7635e4f5ad2b3a28e53f620c25",
+  "reasons": [
+    "cash:primary:lower_bound_not_above_zero",
+    "cash:seed:11211121:point_estimate_not_above_zero",
+    "cash:seed:11212243:point_estimate_not_above_zero",
+    "cash:seed:11213363:point_estimate_not_above_zero",
+    "cash:profile:p11c-plo6-6max-2dealt-100bb:regression_margin_exceeded",
+    "cash:profile:p11c-plo6-6max-4dealt-100bb:regression_margin_exceeded",
+    "cash:position:button:regression_margin_exceeded",
+    "cash:position:small_blind:regression_margin_exceeded",
+    "cash:depth:standard:regression_margin_exceeded"
+  ]
+}

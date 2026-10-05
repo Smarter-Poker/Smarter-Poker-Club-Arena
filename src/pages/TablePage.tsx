@@ -235,6 +235,7 @@ import {
   shouldHandBackTurn,
   type HeroActedFence,
 } from '../lib/heroActedFence';
+import { awaitEngineState } from '../lib/awaitEngineState';
 import { syncPreActionToEngine } from '../lib/preActionSync';
 
 import { gameCode } from '../utils/gameCode';
@@ -2896,6 +2897,23 @@ function LiveTablePage({
     // see the note there. Adding it back re-applies a stale snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineSnapshot, USE_ENGINE_WS, userId]);
+
+  /* AN ACTION WHOSE ANSWER WAS LOST IS CHECKED BEFORE THE BAR COMES BACK
+     (2026-10-05). submitAction gives up with ACTION_NOT_DELIVERED when no
+     send was answered, which includes a first send the engine EXECUTED whose
+     response was lost. Handing the bar straight back then showed a landed
+     action as undone. The submit path asks the engine for its state once and
+     waits, bounded, for that snapshot; this effect, declared after the merge
+     above so the merge is queued first, releases it. The revert that follows
+     is already state-guarded: it hands nothing back once the engine's
+     decision has moved on, which is exactly what a landed action looks like. */
+  const snapshotWaitersRef = useRef<Set<() => void>>(new Set());
+  useEffect(() => {
+    if (!engineSnapshot || snapshotWaitersRef.current.size === 0) return;
+    const waiters = [...snapshotWaitersRef.current];
+    snapshotWaitersRef.current.clear();
+    for (const release of waiters) release();
+  }, [engineSnapshot]);
 
   /**
    * Crazy Pineapple discard.
@@ -21721,6 +21739,9 @@ function LiveTablePage({
       try {
         const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
         if (!res.success) {
+          if (res.code === 'ACTION_NOT_DELIVERED') {
+            await awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot);
+          }
           showActionError({
             error: safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
@@ -21736,7 +21757,7 @@ function LiveTablePage({
         return false;
       }
     },
-    [tableState.actionContext, showActionError]
+    [tableState.actionContext, showActionError, requestEngineSnapshot]
   );
 
   /**

@@ -10,18 +10,29 @@ Scope: the hamburger drawer, every destination it advertises, the contextual sec
 
 This document describes the current release candidate, not a completed production release.
 
-| Delivery stage                                       | Current state                                                           |
-| ---------------------------------------------------- | ----------------------------------------------------------------------- |
-| Source implementation                                | Implemented in the owned external-SSD worktree                          |
-| Focused local validation                             | Passing for the selections recorded below                               |
-| Commit and pull request                              | PR #6147 open with the final source and required-check baseline repairs |
-| Protected merge                                      | Pending                                                                 |
-| Database migration installation and catalog readback | Pending                                                                 |
-| Club Arena client publication                        | Pending                                                                 |
-| Post-deploy browser certification                    | Pending                                                                 |
-| Public build identity and affected live behavior     | Pending                                                                 |
+| Delivery stage                                       | Current state                                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Source implementation                                | Implemented in the owned external-SSD worktree                               |
+| Focused local validation                             | Menu/navigation selections and changed fixture's 195-test wrapper pass       |
+| Commit and pull request                              | PR #6147 open; rollover repair is local, focused-passing, and not yet pushed |
+| Protected merge                                      | Pending                                                                      |
+| Database migration installation and catalog readback | Pending                                                                      |
+| Club Arena client publication                        | Pending                                                                      |
+| Post-deploy browser certification                    | Pending                                                                      |
+| Public build identity and affected live behavior     | Pending                                                                      |
 
 Production success must not be inferred from this source audit. Final delivery still requires the protected repository route, exact migration installation/readback, successful `publish-club-arena.yml`, both public `build-info.json` endpoints, post-deploy checks, and live behavior proof.
+
+Exact-head run `37307605805` passed the Club Arena client, server, navigation,
+route, and migration checks but its accounting PostgreSQL shard 1 refused an
+archived-spin fixture whose bounded recognition capture expired at
+`2026-10-05T07:00:00Z`. A fresh read-only production capture proves the current
+October 5 to October 12 bounds, the two legitimate post-fee-capture routing
+scopes, and zero overlapping runs. The time-bound fixture and exact hash chain
+have been refreshed locally, and the focused validator plus 195-test wrapper
+pass; exact-head CI remains pending. This is required-check repair, not a
+settlement, migration installation, merge, publication, or production-success
+claim.
 
 ## Audit Basis
 
@@ -363,6 +374,7 @@ The following evidence is local candidate evidence only. It is not merge, instal
 | Entry-chunk blocker regression                                    | 4 focused files, 64 tests passed; TypeScript and targeted lint passed                                                                                                                |
 | Final production build and first-paint gate                       | Build passed for navigation source candidate `c13fc9ae41`; entry-chunk gate passed with no new modules downloaded before first paint                                                 |
 | Required-check baseline repair                                    | The existing upstream two-file Horse Phase 11 null-proof repair was carried unchanged; its focused server selection passed 1 file and 95 tests                                       |
+| Archived-spin recognition-period rollover                         | Exact capture/manifest/CI hash chain validated; focused wrapper passed 195 of 195 tests                                                                                              |
 
 Browser discovery proves that the cases are registered, not that they passed against production. The 27 positive club routes, conditional menu actions, query-aware hamburger destinations, and 375x812, 834x1194, and 1440x900 overflow checks still require the configured authenticated post-deploy execution.
 
@@ -378,8 +390,8 @@ Browser discovery proves that the cases are registered, not that they passed aga
 
 ## Policy Receipt For This Resumption
 
-- Canonical policy read: `2026-10-05T11:51:56.590Z`
-- Portable policy read: `2026-10-05T11:53:25.534Z`
+- Canonical policy read: `2026-10-05T12:42:45.846Z`
+- Portable policy read: `2026-10-05T12:43:21.534Z`
 - Policy version: `2.9`
 - Manifest SHA-256: `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`
 - Owner policy: `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`
@@ -388,10 +400,11 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Reference index: `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`
 - Owned worktree: `/Volumes/SmarterWork/agent-work/club-arena-menu-finish-20261005`
 - Branch: `fix/club-arena-hamburger-final-certification-20261005`
-- Candidate base at resumption: `1157cf081a3586e6007ce80813ce24c1988ae5a6`
+- Candidate head at resumption: `40378fb6dc3437dd5c3db1d35635b934ca553776`
 - Latest protected main integrated for local validation: `1a95cbe912`
 - Pull request: `#6147`
 - Navigation source candidate certified locally and by the production-build job: `c13fc9ae41b0a13f906553b33e0ea5ad01f7bc25`
 - Required-check baseline repair carried from upstream: `c8e0e0dc71c7052454365b01df18fe72f9467dd5`
 - Active blocker recovered at resumption: production-build entry-chunk gate found `useUnionRouteId.ts` and `unionIdResolver.ts` through the always-mounted section rail. The rail now resolves union identity lazily, remains fail-closed across resolution and authority races, and the focused tests plus exact entry-chunk gate pass locally.
 - Required-check baseline repair: exact-head run `37306433361` reproduced the stale current-main Horse Phase 11 null-proof after its completion evidence landed. The already-authored upstream fix `9946e57fb8` was carried unchanged as a test-and-changelog-only repair, and its focused server selection passed 95 of 95 tests.
+- Exact-head required-check repair: run `37307605805` passed all other relevant jobs but accounting PostgreSQL shard 1 refused the self-expired archived-spin recognition window. Read-only production evidence captured at `2026-10-05T12:40:08.506687Z` proves the current two-scope state and zero overlapping runs; the bounded fixture/hash chain is refreshed without changing production data or behavior.

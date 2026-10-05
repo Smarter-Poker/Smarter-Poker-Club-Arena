@@ -1297,3 +1297,58 @@ jobs:
           node scripts/ci/seal-phase1-customization-cutover.mjs
           echo 'sealed=true' >> "$GITHUB_OUTPUT"
           echo "Phase 1 client \`$CLIENT_SHA\` and engine \`$ENGINE_SHA\` now have one durable cutover seal." >> "$GITHUB_STEP_SUMMARY"
+
+  # On 2026-10-05 this workflow failed four times in 69 minutes (runs
+  # 37361302553, 37363764720, 37365802796, 37368847647) at
+  # "Confirm The Hetzner Web Publish Reached Production" / "Read The Origin Job
+  # Verdict", which left every lane below it SKIPPED, and
+  # public.operational_alert_events received nothing for any of them: a later
+  # green run cleared the episode and no person and no fleet lane ever learned
+  # the publish on main 6953271d had gone 69 minutes unconfirmed.
+  #
+  # always() is load-bearing and if: failure() would not do: three of those four
+  # runs had no FAILED lane, their lanes never ran. The should_run clause is NOT
+  # used to gate this job, because a gate that fails never reaches the step that
+  # writes should_run — the superseded publisher stand-down, where the gate
+  # SUCCEEDS and deliberately leaves should_run empty, is told apart inside
+  # record-post-deploy-verdict.mjs and records nothing.
+  post-deploy-verdict:
+    needs:
+      - publication-gate
+      - seo-contract
+      - production-e2e
+      - live-table-e2e
+      - phase1-customization-cutover-seal
+    if: ${{ always() && needs.publication-gate.result != 'skipped' }}
+    name: This verification admits its own verdict to the operational inbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Record the production-verification verdict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WORKFLOW_LABEL: Post-Deploy E2E
+          ALERT_SOURCE: club-arena.post-deploy-e2e
+          ALERT_NAME: PostDeployVerificationIncomplete
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          GATE_NAME: Confirm The Hetzner Web Publish Reached Production
+          GATE_RESULT: ${{ needs.publication-gate.result }}
+          GATE_SHOULD_RUN: ${{ needs.publication-gate.outputs.should_run }}
+          LANES: |
+            ${{ needs.seo-contract.result }}|The Live SEO Contract Holds
+            ${{ needs.production-e2e.result }}|Client browser verification
+            ${{ needs.live-table-e2e.result }}|Live-table and engine verification
+            ${{ needs.phase1-customization-cutover-seal.result }}|Seal certified Phase 1 customization cutover
+        run: node scripts/ci/record-post-deploy-verdict.mjs

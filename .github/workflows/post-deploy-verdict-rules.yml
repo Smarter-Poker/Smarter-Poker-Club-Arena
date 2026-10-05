@@ -1,0 +1,37 @@
+name: Post-deploy verdict rules
+
+# The CI gate for the verdict reporter the hardening standard requires: the
+# decision rules of scripts/ci/record-post-deploy-verdict.mjs run on every pull
+# request that touches the reporter, its test, or either workflow that calls it.
+#
+# It adds no timer and no live database access (CLAUDE.md 10.85): decide() and
+# readVerdict() are pure, so this gate needs no secret and no network. The live
+# writes happen inside post-deploy-e2e.yml and deploy-monitoring.yml, on the run
+# whose verdict they are reporting.
+on:
+  pull_request:
+    paths:
+      - scripts/ci/record-post-deploy-verdict.mjs
+      - scripts/ci/record-post-deploy-verdict.test.mjs
+      - .github/workflows/post-deploy-e2e.yml
+      - .github/workflows/deploy-monitoring.yml
+      - .github/workflows/post-deploy-verdict-rules.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-deploy-verdict-rules-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decision-rules:
+    name: A production verification never drops its own verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test scripts/ci/record-post-deploy-verdict.test.mjs

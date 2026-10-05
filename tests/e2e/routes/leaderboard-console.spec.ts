@@ -166,6 +166,25 @@ for (const width of [393, 1440]) {
           ),
       };
     });
+    // Broad guardrails derived from healthy production observations. They catch
+    // a severe regression without treating small runner/network variance as a
+    // failure.
+    expect(firstReadyMs, 'the first usable board should load within 12 seconds').toBeLessThan(
+      12_000
+    );
+    if (firstLoad.lcpMs !== null) {
+      expect(
+        firstLoad.lcpMs,
+        'the board should paint its main content within 8 seconds'
+      ).toBeLessThan(8_000);
+    }
+    if (firstLoad.cls !== null) {
+      expect(firstLoad.cls, 'the board should avoid disruptive layout shifts').toBeLessThan(0.15);
+    }
+    expect(
+      firstLoad.transferBytes,
+      'the full leaderboard route should stay below 12 MiB'
+    ).toBeLessThan(12 * 1024 * 1024);
     // The board painted from the real art and the real route chunk.
     expect(firstLoad.leaderboardChunks.map(([name]) => name).join(' ')).toMatch(/LeaderboardPage-/);
     expect(firstLoad.consoleArt.map(([name]) => name).sort()).toEqual(

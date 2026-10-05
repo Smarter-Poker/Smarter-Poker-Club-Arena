@@ -348,12 +348,6 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V49'
   ),
   sqlTag(
-    'freq_no_3bet',
-    'fn_audit_frequency_leaks',
-    '3-bet under 3% of opportunities: a range nobody has to respect',
-    'V49'
-  ),
-  sqlTag(
     'freq_over_fold_3bet',
     'fn_audit_frequency_leaks',
     'folds over 62% of the time to a 3-bet',
@@ -459,7 +453,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag('v16Reads', 'deep reads: fold-to-c-bet, fold-to-3-bet, big-bet tells', 'V16'),
   flag('v16Icm', 'real ICM (Malmuth-Harville) in tournaments', 'V16'),
-  flag('v16Hu', 'heads-up overlay', 'V16'),
+  flag(
+    'v16Hu',
+    'heads-up postflop overlay; DEFAULT OFF since 2026-10-05 (hu_v16_overlay -0.26 +/- 0.10 over 31 nights)',
+    'V16'
+  ),
   flag('v16Blockers', 'river unblocker bluffs', 'V16'),
   flag('v16SizeCond', 'big-bet-conditioned sampling', 'V16'),
   flag('v16PloPolar', 'PLO polarity read', 'V16'),
@@ -1308,14 +1306,9 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'dominated boat raised after betting called instead of re-raising',
     'V15'
   ),
-  receipt(
-    'v16_hu_overlay',
-    'HorseLogic (V16)',
-    'heads-up overlay; depends on HU volume',
-    'V16',
-    'decide',
-    0.05
-  ),
+  // No floor: v16Hu is default OFF since 2026-10-05, so silence is expected
+  // until a league matchup resolves positive and the default changes.
+  receipt('v16_hu_overlay', 'HorseLogic (V16)', 'heads-up overlay; opt-in (v16Hu)', 'V16'),
   receipt(
     'v16_reads_f3b',
     'HorseLogic (V16)',
@@ -1335,10 +1328,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v16_reads_tell',
     'HorseLogic (V16)',
-    'big-bet showdown tell consulted',
+    // 2026-10-05: per CASH decision. The tell needs a river bettor with a
+    // big-bet showdown history, which is a cash-table read; per fleet decide
+    // it swung 1.8-5.9 per 1,000 with the tournament share alone, per cash
+    // decision it held 6.5-11.5 (2026-09-24..10-05).
+    'big-bet showdown tell consulted; measured per cash decision',
     'V16',
-    'decide',
-    0.002
+    'phase13_utility_cash',
+    0.004
   ),
   receipt(
     'v16_sizecond_bigbet',

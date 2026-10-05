@@ -1487,6 +1487,17 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
     async (reason) => {
       vi.useFakeTimers();
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // Count THIS publisher's pause/resume lines, not every journal line in
+      // the worker. A publisher left by an earlier test keeps a real 1 s
+      // watchdog that reads real performance.now(); on a loaded runner more
+      // than 5 real seconds pass and it logs its own "capture stopped" inside
+      // this test (seen twice on 2026-10-05). This publisher cannot: its
+      // watchdog was created under fake timers and is advanced only while it
+      // is paused, and the health/replay checks below catch it stopping.
+      const pauseResumeWarns = () =>
+        warn.mock.calls.filter((c) =>
+          /^\[HorseDecisionJournal\] capture (paused|resumed) /.test(String(c[0]))
+        );
       try {
         const w = new FakeWorker(),
           notes: string[] = [],
@@ -1505,7 +1516,7 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           failedSince: null,
           queued: 1,
         });
-        expect(warn).toHaveBeenCalledTimes(1);
+        expect(pauseResumeWarns()).toHaveLength(1);
         expect(warn).toHaveBeenCalledWith(
           `[HorseDecisionJournal] capture paused mode=paused reason=${reason} queued=1`
         );
@@ -1544,10 +1555,10 @@ describe('capacity is a condition: the journal pauses at its quota and says so',
           pausedSince: null,
           lastFailureReason: null,
         });
-        expect(warn).toHaveBeenCalledTimes(2);
-        expect(warn).toHaveBeenLastCalledWith(
-          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`
-        );
+        expect(pauseResumeWarns()).toHaveLength(2);
+        expect(pauseResumeWarns().at(-1)).toEqual([
+          `[HorseDecisionJournal] capture resumed mode=ready after=${reason} queued=2`,
+        ]);
         expect(notes).toContain('phase15_journal_capacity_resumed');
         const replay = sentOf(w, 'APPEND')[1]!.records;
         expect(identities(replay)).toEqual(identities(probed));

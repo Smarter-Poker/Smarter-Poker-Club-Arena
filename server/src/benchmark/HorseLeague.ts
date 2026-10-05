@@ -761,7 +761,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
   // ── V16 strategy matchups (2026-08-26) ──
-  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
+  // 2026-10-05: the overlay resolved NEGATIVE here (-0.26 +/- 0.10 pooled
+  // over 31 nights) and is default OFF. Same matchup, same sign: arm A is
+  // still "overlay on". The 6-max card measures it where it mostly fires, in
+  // ring pots that have come down to two players.
+  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: { v16Hu: true }, b: {} },
+  { name: 'v16_hu_overlay_6max', pairs: 6000, a: { v16Hu: true }, b: {} },
   /*
    * v16_ratio_rescale is NOT on the card (2026-09-05). Measured 2026-09-04:
    * 0.00 bb100 with 0.00 stderr over 12,000 hands - the flag changed no

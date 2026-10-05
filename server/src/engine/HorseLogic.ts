@@ -1686,7 +1686,10 @@ export interface HorseDecideOpts {
    *  flat premium whenever the tournament context supplies both (default:
    *  enabled; degrades to the legacy heuristic without the data) */
   v16Icm?: boolean;
-  /** disable the V16 heads-up postflop overlay (default: enabled) */
+  /** ENABLE the V16 heads-up postflop overlay. DEFAULT OFF since 2026-10-05:
+   *  hu_v16_overlay measured -0.26 +/- 0.10 bb/100 pooled over 31 nightly
+   *  runs (z -2.6), the only measurement it ever had. League arm A of
+   *  hu_v16_overlay and v16_hu_overlay_6max turns it on. */
   v16Hu?: boolean;
   /** ENABLE the V16 bet-ratio rescale of the five thresholds still written
    *  in bet/(pot+bet) semantics (default: DISABLED — a strategy change that
@@ -4913,8 +4916,9 @@ export class HorseLogic {
     // wider: value thresholds drop, thin calls get easier, bluffs go up —
     // ranges are so wide that medium hands ARE value and folding medium
     // equity to single bets bleeds. Small nudges, league-measured by the
-    // hu_v16_overlay matchup.
-    const huOn = (opts.v16Hu ?? true) !== false && opponents.length === 1;
+    // hu_v16_overlay matchup. 2026-10-05: that matchup measured the overlay
+    // LOSING (-0.26 +/- 0.10 over 31 nights), so it is now opt-in.
+    const huOn = opts.v16Hu === true && opponents.length === 1;
     if (huOn) {
       mw = Math.max(-0.02, mw - 0.015);
       if (tele15) noteFire('v16_hu_overlay');

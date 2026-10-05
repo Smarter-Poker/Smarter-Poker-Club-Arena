@@ -79,3 +79,34 @@ straight/flush only by design, so the hold'em hands were never in its scope.
 - **self_tune real_bb100 = -9999.** Correct. Every sentinel row 09-29..10-05 has
   `real_hands` < 1,500 and every scored row has >= 1,501; the 1,500 bar is on
   real hands, and `hands` also counts non-real hands. No sentinel row moved a dial.
+
+## Follow-up decisions (2026-10-05, afternoon)
+
+- **hu_v16_overlay: default OFF.** Its only measurement is significantly
+  negative (-0.26 +/- 0.10 over 31 nights, z -2.6). `v16Hu` is now opt-in;
+  `hu_v16_overlay` keeps its name and sign (arm A = overlay on), and a new
+  `v16_hu_overlay_6max` measures it in ring pots that come down to two players,
+  where it mostly fired. Its receipt floor is removed (an opt-in layer is
+  expected to be silent).
+- **freq_no_3bet: retired, not re-banded.** Per game mix, the horses it flagged
+  did better: hold'em-heavy -17.9 vs -23.1 bb/100 (z +2.3), mixed -21.0 vs
+  -28.5 (z +3.4), Omaha-heavy no signal (z -0.8), cash 2026-09-21..10-05. Of the
+  nine frequency bars only freq_too_loose separates results (mixed z -4.8); the
+  rest show nothing either way. The bar is cash-only already (the earlier note
+  that it covered every format was wrong). Migration
+  `20261005190000_the_audit_stops_crying_wolf_on_mix_and_on_three_bets`.
+- **Audit counter warnings: fixed in fn_audit_layer_drift.** v43_tempo_read and
+  v16_reads_tell are divided by cash decisions, and reason / refusal / miss
+  counters plus the named fallbacks are no longer judged as layers (their lanes
+  are judged on `_fired` / `_eligible`). Replayed over 2026-09-28..10-05:
+  73 collapse warns become 5, all real layers. The ledger floor for
+  v16_reads_tell moves to 0.4% of `phase13_utility_cash` (observed 0.65-1.15%).
+- **HorseDecisionJournal capacity test:** counts only `[HorseDecisionJournal]`
+  warnings, so another module warning during the fake-timer advance on a loaded
+  runner cannot fail it.
+- **V31 solver pipeline: not commissionable from software.** The input bundle
+  must bind the checksum and 1,326-combo order of a licensed PioSOLVER binary,
+  and its producers are two licensed-PioSOLVER Windows hosts (M1, M2) with their
+  own HMAC keys (docs/SOLVER-DATABASE.md). None exist; every V31 table is empty.
+  `ca_gto_v31_approve_input_bundle` was not run because there is nothing real
+  to approve.

@@ -100,6 +100,8 @@ RUNNERS = [
      'checks passed: one Diamond cannot be spent twice under concurrency, duplicate delivery or a crash; isolated PostgreSQL 17, not a production certification.'),
     ('run-diamond-cross-format-conservation.py',
      'cross-format conservation checks passed on isolated PostgreSQL 17; this is a fixture proof, not a production installation.'),
+    ('run-diamond-bad-beat-jackpot.py',
+     'Diamond bad beat jackpot certified on isolated PostgreSQL 17; the jackpot ships shut and public gameplay remains gated.'),
 ]
 # Plain psql acceptance scripts: (file, database, the line that proves it ran).
 SQL_SCRIPTS = [
@@ -116,6 +118,7 @@ SQL_SCRIPTS = [
 # (hard-wired to SOCKET_DIR and PORT). A runner therefore cannot be mislabelled
 # into a weaker check - the two contracts exclude each other by assertion.
 PRIVATE_CLUSTER_RUNNERS = [
+    'run-diamond-bad-beat-jackpot.py',
     'run-diamond-club-commerce-admission.py',
     'run-diamond-club-commerce-completion.py',
     'run-diamond-club-commerce-earnings.py',

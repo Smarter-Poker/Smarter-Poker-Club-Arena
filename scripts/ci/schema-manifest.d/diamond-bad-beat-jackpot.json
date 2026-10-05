@@ -1,0 +1,23 @@
+{
+  "_owner": "claude/diamond-bbj-20261005. Migration 20261005152000_diamond_bad_beat_jackpot_is_decided_and_its_pool_is_player_side: B14 to B22 (plus B12 and B13) of docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md decided and recorded in ca_diamond_economics, the player-side Diamond jackpot pool and its append-only ledger, the carried-residue allocator, the drop, the hit, the reseed and the withdrawal, the arena float counting the pool, the settler's conservation rule against the drop, and the chip jackpot fence. ca_diamond_economics is SHARED with the other Diamond destination lanes: extend its name list, do not replace it.",
+  "tables": ["ca_diamond_economics", "poker_diamond_jackpot_pools", "poker_diamond_jackpot_ledger"],
+  "functions": [
+    "fn_ca_diamond_economic",
+    "fn_ca_diamond_economic_account",
+    "fn_ca_diamond_economic_account_ok",
+    "fn_ca_diamond_economic_units",
+    "fn_ca_diamond_economics_admit",
+    "fn_poker_diamond_jackpot_allocate",
+    "fn_poker_diamond_jackpot_bank",
+    "fn_poker_diamond_jackpot_diamonds",
+    "fn_poker_diamond_jackpot_drop",
+    "fn_poker_diamond_jackpot_drop_due",
+    "fn_poker_diamond_jackpot_pay",
+    "fn_poker_diamond_jackpot_pool_for_table",
+    "fn_poker_diamond_jackpot_qualifying_hand",
+    "fn_poker_diamond_jackpot_reseed",
+    "fn_poker_diamond_jackpot_stake_scope",
+    "fn_poker_diamond_jackpot_withdraw",
+    "fn_poker_reject_diamond_chip_jackpot"
+  ]
+}

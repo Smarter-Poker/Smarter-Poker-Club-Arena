@@ -103,6 +103,90 @@ describe('LAW: no later migration re-opens it', () => {
   });
 });
 
+describe('LAW: the seat and the membership do not say "horse" to a browser', () => {
+  /* table_seats.horse_id (965,180 of 1,303,476 seat rows on 2026-10-05) and
+     club_members.is_bot were readable by anon and authenticated through a
+     TABLE-level grant, under which a column REVOKE is a no-op - the reason the
+     2026-09-07 attempt on table_seats rolled itself back. The close replaces
+     the table-level SELECT with a column list built from the catalogue, less
+     the one column, and asserts it. */
+  const SEAT = '20261005115325_a_browser_cannot_read_which_seat_or_member_is_a_horse.sql';
+  const strip = (sql: string) => sql.replace(/^\s*--.*$/gm, '');
+
+  it('the closing migration exists', () => {
+    expect(files, `${SEAT} is missing - the seat mark is readable again`).toContain(SEAT);
+  });
+
+  it('replaces the table-level SELECT with every column but the mark, for both browser roles', () => {
+    const sql = strip(read(SEAT));
+    expect(sql).toContain("('table_seats', 'horse_id'), ('club_members', 'is_bot')");
+    expect(sql).toContain(
+      "EXECUTE format('REVOKE SELECT ON public.%I FROM anon, authenticated', r.tbl);"
+    );
+    expect(sql).toContain(
+      "EXECUTE format('GRANT SELECT (%s) ON public.%I TO anon, authenticated', v_cols, r.tbl);"
+    );
+    expect(sql).toMatch(/AND a\.attname <> r\.withheld/);
+  });
+
+  it('refuses to run while a browser-reachable reader still names the mark, and asserts its effect', () => {
+    const sql = strip(read(SEAT));
+    expect(sql).toContain('a reader a browser can reach may still read a withheld column');
+    expect(sql).toContain('a policy reads a withheld column');
+    expect(sql).toContain('a browser-readable view reads a withheld column');
+    expect(sql).toContain('still holds table-level SELECT on');
+    expect(sql).toContain('can still read %.%');
+    expect(sql).toMatch(/reads % of % columns of %, expected %/);
+  });
+
+  it('a column added after the close is granted to the browser roles in the same migration', () => {
+    /* Column-level SELECT means a NEW column is unreadable by anon and
+       authenticated until it is granted; a browser query naming it would 403
+       with nothing failing at migration time. So every later ADD COLUMN on
+       either table carries its own GRANT SELECT (col) - unless the column is
+       itself withheld, which then says so in a comment with "WITHHELD". */
+    const later = files.filter((f) => f > SEAT);
+    const missing: string[] = [];
+    for (const f of later) {
+      const raw = read(f);
+      const sql = strip(raw).replace(/\/\*[\s\S]*?\*\//g, '');
+      const adds = sql.matchAll(
+        /ALTER\s+TABLE\s+(?:ONLY\s+)?(?:IF\s+EXISTS\s+)?public\.(table_seats|club_members)\s+([^;]*?ADD\s+COLUMN[^;]*);/gi
+      );
+      for (const m of adds) {
+        for (const col of m[2].matchAll(
+          /ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?/gi
+        )) {
+          const granted = new RegExp(
+            `GRANT\\s+SELECT\\s*\\([^)]*\\b${col[1]}\\b[^)]*\\)\\s*ON\\s+(TABLE\\s+)?public\\.${m[1]}\\b[^;]*\\b(anon|authenticated)\\b`,
+            'i'
+          ).test(sql);
+          if (!granted && !new RegExp(`WITHHELD[^\\n]*\\b${col[1]}\\b`).test(raw)) {
+            missing.push(`${f}: ${m[1]}.${col[1]}`);
+          }
+        }
+      }
+    }
+    expect(missing, 'a new column is unreadable by the browser until it is granted').toEqual([]);
+  });
+
+  it('nothing after the close hands either table back to a browser whole', () => {
+    const later = files.filter((f) => f > SEAT);
+    const offenders = later.filter((f) => {
+      const sql = strip(read(f)).replace(/\/\*[\s\S]*?\*\//g, '');
+      return (
+        /GRANT\s+(SELECT|ALL)[^;(]*ON\s+(TABLE\s+)?public\.(table_seats|club_members)\s[^;]*TO[^;]*\b(anon|authenticated)\b/i.test(
+          sql
+        ) ||
+        /GRANT\s+SELECT\s*\([^)]*\b(horse_id|is_bot)\b[^)]*\)\s*ON\s+(TABLE\s+)?public\.(table_seats|club_members)/i.test(
+          sql
+        )
+      );
+    });
+    expect(offenders, 'a later migration re-grants the horse mark to a browser role').toEqual([]);
+  });
+});
+
 describe('LAW: the SECURITY DEFINER RPCs do not walk around the revoke', () => {
   /* A SECURITY DEFINER function runs as its OWNER, so it reads is_horse
      regardless of what a browser role may SELECT — and then hands it to

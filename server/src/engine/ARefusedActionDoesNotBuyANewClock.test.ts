@@ -98,6 +98,19 @@ describe('a refused action keeps the clock it was answering', () => {
     expect(h.engine.preciseTimer.getDeadline(TABLE, PLAYER)).toBeLessThanOrEqual(T0 + 18_001);
   });
 
+  it('refusals repeated inside the grace window never move the enforcement instant', () => {
+    const h = harness();
+    h.engine.startTurnTimer(PLAYER, 2, 15);
+    // Display deadline T0+15s, enforcement T0+17s. A refused raise every 0.6s
+    // inside the grace must not push enforcement past T0+17s (+1ms floor).
+    for (const at of [15_400, 16_000, 16_600]) {
+      h.now.mockReturnValue(T0 + at);
+      h.engine.handlePlayerAction(PLAYER, 'raise', 30);
+      expect(h.engine.preciseTimer.hasTimer(TABLE, PLAYER)).toBe(true);
+      expect(h.engine.preciseTimer.getDeadline(TABLE, PLAYER)).toBeLessThanOrEqual(T0 + 17_001);
+    }
+  });
+
   it('a refusal during a running bank does not open a second bank on the same turn', async () => {
     const h = harness();
     h.engine.startTurnTimer(PLAYER, 2, 15);

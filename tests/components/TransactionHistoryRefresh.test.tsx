@@ -106,3 +106,35 @@ it('retains the latest transactions when visibility requests a fresh first page'
   expect(await screen.findByText('New Deposit')).toBeInTheDocument();
   expect(screen.getByText('Latest Deposit')).toBeInTheDocument();
 });
+
+it('renders a buy-in as outflow and a cashout as inflow from stored endpoints', async () => {
+  backend.rows = [
+    {
+      id: 'debit',
+      transaction_type: 'tournament_buyin',
+      amount: '10.00',
+      from_user_id: 'viewer',
+      to_user_id: null,
+      notes: 'Tournament Buy-In',
+      created_at: '2026-10-05T12:00:00Z',
+    },
+    {
+      id: 'credit',
+      transaction_type: 'cashout',
+      amount: '4.00',
+      from_user_id: null,
+      to_user_id: 'viewer',
+      notes: 'Cashout',
+      created_at: '2026-10-05T12:01:00Z',
+    },
+  ];
+  render(<TransactionHistoryPage />);
+  const debit = (await screen.findByText('Tournament Buy-In')).closest('.transaction-row');
+  expect(debit?.querySelector('.tx-amount')?.textContent).toBe('-♠10');
+  expect(debit?.querySelector('.tx-amount')).toHaveClass('negative');
+  expect(
+    screen.getByText('Cashout').closest('.transaction-row')?.querySelector('.tx-amount')
+      ?.textContent
+  ).toBe('+♠4');
+  expect(document.querySelector('.summary-value.negative')?.textContent).toBe('-10');
+});

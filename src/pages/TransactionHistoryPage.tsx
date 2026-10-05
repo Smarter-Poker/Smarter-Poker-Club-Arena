@@ -24,6 +24,8 @@ import {
   WALLET_MOVE_TYPES,
 } from '../components/wallet/describeChipTransaction';
 
+import { chipTransactionBalanceChange } from '../components/wallet/chipTransactionBalanceChange';
+
 interface Transaction {
   id: string;
   type:
@@ -35,6 +37,7 @@ interface Transaction {
     | 'rakeback'
     | 'settlement';
   amount: number;
+  balanceChange: number;
   currency: 'chips' | 'diamonds' | 'usd';
   description: string;
   created_at: string;
@@ -50,7 +53,7 @@ const PAGE_SIZE = 25;
 // SWR cache helpers
 function getTxCache(userId: string): Transaction[] | null {
   try {
-    const raw = sessionStorage.getItem(`tx_cache_${userId}`);
+    const raw = sessionStorage.getItem(`tx_cache_v2_${userId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -58,7 +61,7 @@ function getTxCache(userId: string): Transaction[] | null {
 }
 function setTxCache(userId: string, data: Transaction[]) {
   try {
-    sessionStorage.setItem(`tx_cache_${userId}`, JSON.stringify(data.slice(0, 25)));
+    sessionStorage.setItem(`tx_cache_v2_${userId}`, JSON.stringify(data.slice(0, 25)));
   } catch {
     /* storage full */
   }
@@ -235,7 +238,8 @@ export default function TransactionHistoryPage() {
       });
 
       if (getIsMounted && !getIsMounted()) return;
-      if (!error && data) {
+      if (error) throw error;
+      if (data) {
         /* THE LINE NAMES BOTH WALLETS (Dan 2026-09-02): "KINGFISH TRANSFERRED
            XXX FROM HIS AGENT WALLET TO PLAYER WALLET". A wallet move is
            described from the row's own structure - actor, amount, source and
@@ -264,7 +268,8 @@ export default function TransactionHistoryPage() {
         const mapped = data.map((t: any) => ({
           id: t.id,
           type: t.transaction_type,
-          amount: t.amount,
+          amount: Number(t.amount),
+          balanceChange: chipTransactionBalanceChange(t, user.id),
           currency: 'chips' as const,
           description: describeChipTransaction(t, names, user?.id) ?? (t.notes || ''),
           created_at: t.created_at,
@@ -317,6 +322,7 @@ export default function TransactionHistoryPage() {
         { key: 'type', label: 'Type' },
         { key: 'description', label: 'Description' },
         { key: 'amount', label: 'Amount' },
+        { key: 'balanceChange', label: 'Personal Wallet Change' },
         { key: 'currency', label: 'Currency' },
         { key: 'club_name', label: 'Club' },
       ]);
@@ -376,8 +382,8 @@ export default function TransactionHistoryPage() {
   // Calculate totals from visible transactions
   const totals = displayTransactions.reduce(
     (acc, tx) => {
-      if (tx.amount > 0) acc.deposits += tx.amount;
-      else acc.withdrawals += Math.abs(tx.amount);
+      if (tx.balanceChange > 0) acc.deposits += tx.balanceChange;
+      else acc.withdrawals += Math.abs(tx.balanceChange);
       return acc;
     },
     { deposits: 0, withdrawals: 0 }
@@ -583,8 +589,10 @@ export default function TransactionHistoryPage() {
                       {formatDate(tx.created_at)}
                     </span>
                   </div>
-                  <span className={`tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}>
-                    {tx.amount >= 0 ? '+' : ''}
+                  <span
+                    className={`tx-amount ${tx.balanceChange > 0 ? 'positive' : tx.balanceChange < 0 ? 'negative' : 'neutral'}`}
+                  >
+                    {tx.balanceChange > 0 ? '+' : tx.balanceChange < 0 ? '-' : ''}
                     {getCurrencySymbol(tx.currency)}
                     {Math.abs(tx.amount).toLocaleString()}
                   </span>

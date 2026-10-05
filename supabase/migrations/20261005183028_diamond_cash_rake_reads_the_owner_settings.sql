@@ -1,46 +1,44 @@
--- SUPERSEDED BY 20261005183028
--- (diamond_cash_rake_reads_the_owner_settings)
--- THIS FILE MUST NEVER RUN.
+-- ============================================================================
+-- THE DIAMOND CASH RAKE READS THE OWNER SETTINGS: B4 TO B13, THE ACCRUAL AND
+-- THE SWEEP
+-- ============================================================================
 --
--- It merged on 2026-10-05 and then REFUSED ITSELF ON APPLY, committing nothing:
+-- Phase 9 line (b) of the programme, the CASH-GAME half. It follows
+-- docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md section 5 step by step and
+-- records B4 to B13 in the settings table section 3.2 asks for. It redesigns
+-- nothing.
+--
+-- IT SUPERSEDES 20261005151712_diamond_cash_rake_economics_and_accrual, which
+-- merged and then REFUSED ITSELF ON APPLY, committing nothing:
 --
 --   ERROR 42P13: cannot remove parameter defaults from existing function
 --   HINT: Use DROP FUNCTION fn_ca_diamond_economic(text,text) first.
 --
--- It builds ca_diamond_economics and its reader itself, because the table did
--- not exist when it was written (to_regclass was NULL at 15:00 UTC). The A-lane
--- applied 20261005151918 at 17:25 UTC while this sat in CI and built the same
--- table, with a reader whose p_scope carries a DEFAULT. CREATE OR REPLACE
--- cannot drop a parameter default, so the transaction rolled back - which is the
--- applier working, not failing.
+-- That file built ca_diamond_economics itself, because the table did not exist
+-- when it was written (measured 2026-10-05 at 15:00 UTC: to_regclass was NULL).
+-- While it sat in CI, the A-lane applied 20261005151918
+-- diamond_economics_records_the_owner_answers at 17:25 UTC and built the same
+-- table - better, and with a reader whose p_scope carries a DEFAULT. Two lanes
+-- answering one design built one table twice, and PostgreSQL caught it at the
+-- only moment that mattered, inside a transaction that rolled back.
 --
--- NOTHING HERE WAS APPLIED: no row, no table, no function and no grant of this
--- file ever reached production. The successor extends the A-lane's table instead
--- of building its own, records the same fourteen answers in that table's own
--- vocabulary, and carries the accrual, the settler, the sweep, the fence and the
--- kind map forward unchanged in substance.
+-- So this file does what the lane was told to do and the first one could not:
+-- it EXTENDS the table that is there. It creates no settings table, no reader
+-- and no name list. It adds the fourteen cash-rake rows to the slots the
+-- A-lane's closed name list already holds for them, in that list's own
+-- vocabulary, and the doors below read ITS readers. One place for every Diamond
+-- number, one spelling, one refusal.
 --
--- Do not re-dispatch this version. It is kept, not deleted, so the record of
--- what was attempted and why it refused stays readable.
-
--- ============================================================================
--- DIAMOND CASH RAKE: THE SETTINGS, THE ACCRUAL, THE SWEEP AND THE RECOMPUTE
--- ============================================================================
+-- Nothing from the superseded file was applied, so nothing is being corrected:
+-- no row, no function and no grant of it ever reached production.
 --
--- Phase 9 line (b) of the programme, "Implement rake/fees/BBJ destinations only
--- in Diamond accounts, where approved", for the CASH-GAME half. It follows
--- docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md section 5 step by step and
--- builds section 3.2's settings table underneath it. It redesigns nothing.
---
--- WHY THIS MIGRATION CARRIES NUMBERS AT ALL. Section 1 of that document calls
--- B4 to B13 "The Decisions Dan Must Make" and proposes no value. Dan answered
--- the whole list on 2026-10-05, verbatim: "NOTHING IS MINE, EVER.... THEY ARE
--- ALWAYS YOURS TO DO." That is a later explicit owner instruction and under
--- CLAUDE.md 10.8 it governs over the earlier framing. It delegates the
--- decision; it does not license inventing a figure. Every number below is
--- DERIVED from what this platform already runs, each row records its basis in
--- its own column, and any one of them is changed by inserting a new row - never
--- by editing code.
+-- WHY THIS FILE CARRIES NUMBERS AT ALL. Section 1 of the design calls B4 to B13
+-- "The Decisions Dan Must Make" and proposes no value. Dan answered the whole
+-- list on 2026-10-05, verbatim: "NOTHING IS MINE, EVER.... THEY ARE ALWAYS
+-- YOURS TO DO." Under CLAUDE.md 10.8 that later explicit owner instruction
+-- governs over the design's earlier framing. It delegates the decision; it does
+-- not license inventing a figure. Every number below is DERIVED from what this
+-- platform already runs and records its derivation in its own basis column.
 --
 -- THE DERIVATION, MEASURED 2026-10-05 ON PRODUCTION (READ-ONLY).
 --
@@ -69,24 +67,25 @@
 -- set it in those words on 2026-08-27 ("Rake is 10% with a max cap. Heads up is
 -- 5% rake.").
 --
--- WHERE THE DERIVATION DOES NOT CARRY, AND WHAT REPLACES IT. The design warns
--- about two items by name and both warnings are honoured:
+-- WHERE THE DERIVATION DOES NOT CARRY. The design warns about two items by name
+-- and both warnings are honoured:
 --
 --   B7, short-handed. "The chip short-handed rules are chip rules and carry
---   nothing to Diamonds." They do not, and for a measurable reason: the chip
---   rules are cap MULTIPLIERS (0.5 heads-up, 0.75 three-handed) and a multiplier
---   on a whole-Diamond cap is not a whole Diamond - 0.75 of the bb:5 cap is
---   56.25 Diamonds, which no door can take. So no multiplier runs at settlement
---   time. The heads-up ladder is published as explicit whole Diamonds per stake,
---   floored (B10) where the half is not exact; sixteen of the seventeen halve
---   exactly, and only bb:5 (75 -> 37.5) floors, to 37. The three-handed chip
---   discount is not carried at all: Dan gated it on nine seats on 2026-09-14
---   ("once any 6-8 handed game reaches 3+ players full rake + BBJ is applied"),
---   so even in chips it is a rule about one table shape rather than a rule about
---   three-handed play, and eleven of the seventeen Diamond tables are six-max,
---   where the chip rule itself charges the full cap. A three-handed Diamond pot
---   therefore pays the ordinary percent and the ordinary cap - recorded as rows
---   of its own at scope dealt:3, not as silence.
+--   nothing to Diamonds." They do not, for a measurable reason: the chip rules
+--   are cap MULTIPLIERS (0.5 heads-up, 0.75 three-handed) and a multiplier on a
+--   whole-Diamond cap is not a whole Diamond - 0.75 of the bb:5 cap is 56.25,
+--   which no door can take. So NO MULTIPLIER RUNS AT SETTLEMENT TIME. The
+--   heads-up ladder is published as explicit whole Diamonds per stake, floored
+--   (B10) where the half is not exact: sixteen of the seventeen halve exactly,
+--   and only bb:5 (75 -> 37.5) floors, to 37. The heads-up PERCENT does carry,
+--   because Dan stated it as a percentage. The three-handed chip discount is not
+--   carried at all: Dan gated it on nine seats on 2026-09-14 ("once any 6-8
+--   handed game reaches 3+ players full rake + BBJ is applied"), so even in
+--   chips it is a rule about one table shape rather than about three-handed
+--   play, and eleven of the seventeen Diamond tables are six-max where the chip
+--   rule itself charges the full cap. A three-handed Diamond pot therefore pays
+--   the ordinary percent and the ordinary cap - recorded as rows of its own,
+--   not as silence.
 --
 --   B13, VIP points. "Chip VIP points are earned by a trigger on the chip rake
 --   records, which a Diamond rake will never write." Exactly so:
@@ -95,17 +94,17 @@
 --   to derive a rate from. No.
 --
 -- B10 was not a free choice: fn_ca_unit_floor_cents floors, the Diamond
--- tournament fee floors, and the Diamond creation door floors. Rake floors.
+-- tournament fee floors, the Diamond creation door floors. Rake floors.
 --
 -- WHAT THIS MIGRATION DOES NOT TOUCH. cash_games_enabled stays exactly as it is
--- found; opening it is a separate, owner-held step. tournaments_enabled stays
--- exactly as it is found. The Diamond table rows keep rake_percent, rake_cap_bb
--- and bbj_percent at an explicit 0 for ever (design 3.2), so boundary layers 1
--- and 2 keep refusing any table that inherits a chip schedule, and the Diamond
--- rake is read from ca_diamond_economics and from nowhere else. The jackpot
--- amount stays held at zero: B14 to B22 and the jackpot pool belong to the BBJ
--- lane, and this settler still refuses a non-zero p_bbj by name. Insurance stays
--- refused, for ever.
+-- found; opening it is a separate, owner-held step, and the closing block
+-- refuses to commit if it is open. tournaments_enabled stays as found. The
+-- Diamond table rows keep rake_percent, rake_cap_bb and bbj_percent at an
+-- explicit 0 for ever (design 3.2), so boundary layers 1 and 2 keep refusing a
+-- table that inherits a chip schedule, and the Diamond rake is read from
+-- ca_diamond_economics and from nowhere else. The jackpot amount stays held at
+-- zero: B14 to B22 and the jackpot pool belong to the BBJ lane, and this settler
+-- still refuses a non-zero p_bbj by name. Insurance stays refused, for ever.
 --
 -- ONE TRANSACTION. One BEGIN, one COMMIT.
 -- ============================================================================
@@ -113,347 +112,170 @@
 BEGIN;
 
 -- ----------------------------------------------------------------------------
--- 1. ca_diamond_economics: one table owned by Dan, with no defaults anywhere
+-- 1. B4 to B13, recorded in the table the A-lane built
 -- ----------------------------------------------------------------------------
 --
--- Design 3.2. Append-only rows; a new answer is a new row and the current value
--- is the latest row for its name and scope. The reader never returns NULL,
--- never falls back to another scope, to a chip value or to a literal.
+-- Fourteen names, all of them already on
+-- fn_ca_diamond_economics_units_of's closed list, which was written with these
+-- very questions in mind. Their units, their value shapes and their scope
+-- grammar are that list's, not this lane's:
 --
--- SHARED WITH THE A-LANE. This table is the single place every Diamond economic
--- number lives, for line (a) as well as line (b). It is created here if absent
--- and extended, never replaced: the name list is a function another migration
--- adds names to, and nothing in this file assumes it holds only cash-rake rows.
-
-CREATE TABLE IF NOT EXISTS public.ca_diamond_economics (
-  id            bigserial PRIMARY KEY,
-  name          text        NOT NULL,
-  scope         text        NOT NULL,
-  value         numeric     NULL,
-  value_text    text        NULL,
-  units         text        NOT NULL,
-  approved_quote text       NOT NULL,
-  basis         text        NOT NULL,
-  approved_on   date        NOT NULL,
-  recorded_by   text        NOT NULL,
-  recorded_at   timestamptz NOT NULL DEFAULT now()
-);
-
--- The quote may not be empty (design 3.2) and neither may the basis: a number
--- with no derivation recorded beside it is the thing CLAUDE.md forbids.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conrelid='public.ca_diamond_economics'::regclass
-                    AND conname='ca_diamond_economics_quote_and_basis_are_stated') THEN
-    ALTER TABLE public.ca_diamond_economics
-      ADD CONSTRAINT ca_diamond_economics_quote_and_basis_are_stated
-      CHECK (length(btrim(approved_quote)) > 0 AND length(btrim(basis)) > 0);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conrelid='public.ca_diamond_economics'::regclass
-                    AND conname='ca_diamond_economics_has_exactly_one_value') THEN
-    ALTER TABLE public.ca_diamond_economics
-      ADD CONSTRAINT ca_diamond_economics_has_exactly_one_value
-      CHECK ((value IS NULL) <> (value_text IS NULL));
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                  WHERE conrelid='public.ca_diamond_economics'::regclass
-                    AND conname='ca_diamond_economics_scope_is_stated') THEN
-    ALTER TABLE public.ca_diamond_economics
-      ADD CONSTRAINT ca_diamond_economics_scope_is_stated
-      CHECK (length(btrim(scope)) > 0 AND scope = lower(scope));
-  END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS ca_diamond_economics_current_idx
-  ON public.ca_diamond_economics (name, scope, id DESC);
-
--- The CLOSED NAME LIST. One row per question of the design's section 1 that this
--- lane answers, with the units its answer is measured in. A name that is not on
--- this list cannot be inserted; a value whose units disagree with the name
--- cannot be inserted. Another lane adds its own names by redefining this
--- function and keeping every name already here.
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_names()
-RETURNS TABLE(name text, units text, question text)
-LANGUAGE sql
-IMMUTABLE
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-  SELECT * FROM (VALUES
-    ('cash_rake_enabled',          'switch',   'B4 is rake taken from Diamond cash-game pots'),
-    ('cash_rake_percent',          'percent',  'B5/B7 percentage of the pot, by players dealt in'),
-    ('cash_rake_cap_diamonds',     'diamonds', 'B6/B7 most rake one hand may pay, by stake and players dealt in'),
-    ('cash_rake_preflop_raked',    'switch',   'B8 is a hand that ends before the flop raked'),
-    ('cash_rake_min_pot_diamonds', 'diamonds', 'B9 smallest pot that is raked'),
-    ('cash_rake_rounding',         'rounding', 'B10 which way a fraction of a Diamond is rounded'),
-    ('cash_rake_destination',      'account',  'B11 where Diamond cash-game rake goes'),
-    ('cash_rakeback_percent',      'percent',  'B12 what part of Diamond rake goes back to the players who paid it'),
-    ('cash_rake_vip_points',       'switch',   'B13 does Diamond rake earn VIP points')
-  ) AS t(name, units, question);
-$function$;
-
--- An account-valued answer names an account whose STORAGE EXISTS (design 3.2).
--- There is exactly one platform-owned Diamond account today, and "retired from
--- supply" needs no storage because the payers' own spend rows retire it.
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_accounts()
-RETURNS TABLE(account text, storage text)
-LANGUAGE sql
-IMMUTABLE
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-  SELECT * FROM (VALUES
-    ('diamond_house',      'public.ca_diamond_house row 1'),
-    ('retired_from_supply', 'none: the payers'' spend rows retire it')
-  ) AS t(account, storage);
-$function$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economics_guard()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE
-  v_units text;
-BEGIN
-  -- APPEND ONLY. A row is never updated or deleted; a new answer is a new row
-  -- (design 3.2). Without this the audit trail of what was approved when is a
-  -- story anyone with UPDATE can rewrite.
-  IF TG_OP IN ('UPDATE','DELETE') THEN
-    RAISE EXCEPTION 'diamond_economics_is_append_only' USING ERRCODE='23514';
-  END IF;
-  SELECT n.units INTO v_units FROM public.fn_ca_diamond_economic_names() n WHERE n.name = NEW.name;
-  IF v_units IS NULL THEN
-    RAISE EXCEPTION 'diamond_economics_unknown_name:%', NEW.name USING ERRCODE='23514';
-  END IF;
-  IF NEW.units IS DISTINCT FROM v_units THEN
-    RAISE EXCEPTION 'diamond_economics_units_disagree:% is %, not %', NEW.name, v_units, NEW.units
-      USING ERRCODE='23514';
-  END IF;
-  -- Each unit has a shape, and a shape nobody checks is a shape that drifts.
-  IF v_units = 'switch' AND (NEW.value IS NULL OR NEW.value NOT IN (0,1)) THEN
-    RAISE EXCEPTION 'diamond_economics_switch_is_0_or_1:%', NEW.name USING ERRCODE='23514';
-  END IF;
-  IF v_units = 'percent' AND (NEW.value IS NULL OR NEW.value < 0 OR NEW.value > 100) THEN
-    RAISE EXCEPTION 'diamond_economics_percent_out_of_range:%', NEW.name USING ERRCODE='23514';
-  END IF;
-  IF v_units = 'diamonds' AND (NEW.value IS NULL OR NEW.value < 0 OR NEW.value <> trunc(NEW.value)) THEN
-    RAISE EXCEPTION 'diamond_economics_diamonds_are_whole_and_not_negative:%', NEW.name
-      USING ERRCODE='23514';
-  END IF;
-  IF v_units = 'rounding'
-     AND (NEW.value_text IS NULL OR NEW.value_text NOT IN ('down','nearest','up')) THEN
-    RAISE EXCEPTION 'diamond_economics_rounding_is_down_nearest_or_up:%', NEW.name
-      USING ERRCODE='23514';
-  END IF;
-  IF v_units = 'account' AND NOT EXISTS (
-       SELECT 1 FROM public.fn_ca_diamond_economic_accounts() a WHERE a.account = NEW.value_text) THEN
-    RAISE EXCEPTION 'diamond_economics_unknown_account:%', COALESCE(NEW.value_text,'(null)')
-      USING ERRCODE='23514';
-  END IF;
-  RETURN NEW;
-END $function$;
-
-DROP TRIGGER IF EXISTS zz_ca_diamond_economics_guard ON public.ca_diamond_economics;
-CREATE TRIGGER zz_ca_diamond_economics_guard
-  BEFORE INSERT OR UPDATE OR DELETE ON public.ca_diamond_economics
-  FOR EACH ROW EXECUTE FUNCTION public.fn_ca_diamond_economics_guard();
-
--- ----------------------------------------------------------------------------
--- 1b. The refusing reader
--- ----------------------------------------------------------------------------
+--   cash_rake_enabled                boolean            yes / no
+--   cash_rake_percent                percent            scope all
+--   cash_rake_cap                    diamonds_per_hand  scope bb:<n>
+--   cash_rake_percent_heads_up       percent            scope all
+--   cash_rake_cap_heads_up           diamonds_per_hand  scope bb:<n>
+--   cash_rake_percent_three_handed   percent            scope all
+--   cash_rake_cap_three_handed       diamonds_per_hand  scope bb:<n>
+--   cash_rake_no_flop_no_drop        boolean            yes / no
+--   cash_rake_min_pot                diamonds           scope all
+--   cash_rake_rounding               choice             down / nearest / up
+--   cash_rake_destination            account            ca_diamond_house
+--   rakeback_percent                 percent            scope all
+--   rakeback_period                  period             text
+--   rake_earns_vip_points            boolean            yes / no
 --
--- "returns the current value, and when there is none raises
--- diamond_economics_unset:<name>/<scope> under one SQLSTATE no Diamond door uses
--- today. It never returns NULL and never falls back to another scope, to a chip
--- value or to a literal." (design 3.2)
+-- The dealt-in bracket is in the NAME here, not in the scope: the table's
+-- scope grammar is 'all' or '^bb:[0-9]+$' and nothing else, which is a better
+-- shape than the one the superseded file invented, because it keeps a stake key
+-- a stake key.
 --
--- P0D01 is that SQLSTATE. Measured 2026-10-05: no migration in this repository
--- raises any P0D code, so no existing handler can swallow this one.
-
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic(p_name text, p_scope text)
-RETURNS numeric
-LANGUAGE plpgsql
-STABLE SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE v_value numeric; v_found boolean;
-BEGIN
-  SELECT e.value, true INTO v_value, v_found
-    FROM public.ca_diamond_economics e
-   WHERE e.name = p_name AND e.scope = p_scope AND e.value IS NOT NULL
-   ORDER BY e.id DESC LIMIT 1;
-  IF NOT COALESCE(v_found,false) THEN
-    RAISE EXCEPTION 'diamond_economics_unset:%/%', p_name, COALESCE(p_scope,'(null)')
-      USING ERRCODE='P0D01';
-  END IF;
-  RETURN v_value;
-END $function$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_text(p_name text, p_scope text)
-RETURNS text
-LANGUAGE plpgsql
-STABLE SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE v_value text; v_found boolean;
-BEGIN
-  SELECT e.value_text, true INTO v_value, v_found
-    FROM public.ca_diamond_economics e
-   WHERE e.name = p_name AND e.scope = p_scope AND e.value_text IS NOT NULL
-   ORDER BY e.id DESC LIMIT 1;
-  IF NOT COALESCE(v_found,false) THEN
-    RAISE EXCEPTION 'diamond_economics_unset:%/%', p_name, COALESCE(p_scope,'(null)')
-      USING ERRCODE='P0D01';
-  END IF;
-  RETURN v_value;
-END $function$;
-
--- A money setting is not a public read.
-REVOKE ALL ON TABLE public.ca_diamond_economics FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON TABLE public.ca_diamond_economics TO service_role;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(text,text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_text(text,text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic(text,text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_economic_text(text,text) TO service_role;
--- The table itself is readable by nobody through RLS and has no policy; the two
--- readers are SECURITY DEFINER so a money door can read a setting while a
--- browser cannot read the table, and EXECUTE on them is service_role only.
-ALTER TABLE public.ca_diamond_economics ENABLE ROW LEVEL SECURITY;
-
--- ----------------------------------------------------------------------------
--- 2. The answers to B4 to B13, each with the derivation that produced it
--- ----------------------------------------------------------------------------
+-- approved_quote is Dan's words, verbatim, delegating these decisions. The same
+-- quote appears on every row because ONE instruction answered the whole list;
+-- reading fourteen different quotes into fourteen rows would be inventing
+-- approvals that were never separately given. basis is how the number was
+-- derived and does not pretend to be a quote.
 --
--- approved_quote is Dan's words, verbatim, delegating these decisions. basis is
--- how the number was derived; it is NOT a quote and does not pretend to be one.
--- Every row here is insert-only: changing any number is one INSERT, no rebuild.
---
--- The quote is deliberately the SAME on every row, because one instruction
--- answered the whole list. Reading nine different quotes into nine rows would
--- be inventing approvals that were never given separately.
+-- Every row here is insert-only. Changing any number is one INSERT, no rebuild.
 
 INSERT INTO public.ca_diamond_economics
   (name, scope, value, value_text, units, approved_quote, basis, approved_on, recorded_by)
 VALUES
-  -- B4. Yes.
-  ('cash_rake_enabled', 'all', 1, NULL, 'switch',
+  ('cash_rake_enabled', 'all', NULL, 'yes', 'boolean',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B4. Derived from the clone: the Diamond Arena is a diamonds-only 1:1 clone of a chip club, '
-   'every chip cash pot is raked by the schedule in server/src/config/rakeSpec.ts, and cash play '
-   'is the arena''s only cash revenue. The switch being on moves nothing while cash_games_enabled '
-   'is closed, which is where this migration leaves it.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B4. DERIVED FROM THE CLONE. The Diamond Arena is a diamonds-only 1:1 clone of a chip club; '
+   'every chip cash pot is raked by the schedule in server/src/config/rakeSpec.ts, and cash play is '
+   'the arena''s only cash revenue. Turning it on moves nothing while cash_games_enabled is closed, '
+   'which is where this migration leaves it.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B5 and B7, the percentage. Four or more dealt in, three dealt in, two dealt in.
-  ('cash_rake_percent', 'dealt:4plus', 10, NULL, 'percent',
+  ('cash_rake_percent', 'all', 10, NULL, 'percent',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B5. All nineteen rows of the chip schedule and all six ca_rake_tier rows read rake_percent = 10; '
-   'Dan set it in those words on 2026-08-27 ("Rake is 10% with a max cap"). A percentage has no unit, '
-   'so it carries from chips to Diamonds unchanged.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
-  ('cash_rake_percent', 'dealt:3', 10, NULL, 'percent',
-   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B7. The ordinary percentage. The chip estate has no three-handed PERCENT discount at all - only a '
-   'cap multiplier, and that one is gated on nine seats by Dan 2026-09-14 ("once any 6-8 handed game '
-   'reaches 3+ players full rake + BBJ is applied"), so it is a rule about one chip table shape and '
-   'carries nothing. Recorded as its own row rather than left silent.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
-  ('cash_rake_percent', 'dealt:2', 5, NULL, 'percent',
-   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B7. Dan, 2026-08-27, verbatim in rakeSpec.ts RULES: "Heads up is 5% rake." Stated as a percentage, '
-   'which has no unit, so it is the one short-handed chip rule that does carry.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B5. DERIVED FROM THE CHIP SCHEDULE, which has exactly one rake percentage: all nineteen rows of '
+   'RAKE_SPEC.schedule and all six ca_rake_tier rows read rake_percent = 10. Dan set it in those '
+   'words on 2026-08-27, quoted in rakeSpec.ts: "Rake is 10% with a max cap." A percentage has no '
+   'unit, so it carries from chips to Diamonds unchanged.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B8. No flop, no drop.
-  ('cash_rake_preflop_raked', 'all', 0, NULL, 'switch',
+  ('cash_rake_percent_heads_up', 'all', 5, NULL, 'percent',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B8. No. RAKE_SPEC.rules.noFlopNoDrop is true, cited to Bible V8 section 2.9 / Appendix A and to '
-   'Dan 2026-08-29 ("no flop, no drop"). It is a rule of the game, not an amount, so it carries.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B7. DERIVED FROM DAN''S OWN RULING, 2026-08-27, verbatim in RAKE_SPEC.rules: "Heads up is 5% '
+   'rake." Stated as a percentage, which has no unit, so it is the one chip short-handed rule that '
+   'does carry to Diamonds intact.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B9. No minimum of its own.
-  ('cash_rake_min_pot_diamonds', 'all', 0, NULL, 'diamonds',
+  ('cash_rake_percent_three_handed', 'all', 10, NULL, 'percent',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B9. No separate minimum, which is the chip answer: effectiveRake applies no pot floor, and '
-   'RAKE_SPEC.rules.bbjMinPotBB is commented "PAYOUT floor only (Dan 2026-08-29); never a fee gate". '
-   'Reasoning from the indivisible unit, the floor in B10 already makes a pot under 10 Diamonds pay '
-   'nothing at 10 percent, so the smallest raked pot is 10 Diamonds as an arithmetic consequence '
-   'rather than as a gate anyone has to maintain.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B7. THE ORDINARY PERCENTAGE, recorded rather than left silent. The chip estate has no '
+   'three-handed PERCENT discount at all - only a cap multiplier, and Dan gated that one on a '
+   'nine-seat table on 2026-09-14 ("once any 6-8 handed game reaches 3+ players full rake + BBJ is '
+   'applied"), so even in chips it is a rule about one table shape rather than about three-handed '
+   'play. It carries nothing and nothing replaces it.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B10. Down.
-  ('cash_rake_rounding', 'all', NULL, 'down', 'rounding',
+  ('cash_rake_no_flop_no_drop', 'all', NULL, 'yes', 'boolean',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B10. Down. The estate already has a whole-unit convention and it floors: fn_ca_unit_floor_cents '
-   'truncates, the Diamond tournament entry fee floors to a whole Diamond, and the Diamond rebuy fee '
-   'floors. The chip engine rounds to the nearest CENT, which is a different indivisible unit; '
-   'diverging from the estate''s own Diamond convention would need a reason and there is none.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B8. YES, the rule applies, so a hand that ends before the flop is raked nothing. '
+   'RAKE_SPEC.rules.noFlopNoDrop is true, cited to Bible V8 section 2.9 / Appendix A and to Dan '
+   '2026-08-29 ("no flop, no drop"). It is a rule of the game rather than an amount, so it carries.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B11. The house.
-  ('cash_rake_destination', 'all', NULL, 'diamond_house', 'account',
+  ('cash_rake_min_pot', 'all', 0, NULL, 'diamonds',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B11. The house. It is the only platform-owned Diamond account that exists (design R1), and it is '
-   'already where the Diamond tournament FEE lands: fn_poker_diamond_tournament_settle_fee credits '
-   'ca_diamond_house with a ca_mint_ledger mint row, reason DR14 (poker_tournament_fee). The rebuild '
-   'contract warns that the house is one row and "it will jam the day rake starts flowing"; that is '
-   'answered by design R4, which is why the rake accrues per hand and crosses to the house once per '
-   'sweep rather than once per hand.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'B9. NO SEPARATE MINIMUM, which is the chip answer: effectiveRake applies no pot floor at all, '
+   'and RAKE_SPEC.rules.bbjMinPotBB is commented "PAYOUT floor only (Dan 2026-08-29); never a fee '
+   'gate". Reasoning from the indivisible unit, the floor in B10 already makes a pot under 10 '
+   'Diamonds pay nothing at 10 percent, so the smallest raked pot is 10 Diamonds as an arithmetic '
+   'consequence rather than as a gate anyone has to maintain.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B12. No rakeback.
-  ('cash_rakeback_percent', 'all', 0, NULL, 'percent',
+  ('cash_rake_rounding', 'all', NULL, 'down', 'choice',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B12. None. The database refuses any rakeback, agent or commission record for the Diamond Arena '
+   'B10. DOWN, and not a free choice: the estate already has a whole-unit convention and it floors. '
+   'fn_ca_unit_floor_cents truncates, the Diamond tournament entry fee floors to a whole Diamond, '
+   'and the Diamond rebuy fee floors. The chip engine rounds to the nearest CENT, which is a '
+   'different indivisible unit; diverging from the estate''s own Diamond convention would need a '
+   'reason and there is none.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
+
+  ('cash_rake_destination', 'all', NULL, 'ca_diamond_house', 'account',
+   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
+   'B11. THE HOUSE. It is the only platform-owned Diamond account that exists (design R1), it is '
+   'the account A1 already names for guarantees, and it is already where the Diamond tournament FEE '
+   'lands: fn_poker_diamond_tournament_settle_fee credits ca_diamond_house with a ca_mint_ledger '
+   'mint row, reason DR14 (poker_tournament_fee). The rebuild contract warns that the house is one '
+   'row and "it will jam the day rake starts flowing"; that is answered by design R4, which is why '
+   'the rake accrues per hand and crosses to the house once per sweep rather than once per hand.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
+
+  ('rakeback_percent', 'all', 0, NULL, 'percent',
+   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
+   'B12. NONE. The database refuses any rakeback, agent or commission record for the Diamond Arena '
    'today: trigger poker_arena_no_hierarchy raises "Diamond Arena Has No Agents Or Commissions" on '
    'eleven tables, five of them the rakeback tables, and ruling 16 says "No unions, agents, '
-   'commissions, chip wallets, chip ledgers or chip conversion". There is no Diamond rakeback door and '
-   'no Diamond period to derive a rate or a frequency from, so the derivation gives zero.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+   'commissions, chip wallets, chip ledgers or chip conversion". There is no Diamond rakeback door '
+   'and no Diamond period to derive a rate or a frequency from, so the derivation gives zero.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
-  -- B13. No VIP points.
-  ('cash_rake_vip_points', 'all', 0, NULL, 'switch',
+  ('rakeback_period', 'all', NULL, 'none', 'period',
    'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
-   'B13. No, for the reason the design states: chip VIP points are awarded by '
-   'trg_award_vip_points_from_rake, a trigger on rake_records, and a Diamond rake will never write '
-   'that table - section 6 of this migration makes writing it a refusal. There is no Diamond VIP '
-   'points ledger to derive a rate from.',
-   '2026-10-05', 'claude-opus-5 for Smarter-Poker');
+   'B12. NONE, because there is nothing to pay on any period. Recorded rather than left unset so '
+   'that a door asking how often Diamond rakeback is paid is answered "never" by a row, instead of '
+   'refusing with diamond_economics_unset and reading as an oversight.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane'),
 
--- B6 and B7, the caps. One row per stake per dealt-in bracket, in whole
--- Diamonds, published rather than computed: the chip cap FACTORS (0.5, 0.75) are
--- multipliers on a denominated cap and a multiplier can land between two
+  ('rake_earns_vip_points', 'all', NULL, 'no', 'boolean',
+   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.',
+   'B13. NO, for the reason the design states: chip VIP points are awarded by '
+   'trg_award_vip_points_from_rake, a trigger on rake_records, and a Diamond rake will never write '
+   'that table - section 5 of this migration makes writing it a refusal. There is no Diamond VIP '
+   'points ledger to derive a rate from, so this is no by construction and not by convention.',
+   '2026-10-05', 'claude-code:diamond-cash-rake-lane');
+
+-- B6 and B7, the cap ladder. One row per stake per dealt-in bracket, in whole
+-- Diamonds, PUBLISHED rather than computed: the chip cap factors (0.5, 0.75)
+-- are multipliers on a denominated cap and a multiplier can land between two
 -- Diamonds, so no factor runs at settlement time.
 --
--- chip_sb/chip_bb are the chip schedule row this stake IS, in cents.
--- chip_cap is that row's rakeCap in dollars; cap_diamonds is the same amount in
--- cents, which is the same integer read in Diamonds.
+-- chip_row is the chip schedule row this stake IS, in dollars; chip_cap is that
+-- row's rakeCap, and cap_diamonds is the same amount in cents, which is the
+-- same integer read in Diamonds.
 DO $$
 DECLARE
   v_quote constant text := 'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.';
+  v_by constant text := 'claude-code:diamond-cash-rake-lane';
   r record;
   v_hu numeric;
 BEGIN
   FOR r IN
     SELECT * FROM (VALUES
-      (   2::numeric,    1::numeric, '0.01/0.02', 0.30::numeric,   30::numeric),
-      (   5,             2,          '0.02/0.05', 0.75,            75),
-      (  10,             5,          '0.05/0.10', 1.50,           150),
-      (  20,            10,          '0.10/0.20', 3.00,           300),
-      (  25,            10,          '0.10/0.25', 3.00,           300),
-      (  50,            25,          '0.25/0.50', 3.00,           300),
-      ( 100,            50,          '0.50/1.00', 5.00,           500),
-      ( 200,           100,          '1/2',       5.00,           500),
-      ( 400,           200,          '2/4',       7.50,           750),
-      ( 500,           200,          '2/5',       7.50,           750),
-      ( 600,           300,          '3/6',       8.00,           800),
-      ( 800,           400,          '4/8',      10.00,          1000),
-      (1000,           500,          '5/10',     12.50,          1250),
-      (2000,          1000,          '10/20',    15.00,          1500),
-      (2500,          1000,          '10/25',    15.00,          1500),
-      (5000,          2500,          '25/50',    20.00,          2000),
-      (10000,         5000,          '50/100',   20.00,          2000)
+      (    2::numeric,    1::numeric, '0.01/0.02', 0.30::numeric,   30::numeric),
+      (    5,             2,          '0.02/0.05', 0.75,            75),
+      (   10,             5,          '0.05/0.10', 1.50,           150),
+      (   20,            10,          '0.10/0.20', 3.00,           300),
+      (   25,            10,          '0.10/0.25', 3.00,           300),
+      (   50,            25,          '0.25/0.50', 3.00,           300),
+      (  100,            50,          '0.50/1.00', 5.00,           500),
+      (  200,           100,          '1/2',       5.00,           500),
+      (  400,           200,          '2/4',       7.50,           750),
+      (  500,           200,          '2/5',       7.50,           750),
+      (  600,           300,          '3/6',       8.00,           800),
+      (  800,           400,          '4/8',      10.00,          1000),
+      ( 1000,           500,          '5/10',     12.50,          1250),
+      ( 2000,          1000,          '10/20',    15.00,          1500),
+      ( 2500,          1000,          '10/25',    15.00,          1500),
+      ( 5000,          2500,          '25/50',    20.00,          2000),
+      (10000,          5000,          '50/100',   20.00,          2000)
     ) AS t(bb, sb, chip_row, chip_cap, cap_diamonds)
   LOOP
     v_hu := trunc(r.cap_diamonds / 2);
@@ -461,29 +283,26 @@ BEGIN
     INSERT INTO public.ca_diamond_economics
       (name, scope, value, units, approved_quote, basis, approved_on, recorded_by)
     VALUES
-      ('cash_rake_cap_diamonds', 'bb:'||r.bb::bigint||'/dealt:4plus', r.cap_diamonds, 'diamonds',
-       v_quote,
-       format('B6. The Diamond %s/%s table IS chip schedule row %s read in the indivisible unit '
-              '(chip $%s/$%s is %s/%s cents). That row''s rakeCap is $%s, which is %s cents, and %s '
-              'cents read in Diamonds is %s Diamonds - a whole number, so nothing is rounded and '
-              'nothing is invented.',
+      ('cash_rake_cap', 'bb:'||r.bb::bigint, r.cap_diamonds, 'diamonds_per_hand', v_quote,
+       format('B6. DERIVED EXACTLY. The Diamond %s/%s table IS chip schedule row %s read in the '
+              'indivisible unit (chip $%s/$%s is %s/%s cents). That row''s rakeCap is $%s, which is '
+              '%s cents, and %s cents read in Diamonds is %s Diamonds - a whole number, so nothing '
+              'is rounded and nothing is invented.',
               r.sb::bigint, r.bb::bigint, r.chip_row,
               (r.sb/100)::text, (r.bb/100)::text, r.sb::bigint, r.bb::bigint,
               r.chip_cap::text, (r.chip_cap*100)::bigint, (r.chip_cap*100)::bigint,
               r.cap_diamonds::bigint),
-       '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+       '2026-10-05', v_by),
 
-      ('cash_rake_cap_diamonds', 'bb:'||r.bb::bigint||'/dealt:3', r.cap_diamonds, 'diamonds',
-       v_quote,
+      ('cash_rake_cap_three_handed', 'bb:'||r.bb::bigint, r.cap_diamonds, 'diamonds_per_hand', v_quote,
        format('B7. Three dealt in pays the ordinary cap of %s Diamonds. The chip three-handed cap '
               'factor of 0.75 is gated on a nine-seat table by Dan 2026-09-14, so it is a rule about '
               'one chip table shape rather than about three-handed play, and eleven of the seventeen '
-              'live Diamond tables are six-max, where the chip rule itself charges the full cap. '
-              'It carries nothing and nothing replaces it.', r.cap_diamonds::bigint),
-       '2026-10-05', 'claude-opus-5 for Smarter-Poker'),
+              'live Diamond tables are six-max, where the chip rule itself charges the full cap. It '
+              'carries nothing and nothing replaces it.', r.cap_diamonds::bigint),
+       '2026-10-05', v_by),
 
-      ('cash_rake_cap_diamonds', 'bb:'||r.bb::bigint||'/dealt:2', v_hu, 'diamonds',
-       v_quote,
+      ('cash_rake_cap_heads_up', 'bb:'||r.bb::bigint, v_hu, 'diamonds_per_hand', v_quote,
        format('B7. Two dealt in pays %s Diamonds, half the %s Diamond cap%s. The chip heads-up cap '
               'factor is 0.5 and a ratio has no unit, but the RESULT must be a whole Diamond, so the '
               'ladder is published as explicit whole amounts instead of a multiplier applied at '
@@ -492,12 +311,12 @@ BEGIN
               CASE WHEN v_hu*2 = r.cap_diamonds THEN ', which halves exactly'
                    ELSE format(' (%s halves to %s, floored to %s by B10)',
                                r.cap_diamonds::bigint, (r.cap_diamonds/2)::text, v_hu::bigint) END),
-       '2026-10-05', 'claude-opus-5 for Smarter-Poker');
+       '2026-10-05', v_by);
   END LOOP;
 END $$;
 
 -- ----------------------------------------------------------------------------
--- 3. The rake accrual: per-hand money that never touches the house row
+-- 2. The rake accrual: per-hand money that never touches the house row
 -- ----------------------------------------------------------------------------
 --
 -- Design R4, verbatim: "Every house write locks ca_diamond_house row 1. Per-hand
@@ -586,7 +405,7 @@ GRANT SELECT ON TABLE public.ca_diamond_rake_accrual TO service_role;
 ALTER TABLE public.ca_diamond_rake_accrual ENABLE ROW LEVEL SECURITY;
 
 -- ----------------------------------------------------------------------------
--- 3b. A new holding is counted in the migration that creates it (design R5)
+-- 2b. A new holding is counted in the migration that creates it (design R5)
 -- ----------------------------------------------------------------------------
 --
 -- Unswept rake is player-side money inside the arena float: it left custody and
@@ -627,7 +446,7 @@ REVOKE ALL ON FUNCTION public.fn_ca_arena_diamonds() FROM PUBLIC, anon, authenti
 GRANT EXECUTE ON FUNCTION public.fn_ca_arena_diamonds() TO service_role;
 
 -- ----------------------------------------------------------------------------
--- 4. The settler recomputes; it does not take the engine's number on trust
+-- 3. The settler recomputes; it does not take the engine's number on trust
 -- ----------------------------------------------------------------------------
 --
 -- Design section 5, steps 3, 4 and 5. Three things change and nothing else does.
@@ -710,7 +529,7 @@ DECLARE
   v_pct numeric;
   v_cap numeric;
   v_min_pot numeric;
-  v_preflop numeric;
+  v_no_drop boolean;
   v_rounding text;
   v_expected bigint;
   v_attributed bigint;
@@ -732,8 +551,12 @@ BEGIN
   -- exactly zero and this door keeps refusing anything else; on with a required
   -- value unset refuses by name, never "on with a default".
   BEGIN
-    v_rake_on := public.fn_ca_diamond_economic('cash_rake_enabled','all') = 1;
-  EXCEPTION WHEN SQLSTATE 'P0D01' THEN
+    v_rake_on := public.fn_ca_diamond_economic_on('cash_rake_enabled','all');
+  EXCEPTION WHEN SQLSTATE 'PDE01' THEN
+    -- Switch ABSENT is the same answer as off (design 3.2): the amount is
+    -- exactly zero and this door keeps refusing anything else. Only the ABSENCE
+    -- is caught. A name the list does not know (PDE02) is a programming error
+    -- in this door and must not be swallowed into "off".
     v_rake_on := false;
   END;
   IF NOT v_rake_on AND v_rake <> 0 THEN
@@ -832,20 +655,23 @@ BEGIN
       RAISE EXCEPTION 'diamond_cash_rake_facts_disagree' USING ERRCODE='22023';
     END IF;
 
-    v_dealt_key := CASE WHEN v_dealt <= 2 THEN 'dealt:2'
-                        WHEN v_dealt = 3 THEN 'dealt:3'
-                        ELSE 'dealt:4plus' END;
+    -- The dealt-in bracket is part of the NAME, not the scope: the settings
+    -- table's scope grammar is 'all' or '^bb:[0-9]+$' and nothing else, so a
+    -- stake key stays a stake key.
+    v_dealt_key := CASE WHEN v_dealt <= 2 THEN '_heads_up'
+                        WHEN v_dealt = 3 THEN '_three_handed'
+                        ELSE '' END;
     -- EVERY NUMBER IS READ, NONE IS A LITERAL, AND NONE FALLS BACK. An unset
     -- name raises diamond_economics_unset:<name>/<scope> out of this door and on
     -- to the client, which is the design's rule: "the settler refuses a raked
-    -- hand with the unset name of B5". A Diamond stake with no published cap row
-    -- therefore refuses by name rather than being raked at some other stake's
-    -- cap.
-    v_pct      := public.fn_ca_diamond_economic('cash_rake_percent', v_dealt_key);
-    v_cap      := public.fn_ca_diamond_economic('cash_rake_cap_diamonds',
-                                                'bb:'||v_bb::text||'/'||v_dealt_key);
-    v_min_pot  := public.fn_ca_diamond_economic('cash_rake_min_pot_diamonds','all');
-    v_preflop  := public.fn_ca_diamond_economic('cash_rake_preflop_raked','all');
+    -- hand with the unset name of B5", and the reader's SQLSTATE PDE01 travels
+    -- out of here untouched. A Diamond stake with no published cap row therefore
+    -- refuses by name rather than being raked at some other stake's cap: the
+    -- A-lane's reader "never falls back from a stake to all".
+    v_pct      := public.fn_ca_diamond_economic('cash_rake_percent'||v_dealt_key, 'all');
+    v_cap      := public.fn_ca_diamond_economic('cash_rake_cap'||v_dealt_key, 'bb:'||v_bb::text);
+    v_min_pot  := public.fn_ca_diamond_economic('cash_rake_min_pot','all');
+    v_no_drop  := public.fn_ca_diamond_economic_on('cash_rake_no_flop_no_drop','all');
     v_rounding := public.fn_ca_diamond_economic_text('cash_rake_rounding','all');
     -- Only "down" is implemented. A row that says something else is an answer
     -- this door cannot honour, and honouring it approximately would be worse
@@ -856,7 +682,7 @@ BEGIN
 
     v_expected := CASE
       WHEN v_dealt < 2 THEN 0
-      WHEN NOT v_saw_flop AND v_preflop = 0 THEN 0
+      WHEN NOT v_saw_flop AND v_no_drop THEN 0
       WHEN v_pot < v_min_pot THEN 0
       ELSE least(trunc(v_pot::numeric * v_pct / 100), v_cap)::bigint END;
 
@@ -1056,10 +882,10 @@ REVOKE ALL ON FUNCTION public.fn_poker_diamond_settle_cash_hand(uuid,bigint,json
 
 SELECT public.fn_ca_declare_guard_redefinition(
   'fn_poker_diamond_settle_cash_hand',
-  '20261005151712_diamond_cash_rake_economics_and_accrual');
+  '20261005183028_diamond_cash_rake_reads_the_owner_settings');
 
 -- ----------------------------------------------------------------------------
--- 5. The sweep: one house write, not one per hand
+-- 4. The sweep: one house write, not one per hand
 -- ----------------------------------------------------------------------------
 --
 -- Design section 5, step 5: "A sweep moves the accrued rake to the destination
@@ -1154,7 +980,7 @@ BEGIN
       USING ERRCODE='P0404';
   END IF;
 
-  IF v_destination = 'diamond_house' THEN
+  IF v_destination = 'ca_diamond_house' THEN
     -- ONE HOUSE WRITE FOR THE WHOLE SWEEP (R4). This is the only place a
     -- Diamond cash rake locks ca_diamond_house row 1.
     INSERT INTO public.ca_diamond_house (id, balance) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
@@ -1197,7 +1023,7 @@ REVOKE ALL ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) FROM PUBLIC, a
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_sweep_cash_rake(text) TO service_role;
 
 -- ----------------------------------------------------------------------------
--- 6. Never a chip table (design section 5, step 6; section 4, step 0)
+-- 5. Never a chip table (design section 5, step 6; section 4, step 0)
 -- ----------------------------------------------------------------------------
 --
 -- "Diamond rake never writes rake_records, rake_attributions,
@@ -1243,174 +1069,7 @@ BEGIN
 END $$;
 
 -- ----------------------------------------------------------------------------
--- 7. Every edit landed, nothing opened, the identity whole
--- ----------------------------------------------------------------------------
-
-DO $$
-DECLARE
-  v_n bigint;
-  v_diff numeric;
-  v_cash boolean;
-  v_tourn boolean;
-BEGIN
-  -- The settings table, its guard, its closed list and its refusing reader.
-  IF to_regclass('public.ca_diamond_economics') IS NULL THEN
-    RAISE EXCEPTION 'ca_diamond_economics did not land';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger
-                  WHERE tgrelid='public.ca_diamond_economics'::regclass
-                    AND tgname='zz_ca_diamond_economics_guard' AND NOT tgisinternal) THEN
-    RAISE EXCEPTION 'the economics append-only guard did not land';
-  END IF;
-  IF to_regprocedure('public.fn_ca_diamond_economic(text,text)') IS NULL
-     OR to_regprocedure('public.fn_ca_diamond_economic_text(text,text)') IS NULL THEN
-    RAISE EXCEPTION 'the economics reader did not land';
-  END IF;
-
-  -- The reader refuses an unset name by name, under P0D01, and does not return NULL.
-  BEGIN
-    PERFORM public.fn_ca_diamond_economic('cash_rake_percent','dealt:99');
-    RAISE EXCEPTION 'the economics reader returned a value for a scope nobody set';
-  EXCEPTION
-    WHEN SQLSTATE 'P0D01' THEN NULL;
-  END;
-
-  -- The append-only rule is a refusal, not a convention.
-  BEGIN
-    UPDATE public.ca_diamond_economics SET value=value WHERE name='cash_rake_percent';
-    RAISE EXCEPTION 'ca_diamond_economics admitted an UPDATE';
-  EXCEPTION
-    WHEN SQLSTATE '23514' THEN NULL;
-  END;
-
-  -- A name off the closed list cannot be recorded.
-  BEGIN
-    INSERT INTO public.ca_diamond_economics
-      (name,scope,value,units,approved_quote,basis,approved_on,recorded_by)
-    VALUES ('cash_rake_percent_for_fun','all',1,'percent','x','x','2026-10-05','x');
-    RAISE EXCEPTION 'ca_diamond_economics admitted a name off its closed list';
-  EXCEPTION
-    WHEN SQLSTATE '23514' THEN NULL;
-  END;
-
-  -- The answers are all here: 9 scalar rows and 17 stakes x 3 brackets of cap.
-  SELECT count(*) INTO v_n FROM public.ca_diamond_economics WHERE name='cash_rake_cap_diamonds';
-  IF v_n <> 51 THEN
-    RAISE EXCEPTION 'the Diamond cap ladder is % rows, not the 51 the seventeen stakes need', v_n;
-  END IF;
-  SELECT count(DISTINCT scope) INTO v_n FROM public.ca_diamond_economics WHERE name='cash_rake_percent';
-  IF v_n <> 3 THEN
-    RAISE EXCEPTION 'the Diamond rake percentage is set for % dealt-in brackets, not 3', v_n;
-  END IF;
-  -- Every live Diamond cash table has a published cap at every bracket, so no
-  -- hand can reach the settler and be refused for a stake nobody priced.
-  SELECT count(*) INTO v_n
-    FROM public.tables t
-    JOIN public.clubs c ON c.id=t.club_id
-    CROSS JOIN (VALUES ('dealt:2'),('dealt:3'),('dealt:4plus')) AS b(k)
-   WHERE c.asset='diamonds' AND t.tournament_id IS NULL
-     AND NOT EXISTS (
-       SELECT 1 FROM public.ca_diamond_economics e
-        WHERE e.name='cash_rake_cap_diamonds'
-          AND e.scope='bb:'||trunc(t.big_blind)::bigint::text||'/'||b.k);
-  IF v_n <> 0 THEN
-    RAISE EXCEPTION '% live Diamond cash stake/bracket pairs have no published cap', v_n;
-  END IF;
-
-  -- The accrual, its guard, and the float that counts it.
-  IF to_regclass('public.ca_diamond_rake_accrual') IS NULL THEN
-    RAISE EXCEPTION 'ca_diamond_rake_accrual did not land';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger
-                  WHERE tgrelid='public.ca_diamond_rake_accrual'::regclass
-                    AND tgname='zz_ca_diamond_rake_accrual_guard' AND NOT tgisinternal) THEN
-    RAISE EXCEPTION 'the accrual append-only guard did not land';
-  END IF;
-  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE n.nspname='public' AND p.proname='fn_ca_arena_diamonds')
-     NOT LIKE '%ca_diamond_rake_accrual%' THEN
-    RAISE EXCEPTION 'fn_ca_arena_diamonds does not count the rake accrual (design R5)';
-  END IF;
-  IF to_regprocedure('public.fn_ca_diamond_sweep_cash_rake(text)') IS NULL THEN
-    RAISE EXCEPTION 'the cash rake sweep did not land';
-  END IF;
-
-  -- The settler took the rake arm, and still refuses a jackpot drop, insurance
-  -- and a chip obligation.
-  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE n.nspname='public' AND p.proname='fn_poker_diamond_settle_cash_hand')
-     NOT LIKE '%diamond_cash_rake_disagrees%' THEN
-    RAISE EXCEPTION 'the Diamond settler does not recompute the rake';
-  END IF;
-  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE n.nspname='public' AND p.proname='fn_poker_diamond_settle_cash_hand')
-     NOT LIKE '%COALESCE(p_bbj,0) <> 0 OR COALESCE(p_inflow,0) <> 0%' THEN
-    RAISE EXCEPTION 'the Diamond settler no longer holds the jackpot and insurance amounts at zero';
-  END IF;
-
-  -- The four chip rake tables refuse a Diamond Arena row by name.
-  SELECT count(*) INTO v_n FROM pg_trigger
-   WHERE tgname='poker_arena_no_chip_rake' AND NOT tgisinternal
-     AND tgrelid IN ('public.rake_records'::regclass,'public.rake_attributions'::regclass,
-                     'public.rake_distribution_legs'::regclass,'public.club_wallets'::regclass);
-  IF v_n <> 4 THEN
-    RAISE EXCEPTION 'the chip rake fence landed on % of its 4 tables', v_n;
-  END IF;
-
-  -- The Diamond tables keep their deductions at an explicit zero for ever, so
-  -- boundary layers 1 and 2 never let a chip schedule reach a Diamond table.
-  SELECT count(*) INTO v_n FROM public.tables t JOIN public.clubs c ON c.id=t.club_id
-   WHERE c.asset='diamonds' AND t.tournament_id IS NULL
-     AND (COALESCE(t.rake_percent,-1) <> 0 OR COALESCE(t.rake_cap_bb,-1) <> 0
-          OR COALESCE(t.bbj_percent,-1) <> 0 OR t.insurance_enabled IS TRUE);
-  IF v_n <> 0 THEN
-    RAISE EXCEPTION '% Diamond cash tables no longer hold their deductions at an explicit zero', v_n;
-  END IF;
-
-  -- No money door of this migration is reachable by a browser.
-  SELECT count(*) INTO v_n FROM information_schema.role_routine_grants
-   WHERE specific_schema='public' AND grantee IN ('anon','authenticated')
-     AND routine_name IN ('fn_ca_diamond_economic','fn_ca_diamond_economic_text',
-                          'fn_ca_diamond_sweep_cash_rake','fn_poker_diamond_settle_cash_hand');
-  IF v_n <> 0 THEN
-    RAISE EXCEPTION '% anon/authenticated grants on a Diamond money door', v_n;
-  END IF;
-  SELECT count(*) INTO v_n FROM information_schema.role_table_grants
-   WHERE table_schema='public' AND grantee IN ('anon','authenticated')
-     AND table_name IN ('ca_diamond_economics','ca_diamond_rake_accrual');
-  IF v_n <> 0 THEN
-    RAISE EXCEPTION '% anon/authenticated grants on a Diamond money table', v_n;
-  END IF;
-
-  -- THIS MIGRATION MUST NOT OPEN EITHER ARENA DOOR. It reads both and refuses to
-  -- commit if it changed one; cash_games_enabled in particular is the owner's to
-  -- open, after this path is live and verified.
-  SELECT s.cash_games_enabled, s.tournaments_enabled INTO v_cash, v_tourn
-    FROM public.ca_arena_settings s WHERE s.id = 1;
-  IF COALESCE(v_cash,false) IS TRUE THEN
-    RAISE EXCEPTION 'cash_games_enabled is open and this migration must never be the thing that opened it';
-  END IF;
-  RAISE NOTICE 'arena switches left as found: cash_games_enabled=%, tournaments_enabled=%',
-    COALESCE(v_cash::text,'(unset)'), COALESCE(v_tourn::text,'(unset)');
-
-  -- Nothing moved: no hand has been raked, so the accrual is empty and the
-  -- house is where it was.
-  SELECT count(*) INTO v_n FROM public.ca_diamond_rake_accrual;
-  IF v_n <> 0 THEN
-    RAISE EXCEPTION 'this migration wrote % accrual rows and it must write none', v_n;
-  END IF;
-
-  SELECT difference INTO v_diff FROM public.fn_ca_diamond_register_vs_supply();
-  IF v_diff IS DISTINCT FROM 0 THEN
-    RAISE EXCEPTION 'the Diamond identity is not whole (difference %)', v_diff;
-  END IF;
-
-  RAISE NOTICE 'PASS: the Diamond cash rake path is installed, priced, fenced and closed';
-END $$;
-
-
--- ----------------------------------------------------------------------------
--- 8. The rake kind is named, and never lands in "Other" or in the chip bucket
+-- 6. The rake kind is named, and never lands in "Other" or in the chip bucket
 -- ----------------------------------------------------------------------------
 --
 -- Design section 2.7, on what a destination must avoid: "a new journal kind that
@@ -1590,6 +1249,176 @@ BEGIN
     RAISE EXCEPTION 'the arena cash-out bucket moved';
   END IF;
   RAISE NOTICE 'PASS: the Diamond cash rake has its own named bucket and the arena pins are intact';
+END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 7. Every edit landed, nothing opened, the identity whole
+-- ----------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  v_n bigint;
+  v_diff numeric;
+  v_cash boolean;
+  v_tourn boolean;
+BEGIN
+  -- THE SETTINGS TABLE IS THE A-LANE'S AND THIS MIGRATION ONLY ADDED ROWS TO IT.
+  IF to_regclass('public.ca_diamond_economics') IS NULL
+     OR to_regprocedure('public.fn_ca_diamond_economic(text,text)') IS NULL
+     OR to_regprocedure('public.fn_ca_diamond_economic_text(text,text)') IS NULL
+     OR to_regprocedure('public.fn_ca_diamond_economic_on(text,text)') IS NULL THEN
+    RAISE EXCEPTION 'the shared Diamond settings table and its readers are not here; this migration extends them and must not build them';
+  END IF;
+
+  -- Every one of the fourteen cash-rake answers reads back, at the scope the
+  -- settler will ask for, through the reader the A-lane wrote.
+  IF public.fn_ca_diamond_economic_on('cash_rake_enabled','all') IS NOT TRUE THEN
+    RAISE EXCEPTION 'B4 did not record';
+  END IF;
+  IF public.fn_ca_diamond_economic('cash_rake_percent','all') <> 10
+     OR public.fn_ca_diamond_economic('cash_rake_percent_heads_up','all') <> 5
+     OR public.fn_ca_diamond_economic('cash_rake_percent_three_handed','all') <> 10 THEN
+    RAISE EXCEPTION 'B5 or B7 did not record as 10, 5 and 10 percent';
+  END IF;
+  IF public.fn_ca_diamond_economic_on('cash_rake_no_flop_no_drop','all') IS NOT TRUE THEN
+    RAISE EXCEPTION 'B8 did not record';
+  END IF;
+  IF public.fn_ca_diamond_economic('cash_rake_min_pot','all') <> 0 THEN
+    RAISE EXCEPTION 'B9 did not record';
+  END IF;
+  IF public.fn_ca_diamond_economic_text('cash_rake_rounding','all') <> 'down' THEN
+    RAISE EXCEPTION 'B10 did not record as down';
+  END IF;
+  IF public.fn_ca_diamond_economic_text('cash_rake_destination','all') <> 'ca_diamond_house' THEN
+    RAISE EXCEPTION 'B11 did not record as the house';
+  END IF;
+  IF public.fn_ca_diamond_economic('rakeback_percent','all') <> 0
+     OR public.fn_ca_diamond_economic_text('rakeback_period','all') <> 'none'
+     OR public.fn_ca_diamond_economic_on('rake_earns_vip_points','all') IS NOT FALSE THEN
+    RAISE EXCEPTION 'B12 or B13 did not record as none';
+  END IF;
+
+  -- The cap ladder: seventeen stakes times three brackets.
+  SELECT count(*) INTO v_n FROM public.ca_diamond_economics
+   WHERE name IN ('cash_rake_cap','cash_rake_cap_heads_up','cash_rake_cap_three_handed');
+  IF v_n <> 51 THEN
+    RAISE EXCEPTION 'the Diamond cap ladder is % rows, not the 51 the seventeen stakes need', v_n;
+  END IF;
+  -- EVERY LIVE DIAMOND CASH STAKE IS PRICED AT EVERY BRACKET, so no hand can
+  -- reach the settler and be refused for a stake nobody priced.
+  SELECT count(*) INTO v_n
+    FROM public.tables t
+    JOIN public.clubs c ON c.id = t.club_id
+    CROSS JOIN (VALUES ('cash_rake_cap'),('cash_rake_cap_heads_up'),('cash_rake_cap_three_handed')) AS b(nm)
+   WHERE c.asset = 'diamonds' AND t.tournament_id IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.ca_diamond_economics e
+        WHERE e.name = b.nm AND e.scope = 'bb:'||trunc(t.big_blind)::bigint::text);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION '% live Diamond cash stake/bracket pairs have no published cap', v_n;
+  END IF;
+  -- The heads-up cap is never above the full cap, at any stake.
+  IF EXISTS (
+    SELECT 1 FROM public.ca_diamond_economics f
+      JOIN public.ca_diamond_economics h ON h.scope = f.scope AND h.name = 'cash_rake_cap_heads_up'
+     WHERE f.name = 'cash_rake_cap' AND h.value > f.value) THEN
+    RAISE EXCEPTION 'a heads-up cap is above its stake''s full cap';
+  END IF;
+
+  -- The accrual, its guard, the float that counts it, and the sweep.
+  IF to_regclass('public.ca_diamond_rake_accrual') IS NULL THEN
+    RAISE EXCEPTION 'ca_diamond_rake_accrual did not land';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                  WHERE tgrelid='public.ca_diamond_rake_accrual'::regclass
+                    AND tgname='zz_ca_diamond_rake_accrual_guard' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'the accrual append-only guard did not land';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='fn_ca_arena_diamonds')
+     NOT LIKE '%ca_diamond_rake_accrual%' THEN
+    RAISE EXCEPTION 'fn_ca_arena_diamonds does not count the rake accrual (design R5)';
+  END IF;
+  IF to_regprocedure('public.fn_ca_diamond_sweep_cash_rake(text)') IS NULL THEN
+    RAISE EXCEPTION 'the cash rake sweep did not land';
+  END IF;
+
+  -- The settler recomputes, reads the shared settings, and still holds the
+  -- jackpot and insurance amounts at zero.
+  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='fn_poker_diamond_settle_cash_hand')
+     NOT LIKE '%diamond_cash_rake_disagrees%' THEN
+    RAISE EXCEPTION 'the Diamond settler does not recompute the rake';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='fn_poker_diamond_settle_cash_hand')
+     NOT LIKE '%fn_ca_diamond_economic%' THEN
+    RAISE EXCEPTION 'the Diamond settler does not read the shared settings table';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='fn_poker_diamond_settle_cash_hand')
+     NOT LIKE '%COALESCE(p_bbj,0) <> 0 OR COALESCE(p_inflow,0) <> 0%' THEN
+    RAISE EXCEPTION 'the Diamond settler no longer holds the jackpot and insurance amounts at zero';
+  END IF;
+
+  -- The four chip rake tables refuse a Diamond Arena row by name.
+  SELECT count(*) INTO v_n FROM pg_trigger
+   WHERE tgname='poker_arena_no_chip_rake' AND NOT tgisinternal
+     AND tgrelid IN ('public.rake_records'::regclass,'public.rake_attributions'::regclass,
+                     'public.rake_distribution_legs'::regclass,'public.club_wallets'::regclass);
+  IF v_n <> 4 THEN
+    RAISE EXCEPTION 'the chip rake fence landed on % of its 4 tables', v_n;
+  END IF;
+
+  -- The Diamond tables keep their deductions at an explicit zero for ever, so
+  -- boundary layers 1 and 2 never let a chip schedule reach a Diamond table.
+  SELECT count(*) INTO v_n FROM public.tables t JOIN public.clubs c ON c.id=t.club_id
+   WHERE c.asset='diamonds' AND t.tournament_id IS NULL
+     AND (COALESCE(t.rake_percent,-1) <> 0 OR COALESCE(t.rake_cap_bb,-1) <> 0
+          OR COALESCE(t.bbj_percent,-1) <> 0 OR t.insurance_enabled IS TRUE);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION '% Diamond cash tables no longer hold their deductions at an explicit zero', v_n;
+  END IF;
+
+  -- No money door of this migration is reachable by a browser.
+  SELECT count(*) INTO v_n FROM information_schema.role_routine_grants
+   WHERE specific_schema='public' AND grantee IN ('anon','authenticated')
+     AND routine_name IN ('fn_ca_diamond_sweep_cash_rake','fn_poker_diamond_settle_cash_hand',
+                          'fn_ca_arena_diamonds');
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION '% anon/authenticated grants on a Diamond money door', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM information_schema.role_table_grants
+   WHERE table_schema='public' AND grantee IN ('anon','authenticated')
+     AND table_name = 'ca_diamond_rake_accrual';
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION '% anon/authenticated grants on the rake accrual', v_n;
+  END IF;
+
+  -- THIS MIGRATION MUST NOT OPEN THE CASH-GAME DOOR. It reads both switches and
+  -- refuses to commit if cash games are open: that one is the owner's to open,
+  -- after this path is live and verified.
+  SELECT s.cash_games_enabled, s.tournaments_enabled INTO v_cash, v_tourn
+    FROM public.ca_arena_settings s WHERE s.id = 1;
+  IF COALESCE(v_cash,false) IS TRUE THEN
+    RAISE EXCEPTION 'cash_games_enabled is open and this migration must never be the thing that opened it';
+  END IF;
+  RAISE NOTICE 'arena switches left as found: cash_games_enabled=%, tournaments_enabled=%',
+    COALESCE(v_cash::text,'(unset)'), COALESCE(v_tourn::text,'(unset)');
+
+  -- Nothing moved: no hand has been raked, so the accrual is empty.
+  SELECT count(*) INTO v_n FROM public.ca_diamond_rake_accrual;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'this migration wrote % accrual rows and it must write none', v_n;
+  END IF;
+
+  SELECT difference INTO v_diff FROM public.fn_ca_diamond_register_vs_supply();
+  IF v_diff IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'the Diamond identity is not whole (difference %)', v_diff;
+  END IF;
+
+  RAISE NOTICE 'PASS: the Diamond cash rake path is installed, priced from the shared settings, fenced and closed';
 END $$;
 
 COMMIT;

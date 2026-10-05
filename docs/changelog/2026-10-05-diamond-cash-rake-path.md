@@ -3,7 +3,38 @@
 Phase 9 line (b) of the Diamond build programme, the cash-game half:
 "Implement rake/fees/BBJ destinations only in Diamond accounts, where approved."
 
-Migration `20261005151712_diamond_cash_rake_economics_and_accrual`.
+Migration `20261005183028_diamond_cash_rake_reads_the_owner_settings`.
+
+## First, what went wrong, because it is the most useful thing here
+
+`20261005151712_diamond_cash_rake_economics_and_accrual` merged and then
+**refused itself on apply, committing nothing**:
+
+```
+ERROR 42P13: cannot remove parameter defaults from existing function
+HINT: Use DROP FUNCTION fn_ca_diamond_economic(text,text) first.
+```
+
+That file built `ca_diamond_economics` and its reader itself, because the table
+did not exist when it was written: `to_regclass` was NULL when production was
+read at 15:00 UTC. While it sat in CI, the A-lane applied
+`20261005151918_diamond_economics_records_the_owner_answers` at 17:25 UTC and
+built the same table - better, and with a reader whose `p_scope` carries a
+DEFAULT. `CREATE OR REPLACE` cannot drop a parameter default, so the transaction
+rolled back.
+
+Two lanes answering one design built one table twice, and PostgreSQL caught it
+at the only moment that mattered. **Nothing was applied**: no row, no table, no
+function and no grant of that file ever reached production. It now carries
+`-- SUPERSEDED BY 20261005183028` and `THIS FILE MUST NEVER RUN`, and is kept
+rather than deleted so the record of what was attempted stays readable.
+
+The successor does what the lane was told to do and the first attempt could not:
+it **extends** the table that is there. It creates no settings table, no reader
+and no name list. The A-lane's closed name list already held a slot for every
+one of B4 to B13 - it was written with these questions in mind - so the fourteen
+answers go into those slots, in that list's own vocabulary, and the doors read
+its readers. One place for every Diamond number, one spelling, one refusal.
 
 ## What was decided, and on whose authority
 
@@ -39,14 +70,16 @@ heads-up half (bb:5, 75 to 37.5, floored to 37 by B10).
 
 ## What was built
 
-- **`ca_diamond_economics`** (design 3.2), the single place every Diamond
-  economic number lives, with a closed name list, a units check, an append-only
-  trigger, and `fn_ca_diamond_economic`/`_text`, which raise
-  `diamond_economics_unset:<name>/<scope>` under `P0D01` and never return NULL,
-  never fall back to another scope, to a chip value or to a literal. Shared with
-  the A-lane: created if absent, extended, never replaced.
-- **61 answer rows**: the nine scalars above plus the cap ladder, 17 stakes by
-  three dealt-in brackets. Each carries Dan's quote and its own derivation.
+- **65 answer rows in the shared `ca_diamond_economics`**: the eleven scalars
+  above plus the cap ladder, 17 stakes by three dealt-in brackets. Each carries
+  Dan's quote and its own derivation, and each sits beside the A-lane's line (a)
+  answers in one table. The dealt-in bracket is part of the **name**
+  (`cash_rake_cap_heads_up`), not the scope, because that table's scope grammar
+  is `all` or `^bb:[0-9]+$` and nothing else - which is a better shape than the
+  one the superseded file invented, because it keeps a stake key a stake key.
+  An unset value refuses as `diamond_economics_unset:<name>/<scope>` under
+  SQLSTATE `PDE01`, the A-lane's, and the reader never falls back from a stake
+  to `all`.
 - **`ca_diamond_rake_accrual`**, append-only, swept once, counted by
   `fn_ca_arena_diamonds()` while unswept (design R5) and excluded once swept.
 - **The settler** recomputes the rake from the Diamond settings and refuses the
@@ -116,7 +149,7 @@ consequence is deliberate: the engine must learn to send those three keys before
 ## How it was proved
 
 `tests/sql/run-diamond-cash-rake.py`, a private-cluster runner on isolated
-PostgreSQL 17: **47 checks**, through the real doors, never production.
+PostgreSQL 17: **48 checks**, through the real doors, never production. The shared settings table is loaded from the A-lane's own migration text, narrowed to its sections 1 to 6 (its section 7 pins tournament doors this fixture does not hold), with the cut asserted so it cannot silently stop matching.
 
 The installed settler (md5 `3aab9170062e97840afc7d15999691ad`) is loaded from
 production's own `pg_get_functiondef` text and the BEFORE cases prove it refuses

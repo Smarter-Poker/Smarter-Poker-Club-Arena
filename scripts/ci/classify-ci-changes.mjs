@@ -83,7 +83,7 @@ const settlementAttribution =
 const strandedPlayerRead =
   /^(scripts\/ci\/(?:test-stranded-player-read-postgres\.py$|fixtures\/stranded-player-read\/)|tests\/strandedPlayerReadRegression\.test\.ts$)/;
 const contractIndexRecovery =
-  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
+  /^(?:scripts\/ci\/(?:contract-index-recovery(?:\.test)?\.mjs|final-table-cleanup-batches(?:\.test)?\.mjs|test-contract-index-recovery-postgres\.py|apply-recorded-migration\.mjs)|\.github\/workflows\/apply-merged-migration\.yml)$/;
 const settlementConservationIndex =
   /^(scripts\/(?:ci\/(?:test-settlement-conservation-index-postgres\.py$|fixtures\/settlement-conservation-index\/)|ops\/(?:build|recover)-settlement-conservation-index-concurrently\.sql$)|tests\/settlementConservationIndexRegression\.test\.ts$)/;
 
@@ -108,7 +108,7 @@ const certificationPlayerIndex =
 // unit with both migrations; changing any one of them must admit the existing
 // PostgreSQL accounting lane even when no application source changed.
 const phase1CustomizationPostgres =
-  /^(scripts\/ci\/(?:test-phase1-customization-postgres\.py$|fixtures\/phase1-customization\/|phase1-customization-cutover-v1\.json$|seal-phase1-customization-cutover\.mjs$|schema-manifest\.d\/phase-one-customization\.json$)|supabase\/migrations\/2026100511(?:1453_phase_one_customization_ownership_face_decks_and_avatar_styl|1523_short_formats_never_reach_final_table)\.sql$)/;
+  /^(scripts\/ci\/(?:test-phase1-customization-postgres\.py$|fixtures\/phase1-customization\/|phase1-customization-cutover-v1\.json$|seal-phase1-customization-cutover\.mjs$|schema-manifest\.d\/(?:phase-one-customization|final-table-cleanup)\.json$)|supabase\/migrations\/20261005(?:11(?:1453_phase_one_customization_ownership_face_decks_and_avatar_styl|1523_short_formats_never_reach_final_table)|230204_the_final_table_cleanup_advances_in_bounded_transactions|230230_the_final_table_cleanup_seals_its_completed_transition)\.sql$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git

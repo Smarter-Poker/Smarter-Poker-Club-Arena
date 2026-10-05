@@ -36,6 +36,14 @@ import {
   horsePhase12PolicyDigest,
 } from '../engine/HorsePhase12PolicyDigest.js';
 import type { RemainingPolicyVariant } from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
+import {
+  admitHorsePhase12QualifiedAuthority,
+  HORSE_PHASE12_EVIDENCE_DIRECTORY,
+  HORSE_PHASE12_QUALIFICATION_KEYS,
+  HORSE_PHASE12_QUALIFICATION_SCHEMA,
+  type HorsePhase12AuthoritySelection,
+} from '../engine/HorsePhase12Authority.js';
+import { p12CompletionBytes } from '../engine/HorsePhase12Authority.test-support.js';
 
 const exec = promisify(execFile);
 const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -254,6 +262,100 @@ describe('phase12-strength-assemble', () => {
       // One digest per pack: an FLH file never carries another pack's digest.
       for (const other of ['short_deck', 'pineapple', 'flo8'] as const)
         expect(horsePhase12PolicyDigest(other)).not.toBe(horsePhase12PolicyDigest(VARIANT));
+    },
+    RUN_TIMEOUT_MS
+  );
+
+  it(
+    'P12.3: the Phase 12 admission reads the real assembler output and never selects a development assembly',
+    async () => {
+      const outcome = await assemble(`--out=${outDir()}`, '--development');
+      expect(outcome.reasons).toEqual([]);
+      const qualificationPath = `docs/evidence/phase12/phase12-qualification-2026-10-05-${VARIANT}.json`;
+      const completionPath = `docs/evidence/phase12/phase12-completion-2026-10-05-${VARIANT}.json`;
+      const bytes = readFileSync(path.join(repo, qualificationPath));
+      const file = JSON.parse(bytes.toString('utf8'));
+      expect(file.schema).toBe(HORSE_PHASE12_QUALIFICATION_SCHEMA);
+      // Admission requires exactly the keys the real assembler wrote.
+      expect(Object.keys(file).sort()).toEqual([...HORSE_PHASE12_QUALIFICATION_KEYS].sort());
+      expect(file.domain).toBe(PACK.domain);
+      expect(file.evidencePath.startsWith(HORSE_PHASE12_EVIDENCE_DIRECTORY)).toBe(true);
+      // A completion record for the same pack and policy, in this temporary directory only.
+      const completion = p12CompletionBytes(VARIANT);
+      writeFileSync(path.join(repo, completionPath), completion);
+      const reader = { read: (relative: string) => readFileSync(path.join(repo, relative)) };
+      const now = Date.parse('2026-10-20T01:00:00.000Z');
+      const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+      const selectionFor = (
+        qualification: Buffer,
+        overrides: Partial<HorsePhase12AuthoritySelection> = {}
+      ): HorsePhase12AuthoritySelection => ({
+        schema: 'horse-qualified-authority-selection-v1',
+        phase: 'phase12',
+        variant: VARIANT,
+        sourceSha: HEAD,
+        packVersion: file.packVersion,
+        contractVersion: file.contractVersion,
+        contractDigest: file.contractDigest,
+        domain: file.domain,
+        qualificationPath,
+        qualificationSha256: sha(qualification),
+        completionPath,
+        completionSha256: sha(completion),
+        approvalGeneration: 1,
+        issuedAt: '2026-10-20T00:00:00.000Z',
+        expiresAt: null,
+        withdrawn: null,
+        ...overrides,
+      });
+      const digest = remainingVariantStrengthContractDigest();
+      const admitAs = (
+        variant: RemainingPolicyVariant,
+        selection: HorsePhase12AuthoritySelection
+      ) => admitHorsePhase12QualifiedAuthority(variant, selection, reader, now, digest);
+      // The assembler's own development file: refused, whatever selects it.
+      expect(admitAs(VARIANT, selectionFor(bytes))).toMatchObject({
+        status: 'refused',
+        reason: 'not_qualified',
+      });
+      // Shape compatibility, in this temporary directory only (never committed):
+      // the same real file relabelled as a contract-mode cash qualification with
+      // no failure reason is read field for field, bound to its digests,
+      // source, strength record and the completion record.
+      const relabelled = Buffer.from(
+        JSON.stringify({
+          ...file,
+          qualified: true,
+          mode: 'contract',
+          objectives: { ...file.objectives, cash: { ...file.objectives.cash, qualified: true } },
+          reasons: [],
+        })
+      );
+      writeFileSync(path.join(repo, qualificationPath), relabelled);
+      expect(admitAs(VARIANT, selectionFor(relabelled))).toMatchObject({
+        status: 'admitted',
+        authority: {
+          phase: 'phase12',
+          variant: VARIANT,
+          sourceSha: HEAD,
+          contractDigest: digest,
+          policyDigest: horsePhase12PolicyDigest(VARIANT),
+          completionPath,
+        },
+      });
+      // It never admits another pack.
+      expect(admitAs('flo8', selectionFor(relabelled))).toMatchObject({
+        status: 'refused',
+        reason: 'continuation_mismatch',
+      });
+      expect(
+        admitAs(VARIANT, selectionFor(relabelled, { sourceSha: 'c'.repeat(40) }))
+      ).toMatchObject({ status: 'refused', reason: 'source_mismatch' });
+      writeFileSync(path.join(outDir(), 'strength.json'), '{}\n');
+      expect(admitAs(VARIANT, selectionFor(relabelled))).toMatchObject({
+        status: 'refused',
+        reason: 'hash_mismatch',
+      });
     },
     RUN_TIMEOUT_MS
   );

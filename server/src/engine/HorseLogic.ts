@@ -1915,6 +1915,9 @@ export interface HorseDecideOpts {
   /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
   phase11Omaha?: OmahaVariantMode;
   phase11EvidenceMode?: boolean;
+  /** Phase 12 variant policies are live shadow; live candidate mode is set only
+   *  by the worker from its own P12.3 authority for the decision's pack. The
+   *  caller may only turn them off; the evidence clock is offline only. */
   phase12Remaining?: RemainingVariantMode;
   phase12EvidenceMode?: boolean;
   phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
@@ -2788,8 +2791,9 @@ export class HorseLogic {
         const legal = this.legalize(phase12.decision, player, gs, vi);
         // P12.2, the P10.3 law (as P11.3 applies it to Phase 11): an applied
         // candidate the legalizer would rewrite is illegal as proposed. It
-        // never reaches the table: the reference is retained. Candidate mode
-        // is offline only (the worker refuses it), so no live decision moves.
+        // never reaches the table: the reference is retained. P12.3: the same
+        // guard holds for a live candidate the worker admits from its own
+        // pack authority; a caller can never request candidate mode.
         if (
           phase12.receipt.applied &&
           (legal.action !== phase12.decision.action ||
@@ -3136,6 +3140,14 @@ export class HorseLogic {
         }
         phase12.receipt.finalAction = decision.action;
         phase12.receipt.finalAmount = decision.amount ?? null;
+        // P12.3: `selected` only when the applied candidate is the action
+        // leaving this guard; otherwise the pack did not own the decision.
+        phase12.receipt.selection =
+          phase12.receipt.applied &&
+          (decision.action !== phase12.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase12.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase12.receipt);
         decision = { ...decision, remainingVariantPolicy: phase12.receipt };
         if (tele) {
           noteFire('phase12_seen');
@@ -3156,6 +3168,7 @@ export class HorseLogic {
           if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
           if (phase12.receipt.applied) noteFire('phase12_applied');
           else noteFire('phase12_baseline_retained');
+          noteFire(`phase12_selection_${phase12.receipt.selection}`);
           noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
           if (phase12.receipt.utilityUnavailableReason)
             noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);

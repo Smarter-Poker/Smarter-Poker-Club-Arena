@@ -15,10 +15,26 @@ import {
   type OmahaVariantEquityEvidence,
 } from '../omaha/OmahaVariantEquity.js';
 import {
+  REMAINING_VARIANT_DOMAIN,
   REMAINING_VARIANT_PACKS,
   remainingVariantHandShape,
   type RemainingPolicyVariant,
 } from './RemainingVariantPolicyPack.js';
+
+/**
+ * P12.3: the samples one live draw requests at equity-governor scale `scale`.
+ * At scale 1 (the governor off, as in the P12.2 matrix) it is the pack's full
+ * count, `REMAINING_VARIANT_DOMAIN.defaultSamples`; under load it falls
+ * proportionally, never below four. The P12.3 completion record counts a
+ * consumed sample that requested fewer than the full count as
+ * governor-reduced, never as completed.
+ */
+export function remainingVariantRequestedSamples(scale: number): number {
+  return Math.max(
+    4,
+    Math.floor(REMAINING_VARIANT_DOMAIN.defaultSamples * Math.min(1, Math.max(0, scale)))
+  );
+}
 
 /** P12.1: where the opponent holdings behind a live remaining-variant sample
  * came from. Each dealt opponent is drawn from one physical deck (36 cards for
@@ -205,10 +221,7 @@ export function sampleRemainingVariantEquity(
       ];
     })
   );
-  const requested = Math.max(
-    4,
-    Math.floor(32 * Math.min(1, Math.max(0, equityGovernor.current())))
-  );
+  const requested = remainingVariantRequestedSamples(equityGovernor.current());
   const samples: HorseEquityOutcomeSample[] = [];
   // P12.1: what the prior actually did, recorded with the sample it produced.
   let seatDraws = 0;

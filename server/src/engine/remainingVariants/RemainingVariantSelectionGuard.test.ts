@@ -74,14 +74,14 @@ describe('P12.2 illegal candidate retention', () => {
     (variant, street) => {
       const honest = decide(variant, street, 'candidate');
       expect(honest.remainingVariantPolicy).toMatchObject({ applied: true });
-      expect(honest.remainingVariantPolicy?.selectionRefusal).toBeUndefined();
+      expect(honest.remainingVariantPolicy?.selectionRefusal).toBeNull();
       expect(['bet', 'raise']).toContain(honest.action);
       const reference = decide(variant, street, 'off');
       expect(act(honest)).not.toEqual(act(reference));
       // Shadow is untouched by the guard: the reference is executed, nothing refused.
       const shadow = decide(variant, street, 'shadow');
       expect(act(shadow)).toEqual(act(reference));
-      expect(shadow.remainingVariantPolicy?.selectionRefusal).toBeUndefined();
+      expect(shadow.remainingVariantPolicy?.selectionRefusal).toBeNull();
       forge.amountDelta = 0.004;
       try {
         const forged = decide(variant, street, 'candidate');

@@ -563,7 +563,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase12Remaining',
-    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    "separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; live candidate only from the worker's own P12.3 pack authority (cash), never from a caller",
     'Phase12'
   ),
   flag(
@@ -1991,6 +1991,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase12',
     'phase12_eligible',
     0.99
+  ),
+  receipt(
+    'phase12_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P12.3)',
+    'none, shadow change (never applied), authority-backed cash selection of the deciding pack, controller acceptance or withdrawal before acceptance; never a tournament objective selection',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_authority_*',
+    'HorsePhase12Authority (HorseQualifiedAuthority, one gate per pack) -> workerRuntime / client / ServerTableEngineTurns (P12.3)',
+    'protected-release Short Deck/Pineapple/FLH/FLO8 authority admission per pack, local withdrawal and acceptance-time verdicts',
+    'Phase12'
   ),
   receipt(
     'phase12_shadow_receipt_binding_dropped',

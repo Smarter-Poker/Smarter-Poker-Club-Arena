@@ -29,6 +29,7 @@ import {
   plo4DealerSeatIsValid,
   plo4PreflopChoice,
   plo4Role,
+  plo4SelectionOf,
   type Plo4BlindSeats,
 } from '../plo4/Plo4LivePolicy.js';
 import {
@@ -1051,6 +1052,12 @@ export function evaluateRemainingVariantPolicy(
     executionStatus: 'pending',
     executedAction: null,
     executedAmount: null,
+    // P12.3: the Phase 10/11 selection vocabulary; the worker binds its
+    // authority receipt, the main scheduler its acceptance-time verdict.
+    selection: 'none',
+    selectionRefusal: null,
+    authority: null,
+    authorityVerdict: null,
   };
   /** Assembled only once every canonical check has passed. */
   let bind: (() => RemainingVariantInputBinding) | null = null;
@@ -1075,6 +1082,7 @@ export function evaluateRemainingVariantPolicy(
     receipt.changed = !same(proposal, baseline);
     const decision = mode === 'candidate' && receipt.fired ? proposal : baseline;
     receipt.applied = !same(decision, baseline);
+    receipt.selection = plo4SelectionOf(receipt);
     return { decision, proposal, receipt };
   };
   if (mode === 'off') return finish('off');

@@ -33,6 +33,12 @@ import { qualifiedTestAdmission } from '../HorseQualifiedAuthority.test-support.
 import { liveHorsePhase11Authorities } from '../HorsePhase11Authority.js';
 import { qualifiedPhase11TestAdmission } from '../HorsePhase11Authority.test-support.js';
 import { OMAHA_VARIANT_PACKS } from '../omaha/OmahaVariantPolicyPack.js';
+import { liveHorsePhase12Authorities } from '../HorsePhase12Authority.js';
+import { qualifiedPhase12TestAdmission } from '../HorsePhase12Authority.test-support.js';
+import {
+  REMAINING_VARIANT_PACKS,
+  type RemainingPolicyVariant,
+} from '../remainingVariants/RemainingVariantPolicyPack.js';
 import {
   HorseDecisionAbortedError,
   HORSE_CAPTURE_LANE_MAX_QUEUED,
@@ -86,6 +92,40 @@ vi.mock('../HorsePhase11Authority.js', async (importOriginal) => {
       plo5: gate('plo5'),
       plo6: gate('plo6'),
       plo8: gate('plo8'),
+    }),
+  };
+});
+
+// P12.3: the four Phase 12 main gates, each replaced the same way.
+const phase12Main = vi.hoisted(() => ({
+  admission: { short_deck: null, pineapple: null, flh: null, flo8: null } as Record<
+    string,
+    unknown
+  >,
+}));
+vi.mock('../HorsePhase12Authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../HorsePhase12Authority.js')>();
+  const { HorsePhase8AuthorityGate } = await import('../HorseQualifiedAuthority.js');
+  const { REMAINING_VARIANT_PACKS } =
+    await import('../remainingVariants/RemainingVariantPolicyPack.js');
+  const gate = (variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8') =>
+    new HorsePhase8AuthorityGate(
+      () =>
+        (phase12Main.admission[variant] as HorseAuthorityAdmission | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      `client-test-phase12-main-${variant}`,
+      REMAINING_VARIANT_PACKS[variant].version
+    );
+  return {
+    ...actual,
+    liveHorsePhase12Authorities: Object.freeze({
+      short_deck: gate('short_deck'),
+      pineapple: gate('pineapple'),
+      flh: gate('flh'),
+      flo8: gate('flo8'),
     }),
   };
 });
@@ -2966,4 +3006,182 @@ describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', ()
       'phase10_shadow_receipt_binding_dropped'
     );
   });
+});
+
+describe('P12.3 per-pack authority at the client boundary', () => {
+  let approval = 300;
+  /** A fresh lane whose FLH main gate admits a usable test-fixture authority. */
+  function lane() {
+    approval += 1;
+    phase12Main.admission.flh = qualifiedPhase12TestAdmission('flh', approval);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    // One worker epoch shared by its four pack holders, as workerRuntime builds them.
+    const epoch = `client-test-p12-worker-${approval}`;
+    const holders = Object.fromEntries(
+      (['short_deck', 'pineapple', 'flh', 'flo8'] as const).map((v) => [
+        v,
+        new HorseQualifiedAuthorityHolder(epoch, REMAINING_VARIANT_PACKS[v].version),
+      ])
+    ) as Record<RemainingPolicyVariant, HorseQualifiedAuthorityHolder>;
+    holders.flh.apply(qualifiedPhase12TestAdmission('flh', approval));
+    const receipts = () => ({
+      short_deck: holders.short_deck.receipt(),
+      pineapple: holders.pineapple.receipt(),
+      flh: holders.flh.receipt(),
+      flo8: holders.flo8.receipt(),
+    });
+    return { worker, client, holders, receipts };
+  }
+  /** A real FLH cash candidate (a turn value raise the worker would select). */
+  const selectedFlh = (authority: unknown) => {
+    const spot = remainingVariantSpot('flh', 'turn', 2);
+    seedFastRandom(100101);
+    const decision = structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase12Remaining: 'candidate',
+          phase12EvidenceMode: true,
+        }
+      )
+    );
+    decision.remainingVariantPolicy!.authority = authority as never;
+    return decision;
+  };
+  function request(client: LiveHorseDecisionWorkerClient, fence: string) {
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'flh';
+    input.decisionKey = buildHorseDecisionKey(input);
+    return client.decideFast(input);
+  }
+
+  it('stamps the receipt at its own pack gate, binds the witness, and a worker exit restarts it', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const pending = request(client, 'p12-3-fence-1');
+    const decision = selectedFlh(holders.flh.receipt());
+    expect(decision.remainingVariantPolicy).toMatchObject({ applied: true, selection: 'selected' });
+    worker.emitMessage({
+      ...fastResult(1, 'p12-3-fence-1'),
+      decision,
+      phase12Authority: receipts(),
+    });
+    const result = await pending;
+    const receipt = result.decision.remainingVariantPolicy!;
+    const flh = liveHorsePhase12Authorities.flh;
+    expect(receipt.authority).toMatchObject({
+      state: 'usable',
+      generation: holders.flh.currentGeneration(),
+      mainGeneration: flh.mainGeneration(),
+      continuationVersion: REMAINING_VARIANT_PACKS.flh.version,
+    });
+    expect(result.decision.executionWitness?.phase12Authority).toMatchObject({
+      continuationVersion: REMAINING_VARIANT_PACKS.flh.version,
+      mode: 'candidate',
+      selection: 'selected',
+      verdict: null,
+      candidate: { action: receipt.proposalAction, amount: receipt.proposalAmount },
+      reference: { action: receipt.baselineAction, amount: receipt.baselineAmount },
+    });
+    expect(result.decision.executionWitness?.phase11Authority).toBeUndefined();
+    expect(flh.check(receipt.authority)).toBe('usable');
+    // The FLO8 gate is unselected and refuses the same receipt; no Phase 11
+    // gate accepts it either.
+    expect(liveHorsePhase12Authorities.flo8.check(receipt.authority)).toBe('unselected');
+    expect(liveHorsePhase11Authorities.plo8.check(receipt.authority)).toBe('unselected');
+    worker.emitExit(1);
+    expect(flh.check(receipt.authority)).toBe('restarted');
+    void client;
+  });
+
+  it('an FLH withdrawal reported by a later result stales already returned FLH work', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const first = request(client, 'p12-3-fence-2');
+    worker.emitMessage({
+      ...fastResult(1, 'p12-3-fence-2'),
+      decision: selectedFlh(holders.flh.receipt()),
+      phase12Authority: receipts(),
+    });
+    const returned = (await first).decision.remainingVariantPolicy!;
+    const flh = liveHorsePhase12Authorities.flh;
+    expect(flh.check(returned.authority)).toBe('usable');
+    holders.flh.withdraw('controller_fallback_candidate');
+    const second = request(client, 'p12-3-fence-3');
+    worker.emitMessage({ ...fastResult(2, 'p12-3-fence-3'), phase12Authority: receipts() });
+    await second;
+    expect(flh.check(returned.authority)).toBe('withdrawn');
+    expect(flh.mainState()).toBe('withdrawn');
+  });
+
+  it.each([
+    ['flo8', 'no authority', 'missing_receipt'],
+    ['flo8', 'a usable FLO8 worker receipt at an unselected gate', 'unselected'],
+    ['plo8', 'no authority', 'mismatched'],
+  ] as const)(
+    'an effect commit beside an applied %s Phase 12 receipt with %s is refused (%s) and retired',
+    async (variant, authorityCase, verdict) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      phase12Main.admission.flo8 = null;
+      liveHorsePhase12Authorities.flo8.refresh();
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const holder = new HorseQualifiedAuthorityHolder(
+        'client-test-p12-commit',
+        REMAINING_VARIANT_PACKS.flo8.version
+      );
+      holder.apply(qualifiedPhase12TestAdmission('flo8'));
+      // The receipt as it would stand if an applied candidate reached the commit.
+      (owned.decision as { remainingVariantPolicy?: unknown }).remainingVariantPolicy = {
+        variant,
+        applied: true,
+        authority: authorityCase === 'no authority' ? null : holder.receipt(),
+      };
+      enableBrainTelemetry();
+      drainFires();
+      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+        `Horse plan commit refused: Phase 12 authority ${verdict}`
+      );
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'RETIRE_DECISION_EFFECTS' });
+      expect(drainFires().map((row) => row.feature)).toContain(
+        `phase12_authority_effects_${verdict}`
+      );
+    }
+  );
+
+  it.each(['missing', 'withdrawn', 'another pack', 'a Phase 11 pack'] as const)(
+    'refuses an applied FLH receipt whose worker authority is %s',
+    async (mode) => {
+      const { worker, client, holders, receipts } = lane();
+      if (mode === 'withdrawn') holders.flh.withdraw('test');
+      const authority =
+        mode === 'missing'
+          ? null
+          : mode === 'another pack'
+            ? {
+                ...holders.flh.receipt(),
+                continuationVersion: REMAINING_VARIANT_PACKS.flo8.version,
+              }
+            : mode === 'a Phase 11 pack'
+              ? { ...holders.flh.receipt(), continuationVersion: OMAHA_VARIANT_PACKS.plo8.version }
+              : holders.flh.receipt();
+      const fence = `p12-3-fence-${mode.replaceAll(' ', '-')}`;
+      const pending = request(client, fence);
+      worker.emitMessage({
+        ...fastResult(1, fence),
+        decision: selectedFlh(authority),
+        phase12Authority: receipts(),
+      });
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+    }
+  );
 });

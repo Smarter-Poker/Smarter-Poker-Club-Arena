@@ -14,6 +14,10 @@ import { PHASE8_POLICY } from '../HorseTournamentPostflop.js';
 import { horseAuthorityReceiptIsWellFormed } from '../HorseQualifiedAuthority.js';
 import { PLO4_POLICY_PACK } from '../plo4/Plo4PolicyPack.js';
 import { isOmahaPolicyVariant, OMAHA_VARIANT_PACKS } from '../omaha/OmahaVariantPolicyPack.js';
+import {
+  isRemainingPolicyVariant,
+  REMAINING_VARIANT_PACKS,
+} from '../remainingVariants/RemainingVariantPolicyPack.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -474,6 +478,31 @@ export function horsePhase10SelectionIsValid(value: unknown, decision: RecordVal
  * no authority, so it may not carry an applied candidate either.
  */
 export function horsePhase11SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  return packSelectionIsValid(value, decision, (variant) =>
+    isOmahaPolicyVariant(variant) ? OMAHA_VARIANT_PACKS[variant].version : null
+  );
+}
+
+/**
+ * P12.3: a Short Deck, Crazy Pineapple, FLH or FLO8 receipt's selection as the
+ * worker returns it, by the same law: a changed action only as an
+ * authority-backed cash selection under usable worker authority for the
+ * running version of the receipt's own pack (a Short Deck authority never
+ * backs a Pineapple receipt, and no Phase 11 authority backs any), with the
+ * final action equal to the proposal; acceptance-time fields unset; a
+ * retained receipt claims nothing.
+ */
+export function horsePhase12SelectionIsValid(value: unknown, decision: RecordValue): boolean {
+  return packSelectionIsValid(value, decision, (variant) =>
+    isRemainingPolicyVariant(variant) ? REMAINING_VARIANT_PACKS[variant].version : null
+  );
+}
+
+function packSelectionIsValid(
+  value: unknown,
+  decision: RecordValue,
+  packVersionOf: (variant: unknown) => string | null
+): boolean {
   if (value === undefined) return true;
   if (!record(value)) return false;
   const wager = (action: unknown) => action === 'bet' || action === 'raise';
@@ -484,9 +513,7 @@ export function horsePhase11SelectionIsValid(value: unknown, decision: RecordVal
       !Object.hasOwn(value, 'authorityVerdict') &&
       !Object.hasOwn(value, 'selectionRefusal')
     );
-  const packVersion = isOmahaPolicyVariant(value.variant)
-    ? OMAHA_VARIANT_PACKS[value.variant].version
-    : null;
+  const packVersion = packVersionOf(value.variant);
   const authority = value.authority;
   if (
     packVersion === null ||
@@ -576,6 +603,7 @@ export function horseDecisionReceiptIsValid(
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
   )
     return false;
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, value)) return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

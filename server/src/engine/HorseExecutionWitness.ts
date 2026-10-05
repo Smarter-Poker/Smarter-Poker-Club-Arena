@@ -65,7 +65,19 @@ export type HorseWitnessPhase10Authority = HorseWitnessPhase8Authority;
  * receipt; absent on retained witnesses and every other variant. */
 export type HorseWitnessPhase11Authority = HorseWitnessPhase8Authority;
 
-type QualifiedAuthorityKey = 'phase8Authority' | 'phase10Authority' | 'phase11Authority';
+/** P12.3 Short Deck/Pineapple/FLH/FLO8 authority binding: the Phase 8 shape,
+ * reused as Phases 10 and 11 reuse it. `continuationVersion` is the deciding
+ * pack's running version (which names the variant), `candidate` its proposal
+ * and `reference` the shadow baseline. Present whenever the decision carried a
+ * P12.3 Phase 12 receipt; absent on retained witnesses and every other
+ * variant. */
+export type HorseWitnessPhase12Authority = HorseWitnessPhase8Authority;
+
+type QualifiedAuthorityKey =
+  | 'phase8Authority'
+  | 'phase10Authority'
+  | 'phase11Authority'
+  | 'phase12Authority';
 
 export interface HorseAcceptedAction {
   readonly record: Readonly<
@@ -98,7 +110,7 @@ export interface HorseExecutionWitness {
     boardCount: number | null;
   }>;
   /** The intent the executor will submit. Readonly except for the Phase 8,
-   * Phase 10 and Phase 11 authority withdrawals below, which re-select the
+   * Phase 10, Phase 11 and Phase 12 authority withdrawals below, which re-select the
    * reference before acceptance. */
   readonly selected: Readonly<{ action: ActionType; amount: number | null }>;
   /** Canonical controller amount expected from the original request. Calls
@@ -158,6 +170,8 @@ export interface HorseExecutionWitness {
   readonly phase10Authority?: HorseWitnessPhase10Authority | null;
   /** P11.3; absent on retained witnesses and decisions without a P11.3 Phase 11 receipt. */
   readonly phase11Authority?: HorseWitnessPhase11Authority | null;
+  /** P12.3; absent on retained witnesses and decisions without a P12.3 Phase 12 receipt. */
+  readonly phase12Authority?: HorseWitnessPhase12Authority | null;
   readonly computeMs: number;
   readonly governorScale: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed' | 'unverified';
@@ -267,6 +281,24 @@ export function recordHorsePhase10Verdict(
   if (witness?.executionStatus === 'pending' && phase10) phase10.verdict = verdict;
 }
 
+/** P12.3: the same re-selection for a selected Short Deck/Pineapple/FLH/FLO8 candidate. */
+export function withdrawHorsePhase12Selection(
+  witness: HorseExecutionWitness | undefined,
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  verdict: HorseAuthorityVerdict
+): void {
+  withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase12Authority');
+}
+
+/** P12.3: record the usable Phase 12 verdict observed immediately before acceptance. */
+export function recordHorsePhase12Verdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const phase12 = witness?.phase12Authority;
+  if (witness?.executionStatus === 'pending' && phase12) phase12.verdict = verdict;
+}
+
 /** P11.3: record the usable Phase 11 verdict observed immediately before acceptance. */
 export function recordHorsePhase11Verdict(
   witness: HorseExecutionWitness | undefined,
@@ -296,6 +328,9 @@ export function createHorseExecutionWitness(
   const phase10 = plo4 && Object.hasOwn(plo4, 'selection') && plo4.selection ? plo4 : null;
   const omaha = decision.omahaVariantPolicy;
   const phase11 = omaha && Object.hasOwn(omaha, 'selection') && omaha.selection ? omaha : null;
+  const remaining = decision.remainingVariantPolicy;
+  const phase12 =
+    remaining && Object.hasOwn(remaining, 'selection') && remaining.selection ? remaining : null;
   return {
     version: 'horse-execution-witness-v4',
     handAnchor: anchorHorseDecisionHand(snapshot),
@@ -422,6 +457,25 @@ export function createHorseExecutionWitness(
             reference: Object.freeze({
               action: phase11.baselineAction,
               amount: phase11.baselineAmount,
+            }),
+          },
+        }
+      : {}),
+    ...(phase12
+      ? {
+          phase12Authority: {
+            continuationVersion: phase12.version,
+            mode: phase12.mode === 'candidate' ? ('candidate' as const) : ('shadow' as const),
+            selection: phase12.selection!,
+            authority: phase12.authority ? Object.freeze({ ...phase12.authority }) : null,
+            verdict: null,
+            candidate: Object.freeze({
+              action: phase12.proposalAction,
+              amount: phase12.proposalAmount,
+            }),
+            reference: Object.freeze({
+              action: phase12.baselineAction,
+              amount: phase12.baselineAmount,
             }),
           },
         }
@@ -555,7 +609,12 @@ export function settleHorseExecutionWitness(
       : matched
         ? 'intended'
         : 'coerced';
-  for (const key of ['phase8Authority', 'phase10Authority', 'phase11Authority'] as const) {
+  for (const key of [
+    'phase8Authority',
+    'phase10Authority',
+    'phase11Authority',
+    'phase12Authority',
+  ] as const) {
     const binding = witness[key];
     if (
       binding?.selection === 'selected' &&

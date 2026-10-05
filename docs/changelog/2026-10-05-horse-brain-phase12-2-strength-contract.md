@@ -43,9 +43,13 @@ runner-hours in all at 2.5 times the pilot time.
 
 Finding (pilot, development seed): the no-limit packs size wagers in cents
 while the legalizer sizes cash wagers in whole dollars, so the new guard
-refuses about one in seven no-limit candidate changes (Short Deck 133 of 831,
-Pineapple 96 of 675; fixed limit 0). Named in the record; the pack is not
-changed here.
+refused about one in seven no-limit candidate changes (Short Deck 133 of 831,
+Pineapple 96 of 675; fixed limit 0). Named in the record and not changed by
+P12.2; fixed by P12.1 (`remainingVariantLegalForm`: every proposal in the
+legalizer's own form) before any held-out run, so on the combined branch the
+guard refuses no natural candidate (0 on the development Short Deck shard) and
+only a forged off-grid size is refused. The pilot counts describe the pre-fix
+code.
 
 Machinery: `runRemainingVariantStrengthShard`,
 `remainingVariantStrengthEvaluate.ts` (npm

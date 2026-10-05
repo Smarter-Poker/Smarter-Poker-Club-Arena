@@ -100,7 +100,7 @@ describe('P12.2 illegal candidate retention', () => {
 });
 
 describe('P12.2 the shard runner counts guard refusals beside changed', () => {
-  it('counts natural refusals, and a forged illegal size moves decisions from changed to illegalCandidates', async () => {
+  it('counts no natural refusal (P12.1 legal form), and a forged illegal size moves decisions from changed to illegalCandidates', async () => {
     const request = {
       profileId: 'p12c-short_deck-6max-4dealt-100bb',
       seed: 12101101,
@@ -108,11 +108,14 @@ describe('P12.2 the shard runner counts guard refusals beside changed', () => {
       mode: 'development' as const,
       pairs: 96,
     };
-    // The pack sizes no-limit wagers in cents, the legalizer in whole dollars
-    // (HorseLogic chipStep): a fractional proposal is refused as proposed.
+    // P12.1 puts every proposal in the legalizer's own form
+    // (remainingVariantLegalForm): wagers land on HorseLogic's chip step, so
+    // the guard refuses no natural candidate. Before that fix the pack sized
+    // no-limit wagers in cents against a whole-dollar legalizer and this shard
+    // counted natural refusals.
     const natural = await runRemainingVariantStrengthShard('short_deck', request);
     expect(natural.complete).toBe(true);
-    expect(natural.illegalCandidates).toBeGreaterThan(0);
+    expect(natural.illegalCandidates).toBe(0);
     expect(natural.changed).toBeGreaterThan(0);
     expect(natural.illegalActions + natural.settlementMismatches).toBe(0);
     forge.amountDelta = 0.004;

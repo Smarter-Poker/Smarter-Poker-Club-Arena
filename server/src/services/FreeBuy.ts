@@ -112,6 +112,26 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
   { chicagoHour: 0, tier: 'standard', label: 'Midnight Free Buy' },
 ];
 
+/**
+ * The name a slot's event is published under (`freeBuyTournamentRow`), and so
+ * the only rows that belong to the board.
+ *
+ * WHY THE BOARD IS READ BY NAME, NOT BY `free_buy` (2026-10-05). Dan made every
+ * freeroll a Free Buy ("FREE ROLLS MUST ALWAYS BE SET AS 'FREE BUY'"), so
+ * `freeBuyColumns()` writes `free_buy: true` on the $100 Freerolls, the Coffee
+ * Break and Early Bird freerolls and every DSS freeroll as well. The hourly
+ * watch and `freebuy:verify` selected `free_buy = true` and audited all of
+ * them against the five-slot board, so a correct $100 Freeroll at 6:00 AM
+ * Chicago read as "not one of the five slots" and the watch held a warning
+ * open since 2026-09-11 that described no fault in the board at all.
+ */
+export function freeBuyBoardName(slot: FreeBuySlot): string {
+  return `${slot.label} (NLH)`;
+}
+
+/** Every name the board publishes under, for selecting its rows. */
+export const FREE_BUY_BOARD_NAMES: readonly string[] = FREE_BUY_SLOTS.map(freeBuyBoardName);
+
 export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
@@ -547,7 +567,7 @@ export function freeBuyTournamentRow(opts: {
   return {
     club_id: opts.host.clubId,
     union_id: opts.host.unionId,
-    name: `${opts.due.slot.label} (NLH)`,
+    name: freeBuyBoardName(opts.due.slot),
     game_type: 'NLH',
     variant: 'freezeout',
     tournament_type: 'MTT',

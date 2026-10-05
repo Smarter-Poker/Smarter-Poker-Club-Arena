@@ -1259,6 +1259,10 @@ try:
         SELECT ('e0000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,NULL,true
         FROM generate_series(1,450) n;
       CREATE TABLE public.fixture_updates(id uuid);
+      CREATE FUNCTION public.fixture_collateral_update() RETURNS trigger LANGUAGE plpgsql AS
+        $$ BEGIN IF current_setting('fixture.collateral',true)='true' THEN NEW.format_contract:='sng-v1'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER fixture_collateral BEFORE UPDATE ON public.tournaments
+        FOR EACH ROW EXECUTE FUNCTION public.fixture_collateral_update();
       CREATE FUNCTION public.fixture_count_update() RETURNS trigger LANGUAGE plpgsql AS
         $$ BEGIN IF current_setting('fixture.slow',true)='true' THEN PERFORM pg_sleep(1); END IF; INSERT INTO public.fixture_updates VALUES(NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER fixture_update AFTER UPDATE ON public.tournaments
@@ -1283,6 +1287,13 @@ try:
       "SELECT (SELECT last_id IS NULL FROM public.final_table_cleanup_progress) "
       "AND NOT EXISTS (SELECT 1 FROM public.final_table_cleanup_receipts) "
       "AND NOT EXISTS (SELECT 1 FROM public.fixture_updates);")
+    expect_error("collateral-trigger-change-rolls-back-entire-page",
+      "SET statement_timeout='5s'; SET fixture.collateral='true';"+call,"55000")
+    expect_value("collateral-refusal-preserves-all-state",
+      "SELECT (SELECT last_id IS NULL FROM public.final_table_cleanup_progress) "
+      "AND NOT EXISTS (SELECT 1 FROM public.final_table_cleanup_receipts) "
+      "AND NOT EXISTS (SELECT 1 FROM public.fixture_updates) "
+      "AND (SELECT count(*)=450 FROM public.tournaments WHERE format_contract IS NULL AND final_table_triggered);")
     # A locked row refuses the whole page. A cursor must never skip it.
     locker = subprocess.Popen([str(x) for x in PSQL], stdin=subprocess.PIPE,
       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=ENV)

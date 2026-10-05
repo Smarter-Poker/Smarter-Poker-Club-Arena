@@ -133,9 +133,12 @@ DECLARE
   v_progress public.final_table_cleanup_progress%ROWTYPE;
   v_result jsonb;
   v_ids uuid[];
+  v_changed_ids uuid[];
   v_last uuid;
   v_count integer;
   v_updated integer;
+  v_before jsonb;
+  v_after jsonb;
 BEGIN
   IF p_request_id IS NULL THEN
     RAISE EXCEPTION 'final-table cleanup: request identity required' USING ERRCODE = '22023';
@@ -166,11 +169,28 @@ BEGIN
               AND (v_progress.last_id IS NULL OR id <> v_progress.last_id)
             ORDER BY id LIMIT 200 FOR UPDATE NOWAIT) page;
     v_last := v_ids[array_length(v_ids, 1)];
+    SELECT array_agg(t.id), jsonb_object_agg(t.id::text, to_jsonb(t) - 'final_table_triggered')
+      INTO v_changed_ids, v_before FROM public.tournaments t WHERE t.id = ANY(v_ids)
+        AND (t.final_table_triggered IS NULL OR (t.final_table_triggered IS TRUE
+          AND (t.format_contract IN ('mtt-v1','mtt-v2')) IS NOT TRUE));
     UPDATE public.tournaments SET final_table_triggered = false
-      WHERE id = ANY(v_ids)
+      WHERE id = ANY(v_changed_ids)
         AND (final_table_triggered IS NULL OR
           (final_table_triggered IS TRUE AND (format_contract IN ('mtt-v1','mtt-v2')) IS NOT TRUE));
     GET DIAGNOSTICS v_updated = ROW_COUNT;
+    SELECT jsonb_object_agg(t.id::text, to_jsonb(t) - 'final_table_triggered')
+      INTO v_after FROM public.tournaments t WHERE t.id = ANY(v_changed_ids);
+    -- Ordinary triggers remain active. Union ownership and Spin-ladder guards
+    -- can normalize other columns; this operation must never commit that
+    -- incidental change or any resulting downstream event.
+    IF v_before IS DISTINCT FROM v_after OR EXISTS (
+      SELECT 1 FROM public.tournaments WHERE id = ANY(v_ids)
+        AND (final_table_triggered IS NULL OR (final_table_triggered IS TRUE
+          AND (format_contract IN ('mtt-v1','mtt-v2')) IS NOT TRUE))
+    ) THEN
+      RAISE EXCEPTION 'final-table cleanup: trigger changed other state or refused normalization'
+        USING ERRCODE = '55000';
+    END IF;
     UPDATE public.final_table_cleanup_progress
       SET last_id = coalesce(v_last, last_id), complete = v_count < 200 WHERE singleton;
     v_result := jsonb_build_object('visited',v_count,'updated',v_updated,

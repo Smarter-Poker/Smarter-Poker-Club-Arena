@@ -171,6 +171,7 @@ SELECT t.id, gen_random_uuid()
   FROM public.tournaments t
  WHERE t.final_table_triggered IS TRUE
    AND (t.format_contract IN ('mtt-v1', 'mtt-v2')) IS TRUE
+   AND NOT EXISTS (SELECT 1 FROM public.tournament_final_table_transition_receipts r WHERE r.tournament_id = t.id)
 ON CONFLICT (tournament_id) DO NOTHING;
 
 INSERT INTO public.tournament_final_table_events (tournament_id)
@@ -178,6 +179,7 @@ SELECT t.id
   FROM public.tournaments t
  WHERE t.final_table_triggered IS TRUE
    AND (t.format_contract IN ('mtt-v1', 'mtt-v2')) IS TRUE
+   AND NOT EXISTS (SELECT 1 FROM public.tournament_final_table_events e WHERE e.tournament_id = t.id)
 ON CONFLICT (tournament_id) DO NOTHING;
 
 DO $verify$

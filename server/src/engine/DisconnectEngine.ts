@@ -1333,7 +1333,17 @@ export class DisconnectEngine {
       (state.disconnectedAt ?? Date.now()) +
         reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
     state.reconnectDeadlineMs = deadline;
-    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, deadline, () => {
+    /* AN EXPIRED ALLOWANCE STILL WAITS A BEAT (2026-10-05). Once a seat's
+       reconnect protection has run out (a player gone for longer than the
+       allowance, still away at a later turn), `deadline` is in the past and
+       the timer fired on the scheduler's next 100 ms tick: the seat was acted
+       for at machine speed on every later turn of the absence, exactly the
+       rhythm sitOutBeat.ts exists to remove (CLAUDE.md 10.5, "timing is part
+       of the treatment"). The action never lands sooner than the same beat a
+       sat-out seat and a horse act on. The protection deadline itself is
+       unchanged; only when the auto-action fires. */
+    const armAt = Math.max(deadline, Date.now() + sitOutAutoActionDelayMs(canCheck));
+    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, armAt, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;
 

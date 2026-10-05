@@ -10,7 +10,8 @@ horse-phase12-completion-v1 record, so no counting rule lives here.
 
 Pineapple discards are journaled as their own kind (discard_decision); they
 are never betting decisions and are counted apart here, by name, never
-printed.
+printed. Only DECIDE_FAST decision records count: a DEEP second look is a
+second record for the same turn and is counted apart by name.
 
 Reads closed archive segment files only (never the live journal), verifying
 each segment's sha256 name. Run under nice 19 / ionice idle.
@@ -50,12 +51,22 @@ for d in DIRS:
             if kind not in ('decision', 'discard_decision'): continue
             body = json.loads(r['body'])
             s = body.get('snapshot') or {}
+            if kind == 'discard_decision':
+                # A discard snapshot is a DECIDE_DISCARD request: its variant is
+                # top level and its time is the request's own (or the record's).
+                ctx = s.get('journalContext') or {}
+                at = ctx.get('requestedAtMs', r.get('atMs'))
+                if isinstance(at, int) and FROM <= at < TO and s.get('gameVariant') == variant:
+                    summary['excluded_discard_decision'] += 1
+                continue
             gs = s.get('gameState') or {}
             dt = s.get('decisionTimeMs')
             if not isinstance(dt, int) or not (FROM <= dt < TO): continue
             if gs.get('gameVariant') != variant: continue
-            if kind == 'discard_decision':
-                summary['excluded_discard_decision'] += 1; continue
+            # One natural decision per turn: a DEEP second look is journaled as
+            # a second 'decision' record for the same turn.
+            if s.get('type') != 'DECIDE_FAST':
+                summary['excluded_deep_second_look'] += 1; continue
             if r.get('sourceRelease') != release:
                 summary['excluded_release_other'] += 1; continue
             if gs.get('boardCount', 1) not in (1, None) or gs.get('communityCards2') or gs.get('communityCards3'):

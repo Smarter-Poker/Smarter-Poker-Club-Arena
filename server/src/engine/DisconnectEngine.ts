@@ -957,6 +957,20 @@ export class DisconnectEngine {
       if (!state) return;
     }
 
+    /* A STAMP READ FROM THE DATABASE AFTER THE THAW IS ALREADY CREDITED
+       (2026-10-05). fn_thaw_platform moves `table_seats.sit_out_at` forward by
+       the frozen interval. An engine that seeds `sitOutSince` from that row
+       once the break has completed holds a stamp the break no longer owes
+       anything, but without a compensated-through marker thawPresenceClock
+       assumed the marker was the freeze start and credited the interval a
+       second time on the next sweep: a ten-minute limit instead of five.
+       So bring this entry's own stamps up to date first (a no-op when no
+       freeze has completed, or when the entry is already credited), which
+       leaves `presenceThawedAtMs` at that freeze's end, and only then take
+       the database stamp, which is in the same post-thaw terms. Before the
+       thaw the database stamp is unshifted and is credited with the rest. */
+    if (Number.isFinite(sinceMs as number)) thawTablePresenceClock(tableId, state);
+
     // Stamp the clock only on the TRANSITION into sitting out, so a repeated
     // sitOut() call cannot keep resetting the 5-minute eviction window.
     if (!state.isSittingOut) {

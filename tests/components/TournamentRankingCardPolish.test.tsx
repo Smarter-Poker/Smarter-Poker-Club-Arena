@@ -21,6 +21,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import TournamentRankingCard from '../../src/components/tournament/TournamentRankingCard';
 import type { TournamentResult } from '../../src/services/pendingSessionSummary';
 import { CHIP_UNIT_CENTS } from '../../server/src/tournament/tournamentUnit';
+import { paintRankingShareImage } from '../../src/components/tournament/rankingShareImage';
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -138,9 +139,13 @@ describe('the result card, finished', () => {
     nav.share = share;
     nav.canShare = vi.fn((d: ShareData) => Array.isArray(d.files) && d.files.length === 1);
     renderCard();
-    // Let the pre-paint land before the tap, as it does in a browser.
+    // The painter is loaded on demand; let it be fetched and the PNG land,
+    // as it does in a browser long before a player reaches for Share.
+    await waitFor(() => expect(paintRankingShareImage).toHaveBeenCalled());
     await act(async () => {
-      await Promise.resolve();
+      await (
+        paintRankingShareImage as unknown as { mock: { results: { value: unknown }[] } }
+      ).mock.results.at(-1)?.value;
     });
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
@@ -153,8 +158,13 @@ describe('the result card, finished', () => {
   it('saves the image through the one file door when there is no share sheet', async () => {
     painted.blob = new Blob(['png'], { type: 'image/png' });
     renderCard();
+    // The painter is loaded on demand; let it be fetched and the PNG land,
+    // as it does in a browser long before a player reaches for Share.
+    await waitFor(() => expect(paintRankingShareImage).toHaveBeenCalled());
     await act(async () => {
-      await Promise.resolve();
+      await (
+        paintRankingShareImage as unknown as { mock: { results: { value: unknown }[] } }
+      ).mock.results.at(-1)?.value;
     });
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await waitFor(() =>

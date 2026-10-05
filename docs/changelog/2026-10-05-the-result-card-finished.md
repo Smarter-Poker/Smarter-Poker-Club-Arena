@@ -59,3 +59,13 @@ updated `TournamentRankingCardMysteryBounty.test.tsx` and
 `tournamentRankingHost.test.tsx`. Rendered in the console harness at 393px for
 1st, 3rd, 47th, a bounty and mystery win, a satellite seat, a Diamond Spin, a
 winning hand and the share image.
+
+## The card left first paint
+
+The first CI run of this change failed `Production Build`: the reveal and the
+share image put the initial load at 321kB gzipped against the 320kB gate, and
+`entry-chunk-delta` saw two new modules in the entry. The card is only shown
+after a tournament ends, so `TournamentRankingHost` now loads it with
+`React.lazy`, and the card loads its share painter with `import()` on open.
+Measured on the production Vite build: initial load 312kB gzipped (was 321kB
+with the card eager), six modules left the entry chunk, nothing new entered.

@@ -45,7 +45,7 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentRankingCard.css';
 import { publicOrigin } from '../../lib/appBase';
 import { downloadBlob } from '../../utils/downloadCsv';
-import { paintRankingShareImage, TROPHY_PATHS, type ShareTier } from './rankingShareImage';
+import { TROPHY_PATHS, type ShareTier } from './rankingTrophy';
 import { formatPrizeCentsAtUnit, moneySuffixAtUnit } from '../../utils/format';
 
 export interface TournamentRankingCardProps {
@@ -456,26 +456,31 @@ export default function TournamentRankingCard({
   const subtitleText = shortEventName(eventName);
   useEffect(() => {
     let live = true;
-    void paintRankingShareImage({
-      eyebrow: eventSubtitle,
-      title: qualification ? 'Qualified' : 'Ranking',
-      subtitle: subtitleText,
-      pill: pillText,
-      placeTitle: placeWord,
-      place: qualification
-        ? { word: bandWord }
-        : place != null
-          ? ordinalParts(place)
-          : { word: 'Finished' },
-      medal:
-        qualification || (place != null && place <= 3)
-          ? { trophy: true }
-          : { trophy: false, text: place != null ? String(place) : '-' },
-      tier: shareTier(place, Boolean(qualification)),
-      payoutLabel: payoutLabel.replace(/:$/, ''),
-      payoutValue: `${moneyAtUnit(payoutAmount, unitCents)}${moneySuffixAtUnit(unitCents)}`,
-      username: shareName,
-    })
+    /* Loaded on demand: the painter is the card's share, not its first paint,
+       and this card sits in the entry chunk every player downloads. */
+    void import('./rankingShareImage')
+      .then(({ paintRankingShareImage }) =>
+        paintRankingShareImage({
+          eyebrow: eventSubtitle,
+          title: qualification ? 'Qualified' : 'Ranking',
+          subtitle: subtitleText,
+          pill: pillText,
+          placeTitle: placeWord,
+          place: qualification
+            ? { word: bandWord }
+            : place != null
+              ? ordinalParts(place)
+              : { word: 'Finished' },
+          medal:
+            qualification || (place != null && place <= 3)
+              ? { trophy: true }
+              : { trophy: false, text: place != null ? String(place) : '-' },
+          tier: shareTier(place, Boolean(qualification)),
+          payoutLabel: payoutLabel.replace(/:$/, ''),
+          payoutValue: `${moneyAtUnit(payoutAmount, unitCents)}${moneySuffixAtUnit(unitCents)}`,
+          username: shareName,
+        })
+      )
       .then((blob) => {
         if (live) shareImage.current = blob;
       })

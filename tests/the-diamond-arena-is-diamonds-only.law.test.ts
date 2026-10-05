@@ -85,10 +85,10 @@ describe('the Diamond Arena is diamonds only', () => {
   it('where the diamonds go buckets the arena as diamonds and the panel has no chip vocabulary (phase 5)', () => {
     /* The LIVE map is the latest redefinition of fn_diamond_kind_bucket
        (20260914110559 first draft, 20260914114052 every writer, 20260920141527
-       the Diamond Games, 20260920141807 the Diamond Spins perks, 20261005151712
+       the Diamond Games, 20260920141807 the Diamond Spins perks, 20261005183028
        the Diamond cash rake). Pin the version production runs. */
     const migration = read(
-      'supabase/migrations/20261005151712_diamond_cash_rake_economics_and_accrual.sql'
+      'supabase/migrations/20261005183028_diamond_cash_rake_reads_the_owner_settings.sql'
     );
     const map = migration.slice(
       migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
@@ -100,7 +100,7 @@ describe('the Diamond Arena is diamonds only', () => {
     expect(map).toMatch(/k IN \('arena_withdraw', 'arena'\)\s+THEN 'arena_cash_outs'/);
     expect(map).toMatch(/WHEN 'arena'\s+THEN 'Diamond Arena Seats'/);
     expect(map).toMatch(/WHEN 'arena_cash_outs'\s+THEN 'Diamond Arena Cash-Outs'/);
-    /* THE CASH RAKE IS A KIND OF ITS OWN (2026-10-05, migration 20261005151712).
+    /* THE CASH RAKE IS A KIND OF ITS OWN (2026-10-05, migration 20261005183028).
        Before that migration fn_diamond_kind_bucket resolved 'cash_rake' to
        other_spent, labelled "Other" - measured on production - which is exactly
        what section 2.7 of the destinations design says a new Diamond journal

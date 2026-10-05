@@ -44,6 +44,16 @@ SQL_DIR = ROOT / 'tests' / 'sql'
 SCHEMA = SQL_DIR / 'poker-diamond-cash-rake-schema.sql'
 DOORS = SQL_DIR / 'poker-diamond-cash-rake-doors.sql'
 MIGRATION = ROOT / 'supabase' / 'migrations' / \
+    '20261005183028_diamond_cash_rake_reads_the_owner_settings.sql'
+# The SHARED settings table and its readers, which the A-lane applied as
+# 20261005151918 at 17:25 UTC on 2026-10-05. The migration under test extends
+# this one; it does not build a settings table of its own. Loaded here so the
+# fixture's readers are the ones production runs, not a stand-in.
+ECONOMICS = ROOT / 'supabase' / 'migrations' / \
+    '20261005151918_diamond_economics_records_the_owner_answers.sql'
+# The version that merged and then refused itself on apply. It must stay marked
+# and must never run; this runner checks the marker and never applies it.
+SUPERSEDED = ROOT / 'supabase' / 'migrations' / \
     '20261005151712_diamond_cash_rake_economics_and_accrual.sql'
 # The live kind map, whose text the migration restates with two lines added.
 KIND_MAP = ROOT / 'supabase' / 'migrations' / \
@@ -256,54 +266,71 @@ END $$;
 """
 
 SETTINGS = """
--- Every answer is readable, by name and scope, and an unpriced stake refuses.
+-- Every answer is readable, by the A-lane's own reader, at the name and scope
+-- the settler will ask for, and an unpriced stake refuses.
 DO $$
 BEGIN
-  IF public.fn_ca_diamond_economic('cash_rake_percent','dealt:4plus') <> 10 THEN
+  IF public.fn_ca_diamond_economic_on('cash_rake_enabled','all') IS NOT TRUE THEN
+    RAISE EXCEPTION 'B4 is not yes';
+  END IF;
+  IF public.fn_ca_diamond_economic('cash_rake_percent','all') <> 10 THEN
     RAISE EXCEPTION 'B5 is not 10 percent';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_percent','dealt:3') <> 10 THEN
+  IF public.fn_ca_diamond_economic('cash_rake_percent_three_handed','all') <> 10 THEN
     RAISE EXCEPTION 'B7 three-handed is not the ordinary 10 percent';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_percent','dealt:2') <> 5 THEN
+  IF public.fn_ca_diamond_economic('cash_rake_percent_heads_up','all') <> 5 THEN
     RAISE EXCEPTION 'B7 heads-up is not 5 percent';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_cap_diamonds','bb:20/dealt:4plus') <> 300 THEN
+  IF public.fn_ca_diamond_economic('cash_rake_cap','bb:20') <> 300 THEN
     RAISE EXCEPTION 'the 10/20 cap is not 300 Diamonds';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_cap_diamonds','bb:20/dealt:2') <> 150 THEN
+  IF public.fn_ca_diamond_economic('cash_rake_cap_heads_up','bb:20') <> 150 THEN
     RAISE EXCEPTION 'the 10/20 heads-up cap is not 150 Diamonds';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_cap_diamonds','bb:2/dealt:4plus') <> 30 THEN
-    RAISE EXCEPTION 'the 1/2 cap is not 30 Diamonds';
+  IF public.fn_ca_diamond_economic('cash_rake_cap','bb:2') <> 30
+     OR public.fn_ca_diamond_economic('cash_rake_cap_heads_up','bb:2') <> 15 THEN
+    RAISE EXCEPTION 'the 1/2 caps are not 30 and 15 Diamonds';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rake_cap_diamonds','bb:5/dealt:2') <> 37 THEN
+  IF public.fn_ca_diamond_economic('cash_rake_cap_heads_up','bb:5') <> 37 THEN
     RAISE EXCEPTION 'the 2/5 heads-up cap is not the floored 37 Diamonds';
+  END IF;
+  IF public.fn_ca_diamond_economic_on('cash_rake_no_flop_no_drop','all') IS NOT TRUE THEN
+    RAISE EXCEPTION 'B8 is not yes';
+  END IF;
+  IF public.fn_ca_diamond_economic('cash_rake_min_pot','all') <> 0 THEN
+    RAISE EXCEPTION 'B9 is not zero';
   END IF;
   IF public.fn_ca_diamond_economic_text('cash_rake_rounding','all') <> 'down' THEN
     RAISE EXCEPTION 'B10 is not down';
   END IF;
-  IF public.fn_ca_diamond_economic_text('cash_rake_destination','all') <> 'diamond_house' THEN
+  IF public.fn_ca_diamond_economic_text('cash_rake_destination','all') <> 'ca_diamond_house' THEN
     RAISE EXCEPTION 'B11 is not the house';
   END IF;
-  IF public.fn_ca_diamond_economic('cash_rakeback_percent','all') <> 0
-     OR public.fn_ca_diamond_economic('cash_rake_vip_points','all') <> 0
-     OR public.fn_ca_diamond_economic('cash_rake_preflop_raked','all') <> 0 THEN
-    RAISE EXCEPTION 'B8, B12 or B13 is not the recorded zero';
+  IF public.fn_ca_diamond_economic('rakeback_percent','all') <> 0
+     OR public.fn_ca_diamond_economic_on('rake_earns_vip_points','all') IS NOT FALSE THEN
+    RAISE EXCEPTION 'B12 or B13 is not none';
   END IF;
   RAISE NOTICE 'PASS: B4 to B13 all read back by name, including the one floored heads-up cap (bb:5 -> 37)';
+
+  -- THE READER NEVER FALLS BACK FROM A STAKE TO all (the A-lane's words).
   BEGIN
-    PERFORM public.fn_ca_diamond_economic('cash_rake_cap_diamonds','bb:7/dealt:4plus');
+    PERFORM public.fn_ca_diamond_economic('cash_rake_cap','bb:7');
     RAISE EXCEPTION 'an unpriced stake returned a cap';
-  EXCEPTION WHEN SQLSTATE 'P0D01' THEN
-    RAISE NOTICE 'PASS: an unpriced stake refuses by name, and never falls back to another stake';
+  EXCEPTION WHEN SQLSTATE 'PDE01' THEN
+    RAISE NOTICE 'PASS: an unpriced stake refuses by name, and never falls back to all or to another stake';
   END;
-  -- Every row carries both a quote and a derivation.
+
+  -- THE ROWS WENT INTO THE SHARED TABLE, beside the A-lane's line (a) answers,
+  -- and did not replace them.
+  IF (SELECT count(*) FROM public.ca_diamond_economics WHERE name LIKE 'guarantee%') < 9 THEN
+    RAISE EXCEPTION 'the cash rake rows displaced the A-lane''s guarantee answers';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.ca_diamond_economics
-              WHERE length(btrim(approved_quote))=0 OR length(btrim(basis))=0) THEN
+              WHERE btrim(approved_quote)='' OR btrim(basis)='') THEN
     RAISE EXCEPTION 'a recorded answer has no quote or no basis';
   END IF;
-  RAISE NOTICE 'PASS: every recorded answer carries Dan''s quote and its own derivation';
+  RAISE NOTICE 'PASS: the fourteen cash rake answers sit beside line (a) in ONE table, each with its quote and derivation';
 END $$;
 """
 
@@ -687,7 +714,7 @@ BEGIN
                          '{P_B}',jsonb_build_object('delta',0,'contributed',0,'dealt_in',true)),
       true, 0);
     RAISE EXCEPTION 'a stake with no published cap was settled';
-  EXCEPTION WHEN SQLSTATE 'P0D01' THEN
+  EXCEPTION WHEN SQLSTATE 'PDE01' THEN
     RAISE NOTICE 'PASS: a Diamond stake nobody priced refuses with diamond_economics_unset, by name';
   END;
 END $$;
@@ -710,7 +737,7 @@ BEGIN
   END IF;
 
   v := public.fn_ca_diamond_sweep_cash_rake('the fixture sweep');
-  IF (v->>'amount')::bigint <> 75 OR (v->>'destination') <> 'diamond_house' THEN
+  IF (v->>'amount')::bigint <> 75 OR (v->>'destination') <> 'ca_diamond_house' THEN
     RAISE EXCEPTION 'the sweep moved % to %', v->>'amount', v->>'destination';
   END IF;
   IF (SELECT balance FROM public.ca_diamond_house WHERE id=1) <> 75 THEN
@@ -853,7 +880,7 @@ DECLARE v_cash boolean;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.ca_guard_defs
                   WHERE proname='fn_poker_diamond_settle_cash_hand'
-                    AND declared_ref='20261005151712_diamond_cash_rake_economics_and_accrual') THEN
+                    AND declared_ref='20261005183028_diamond_cash_rake_reads_the_owner_settings') THEN
     RAISE EXCEPTION 'the watched settler was redefined without declaring it';
   END IF;
   RAISE NOTICE 'PASS: the watched settler''s redefinition is declared against its migration';
@@ -881,6 +908,48 @@ def main() -> int:
     kind_map = kind_map[:kind_map.index('COMMENT ON FUNCTION public.fn_diamond_kind_bucket')]
     if len(kind_map) < 500:
         raise SystemExit('the live kind map could not be sliced out of 20260920141807')
+
+    # The version that merged and then refused itself on apply must still say
+    # so, and this runner must never be the thing that runs it. A marker that
+    # names no successor is the easiest lie to tell about a migration that
+    # simply never applied, so it is read rather than assumed.
+    head = SUPERSEDED.read_text()[:400]
+    if '-- SUPERSEDED BY 20261005183028' not in head:
+        raise SystemExit(
+            f'{SUPERSEDED.name} does not carry "-- SUPERSEDED BY 20261005183028" in its head')
+    if 'THIS FILE MUST NEVER RUN' not in head:
+        raise SystemExit(f'{SUPERSEDED.name} does not say it must never run')
+    print('  PASS: the superseded 20261005151712 is marked, names its successor, and never runs here')
+    passes += 1
+
+    # THE SHARED SETTINGS MIGRATION, NARROWED TO ITS OWN SECTIONS 1 TO 6.
+    # Its section 7 pins the md5 of fn_poker_diamond_create_tournament and the
+    # other tournament doors, which belong to the A-lane's own fixtures and are
+    # not in this one; section 7 proves nothing about a cash rake. Sections 1 to
+    # 6 - the table, the units rule, the append-only guard, the two readers, the
+    # choice lists and the twenty line (a) answers - are loaded verbatim, which
+    # is everything the migration under test extends.
+    #
+    # The cut is asserted, not assumed: a narrowing that silently stops matching
+    # would quietly load the whole file again (and fail) or nothing at all.
+    _econ = ECONOMICS.read_text()
+    _cut = _econ.index("-- 7. EVERY EDIT LANDED")
+    _rule = _econ.rindex("-- " + "-" * 73, 0, _cut)
+    economics = _econ[:_rule] + "\nCOMMIT;\n"
+    # The pins live in md5(pg_get_functiondef(...)) comparisons. The door NAMES
+    # also appear in the A-lane's own basis prose, which is why the check is on
+    # the pin expression and not on the names.
+    if "md5(pg_get_functiondef(" in economics:
+        raise SystemExit("the economics narrowing no longer removes section 7's md5 pins")
+    if "md5(pg_get_functiondef(" not in _econ[_rule:]:
+        raise SystemExit("the economics migration no longer pins any door in its section 7; the cut is in the wrong place")
+    for _needed in ("CREATE TABLE public.ca_diamond_economics",
+                    "fn_ca_diamond_economics_units_of",
+                    "fn_ca_diamond_economic_text",
+                    "fn_ca_diamond_economic_on",
+                    "guarantee_overlay_account"):
+        if _needed not in economics:
+            raise SystemExit(f"the economics narrowing dropped {_needed}, which is load-bearing")
 
     try:
         subprocess.run([bin_path('initdb'), '-D', str(data), '-U', 'postgres',
@@ -930,6 +999,9 @@ def main() -> int:
             psql(kind_map + ';', 'the live kind map')
             psql(SEED, 'fixture seed')
             psql(HELPER, 'the fixture payload helper')
+
+            print('\nTHE SHARED SETTINGS TABLE, as the A-lane applied it (20261005151918):')
+            psql(economics, 'the shared Diamond economics table')
 
             print('\nBEFORE - the six layers as production has them:')
             psql(BEFORE, 'the installed settler refuses any rake')

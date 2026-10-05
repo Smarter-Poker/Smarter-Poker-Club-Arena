@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/diamond-cash-rake-path. Migration 20261005183028_diamond_cash_rake_reads_the_owner_settings: the Diamond cash-game rake path - the per-hand rake accrual inside the arena float, the sweep that crosses it to the house once per sweep, the settler's recompute and conservation rule, and the fence that keeps a Diamond rake out of every chip rake table. Answers B4 to B13 of docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md as rows in ca_diamond_economics, which the A-lane's 20261005151918 owns and this migration only extends. Supersedes 20261005151712, which merged and then refused itself on apply because it built that table a second time.",
+  "tables": ["ca_diamond_rake_accrual"],
+  "functions": [
+    "fn_ca_diamond_rake_accrual_guard",
+    "fn_ca_diamond_sweep_cash_rake",
+    "fn_ca_reject_diamond_chip_rake_row"
+  ]
+}

@@ -27,8 +27,13 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-const MIGRATION = 'supabase/migrations/20261005151712_diamond_cash_rake_economics_and_accrual.sql';
+const MIGRATION =
+  'supabase/migrations/20261005183028_diamond_cash_rake_reads_the_owner_settings.sql';
 const migration = read(MIGRATION);
+
+/* The version that merged and then refused itself on apply, committing nothing.
+   It must stay marked and must never run. */
+const SUPERSEDED = 'supabase/migrations/20261005151712_diamond_cash_rake_economics_and_accrual.sql';
 
 /** The body of one function as the migration writes it.
  *
@@ -53,68 +58,101 @@ function code(proname: string): string {
 }
 
 describe('the Diamond cash rake is priced by its settings and by nothing else', () => {
-  it('names every answer on a closed list, with its units', () => {
-    const list = body('fn_ca_diamond_economic_names');
+  it('builds no settings table of its own: it extends the one the estate has', () => {
+    /* TWO LANES ANSWERING ONE DESIGN BUILT ONE TABLE TWICE, and PostgreSQL
+       caught it inside a transaction that rolled back. The first attempt
+       (20261005151712) created ca_diamond_economics and its reader because
+       neither existed when it was written; the A-lane applied 20261005151918
+       while it sat in CI. This file must never be that mistake again: the
+       settings table, the units rule, the closed name list and the two readers
+       are the A-lane's, and this migration only writes rows into them. */
+    expect(migration).not.toMatch(/CREATE TABLE[^;]*ca_diamond_economics/);
+    expect(migration).not.toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_ca_diamond_economic(_text|_on|_names)?\s*\(/
+    );
+    expect(migration).not.toMatch(/ALTER TABLE public\.ca_diamond_economics/);
+    // It writes rows, and it reads them back through the readers that exist.
+    expect(migration).toMatch(/INSERT INTO public\.ca_diamond_economics/);
+    expect(migration).toMatch(/fn_ca_diamond_economic_on\('cash_rake_enabled'/);
+  });
+
+  it('keeps the superseded first attempt marked, and never lets it run', () => {
+    const head = read(SUPERSEDED).slice(0, 400);
+    expect(head).toMatch(/^--\s*SUPERSEDED BY\s+20261005183028\b/m);
+    expect(head).toContain('THIS FILE MUST NEVER RUN');
+  });
+
+  it('uses the shared closed list own names for every answer', () => {
+    /* The name is the contract. A name this list does not hold cannot be
+       inserted at all (the A-lane's units rule returns NULL and the units CHECK
+       fails), so a misspelling here is a refused migration rather than a row
+       nobody reads - but the law states the fourteen so a rename has to come
+       here too. */
     for (const name of [
       'cash_rake_enabled',
       'cash_rake_percent',
-      'cash_rake_cap_diamonds',
-      'cash_rake_preflop_raked',
-      'cash_rake_min_pot_diamonds',
+      'cash_rake_percent_heads_up',
+      'cash_rake_percent_three_handed',
+      'cash_rake_cap',
+      'cash_rake_cap_heads_up',
+      'cash_rake_cap_three_handed',
+      'cash_rake_no_flop_no_drop',
+      'cash_rake_min_pot',
       'cash_rake_rounding',
       'cash_rake_destination',
-      'cash_rakeback_percent',
-      'cash_rake_vip_points',
+      'rakeback_percent',
+      'rakeback_period',
+      'rake_earns_vip_points',
     ]) {
-      expect(list, `${name} is not on the closed list`).toContain(`'${name}'`);
-    }
-    // A name off the list cannot be recorded, so the list is the schema.
-    expect(body('fn_ca_diamond_economics_guard')).toContain('diamond_economics_unknown_name');
-  });
-
-  it('refuses an unset value by name, under its own SQLSTATE, and never returns NULL', () => {
-    for (const reader of ['fn_ca_diamond_economic', 'fn_ca_diamond_economic_text']) {
-      const src = body(reader);
-      expect(src).toMatch(/diamond_economics_unset:%\/%/);
-      expect(src).toContain("ERRCODE='P0D01'");
-      // "It never returns NULL and never falls back to another scope, to a chip
-      // value or to a literal." A COALESCE or a second scope would be the
-      // fallback the design forbids.
-      expect(src).not.toMatch(/RETURN\s+NULL/);
-      expect(src).not.toMatch(/COALESCE\s*\(\s*v_value/);
+      expect(migration, `${name} is not recorded`).toContain(`'${name}'`);
     }
   });
 
-  it('is append-only, so an approved answer cannot be rewritten in place', () => {
-    const guard = body('fn_ca_diamond_economics_guard');
-    expect(guard).toContain('diamond_economics_is_append_only');
-    expect(guard).toMatch(/TG_OP IN \('UPDATE','DELETE'\)/);
-    expect(body('fn_ca_diamond_rake_accrual_guard')).toContain(
-      'diamond_rake_accrual_is_append_only'
-    );
-    expect(body('fn_ca_diamond_rake_accrual_guard')).toContain(
-      'diamond_rake_accrual_is_swept_once'
-    );
+  it('asks the dealt-in bracket by name and the stake by scope, never the reverse', () => {
+    const settler = body('fn_poker_diamond_settle_cash_hand');
+    /* The shared table's scope grammar is 'all' or ^bb:[0-9]+$ and nothing
+       else, so a stake key stays a stake key and the bracket rides on the
+       name. The first attempt invented 'bb:20/dealt:2', which that grammar
+       refuses outright. */
+    expect(settler).toMatch(/v_dealt_key := CASE WHEN v_dealt <= 2 THEN '_heads_up'/);
+    expect(settler).toMatch(/'cash_rake_cap'\|\|v_dealt_key, 'bb:'\|\|v_bb::text/);
+    expect(settler).not.toContain('dealt:');
   });
 
   it('records a quote and a derivation beside every number', () => {
-    expect(migration).toMatch(
-      /CHECK \(length\(btrim\(approved_quote\)\) > 0 AND length\(btrim\(basis\)\) > 0\)/
-    );
+    /* The shared table REFUSES an empty quote or basis by CHECK constraint, so
+       this law's job is that every row this file writes actually fills them
+       rather than passing the constraint with a space. */
+    const rows = migration.split('INSERT INTO public.ca_diamond_economics').slice(1).join('');
+    expect(rows).toContain('NOTHING IS MINE, EVER');
+    for (const marker of [
+      'B4.',
+      'B5.',
+      'B6.',
+      'B7.',
+      'B8.',
+      'B9.',
+      'B10.',
+      'B11.',
+      'B12.',
+      'B13.',
+    ]) {
+      expect(rows, `no derivation recorded for ${marker}`).toContain(marker);
+    }
   });
 
   it('reads the settler every number and holds no literal for one', () => {
     const settler = body('fn_poker_diamond_settle_cash_hand');
     // Each number comes from the reader, at the scope the hand is in.
-    expect(settler).toMatch(/v_pct\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_percent'/);
     expect(settler).toMatch(
-      /v_cap\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_cap_diamonds'/
+      /v_pct\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_percent'\|\|v_dealt_key/
     );
     expect(settler).toMatch(
-      /v_min_pot\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_min_pot_diamonds'/
+      /v_cap\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_cap'\|\|v_dealt_key/
     );
+    expect(settler).toMatch(/v_min_pot\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_min_pot'/);
     expect(settler).toMatch(
-      /v_preflop\s*:=\s*public\.fn_ca_diamond_economic\('cash_rake_preflop_raked'/
+      /v_no_drop\s*:=\s*public\.fn_ca_diamond_economic_on\('cash_rake_no_flop_no_drop'/
     );
     expect(settler).toMatch(
       /v_rounding\s*:=\s*public\.fn_ca_diamond_economic_text\('cash_rake_rounding'/

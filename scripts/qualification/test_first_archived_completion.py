@@ -90,7 +90,7 @@ class FirstArchivedCompletionTests(unittest.TestCase):
    if kind=='hash':p['capture_sha256']='0'*64
    elif kind=='query':p['query']+=' '
    elif kind=='evidence':p['evidence']['observed_at']='2026-09-27T00:00:00+00:00'
-   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-05T07:00:00Z',b'2026-09-28T07:00:00Z')
+   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-12T07:00:00Z',b'2026-10-05T07:00:00Z')
    else:
     e=r['rows'][0]['evidence']
     if kind=='outside':e['observed_at']='2026-09-27T00:00:00+00:00'

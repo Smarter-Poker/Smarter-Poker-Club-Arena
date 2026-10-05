@@ -23,6 +23,11 @@ describe('Table Management visual compliance follow-up', () => {
     expect(rule).toContain('border-bottom: 1px solid currentColor');
   });
 
+  it('uses a clear Title Case Back label instead of a generic navigation glyph', () => {
+    expect(management).toMatch(/aria-label="Back To Game Types"[\s\S]*?>\s*Back\s*<\/button>/);
+    expect(management).not.toContain('‹‹');
+  });
+
   it('reuses the approved engraved tick well instead of a CSS-built switch', () => {
     expect(controls).toContain('table-config-switch sc-check');
     expect(controls).toContain("value ? ' sc-check--on' : ''");
@@ -48,5 +53,15 @@ describe('Table Management visual compliance follow-up', () => {
     expect(production).toContain('toHaveClass(/sc--family-riveted/)');
     expect(production).toContain("getByRole('heading', { name: 'NLH Setup' })");
     expect(production).not.toMatch(/getByRole\('button', \{ name: 'Create Tournament' \}\)\.click/);
+  });
+
+  it('pins phone overflow proof for every creator and the union refusal frame', () => {
+    for (const pathName of ['pickerPath', 'configPath', 'refusalPath']) {
+      expect(production).toContain(`expectNoHorizontalOverflow(page, ${pathName})`);
+    }
+    expect(production).toMatch(
+      /await expectRivetedCreator\(page, path, pill\);\s*await expectNoHorizontalOverflow\(page, path\);/
+    );
+    expect(production).toContain("expect(await frameFamilies(page)).toEqual(['sc--family-shark'])");
   });
 });

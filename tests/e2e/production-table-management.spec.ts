@@ -92,6 +92,13 @@ async function frameFamilies(page: Page) {
   );
 }
 
+async function expectNoHorizontalOverflow(page: Page, path: string) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflow, `${path} scrolls sideways by ${overflow}px`).toBeLessThanOrEqual(1);
+}
+
 /** A refusal on the standalone club is fixture drift, and it is fatal here:
  *  a silent skip is how this layer went blind on 2026-09-29. */
 function mustSeeBoard(outcome: Outcome, path: string) {
@@ -224,12 +231,42 @@ test.describe('Table Management is its own page on its own frame, in production'
 
   test('no surface scrolls sideways on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 393, height: 852 });
-    for (const path of [BOARD, `${BOARD}?section=ticker`, `${BOARD}?section=messages`]) {
+
+    for (const [path, family] of [
+      [BOARD, 'sc--family-spade'],
+      [`${BOARD}?section=ticker`, 'sc--family-shark'],
+      [`${BOARD}?section=messages`, 'sc--family-riveted'],
+    ] as const) {
       mustSeeBoard(await open(page, path), path);
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-      );
-      expect(overflow, `${path} scrolls sideways by ${overflow}px`).toBeLessThanOrEqual(1);
+      expect(await frameFamilies(page)).toEqual([family]);
+      await expectNoHorizontalOverflow(page, path);
     }
+
+    const pickerPath = `${BOARD}?create=table`;
+    mustSeeBoard(await open(page, pickerPath), pickerPath);
+    await expect(page.getByRole('heading', { name: 'Choose Game Type' })).toBeVisible();
+    expect(await frameFamilies(page)).toEqual([]);
+    await expectNoHorizontalOverflow(page, pickerPath);
+
+    const configPath = `${BOARD}?create=table&game=nlh`;
+    mustSeeBoard(await open(page, configPath), configPath);
+    await expect(page.getByRole('heading', { name: 'NLH Setup' })).toBeVisible();
+    expect(await frameFamilies(page)).toEqual(['sc--family-spade']);
+    await expectNoHorizontalOverflow(page, configPath);
+
+    for (const [path, pill] of [
+      [`${BOARD}?create=event`, 'Event'],
+      [`${BOARD}?create=spin`, 'Spins'],
+      [`${BOARD}?create=sng`, 'Sit N Go'],
+    ] as const) {
+      await expectRivetedCreator(page, path, pill);
+      await expectNoHorizontalOverflow(page, path);
+    }
+
+    const refusalPath = `clubs/${UNION_MEMBER_CLUB}/table-management`;
+    expect(await open(page, refusalPath)).toBe('refused');
+    expect(await frameFamilies(page)).toEqual(['sc--family-shark']);
+    await expect(page.getByText('Game Management Is Restricted')).toBeVisible();
+    await expectNoHorizontalOverflow(page, refusalPath);
   });
 });

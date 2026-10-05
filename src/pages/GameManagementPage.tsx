@@ -24,6 +24,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
+import type { GameCreationAccess } from '../lib/gameCreationAccess';
 import {
   gameManagementService,
   type ManagedGameCommandReceipt,
@@ -725,6 +726,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const requestedGameType =
     requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [clubAccess, setClubAccess] = useState<GameCreationAccess | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
   const [hosts, setHosts] = useState<HostClub[]>([]);
@@ -849,6 +851,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         contractEpochRef.current += 1;
         hostNamesRef.current = {};
         setAllowed(null);
+        setClubAccess(null);
         setScopeId(null);
         setHosts([]);
         setHostClubId('');
@@ -918,6 +921,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           // A member club is operated from its union console, even for a union
           // owner who technically has authority over the underlying rows.
           const standaloneAccess = access.allowed && !access.unionId;
+          setClubAccess(access);
           setAllowed(standaloneAccess);
           if (!standaloneAccess) {
             setScopeId(resolvedScopeId);
@@ -1503,11 +1507,32 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   }
 
   if (allowed === false) {
+    const unionManagedClub =
+      scope === 'club' && Boolean(clubAccess?.unionId || clubAccess?.reason === 'union_only');
+    const clubAccessUnverified = scope === 'club' && clubAccess?.reason === 'check_failed';
+    const clubAccessTitle = unionManagedClub
+      ? 'This Club Is Managed By Its Union'
+      : clubAccessUnverified
+        ? 'Management Access Could Not Be Verified'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'Club Not Found'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Required'
+            : 'Club Staff Access Required';
+    const clubAccessMessage = unionManagedClub
+      ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+      : clubAccessUnverified
+        ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'This Club Could Not Be Found, So Its Game-Management Controls Cannot Be Opened.'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Before Opening Club Game-Management Controls.'
+            : 'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.';
     return (
       <main className={styles.page}>
         <SpadeConsole
           eyebrow="Management Locked"
-          title={scope === 'club' ? 'This Club Is Managed By Its Union' : 'Union Admin Required'}
+          title={scope === 'club' ? clubAccessTitle : 'Union Admin Required'}
           subtitle="Game Management Is Restricted"
           pill="Locked"
           pillInk="red"
@@ -1524,7 +1549,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           <section className={styles.denied} role="alert">
             <p className="sc-copy sc-copy--center">
               {scope === 'club'
-                ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+                ? clubAccessMessage
                 : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
             </p>
           </section>
@@ -2037,7 +2062,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             onClick={openTableSelector}
             aria-label="Back To Game Types"
           >
-            ‹‹
+            Back
           </button>
           <TableConfigPage
             key={`${hostClubId}:${requestedGameType}`}

@@ -25,13 +25,16 @@ describe('social graph profile resolution', () => {
     });
   });
 
-  it('accepts realtime presence immediately and otherwise the presence door, which is fresh by construction', () => {
+  it('answers from the presence door alone: the latest re-ask, else the answer at load', () => {
     /* Since ruling 25 (2026-10-01) the browser never receives last_seen: the
-       five-minute freshness test runs in fn_profile_presence, so the persisted
-       answer passed here is already fresh, and a stale flag arrives as false. */
-    expect(isSocialProfileOnline('a', new Set(['a']), false)).toBe(true);
-    expect(isSocialProfileOnline('b', new Set(), true)).toBe(true);
-    expect(isSocialProfileOnline('b', new Set(), false)).toBe(false);
+       five-minute freshness test runs in fn_profile_presence, so both answers
+       passed here are already fresh, and a stale flag arrives as false. Since
+       2026-10-05 no realtime channel can mark anyone online on its own. */
+    expect(isSocialProfileOnline('a', new Map([['a', true]]), false)).toBe(true);
+    // A re-ask that says offline beats a load that said online: the heartbeat went stale.
+    expect(isSocialProfileOnline('a', new Map([['a', false]]), true)).toBe(false);
+    expect(isSocialProfileOnline('b', new Map(), true)).toBe(true);
+    expect(isSocialProfileOnline('b', new Map(), false)).toBe(false);
   });
 
   it('never carries a last-seen time into the resolved profile', () => {

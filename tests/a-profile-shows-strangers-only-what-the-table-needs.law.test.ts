@@ -307,10 +307,13 @@ describe('LAW: a profile shows strangers only what the table needs', () => {
       'src/pages/FriendsPage.tsx',
       'src/pages/AgentDashboardPage.tsx',
       'src/components/social/OnlineFriendsPill.tsx',
-      'src/components/social/PresenceIndicator.tsx',
+      'src/lib/profilePresence.ts',
     ]) {
       expect(read(file), file).toContain('readPresence(');
     }
+    // The dot asks the same door through the shared watcher, which re-asks
+    // every minute (tests/presence-has-one-definition.law.test.ts).
+    expect(read('src/components/social/PresenceIndicator.tsx')).toContain('useIsProfileOnline(');
   });
 });
 

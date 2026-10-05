@@ -15355,24 +15355,16 @@ function LiveTablePage({
     }
   });
 
-  // TIME_BANK_STOPPED / DEPLETED / EXPIRED: Update UI + persist hero's time bank state to Supabase
+  // TIME_BANK_STOPPED / DEPLETED / EXPIRED: update the UI. The engine owns and
+  // persists the seat's time bank (ServerTableEngine writes time_bank_remaining
+  // with the hand). The browser's own write here was refused by row security
+  // on every call - no policy lets a player update table_seats - and since
+  // 2026-10-05 the browser roles hold no write grant on the table at all.
   const persistTimeBankState = useCallback(
-    async (payload: any) => {
+    (payload: any) => {
       if (payload.tableId !== tableId || payload.playerId !== userId) return;
       setTimeBankActive(false);
       setTimeBanksRemaining(payload.usesRemaining ?? 0);
-      try {
-        await supabase
-          .from('table_seats')
-          .update({
-            time_bank_remaining: payload.remainingSeconds ?? 0,
-            time_bank_uses_remaining: payload.usesRemaining ?? 0,
-          })
-          .eq('table_id', tableId)
-          .eq('user_id', userId);
-      } catch (err) {
-        reportError(err, 'TablePage.Failed_to_persist_time_bank_state');
-      }
     },
     [tableId, userId]
   );

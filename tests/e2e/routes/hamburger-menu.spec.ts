@@ -65,7 +65,7 @@ function matchesDestination(url: URL, target: string): boolean {
   const expected = new URL(target, 'https://club-arena.invalid');
   const pathMatches =
     expected.pathname === '/'
-      ? url.pathname === '/' || url.pathname.endsWith('/hub/club-arena/')
+      ? url.pathname === '/' || /\/hub\/club-arena\/?$/.test(url.pathname)
       : url.pathname.endsWith(expected.pathname);
   if (!pathMatches) return false;
   return [...expected.searchParams].every(

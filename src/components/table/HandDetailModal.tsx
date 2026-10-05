@@ -498,14 +498,38 @@ export function HandDetailModal({
     };
   }, [isOpen]);
 
+  /* THE PANEL THAT IS ON SCREEN IS THE ONE THAT HOLDS FOCUS (2026-10-04 review
+     pass). The modal renders one of two panels - the empty/loading one, or the
+     hand - and only the second carried `panelRef`. Opened before the history
+     had loaded (the ordinary case: the first tap of a session), the effect
+     above focused nothing, and the Tab trap returned at `!panelRef.current`,
+     so Tab walked the live table behind a dialog that claims to be modal.
+     When the hands then arrived the hand panel MOUNTED, but that effect is
+     keyed on `isOpen` and did not run again, so focus was never moved in.
+     Both panels carry the ref now, and whichever one mounts takes focus unless
+     focus is already inside it. */
+  const hasHand = hands.length > 0;
+  useEffect(() => {
+    if (!isOpen) return;
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus();
+  }, [isOpen, hasHand]);
+
+  const summaryTabRef = useRef<HTMLButtonElement | null>(null);
+  const detailTabRef = useRef<HTMLButtonElement | null>(null);
   /** Left/Right/Home/End across the two tabs, the way a tablist behaves. */
   const onTabsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    /* Focus follows selection. Selecting alone left focus on a tab that had
+       just become `tabIndex={-1}`: the next Tab press then left from an
+       element that is no longer in the tab order. */
     if (e.key === 'ArrowLeft' || e.key === 'Home') {
       e.preventDefault();
       setTab('summary');
+      summaryTabRef.current?.focus();
     } else if (e.key === 'ArrowRight' || e.key === 'End') {
       e.preventDefault();
       setTab('detail');
+      detailTabRef.current?.focus();
     }
   };
 
@@ -608,6 +632,7 @@ export function HandDetailModal({
           aria-label="Hand Detail"
           aria-busy={loadState === 'loading'}
           tabIndex={-1}
+          ref={panelRef}
           style={sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
@@ -855,7 +880,7 @@ export function HandDetailModal({
             </button>
             <div className="hdm-nav__track">
               <span className="hdm-nav__label">
-                {displayPos}/{total}
+                {displayPos.toLocaleString()}/{total.toLocaleString()}
               </span>
               {/* The only thing drawn on this sheet: a position control the
                   master paints nowhere, cut down to an engraved track and a
@@ -867,6 +892,7 @@ export function HandDetailModal({
                 value={displayPos}
                 onChange={(e) => goTo(total - Number(e.target.value))}
                 aria-label="Hand Position"
+                aria-valuetext={`Hand ${displayPos.toLocaleString()} Of ${total.toLocaleString()}`}
               />
             </div>
             <button
@@ -890,6 +916,7 @@ export function HandDetailModal({
               type="button"
               role="tab"
               id="hdm-tab-summary"
+              ref={summaryTabRef}
               aria-selected={tab === 'summary'}
               aria-controls="hdm-panel-body"
               tabIndex={tab === 'summary' ? 0 : -1}
@@ -902,6 +929,7 @@ export function HandDetailModal({
               type="button"
               role="tab"
               id="hdm-tab-detail"
+              ref={detailTabRef}
               aria-selected={tab === 'detail'}
               aria-controls="hdm-panel-body"
               tabIndex={tab === 'detail' ? 0 : -1}

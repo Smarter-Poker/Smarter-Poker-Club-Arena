@@ -76,6 +76,7 @@ import {
   effectivePlaceLadderPool,
   effectivePrizePool,
   isPlayerLive,
+  isPlayerOut,
   lastPaidPlace,
   ordinal,
   placePrize,
@@ -282,6 +283,16 @@ export default function RewardsTab({
 
   const [ledger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
 
+  /* A KNOCKOUT MOVES THE POOL (2026-10-04 review pass). The two bounty reads
+     ran once, when the tab opened, so "Claimed", the knockout count and - on
+     an event whose pool is the heads themselves - "Still Available" sat at
+     their opening values for as long as the tab stayed on screen while the
+     field busted around them. Every bounty is paid on an elimination, and the
+     page already streams those into `entries`, so the count of players out is
+     the signal: the same two reads run again when it changes, and never on a
+     timer. The figures on screen are kept until the new ones land. */
+  const playersOut = useMemo(() => entries.filter(isPlayerOut).length, [entries]);
+
   /* Two queries, bounty events only, cancelled on unmount. */
   useEffect(() => {
     if (!tournamentId || !isBountyEvent) {
@@ -327,7 +338,14 @@ export default function RewardsTab({
              fact, with no trace in error reporting. fetchAllRows throws on `error`, so
              this branch now actually runs, and `failed` keeps the panel from
              making that claim. */
-          setLedger({ liveHeads: [], claimedHeads: [], loaded: true, failed: true });
+          /* A refresh that fails keeps the last ledger that was read: a
+             network wobble during a knockout must not swap real figures for
+             "Could Not Be Read". Only a first read that fails says so. */
+          setLedger((prev) =>
+            prev.loaded && !prev.failed
+              ? prev
+              : { liveHeads: [], claimedHeads: [], loaded: true, failed: true }
+          );
           reportError(e, 'RewardsTab.bounty_ledger_load_failed');
         }
       }
@@ -336,12 +354,13 @@ export default function RewardsTab({
     return () => {
       cancelled = true;
     };
-  }, [tournamentId, isBountyEvent]);
+  }, [tournamentId, isBountyEvent, playersOut]);
 
   /* ── FIELD STATE ──────────────────────────────────────────────────────── */
 
   const isRunning = String(t.status || '').toUpperCase() === 'RUNNING';
   const isComplete = String(t.status || '').toUpperCase() === 'COMPLETED';
+  const isCancelled = String(t.status || '').toUpperCase() === 'CANCELLED';
 
   const entryCount = entries.length || num(t.current_players);
   const playersRemaining = useMemo(() => {
@@ -415,7 +434,7 @@ export default function RewardsTab({
   const provisionalReason =
     !parsedPlaces && !isSatellite
       ? 'No Payout Structure Has Been Published For This Event Yet'
-      : !isFinalised && !isComplete
+      : !isFinalised && !isComplete && !isCancelled
         ? 'Provisional. The Prize Pool Is Still Moving With Entries, Rebuys And Add Ons'
         : null;
 
@@ -546,7 +565,7 @@ export default function RewardsTab({
           ) : (
             paidPlaces > 0 && (
               <span className="tl-section-note">
-                {paidPlaces} Paid {paidPlaces === 1 ? 'Place' : 'Places'}
+                {chips(paidPlaces)} Paid {paidPlaces === 1 ? 'Place' : 'Places'}
               </span>
             )
           )}
@@ -559,7 +578,12 @@ export default function RewardsTab({
               {effectivePool > 0 ? chips(effectivePool) : 'Set By Entries'}
             </span>
             <span className="tl-stat__sub">
-              {isFinalised || isComplete ? 'Final' : 'Still Growing'}
+              {/* A cancelled event's pool is not "Still Growing". */}
+              {isCancelled
+                ? 'Event Cancelled'
+                : isFinalised || isComplete
+                  ? 'Final'
+                  : 'Still Growing'}
             </span>
           </div>
 
@@ -649,7 +673,13 @@ export default function RewardsTab({
       <section className="tl-panel rw-payouts">
         <div className="tl-section-head">
           <h3>{isSatellite ? 'Seat Awards' : 'Payouts'}</h3>
-          {!isSatellite && effectivePool > 0 && paidPlaces > 0 && (
+          {/* ONLY ONCE THE FIELD IS AT LEAST AS BIG AS THE LADDER (2026-10-04
+              review pass). The share is paid places over entries, and while an
+              event is still filling the ladder is longer than the field: nine
+              paid places against two early entries printed "450% Of The Field
+              Paid", and against none, "900%". No field can be more than
+              entirely paid; until it outgrows the ladder the line says nothing. */}
+          {!isSatellite && effectivePool > 0 && paidPlaces > 0 && entryCount >= paidPlaces && (
             <span className="tl-section-note">
               {Math.round((paidPlaces / Math.max(1, entryCount)) * 1000) / 10}% Of The Field Paid
             </span>

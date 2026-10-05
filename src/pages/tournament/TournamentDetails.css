@@ -693,8 +693,9 @@
     display: none;
   }
 
+  /* 44px: the tab strip gives back two pixels, not its touch floor. */
   .details-tabs .tab {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .details-footer {

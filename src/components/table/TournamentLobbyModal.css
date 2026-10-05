@@ -221,6 +221,13 @@
   animation: tlmFadeIn calc(0.16s * var(--animation-speed, 1)) ease-out;
 }
 
+/* The popup takes focus when it opens so the keyboard starts inside it. It is
+   the whole screen: a ring around the viewport says nothing, and the controls
+   inside draw their own. */
+.tlm-panel--full:focus {
+  outline: none;
+}
+
 @keyframes tlmFadeIn {
   from {
     opacity: 0;

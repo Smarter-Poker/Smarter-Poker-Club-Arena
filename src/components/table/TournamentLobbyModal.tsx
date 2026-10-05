@@ -68,15 +68,86 @@ export function TournamentLobbyModal({
   currentTableId,
   onClose,
 }: TournamentLobbyModalProps) {
-  // Escape closes, same as every other overlay at the table.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusTo = useRef<HTMLElement | null>(null);
+  /* `onClose` is an inline arrow at the call site (TablePage), so it is a new
+     function on every render of a component that renders many times a second.
+     Read through a ref, the keyboard effect below binds once per open instead
+     of once per table render. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  /**
+   * DIALOG SEMANTICS: Escape, focus in, Tab kept inside, focus back out
+   * (2026-10-04 review pass).
+   *
+   * This declared `role="dialog"` and `aria-modal="true"` and implemented one
+   * third of it. Focus stayed on the LOBBY button underneath - which the popup
+   * covers - so Tab walked through a live table's controls behind a
+   * full-screen page, and Enter pressed whichever one it had reached.
+   *
+   * ESCAPE BELONGS TO THE TOPMOST DIALOG. The Sign Up card (register, late
+   * register, a satellite card's Register) opens ABOVE this popup and cancels
+   * itself on Escape from a capture-phase listener, calling preventDefault.
+   * This listener is on `window` in the bubble phase, so it ran afterwards for
+   * the same key press and closed the whole lobby under the card the player
+   * had only meant to dismiss. A key another dialog has already answered is
+   * not ours.
+   */
   useEffect(() => {
     if (!isOpen) return;
+    restoreFocusTo.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus({ preventScroll: true });
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    /* A dialog stacked on top of this one (Sign Up, Watch This Player Live,
+       a deal review) owns the keyboard while it is open. Those are portalled
+       to <body>, so "inside another dialog that is not ours" is the test. */
+    const focusIsInAnotherDialog = () => {
+      const active = document.activeElement as HTMLElement | null;
+      const host = active?.closest?.('[role="dialog"], [role="alertdialog"]');
+      return !!host && host !== panelRef.current;
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (e.defaultPrevented || focusIsInAnotherDialog()) return;
+        onCloseRef.current();
+        return;
+      }
+      const panel = panelRef.current;
+      if (e.key !== 'Tab' || !panel || e.defaultPrevented || focusIsInAnotherDialog()) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.getClientRects().length > 0
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      /* Focus outside the popup is the common case, not an edge one: tap any
+         text and activeElement becomes <body>. Pull it back in. */
+      if (!panel.contains(active) || active === panel) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      /* Give focus back only if it is still ours to give: a Take Seat or a
+         Watch that moved the player to another table has already put focus
+         where it belongs. */
+      const active = document.activeElement;
+      if (!active || active === document.body || panelRef.current?.contains(active)) {
+        restoreFocusTo.current?.focus?.({ preventScroll: true });
+      }
+    };
+  }, [isOpen]);
 
   /* Dan 2026-08-30: "OPEN TO THE TOURNAMENT LOBBY INSTANTLY (NO LOAD TIME)."
      The panel used to unmount on close, so every open paid the lobby's full
@@ -116,6 +187,8 @@ export function TournamentLobbyModal({
         role="dialog"
         aria-modal="true"
         aria-label="Tournament Lobby"
+        tabIndex={-1}
+        ref={panelRef}
         /* The popup chassis sheet restyles every button, heading and paragraph
            inside a dialog. This dialog holds a whole page, not a card; see
            the note in styles/metallic-popups.css. */

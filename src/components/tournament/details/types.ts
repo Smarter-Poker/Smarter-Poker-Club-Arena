@@ -180,10 +180,14 @@ export interface TournamentTabProps {
    * tournament is RUNNING, because a finished event's `table_id`s point at
    * closed felts.
    *
-   * Ranking and Tables call `openTableAsObserver` themselves and do not need
-   * this; Entries does, because it holds no navigate of its own.
+   * EVERY tab opens a table through this (2026-10-04). Ranking and Tables used
+   * to call `openTableAsObserver` themselves, which meant the page could not
+   * tell them apart from a watch made anywhere else: inside the in-game popup
+   * a tap on "Your Table" asked for the table the popup was already covering,
+   * and nothing visible happened. One door, owned by the page, which knows
+   * where it is mounted. `tableName` labels the new screen's tab.
    */
-  onWatchPlayer?: (tableId: string) => void;
+  onWatchPlayer?: (tableId: string, tableName?: string) => void;
 
   /**
    * The mystery bounty ladder, fetched ONCE by the page from
@@ -502,4 +506,32 @@ export function initials(name: string | null | undefined): string {
   const parts = clean.split(/[\s_-]+/).filter(Boolean);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/**
+ * A table's name without the event's name in front of it.
+ *
+ * The engine names a tournament table "<Event Name> - Table 2", and every
+ * surface in this lobby already says which event it is in its header. Printed
+ * whole, on a phone, the name truncated to "Sunday Funday Main Event
+ * Satellite - ..." on every Ranking row and every Tables row - the event,
+ * which the player knows, kept; the table number, which is the only part that
+ * differs from row to row, cut off (2026-10-04 review pass).
+ *
+ * Only an exact leading match is removed, and never down to nothing: a table
+ * whose name IS the event name (a sit and go, a heads-up) keeps it.
+ */
+export function shortTableName(
+  tableName: string | null | undefined,
+  eventName: string | null | undefined
+): string {
+  const full = (tableName || '').trim();
+  const event = (eventName || '').trim();
+  if (!full || !event || full.length <= event.length) return full;
+  if (full.slice(0, event.length).toLowerCase() !== event.toLowerCase()) return full;
+  const rest = full
+    .slice(event.length)
+    .replace(/^[\s\-:|,.\u2013]+/, '')
+    .trim();
+  return rest || full;
 }

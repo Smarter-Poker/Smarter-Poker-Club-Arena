@@ -199,6 +199,16 @@ export default function TournamentDetails({
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   }, [activeTab, tournament?.id]);
+  /* EVERY TAB OPENS AT ITS TOP (2026-10-04 review pass). The panel is the one
+     scroller for all seven tabs, so its scroll offset outlived the tab it
+     belonged to: read forty rows down the Ranking list, tap Blinds, and Blinds
+     opened scrolled past its own clock - or, on a shorter tab, clamped to the
+     bottom with the first card off screen. */
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (el) el.scrollTop = 0;
+  }, [activeTab, tournament?.id]);
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   /** Fires the auto-open-my-table navigation exactly once per tournament. */
@@ -1361,13 +1371,37 @@ export default function TournamentDetails({
    * screen - the wrong shape for "watch this too". Both are keyed on the table
    * id and de-duplicated, so running both can only ever produce one screen.
    */
+  /**
+   * IN THE POPUP, A WATCH ALSO PUTS THE LOBBY AWAY (2026-10-04 review pass).
+   *
+   * The in-game popup covers the whole screen of the table it was opened from.
+   * Two things followed from leaving it open:
+   *
+   *  - the table asked for is very often THAT table (the featured table of a
+   *    two-table event, "Your Table" in the Tables tab, your own row in
+   *    Ranking). MultiTablePage answers a watch for a table already on screen
+   *    by focusing its tab, which is the tab the player is on - so the button
+   *    did nothing at all that anyone could see;
+   *  - for any other table a screen was added and focused, and the lobby was
+   *    left covering the felt the player came from, to be found there when
+   *    they came back to act.
+   *
+   * The footer already does this for Take Seat. `tableName` rides along so the
+   * new screen's tab is labelled before the engine reports its own name.
+   */
   const watchTable = useCallback(
-    (tableId: string) => {
-      if (!openTableAsObserver(navigate, { tableId })) {
-        toast.error('That Table Is Not Available To Watch');
+    (tableId: string, tableName?: string) => {
+      if (onClose && currentTableId && tableId === currentTableId) {
+        onClose();
+        return;
       }
+      if (!openTableAsObserver(navigate, { tableId, tableName })) {
+        toast.error('That Table Is Not Available To Watch');
+        return;
+      }
+      onClose?.();
     },
-    [navigate, toast]
+    [navigate, toast, onClose, currentTableId]
   );
 
   /**
@@ -1735,9 +1769,9 @@ export default function TournamentDetails({
 
   if (isLoading) {
     return (
-      <div className="tournament-details loading">
+      <div className="tournament-details loading" role="status" aria-live="polite" aria-busy="true">
         {closeButton}
-        <div className="loader-spinner" />
+        <div className="loader-spinner" aria-hidden="true" />
         <p>Loading Tournament...</p>
       </div>
     );
@@ -1885,6 +1919,7 @@ export default function TournamentDetails({
              above has somewhere to send focus next. */
           aria-labelledby={`tl-tab-${activeTab}`}
           tabIndex={-1}
+          ref={contentRef}
         >
           {activeTab === 'detail' && <DetailOverviewTab {...tabProps} />}
           {activeTab === 'blinds' && <BlindsTab {...tabProps} />}

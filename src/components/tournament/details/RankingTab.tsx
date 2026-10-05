@@ -62,14 +62,12 @@
  * gets it right. Degrades to plain rendering where unsupported.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../../../core/MasterBus';
 import { useToast } from '../../common/Toast';
 import { useIsMounted } from '../../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
-import { openTableAsObserver } from '../../../utils/observeTable';
 import { reportError } from '../../../utils/errorReporter';
 import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
@@ -84,6 +82,7 @@ import {
   lastPaidPlace,
   ordinal,
   resolvePayoutStructure,
+  shortTableName,
   type TournamentTabProps,
 } from './types';
 import type { TournamentEntry } from './types';
@@ -222,7 +221,7 @@ const RankRow = React.memo(function RankRow({
       <span
         className={`tl-rank rk-rank${!out && rank !== null && rank <= 3 ? ' tl-rank--podium' : ''}`}
       >
-        {rank ?? '-'}
+        {rank === null ? '-' : rank.toLocaleString()}
       </span>
 
       {entry.avatar_url ? (
@@ -431,9 +430,10 @@ export default function RankingTab({
   currentUserId,
   onWatchPlayer,
 }: TournamentTabProps) {
-  const navigate = useNavigate();
   const toast = useToast();
   const isMounted = useIsMounted();
+  /** Distinguishes this mount's realtime channel; see the subscription effect. */
+  const channelInstance = useId();
 
   const [overlay, setOverlay] = useState<Map<string, EntryPatch>>(() => new Map());
   const [pulses, setPulses] = useState<Map<string, Pulse>>(() => new Map());
@@ -556,7 +556,16 @@ export default function RankingTab({
   useEffect(() => {
     if (!tournamentId) return;
 
-    const channelKey = `ranking-${tournamentId}`;
+    /* ONE CHANNEL PER MOUNT (2026-10-04 review pass). This was
+       `ranking-${tournamentId}`, and MasterBus hands the SAME channel to every
+       holder of a key. The lobby can be mounted twice on one event - the
+       in-game popup stays mounted after it is closed, and a lobby tab or the
+       route can be open beside it - and supabase-js sends postgres_changes
+       bindings in the JOIN: the second mount's `.on()` lands on a channel
+       that has already joined and receives nothing, with no error anywhere.
+       TournamentDetails fixed exactly this for its own channel on 2026-08-30;
+       this tab kept the shared key. */
+    const channelKey = `ranking-${tournamentId}-${channelInstance.replace(/[^a-zA-Z0-9]/g, '')}`;
     let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
 
     try {
@@ -611,7 +620,7 @@ export default function RankingTab({
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [tournamentId, queuePatch]);
+  }, [tournamentId, queuePatch, channelInstance]);
 
   // The engine announces eliminations on the bus faster than Postgres
   // replication delivers them, and this is the one change a ranking board must
@@ -743,9 +752,11 @@ export default function RankingTab({
 
   const tableNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of tables) if (t.id) map.set(t.id, t.name);
+    /* "Table 2", not "<Event Name> - Table 2": the header already names the
+       event, and at 375px the full name truncated before the number. */
+    for (const t of tables) if (t.id) map.set(t.id, shortTableName(t.name, tournament.name));
     return map;
-  }, [tables]);
+  }, [tables, tournament.name]);
 
   const heroIndex = useMemo(
     () => (currentUserId ? ordered.findIndex((e) => e.user_id === currentUserId) : -1),
@@ -826,14 +837,16 @@ export default function RankingTab({
   const confirmWatch = useCallback(() => {
     const entry = picked;
     setPicked(null);
-    if (!entry?.table_id) return;
-    const opened = openTableAsObserver(navigate, {
-      tableId: entry.table_id,
-      tableName: tableNameById.get(entry.table_id) || entry.username,
-    });
     // Only reachable if the seat vanished between the click and the confirm.
-    if (!opened) toast.warning('That Player Is No Longer Seated');
-  }, [picked, navigate, tableNameById, toast]);
+    if (!entry?.table_id || !onWatchPlayer) {
+      toast.warning('That Player Is No Longer Seated');
+      return;
+    }
+    /* Through the page's one door, not a navigate of this tab's own: the page
+       knows whether it is the in-game popup, and there a watch has to put the
+       popup away or the table it opens stays hidden behind it. */
+    onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username);
+  }, [picked, onWatchPlayer, tableNameById, toast]);
 
   // ── render ──────────────────────────────────────────────────────────────────
   if (entries.length === 0) {

@@ -25,6 +25,7 @@ import { handleAdminKickOccupancy } from './handlers/admin.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { GameServer } from './GameServer.js';
 import { sendJSON, CORS_HEADERS } from './http/respond.js';
+import { reportError } from './services/errorReporter.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleStableHand } from './handlers/stableHand.js';
 import { handleAction } from './handlers/action.js';
@@ -356,7 +357,7 @@ export function createRouter(
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { gameServer, tableStateHub, engineWs, channelHub } = deps;
 
-  return async (req, res) => {
+  const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const method = req.method || 'GET';
     // PATH ONLY (2026-09-03). Every route below is matched on the whole
     // request target, so `/health?cb=1788402501855` fell through to the 404
@@ -665,5 +666,29 @@ export function createRouter(
     // 404 — Not Found
     // ─────────────────────────────────────────────────────────────────────────
     sendJSON(res, 404, { error: 'Not Found' });
+  };
+
+  /* ONE REQUEST CANNOT RESTART THE ENGINE (launch audit 2026-10-05).
+     This listener is handed straight to `http.createServer`, which does not
+     await it, so a handler that throws becomes an unhandledRejection - and
+     `index.ts` treats that as fatal: the engine drains and restarts, voiding
+     every hand in flight. Several handlers have no try/catch of their own
+     and one parses the request target with `new URL()`. A request that
+     fails is answered 500 and reported; it is never the process's problem. */
+  return async (req, res) => {
+    try {
+      await route(req, res);
+    } catch (err) {
+      reportError(err, 'Router.Unhandled_request_error');
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      try {
+        sendJSON(res, 500, { error: 'Internal Server Error' });
+      } catch {
+        res.destroy();
+      }
+    }
   };
 }

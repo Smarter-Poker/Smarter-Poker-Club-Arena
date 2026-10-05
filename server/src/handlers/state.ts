@@ -12,6 +12,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
 import { authenticateRequest } from '../http/auth.js';
+import { isUuidShape } from '../lib/uuidShape.js';
 import { authorizeTableViewer } from '../services/TableViewerAccess.js';
 
 export interface StateDeps {
@@ -40,6 +41,15 @@ export async function handleGetActions(
 
   // Use authenticated userId, ignore URL param to prevent info leakage
   const userId = auth.userId;
+
+  /* A table id that is not a UUID names no table. Before this check a junk id
+     reached ensureCashTableEngine, whose lookup error is classed retryable and
+     rescheduled with no cap until the next restart: any signed-in user could
+     plant permanent retry work on the single engine core (launch audit
+     2026-10-05). */
+  if (!isUuidShape(tableId)) {
+    return sendJSON(res, 400, { canAct: false, error: 'Invalid table id' });
+  }
 
   if (!deps.gameServer.getTableEngine(tableId) && deps.gameServer.ensureCashTableEngine) {
     await deps.gameServer.ensureCashTableEngine(tableId);

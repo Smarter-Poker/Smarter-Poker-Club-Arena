@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { readLocalSession } from '../lib/authUtils';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -32,7 +33,6 @@ interface ProfileRow extends NameableProfile {
   id: string;
   username: string;
   avatar_url?: string | null;
-  is_online?: boolean;
 }
 
 export interface FriendSuggestion {
@@ -134,7 +134,20 @@ class FriendSuggestionServiceClass {
 
       // Sort by score descending
       results.sort((a, b) => b.score - a.score);
-      return results.slice(0, limit);
+      const top = results.slice(0, limit);
+
+      /* Online-now, once, for the suggestions actually shown: the presence
+         door's answer (the flag AND a heartbeat under five minutes old). The
+         candidate reads above name no presence column - the raw flag stays
+         true long after somebody leaves (presence-has-one-definition law). */
+      try {
+        const presence = await readPresence(top.map((s) => s.userId));
+        for (const s of top) s.isOnline = presence.get(s.userId) === true;
+      } catch (e) {
+        reportError(e, 'FriendSuggestionService.getSuggestions.presence');
+        for (const s of top) s.isOnline = false;
+      }
+      return top;
     } catch (err: unknown) {
       reportError(err, 'FriendSuggestionService.getSuggestions');
       return [];
@@ -209,7 +222,7 @@ class FriendSuggestionServiceClass {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, is_online`)
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url`)
             .in('id', [...new Set(userIds)]);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p as ProfileRow;
@@ -227,7 +240,7 @@ class FriendSuggestionServiceClass {
           username: playerDisplayName(profileMap[userId]),
           displayName: playerDisplayName(profileMap[userId]),
           avatarUrl: profileMap[userId]?.avatar_url ?? undefined,
-          isOnline: profileMap[userId]?.is_online || false,
+          isOnline: false, // answered once for the final list, in getSuggestions
           score: 0,
           reasons: [],
           clubName: clubNames.get(m.club_id) || 'Club',
@@ -289,7 +302,7 @@ class FriendSuggestionServiceClass {
         .select(
           `
           user_id,
-          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url, is_online, is_horse)
+          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url, is_horse)
         `
         )
         .in('table_id', tableIds)
@@ -311,7 +324,7 @@ class FriendSuggestionServiceClass {
           username: playerDisplayName(o.profiles),
           displayName: playerDisplayName(o.profiles),
           avatarUrl: o.profiles?.avatar_url ?? undefined,
-          isOnline: o.profiles?.is_online || false,
+          isOnline: false, // answered once for the final list, in getSuggestions
           score: 0,
           reasons: [],
         }));

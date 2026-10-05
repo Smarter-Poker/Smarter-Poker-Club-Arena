@@ -111,6 +111,7 @@ import {
   mysteryBountyThresholdReached,
   mysteryPoolCents,
   shouldActivateMysteryBounty,
+  totalEntriesFromRows,
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
@@ -4029,6 +4030,13 @@ export abstract class TournamentManagerBase {
   protected mysteryBountyStage: MysteryBountyStage = 'pending';
   /** Guard against two sweeps overlapping across an await. */
   private mysteryBountySeeding = false;
+  /**
+   * Every entry this event took - one per registration plus one per rebuy or
+   * re-entry, which both increment `tournament_players.rebuys` on the one row
+   * a player holds. Read once, after entry closes, because it cannot change
+   * after that. `null` until read. See readMysteryTotalEntries.
+   */
+  protected mysteryTotalEntries: number | null = null;
 
   /**
    * THE MYSTERY PHASE OPENS AT A HAND BOUNDARY THE ENGINE HOLDS (2026-10-01).
@@ -4072,11 +4080,20 @@ export abstract class TournamentManagerBase {
     const after = hint - busted;
     // The bust that leaves one player ends the event; there is nothing to open.
     if (after <= 1) return false;
+    const mode = (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode;
+    /* TOTAL ENTRIES, NOT `current_players` (2026-10-05). `current_players`
+       drains to the players still in, so "the last 20% of the field" was
+       measured against the survivors and could never be reached. The real
+       entry count is read once entry closes (readMysteryTotalEntries); before
+       that the phase cannot open at all, and an unread count after the close
+       holds the boundary rather than guessing. */
+    const totalEntries = this.mysteryTotalEntries;
+    if (mode === 'percent_field' && totalEntries == null) return this.prizePoolFinalized;
     return mysteryBountyThresholdReached(
-      (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      mode,
       t.mystery_bounty_activation_value,
       after,
-      Number(t.current_players) || hint,
+      totalEntries ?? hint,
       countPaidPlaces(t.payout_structure)
     );
   }
@@ -4260,15 +4277,34 @@ export abstract class TournamentManagerBase {
     const paidPlaces =
       countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
 
+    const entryClosed = Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized;
+    const activationMode = (fresh.mystery_bounty_activation ||
+      'at_the_money') as MysteryBountyActivationMode;
+    /* THE FIELD IS THE ENTRIES, NOT THE SURVIVORS (2026-10-05). This passed
+       `fresh.current_players`, which the engine drains to the players still
+       in. "Open at the last N% of the field" then compared the survivors with
+       N% of the survivors, which is never true for N < 100, so a
+       percent_field event never opened a chest. The count is read from the
+       entry rows once entry has closed (it cannot move after that); an
+       unreadable count waits for the next sweep rather than guessing. */
+    let totalEntries = playersRemaining;
+    if (activationMode === 'percent_field' && entryClosed) {
+      if (this.mysteryTotalEntries == null) {
+        this.mysteryTotalEntries = await this.readMysteryTotalEntries();
+      }
+      if (this.mysteryTotalEntries == null) return;
+      totalEntries = this.mysteryTotalEntries;
+    }
+
     const decision = shouldActivateMysteryBounty({
       isMysteryBounty: true,
       stage: 'pending',
-      entryClosed: Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized,
+      entryClosed,
       allTablesBetweenHands: this.allTablesBetweenHands(),
       playersRemaining,
-      totalEntries: Number(fresh.current_players) || playersRemaining,
+      totalEntries,
       paidPlaces,
-      mode: (fresh.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      mode: activationMode,
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
     });
@@ -4298,6 +4334,21 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    /* A BUST ALREADY PLAYED IS NOT A CHEST STILL OWED (2026-10-05). The
+       heads above are paid flat from the regular half, so the players they
+       belong to will never be knocked out for a chest. Counting them among
+       the players remaining built one chest per such bust that no knockout
+       could ever draw, and the terminal settle handed every one of them to
+       the champion (b5102d84). The chests are drawn for the players who can
+       still be knocked out, and the seed is told the same figure, because it
+       derives its chest count from it (players - 1). */
+    const unrecordedKnockouts = await this.readUnrecordedKnockoutCount();
+    if (unrecordedKnockouts == null) return;
+    const chestPlayers = playersRemaining - unrecordedKnockouts;
+    // Nobody left who can be knocked out for a chest: nothing to open.
+    if (chestPlayers <= 1) return;
+    const drawCount = chestPlayers - 1;
+
     if (unrecordedCents > 0) {
       try {
         poolCents = mysteryPoolCents(
@@ -4326,7 +4377,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)
+        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
@@ -4335,8 +4386,9 @@ export abstract class TournamentManagerBase {
            count from it (players - 1) and also records it as
            mystery_bounty_activated_players, which is the figure the audit
            trail prints as "Mystery Stage Activated: 150 Players Remaining".
-           Sending drawCount here would log 149 for a 150-player field. */
-        p_players_remaining: playersRemaining,
+           Sending drawCount here would log 149 for a 150-player field.
+           Net of the busts already played (above), which have left. */
+        p_players_remaining: chestPlayers,
         p_chests: chests,
       });
 
@@ -4368,17 +4420,99 @@ export abstract class TournamentManagerBase {
       this.mysteryBountyStage = 'active';
       await this.broadcast('mystery_bounty_activated', {
         poolCents: Number(res.pool_cents) || poolCents,
-        chests: decision.drawCount,
+        chests: drawCount,
         profile,
       });
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${drawCount} chests, ${poolCents}c, profile ${profile}`
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
     } finally {
       this.mysteryBountySeeding = false;
     }
+  }
+
+  /**
+   * How many entries this event took: one per entry row plus every rebuy and
+   * re-entry, which the purchase door counts on that row's `rebuys`. Read in
+   * pages so a field larger than PostgREST's row cap is counted whole, and
+   * checked against the exact row count so a short read is refused rather
+   * than taken as a smaller field. `null` means it could not be read.
+   */
+  protected async readMysteryTotalEntries(): Promise<number | null> {
+    const PAGE = 1000;
+    const rows: Array<{ rebuys: unknown }> = [];
+    let expected: number | null = null;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error, count } = await supabase
+        .from('tournament_players')
+        .select('id, rebuys', { count: 'exact' })
+        .eq('tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error || !data || count == null) {
+        reportError(
+          error ?? new Error('tournament entry rows unreadable'),
+          'Tournament.mystery_total_entries_unreadable'
+        );
+        return null;
+      }
+      expected = count;
+      rows.push(...(data as Array<{ rebuys: unknown }>));
+      if (data.length < PAGE || rows.length >= count) break;
+    }
+    if (expected == null || rows.length !== expected) {
+      reportError(
+        new Error(`tournament entry rows read ${rows.length} of ${String(expected)}`),
+        'Tournament.mystery_total_entries_unreadable'
+      );
+      return null;
+    }
+    return totalEntriesFromRows(rows);
+  }
+
+  /**
+   * How many players have busted in a hand already committed (knockout
+   * candidate 'pending') but are still recorded as playing - the same players
+   * whose heads fn_mystery_bounty_unrecorded_head_cents reserves from the
+   * regular half. `null` means it could not be read.
+   */
+  protected async readUnrecordedKnockoutCount(): Promise<number | null> {
+    const { data: pending, error: pendingErr } = await supabase
+      .from('tournament_knockout_candidates')
+      .select('eliminated_user_id')
+      .eq('tournament_id', this.tournamentId)
+      .eq('state', 'pending');
+    if (pendingErr || !pending) {
+      reportError(
+        pendingErr ?? new Error('pending knockout candidates unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    const userIds = [
+      ...new Set(
+        (pending as Array<{ eliminated_user_id: unknown }>)
+          .map((r) => (r.eliminated_user_id == null ? '' : String(r.eliminated_user_id)))
+          .filter((id) => id.length > 0)
+      ),
+    ];
+    if (userIds.length === 0) return 0;
+    const { count, error } = await supabase
+      .from('tournament_players')
+      .select('*', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing')
+      .in('user_id', userIds);
+    if (error || count == null) {
+      reportError(
+        error ?? new Error('unrecorded knockout count unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    return count;
   }
 
   /**

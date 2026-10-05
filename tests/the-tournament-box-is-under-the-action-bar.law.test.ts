@@ -110,7 +110,7 @@ describe('it is collapsible, and collapsing it never resizes the felt', () => {
   it('tapping the dock toggles it; collapsed is one line, open is every figure', () => {
     expect(HUD).toMatch(/data-collapsed=\{collapsed \? 'true' : 'false'\}/);
     expect(HUD).toMatch(/onClick=\{toggle\}/);
-    expect(HUD).toMatch(/aria-expanded=\{toggle \? !collapsed : undefined\}/);
+    expect(HUD).toMatch(/aria-expanded=\{!collapsed\}/);
     expect(HUD).toMatch(/\{!collapsed && \(\s*<div className="tournament-dock__row">/);
     for (const label of ["'Level'", 'Blinds', 'Rank', 'Left', "? 'Prize' : 'Avg'"]) {
       expect(HUD, label).toContain(label);

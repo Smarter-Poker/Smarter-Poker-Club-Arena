@@ -123,6 +123,22 @@ export function mysteryBountyThresholdReached(
   }
 }
 
+/**
+ * The field a 'percent_field' threshold is measured against: every entry the
+ * event took. A player holds one `tournament_players` row for the whole event,
+ * and each rebuy or re-entry increments that row's `rebuys`, so the entries are
+ * the rows plus their rebuys. Never `tournaments.current_players`, which the
+ * engine drains to the players still in (2026-10-05).
+ */
+export function totalEntriesFromRows(rows: ReadonlyArray<{ rebuys?: unknown }>): number {
+  let total = 0;
+  for (const row of rows) {
+    const extra = Math.floor(Number(row.rebuys) || 0);
+    total += 1 + (extra > 0 ? extra : 0);
+  }
+  return total;
+}
+
 /** The whole predicate. Pure. */
 export function shouldActivateMysteryBounty(
   input: MysteryBountyActivationInputs

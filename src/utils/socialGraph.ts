@@ -42,23 +42,26 @@ export function resolveSocialProfile(
 }
 
 /**
- * Realtime presence wins. Otherwise the persisted signal counts only while its
- * heartbeat is fresh, so a stale `is_online=true` row cannot keep somebody
- * online forever after a disconnected device disappears.
+ * Online now, by the one definition: the presence door's answer
+ * (fn_profile_presence, through src/lib/ownProfile.ts readPresence), which
+ * counts the persisted flag only while its heartbeat is under five minutes old
+ * (SOCIAL_PRESENCE_FRESH_MS) - the browser never receives last_seen (ruling
+ * 25). `livePresence` is that door re-asked every minute while the row is on
+ * screen (useProfilePresence); `loadedAnswer` is what the same door said when
+ * the page loaded, used until the first re-ask lands.
  *
- * Since 2026-10-01 that freshness test runs in the database: a player's
- * last-seen time is theirs alone (ruling 25, docs/DIAMOND-RULINGS.md), so the
- * browser never receives it, and `presenceOnline` is the presence door's
- * answer (fn_profile_presence, src/lib/ownProfile.ts readPresence), which
- * applies SOCIAL_PRESENCE_FRESH_MS to the flag before answering. An offline
- * friend reads "Offline"; how long ago they left is not shown.
+ * Until 2026-10-05 a Realtime presence channel "won" here. Only people can
+ * join one - a house player never opens a browser - so it was a second
+ * definition of online that told a person from a house player. There is one
+ * definition now: tests/presence-has-one-definition.law.test.ts.
  */
 export function isSocialProfileOnline(
   userId: string,
-  liveUserIds: ReadonlySet<string>,
-  presenceOnline: boolean
+  livePresence: ReadonlyMap<string, boolean>,
+  loadedAnswer: boolean
 ): boolean {
-  return liveUserIds.has(userId) || presenceOnline === true;
+  const live = livePresence.get(userId);
+  return live === undefined ? loadedAnswer === true : live === true;
 }
 
 export function chunkSocialProfileIds(ids: readonly string[], size = 100): string[][] {

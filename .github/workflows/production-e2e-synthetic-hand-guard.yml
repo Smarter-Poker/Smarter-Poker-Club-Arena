@@ -1,0 +1,76 @@
+name: Production e2e never writes a hand (ledger guard and native trigger proof)
+
+# Board #5070, incident e2e-synthetic-hands. tests/e2e/production-daily-missions.spec.ts
+# used to certify the settled-hand Daily Missions trigger by inserting a
+# synthetic hand_history row into PRODUCTION; four survived and tripped the
+# cash-pot conservation no_winner_recorded monitor. The trigger is now
+# certified on a throwaway native PostgreSQL 17 cluster (never production, as
+# the unprivileged runner user), and every production e2e spec is scanned so
+# none writes a hand or ledger table again.
+#
+# A dedicated workflow rather than ci.yml steps, so a change to these proofs
+# never has to rewrite ci.yml. No timer (CLAUDE.md 10.85): pull_request only,
+# scoped to the paths the two proofs read. The trigger proof reads the newest
+# migration that defines fn_enqueue_hand_daily_missions, so any migration
+# change re-runs it.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - tests/e2e/**
+      - tests/operations/production-e2e-ledger-write-guard.test.mjs
+      - scripts/ci/test-daily-missions-hand-trigger-postgres.py
+      - supabase/migrations/**
+      - .github/workflows/production-e2e-synthetic-hand-guard.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-e2e-synthetic-hand-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ledger-write-guard:
+    name: Production e2e specs never write a hand or ledger table
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Production e2e specs never write a hand or ledger table
+        run: node --test tests/operations/production-e2e-ledger-write-guard.test.mjs
+
+  daily-missions-hand-trigger:
+    name: Settled-hand Daily Missions trigger (throwaway PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Settled-hand Daily Missions trigger is certified on native PostgreSQL
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-daily-missions-hand-trigger-postgres.py

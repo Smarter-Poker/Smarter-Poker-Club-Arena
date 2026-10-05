@@ -5,12 +5,8 @@
  * Shows user's real-time presence status with optional pulse animation
  */
 
-import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { readPresence } from '../../lib/ownProfile';
-import { masterBus } from '../../core/MasterBus';
+import { useIsProfileOnline } from '../../hooks/useProfilePresence';
 import styles from './PresenceIndicator.module.css';
-import { reportError } from '../../utils/errorReporter';
 
 interface PresenceIndicatorProps {
   userId: string;
@@ -21,101 +17,26 @@ interface PresenceIndicatorProps {
 
 type PresenceStatus = 'online' | 'away' | 'offline';
 
+/* AUDIT 2026-08-20: this read `user_presence`, a table that does not exist,
+   and its profiles fallback sat in a catch the client never reaches, so the
+   dot read "offline" for every player. 2026-10-01 (ruling 25): online-now
+   comes from the presence door, never the heartbeat itself.
+
+   2026-10-05, ONE DEFINITION: the dot also subscribed to postgres_changes on
+   `profiles` and set itself from the payload's raw is_online - the flag that
+   was stale-true on 768 of 927 human rows. A row change cannot say a heartbeat
+   is fresh, and nothing changes a row when a heartbeat simply goes stale. So
+   the dot now asks fn_profile_presence through the shared watcher, which
+   re-asks every minute in one batched call for every dot on screen
+   (src/lib/profilePresence.ts). `profiles` is not in the realtime publication
+   anyway, so the subscription never delivered anything. */
 export default function PresenceIndicator({
   userId,
   size = 'medium',
   showLabel = false,
   className = '',
 }: PresenceIndicatorProps) {
-  const [status, setStatus] = useState<PresenceStatus>('offline');
-
-  useEffect(() => {
-    if (!userId) return;
-
-    let isMounted = true;
-
-    // Fetch initial presence
-    const fetchPresence = async () => {
-      /* AUDIT 2026-08-20 — this read `user_presence`, and there is no such
-         table in the database. It has never returned a row.
-
-         Worse than the missing table was the shape of the failure. The
-         Supabase client RETURNS `{ data, error }`; it does not throw. So
-         `if (!error && data)` simply fell through, the catch below never ran,
-         and the profiles fallback sitting inside it was unreachable code. The
-         dot has read "offline" for every player since the day it was written,
-         and the fallback written precisely to prevent that could not fire.
-
-         profiles.is_online and profiles.last_seen are real columns and are the
-         only presence data that exists, so they are now the primary read
-         rather than a fallback nobody could reach. */
-      /* 2026-10-01 (ruling 25): a player's last-seen time is theirs alone, so
-         it is no longer read or shown here. Online-now comes from the presence
-         door, which counts the flag only while its heartbeat is fresh - the
-         raw flag alone was stale-true on 288 human rows. */
-      try {
-        const presence = await readPresence([userId]);
-        if (isMounted) {
-          setStatus(presence.get(userId) ? 'online' : 'offline');
-        }
-      } catch (e) {
-        /* The old fallback lived here and duplicated the query above, from
-           back when this catch was expected to fire. It cannot: the client
-           returns errors rather than throwing. Nothing is retried — a player
-           whose presence cannot be read is shown as offline, which is the
-           honest default. */
-        reportError(e, 'PresenceIndicator.fetchPresence');
-      }
-    };
-
-    fetchPresence();
-
-    // Subscribe to realtime changes with a unique key per component instance
-    // This prevents one unmounting component from killing the channel for other components showing the same user
-    const channelKey = `social-presence:${userId}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          /* THE TABLE IS NOT MISSING, IT IS UNPUBLISHED, and the difference
-             decides the repair. `profiles` exists and is where is_online
-             lives; it is simply not in the supabase_realtime publication -
-             1,000,061 writes over 120 columns, 45.29ms per change, the worst
-             per-change cost measured on 2026-09-06. So this delivers nothing
-             and the dot never moves after its first read.
-
-             Republishing it to drive an online dot would be the most expensive
-             possible way to do it. Presence is a channel feature, not a row
-             change: the correct carrier is Realtime Presence, which needs no
-             publication and no row image at all. */
-          table: 'profiles',
-          filter: `id=eq.${userId}`,
-        },
-        (payload) => {
-          if (payload.new && isMounted) {
-            const newData = payload.new as { is_online?: boolean };
-            setStatus(newData.is_online ? 'online' : 'offline');
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PresenceIndicator] Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [userId]);
+  const status = usePresence(userId);
 
   const getStatusLabel = (): string => {
     if (status === 'online') return 'Online';
@@ -131,28 +52,7 @@ export default function PresenceIndicator({
   );
 }
 
-// Utility function for external use
+// Utility function for external use: the same answer as the dot.
 export function usePresence(userId: string): PresenceStatus {
-  const [status, setStatus] = useState<PresenceStatus>('offline');
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const fetchPresence = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('is_online')
-        .eq('id', userId)
-        .maybeSingle();
-      if (error) reportError(error, 'PresenceIndicator.Fetch_failed');
-
-      if (data) {
-        setStatus(data.is_online ? 'online' : 'offline');
-      }
-    };
-
-    fetchPresence();
-  }, [userId]);
-
-  return status;
+  return useIsProfileOnline(userId) ? 'online' : 'offline';
 }

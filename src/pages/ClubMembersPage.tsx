@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
+import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
@@ -1028,10 +1029,14 @@ function MemberRow({
   columns: Set<OptionalColumn>;
 }) {
   const initial = (member.alias || '?')[0]?.toUpperCase() ?? '?';
-  const status = member.is_seated ? 'At A Table' : member.is_online ? 'Online' : 'Offline';
+  /* The roster's is_online is "seated OR fresh presence"; off a seat it is the
+     presence door's answer, re-asked every minute while the row is shown so
+     it goes dark when the heartbeat does (presence-has-one-definition law). */
+  const online = useOnlineNow(member.user_id, member.is_online);
+  const status = member.is_seated ? 'At A Table' : online ? 'Online' : 'Offline';
   return (
     <div
-      className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
+      className={`member-row${member.is_seated ? ' member-row--seated' : online ? ' member-row--online' : ''}`}
       role="listitem"
       aria-posinset={position}
       aria-setsize={total}
@@ -1086,7 +1091,7 @@ function MemberRow({
             )}
             {member.is_seated ? (
               <span className="member-seated">At Table</span>
-            ) : member.is_online ? (
+            ) : online ? (
               <span className="member-online">Online</span>
             ) : columns.has('activity') && member.last_login ? (
               <span className="member-seen">{dormancy(member.last_login)}</span>

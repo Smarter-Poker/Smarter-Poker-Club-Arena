@@ -12,6 +12,7 @@ import type { Agent, AgentPlayer } from '../services/AgentService';
 import { CommissionService } from '../services/CommissionService';
 import type { CommissionSpread } from '../services/CommissionService';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useProfilePresence } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import { fmt } from '../utils/format';
 
@@ -63,6 +64,8 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
   const [canReviewCredit, setCanReviewCredit] = useState(false);
   const [subAgents, setSubAgents] = useState<Agent[]>([]);
   const [players, setPlayers] = useState<AgentPlayer[]>([]);
+  // Re-asked every minute while shown, so a dot goes dark when its heartbeat does.
+  const livePresence = useProfilePresence(players.map((p) => p.userId));
   const [spread, setSpread] = useState<CommissionSpread | null>(null);
   const [loading, setLoading] = useState(true);
   /* Told apart from "you hold no agency here": see the catch in the loader. */
@@ -561,7 +564,9 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                     ) : (
                       <span>{(player.displayName || 'P')[0].toUpperCase()}</span>
                     )}
-                    {player.isOnline && <span className="online-dot" />}
+                    {(livePresence.get(player.userId) ?? player.isOnline) && (
+                      <span className="online-dot" />
+                    )}
                   </div>
                   <div className="player-info">
                     <span className="player-name">{player.displayName}</span>

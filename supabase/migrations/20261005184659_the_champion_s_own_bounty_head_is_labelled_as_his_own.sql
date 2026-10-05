@@ -34,6 +34,8 @@
 -- PINNED LIVE md5(pg_get_functiondef('public.fn_finalize_bounty_pool(uuid,uuid)')):
 --   96417e3cbe35661ced11437cbbb18613   (read 2026-10-05)
 --
+-- @live-proof: (SELECT position('own bounty head returned' in pg_get_functiondef('public.fn_finalize_bounty_pool(uuid,uuid)'::regprocedure)) > 0)
+--
 -- NOT APPLIED by the authoring agent. Apply once, outside the :50-:03 UTC
 -- break window, as one transaction.
 --

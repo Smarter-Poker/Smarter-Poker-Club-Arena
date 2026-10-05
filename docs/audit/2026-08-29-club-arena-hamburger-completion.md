@@ -361,15 +361,14 @@ The following evidence is local candidate evidence only. It is not merge, instal
 | Production build                                                  | `npm run build` passed at `3c84d94b27`, with build provenance reporting `behind-main=0`                                                                                              |
 | Browser-spec discovery                                            | Hamburger, responsive-fit, and exhaustive Club Operations specs parsed successfully; 171 tests listed                                                                                |
 | Entry-chunk blocker regression                                    | 4 focused files, 64 tests passed; TypeScript and targeted lint passed                                                                                                                |
-| Final production build and first-paint gate                       | Build passed with both navigation repairs committed; entry-chunk gate passed with no new modules downloaded before first paint                                                       |
+| Final production build and first-paint gate                       | Build passed for navigation source candidate `c13fc9ae41`; entry-chunk gate passed with no new modules downloaded before first paint                                                 |
 | Required-check baseline repair                                    | The existing upstream two-file Horse Phase 11 null-proof repair was carried unchanged; its focused server selection passed 1 file and 95 tests                                       |
 
 Browser discovery proves that the cases are registered, not that they passed against production. The 27 positive club routes, conditional menu actions, query-aware hamburger destinations, and 375x812, 834x1194, and 1440x900 overflow checks still require the configured authenticated post-deploy execution.
 
 ## Final Verification Required Before Success
 
-- Commit the exact candidate and run the final affected source/document gates through ordinary hooks.
-- Pass required checks on the exact pull-request head and complete protected merge.
+- Pass required checks on the exact pushed pull-request head and complete protected merge.
 - Install migration `20261005111546` once through the approved database route, then read back the migration ledger, policy command/roles/predicate, and legacy function ACL/owner/security mode.
 - Complete `publish-club-arena.yml` successfully.
 - Prove the serving revision at both `https://ca-static.smarter.poker/build-info.json` and `https://smarter.poker/hub/club-arena/build-info.json`.
@@ -392,7 +391,7 @@ Browser discovery proves that the cases are registered, not that they passed aga
 - Candidate base at resumption: `1157cf081a3586e6007ce80813ce24c1988ae5a6`
 - Latest protected main integrated for local validation: `1a95cbe912`
 - Pull request: `#6147`
-- Pushed pull-request head before the current release repair: `c56681d5f9394409a73660a42094eaa5675a4bb6`
-- Local source candidate at resumption: `9e24e2ed04`
+- Navigation source candidate certified locally and by the production-build job: `c13fc9ae41b0a13f906553b33e0ea5ad01f7bc25`
+- Required-check baseline repair carried from upstream: `c8e0e0dc71c7052454365b01df18fe72f9467dd5`
 - Active blocker recovered at resumption: production-build entry-chunk gate found `useUnionRouteId.ts` and `unionIdResolver.ts` through the always-mounted section rail. The rail now resolves union identity lazily, remains fail-closed across resolution and authority races, and the focused tests plus exact entry-chunk gate pass locally.
 - Required-check baseline repair: exact-head run `37306433361` reproduced the stale current-main Horse Phase 11 null-proof after its completion evidence landed. The already-authored upstream fix `9946e57fb8` was carried unchanged as a test-and-changelog-only repair, and its focused server selection passed 95 of 95 tests.

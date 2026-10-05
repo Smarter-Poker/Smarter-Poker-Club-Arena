@@ -47,3 +47,11 @@ p95 for the facts alone, out of a 3 ms sampler budget.
 digests, so both move. Neither phase has a qualification to invalidate: Phase
 10 closed without promotion, and every Phase 11 pack failed its P11.2 matrix
 (see the Phase 11 closure record).
+
+## Live
+
+Merged as #6133 (`565a43fa`), serving since 2026-10-05T04:55:53Z, exact-engine
+certificate run 37265674330 (job 111621887576, 4 passed). Natural diagnostic on
+that release, 05:01-05:11Z: every postflop street of every Phase 11 pack
+completed on 99% or more of eligible decisions (PLO6 turn 116 / 117 against
+185 / 426 on the release before; PLO5 turn 106 / 106 against 232 / 318).

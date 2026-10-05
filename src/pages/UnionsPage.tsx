@@ -17,6 +17,7 @@ import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 import { mediaUrl } from '../utils/mediaBase';
 import { useCanCreateUnion } from '../hooks/useCanCreateUnion';
+import { COUNT_UNKNOWN, countText, type CountFigure } from '../lib/countFigure';
 
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -24,14 +25,21 @@ const unionCardAnimationStyle = (index: number) => ({
   animation: `animationsFadeInUp 0.6s ease-out ${index * 80}ms forwards`,
 });
 
-function UnionCard({ union, idx }: { union: Union; idx: number }) {
+function UnionCard({
+  union,
+  idx,
+  online,
+}: {
+  union: Union;
+  idx: number;
+  /** fn_union_online_count's answer: a number, COUNT_UNKNOWN, or null while asking. */
+  online: CountFigure;
+}) {
   const [memberDisplay, setMemberDisplay] = useState(0);
-  const [onlineDisplay, setOnlineDisplay] = useState(0);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setMemberDisplay(union.memberCount);
-      setOnlineDisplay(union.onlineCount || 0);
       return;
     }
 
@@ -56,9 +64,8 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
     };
 
     animateNumber(0, union.memberCount, setMemberDisplay);
-    animateNumber(0, union.onlineCount || 0, setOnlineDisplay);
     return () => frames.forEach(cancelAnimationFrame);
-  }, [union.memberCount, union.onlineCount]);
+  }, [union.memberCount]);
 
   const uLevel = getUnionLevel({
     level: union.level,
@@ -113,7 +120,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
             <span className="stat-label">Members</span>
           </div>
           <div className="union-stat">
-            <span className="stat-value online">{onlineDisplay.toLocaleString()}</span>
+            <span className="stat-value online">{countText(online)}</span>
             <span className="stat-label">Online</span>
           </div>
         </div>
@@ -139,6 +146,10 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
   );
 }
 
+/** At most this many cards ask for their online figure, this many at a time. */
+const UNION_ONLINE_ASK_LIMIT = 24;
+const UNION_ONLINE_ASK_CONCURRENCY = 4;
+
 export default function UnionsPage() {
   useEffect(() => {
     document.title = 'Unions | Smarter Poker';
@@ -149,6 +160,38 @@ export default function UnionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  /* ONLINE PER CARD IS THE DATABASE'S ANSWER (2026-10-05). The card read
+     unions.online_count, a column that does not exist, so every card said 0.
+     Each shown union now asks fn_union_online_count (the one definition of
+     online), a few at a time and for at most UNION_ONLINE_ASK_LIMIT cards; a
+     card past the limit, or whose read fails, says Unavailable. */
+  const [onlineByUnion, setOnlineByUnion] = useState<ReadonlyMap<string, CountFigure>>(
+    () => new Map()
+  );
+  const unionIdsKey = unions.map((u) => u.id).join(',');
+  useEffect(() => {
+    const ids = unionIdsKey ? unionIdsKey.split(',') : [];
+    let alive = true;
+    const answers = new Map<string, CountFigure>();
+    ids.slice(UNION_ONLINE_ASK_LIMIT).forEach((id) => answers.set(id, COUNT_UNKNOWN));
+    setOnlineByUnion(new Map(answers));
+    const queue = ids.slice(0, UNION_ONLINE_ASK_LIMIT);
+    const worker = async () => {
+      for (let id = queue.shift(); id !== undefined && alive; id = queue.shift()) {
+        try {
+          answers.set(id, await unionService.getOnlineCount(id));
+        } catch (e) {
+          reportError(e, 'UnionsPage.onlineCount');
+          answers.set(id, COUNT_UNKNOWN);
+        }
+        if (alive) setOnlineByUnion(new Map(answers));
+      }
+    };
+    for (let i = 0; i < UNION_ONLINE_ASK_CONCURRENCY; i++) void worker();
+    return () => {
+      alive = false;
+    };
+  }, [unionIdsKey]);
   /* Union creation is an allowlist (Dan 2026-09-04). The database refuses the
      insert for everyone else; this stops the app offering it. */
   const { canCreateUnion } = useCanCreateUnion();
@@ -232,7 +275,14 @@ export default function UnionsPage() {
             />
           </div>
         ) : (
-          unions.map((union, idx) => <UnionCard key={union.id} union={union} idx={idx} />)
+          unions.map((union, idx) => (
+            <UnionCard
+              key={union.id}
+              union={union}
+              idx={idx}
+              online={onlineByUnion.get(union.id) ?? null}
+            />
+          ))
         )}
       </div>
 

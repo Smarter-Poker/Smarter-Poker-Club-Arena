@@ -1,7 +1,8 @@
 """P11.3 completion reader, stage 1 (engine host, read-only).
 
 Prints one JSON line per journaled PLO5/PLO6/PLO8 decision of ONE pack, made on
-ONE engine release, decided in [from, to): {"eventId", "decisionTimeMs",
+ONE engine release, decided in [from, to), first looks only (DECIDE_FAST;
+a DEEP second look is counted apart by name): {"eventId", "decisionTimeMs",
 "gameMode", "receipt"} where receipt is body.decision.omahaVariantPolicy as
 journaled (null when absent). Stage 2 (server/src/scripts/phase11CompletionRecord.ts)
 counts them with the authority's own horsePhase11CompletionCounts and writes the
@@ -18,6 +19,8 @@ from collections import Counter
 
 DIRS = ['/var/lib/club-arena/horse-decisions/archive/segments',
         '/var/lib/club-arena/horse-decisions/archive-shard-1/segments']
+if os.environ.get('PHASE11_EXTRACT_SEGMENT_DIRS'):  # tests only
+    DIRS = os.environ['PHASE11_EXTRACT_SEGMENT_DIRS'].split(':')
 frm, to, release, variant = sys.argv[1:5]
 assert variant in ('plo5', 'plo6', 'plo8') and len(release) == 40
 def ms(iso):
@@ -44,6 +47,10 @@ for d in DIRS:
             dt = s.get('decisionTimeMs')
             if not isinstance(dt, int) or not (FROM <= dt < TO): continue
             if gs.get('gameVariant') != variant: continue
+            # One natural decision per turn: a DEEP second look is journaled as
+            # a second 'decision' record for the same turn.
+            if s.get('type') != 'DECIDE_FAST':
+                summary['excluded_deep_second_look'] += 1; continue
             if r.get('sourceRelease') != release:
                 summary['excluded_release_other'] += 1; continue
             if gs.get('boardCount', 1) not in (1, None) or gs.get('communityCards2') or gs.get('communityCards3'):

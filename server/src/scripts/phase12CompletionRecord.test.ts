@@ -253,13 +253,25 @@ describe('P12.3 completion reader, stage 1: the host extractor', () => {
     eventId: `${kind}-${variant}-${at}`,
     sourceRelease: RELEASE,
     body: JSON.stringify({
-      snapshot: {
-        decisionTimeMs: at,
-        gameState: { gameVariant: variant, gameMode: 'cash', ...gameState },
-      },
+      snapshot:
+        kind === 'discard_decision'
+          ? // The real discard snapshot: a DECIDE_DISCARD request, variant at
+            // the top level and the request time in its journal context.
+            {
+              type: 'DECIDE_DISCARD',
+              gameVariant: variant,
+              cards: [],
+              communityCards: [],
+              journalContext: { requestedAtMs: at },
+            }
+          : {
+              type: overrides.type ?? 'DECIDE_FAST',
+              decisionTimeMs: at,
+              gameState: { gameVariant: variant, gameMode: 'cash', ...gameState },
+            },
       decision,
     }),
-    ...overrides,
+    ...Object.fromEntries(Object.entries(overrides).filter(([k]) => k !== 'type')),
   });
 
   it('prints each window decision of one pack and release with its journaled receipt, and names every exclusion', () => {
@@ -273,6 +285,8 @@ describe('P12.3 completion reader, stage 1: the host extractor', () => {
       record('discard_decision', 'pineapple', AT + 2, { discard: 'private' }),
       record('decision', 'pineapple', AT + 3, {}, { sourceRelease: 'f'.repeat(40) }),
       record('decision', 'pineapple', AT + 4, {}, {}, { boardCount: 2 }),
+      // A DEEP second look of the first turn: the same turn, not a new decision.
+      record('decision', 'pineapple', AT + 8, { action: 'call' }, { type: 'DECIDE_DEEP' }),
       record('decision', 'flh', AT + 5, {}),
       record('decision', 'pineapple', Date.parse(TO), {}),
       record('execution', 'pineapple', AT + 6, {}),
@@ -299,6 +313,7 @@ describe('P12.3 completion reader, stage 1: the host extractor', () => {
     expect(rows[0]).toMatchObject({ gameMode: 'cash', receipt: ok });
     expect(rows[1].receipt).toBeNull();
     expect(JSON.parse(run.stderr)).toEqual({
+      excluded_deep_second_look: 1,
       excluded_discard_decision: 1,
       excluded_multiboard: 1,
       excluded_release_other: 1,

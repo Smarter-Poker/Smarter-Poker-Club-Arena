@@ -532,6 +532,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V46'
   ),
   flag(
+    'v46ShortDeck',
+    'the short-deck half of the V46 chart; DEFAULT OFF since 2026-10-05 (shortdeck_v46_classes -0.51 +/- 0.15 over 960k hands)',
+    'V46'
+  ),
+  flag(
+    'v51RiverFlat',
+    'a committed river one-pair hand calls instead of jamming (league v51_river_flat)',
+    'V51'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -2550,10 +2560,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a horse posted a VOLUNTARY straddle; straddle-enabled tables only',
     'V48'
   ),
+  // No floor: the spot (committed, river, one pair, clearing the call bar)
+  // is rare by construction; silence on a quiet day is not a dead layer.
+  receipt(
+    'v51_river_flat',
+    'HorseLogic committed branch (V51)',
+    'a committed river one-pair hand flatted where it used to jam',
+    'V51'
+  ),
   receipt(
     'v46_class_read',
     'HorseHandClasses.handClassRead via HorseLogic (V46)',
-    'the hand SHAPE priced a preflop decision; Omaha and short-deck volume only',
+    'the hand SHAPE priced a preflop decision; Omaha volume only (the short-deck chart is off by default since 2026-10-05)',
     'V46'
   ),
   receipt(

@@ -459,7 +459,10 @@ describe('MultiTablePage', () => {
     // The branch always returns: an empty list is rendered, never passed on.
     const body = HANDLER.slice(branch, HANDLER.indexOf('/* A cash table after all.'));
     expect(body).toContain('mod.quickJoinTournamentRows(tournamentScope, tournamentCtx, user?.id)');
-    expect(body.match(/\breturn;/g)?.length).toBe(2);
+    // (A stale "+" press, one the player already dismissed or replaced,
+    // also stops here without rendering; those exits are not counted.)
+    const exits = body.replace(/if \(stale\(\)\) return;/g, '');
+    expect(exits.match(/\breturn;/g)?.length).toBe(2);
   });
 
   it('either witness is enough, a Spin keeps its own sheet, and a row read as cash is cash', () => {

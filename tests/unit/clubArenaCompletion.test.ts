@@ -88,16 +88,20 @@ describe('consolidated route families', () => {
   });
 
   it('keeps every union operations route reachable from the canonical union rail', () => {
-    const paths = getArenaSectionNavigation('/unions/union-1/operations')?.items.map(
-      (item) => item.path
-    );
+    const paths = getArenaSectionNavigation('/unions/union-1/operations', {
+      canOverseeCurrentUnion: true,
+      canManageCurrentUnionGames: true,
+    })?.items.map((item) => item.path);
     expect(paths).toEqual(
       expect.arrayContaining([
         '/unions/union-1',
         '/unions/union-1/games',
         '/unions/union-1/operations',
+        '/unions/union-1/table-management',
+        '/unions/union-1/data',
         '/unions/union-1/statements',
         '/unions/union-1/settlement',
+        '/unions/union-1/diamond-costs',
       ])
     );
   });

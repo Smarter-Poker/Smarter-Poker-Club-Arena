@@ -9,7 +9,10 @@ import {
   remainingVariantReceiptBindingIsValid,
 } from './RemainingVariantLivePolicy.js';
 import { REMAINING_VARIANT_DOMAIN } from './RemainingVariantPolicyPack.js';
-import { remainingVariantActionEconomicsIsValid } from './RemainingVariantActionEconomics.js';
+import {
+  remainingVariantActionEconomics,
+  remainingVariantActionEconomicsIsValid,
+} from './RemainingVariantActionEconomics.js';
 import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
 
 /**
@@ -272,11 +275,11 @@ describe('P12.1 never spends the policy budget it was given', () => {
     }
   );
 
-  it('completes the whole priced node well inside the policy budget once warm', () => {
-    // Measurement, not a strength claim: the fixed-clock assertions above are
-    // computation coverage. This records what the pass actually costs on this
-    // host at the sampler's full sample count.
-    const runs: number[] = [];
+  it('reports either a result or a named work budget refusal, never a third thing', () => {
+    // The outcome on a real clock depends on the host, so what is pinned here
+    // is that there are exactly TWO outcomes and both are named. A starved
+    // pass must not come back as an empty result, a zero, or a silence
+    // (10.86 rule 1), and it must never take the proposal down with it.
     for (let i = 0; i < 24; i++) {
       const spot = remainingVariantSpot('flo8', 'river', 2);
       const saved = saveFastRandom();
@@ -292,18 +295,80 @@ describe('P12.1 never spends the policy budget it was given', () => {
           1,
           true
         );
-        if (i >= 8 && result.receipt.actionEconomics?.unavailable === null)
-          runs.push(result.receipt.actionEconomics.analysisMs);
+        const economics = result.receipt.actionEconomics!;
+        expect(economics).toBeTruthy();
+        if (economics.unavailable === null) {
+          expect(economics.values.length).toBeGreaterThan(0);
+          expect(result.receipt.features).toContain('net_action_economics');
+        } else {
+          expect(economics.unavailable).toBe('work_budget_unavailable');
+          expect(economics.values).toEqual([]);
+          expect(economics.budgetExhausted).toBe(true);
+          expect(result.receipt.features).not.toContain('net_action_economics');
+        }
+        expect(result.receipt.reason).not.toBe('work_budget');
+        expect(result.receipt.fired).toBe(true);
+        expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
       } finally {
         restoreFastRandom(saved);
       }
     }
-    expect(runs.length).toBeGreaterThan(0);
+  });
+
+  it('costs what it costs, measured at the sampler full sample count', () => {
+    // Measurement, not a strength claim, and deliberately NOT conditional on
+    // the result being available: an unconditional budget lets every run
+    // complete, so this always measures something. The number it prints is
+    // what the residual between samplingDeadlineMs and netActionDeadlineMs has
+    // to accommodate on THIS host, which is why a slow or loaded host reports
+    // work_budget_unavailable above rather than a truncated average.
+    const spot = remainingVariantSpot('flo8', 'river', 2);
+    const opponentIds = spot.state.players
+      .filter((p) => p.user_id !== spot.hero.user_id && !p.is_folded)
+      .map((p) => p.user_id);
+    const input = {
+      variant: 'flo8',
+      stage: 'river' as const,
+      hero: spot.hero,
+      players: spot.state.players,
+      opponentIds,
+      samples: Array.from({ length: REMAINING_VARIANT_DOMAIN.defaultSamples }, (_, i) => ({
+        heroHigh: i % 3,
+        opponentHigh: opponentIds.map((_id, k) => (i + k) % 5),
+        heroLow: i % 2 ? 1 : null,
+        opponentLow: opponentIds.map((_id, k) => ((i + k) % 3 ? 2 : null)),
+        opponentDecisionStrength: opponentIds.map(() => 0.5),
+      })),
+      currentBet: spot.state.currentBet,
+      betSize: spot.state.fixedBetSize!,
+      actionHistory: spot.state.actionHistory ?? [],
+      legalActions: spot.state.legalActions!,
+      wagersCapped: false,
+      minRaiseTo: spot.state.minRaiseTo ?? null,
+      maxRaiseTo: spot.state.maxRaiseTo ?? null,
+      chipUnit: 0.01 as const,
+      asset: 'chips' as const,
+      gameMode: 'cash' as const,
+      bigBlind: spot.state.bigBlind,
+      dealerSeat: spot.state.dealerSeat!,
+      rakeConfig: spot.state.rakeConfig!,
+      bbjConfig: { enabled: true, feeBB: 0.25, minPotBB: 0, minPlayersDealt: 2 },
+      withinBudget: () => true,
+    };
+    const runs: number[] = [];
+    for (let i = 0; i < 32; i++) {
+      const started = performance.now();
+      const result = remainingVariantActionEconomics(input);
+      const elapsed = performance.now() - started;
+      expect(result.unavailable, JSON.stringify(result.unavailable)).toBe(null);
+      if (i >= 8) runs.push(elapsed);
+    }
     runs.sort((a, b) => a - b);
     const median = runs[Math.floor(runs.length / 2)];
     console.log(
-      `P12.1 net-action pass: n=${runs.length} median=${median.toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms`
+      `P12.1 net-action pass at ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples: n=${runs.length} median=${median.toFixed(4)}ms p95=${runs[Math.floor(runs.length * 0.95)].toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms residual=${(REMAINING_VARIANT_DOMAIN.netActionDeadlineMs - REMAINING_VARIANT_DOMAIN.samplingDeadlineMs).toFixed(2)}ms`
     );
+    expect(runs.length).toBe(24);
     expect(median).toBeLessThan(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
   });
 });

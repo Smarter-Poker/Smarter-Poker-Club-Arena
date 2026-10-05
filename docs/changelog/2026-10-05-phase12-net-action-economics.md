@@ -98,21 +98,36 @@ re-checked by the running module at the worker response boundary:
 
 `REMAINING_VARIANT_DOMAIN.netActionDeadlineMs = 3.4`, between the unchanged
 `samplingDeadlineMs` 2.5 and the unchanged `liveBudgetMs` 4. The pass refuses
-before inspecting anything when the budget is already gone, and re-checks
+before INSPECTING anything when the budget is already gone, and re-checks
 before every terminal settlement, so it can never be the reason `finish` falls
-back to the baseline on `work_budget`. Measured on the Mac Studio at the
-sampler's full 32 samples, warm: median 0.135 ms, max 0.30 ms, inside the
-0.9 ms residual. A cold first call is slower than that and reports
-`work_budget_unavailable`, which is the correct outcome and not a silent one.
+back to the baseline on `work_budget`.
+
+Measured at the sampler's full 32 samples, warm, with an unconditional budget
+so every run completes: **Mac Studio median 0.142 ms, p95 0.233 ms**, against a
+0.90 ms residual between the sampling deadline and the net-action deadline.
+
+**Measured limitation, stated rather than smoothed over.** On the shared GitHub
+ubuntu runner the same pass cost about 0.71 ms through the live policy, and on
+that host most post-warmup evaluations did not fit the residual and reported
+`work_budget_unavailable`. That is the designed outcome and it is named, not
+silent: the field is simply absent on those nodes, the proposal is untouched,
+and `reason` is never `work_budget` because of it. Production runs a dedicated
+engine box rather than a shared runner, and `EquityLoadGovernor` already cuts
+`requestedSamples` when the loop saturates, which cuts this pass with it. If
+natural coverage of the field turns out thin, the next step is a DECLARED
+per-line sample cap, not a wider deadline. A cold first call on any host is
+slower than the warm figures and reports the same named refusal.
 
 ## Verification
 
 - `RemainingVariantActionEconomics.test.ts`, 76 cases. Every expected number is
   derived in the comment beside it from the hand's own chips, never from
   another call into the module and never from the pot-share estimator.
-- `RemainingVariantNetAction.test.ts`, 25 cases: the live node, the absences,
-  the named refusals, the boundary validation, and the BBJ contrast that proves
-  the economics changed no decision.
+- `RemainingVariantNetAction.test.ts`, 26 cases: the live node, the absences,
+  the named refusals, the boundary validation, the BBJ contrast that proves the
+  economics changed no decision, a pin that the live outcome is always one of
+  exactly two NAMED states, and an unconditional cost measurement that always
+  measures something rather than passing when it measured nothing.
 - Four source mutations of the calculation (BBJ dropped from the deduction
   call, the refund dropped from the net, the controller bound no longer
   compared, FLO8 scored high-only) and four of the wiring (the boundary check

@@ -76,7 +76,8 @@ after the compatible client and engine are proven live.
   no retired publisher, no scheduler/watchdog, and no destructive testing on
   active players or games.
 - Operation owner: this Codex task, branch
-  `agent/codex-phase1-20261005/fix/customization-phase1-certification-closure`,
+  `agent/codex-phase1-20261005/fix/production-customization-cert-contracts`,
+  protected follow-up PR #6183,
   worktree
   `/Volumes/SmarterWork/agent-work/codex-club-arena-phase1-20261005/codex-phase1-20261005`.
 - Recovered baseline: archived commit `d9c3002f0431663a4015223f86c1ac58b9509294`
@@ -186,8 +187,9 @@ after the compatible client and engine are proven live.
   verdict and is superseded by the intentional Chromium correction and clean
   13/13 settled-source Chromium run above. Hosted Linux Chromium remains the
   final cross-platform browser gate for the corrected commit.
-- Remaining proof: commit this checkpoint, push the exact candidate, complete
-  protected PR checks/merge, verify client publication and exact engine release,
+- The production-certificate correction and this checkpoint are pushed in
+  protected follow-up PR #6183. Remaining proof: complete its checks/merge,
+  verify client publication and exact engine release,
   observe the terminal cutover seal, install/read back `20261005111523`, then
   run the fresh authenticated production commerce/realtime/gameplay certificate
   and verify cleanup plus affected live behavior.

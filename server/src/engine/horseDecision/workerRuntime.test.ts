@@ -19,6 +19,7 @@ import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protoc
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import * as plo4Live from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
+import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 import {
   HorseDecisionWorkerRuntime,
@@ -2879,6 +2880,24 @@ it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
       expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
         result.decision.action
       );
+      // P12.1: the frozen input binding crosses the boundary intact.
+      const receipt = structuredClone(result.decision.remainingVariantPolicy!);
+      expect(remainingVariantReceiptBindingIsValid(receipt)).toBe(true);
+      expect(receipt.inputs).toMatchObject({
+        variant,
+        mode: 'cash',
+        census: { dealerSeat: 1, blindSeats: input.state.blindSeats },
+        positions: { hero: 'button' },
+        privateCards: { cardValues: 'not_recorded' },
+        range: { status: 'not_consumed_preflop' },
+      });
+      expect(horseDecisionReceiptIsValid(structuredClone(result.decision), variant)).toBe(true);
+      const forged = structuredClone(result.decision) as any;
+      forged.remainingVariantPolicy.inputs.pack.calibratedConfidence = 0.99;
+      expect(horseDecisionReceiptIsValid(forged, variant)).toBe(false);
+      const legacy = structuredClone(result.decision) as any;
+      delete legacy.remainingVariantPolicy.inputs;
+      expect(horseDecisionReceiptIsValid(legacy, variant)).toBe(true);
     } finally {
       clock.mockRestore();
     }

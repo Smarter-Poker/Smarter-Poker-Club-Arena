@@ -16,6 +16,7 @@ import { encodeHorseDecisionReads } from './HorseDecisionReadFrame.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from './HorseEval.js';
 import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js';
 import { omahaVariantSpot } from '../benchmark/OmahaVariantPolicyEvidence.js';
+import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
 import { createHash } from 'node:crypto';
 import { horseJournalJson } from '../services/horseDecisionJournal/record.js';
 
@@ -172,6 +173,64 @@ describe('private execution witness', () => {
     expect(make({ ...decision }).phase10Inputs).toBeNull();
     expect(make({ action: 'check', thinkTime: 1 }).phase10Inputs).toBeNull();
   });
+
+  it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+    'owns a compact immutable commitment to the %s Phase 12 input binding (P12.1)',
+    (variant) => {
+      const spot = remainingVariantSpot(variant, 'river', 3);
+      const rng = saveFastRandom();
+      let decision: HorseDecision;
+      try {
+        seedFastRandom(7301205);
+        decision = HorseLogic.decide(
+          spot.hero,
+          spot.state,
+          'balanced',
+          {},
+          { telemetry: false, mind: false, decisionTimeMs: 1000, phase12EvidenceMode: true }
+        );
+      } finally {
+        restoreFastRandom(rng);
+      }
+      const receipt = decision.remainingVariantPolicy!;
+      expect(receipt.inputs).not.toBeNull();
+      const snapshot = { ...input, player: spot.hero, gameState: spot.state };
+      const witness = createHorseExecutionWitness(snapshot, decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      const expected = {
+        version: 'horse-phase12-input-binding-v1',
+        variant,
+        inputSha256: createHash('sha256').update(horseJournalJson(receipt.inputs)).digest('hex'),
+        rangeStatus: receipt.inputs!.range.status,
+      };
+      expect(witness.phase12Inputs).toEqual(expected);
+      expect(Object.isFrozen(witness.phase12Inputs)).toBe(true);
+      // The witness commits to a value, not to the receipt object.
+      decision.remainingVariantPolicy = { ...receipt, inputs: null, eligible: false };
+      expect(witness.phase12Inputs).toEqual(expected);
+      // A refused proposal binds null; a retained receipt without the field,
+      // and every other variant, carry no Phase 12 commitment at all.
+      expect(
+        createHorseExecutionWitness(snapshot, decision, {
+          requestId: 1,
+          lane: 'fast',
+          computeMs: 1,
+          governorScale: 1,
+        }).phase12Inputs
+      ).toBeNull();
+      const legacy = { ...receipt };
+      delete legacy.inputs;
+      expect(make({ ...decision, remainingVariantPolicy: legacy })).not.toHaveProperty(
+        'phase12Inputs'
+      );
+      expect(make({ action: 'check', thinkTime: 1 })).not.toHaveProperty('phase12Inputs');
+      expect(witness).not.toHaveProperty('phase11Inputs');
+    }
+  );
 
   it('owns a compact immutable commitment to the Phase 11 input binding (P11.1)', () => {
     const spot = omahaVariantSpot('plo8', 'river', 3);

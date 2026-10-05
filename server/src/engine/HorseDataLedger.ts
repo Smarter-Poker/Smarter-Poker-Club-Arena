@@ -1985,6 +1985,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase12_range_*',
+    'evaluateRemainingVariantPolicy -> HorseLogic (P12.1 input binding)',
+    'range status of every bound Short Deck/Pineapple/FLH/FLO8 proposal (not_consumed_preflop, unavailable, rejected_malformed, rejected_population, consumed_unattributed, consumed); counts only, never calibration or solver evidence',
+    'Phase12',
+    'phase12_eligible',
+    0.99
+  ),
+  receipt(
+    'phase12_shadow_receipt_binding_dropped',
+    'horseDecision/client (P12.1, the P10 audit F8 rule)',
+    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase12'
+  ),
+  receipt(
     'phase12_street_*',
     'evaluateRemainingVariantPolicy',
     'street coverage for completed policy evaluations',

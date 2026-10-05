@@ -628,6 +628,7 @@ export function reconcileHorseJournalHand(
           !same(w.phase7Evidence ?? null, expectedWitness.phase7Evidence ?? null) ||
           !same(w.phase10Inputs ?? null, expectedWitness.phase10Inputs ?? null) ||
           !same(w.phase11Inputs ?? null, expectedWitness.phase11Inputs ?? null) ||
+          !same(w.phase12Inputs ?? null, expectedWitness.phase12Inputs ?? null) ||
           w.policyFallback !== expectedWitness.policyFallback ||
           w.expectedExecutionAmount !== expectedAmount ||
           w.computeMs !== d.computeMs ||

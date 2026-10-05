@@ -10,6 +10,11 @@ import {
   type OmahaVariantRangeStatus,
 } from './omaha/OmahaVariantLivePolicy.js';
 import type { OmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import {
+  remainingVariantInputBindingSha256,
+  type RemainingVariantRangeStatus,
+} from './remainingVariants/RemainingVariantLivePolicy.js';
+import type { RemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 import type { Phase8Selection } from './HorseTournamentPostflop.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
@@ -133,6 +138,18 @@ export interface HorseExecutionWitness {
     variant: OmahaPolicyVariant;
     inputSha256: string;
     rangeStatus: OmahaVariantRangeStatus;
+  }> | null;
+  /** P12.1 compact private commitment to the facts a Short Deck, Pineapple,
+   * FLH or FLO8 proposal used. Present only on decisions with a Phase 12
+   * receipt that carries the binding field (null for a refused proposal);
+   * absent on retained witnesses and every other variant. The sampler reads
+   * the public action line only, so no read frame is bound. Never strength or
+   * calibration proof. */
+  readonly phase12Inputs?: Readonly<{
+    version: 'horse-phase12-input-binding-v1';
+    variant: RemainingPolicyVariant;
+    inputSha256: string;
+    rangeStatus: RemainingVariantRangeStatus;
   }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
@@ -331,6 +348,20 @@ export function createHorseExecutionWitness(
                 variant: decision.omahaVariantPolicy.inputs.variant,
                 inputSha256: omahaVariantInputBindingSha256(decision.omahaVariantPolicy.inputs),
                 rangeStatus: decision.omahaVariantPolicy.inputs.range.status,
+              })
+            : null,
+        }
+      : {}),
+    ...(decision.remainingVariantPolicy && Object.hasOwn(decision.remainingVariantPolicy, 'inputs')
+      ? {
+          phase12Inputs: decision.remainingVariantPolicy.inputs
+            ? Object.freeze({
+                version: 'horse-phase12-input-binding-v1' as const,
+                variant: decision.remainingVariantPolicy.inputs.variant,
+                inputSha256: remainingVariantInputBindingSha256(
+                  decision.remainingVariantPolicy.inputs
+                ),
+                rangeStatus: decision.remainingVariantPolicy.inputs.range.status,
               })
             : null,
         }

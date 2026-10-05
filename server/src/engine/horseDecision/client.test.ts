@@ -19,6 +19,7 @@ import { seedFastRandom } from '../HorseEval.js';
 import { drainFires, enableBrainTelemetry } from '../BrainTelemetry.js';
 import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
 import { omahaVariantSpot } from '../../benchmark/OmahaVariantPolicyEvidence.js';
+import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
@@ -2725,6 +2726,153 @@ describe('P11.3 per-pack authority at the client boundary', () => {
       expect(client.status().phase).toBe('failed');
     }
   );
+});
+
+describe('P12-A: a duplicate or stale Pineapple discard answer at the client boundary', () => {
+  const discardRequest = (client: LiveHorseDecisionWorkerClient, fence: string) =>
+    client.decideDiscard({
+      generation: 7,
+      fence,
+      cards: [],
+      communityCards: [],
+      gameVariant: 'pineapple',
+    });
+  const discardResult = (requestId: number, fence: string, cardIndex = 1) =>
+    ({
+      type: 'DISCARD_RESULT',
+      requestId,
+      generation: 7,
+      fence,
+      cardIndex,
+      computeMs: 1,
+      governorScale: 1,
+    }) as any;
+
+  it('resolves the first answer once and refuses a duplicate of it', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = discardRequest(client, 'p12a-dup');
+    worker.emitMessage(discardResult(1, 'p12a-dup', 1));
+    await expect(pending).resolves.toMatchObject({ cardIndex: 1 });
+    // The same answer again, now with no job that owns it: refused, never
+    // delivered a second time.
+    worker.emitMessage(discardResult(1, 'p12a-dup', 2));
+    expect(client.status().phase).toBe('failed');
+    await expect(pending).resolves.toMatchObject({ cardIndex: 1 });
+  });
+
+  it('refuses a duplicate answer that would land on the next queued discard', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const first = discardRequest(client, 'p12a-seat-1');
+    const second = discardRequest(client, 'p12a-seat-2');
+    void second.catch(() => undefined);
+    worker.emitMessage(discardResult(1, 'p12a-seat-1', 0));
+    await expect(first).resolves.toMatchObject({ cardIndex: 0 });
+    worker.emitMessage(discardResult(1, 'p12a-seat-1', 0));
+    await expect(second).rejects.toThrow('broke FIFO: expected 2, received 1');
+  });
+
+  it("refuses an answer carrying another hand's fence (stale hand)", async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = discardRequest(client, 'p12a-hand-2');
+    void pending.catch(() => undefined);
+    worker.emitMessage(discardResult(1, 'p12a-hand-1'));
+    await expect(pending).rejects.toThrow('mismatched lifecycle fence');
+  });
+});
+
+describe('P12.1: a Short Deck/Pineapple/FLH/FLO8 receipt whose input binding fails validation', () => {
+  /** A real Phase 12 cash decision from the brain, with its frozen input binding. */
+  const variantDecision = (mode: 'shadow' | 'candidate') => {
+    // A FLO8 flop with the nut low and a pair of aces: the candidate raises
+    // the canonical fixed amount where the reference calls.
+    const spot = remainingVariantSpot('flo8', 'flop', 2);
+    seedFastRandom(100105);
+    return structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase12Remaining: mode,
+          phase12EvidenceMode: true,
+        }
+      )
+    );
+  };
+  const corruptBinding = (decision: ReturnType<typeof variantDecision>) => {
+    (
+      decision.remainingVariantPolicy!.inputs!.approximation as { solverInput: unknown }
+    ).solverInput = true;
+    return decision;
+  };
+  const send = (decision: ReturnType<typeof variantDecision>, fence: string) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'flo8';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, fence);
+    reply.decision = decision;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    return { worker, client, pending };
+  };
+
+  it('drops a shadow-only receipt, keeps the actual action and the worker, and counts it by name', async () => {
+    const valid = variantDecision('shadow');
+    expect(valid.remainingVariantPolicy).toMatchObject({
+      mode: 'shadow',
+      applied: false,
+      eligible: true,
+    });
+    expect(valid.policyOwnership).toMatchObject({ owner: 'phase12', mode: 'shadow' });
+    expect(horseDecisionReceiptIsValid(structuredClone(valid), 'flo8')).toBe(true);
+    const forged = corruptBinding(structuredClone(valid));
+    expect(horseDecisionReceiptIsValid(structuredClone(forged), 'flo8')).toBe(false);
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(forged, 'p12-1-shadow');
+    const result = await pending;
+    expect({ action: result.decision.action, amount: result.decision.amount }).toEqual({
+      action: valid.action,
+      amount: valid.amount,
+    });
+    expect(result.decision.remainingVariantPolicy).toBeUndefined();
+    expect(result.decision.policyOwnership).toBeUndefined();
+    expect(result.decision.executionWitness).not.toHaveProperty('phase12Inputs');
+    expect(result.decision.executionWitness).toMatchObject({ policyOwnership: null });
+    expect(client.status().phase).not.toBe('failed');
+    expect(worker.terminateCalls).toBe(0);
+    expect(drainFires()).toContainEqual({
+      feature: 'phase12_shadow_receipt_binding_dropped',
+      fires: 1,
+    });
+  });
+
+  it('still fails closed for an applied receipt', async () => {
+    const applied = variantDecision('candidate');
+    expect(applied.remainingVariantPolicy).toMatchObject({ mode: 'candidate', applied: true });
+    enableBrainTelemetry();
+    drainFires();
+    const { worker, client, pending } = send(corruptBinding(applied), 'p12-1-applied');
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+    expect(worker.terminateCalls).toBe(1);
+    expect(drainFires().map((row) => row.feature)).not.toContain(
+      'phase12_shadow_receipt_binding_dropped'
+    );
+  });
 });
 
 describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', () => {

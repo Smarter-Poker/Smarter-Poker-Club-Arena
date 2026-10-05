@@ -3133,6 +3133,8 @@ export class HorseLogic {
           if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
           noteFire(`phase12_reason_${phase12.receipt.reason}`);
           if (phase12.receipt.eligible) noteFire('phase12_eligible');
+          if (phase12.receipt.inputs)
+            noteFire(`phase12_range_${phase12.receipt.inputs.range.status}`);
           if (phase12.receipt.fired) {
             noteFire('phase12_fired');
             noteFire(`phase12_street_${gs.stage}`);

@@ -67,6 +67,27 @@ export type RemainingVariantMode = OmahaVariantMode;
 export type RemainingVariantRangeStatus = OmahaVariantRangeStatus;
 
 /**
+ * The complete budget-refusal vocabulary for an eligible decision that never
+ * reaches a firing proposal. The sampler can exhaust its own earlier deadline
+ * before it produces equity, while the overall policy can exhaust the later
+ * live-work deadline. Both outcomes are safe reference-action refusals and
+ * both must remain named for receipts, validators and release evidence.
+ */
+export const REMAINING_VARIANT_UNFIRED_BUDGET_REFUSALS = Object.freeze([
+  'equity_budget_unavailable',
+  'work_budget',
+] as const);
+
+export type RemainingVariantUnfiredBudgetRefusal =
+  (typeof REMAINING_VARIANT_UNFIRED_BUDGET_REFUSALS)[number];
+
+export function remainingVariantUnfiredBudgetRefusalIsValid(
+  value: unknown
+): value is RemainingVariantUnfiredBudgetRefusal {
+  return REMAINING_VARIANT_UNFIRED_BUDGET_REFUSALS.some((reason) => reason === value);
+}
+
+/**
  * P12.1: the facts a Short Deck, Crazy Pineapple, Fixed Limit Hold'em or
  * Fixed Limit Omaha Eight-or-Better proposal actually consumed, copied and
  * frozen when it was computed. A private receipt field: never public state or

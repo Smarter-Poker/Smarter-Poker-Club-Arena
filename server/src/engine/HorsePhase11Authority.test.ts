@@ -426,7 +426,13 @@ describe('P11.3 admission refuses by name unless the pack qualifies and complete
         withCompletion({
           streets: {
             ...p11CompletionObject(V).streets,
-            river: { eligible: 200, completed: 200, workBudget: 1, samplerBudgetExhausted: 0 },
+            river: {
+              eligible: 200,
+              completed: 200,
+              workBudget: 1,
+              samplerBudgetExhausted: 0,
+              sampleUnavailable: 0,
+            },
           },
         }),
       'completion_evidence_mismatch',
@@ -816,9 +822,52 @@ describe('P11.3 natural completion share: what a record counts', () => {
         completed: 1,
         workBudget: 1,
         samplerBudgetExhausted: 0,
+        sampleUnavailable: 0,
       });
     // Another pack's counting reads none of them.
     expect(horsePhase11CompletionCounts('plo6', seen).river.eligible).toBe(0);
+  });
+
+  it('v2: a postflop decision priced with no complete live sample is not completed', () => {
+    const counted: unknown[] = [];
+    for (const street of ['flop', 'turn', 'river'] as const) {
+      const input = omahaVariantSpot('plo5', street, 3);
+      // The sampler's 3 ms budget is spent before the first sample; the
+      // policy itself stays inside its 4 ms budget.
+      let calls = 0;
+      const clock = () => (calls++ === 0 ? 0 : 3.5);
+      const r = evaluateOmahaVariantPolicy(
+        input.hero,
+        input.state,
+        { action: 'call', amount: input.state.toCall, thinkTime: 0 },
+        null,
+        'shadow',
+        clock
+      );
+      expect(r.receipt.inputs?.range.status, street).toBe('unavailable');
+      expect(r.receipt.reason, street).not.toBe('work_budget');
+      expect(horsePhase11CompletionOutcome('plo5', r.receipt), street).toBe('sample_unavailable');
+      counted.push(r.receipt);
+    }
+    expect(horsePhase11CompletionCounts('plo5', counted).river).toEqual({
+      eligible: 1,
+      completed: 0,
+      workBudget: 0,
+      samplerBudgetExhausted: 0,
+      sampleUnavailable: 1,
+    });
+    // Preflop never samples: an eligible preflop proposal inside the budget
+    // is the measured policy.
+    const pre = omahaVariantSpot('plo5', 'preflop', 3);
+    const p = evaluateOmahaVariantPolicy(
+      pre.hero,
+      pre.state,
+      pre.baseline,
+      null,
+      'shadow',
+      () => 0
+    );
+    expect(horsePhase11CompletionOutcome('plo5', p.receipt)).toBe('completed');
   });
 
   it('the floor is judged on the Wilson lower bound at the contract interval z', () => {

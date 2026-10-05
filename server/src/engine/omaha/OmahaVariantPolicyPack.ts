@@ -214,6 +214,113 @@ export function omahaVariantHandShape(variant: OmahaPolicyVariant, cards: Card[]
   };
 }
 
+const SUIT_INDEX: Record<string, number> = { clubs: 0, diamonds: 1, hearts: 2, spades: 3 };
+
+/**
+ * omahaVariantHandShape(variant, cards).quality, computed without the
+ * descriptive fields: the variant sampler weighs every drawn hand by this one
+ * number. Every integer it is built from (pairs, suit counts, connected cores,
+ * low ranks) is the same integer omahaVariantHandShape derives, and the final
+ * arithmetic is the same expression in the same order, so the value is
+ * bit-identical (pinned against omahaVariantHandShape by test). Cards are the
+ * sampler's own deck draws, already valid and distinct; no validation here.
+ */
+export function omahaVariantHandQuality(variant: OmahaPolicyVariant, cards: Card[]): number {
+  const rankCount = new Array<number>(15).fill(0);
+  const suitCount = [0, 0, 0, 0];
+  const aceSuit = [false, false, false, false];
+  let broadway = 0;
+  for (const c of cards) {
+    const v = ranks.indexOf(c.rank) + 2;
+    const s = SUIT_INDEX[c.suit];
+    rankCount[v]++;
+    suitCount[s]++;
+    if (v === 14) aceSuit[s] = true;
+    if (v >= 10) broadway++;
+  }
+  const distinct: number[] = [];
+  for (let v = 2; v <= 14; v++) if (rankCount[v]) distinct.push(v);
+  let pairCount = 0,
+    highPair = false,
+    tripleCount = 0;
+  for (const v of distinct) {
+    if (rankCount[v] === 2) {
+      pairCount++;
+      if (v >= 12) highPair = true;
+    } else if (rankCount[v] >= 3) tripleCount++;
+  }
+  const pairedAces = rankCount[14] === 2;
+  let nutSuits = 0,
+    suitedPairs = 0,
+    suitWaste = 0;
+  for (let s = 0; s < 4; s++) {
+    if (aceSuit[s] && suitCount[s] >= 2) nutSuits++;
+    if (suitCount[s] >= 2) suitedPairs++;
+    suitWaste += Math.max(0, suitCount[s] - 2);
+  }
+  let coreMask = 0;
+  let connectedCores = 0;
+  const n = distinct.length;
+  for (let a = 0; a < n; a++)
+    for (let b = a + 1; b < n; b++)
+      for (let c = b + 1; c < n; c++)
+        for (let d = c + 1; d < n; d++) {
+          const g0 = distinct[a],
+            g3 = distinct[d];
+          // The wheel reading moves an ace (only ever g3) to 1.
+          const span = g3 === 14 ? Math.min(g3 - g0, distinct[c] - 1) : g3 - g0;
+          if (span <= 4) {
+            connectedCores++;
+            coreMask |= (1 << g0) | (1 << distinct[b]) | (1 << distinct[c]) | (1 << g3);
+          }
+        }
+  let coreSize = 0;
+  for (let bits = coreMask; bits; bits &= bits - 1) coreSize++;
+  const connectivity = coreSize / cards.length;
+  const highQuality = clamp(
+    0.04 +
+      (pairedAces ? 0.35 : highPair ? 0.16 : 0) +
+      nutSuits * 0.12 +
+      Math.min(3, suitedPairs) * 0.065 +
+      connectivity * 0.29 +
+      Math.min(4, connectedCores) * 0.025 +
+      (broadway / cards.length) * 0.13 +
+      Math.min(2, pairCount) * 0.06 -
+      tripleCount * 0.23 -
+      suitWaste * 0.025
+  );
+  if (variant === 'plo5') return highQuality;
+  if (variant === 'plo6')
+    return clamp(
+      highQuality * 0.88 +
+        connectivity * 0.08 +
+        Math.min(3, suitedPairs) * 0.025 -
+        Number(nutSuits === 0) * 0.035
+    );
+  const low = (r: number) => rankCount[r === 1 ? 14 : r] > 0;
+  let lowDistinct = 0,
+    lowFive = 0;
+  for (let r = 1; r <= 8; r++)
+    if (low(r)) {
+      lowDistinct++;
+      if (r <= 5) lowFive++;
+    }
+  const backupLow = lowDistinct >= 3;
+  const aceDeuce = low(1) && low(2);
+  const aceTrey = low(1) && low(3);
+  const lowQuality = clamp(
+    (aceDeuce ? 0.57 : aceTrey ? 0.32 : low(2) && low(3) ? 0.2 : 0) +
+      Number(backupLow) * 0.2 +
+      Math.min(4, lowFive) * 0.045
+  );
+  return clamp(
+    lowQuality * 0.52 +
+      highQuality * 0.38 +
+      Number(aceDeuce && nutSuits > 0) * 0.1 +
+      Number(backupLow && pairedAces) * 0.06
+  );
+}
+
 export function omahaVariantEntryBars(
   variant: OmahaPolicyVariant,
   node: {

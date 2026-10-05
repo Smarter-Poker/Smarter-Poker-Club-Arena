@@ -98,12 +98,14 @@ export const p11QualificationBytes = (
 export const p11Street = (
   eligible = 200,
   workBudget = 0,
-  samplerBudgetExhausted = 0
+  samplerBudgetExhausted = 0,
+  sampleUnavailable = 0
 ): HorsePhase11StreetCompletion => ({
   eligible,
-  completed: eligible - workBudget - samplerBudgetExhausted,
+  completed: eligible - workBudget - samplerBudgetExhausted - sampleUnavailable,
   workBudget,
   samplerBudgetExhausted,
+  sampleUnavailable,
 });
 
 /** A `horse-phase11-completion-v1` record that clears the floor. */

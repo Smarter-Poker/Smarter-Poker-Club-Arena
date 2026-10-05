@@ -5,7 +5,7 @@ import {
   saveFastRandom,
   scoreOmahaHi,
   scoreOmahaLow,
-  omahaMadeClass,
+  scoreOmahaHiPartial,
   type HorseEquityOutcomeSample,
 } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
@@ -16,7 +16,7 @@ import {
 } from './OmahaVariantEquity.js';
 import {
   OMAHA_VARIANT_PACKS,
-  omahaVariantHandShape,
+  omahaVariantHandQuality,
   type OmahaPolicyVariant,
 } from './OmahaVariantPolicyPack.js';
 
@@ -84,6 +84,24 @@ export function sampleOmahaVariantEquity(
     4,
     Math.floor(32 * Math.min(1, Math.max(0, equityGovernor.current())))
   );
+  const board3 = state.communityCards;
+  // On the river the board is complete, so a drawn hand's made score IS its
+  // showdown score (scoreOmahaHiPartial on five cards enumerates exactly what
+  // scoreOmahaHi does, in the same order), and the hero's scores are the same
+  // in every sample. Both are computed once instead of per sample.
+  const riverBoard = board3.length === 5;
+  const scoreOf = new Map<Card[], number>();
+  const madeCategory = (cards: Card[]) => {
+    const score = scoreOmahaHiPartial(cards, board3);
+    if (riverBoard) scoreOf.set(cards, score);
+    return Math.floor(score / 0x100000);
+  };
+  const riverHero = riverBoard
+    ? {
+        high: scoreOmahaHi(hero.cards, board3),
+        low: pack.splitPot ? scoreOmahaLow(hero.cards, board3) : Infinity,
+      }
+    : null;
   const samples: HorseEquityOutcomeSample[] = [];
   // P11.1: what the prior actually did, recorded with the sample it produced.
   let seatDraws = 0;
@@ -92,10 +110,12 @@ export function sampleOmahaVariantEquity(
     if (!withinBudget()) break;
     let remaining = deck.slice();
     const hands = new Map<string, Card[]>();
+    const contactOf = new Map<string, number>();
     let iterationEscapes = 0;
     for (const p of dealt) {
       if (!withinBudget()) break sampleLoop;
       const read = reads.get(p.user_id)!;
+      const exponent = Math.min(4, 1 + read.raises * 0.6 + read.calls * 0.1);
       // Up to three rejection attempts from the still-available deck. The
       // final attempt is a declared uniform escape, keeping sparse priors
       // from inventing impossible cards or starving wide tables.
@@ -105,17 +125,26 @@ export function sampleOmahaVariantEquity(
           { length: pack.holes },
           () => trial.splice(Math.floor(random() * trial.length), 1)[0]
         );
-        const shape = omahaVariantHandShape(variant, cards);
-        const contact = omahaMadeClass(cards, state.communityCards).category / 10;
-        const signal = Math.min(1, shape.quality * 0.55 + contact * 0.45);
-        const weight = Math.pow(
-          0.3 + signal * 0.7,
-          Math.min(4, 1 + read.raises * 0.6 + read.calls * 0.1)
-        );
-        if (attempt === 2 || random() <= weight) {
-          if (attempt === 2) iterationEscapes++;
+        // The third attempt is accepted without a weight test (no random draw
+        // either), so its weight is never computed: same cards, same stream.
+        if (attempt === 2) {
+          iterationEscapes++;
           remaining = trial;
           hands.set(p.user_id, cards);
+          break;
+        }
+        // The made category, exactly omahaMadeClass(...).category on a 3-5 card
+        // board, without the board-shape and rank maps the prior never reads.
+        const category = madeCategory(cards);
+        const signal = Math.min(
+          1,
+          omahaVariantHandQuality(variant, cards) * 0.55 + (category / 10) * 0.45
+        );
+        const weight = Math.pow(0.3 + signal * 0.7, exponent);
+        if (random() <= weight) {
+          remaining = trial;
+          hands.set(p.user_id, cards);
+          contactOf.set(p.user_id, category / 10);
           break;
         }
       }
@@ -132,12 +161,19 @@ export function sampleOmahaVariantEquity(
     seatDraws += dealt.length;
     uniformEscapes += iterationEscapes;
     samples.push({
-      heroHigh: scoreOmahaHi(hero.cards, board),
-      heroLow: low(hero.cards),
-      opponentHigh: active.map((p) => scoreOmahaHi(hands.get(p.user_id)!, board)),
+      heroHigh: riverHero ? riverHero.high : scoreOmahaHi(hero.cards, board),
+      heroLow: riverHero
+        ? Number.isFinite(riverHero.low)
+          ? riverHero.low
+          : null
+        : low(hero.cards),
+      opponentHigh: active.map((p) => {
+        const cards = hands.get(p.user_id)!;
+        return scoreOf.get(cards) ?? scoreOmahaHi(cards, board);
+      }),
       opponentLow: active.map((p) => low(hands.get(p.user_id)!)),
       opponentDecisionStrength: active.map(
-        (p) => omahaMadeClass(hands.get(p.user_id)!, state.communityCards).category / 10
+        (p) => contactOf.get(p.user_id) ?? madeCategory(hands.get(p.user_id)!) / 10
       ),
     });
   }

@@ -403,7 +403,7 @@ async function selectAsset(
     .waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/user_theme_settings'),
+        response.url().includes('/rest/v1/rpc/fn_patch_table_appearance'),
       { timeout: PRODUCTION_RESPONSE_TIMEOUT }
     );
   await asset.click();
@@ -668,8 +668,9 @@ test.describe('production Table Studio realtime contract', () => {
         await expect
           .poll(
             () =>
-              page.evaluate(() =>
-                JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')
+              page.evaluate(
+                (userId) => JSON.parse(localStorage.getItem(`ca_user_settings:${userId}`) || '{}'),
+                primaryUserId
               ),
             { timeout: PRODUCTION_RESPONSE_TIMEOUT }
           )

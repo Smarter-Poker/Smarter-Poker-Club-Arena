@@ -37,9 +37,27 @@ new answer is a new row. So every number above changes by appending a row.
 
 ## What it builds
 
-- `ca_diamond_economics` and its refusing reader. SHARED with the other Diamond
-  destination lanes: it did not exist anywhere, so this creates it. Extend the
-  name list and the unit table; do not replace them.
+- **Nothing of `ca_diamond_economics`.** That table existed nowhere when this
+  work began and was created here; it then landed on main as
+  `20261005151918_diamond_economics_records_the_owner_answers` (the A1 to A20
+  lane) with a closed name list that already carries every B14 to B22 name and a
+  units map that fixes each one's unit. This migration joins that table instead:
+  it creates no table and no reader, takes their names
+  (`bbj_enabled`, `bbj_drop_per_hand`, `bbj_qualifying_hand`,
+  `bbj_excluded_games`, `bbj_min_pot`, `bbj_min_dealt_in`, `bbj_pool_split`,
+  `bbj_hit_shares`, `bbj_seed`, `bbj_pool_ceiling`,
+  `bbj_withdrawal_destination`, `rakeback_percent`, `rake_earns_vip_points`) and
+  their units, refuses to run if their table or readers are absent, and refuses
+  rather than alter their closed name list. **One narrow extension**, the kind
+  that constraint's own comment asks for: the account list admitted only
+  `ca_diamond_house` and `retired_from_supply`, and B22's answer is neither and
+  must not be, so `surviving_diamond_jackpot_pool` and
+  `contributing_players_pro_rata` are added beside them. Both of theirs stay.
+- A strict reader for a `shares` answer. `bbj_pool_split` and `bbj_hit_shares`
+  carry several percentages in one word, so the grammar is fixed in one place
+  and a malformed segment or a missing key refuses by name rather than being
+  partly parsed. The migration asserts both pool regimes and all seventeen hit
+  shares re-sum to the whole.
 - `poker_diamond_jackpot_pools` and `poker_diamond_jackpot_ledger`. The pool is
   player-side, inside the arena float, with NO stored balance: a bank's balance
   is the sum of its append-only rows, so it cannot drift from its own history

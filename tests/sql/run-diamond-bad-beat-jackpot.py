@@ -31,6 +31,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SQL = ROOT / 'tests/sql'
 MIGRATION = (ROOT / 'supabase/migrations'
              / '20261005152000_the_diamond_jackpot_is_decided_and_its_pool_is_player_side.sql')
+# ca_diamond_economics is SHARED. It is the A1 to A20 lane's table, and this
+# lane joins it rather than holding a copy.
+SHARED_ECONOMICS = (ROOT / 'supabase/migrations'
+                    / '20261005151918_diamond_economics_records_the_owner_answers.sql')
 # THIS RUNNER OWNS ITS CLUSTER, so it names a port no other runner names. The
 # Phase 3 base asserts the port of the long-lived cluster it was written for,
 # which this run does not and must not have; that guard's purpose is "isolated
@@ -64,7 +68,7 @@ def main():
     ap.add_argument('--keep', action='store_true')
     args = ap.parse_args()
 
-    for f in (MIGRATION, SQL / 'poker-diamond-custody.sql',
+    for f in (MIGRATION, SHARED_ECONOMICS, SQL / 'poker-diamond-custody.sql',
               SQL / 'poker-diamond-cash-custody-setup.sql',
               SQL / 'poker-diamond-bad-beat-jackpot-fixture.sql',
               SQL / 'poker-diamond-bad-beat-jackpot-acceptance.sql'):
@@ -129,6 +133,23 @@ def main():
             rewritten.unlink(missing_ok=True)
         load(SQL / 'poker-diamond-cash-custody-setup.sql', 'the Diamond cash custody setup')
         load(SQL / 'poker-diamond-bad-beat-jackpot-fixture.sql', 'the jackpot fixture delta')
+        # THE SHARED ANSWERS TABLE IS THE A LANE'S, LOADED FROM ITS OWN
+        # MIGRATION. 20261005151918 created ca_diamond_economics, its units
+        # map, its append-only trigger and the three readers; this lane adopts
+        # them and must meet them exactly. Its last section asserts things
+        # about the wider estate that this fixture is not (a tournament
+        # creation door's md5, the house, the register), so the file is cut at
+        # its own section 7 heading and a COMMIT is added. Sections 1 to 6 are
+        # loaded verbatim, including the A1 to A20 answers.
+        shared = SHARED_ECONOMICS.read_text()
+        head = shared.index('BEGIN;')
+        cut = shared.index('-- 7. EVERY EDIT LANDED, AND THE ESTATE IS AS IT WAS')
+        trimmed = SQL / 'poker-diamond-bad-beat-jackpot-shared.generated.sql'
+        trimmed.write_text(shared[head:cut] + '\nCOMMIT;\n')
+        try:
+            load(trimmed, 'the shared ca_diamond_economics, sections 1 to 6 of 20261005151918')
+        finally:
+            trimmed.unlink(missing_ok=True)
         # THE MIGRATION IS LOADED AS IT WILL BE APPLIED. Not narrowed, not
         # edited: if an asserted substitution does not meet its pinned md5 here,
         # it would not meet it in production either.

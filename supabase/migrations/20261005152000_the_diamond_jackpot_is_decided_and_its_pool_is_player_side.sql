@@ -75,6 +75,14 @@
 -- ca_diamond_economics, so every one of them changes by appending a row, not
 -- by editing code.
 --
+-- THAT TABLE IS NOT THIS LANE'S. It existed nowhere when this work started and
+-- was created here; it then landed on main as 20261005151918 (the A1 to A20
+-- lane) with a closed name list that already carries every B14 to B22 name and
+-- a units map that fixes each one's unit. This migration therefore JOINS it -
+-- no table, no reader, their names, their units - and extends exactly one
+-- thing: the account list, to admit the two accounts B22 needs and whose
+-- storage this migration provides. Section 1 says it in full.
+--
 --   B14  IS THERE A DIAMOND BAD BEAT JACKPOT?  YES.
 --        The Diamond Arena is a diamonds-only clone of a chip club and the
 --        chip club runs a bad beat jackpot on every eligible cash game. The
@@ -273,206 +281,112 @@ BEGIN
 END $before$;
 
 -- ---------------------------------------------------------------------------
--- 1. ca_diamond_economics: ONE TABLE OF ANSWERS, APPEND ONLY
+-- 1. ca_diamond_economics IS ALREADY HERE, AND THIS LANE JOINS IT
 -- ---------------------------------------------------------------------------
--- SHARED TABLE. Design section 3.2 gives this table to every Diamond
--- destination lane: cash rake (B4 to B11), the tournament fee rates (B1 to
--- B3), the guarantee and promotional-entry caps (A1 to A20) and this jackpot.
--- It did not exist in production or in the repository when this was written, so
--- it is created here. A lane that lands after this one EXTENDS the name list
--- and the unit table; it does not replace them. Nothing in this file is
--- specific to the jackpot except the rows at the end.
+-- WHAT CHANGED WHILE THIS WAS BEING WRITTEN. ca_diamond_economics existed
+-- nowhere - not in production, not in this repository - when this lane started,
+-- so it was created here. It then landed on main as
+-- 20261005151918_diamond_economics_records_the_owner_answers (PR #6161, the
+-- A1 to A20 lane), with a closed name list that ALREADY CARRIES EVERY B14 TO
+-- B22 NAME and a units map that fixes each one's unit. That is the shared
+-- table the design asks for, and two lanes writing one table have to agree
+-- rather than each hold its own copy.
 --
--- A value is never updated and never deleted. A new answer is a new row, and
--- the current value is the newest row for a name and scope. That is why a
--- number can be changed by appending a row rather than by shipping code.
-DO $econ$
+-- So this lane adopts it. It creates no table, defines no reader, and takes
+-- their names and their units: bbj_enabled, bbj_drop_per_hand,
+-- bbj_qualifying_hand, bbj_excluded_games, bbj_min_pot, bbj_min_dealt_in,
+-- bbj_pool_split, bbj_hit_shares, bbj_seed, bbj_pool_ceiling,
+-- bbj_withdrawal_destination, rakeback_percent and rake_earns_vip_points. The
+-- readers are theirs too: fn_ca_diamond_economic for a number,
+-- fn_ca_diamond_economic_text for a word, fn_ca_diamond_economic_on for a
+-- switch, each refusing an unset value by name under SQLSTATE PDE01.
+--
+-- ONE NARROW EXTENSION, and it is the kind the constraint's own comment asks
+-- for. ca_diamond_economics_account_exists admits only 'ca_diamond_house' and
+-- 'retired_from_supply', "an account whose storage exists today". B22's answer
+-- is neither, and must not be: a jackpot pool is money owed to players, so the
+-- house is the one place it may never go (design rule R1, CLAUDE.md 10.9
+-- condition 3). The two accounts this migration's own storage provides are
+-- added beside theirs; neither of theirs is removed.
+DO $adopt$
 BEGIN
-  IF to_regclass('public.ca_diamond_economics') IS NOT NULL THEN
-    RAISE NOTICE 'ca_diamond_economics already exists; this migration only appends to it';
-    RETURN;
+  IF to_regclass('public.ca_diamond_economics') IS NULL THEN
+    RAISE EXCEPTION 'ca_diamond_economics is absent; apply 20261005151918 first';
   END IF;
+  IF to_regprocedure('public.fn_ca_diamond_economic(text,text)') IS NULL
+     OR to_regprocedure('public.fn_ca_diamond_economic_text(text,text)') IS NULL
+     OR to_regprocedure('public.fn_ca_diamond_economic_on(text,text)') IS NULL THEN
+    RAISE EXCEPTION 'the Diamond economics readers are absent; apply 20261005151918 first';
+  END IF;
+  -- The names this lane writes must already be on their closed list. If one is
+  -- not, that is a disagreement between two lanes about what a question is
+  -- called, and it stops here rather than being papered over with an ALTER.
+  IF EXISTS (
+    SELECT 1 FROM unnest(ARRAY[
+      'bbj_enabled', 'bbj_drop_per_hand', 'bbj_qualifying_hand', 'bbj_excluded_games',
+      'bbj_min_pot', 'bbj_min_dealt_in', 'bbj_pool_split', 'bbj_hit_shares',
+      'bbj_seed', 'bbj_pool_ceiling', 'bbj_withdrawal_destination',
+      'rakeback_percent', 'rake_earns_vip_points']) n
+     WHERE public.fn_ca_diamond_economics_units_of(n) IS NULL) THEN
+    RAISE EXCEPTION 'a B14 to B22 name this lane records is not on the shared closed list';
+  END IF;
+END $adopt$;
 
-  CREATE TABLE public.ca_diamond_economics (
-    id            bigserial PRIMARY KEY,
-    name          text        NOT NULL,
-    scope         text        NOT NULL DEFAULT 'all',
-    value         numeric,
-    account       text,
-    units         text        NOT NULL,
-    approved_quote text       NOT NULL,
-    approved_on   date        NOT NULL,
-    basis         text        NOT NULL,
-    recorded_by   text        NOT NULL,
-    recorded_at   timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT ca_diamond_economics_name_shape
-      CHECK (name = btrim(name) AND name <> '' AND name ~ '^[a-z][a-z0-9_]*$'),
-    -- 'all', a stake named by its big blind in Diamonds, or a game variant.
-    CONSTRAINT ca_diamond_economics_scope_shape
-      CHECK (scope = 'all' OR scope ~ '^bb:[0-9]+$' OR scope ~ '^variant:[a-z0-9_]+$'),
-    -- Exactly one of the two answer columns. An answer is a number or an
-    -- account; it is never both and never neither.
-    CONSTRAINT ca_diamond_economics_one_answer
-      CHECK ((value IS NULL) <> (account IS NULL)),
-    CONSTRAINT ca_diamond_economics_units_present
-      CHECK (units = btrim(units) AND units <> ''),
-    -- Dan's words, verbatim, and they may not be empty. The DERIVATION is a
-    -- column of its own: no row may carry a quote as if it were the reasoning.
-    CONSTRAINT ca_diamond_economics_quote_present
-      CHECK (btrim(approved_quote) <> ''),
-    CONSTRAINT ca_diamond_economics_basis_present
-      CHECK (btrim(basis) <> ''),
-    CONSTRAINT ca_diamond_economics_recorded_by_present
-      CHECK (btrim(recorded_by) <> '')
+ALTER TABLE public.ca_diamond_economics
+  DROP CONSTRAINT IF EXISTS ca_diamond_economics_account_exists;
+ALTER TABLE public.ca_diamond_economics
+  ADD CONSTRAINT ca_diamond_economics_account_exists CHECK (
+    units <> 'account' OR value_text IN (
+      'ca_diamond_house',
+      'retired_from_supply',
+      -- B22. The storage for both is created by this migration:
+      -- poker_diamond_jackpot_pools holds the surviving pool, and the
+      -- contributors of a pool are the payer rows of its own ledger.
+      'surviving_diamond_jackpot_pool',
+      'contributing_players_pro_rata'
+    )
   );
 
-  CREATE INDEX ca_diamond_economics_current
-    ON public.ca_diamond_economics (name, scope, id DESC);
-
-  ALTER TABLE public.ca_diamond_economics ENABLE ROW LEVEL SECURITY;
-  REVOKE ALL ON public.ca_diamond_economics FROM PUBLIC, anon, authenticated, service_role;
-  REVOKE ALL ON SEQUENCE public.ca_diamond_economics_id_seq FROM PUBLIC, anon, authenticated, service_role;
-
-  CREATE TRIGGER ca_diamond_economics_append_only BEFORE UPDATE OR DELETE
-    ON public.ca_diamond_economics FOR EACH ROW
-    EXECUTE FUNCTION public.fn_poker_diamond_append_only();
-END $econ$;
-
--- The closed list, and the unit each name is measured in. A name that is not
--- on this list cannot be written, and a name written in the wrong unit cannot
--- be written either - which is what stops a percentage landing in a column a
--- door reads as Diamonds.
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_units(p_name text)
-RETURNS text LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $fn$
-  SELECT CASE p_name
-    -- B14 and the two feature answers of B12 and B13. A switch is 0 or 1 and
-    -- is itself an answer: absent is not off, and off is not "on with a
-    -- default".
-    WHEN 'bbj_enabled'                   THEN 'switch'
-    WHEN 'rakeback_enabled'              THEN 'switch'
-    WHEN 'vip_points_enabled'            THEN 'switch'
-    WHEN 'bbj_requires_flop_to_drop'     THEN 'switch'
-    WHEN 'bbj_pool_has_maximum'          THEN 'switch'
-    WHEN 'bbj_variant_eligible'          THEN 'switch'
-    -- B15, per stake.
-    WHEN 'bbj_drop_diamonds'             THEN 'diamonds_per_qualifying_hand'
-    -- B17.
-    WHEN 'bbj_min_players_dealt_to_drop' THEN 'players_dealt'
-    WHEN 'bbj_min_players_dealt_to_hit'  THEN 'players_dealt'
-    WHEN 'bbj_min_pot_bb_to_hit'         THEN 'big_blinds'
-    -- B18.
-    WHEN 'bbj_pool_main_share'           THEN 'percent_of_drop'
-    WHEN 'bbj_pool_backup_share'         THEN 'percent_of_drop'
-    WHEN 'bbj_pool_pivot_main_share'     THEN 'percent_of_drop'
-    WHEN 'bbj_pool_pivot_backup_share'   THEN 'percent_of_drop'
-    WHEN 'bbj_pool_pivot_threshold'      THEN 'diamonds_in_main'
-    -- B19, the total per stake and the three shares of it.
-    WHEN 'bbj_payout_total_percent'      THEN 'percent_of_main_pool'
-    WHEN 'bbj_payout_loser_share'        THEN 'percent_of_paid'
-    WHEN 'bbj_payout_winner_share'       THEN 'percent_of_paid'
-    WHEN 'bbj_payout_table_share'        THEN 'percent_of_paid'
-    -- B20.
-    WHEN 'bbj_pool_seed_diamonds'        THEN 'diamonds'
-    -- B22, both branches, account valued.
-    WHEN 'bbj_withdrawal_destination'    THEN 'account'
-    WHEN 'bbj_withdrawal_fallback'       THEN 'account'
-    ELSE NULL
-  END;
-$fn$;
-
--- The closed list of accounts an account-valued answer may name. Each one must
--- be a place whose storage already exists, or a rule this migration
--- implements. 'the house' is deliberately NOT on it for a jackpot answer.
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_account_ok(p_account text)
-RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $fn$
-  SELECT p_account IN (
-    'surviving_diamond_jackpot_pool',
-    'contributing_players_pro_rata'
-  );
-$fn$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economics_admit() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $fn$
-DECLARE v_units text;
+-- ---------------------------------------------------------------------------
+-- 1b. READING A SHARES ANSWER, STRICTLY
+-- ---------------------------------------------------------------------------
+-- bbj_pool_split and bbj_hit_shares are recorded in the shared table's own
+-- 'shares' unit, which is a word rather than a number, because one answer
+-- carries several percentages that have to add up. The grammar is fixed here
+-- and nowhere else:
+--
+--   a segment is `key=integer` pairs separated by commas
+--   segments are separated by a semicolon, and a later segment is a later
+--     regime of the same answer (the pivot, for bbj_pool_split)
+--
+-- Nothing is inferred. A missing key, a malformed segment or a value that is
+-- not a whole percentage refuses BY NAME, so a door never acts on a share it
+-- could not read. This is what keeps the percentages in the row rather than in
+-- the door while still letting the door be sure of them.
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_jackpot_share(
+  p_shares text, p_segment integer, p_key text)
+RETURNS numeric LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp AS $fn$
+DECLARE v_seg text; v_hit text[];
 BEGIN
-  v_units := public.fn_ca_diamond_economic_units(NEW.name);
-  IF v_units IS NULL THEN
-    RAISE EXCEPTION 'diamond_economics_unknown_name:%', NEW.name USING ERRCODE = 'DE002';
+  IF p_shares IS NULL OR p_segment IS NULL OR p_segment < 1 OR p_key IS NULL THEN
+    RAISE EXCEPTION 'diamond_jackpot_shares_unreadable' USING ERRCODE = '22023';
   END IF;
-  IF NEW.units IS DISTINCT FROM v_units THEN
-    RAISE EXCEPTION 'diamond_economics_wrong_unit:%/% is measured in %',
-      NEW.name, NEW.units, v_units USING ERRCODE = 'DE002';
+  v_seg := btrim(split_part(p_shares, ';', p_segment));
+  IF v_seg = '' THEN
+    RAISE EXCEPTION 'diamond_jackpot_shares_have_no_segment_%:%', p_segment, p_shares
+      USING ERRCODE = '22023';
   END IF;
-  IF v_units = 'account' THEN
-    IF NEW.account IS NULL OR NOT public.fn_ca_diamond_economic_account_ok(NEW.account) THEN
-      RAISE EXCEPTION 'diamond_economics_unknown_account:%', COALESCE(NEW.account, '(null)')
-        USING ERRCODE = 'DE002';
-    END IF;
-  ELSE
-    IF NEW.value IS NULL THEN
-      RAISE EXCEPTION 'diamond_economics_requires_a_number:%', NEW.name USING ERRCODE = 'DE002';
-    END IF;
-    IF v_units = 'switch' AND NEW.value NOT IN (0, 1) THEN
-      RAISE EXCEPTION 'diamond_economics_switch_is_zero_or_one:%=%', NEW.name, NEW.value
-        USING ERRCODE = 'DE002';
-    END IF;
-    IF NEW.value < 0 THEN
-      RAISE EXCEPTION 'diamond_economics_negative:%=%', NEW.name, NEW.value USING ERRCODE = 'DE002';
-    END IF;
+  IF v_seg !~ '^[a-z_]+=[0-9]+(,[a-z_]+=[0-9]+)*$' THEN
+    RAISE EXCEPTION 'diamond_jackpot_shares_malformed:%', v_seg USING ERRCODE = '22023';
   END IF;
-  RETURN NEW;
+  v_hit := regexp_match(v_seg, '(?:^|,)' || p_key || '=([0-9]+)(?:,|$)');
+  IF v_hit IS NULL THEN
+    RAISE EXCEPTION 'diamond_jackpot_shares_missing:%/%', p_key, v_seg USING ERRCODE = '22023';
+  END IF;
+  RETURN v_hit[1]::numeric;
 END $fn$;
-
-DO $trg$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger
-                  WHERE tgrelid = 'public.ca_diamond_economics'::regclass
-                    AND tgname = 'ca_diamond_economics_admit') THEN
-    CREATE TRIGGER ca_diamond_economics_admit BEFORE INSERT
-      ON public.ca_diamond_economics FOR EACH ROW
-      EXECUTE FUNCTION public.fn_ca_diamond_economics_admit();
-  END IF;
-END $trg$;
-
--- THE READER. It never returns NULL, never falls back to another scope, never
--- falls back to a chip value and never falls back to a literal. An unset value
--- refuses BY NAME, under a SQLSTATE no Diamond door uses, so the reason
--- reaches the client as the name of the thing nobody set.
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic(p_name text, p_scope text DEFAULT 'all')
-RETURNS numeric LANGUAGE plpgsql STABLE SECURITY DEFINER
-SET search_path = public, pg_temp AS $fn$
-DECLARE v numeric;
-BEGIN
-  SELECT e.value INTO v FROM public.ca_diamond_economics e
-   WHERE e.name = p_name AND e.scope = COALESCE(p_scope, 'all')
-   ORDER BY e.id DESC LIMIT 1;
-  IF v IS NULL THEN
-    RAISE EXCEPTION 'diamond_economics_unset:%/%', p_name, COALESCE(p_scope, 'all')
-      USING ERRCODE = 'DE001';
-  END IF;
-  RETURN v;
-END $fn$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_diamond_economic_account(p_name text, p_scope text DEFAULT 'all')
-RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
-SET search_path = public, pg_temp AS $fn$
-DECLARE v text;
-BEGIN
-  SELECT e.account INTO v FROM public.ca_diamond_economics e
-   WHERE e.name = p_name AND e.scope = COALESCE(p_scope, 'all')
-   ORDER BY e.id DESC LIMIT 1;
-  IF v IS NULL THEN
-    RAISE EXCEPTION 'diamond_economics_unset:%/%', p_name, COALESCE(p_scope, 'all')
-      USING ERRCODE = 'DE001';
-  END IF;
-  RETURN v;
-END $fn$;
-
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic(text, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_account(text, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_units(text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economic_account_ok(text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fn_ca_diamond_economics_admit() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_share(text, integer, text)
+  FROM PUBLIC, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 2. THE POOL AND ITS LEDGER. PLAYER SIDE, APPEND ONLY, NO STORED BALANCE
@@ -654,7 +568,7 @@ CREATE OR REPLACE FUNCTION public.fn_poker_diamond_jackpot_allocate(
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
 DECLARE
   v_pool public.poker_diamond_jackpot_pools%ROWTYPE;
-  v_main_share numeric; v_backup_share numeric;
+  v_main_share numeric; v_backup_share numeric; v_split text;
   v_exact_main numeric; v_exact_backup numeric;
   v_main_balance bigint;
 BEGIN
@@ -672,12 +586,16 @@ BEGIN
   END IF;
 
   v_main_balance := public.fn_poker_diamond_jackpot_bank(p_pool_id, 'main');
-  IF v_main_balance >= public.fn_ca_diamond_economic('bbj_pool_pivot_threshold') THEN
-    v_main_share   := public.fn_ca_diamond_economic('bbj_pool_pivot_main_share');
-    v_backup_share := public.fn_ca_diamond_economic('bbj_pool_pivot_backup_share');
+  -- B18, read as one shares answer. Segment 1 is the standard regime,
+  -- segment 2 the regime at and above the pivot, and `pivot_at` is the main
+  -- balance that moves between them. One row, read strictly, no literal here.
+  v_split := public.fn_ca_diamond_economic_text('bbj_pool_split');
+  IF v_main_balance >= public.fn_poker_diamond_jackpot_share(v_split, 2, 'pivot_at') THEN
+    v_main_share   := public.fn_poker_diamond_jackpot_share(v_split, 2, 'main');
+    v_backup_share := public.fn_poker_diamond_jackpot_share(v_split, 2, 'backup');
   ELSE
-    v_main_share   := public.fn_ca_diamond_economic('bbj_pool_main_share');
-    v_backup_share := public.fn_ca_diamond_economic('bbj_pool_backup_share');
+    v_main_share   := public.fn_poker_diamond_jackpot_share(v_split, 1, 'main');
+    v_backup_share := public.fn_poker_diamond_jackpot_share(v_split, 1, 'backup');
   END IF;
   IF v_main_share + v_backup_share > 100 THEN
     RAISE EXCEPTION 'diamond_jackpot_shares_exceed_the_drop:%+%', v_main_share, v_backup_share
@@ -743,10 +661,10 @@ BEGIN
     RAISE EXCEPTION 'diamond_plain_cash_table_required' USING ERRCODE = '23514';
   END IF;
   -- A game with no jackpot drops nothing and can never win one (B16).
-  IF public.fn_ca_diamond_economic('bbj_variant_eligible', 'variant:' || v_variant) <> 1 THEN
+  IF NOT public.fn_poker_diamond_jackpot_game_qualifies(v_variant) THEN
     RETURN 0;
   END IF;
-  RETURN public.fn_ca_diamond_economic('bbj_drop_diamonds',
+  RETURN public.fn_ca_diamond_economic('bbj_drop_per_hand',
            public.fn_poker_diamond_jackpot_stake_scope(v_bb))::bigint;
 END $fn$;
 
@@ -847,25 +765,47 @@ REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_drop(uuid, bigint, bigint
 -- ---------------------------------------------------------------------------
 -- 6. THE HIT (B16, B17, B19). ONE IDEMPOTENT DOOR, KEYED BY TABLE AND HAND
 -- ---------------------------------------------------------------------------
--- The qualifying bar per game, as the chip estate states it (B16). It is a
--- rule, not a number, so it lives here in words and is pinned by the law test
--- rather than stored as a quantity nobody could check.
+-- The qualifying bar per game (B16), read out of the shared table rather than
+-- carried here. bbj_qualifying_hand is one `shares`-style word listing the bar
+-- per game; bbj_excluded_games is the list that has none. A game absent from
+-- the map has no bar, which is the same thing as having no jackpot.
 CREATE OR REPLACE FUNCTION public.fn_poker_diamond_jackpot_qualifying_hand(p_variant text)
-RETURNS text LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $fn$
-  SELECT CASE p_variant
-    WHEN 'nlh'       THEN 'AAAJJ'
-    WHEN 'flh'       THEN 'AAAJJ'
-    WHEN 'plo4'      THEN 'KKKK2'
-    WHEN 'flo4'      THEN 'KKKK2'
-    WHEN 'plo5'      THEN '87654'
-    WHEN 'flo5'      THEN '87654'
-    WHEN 'plo8'      THEN 'KKKK2'
-    WHEN 'flo8'      THEN 'KKKK2'
-    WHEN 'pineapple' THEN 'KKKK2'
-    ELSE NULL
-  END;
-$fn$;
+RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp AS $fn$
+DECLARE v_map text; v_hit text[];
+BEGIN
+  IF p_variant IS NULL OR p_variant !~ '^[a-z0-9_]+$' THEN
+    RETURN NULL;
+  END IF;
+  v_map := public.fn_ca_diamond_economic_text('bbj_qualifying_hand');
+  v_hit := regexp_match(v_map, '(?:^|,)' || p_variant || '=([A-Za-z0-9]+)(?:,|$)');
+  IF v_hit IS NULL THEN
+    RETURN NULL;
+  END IF;
+  RETURN v_hit[1];
+END $fn$;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_qualifying_hand(text)
+  FROM PUBLIC, anon, authenticated, service_role;
 
+-- A game qualifies when it is not on the excluded list AND it has a bar. Both
+-- halves matter: the excluded list is the recorded answer, and a game with no
+-- bar is one nobody has priced, which must not fall through to hold'em's.
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_jackpot_game_qualifies(p_variant text)
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp AS $fn$
+DECLARE v_excluded text;
+BEGIN
+  IF p_variant IS NULL OR p_variant !~ '^[a-z0-9_]+$' THEN
+    RETURN false;
+  END IF;
+  v_excluded := public.fn_ca_diamond_economic_text('bbj_excluded_games');
+  IF regexp_match(v_excluded, '(?:^|,)' || p_variant || '(?:,|$)') IS NOT NULL THEN
+    RETURN false;
+  END IF;
+  RETURN public.fn_poker_diamond_jackpot_qualifying_hand(p_variant) IS NOT NULL;
+END $fn$;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_game_qualifies(text)
+  FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_jackpot_qualifying_hand(text)
   FROM PUBLIC, anon, authenticated, service_role;
 
@@ -889,13 +829,13 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_temp AS $fn$
 DECLARE
   v_pool uuid; v_ref text; v_bb numeric; v_variant text; v_scope text;
-  v_main bigint; v_pct numeric; v_paid bigint;
+  v_main bigint; v_pct numeric; v_paid bigint; v_shares text;
   v_loser bigint; v_winner bigint; v_table_total bigint;
   v_others uuid[]; v_n integer; v_each bigint; v_remainder bigint;
   v_rec record; v_credit jsonb; v_key text; v_inserted integer;
   v_paid_out bigint := 0; v_legs jsonb := '[]'::jsonb;
 BEGIN
-  IF public.fn_ca_diamond_economic('bbj_enabled') <> 1 THEN
+  IF NOT public.fn_ca_diamond_economic_on('bbj_enabled') THEN
     RAISE EXCEPTION 'diamond_bad_beat_jackpot_not_open' USING ERRCODE = '55000';
   END IF;
   IF p_loser_user_id IS NULL OR p_winner_user_id IS NULL
@@ -913,21 +853,24 @@ BEGIN
   v_scope := public.fn_poker_diamond_jackpot_stake_scope(v_bb);
 
   -- B16: a game with no jackpot can never win one.
-  IF public.fn_ca_diamond_economic('bbj_variant_eligible', 'variant:' || v_variant) <> 1
-     OR public.fn_poker_diamond_jackpot_qualifying_hand(v_variant) IS NULL THEN
+  IF NOT public.fn_poker_diamond_jackpot_game_qualifies(v_variant) THEN
     RAISE EXCEPTION 'diamond_jackpot_game_has_no_jackpot:%', v_variant USING ERRCODE = '23514';
   END IF;
   -- B15's symmetry: a stake that drops nothing can never hit.
-  IF public.fn_ca_diamond_economic('bbj_drop_diamonds', v_scope) <= 0 THEN
+  IF public.fn_ca_diamond_economic('bbj_drop_per_hand', v_scope) <= 0 THEN
     RAISE EXCEPTION 'diamond_jackpot_stake_drops_nothing:%', v_scope USING ERRCODE = '23514';
   END IF;
   -- B17, the payout gates. The pot floor is a payout floor and only ever that.
   IF p_players_dealt IS NULL
-     OR p_players_dealt < public.fn_ca_diamond_economic('bbj_min_players_dealt_to_hit') THEN
+     OR p_players_dealt < public.fn_ca_diamond_economic('bbj_min_dealt_in') THEN
     RAISE EXCEPTION 'diamond_jackpot_too_few_dealt_in:%', p_players_dealt USING ERRCODE = '23514';
   END IF;
+  -- bbj_min_pot is recorded in DIAMONDS, per stake: ten big blinds of a
+  -- whole-Diamond blind is a whole number of Diamonds, so the floor is stored
+  -- as the figure the door compares against rather than as a multiplier the
+  -- door would have to apply.
   IF p_pot IS NULL
-     OR p_pot <= public.fn_ca_diamond_economic('bbj_min_pot_bb_to_hit') * v_bb THEN
+     OR p_pot <= public.fn_ca_diamond_economic('bbj_min_pot', v_scope) THEN
     RAISE EXCEPTION 'diamond_jackpot_pot_below_the_payout_floor:%', p_pot USING ERRCODE = '23514';
   END IF;
 
@@ -951,7 +894,9 @@ BEGIN
   END IF;
 
   v_main := public.fn_poker_diamond_jackpot_bank(v_pool, 'main');
-  v_pct  := public.fn_ca_diamond_economic('bbj_payout_total_percent', v_scope);
+  -- B19 is one shares answer per stake: what is paid, and how it divides.
+  v_shares := public.fn_ca_diamond_economic_text('bbj_hit_shares', v_scope);
+  v_pct  := public.fn_poker_diamond_jackpot_share(v_shares, 1, 'paid');
   -- B19, in whole Diamonds. Every division floors; what no floor could
   -- allocate STAYS IN THE MAIN POOL, because it was never allocated to a
   -- person and the pool is the players' money either way. Nothing is ever
@@ -960,8 +905,8 @@ BEGIN
   IF v_paid <= 0 THEN
     RAISE EXCEPTION 'diamond_jackpot_pool_pays_nothing_yet:main=%', v_main USING ERRCODE = '23514';
   END IF;
-  v_loser  := floor(v_paid * public.fn_ca_diamond_economic('bbj_payout_loser_share')  / 100)::bigint;
-  v_winner := floor(v_paid * public.fn_ca_diamond_economic('bbj_payout_winner_share') / 100)::bigint;
+  v_loser  := floor(v_paid * public.fn_poker_diamond_jackpot_share(v_shares, 1, 'loser')  / 100)::bigint;
+  v_winner := floor(v_paid * public.fn_poker_diamond_jackpot_share(v_shares, 1, 'winner') / 100)::bigint;
   v_table_total := v_paid - v_loser - v_winner;
 
   -- The rest of the table: everybody dealt in who is neither the loser nor the
@@ -1079,13 +1024,17 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public, pg_temp AS $fn$
 DECLARE v_ref text; v_moved jsonb := '{}'::jsonb; v_b record; v_total bigint := 0;
 BEGIN
-  IF public.fn_ca_diamond_economic_account('bbj_withdrawal_destination')
+  IF public.fn_ca_diamond_economic_text('bbj_withdrawal_destination')
      <> 'surviving_diamond_jackpot_pool' THEN
     RAISE EXCEPTION 'diamond_jackpot_withdrawal_destination_is_not_a_pool' USING ERRCODE = '23514';
   END IF;
   IF p_into_pool_id IS NULL THEN
-    RAISE EXCEPTION 'diamond_jackpot_withdrawal_needs_a_surviving_pool:%',
-      public.fn_ca_diamond_economic_account('bbj_withdrawal_fallback') USING ERRCODE = '23514';
+    -- B22's second branch is recorded in the same row's basis, and paying
+    -- every contributor pro rata is a distribution to named people. This door
+    -- refuses rather than guessing at it, so the last pool cannot be withdrawn
+    -- by accident and leave the Diamonds nowhere.
+    RAISE EXCEPTION 'diamond_jackpot_withdrawal_needs_a_surviving_pool:contributing_players_pro_rata'
+      USING ERRCODE = '23514';
   END IF;
   IF p_into_pool_id = p_pool_id THEN
     RAISE EXCEPTION 'diamond_jackpot_withdrawal_into_itself' USING ERRCODE = '23514';
@@ -1222,7 +1171,7 @@ END $declare$;
 -- behaviour is byte-for-byte the behaviour of today.
 SELECT pg_temp.ca_audit_subst(
   'public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
-  '3aab9170062e97840afc7d15999691ad', '65f5ca7dec3e8f1323bfe0ee3fd27ce9',
+  '3aab9170062e97840afc7d15999691ad', 'e9761c3ed7b52d2aec90bcf0e6226812',
   ARRAY[$o$  v_result jsonb;
 $o$,
 $o$  IF p_table_id IS NULL OR p_hand_number IS NULL OR p_hand_number < 1000000
@@ -1269,7 +1218,7 @@ $n$  IF p_table_id IS NULL OR p_hand_number IS NULL OR p_hand_number < 1000000
     IF v_bbj < 0 OR v_bbj <> trunc(v_bbj) THEN
       RAISE EXCEPTION 'diamond_bbj_must_be_whole_diamonds' USING ERRCODE='22023';
     END IF;
-    IF public.fn_ca_diamond_economic('bbj_enabled') <> 1 THEN
+    IF NOT public.fn_ca_diamond_economic_on('bbj_enabled') THEN
       RAISE EXCEPTION 'diamond_bad_beat_jackpot_not_open' USING ERRCODE='22023';
     END IF;
   END IF;
@@ -1291,8 +1240,8 @@ $n$    RAISE EXCEPTION 'diamond_plain_cash_table_required' USING ERRCODE='23514'
   -- THE SETTLER DOES NOT TAKE THE ENGINE'S NUMBER ON TRUST (design section 5,
   -- step 3). It recomputes what this stake owes from ca_diamond_economics and
   -- refuses a disagreement by name. An unset value refuses under its own name
-  -- through the reader's SQLSTATE DE001, never by falling back to a chip
-  -- schedule, to another stake's price or to a literal.
+  -- through the shared reader's SQLSTATE PDE01, never by falling back to a
+  -- chip schedule, to another stake's price or to a literal.
   IF v_bbj <> 0 THEN
     v_due := public.fn_poker_diamond_jackpot_drop_due(p_table_id);
     IF v_due IS DISTINCT FROM v_bbj::bigint THEN
@@ -1402,153 +1351,119 @@ SELECT s.club_id FROM public.ca_arena_settings s
                     WHERE j.arena_id = s.club_id AND j.status = 'active');
 
 -- ---------------------------------------------------------------------------
--- 13. THE ANSWERS (B12 to B22)
+-- 13. THE ANSWERS (B12 to B22), IN THE SHARED TABLE'S OWN NAMES AND UNITS
 -- ---------------------------------------------------------------------------
 -- approved_quote carries the AUTHORITY: Dan's grant of 2026-10-05, verbatim,
 -- which is why these rows exist at all. basis carries the DERIVATION: what in
--- this platform produced the number. The two are separate columns on purpose,
--- so no row can be read as Dan having approved a figure he never saw.
+-- this platform produced the value. The two are separate columns on purpose,
+-- so no row can be read as Dan having approved a figure he never saw. Both
+-- columns, and the closed name list and units map these rows obey, belong to
+-- 20261005151918; this lane adds rows and alters nothing but the account list.
 DO $answers$
 DECLARE
-  v_quote  text := 'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.';
-  v_on     date := DATE '2026-10-05';
-  v_by     text := 'claude/diamond-bbj-20261005 (derived from production, read 2026-10-05)';
-  -- bb -> the tier's bbj_fee_bb, as bbj_stakes_tiers publishes it.
-  v_fee    numeric;
-  v_pct    numeric;
-  v_bb     numeric;
-  v_drop   bigint;
-  v_tier   text;
+  v_quote text := 'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.';
+  v_on    date := DATE '2026-10-05';
+  v_by    text := 'claude/diamond-bbj-20261005 (derived from production, read 2026-10-05)';
+  v_bb    numeric; v_fee numeric; v_pct numeric; v_drop bigint; v_tier text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                  WHERE table_schema = 'public' AND table_name = 'ca_diamond_economics'
-                    AND column_name = 'basis') THEN
-    RAISE EXCEPTION 'ca_diamond_economics exists without a basis column; another lane changed its shape';
-  END IF;
-
-  -- B14. YES, and the switch is written at 0 because a drop can only come out
-  -- of a cash pot and cash games are closed. Every value it needs is written
-  -- below, so turning it on is one appended row and cannot land on an unset
-  -- number.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES ('bbj_enabled', 'all', 0, 'switch', v_quote, v_on,
-    'B14 = yes: the Diamond Arena is a diamonds-only clone of a chip club and the chip club runs a bad beat jackpot on every eligible cash game. The six DiamondCashBoundary layers refuse a CHIP jackpot object because "the counterparty does not exist" (bbj_pools are club and union chip pools), not because the product was declined; this migration builds the Diamond counterparty. The switch is 0, not absent and not defaulted, because a drop can only be taken from a cash pot and ca_arena_settings.cash_games_enabled is false. Turning it on is one appended row.',
+  -- B14. YES, and the switch is recorded as 'no' because a drop can only come
+  -- out of a cash pot and ca_arena_settings.cash_games_enabled is false. Every
+  -- value B15 to B22 needs is written below, so turning it on is one appended
+  -- row and cannot land on an unset number.
+  INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
+  VALUES ('bbj_enabled', 'all', 'no', 'boolean', v_quote, v_on,
+    'B14 = YES, there is a Diamond Bad Beat Jackpot: the Diamond Arena is a diamonds-only clone of a chip club and the chip club runs one on every eligible cash game. The six DiamondCashBoundary layers refuse a CHIP jackpot object because "the counterparty does not exist" (bbj_pools are club and union chip pools), not because the product was declined; this migration builds the Diamond counterparty. THE SWITCH IS RECORDED AS no, and that is an answer rather than a default: a drop can only be taken from a cash pot and cash_games_enabled is false. Every value B15 to B22 needs is recorded in this migration, so turning it on is one appended row and cannot land on an unset number.',
     v_by);
 
-  -- B17. ca_rake_rules row 1: bbj_min_players_dealt 3, bbj_min_pot_bb 10, and
-  -- RakeConfig.ts on the pot floor, verbatim: "PAYOUT floor ONLY (Dan
-  -- 2026-08-29) ... The FEE is collected on every flop with 3+ dealt
-  -- regardless of pot size - do not re-add this to a fee gate."
+  -- B16. One recorded map of bars, and one recorded list of games that have
+  -- none. Taken verbatim from BBJ_QUALIFYING_HANDS in
+  -- server/src/config/RakeConfig.ts and ca_rake_rules.bbj_ineligible_variants.
+  INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
+  VALUES
+   ('bbj_qualifying_hand', 'all',
+    'nlh=AAAJJ,flh=AAAJJ,plo4=KKKK2,flo4=KKKK2,plo5=87654,flo5=87654,plo8=KKKK2,flo8=KKKK2,pineapple=KKKK2',
+    'hand', v_quote, v_on,
+    'B16, verbatim from BBJ_QUALIFYING_HANDS in server/src/config/RakeConfig.ts, because which hand qualifies is a property of the GAME and not of the currency. nlh and flh: a full house, aces full of jacks, or better must lose to quads or a straight flush, the holder must have at least one ace among their hole cards, and both hole cards must play. plo4 and flo4: four kings or better must lose, exactly two hole cards playing. plo5 and flo5: an eight-high straight flush or better. plo8 and flo8: four kings or better on the HIGH hand only. pineapple: four kings or better. The three rules beside them also hold as the chip estate runs them: a double or triple board hand is excluded, only the first runout counts, and where more than one loser qualifies the STRONGEST qualifying losing hand takes it (BBJ_RULES.splitIfMultipleQualify is false, set to what the engine does on 2026-09-11 because a flag nothing enforced was being printed to players as the rule). A game absent from this map has no bar, which is the same thing as having no jackpot: nothing falls through to hold''em''s.',
+    v_by),
+   ('bbj_excluded_games', 'all', 'plo6,short_deck', 'game_list', v_quote, v_on,
+    'B16: ca_rake_rules.bbj_ineligible_variants = {plo6, short_deck}, read on production 2026-10-05. The chip estate''s own rule is that a variant that drops nothing can never win one, and the Diamond doors enforce both halves.',
+    v_by);
+
+  -- B17. The players-dealt floor. The pot floor is per stake, below.
+  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
+  VALUES ('bbj_min_dealt_in', 'all', 3, 'players', v_quote, v_on,
+    'B17: ca_rake_rules.bbj_min_players_dealt = 3, read on production 2026-10-05, and it is the floor for the drop AND for the hit (BBJ_RULES.miniMinPlayersDealt ships equal to minPlayersDealt "so nothing changes until somebody sets it"). A player count is a player count in any currency, so nothing needed converting. A FLOP IS ALSO REQUIRED TO DROP, which is a rule rather than a number: ca_rake_rules.no_flop_no_drop is true and RakeConfig.ts collects the fee only on a flop. There is NO SMALLEST POT for the drop - RakeConfig.ts says of the pot floor, verbatim, "PAYOUT floor ONLY (Dan 2026-08-29) ... The FEE is collected on every flop with 3+ dealt regardless of pot size - do not re-add this to a fee gate."',
+    v_by);
+
+  -- B18. One shares answer, both regimes, with the grammar section 1b fixes.
+  INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
+  VALUES ('bbj_pool_split', 'all',
+    'main=50,backup=25,promotional=25;pivot_at=100000,main=25,backup=25,promotional=50',
+    'shares', v_quote, v_on,
+    'B18 = THREE POOLS, from ca_bbj_policy row 1 read on production 2026-10-05: standard_main 0.50, standard_backup 0.25, promo the remainder; pivot_threshold 100000, above which pivot_main 0.25, pivot_backup 0.25 and promo 0.50. Three pools are load-bearing and not decoration: fn_bbj_reseed_main_from_backup is what lets a jackpot survive a 100 percent hit, so a one-pool product would restart at zero on every hit. The pivot threshold is the one figure cloned by UNIT COUNT rather than by economic equivalence - 100,000 of the asset, where the asset is now the Diamond - and it is one appended row to change. THE REMAINDER RULE, because a 1 Diamond drop cannot split 50/25/25: the chip allocator''s own carried residue (fn_bbj_allocate(numeric,numeric,uuid) with ca_bbj_alloc_state) at the Diamond''s unit. main and backup each take floor(exact share + carried residue) and carry what is left; promotional takes the remainder, so the three re-sum to the drop EXACTLY every hand. Flooring rather than rounding keeps each residue in [0,1), so no bank is ever credited ahead of its exact cumulative share: main and backup are each at most one Diamond behind theirs, promotional at most two ahead.',
+    v_by);
+
+  -- B20, B21, B12, B13.
   INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
   VALUES
-   ('bbj_requires_flop_to_drop', 'all', 1, 'switch', v_quote, v_on,
-    'B17: the chip drop is collected on every flop. No flop, no drop - ca_rake_rules.no_flop_no_drop is true and RakeConfig.ts collects the fee only when a flop was dealt.', v_by),
-   ('bbj_min_players_dealt_to_drop', 'all', 3, 'players_dealt', v_quote, v_on,
-    'B17: ca_rake_rules.bbj_min_players_dealt = 3, read on production 2026-10-05. A player count is a player count in any currency, so nothing needed converting.', v_by),
-   ('bbj_min_players_dealt_to_hit', 'all', 3, 'players_dealt', v_quote, v_on,
-    'B17: the same 3. The chip estate uses one players-dealt floor for the drop and the hit (BBJ_RULES.miniMinPlayersDealt ships equal to minPlayersDealt "so nothing changes until somebody sets it").', v_by),
-   ('bbj_min_pot_bb_to_hit', 'all', 10, 'big_blinds', v_quote, v_on,
-    'B17: ca_rake_rules.bbj_min_pot_bb = 10, and RakeConfig.ts states in words that it is a PAYOUT floor and never a fee gate. There is no smallest pot that drops. 10 big blinds of a whole-Diamond blind is a whole number of Diamonds, so nothing needed flooring.', v_by);
-
-  -- B18. ca_bbj_policy row 1, read on production 2026-10-05.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
+   ('bbj_seed', 'all', 0, 'diamonds', v_quote, v_on,
+    'B20 = NO SEED, and no account funds it, so bbj_seed_account is deliberately not recorded: with a seed of 0 the question does not arise, and the reader refusing that name is the correct behaviour. Measured on production 2026-10-05, not reasoned: of the 402 rows in bbj_pools, the count whose main+backup+promo exceeds total_contributed less total_paid_out is ZERO. The chip estate has never seeded a pool in its history, and the backup reserve is why it does not have to. Consequences: no house earmark, no Mint issuance for a jackpot, design rule R3 never engages, and the pool is player-side from its first hand - which is just as well, since ca_diamond_house holds 0 Diamonds.',
+    v_by),
+   ('bbj_pool_ceiling', 'all', 0, 'diamonds', v_quote, v_on,
+    'B21 = NO MAXIMUM, so no drop is ever turned away, and 0 in this unit is read as "no ceiling" by the only door that could enforce one - which never turns a drop away at all. bbj_pool_ceiling_destination is therefore deliberately not recorded: with no ceiling there is nowhere for a turned-away drop to go. The chip estate has no maximum either; what it has is the pivot above, which steers the larger share of every drop into promotional once main reaches the threshold and is the mechanism that bounds main. A maximum would have to send a drop somewhere, and under ruling 21 a platform pot never refuses a player.',
+    v_by),
+   ('rakeback_percent', 'all', 0, 'percent', v_quote, v_on,
+    'B12 = NO, and rakeback_period is therefore not recorded: a period for a rakeback of zero would be a setting no door reads. The database already refuses every rakeback, agent and commission record for the Diamond Arena (trigger poker_arena_no_hierarchy over eleven tables, "Diamond Arena Has No Agents Or Commissions"), and ruling 16 says "No unions, agents, commissions, chip wallets, chip ledgers or chip conversion". Chip rakeback is computed by the union weekly close out of the UNION RAKE WALLET, a counterparty that does not exist here and is never going to. Answering yes would mean inventing a Diamond rakeback period, accrual and payout door with no counterparty to pay from; answering no leaves eleven live refusals CORRECT rather than absent. Read for first: no open pull request and no branch had decided B12 or B13.',
+    v_by);
+  INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
   VALUES
-   ('bbj_pool_main_share', 'all', 50, 'percent_of_drop', v_quote, v_on,
-    'B18: ca_bbj_policy.standard_main = 0.50. Three pools, because fn_bbj_reseed_main_from_backup is what lets a jackpot survive a 100 percent hit - a one-pool product would restart at zero every hit.', v_by),
-   ('bbj_pool_backup_share', 'all', 25, 'percent_of_drop', v_quote, v_on,
-    'B18: ca_bbj_policy.standard_backup = 0.25. Promotional takes the remainder, so the three always re-sum to the drop.', v_by),
-   ('bbj_pool_pivot_threshold', 'all', 100000, 'diamonds_in_main', v_quote, v_on,
-    'B18: ca_bbj_policy.pivot_threshold = 100000. This is the one figure cloned by UNIT COUNT rather than by economic equivalence - 100,000 of the asset, where the asset is now the Diamond. It is one appended row to change.', v_by),
-   ('bbj_pool_pivot_main_share', 'all', 25, 'percent_of_drop', v_quote, v_on,
-    'B18 and B21: ca_bbj_policy.pivot_main = 0.25. Above the pivot the larger share of every drop is steered into promotional, which is the mechanism that stops main growing without bound - and the reason there is no maximum pool size.', v_by),
-   ('bbj_pool_pivot_backup_share', 'all', 25, 'percent_of_drop', v_quote, v_on,
-    'B18: ca_bbj_policy.pivot_backup = 0.25.', v_by);
-
-  -- B19's three shares. All six live tier rows carry loser/winner/table as
-  -- exactly half, a quarter and a quarter of their payout_total_pct
-  -- (7.50/3.75/3.75 of 15 ... 42.50/21.25/21.25 of 85). That is the rule.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES
-   ('bbj_payout_loser_share', 'all', 50, 'percent_of_paid', v_quote, v_on,
-    'B19: bbj_stakes_tiers, all six rows, payout_loser_pct is exactly half of payout_total_pct. The losing hand takes half of what the jackpot pays.', v_by),
-   ('bbj_payout_winner_share', 'all', 25, 'percent_of_paid', v_quote, v_on,
-    'B19: bbj_stakes_tiers, all six rows, payout_winner_pct is exactly a quarter of payout_total_pct.', v_by),
-   ('bbj_payout_table_share', 'all', 25, 'percent_of_paid', v_quote, v_on,
-    'B19: bbj_stakes_tiers, all six rows, payout_table_pct is exactly a quarter of payout_total_pct, divided among the rest of the table. Every Diamond no floor could allocate stays in the main pool: it was never allocated to a person, and nothing is taken from a player to round a number (CLAUDE.md 10.9 condition 3).', v_by);
-
-  -- B20. Measured across all 402 live chip pools: not one is or ever was
-  -- seeded.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES ('bbj_pool_seed_diamonds', 'all', 0, 'diamonds', v_quote, v_on,
-    'B20 = no seed, and no account funds it. Measured on production 2026-10-05: of the 402 rows in bbj_pools, the count whose main+backup+promo exceeds total_contributed less total_paid_out is ZERO. The chip estate has never seeded a pool, and the backup reserve is why it does not have to. Consequences: no house earmark, no Mint issuance for a jackpot, and the pool is player-side from its first hand - which is just as well, since ca_diamond_house holds 0 Diamonds.', v_by);
-
-  -- B21.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES ('bbj_pool_has_maximum', 'all', 0, 'switch', v_quote, v_on,
-    'B21 = no maximum, so no drop is ever turned away. The chip estate has no maximum either; what it has is the pivot, which steers the larger share of a drop into promotional once main reaches the threshold. A maximum would have to send a drop somewhere, and under ruling 21 a platform pot never refuses a player.', v_by);
-
-  -- B22, both branches, account valued.
-  INSERT INTO public.ca_diamond_economics(name, scope, account, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES
+   ('rake_earns_vip_points', 'all', 'no', 'boolean', v_quote, v_on,
+    'B13 = NO. Chip VIP points are awarded by trg_award_vip_points_from_rake, one of eighteen triggers on rake_records - a chip money table a Diamond rake must never write and which this migration''s own fence makes refuse a Diamond Arena row by name. The leg is not disabled for Diamonds; it was never connected, and now it cannot be.',
+    v_by),
+   -- B22. The account this names did not exist on the shared closed list
+   -- before this migration, and must not have been the house.
    ('bbj_withdrawal_destination', 'all', 'surviving_diamond_jackpot_pool', 'account', v_quote, v_on,
-    'B22: the one chip pool ever withdrawn (0867a7fd-58d9-4768-9919-06532afe79f3, read on production 2026-10-05) reads status retired_settled, merged_into_pool_id f9806a7f-e7a2-47d2-a676-36336e3a5337 and all three balances 0. Its money went to the surviving pool. Never to the house: the pool is money owed to players, and under design rule R1 nothing player-owned may be parked in the house.', v_by),
-   ('bbj_withdrawal_fallback', 'all', 'contributing_players_pro_rata', 'account', v_quote, v_on,
-    'B22, second branch: if no pool survives - the product itself withdrawn - the pool is paid to the players who contributed to it, in proportion to their recorded contributions, floored to whole Diamonds with the remainder to the largest contributor and ties broken by the earliest contribution. fn_poker_diamond_jackpot_withdraw refuses by name rather than guessing at this distribution, so the last pool cannot be withdrawn by accident and leave the Diamonds nowhere.', v_by);
+    'B22: the one chip pool ever withdrawn (0867a7fd-58d9-4768-9919-06532afe79f3, read on production 2026-10-05) reads status retired_settled, merged_into_pool_id f9806a7f-e7a2-47d2-a676-36336e3a5337 and all three balances 0. Its money went to the SURVIVING POOL. NEVER TO THE HOUSE: the pool is money owed to players, so under design rule R1 nothing of it may be parked in the house and under CLAUDE.md 10.9 condition 3 nothing is taken back from a player for our mistake. SECOND BRANCH, if no pool survives because the product itself is withdrawn: the pool is paid to the players who contributed to it, in proportion to their recorded contributions (the payer rows of its own ledger), floored to whole Diamonds with the remainder to the largest contributor and ties broken by the earliest contribution. fn_poker_diamond_jackpot_withdraw refuses by name rather than guessing at that distribution, so the last pool cannot be withdrawn by accident and leave the Diamonds nowhere.',
+    v_by);
 
-  -- B12 and B13.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  VALUES
-   ('rakeback_enabled', 'all', 0, 'switch', v_quote, v_on,
-    'B12 = no. The database already refuses every rakeback, agent and commission record for the Diamond Arena (trigger poker_arena_no_hierarchy over eleven tables, "Diamond Arena Has No Agents Or Commissions"), and ruling 16 says "No unions, agents, commissions, chip wallets, chip ledgers or chip conversion". Chip rakeback is computed by the union weekly close out of the union rake wallet, a counterparty that does not exist here. Answering no leaves eleven live refusals CORRECT rather than absent.', v_by),
-   ('vip_points_enabled', 'all', 0, 'switch', v_quote, v_on,
-    'B13 = no. Chip VIP points are awarded by trg_award_vip_points_from_rake, one of eighteen triggers on rake_records - a chip money table a Diamond rake must never write. The leg is not disabled for Diamonds; it was never connected.', v_by);
-
-  -- B16, per game. Eligibility is the switch; which hand qualifies is a rule
-  -- and lives in fn_poker_diamond_jackpot_qualifying_hand, pinned by the law.
-  INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-  SELECT 'bbj_variant_eligible', 'variant:' || v.k,
-         CASE WHEN v.k IN ('plo6', 'short_deck') THEN 0 ELSE 1 END,
-         'switch', v_quote, v_on,
-         CASE WHEN v.k IN ('plo6', 'short_deck')
-              THEN 'B16: ' || v.k || ' has NO jackpot. ca_rake_rules.bbj_ineligible_variants = {plo6, short_deck}, read on production 2026-10-05, and the chip estate''s rule is that a variant that drops nothing can never win one.'
-              ELSE 'B16: ' || v.k || ' qualifies on ' || public.fn_poker_diamond_jackpot_qualifying_hand(v.k)
-                   || ' or better, taken verbatim from BBJ_QUALIFYING_HANDS in server/src/config/RakeConfig.ts. Which hand qualifies is a property of the game and not of the currency, so it clones exactly. The three rules beside it also hold: a double or triple board hand is excluded, only the first runout counts, and where more than one loser qualifies the STRONGEST qualifying losing hand takes it (BBJ_RULES.splitIfMultipleQualify is false, set to what the engine does on 2026-09-11 because a flag nothing enforced was being printed to players as the rule).'
-         END,
-         v_by
-    FROM (VALUES ('nlh'), ('flh'), ('plo4'), ('flo4'), ('plo5'), ('flo5'),
-                 ('plo8'), ('flo8'), ('pineapple'), ('plo6'), ('short_deck')) v(k);
-
-  -- B15 and B19, per stake. One row per live Diamond big blind, derived here
-  -- from the tier ladder rather than typed, so the derivation is visible and
-  -- the rows cannot disagree with it.
+  -- B15, B17's pot floor and B19, per stake. Derived here from the tier ladder
+  -- rather than typed, so the derivation is visible and the rows cannot
+  -- disagree with it.
   FOR v_bb IN SELECT * FROM unnest(ARRAY[2, 5, 10, 20, 25, 50, 100, 200, 400, 500,
                                          600, 800, 1000, 2000, 2500, 5000, 10000]::numeric[]) LOOP
     -- bbj_stakes_tiers, as read on production 2026-10-05.
-    SELECT t.tier, t.fee, t.pct INTO v_tier, v_fee, v_pct FROM (VALUES
-      ('nano',       0.01,   0.20, 0.60, 15),
-      ('micro',      0.21,   0.80, 0.60, 25),
-      ('small',      0.81,   3.00, 0.25, 40),
-      ('mid',        3.01,   8.00, 0.12, 55),
-      ('high',       8.01,  40.00, 0.06, 70),
-      ('nosebleeds',40.01,99999.00, 0.03, 85)
-    ) t(tier, min_bb, max_bb, fee, pct)
-     WHERE v_bb <= t.max_bb ORDER BY t.max_bb LIMIT 1;
+    SELECT x.tier, x.fee, x.pct INTO v_tier, v_fee, v_pct FROM (VALUES
+      ('nano',        0.01,     0.20, 0.60, 15),
+      ('micro',       0.21,     0.80, 0.60, 25),
+      ('small',       0.81,     3.00, 0.25, 40),
+      ('mid',         3.01,     8.00, 0.12, 55),
+      ('high',        8.01,    40.00, 0.06, 70),
+      ('nosebleeds', 40.01, 99999.00, 0.03, 85)
+    ) x(tier, min_bb, max_bb, fee, pct)
+     WHERE v_bb <= x.max_bb ORDER BY x.max_bb LIMIT 1;
     -- THE FLOOR IS THE DERIVATION. fn_ca_unit_floor_cents and the Diamond
     -- tournament fee both floor a proportional charge at the whole unit, which
-    -- is why an entry under 10 Diamonds pays no fee. Same floor, same effect:
-    -- the three lowest Diamond stakes owe nothing.
+    -- is why an entry under 10 Diamonds pays no fee at all.
     v_drop := floor(v_bb * v_fee)::bigint;
+
     INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-    VALUES ('bbj_drop_diamonds', public.fn_poker_diamond_jackpot_stake_scope(v_bb), v_drop,
-      'diamonds_per_qualifying_hand', v_quote, v_on,
+    VALUES
+     ('bbj_drop_per_hand', public.fn_poker_diamond_jackpot_stake_scope(v_bb), v_drop,
+      'diamonds_per_hand', v_quote, v_on,
       format('B15: floor(big blind %s * the %s tier''s bbj_fee_bb %s) = %s whole Diamonds. The chip drop is published in BIG BLIND units, which carry no currency, so the schedule transfers; and a Diamond is whole, so the proportional charge floors at the unit exactly as fn_ca_unit_floor_cents and the Diamond tournament fee do.%s',
              v_bb, v_tier, v_fee, v_drop,
-             CASE WHEN v_drop = 0 THEN ' THIS STAKE DROPS NOTHING, for the same reason a 9 Diamond entry pays no fee: the proportional charge is smaller than the smallest thing that exists. By the chip estate''s own symmetry rule - a variant that drops nothing "can never win one" - it can never hit either.' ELSE '' END),
+             CASE WHEN v_drop = 0 THEN ' THIS STAKE DROPS NOTHING, for the same reason a 9 Diamond entry pays no fee: the proportional charge is smaller than the smallest thing that exists. By the chip estate''s own symmetry rule - a variant that drops nothing "can never win one" - it can never hit either, and the hit door refuses it by name.' ELSE '' END),
+      v_by),
+     ('bbj_min_pot', public.fn_poker_diamond_jackpot_stake_scope(v_bb), 10 * v_bb,
+      'diamonds', v_quote, v_on,
+      format('B17, the PAYOUT floor only: ca_rake_rules.bbj_min_pot_bb = 10, read on production 2026-10-05, which at a %s Diamond big blind is %s Diamonds. Ten big blinds of a whole-Diamond blind is a whole number of Diamonds, so nothing needed flooring, and it is recorded as the figure the door compares against rather than as a multiplier the door would have to apply. There is no smallest pot that DROPS.',
+             v_bb, 10 * v_bb),
       v_by);
-    INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-    VALUES ('bbj_payout_total_percent', public.fn_poker_diamond_jackpot_stake_scope(v_bb), v_pct,
-      'percent_of_main_pool', v_quote, v_on,
-      format('B19: the %s tier''s payout_total_pct, %s percent of the main pool, from bbj_stakes_tiers as read on production 2026-10-05. It divides half to the losing player, a quarter to the winning player and a quarter among the rest of the table.',
+
+    INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
+    VALUES ('bbj_hit_shares', public.fn_poker_diamond_jackpot_stake_scope(v_bb),
+      format('paid=%s,loser=50,winner=25,table=25', v_pct), 'shares', v_quote, v_on,
+      format('B19: the %s tier''s payout_total_pct, %s percent of the MAIN pool, from bbj_stakes_tiers as read on production 2026-10-05; and half of what is paid to the losing player, a quarter to the winning player, a quarter among the rest of the table. Those three shares are not chosen: ALL SIX live tier rows carry payout_loser_pct, payout_winner_pct and payout_table_pct as exactly 1/2, 1/4 and 1/4 of payout_total_pct (7.50/3.75/3.75 of 15 through 42.50/21.25/21.25 of 85). Every division floors, and every Diamond no floor could allocate STAYS IN THE MAIN POOL: it was never allocated to a person, the pool is the players'' money either way, and nothing is taken from anybody to round a number (CLAUDE.md 10.9 condition 3).',
              v_tier, v_pct),
       v_by);
   END LOOP;
@@ -1578,7 +1493,7 @@ BEGIN
 
   -- THE JACKPOT IS NOT OPEN, AND HOLDS NOTHING. Amounts held at zero is what
   -- the design asks for before the switch is flipped.
-  IF public.fn_ca_diamond_economic('bbj_enabled') <> 0 THEN
+  IF public.fn_ca_diamond_economic_on('bbj_enabled') THEN
     RAISE EXCEPTION 'this migration must not open the bad beat jackpot';
   END IF;
   IF public.fn_poker_diamond_jackpot_diamonds() <> 0 THEN
@@ -1638,31 +1553,79 @@ BEGIN
   -- THE DROP SCHEDULE IS COMPLETE FOR EVERY LIVE DIAMOND STAKE, and the three
   -- lowest owe nothing.
   SELECT count(*) INTO v_n FROM public.ca_diamond_economics
-   WHERE name = 'bbj_drop_diamonds';
+   WHERE name = 'bbj_drop_per_hand';
   IF v_n <> 17 THEN
     RAISE EXCEPTION 'the drop schedule names % stakes, not the 17 that exist', v_n;
   END IF;
-  IF public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:2') <> 0
-     OR public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:5') <> 0
-     OR public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:10') <> 0
-     OR public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:20') <> 1
-     OR public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:100') <> 3
-     OR public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:10000') <> 300 THEN
+  SELECT count(*) INTO v_n FROM public.ca_diamond_economics
+   WHERE name IN ('bbj_min_pot', 'bbj_hit_shares');
+  IF v_n <> 34 THEN
+    RAISE EXCEPTION 'the pot floor and the hit shares do not name all 17 stakes each (% rows)', v_n;
+  END IF;
+  IF public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:2') <> 0
+     OR public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:5') <> 0
+     OR public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:10') <> 0
+     OR public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:20') <> 1
+     OR public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:100') <> 3
+     OR public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:10000') <> 300 THEN
     RAISE EXCEPTION 'the drop schedule does not read back as the floor of the tier fee';
   END IF;
-  IF public.fn_ca_diamond_economic('bbj_payout_total_percent', 'bb:2') <> 40
-     OR public.fn_ca_diamond_economic('bbj_payout_total_percent', 'bb:5') <> 55
-     OR public.fn_ca_diamond_economic('bbj_payout_total_percent', 'bb:25') <> 70
-     OR public.fn_ca_diamond_economic('bbj_payout_total_percent', 'bb:50') <> 85 THEN
+  IF public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_hit_shares', 'bb:2'), 1, 'paid') <> 40
+     OR public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_hit_shares', 'bb:5'), 1, 'paid') <> 55
+     OR public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_hit_shares', 'bb:25'), 1, 'paid') <> 70
+     OR public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_hit_shares', 'bb:50'), 1, 'paid') <> 85 THEN
     RAISE EXCEPTION 'the payout ladder does not read back as the tier percentages';
+  END IF;
+  IF public.fn_ca_diamond_economic('bbj_min_pot', 'bb:20') <> 200 THEN
+    RAISE EXCEPTION 'the payout floor is not ten big blinds in Diamonds';
+  END IF;
+
+  -- THE SHARES RE-SUM TO THE WHOLE, IN BOTH REGIMES AND IN EVERY HIT.
+  IF public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 1, 'main')
+     + public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 1, 'backup')
+     + public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 1, 'promotional') <> 100
+     OR public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 2, 'main')
+     + public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 2, 'backup')
+     + public.fn_poker_diamond_jackpot_share(
+       public.fn_ca_diamond_economic_text('bbj_pool_split'), 2, 'promotional') <> 100 THEN
+    RAISE EXCEPTION 'a pool split regime does not account for the whole drop';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.ca_diamond_economics e
+     WHERE e.name = 'bbj_hit_shares'
+       AND public.fn_poker_diamond_jackpot_share(e.value_text, 1, 'loser')
+         + public.fn_poker_diamond_jackpot_share(e.value_text, 1, 'winner')
+         + public.fn_poker_diamond_jackpot_share(e.value_text, 1, 'table') <> 100) THEN
+    RAISE EXCEPTION 'a hit share does not account for the whole of what is paid';
+  END IF;
+
+  -- B16 READS BACK AS THE CHIP ESTATE STATES IT, including the two games that
+  -- have no jackpot and therefore no bar.
+  IF public.fn_poker_diamond_jackpot_qualifying_hand('nlh') <> 'AAAJJ'
+     OR public.fn_poker_diamond_jackpot_qualifying_hand('plo4') <> 'KKKK2'
+     OR public.fn_poker_diamond_jackpot_qualifying_hand('plo5') <> '87654'
+     OR public.fn_poker_diamond_jackpot_qualifying_hand('plo6') IS NOT NULL
+     OR public.fn_poker_diamond_jackpot_game_qualifies('plo6')
+     OR public.fn_poker_diamond_jackpot_game_qualifies('short_deck')
+     OR NOT public.fn_poker_diamond_jackpot_game_qualifies('pineapple') THEN
+    RAISE EXCEPTION 'the qualifying bars do not read back as the chip estate states them';
   END IF;
 
   -- AN UNSET VALUE REFUSES BY NAME, and that is the whole point of the reader.
   BEGIN
-    PERFORM public.fn_ca_diamond_economic('bbj_drop_diamonds', 'bb:3');
+    PERFORM public.fn_ca_diamond_economic('bbj_drop_per_hand', 'bb:3');
     RAISE EXCEPTION 'an unset Diamond economic value did not refuse';
-  EXCEPTION WHEN SQLSTATE 'DE001' THEN
-    IF SQLERRM NOT LIKE 'diamond_economics_unset:bbj_drop_diamonds/bb:3%' THEN
+  EXCEPTION WHEN SQLSTATE 'PDE01' THEN
+    IF SQLERRM NOT LIKE 'diamond_economics_unset:bbj_drop_per_hand/bb:3%' THEN
       RAISE EXCEPTION 'the unset refusal does not name what is unset: %', SQLERRM;
     END IF;
   END;
@@ -1719,17 +1682,13 @@ BEGIN
   END IF;
 
   -- NO BROWSER ROLE TOUCHES ANY OF IT.
-  IF has_table_privilege('anon', 'public.ca_diamond_economics', 'SELECT')
-     OR has_table_privilege('authenticated', 'public.ca_diamond_economics', 'SELECT')
-     OR has_table_privilege('anon', 'public.poker_diamond_jackpot_ledger', 'SELECT')
+  IF has_table_privilege('anon', 'public.poker_diamond_jackpot_ledger', 'SELECT')
      OR has_table_privilege('authenticated', 'public.poker_diamond_jackpot_ledger', 'SELECT')
      OR has_table_privilege('anon', 'public.poker_diamond_jackpot_pools', 'SELECT')
      OR has_table_privilege('authenticated', 'public.poker_diamond_jackpot_pools', 'SELECT') THEN
     RAISE EXCEPTION 'a browser role can read the Diamond jackpot';
   END IF;
-  IF has_function_privilege('anon', 'public.fn_ca_diamond_economic(text,text)', 'EXECUTE')
-     OR has_function_privilege('authenticated', 'public.fn_ca_diamond_economic(text,text)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])', 'EXECUTE')
+  IF has_function_privilege('anon', 'public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])', 'EXECUTE')
      OR has_function_privilege('service_role', 'public.fn_poker_diamond_jackpot_pay(uuid,bigint,numeric,integer,uuid,uuid,uuid[])', 'EXECUTE') THEN
     RAISE EXCEPTION 'a non-owner role can execute a Diamond jackpot money door';
@@ -1744,7 +1703,6 @@ BEGIN
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public'
        AND (p.proname LIKE 'fn_poker_diamond_jackpot%'
-            OR p.proname LIKE 'fn_ca_diamond_economic%'
             OR p.proname = 'fn_poker_reject_diamond_chip_jackpot')
   LOOP
     IF has_function_privilege('anon', v_fn.oid, 'EXECUTE')

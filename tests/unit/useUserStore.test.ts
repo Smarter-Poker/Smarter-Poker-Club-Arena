@@ -6,6 +6,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mocks = vi.hoisted(() => ({ maybeSingle: vi.fn() }));
+
+vi.mock('../../src/lib/ownProfile', () => ({
+  ownProfile: () => ({
+    select: () => ({ maybeSingle: mocks.maybeSingle }),
+  }),
+}));
+
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
@@ -35,6 +43,8 @@ import { useUserStore } from '../../src/stores/useUserStore';
 
 describe('useUserStore', () => {
   beforeEach(() => {
+    mocks.maybeSingle.mockReset();
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     useUserStore.setState({
       user: null,
       isAuthenticated: false,
@@ -71,6 +81,60 @@ describe('useUserStore', () => {
     useUserStore.getState().setUser({ id: 'u2', display_name: 'Original' } as any);
     useUserStore.getState().updateProfile({ display_name: 'Changed' });
     expect(useUserStore.getState().user?.display_name).toBe('Changed');
+  });
+
+  it('discards a late A profile after the store switches to B', async () => {
+    let resolveA!: (value: { data: Record<string, unknown>; error: null }) => void;
+    const lateA = new Promise<{ data: Record<string, unknown>; error: null }>((resolve) => {
+      resolveA = resolve;
+    });
+    mocks.maybeSingle.mockReturnValueOnce(lateA);
+    useUserStore.getState().setUser({ id: 'user-a', username: 'A' } as any);
+
+    const loadA = useUserStore.getState().loadProfile('user-a');
+    useUserStore.getState().setUser({ id: 'user-b', username: 'B' } as any);
+    resolveA({
+      data: {
+        id: 'user-a',
+        username: 'A full',
+        display_name: 'Account A',
+        created_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+
+    await expect(loadA).resolves.toBeNull();
+    expect(useUserStore.getState().user?.id).toBe('user-b');
+    expect(useUserStore.getState().user?.username).toBe('B');
+    expect(useUserStore.getState().isLoading).toBe(false);
+  });
+
+  it('discards a late profile after logout without restoring loading state', async () => {
+    let resolveA!: (value: { data: Record<string, unknown>; error: null }) => void;
+    const lateA = new Promise<{ data: Record<string, unknown>; error: null }>((resolve) => {
+      resolveA = resolve;
+    });
+    mocks.maybeSingle.mockReturnValueOnce(lateA);
+    useUserStore.getState().setUser({ id: 'user-a', username: 'A' } as any);
+
+    const loadA = useUserStore.getState().loadProfile('user-a');
+    useUserStore.getState().logout();
+    resolveA({
+      data: {
+        id: 'user-a',
+        username: 'A full',
+        display_name: 'Account A',
+        created_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+
+    await expect(loadA).resolves.toBeNull();
+    expect(useUserStore.getState()).toMatchObject({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+    });
   });
 
   it('should export store with all actions', () => {

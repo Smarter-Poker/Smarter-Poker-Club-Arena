@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import { occupiedButtonBlinds } from '../../benchmark/OmahaVariantPolicyEvidence.js';
 import { evaluateRemainingVariantPolicy } from './RemainingVariantLivePolicy.js';
 import { remainingVariantSeatCap } from './RemainingVariantPolicyPack.js';
 import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
@@ -23,6 +24,11 @@ describe('Phase 12 postflop geometry and hostile-state boundaries', () => {
                 ] as const) {
                   const s = remainingVariantSpot(variant, street, seats, mode);
                   s.state.dealerSeat = button;
+                  // P12.1: the blinds move with the button, as the engine posts them.
+                  s.state.blindSeats = occupiedButtonBlinds(
+                    button,
+                    s.state.players.map((p) => p.seat)
+                  );
                   const price = role === 'checked_to' ? 0 : role === 'call_off' ? depth * 2 : 2;
                   s.hero.bet = role === 'facing_raise' ? 1 : 0;
                   s.hero.totalInvested = 20 + s.hero.bet;

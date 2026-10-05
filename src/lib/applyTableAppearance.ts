@@ -30,15 +30,23 @@ import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
 import { capture } from './analytics';
 import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
+import { applyFaceDeckToDocument, normalizeFaceDeckId, type FaceDeckId } from './faceDeck';
+import { createMutationId } from './mutationId';
 
-/** The five columns of `user_theme_settings` the felt actually paints from. */
+/** Runtime appearance fields the felt actually paints from. */
 export interface AppearancePatch {
   theme_id?: string;
   table_id?: string;
   button_id?: string;
   background_id?: string;
   cards_id?: string;
+  /** Runtime spelling; persisted as face_deck_id. */
+  faceDeckId?: FaceDeckId;
 }
+
+export type DatabaseAppearancePatch = Omit<AppearancePatch, 'faceDeckId'> & {
+  face_deck_id?: FaceDeckId;
+};
 
 export interface ApplyAppearanceResult {
   ok: boolean;
@@ -54,9 +62,19 @@ const APPEARANCE_FIELDS = [
   'button_id',
   'background_id',
   'cards_id',
+  'faceDeckId',
 ] as const satisfies readonly (keyof AppearancePatch)[];
 
-/* One ordered tail per database row. Two fast taps used to launch two upserts
+/** The database contract remains snake_case while the live client event is typed camelCase. */
+export function toDatabaseAppearancePatch(patch: AppearancePatch): DatabaseAppearancePatch {
+  const { faceDeckId, ...databasePatch } = patch;
+  return {
+    ...databasePatch,
+    ...(faceDeckId ? { face_deck_id: normalizeFaceDeckId(faceDeckId) } : {}),
+  };
+}
+
+/* One ordered tail per database row. Two fast taps used to launch two writes
    concurrently, allowing the slower FIRST request to finish last and become
    the durable selection. Partial writes protect unrelated fields; this queue
    protects the ordering of repeated changes to the same row. */
@@ -97,6 +115,7 @@ function retryableAppearanceWriteError(error: unknown): boolean {
 
 async function persistAppearancePatch(
   userId: string,
+  mutationId: string,
   gameType: string,
   patch: AppearancePatch
 ): Promise<unknown | undefined> {
@@ -105,12 +124,12 @@ async function persistAppearancePatch(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), APPEARANCE_WRITE_TIMEOUT_MS);
     try {
-      const request = supabase
-        .from('user_theme_settings')
-        .upsert(
-          { user_id: userId, game_type: gameType, ...patch },
-          { onConflict: 'user_id,game_type' }
-        );
+      const request = supabase.rpc('fn_patch_table_appearance', {
+        p_expected_user_id: userId,
+        p_mutation_id: mutationId,
+        p_game_type: gameType,
+        p_patch: toDatabaseAppearancePatch(patch),
+      });
       // PostgREST builders support abortSignal. The conditional keeps the
       // writer compatible with the deliberately tiny promise-only test mock.
       const result =
@@ -175,6 +194,7 @@ function emitAppearance(
     userId: userId || undefined,
     mutationId,
   });
+  if (patch.faceDeckId) applyFaceDeckToDocument(patch.faceDeckId);
   if (patch.cards_id) {
     masterBus.emit('SETTINGS_CHANGED', {
       setting: 'cardBack',
@@ -206,7 +226,9 @@ export async function applyTableAppearance(
   const cleanPatch: AppearancePatch = {};
   for (const field of APPEARANCE_FIELDS) {
     const value = patch[field];
-    if (typeof value === 'string' && value) cleanPatch[field] = value;
+    if (typeof value === 'string' && value) {
+      cleanPatch[field] = (field === 'faceDeckId' ? normalizeFaceDeckId(value) : value) as never;
+    }
   }
   if (!Object.keys(cleanPatch).length) {
     recordAppearanceResult('empty', startedAt, gameType, cleanPatch, opts.userId);
@@ -215,7 +237,10 @@ export async function applyTableAppearance(
 
   const scope = `${opts.userId || 'guest'}:${gameType}`;
   const revision = ++appearanceRevision;
-  const mutationId = `${scope}:${revision}`;
+  // This UUID is the durable identity of one logical tap. Every retry carries
+  // the same value so a response lost after commit cannot replay this choice
+  // over a newer choice made on another device.
+  const mutationId = createMutationId();
   for (const field of APPEARANCE_FIELDS) {
     if (cleanPatch[field]) latestFieldRevision.set(`${scope}:${field}`, revision);
   }
@@ -237,7 +262,11 @@ export async function applyTableAppearance(
     const reverted: AppearancePatch = {};
     for (const field of APPEARANCE_FIELDS) {
       const previous = opts.previous?.[field];
-      if (cleanPatch[field] && previous) reverted[field] = previous;
+      if (cleanPatch[field] && previous) {
+        Object.assign(reverted, {
+          [field]: field === 'faceDeckId' ? normalizeFaceDeckId(previous) : previous,
+        });
+      }
     }
     masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
       kind: 'table-appearance',
@@ -268,10 +297,11 @@ export async function applyTableAppearance(
   }
   pendingWriteCount.set(scope, (pendingWriteCount.get(scope) ?? 0) + 1);
 
-  // 2. PERSIST IN TAP ORDER — only the changed columns plus the composite key.
+  // 2. PERSIST IN TAP ORDER — only the changed columns, owner fence, bucket,
+  // and durable mutation UUID cross the RPC boundary.
   const previousTail = writeTails.get(scope) ?? Promise.resolve();
   const task = previousTail.then(() =>
-    persistAppearancePatch(opts.userId as string, gameType, cleanPatch)
+    persistAppearancePatch(opts.userId as string, mutationId, gameType, cleanPatch)
   );
   const tail = task.then(() => undefined);
   writeTails.set(scope, tail);
@@ -289,7 +319,9 @@ export async function applyTableAppearance(
         previous &&
         latestFieldRevision.get(`${scope}:${field}`) === revision
       ) {
-        reverted[field] = previous;
+        Object.assign(reverted, {
+          [field]: field === 'faceDeckId' ? normalizeFaceDeckId(previous) : previous,
+        });
       }
     }
     if (Object.keys(reverted).length < Object.keys(cleanPatch).length) {

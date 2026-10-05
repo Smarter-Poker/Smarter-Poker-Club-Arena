@@ -19,8 +19,8 @@ SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 0,
 -- This is the state the migration leaves production in, and it is the state
 -- the six boundary layers already describe. Proved first, because it is what
 -- "amounts held at zero" has to mean.
-SELECT fixture_assert(public.fn_ca_diamond_economic('bbj_enabled') = 0,
-  'B14 is recorded as yes and the switch ships at 0: the jackpot is not open');
+SELECT fixture_assert(public.fn_ca_diamond_economic_on('bbj_enabled') IS FALSE,
+  'B14 is recorded as yes and the switch ships shut: the jackpot is not open');
 SELECT fixture_refuses($q$SELECT public.fn_ca_settle_hand_stacks_absolute(
   '30000000-0000-0000-0000-000000000001', 1000001,
   jsonb_build_array(
@@ -47,16 +47,16 @@ SELECT fixture_refuses($q$SELECT public.fn_ca_settle_hand_stacks_absolute(
 -- ---------------------------------------------------------------------------
 -- 2. THE SWITCH IS TURNED ON THE WAY THE DESIGN SAYS: BY APPENDING A ROW
 -- ---------------------------------------------------------------------------
-INSERT INTO public.ca_diamond_economics(name, scope, value, units, approved_quote, approved_on, basis, recorded_by)
-VALUES ('bbj_enabled', 'all', 1, 'switch',
+INSERT INTO public.ca_diamond_economics(name, scope, value_text, units, approved_quote, approved_on, basis, recorded_by)
+VALUES ('bbj_enabled', 'all', 'yes', 'boolean',
   'NOTHING IS MINE, EVER.... THEY ARE ALWAYS YOURS TO DO.', DATE '2026-10-05',
-  'The fixture opens the jackpot to prove the drop, the hit, the shares and the replay. Production keeps the 0 row this migration wrote.',
+  'The fixture opens the jackpot to prove the drop, the hit, the shares and the replay. Production keeps the no row this migration wrote.',
   'poker-diamond-bad-beat-jackpot-acceptance.sql');
-SELECT fixture_assert(public.fn_ca_diamond_economic('bbj_enabled') = 1,
+SELECT fixture_assert(public.fn_ca_diamond_economic_on('bbj_enabled'),
   'the newest row for a name is the current value: appending turned the jackpot on');
 SELECT fixture_assert((SELECT count(*) = 2 FROM ca_diamond_economics WHERE name = 'bbj_enabled'),
   'the earlier answer was not overwritten; a new answer is a new row');
-SELECT fixture_refuses($q$UPDATE ca_diamond_economics SET value = 1 WHERE name = 'bbj_pool_seed_diamonds'$q$,
+SELECT fixture_refuses($q$UPDATE ca_diamond_economics SET value = 1 WHERE name = 'bbj_seed'$q$,
   'append');
 SELECT fixture_refuses($q$DELETE FROM ca_diamond_economics WHERE name = 'bbj_enabled'$q$, 'append');
 
@@ -173,7 +173,8 @@ SELECT fixture_assert((SELECT sum(balance) = 900 FROM poker_diamond_custody WHER
 -- Diamond pot clears 200 honestly rather than being asserted past the gate.
 UPDATE public.tables SET small_blind = 10, big_blind = 20
  WHERE id = '30000000-0000-0000-0000-000000000001';
-SELECT fixture_assert(public.fn_ca_diamond_economic('bbj_payout_total_percent', 'bb:20') = 70,
+SELECT fixture_assert(public.fn_poker_diamond_jackpot_share(
+  public.fn_ca_diamond_economic_text('bbj_hit_shares', 'bb:20'), 1, 'paid') = 70,
   'B19: a 20 Diamond big blind is in the High tier and pays 70 percent of main');
 
 -- The gates refuse before the pool is touched.
@@ -213,7 +214,7 @@ SELECT fixture_refuses($q$SELECT public.fn_poker_diamond_jackpot_pay(
 -- An unset stake refuses by its own name rather than borrowing another's price.
 UPDATE public.tables SET small_blind = 1.5, big_blind = 3 WHERE id = '30000000-0000-0000-0000-000000000001';
 SELECT fixture_refuses($q$SELECT public.fn_poker_diamond_jackpot_drop_due(
-  '30000000-0000-0000-0000-000000000001')$q$, 'diamond_economics_unset:bbj_drop_diamonds/bb:3');
+  '30000000-0000-0000-0000-000000000001')$q$, 'diamond_economics_unset:bbj_drop_per_hand/bb:3');
 UPDATE public.tables SET small_blind = 10, big_blind = 20 WHERE id = '30000000-0000-0000-0000-000000000001';
 
 SELECT fixture_assert(public.fn_poker_diamond_jackpot_diamonds() = 300,

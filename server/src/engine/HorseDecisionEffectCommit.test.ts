@@ -132,7 +132,47 @@ vi.mock('./HorsePhase11Authority.js', async (importOriginal) => {
   };
 });
 
+// P12.3: one Phase 12 main gate per pack, the same class, each with an
+// admission these tests control.
+const phase12Main = vi.hoisted(() => ({
+  admission: { short_deck: null, pineapple: null, flh: null, flo8: null } as Record<
+    string,
+    unknown
+  >,
+}));
+vi.mock('./HorsePhase12Authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./HorsePhase12Authority.js')>();
+  const { HorsePhase8AuthorityGate } = await import('./HorseQualifiedAuthority.js');
+  const { REMAINING_VARIANT_PACKS } =
+    await import('./remainingVariants/RemainingVariantPolicyPack.js');
+  const gate = (variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8') =>
+    new HorsePhase8AuthorityGate(
+      () =>
+        (phase12Main.admission[variant] as
+          | import('./HorseQualifiedAuthority.js').HorseAuthorityAdmission
+          | null) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        },
+      `turns-test-phase12-main-${variant}`,
+      REMAINING_VARIANT_PACKS[variant].version
+    );
+  return {
+    ...actual,
+    liveHorsePhase12Authorities: Object.freeze({
+      short_deck: gate('short_deck'),
+      pineapple: gate('pineapple'),
+      flh: gate('flh'),
+      flo8: gate('flo8'),
+    }),
+  };
+});
+
 import { HandController } from './HandController.js';
+import { liveHorsePhase12Authorities } from './HorsePhase12Authority.js';
+import { qualifiedPhase12TestAdmission } from './HorsePhase12Authority.test-support.js';
+import { REMAINING_VARIANT_PACKS } from './remainingVariants/RemainingVariantPolicyPack.js';
 import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
 import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
 import { qualifiedPhase11TestAdmission } from './HorsePhase11Authority.test-support.js';
@@ -2347,6 +2387,299 @@ describe('P11.3 acceptance-time Phase 11 authority recheck (the Phase 8 law, one
       drainFires()
         .map(({ feature }) => feature)
         .filter((f) => f.startsWith('phase11_authority_'))
+    ).toEqual([]);
+  });
+});
+
+describe('P12.3 acceptance-time Phase 12 authority recheck (the Phase 8 law, one gate per pack)', () => {
+  let approval = 600;
+  beforeEach(() => {
+    enableBrainTelemetry();
+    drainFires();
+  });
+  /** Usable authority for `variant` at its own main gate and a worker holder. */
+  function authority(variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8') {
+    approval += 1;
+    phase12Main.admission[variant] = qualifiedPhase12TestAdmission(variant, approval);
+    liveHorsePhase12Authorities[variant].refresh();
+    const worker = new HorseQualifiedAuthorityHolder(
+      `turns-p12-worker-${approval}`,
+      REMAINING_VARIANT_PACKS[variant].version
+    );
+    worker.apply(qualifiedPhase12TestAdmission(variant, approval));
+    liveHorsePhase12Authorities[variant].observeWorker(worker.receipt());
+    return worker;
+  }
+  const receiptFor = (
+    variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8',
+    worker: HorseQualifiedAuthorityHolder | null,
+    proposal: { action: string; amount: number | null },
+    baseline: { action: string; amount: number | null },
+    selected = true
+  ) => ({
+    version: REMAINING_VARIANT_PACKS[variant].version,
+    variant,
+    mode: selected ? 'candidate' : 'shadow',
+    eligible: true,
+    fired: true,
+    changed: true,
+    applied: selected,
+    selection: selected ? 'selected' : 'shadow_change',
+    selectionRefusal: null,
+    authority: worker ? liveHorsePhase12Authorities[variant].stamp(worker.receipt()) : null,
+    authorityVerdict: null,
+    baselineAction: baseline.action,
+    baselineAmount: baseline.amount,
+    proposalAction: proposal.action,
+    proposalAmount: proposal.amount,
+    finalAction: selected ? proposal.action : baseline.action,
+    finalAmount: selected ? proposal.amount : baseline.amount,
+    utilityOwner: 'cash',
+    executionStatus: 'pending',
+    executedAction: null,
+    executedAmount: null,
+  });
+  const result = (snapshot: any, receipt: any): any => {
+    const decision: any = {
+      action: receipt.finalAction,
+      ...(receipt.finalAmount === null ? {} : { amount: receipt.finalAmount }),
+      thinkTime: 1000,
+      remainingVariantPolicy: receipt,
+    };
+    decision.executionWitness = createHorseExecutionWitness(snapshot, decision, {
+      requestId: 93,
+      lane: 'fast',
+      computeMs: 2,
+      governorScale: 1,
+    });
+    return {
+      type: 'FAST_RESULT' as const,
+      planIssueDisposition: 'no_effects' as const,
+      planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 93 }),
+      requestId: 93,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision,
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    };
+  };
+
+  it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+    'accepts a selected %s proposal under usable authority and records selected, accepted and baseline actions',
+    async (variant) => {
+      const worker = authority(variant);
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const receipt = receiptFor(
+        variant,
+        worker,
+        { action: 'bet', amount: 20 },
+        { action: 'check', amount: null }
+      );
+      let witness: any;
+      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+        const r = result(s, receipt);
+        witness = r.decision.executionWitness;
+        return r;
+      });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(1250);
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['bet', 20, 'horse_policy']);
+      expect(receipt).toMatchObject({
+        applied: true,
+        selection: 'controller_accepted',
+        authorityVerdict: 'usable',
+        executionStatus: 'intended',
+        executedAction: 'bet',
+        executedAmount: 20,
+      });
+      expect(witness.executionStatus).toBe('intended');
+      expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+      expect(witness.phase12Authority).toMatchObject({
+        continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
+        mode: 'candidate',
+        selection: 'controller_accepted',
+        verdict: 'usable',
+        candidate: { action: 'bet', amount: 20 },
+        reference: { action: 'check', amount: null },
+      });
+      expect(witness.phase10Authority).toBeUndefined();
+      expect(witness.phase11Authority).toBeUndefined();
+      expect(witness.acceptedActions[0].record).toMatchObject({ action: 'bet', amount: 20 });
+      expect(drainFires().map(({ feature }) => feature)).toEqual(
+        expect.arrayContaining([
+          'phase12_authority_verdict_usable',
+          'phase12_selection_controller_accepted',
+        ])
+      );
+    }
+  );
+
+  it.each(['withdrawn', 'stale_generation', 'restarted', 'refresh_failed'] as const)(
+    'Phase 12 authority %s during think time executes the shadow baseline exactly',
+    async (verdict) => {
+      const worker = authority('flh');
+      const gate = liveHorsePhase12Authorities.flh;
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const receipt = receiptFor(
+        'flh',
+        worker,
+        { action: 'check', amount: null },
+        { action: 'bet', amount: 20 }
+      );
+      let witness: any;
+      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+        const r = result(s, receipt);
+        witness = r.decision.executionWitness;
+        return r;
+      });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(receipt.executionStatus).toBe('pending');
+      if (verdict === 'withdrawn') gate.withdraw('test_withdrawal');
+      if (verdict === 'stale_generation') {
+        worker.apply({ status: 'refused', reason: 'unreadable_evidence', transient: true });
+        worker.apply(qualifiedPhase12TestAdmission('flh', approval));
+        gate.observeWorker(worker.receipt());
+      }
+      if (verdict === 'restarted') gate.forgetWorker(worker.epoch);
+      if (verdict === 'refresh_failed') {
+        phase12Main.admission.flh = {
+          status: 'refused',
+          reason: 'unreadable_evidence',
+          transient: true,
+        };
+        gate.refresh();
+      }
+      await vi.advanceTimersByTimeAsync(1250);
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['bet', 20, 'horse_policy']);
+      expect(receipt).toMatchObject({
+        applied: false,
+        selection: 'withdrawn_before_acceptance',
+        authorityVerdict: verdict,
+        finalAction: 'bet',
+        finalAmount: 20,
+        executionStatus: 'intended',
+        executedAction: 'bet',
+        executedAmount: 20,
+      });
+      expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+      expect(witness.executionStatus).toBe('intended');
+      expect(witness.phase12Authority).toMatchObject({
+        selection: 'withdrawn_before_acceptance',
+        verdict,
+        candidate: { action: 'check', amount: null },
+        reference: { action: 'bet', amount: 20 },
+      });
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+      expect(drainFires().map(({ feature }) => feature)).toEqual(
+        expect.arrayContaining([
+          'phase12_selection_withdrawn_before_acceptance',
+          `phase12_authority_verdict_${verdict}`,
+        ])
+      );
+    }
+  );
+
+  it('a selected receipt is checked at its own pack gate: usable Short Deck authority never accepts a FLO8 proposal', async () => {
+    const shortDeckWorker = authority('short_deck');
+    // FLO8's gate is unselected; the receipt is stamped with the Short Deck receipt.
+    phase12Main.admission.flo8 = null;
+    liveHorsePhase12Authorities.flo8.refresh();
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = {
+      ...receiptFor('flo8', null, { action: 'bet', amount: 20 }, { action: 'check', amount: null }),
+      authority: liveHorsePhase12Authorities.short_deck.stamp(shortDeckWorker.receipt()),
+    };
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => result(s, receipt));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(performAction.mock.calls[0].slice(1, 4)).toEqual(['check', undefined, 'horse_policy']);
+    expect(receipt).toMatchObject({
+      applied: false,
+      selection: 'withdrawn_before_acceptance',
+      authorityVerdict: 'unselected',
+      executedAction: 'check',
+    });
+    // The Short Deck gate itself is untouched and still usable for its own receipts.
+    expect(
+      liveHorsePhase12Authorities.short_deck.check(
+        liveHorsePhase12Authorities.short_deck.stamp(shortDeckWorker.receipt())
+      )
+    ).toBe('usable');
+  });
+
+  it('a controller refusal of a selected proposal withdraws that pack only, for this process', async () => {
+    const flhWorker = authority('flh');
+    const flo8Worker = authority('flo8');
+    const { engine, player, enginePlayer, state } = harness(false);
+    const receipt = receiptFor(
+      'flh',
+      flhWorker,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null }
+    );
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => result(s, receipt));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(receipt.executionStatus).toBe('fallback');
+    expect(receipt.selection).toBe('selected');
+    expect(liveHorsePhase12Authorities.flh.mainState()).toBe('withdrawn');
+    expect(
+      liveHorsePhase12Authorities.flh.check(
+        liveHorsePhase12Authorities.flh.stamp(flhWorker.receipt())
+      )
+    ).toBe('withdrawn');
+    expect(liveHorsePhase12Authorities.flo8.mainState()).toBe('usable');
+    expect(
+      liveHorsePhase12Authorities.flo8.check(
+        liveHorsePhase12Authorities.flo8.stamp(flo8Worker.receipt())
+      )
+    ).toBe('usable');
+    expect(drainFires().map(({ feature }) => feature)).toContain(
+      'phase12_authority_controller_withdrawn'
+    );
+  });
+
+  it('a shadow Phase 12 receipt is never rechecked and executes the baseline it already carries', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = receiptFor(
+      'short_deck',
+      null,
+      { action: 'bet', amount: 20 },
+      { action: 'check', amount: null },
+      false
+    );
+    let witness: any;
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => {
+      const r = result(s, receipt);
+      witness = r.decision.executionWitness;
+      return r;
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(1250);
+    expect(performAction.mock.calls[0][1]).toBe('check');
+    expect(receipt).toMatchObject({
+      selection: 'shadow_change',
+      authorityVerdict: null,
+      executionStatus: 'intended',
+    });
+    expect(witness.phase12Authority).toMatchObject({
+      mode: 'shadow',
+      selection: 'shadow_change',
+      verdict: null,
+      candidate: { action: 'bet', amount: 20 },
+      reference: { action: 'check', amount: null },
+    });
+    expect(
+      drainFires()
+        .map(({ feature }) => feature)
+        .filter((f) => f.startsWith('phase12_authority_'))
     ).toEqual([]);
   });
 });

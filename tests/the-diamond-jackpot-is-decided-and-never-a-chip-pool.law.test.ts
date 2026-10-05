@@ -51,6 +51,7 @@ function bodyOf(name: string): string {
 
 const MONEY_DOORS = [
   'fn_poker_diamond_jackpot_allocate',
+  'fn_poker_diamond_jackpot_game_qualifies',
   'fn_poker_diamond_jackpot_drop',
   'fn_poker_diamond_jackpot_drop_due',
   'fn_poker_diamond_jackpot_pay',
@@ -59,19 +60,19 @@ const MONEY_DOORS = [
 
 /* The names whose VALUE is an answer of Dan's. A door may not carry one of
    these as a literal; it reads it. */
+/* The SHARED table's own names, from 20261005151918. This lane records and
+   reads these and no others: a name of its own invention would be a second
+   vocabulary for one question. */
 const ANSWERED_NAMES = [
   'bbj_enabled',
-  'bbj_drop_diamonds',
-  'bbj_min_players_dealt_to_hit',
-  'bbj_min_pot_bb_to_hit',
-  'bbj_pool_main_share',
-  'bbj_pool_backup_share',
-  'bbj_pool_pivot_threshold',
-  'bbj_pool_pivot_main_share',
-  'bbj_pool_pivot_backup_share',
-  'bbj_payout_total_percent',
-  'bbj_payout_loser_share',
-  'bbj_payout_winner_share',
+  'bbj_drop_per_hand',
+  'bbj_qualifying_hand',
+  'bbj_excluded_games',
+  'bbj_min_pot',
+  'bbj_min_dealt_in',
+  'bbj_pool_split',
+  'bbj_hit_shares',
+  'bbj_withdrawal_destination',
 ];
 
 describe('the Diamond jackpot reads its numbers and never carries them', () => {
@@ -92,31 +93,56 @@ describe('the Diamond jackpot reads its numbers and never carries them', () => {
     }
   });
 
-  it.each(ANSWERED_NAMES)('%s is read through the refusing reader', (name) => {
-    expect(
-      sql.includes(`fn_ca_diamond_economic('${name}'`),
-      `${name} is recorded but no door reads it`
-    ).toBe(true);
+  it.each(ANSWERED_NAMES)('%s is recorded and read under the shared name', (name) => {
+    expect(sql.includes(`'${name}'`), `${name} is not recorded`).toBe(true);
+    const read =
+      sql.includes(`fn_ca_diamond_economic('${name}'`) ||
+      sql.includes(`fn_ca_diamond_economic_text('${name}'`) ||
+      sql.includes(`fn_ca_diamond_economic_on('${name}'`);
+    expect(read, `${name} is recorded but no door reads it`).toBe(true);
   });
 
-  it('the reader never returns NULL and never falls back', () => {
-    const reader = bodyOf('fn_ca_diamond_economic');
-    expect(reader).toContain("RAISE EXCEPTION 'diamond_economics_unset:%/%'");
-    expect(reader).toContain("USING ERRCODE = 'DE001'");
-    /* One scope, one answer. The only COALESCEs default the scope ARGUMENT to
-       'all'; none of them defaults the VALUE, which is the whole point. */
-    for (const c of reader.match(/COALESCE\([^)]*\)/g) ?? [])
-      expect(c, `the reader defaults a value: ${c}`).toBe("COALESCE(p_scope, 'all')");
-    expect(reader).not.toMatch(/RETURN\s+0/);
-    expect(reader).toContain('ORDER BY e.id DESC LIMIT 1');
+  it('this lane creates no table and no reader of its own', () => {
+    /* ca_diamond_economics belongs to 20261005151918, the A1 to A20 lane's
+       migration, whose closed name list already carries every B14 to B22 name.
+       Two lanes writing one table have to agree rather than each hold a copy,
+       and a CREATE OR REPLACE of their reader or their units map here would
+       silently drop the A names from it. */
+    expect(sql).not.toMatch(/CREATE TABLE[^;]*ca_diamond_economics/);
+    expect(sql).not.toMatch(/FUNCTION public\.fn_ca_diamond_economic\s*\(/);
+    expect(sql).not.toMatch(/FUNCTION public\.fn_ca_diamond_economic_text/);
+    expect(sql).not.toMatch(/FUNCTION public\.fn_ca_diamond_economic_on/);
+    expect(sql).not.toMatch(/FUNCTION public\.fn_ca_diamond_economics_units_of/);
+    /* It refuses to run at all if their table or readers are absent, rather
+       than creating a second one. */
+    expect(sql).toContain('apply 20261005151918 first');
+    /* And it stops if a name it writes is not on their closed list, rather
+       than altering that constraint to admit one. */
+    expect(sql).toContain('a B14 to B22 name this lane records is not on the shared closed list');
   });
 
-  it('an answer is appended, never updated or deleted', () => {
-    expect(sql).toContain('ca_diamond_economics_append_only BEFORE UPDATE OR DELETE');
-    expect(sql).toContain('fn_poker_diamond_append_only()');
-    /* A row with no authority quote and no derivation cannot exist. */
-    expect(sql).toContain('ca_diamond_economics_quote_present');
-    expect(sql).toContain('ca_diamond_economics_basis_present');
+  it('the one extension is the account list, and it keeps both of theirs', () => {
+    const ext = sql.slice(
+      sql.indexOf('ADD CONSTRAINT ca_diamond_economics_account_exists'),
+      sql.indexOf('-- 1b. READING A SHARES ANSWER')
+    );
+    expect(ext).toContain("'ca_diamond_house'");
+    expect(ext).toContain("'retired_from_supply'");
+    expect(ext).toContain("'surviving_diamond_jackpot_pool'");
+    expect(ext).toContain("'contributing_players_pro_rata'");
+  });
+
+  it('a shares answer is read strictly, and refuses rather than guessing', () => {
+    const parser = bodyOf('fn_poker_diamond_jackpot_share');
+    expect(parser).toContain('diamond_jackpot_shares_malformed');
+    expect(parser).toContain('diamond_jackpot_shares_missing');
+    expect(parser).toContain('diamond_jackpot_shares_have_no_segment_');
+    expect(parser).toContain("'^[a-z_]+=[0-9]+(,[a-z_]+=[0-9]+)*$'");
+  });
+
+  it('the shares re-sum to the whole, and the migration proves it', () => {
+    expect(sql).toContain('a pool split regime does not account for the whole drop');
+    expect(sql).toContain('a hit share does not account for the whole of what is paid');
   });
 });
 
@@ -205,7 +231,7 @@ describe('the boundary layers become correct, not absent', () => {
 
   it('conservation is against the drop, and the settler is pinned both ways', () => {
     expect(sql).toContain('<> -v_bbj');
-    expect(sql).toContain("'3aab9170062e97840afc7d15999691ad', '65f5ca7dec3e8f1323bfe0ee3fd27ce9'");
+    expect(sql).toContain("'3aab9170062e97840afc7d15999691ad', 'e9761c3ed7b52d2aec90bcf0e6226812'");
   });
 
   it('the migration opens no arena switch', () => {

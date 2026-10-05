@@ -1,0 +1,45 @@
+import { it } from 'vitest';
+import { HandController } from '../HandController.js';
+import { deadButtonPositions } from '../deadButton.js';
+import { seedFastRandom } from '../HorseEval.js';
+import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import { evaluateRemainingVariantPolicy } from './RemainingVariantLivePolicy.js';
+import { sampleRemainingVariantEquity } from './RemainingVariantSampler.js';
+import { remainingVariantSeatCap } from './RemainingVariantPolicyPack.js';
+import { controllerDecisionState } from './RemainingVariantControllerSpots.test-support.js';
+function decisions(variant: any, seatsNow: number[], last: any) {
+  const blinds = deadButtonPositions(seatsNow, last)!;
+  const players = seatsNow.map((seat) => ({ seat, user_id: `p${seat}`, username: 'x', stack: 2000, bet: 0, totalInvested: 0, cards: [], is_folded: false, is_all_in: false, is_sitting_out: false, is_horse: true }));
+  const config: any = { tableId: 't', handNumber: 7, gameVariant: variant, smallBlind: 10, bigBlind: 20, ante: 0, isTournament: true, rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true }, blindSeats: { smallBlind: blinds.smallBlind, bigBlind: blinds.bigBlind } };
+  const c = new HandController(config, players as any, blinds.button);
+  c.start();
+  const out: string[] = [];
+  for (let i = 0; i < seatsNow.length; i++) {
+    const spot = controllerDecisionState(c, variant, 'tournament', config)!;
+    const r = evaluateRemainingVariantPolicy(spot.hero, spot.state, spot.baseline, null, 'shadow', () => 0);
+    out.push(`seat ${spot.hero.seat}: ${r.receipt.reason} position=${r.receipt.position}`);
+    c.performAction(spot.hero.seat, spot.state.toCall! > 0 ? 'call' : 'check');
+  }
+  return out;
+}
+it('probe', () => {
+  for (const v of ['short_deck', 'flh', 'flo8']) {
+    console.log(`DEFECT dead button ${v} (dealer 5 empty; engine blinds 6/7): ` + decisions(v, [1, 2, 4, 6, 7, 8], { smallBlind: 5, bigBlind: 6 }).join(' | '));
+    console.log(`DEFECT dead small blind ${v} (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): ` + decisions(v, [1, 2, 4, 5], { smallBlind: 2, bigBlind: 3 }).join(' | '));
+  }
+  for (const v of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
+    for (const mode of ['cash', 'tournament'] as const) {
+      const cap = remainingVariantSeatCap(v, mode);
+      if (cap < 2 || cap >= 10) continue;
+      const s = remainingVariantSpot(v, 'preflop', cap + 1, mode);
+      const r = evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+      console.log(`DEFECT census above ceiling ${v} ${mode} ${cap + 1} dealt: ${r.receipt.reason}`);
+    }
+  for (const v of ['short_deck', 'pineapple', 'flh', 'flo8'] as const) {
+    const river = remainingVariantSpot(v, 'river', 3); seedFastRandom(17);
+    const evidence = sampleRemainingVariantEquity(v, river.hero, river.state, () => true)!;
+    const pre = remainingVariantSpot(v, 'preflop', 3);
+    const r = evaluateRemainingVariantPolicy(pre.hero, pre.state, pre.baseline, evidence as any, 'shadow', () => 0, 1, false);
+    console.log(`DEFECT preflop receipt echoes caller evidence ${v}: ${r.receipt.equity === evidence}`);
+  }
+});

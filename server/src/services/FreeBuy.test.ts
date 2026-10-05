@@ -227,6 +227,7 @@ import {
   chicagoWallClockToUtcMs,
   freeBuySlotsDue,
   freeBuyTournamentRow,
+  FREE_BUY_BOARD_NAMES,
   freeBuyBreakEvenEntrants,
   lateRegLevelsForMinutes,
   ladderMinutesThrough,
@@ -458,6 +459,19 @@ describe('the row a Free Buy is created as', () => {
 
   it('the default paid depth is explicitly retained', () => {
     expect(rowFor(0, 8).payout_percent).toBe(10);
+  });
+
+  it('is published under a board name, which is how the watch finds its rows', () => {
+    /* 2026-10-05. Every freeroll carries free_buy, so the hourly watch and
+       freebuy:verify select the board by FREE_BUY_BOARD_NAMES. A row published
+       under any other name would be a board event the watch never reads. */
+    for (const slot of FREE_BUY_SLOTS) {
+      const name = String(rowFor(0, slot.chicagoHour).name);
+      expect(FREE_BUY_BOARD_NAMES).toContain(name);
+    }
+    expect(new Set(FREE_BUY_BOARD_NAMES).size).toBe(FREE_BUY_SLOTS.length);
+    // A correct non-board freeroll is not one of them.
+    expect(FREE_BUY_BOARD_NAMES).not.toContain('$100 Freeroll • 6:00 AM');
   });
 
   it('the first entry is free on both halves - the CHECK constraint refuses anything else', () => {

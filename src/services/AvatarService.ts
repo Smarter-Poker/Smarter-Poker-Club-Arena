@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { reportError, reportWarning } from '../utils/errorReporter';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../utils/avatarGenerator';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolveVipStatus } from '../utils/vipStatus';
 import {
   ALL_COSMETICS,
   isCosmeticOwned,
@@ -603,13 +604,20 @@ class AvatarServiceClass {
    */
   async hasVipAccess(userId: string): Promise<boolean> {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('is_vip')
+        .select('is_vip, vip_tier, vip_expires_at')
         .eq('id', userId)
         .maybeSingle();
 
-      return data?.is_vip || false;
+      if (error) {
+        reportWarning('VIP status read failed', 'AvatarService.hasVipAccess', {
+          code: error.code,
+        });
+        return false;
+      }
+
+      return resolveVipStatus(data) !== 'none';
     } catch (err) {
       reportError(err, 'AvatarService.Error');
       return false;
@@ -704,7 +712,7 @@ class AvatarServiceClass {
     const vipPromise = (async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('is_vip')
+        .select('is_vip, vip_tier, vip_expires_at')
         .eq('id', userId)
         .maybeSingle();
       if (error) {
@@ -714,7 +722,7 @@ class AvatarServiceClass {
         });
         return false;
       }
-      return Boolean(data?.is_vip);
+      return resolveVipStatus(data) !== 'none';
     })();
 
     const unlockPromise = (async () => {

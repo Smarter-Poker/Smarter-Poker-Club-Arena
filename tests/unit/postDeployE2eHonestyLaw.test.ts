@@ -98,7 +98,9 @@ describe.each([
     const script = body.replace(/^ {10}/gm, '');
     const dir = mkdtempSync(join(tmpdir(), 'e2e-release-window-'));
     const summary = join(dir, 'summary.md');
+    const output = join(dir, 'output.txt');
     writeFileSync(summary, '');
+    writeFileSync(output, '');
     try {
       // Execute the maintained shell block, including its pipeline, with the
       // runner's errexit setting. Only external I/O is controlled here; the
@@ -130,6 +132,8 @@ ${script}`,
             ...process.env,
             EXPECTED_LIVE_SHA: 'a'.repeat(40),
             GITHUB_STEP_SUMMARY: summary,
+            GITHUB_OUTPUT: output,
+            RUNTIME_RESUMED: 'true',
             CLASSIFIER_STATUS: String(status),
             CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
           },
@@ -138,18 +142,22 @@ ${script}`,
       expect(result.error).toBeUndefined();
       expect(result.status).toBe(status === 1 ? 1 : 0);
       const report = readFileSync(summary, 'utf8');
+      const outputs = readFileSync(output, 'utf8');
       if (status === 0) {
         expect(report).toContain('Production stayed on');
         expect(report).not.toContain('NON-VERDICT');
+        expect(outputs).toContain('certified=true');
       } else if (status === 3) {
         expect(result.stdout).toContain('::warning::UNKNOWN: production advanced');
         expect(report).toContain(`superseded ${'b'.repeat(40)}`);
         expect(report).toContain('NON-VERDICT');
         expect(report).not.toContain('Production stayed on');
+        expect(outputs).not.toContain('certified=true');
       } else {
         expect(result.stdout).toContain('::error::production left');
         expect(report).not.toContain('Production stayed on');
         expect(report).not.toContain('NON-VERDICT');
+        expect(outputs).not.toContain('certified=true');
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

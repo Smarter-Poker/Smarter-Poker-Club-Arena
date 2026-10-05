@@ -194,7 +194,9 @@ const BASELINE = new Map<string, number>([
   // PostgREST failures so retryable deadlocks cannot disappear into `void`.
   ['src/services/DailyChallengeService.ts', 0],
   ['src/services/BlockService.ts', 1],
-  ['src/services/AvatarService.ts', 1],
+  // 1 -> 0 on 2026-10-05. VIP access now binds and reports its PostgREST
+  // failure instead of treating an unreadable account as a non-VIP account.
+  ['src/services/AvatarService.ts', 0],
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
   ['src/pages/admin/AnalyticsDashboard.tsx', 0],

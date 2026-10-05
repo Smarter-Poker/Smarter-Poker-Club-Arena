@@ -1226,6 +1226,18 @@ async function observeTournamentBoard(
       const reader = await createHudClockReader();
       try {
         hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        /* A LEVEL ABOUT TO ROLL OVER IS NOT A MISSING CLOCK (2026-10-04).
+           eligibleHudClock refuses a level with 20 s or less left, because
+           that level-up may fire before both HUDs are watching. Run
+           37246061086 read tournament 8c42b2c2 at 00:13:04Z, 14 s before its
+           level 7 began at 00:13:18Z, and failed "no eligible natural HUD
+           clock" on a healthy RUNNING event. Ask again across the rollover:
+           the next level is the baseline, and mttCaseTimeoutMs below sizes
+           the deadline from it. Every other refusal is still a refusal. */
+        for (let retry = 0; !hudClock && retry < 9; retry++) {
+          await new Promise((settle) => setTimeout(settle, 5_000));
+          hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        }
       } finally {
         await testInfo.attach('mtt-hud-clock-qualification', {
           body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),

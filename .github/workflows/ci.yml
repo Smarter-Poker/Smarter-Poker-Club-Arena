@@ -2141,6 +2141,12 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      # The evidence above is blob-served; this names each recorded failure as
+      # a check-run annotation the API can read (2026-10-05). Report only.
+      - name: Name the Spin expiry failure where the API can read it
+        if: failure() && matrix.shard == 1 && steps.spin_expiry_postgres.outcome == 'failure'
+        run: python3 scripts/ci/annotate-spin-expiry-failure.py artifacts/spin-expiry
+
       - name: PKO heads follow exact accepted knockout dependencies
         if: matrix.shard == 4
         env:

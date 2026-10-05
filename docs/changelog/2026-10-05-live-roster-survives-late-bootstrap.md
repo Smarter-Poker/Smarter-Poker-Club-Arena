@@ -7,3 +7,5 @@ TablePage now refuses cancelled bootstrap replies and preserves the same table's
 Regression coverage executes the actual async bootstrap with a deferred metadata response and the actual database restore updater with a deferred profile response. The metadata and cancelled-effect regressions failed before the repair. Production deadlines remain unchanged. No engine or database mutation is required for this client correction.
 
 The gameplay customization certificate now selects the existing accessible name "Open Table Studio", matching SettingsPanel's aria-label. Its former visible-text selector "Open Studio" could never match that role query.
+
+The deferred tournament metadata read also exits after identity cleanup, before restoring final-table state, level, clock or add-on offers. Its regression reproduced an obsolete final-table update before the guard. The live level subscription is created only after this read; no speculative level counter fence was added.

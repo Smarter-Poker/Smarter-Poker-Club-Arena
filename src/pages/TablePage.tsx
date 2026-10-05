@@ -13156,6 +13156,7 @@ function LiveTablePage({
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
+          if (!isMounted) return;
           if (tournError) {
             reportError(tournError, 'TablePage.loadTableInfo_tournament_row', {
               tournamentId: table.tournament_id,

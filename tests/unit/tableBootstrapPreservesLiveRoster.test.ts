@@ -212,3 +212,37 @@ it.each([
     expect(uses).toBe(input.expectedUses);
   }
 );
+
+it('ignores tournament metadata returned after identity cleanup', async () => {
+  const start = source.indexOf('const { data: tournData, error: tournError } = await supabase');
+  const end = source.indexOf('// ─── Resolve initial tournament blind level', start);
+  expect(end).toBeGreaterThan(start);
+  const code = ts.transpileModule(
+    `let isMounted = true; let loadedTournamentStatus = null;
+     async function load() { ${source.slice(start, end)} }
+     return { load, cancel: () => { isMounted = false; } };`,
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } }
+  ).outputText;
+  let answer!: (value: unknown) => void;
+  const response = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const query: any = { select: () => query, eq: () => query, maybeSingle: () => response };
+  const setTableState = vi.fn();
+  const presentPersistedAddOnOffer = vi.fn();
+  const env = {
+    table: { tournament_id: 'old-tournament' },
+    supabase: { from: () => query },
+    reportError: vi.fn(),
+    setTableState,
+    presentPersistedAddOnOffer,
+    getTournamentFormatKind: () => 'mtt',
+  };
+  const h = new Function(...Object.keys(env), code)(...Object.values(env));
+  const loading = h.load();
+  h.cancel();
+  answer({ data: { final_table_triggered: true, status: 'RUNNING' }, error: null });
+  await loading;
+  expect(setTableState).not.toHaveBeenCalled();
+  expect(presentPersistedAddOnOffer).not.toHaveBeenCalled();
+});

@@ -284,6 +284,7 @@ describe('a refusal by the hold is never a miss or an alarm (stale occupancy cac
     expect(held).toBeLessThan(topUp.indexOf('seatFirstFillMisses.set('));
     expect(held).toBeLessThan(topUp.indexOf('seat_first_human_waiting'));
     expect(topUp).toContain('this.seatFirstOccupancy.delete(tournamentId);');
+    expect(topUp).toContain('this.tournamentRecurring.clearHumanSeatDemand(tournamentId);');
   });
 
   it('the past-start lane does not back an event off for a hold', () => {

@@ -10647,6 +10647,9 @@ export class GameServer {
     ) {
       this.seatFirstOccupancy.delete(tournamentId);
       this.seatFirstFillMisses.delete(tournamentId);
+      // Declared from a stale answer: the next pass re-declares it in the
+      // hold's last stretch if the board still needs it.
+      this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
       return;
     }
     let shortfall = seats - paid;

@@ -102,6 +102,28 @@ function ordinal(n: number): string {
   }
 }
 
+/**
+ * The ordinal as two prints: the numeral, which is the result, and its suffix,
+ * which is grammar. "1st" set as one string at one size gave the suffix the
+ * same weight as the place itself (Dan 2026-10-05: "it looks pretty generic").
+ */
+function ordinalParts(n: number): { num: string; suffix: string } {
+  const full = ordinal(n);
+  return { num: full.slice(0, -2), suffix: full.slice(-2) };
+}
+
+/**
+ * The word over the place. A podium finish is named for what it is; anything
+ * else is simply where the run ended - never a consolation title.
+ */
+function placeTitle(place: number | null, qualified: boolean): string {
+  if (qualified) return 'Satellite';
+  if (place === 1) return 'Champion';
+  if (place === 2) return 'Runner Up';
+  if (place === 3) return 'Third Place';
+  return 'Finished';
+}
+
 /** "20-Aug" — the reference card's date format. */
 function shortDate(d: Date): string {
   const day = String(d.getDate()).padStart(2, '0');
@@ -417,6 +439,15 @@ export default function TournamentRankingCard({
           subtitle={eventName}
           pill={place != null ? `#${place}` : undefined}
           pillInk="silver"
+          /* THE X (Dan 2026-10-05: "THE TOURNAMENT RESULT CARD HAS NO 'X' OFF
+             ON IT TO CLOSE THIS OUT"). Every other popup took the console's
+             painted X on 2026-09-23; this one was written into the law's
+             no-X list on the claim that it "carries its own painted close
+             control" - which was the word Close at the very bottom of the
+             glass, under the stats, the one place the X ruling says a player
+             must never have to go. The head's corner is where the X lives on
+             every console, so it lives there here too. */
+          onClose={onDismiss}
           plates={{
             secondary: {
               label: shared ? 'Link Copied' : 'Share',
@@ -441,8 +472,12 @@ export default function TournamentRankingCard({
             {!result.isSpin && <span className="trc2__brand-mark">TOURNAMENT</span>}
           </div>
 
-          {/* ── Medal ── */}
+          {/* ── Medal ──
+              The rays are the reference card's starburst, cast in the medal's
+              own light: bright cool beams for the podium, a faint steel wash
+              for everyone else. Light on the glass, not a shape on it. */}
           <div className={`trc2__medal ${medalClass(place)}`}>
+            <span className="trc2__medal-rays" aria-hidden="true" />
             <div className="trc2__medal-ring">
               {place != null && place <= 3 ? (
                 <PlacementTrophy place={place} />
@@ -453,12 +488,74 @@ export default function TournamentRankingCard({
             <span className="trc2__medal-glow" aria-hidden="true" />
           </div>
 
-          {/* ── Place band ── */}
+          {/* ── Place band ──
+              Was a flat blue slab with "1ST" centred in it, the one thing on
+              the card that looked like every other app. The result is now
+              set as the result: what the finish is called, lit, between two
+              engraved rules, then the place itself in the master's engraved
+              silver at the largest size on the sheet. The band colour is
+              still the finish's metal; it is the light the numeral sits in. */}
           <div className={`trc2__placeband ${medalClass(place)}`}>
-            {qualification ? 'Qualified' : place != null ? ordinal(place) : 'Finished'}
+            <span className="trc2__place-title sc-ink--blue">
+              {placeTitle(place, Boolean(qualification))}
+            </span>
+            {qualification ? (
+              <span className="trc2__place-word sc-ink--silver">Qualified</span>
+            ) : place != null ? (
+              <span className="trc2__place-ordinal sc-ink--silver" aria-label={ordinal(place)}>
+                <span className="trc2__place-num">{ordinalParts(place).num}</span>
+                <span className="trc2__place-suffix">{ordinalParts(place).suffix}</span>
+              </span>
+            ) : (
+              <span className="trc2__place-word sc-ink--silver">Finished</span>
+            )}
           </div>
 
-          {/* ── Player row ── */}
+          {/* ── What it paid ──
+              The figure a player came back to the card to read, so it is the
+              second largest print on the sheet, directly under the place,
+              rather than a corner of the player row. */}
+          <div className="trc2__reward">
+            {/* Dan section 44: the champion's card must not imply the placement
+                prize was the whole story. It never was on this card - "Reward"
+                has always been prize + bounties - but a single opaque figure
+                does not SAY so, and in a mystery bounty event the split is
+                frequently most of the interest. The label names it as the
+                total, and the line underneath shows the two halves whenever
+                there are two. */}
+            <span className="trc2__reward-label">
+              {qualification
+                ? qualification.deliveryKind === 'seat'
+                  ? 'Target Entry:'
+                  : qualification.deliveryKind === 'ticket'
+                    ? 'Entry Ticket:'
+                    : 'Cash Award:'
+                : 'Total Payout:'}
+            </span>
+            <span className="trc2__reward-value sc-ink--silver">
+              {moneyAtUnit(qualification?.amount ?? totalWon, unitCents)}
+              {/* The headline figure is otherwise a bare number, and a bare
+                  number in the Diamond Arena does not say what was won. Adds
+                  nothing at a chip event. */}
+              {moneySuffixAtUnit(unitCents)}
+            </span>
+          </div>
+
+          {result.bountyWinnings > 0 && (
+            <div className="trc2__payout-split">
+              <span className="trc2__payout-part">
+                Prize <strong>{moneyAtUnit(result.prize || 0, unitCents)}</strong>
+              </span>
+              <span className="trc2__payout-plus" aria-hidden="true">
+                +
+              </span>
+              <span className="trc2__payout-part">
+                Bounties <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong>
+              </span>
+            </div>
+          )}
+
+          {/* ── Player row: who this was ── */}
           <div className="trc2__player">
             <img
               className="trc2__avatar"
@@ -474,31 +571,6 @@ export default function TournamentRankingCard({
                 <span className="trc2__playernum sc-ink--muted">{profile.playerNumber}</span>
               )}
             </div>
-            <div className="trc2__reward">
-              {/* Dan section 44: the champion's card must not imply the placement
-                  prize was the whole story. It never was on this card - "Reward"
-                  has always been prize + bounties - but a single opaque figure
-                  does not SAY so, and in a mystery bounty event the split is
-                  frequently most of the interest. The label names it as the
-                  total, and the line underneath shows the two halves whenever
-                  there are two. */}
-              <span className="trc2__reward-label">
-                {qualification
-                  ? qualification.deliveryKind === 'seat'
-                    ? 'Target Entry:'
-                    : qualification.deliveryKind === 'ticket'
-                      ? 'Entry Ticket:'
-                      : 'Cash Award:'
-                  : 'Total Payout:'}
-              </span>
-              <span className="trc2__reward-value sc-ink--silver">
-                {moneyAtUnit(qualification?.amount ?? totalWon, unitCents)}
-                {/* The headline figure is otherwise a bare number, and a bare
-                    number in the Diamond Arena does not say what was won. Adds
-                    nothing at a chip event. */}
-                {moneySuffixAtUnit(unitCents)}
-              </span>
-            </div>
           </div>
 
           {/* ── Winning hand (if applicable) ── */}
@@ -510,20 +582,6 @@ export default function TournamentRankingCard({
                   <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
                 ))}
               </div>
-            </div>
-          )}
-
-          {result.bountyWinnings > 0 && (
-            <div className="trc2__payout-split">
-              <span className="trc2__payout-part">
-                Prize <strong>{moneyAtUnit(result.prize || 0, unitCents)}</strong>
-              </span>
-              <span className="trc2__payout-plus" aria-hidden="true">
-                +
-              </span>
-              <span className="trc2__payout-part">
-                Bounties <strong>{moneyAtUnit(result.bountyWinnings, unitCents)}</strong>
-              </span>
             </div>
           )}
 
@@ -565,8 +623,8 @@ export default function TournamentRankingCard({
               )}
               {largestMysteryCents > 0 && (
                 <span className="trc2__extra">
-                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest Mystery
-                  Bounty
+                  <strong>{moneyAtUnit(largestMysteryCents / 100, unitCents)}</strong> Largest
+                  Mystery Bounty
                 </span>
               )}
               {result.rebuys > 0 && (
@@ -610,8 +668,10 @@ export default function TournamentRankingCard({
             </div>
           )}
 
-          {/* The way out, kept as its own control because the backdrop is not
-              one. The foot's two plates belong to Share and Play Again. */}
+          {/* The second way out. The X in the head is the first (2026-10-05);
+              this word stays because the X ruling adds the corner and never
+              moves what a player already learned. The backdrop is neither,
+              and the foot's two plates belong to Share and Play Again. */}
           <div className="trc2__exit">
             <button className="trc2__close" onClick={onDismiss} aria-label="Close">
               Close

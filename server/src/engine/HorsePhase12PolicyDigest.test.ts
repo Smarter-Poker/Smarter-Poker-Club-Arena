@@ -12,6 +12,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   HORSE_PHASE12_POLICY_DIGEST_DEFINITION,
+  HORSE_PHASE12_POLICY_DIAGNOSTIC_BOUNDARY,
   HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES,
   HORSE_PHASE12_POLICY_SOURCE_FILES,
   HORSE_PHASE12_POLICY_SOURCE_REASONS,
@@ -62,6 +63,7 @@ function runtimeClosure(roots: string[]): string[] {
     const rel = path.relative(serverRoot, file).split(path.sep).join('/');
     if (seen.has(rel)) continue;
     seen.add(rel);
+    if (HORSE_PHASE12_POLICY_DIAGNOSTIC_BOUNDARY.includes(rel)) continue;
     for (const spec of runtimeImports(file)) {
       const target = path.resolve(path.dirname(file), spec).replace(/\.js$/, '.ts');
       if (!existsSync(target)) throw new Error(`unresolved ${spec} from ${rel}`);
@@ -78,7 +80,7 @@ describe('P12.2 Phase 12 policy digest', () => {
       'src/engine/remainingVariants/RemainingVariantSampler.ts',
       'src/engine/remainingVariants/RemainingVariantPolicyPack.ts',
     ]);
-    expect(closure).toHaveLength(26);
+    expect(closure).toHaveLength(27);
     const hashed = new Set(HORSE_PHASE12_POLICY_SOURCE_FILES);
     const excluded = new Set(Object.keys(HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)

@@ -16565,6 +16565,21 @@ function LiveTablePage({
             heroP.status !== 'folded' &&
             (heroP.stack || 0) > 0;
           if (!heroStillHasAction) setIsAllInMode(true);
+          /* The hero's own shove, as the engine executed it, is a preflop
+             raise when it puts in more than anyone else has. The lastActions
+             effect no longer counts `all_in` because that label can be the
+             optimistic paint of a press the engine played as a call. A short
+             stack's all-in that only calls (the engine still echoes
+             `all_in`) is not a raise. `amount` is the seat's total street
+             bet; the other seats' bets are untouched by the hero's own
+             optimistic update. */
+          if (actionSeat === st.heroSeat && st.boardStage === 'preflop') {
+            const othersTopBet = st.lastBetAmounts.reduce(
+              (top, bet, i) => (i === seatIdx ? top : Math.max(top, bet || 0)),
+              0
+            );
+            if (actionAmount > othersTopBet + 0.005) heroPfrThisHandRef.current = true;
+          }
         }
         // Dan 2026-08-20 (pot redesign): NO chip flight to the pot on the
         // action itself. Chips belong IN FRONT of the player (ChipPhysics bet
@@ -19597,7 +19612,11 @@ function LiveTablePage({
     if (act === 'call' || act === 'bet' || act === 'raise' || act === 'allin' || act === 'all_in') {
       if (!heroVpipThisHandRef.current) vpipCountRef.current++;
       heroVpipThisHandRef.current = true;
-      if (act !== 'call') heroPfrThisHandRef.current = true;
+      /* Bet/raise only. `all_in` here can be the optimistic label an ALL IN
+         press paints before the engine answers, and the engine may execute
+         that press as a call. A real shove is counted as a preflop raise from
+         the hero's own PLAYER_ACTION echo, which carries the executed verb. */
+      if (act === 'bet' || act === 'raise') heroPfrThisHandRef.current = true;
     }
   }, [tableState.lastActions, tableState.boardStage, tableState.heroSeat]);
 
@@ -22596,8 +22615,8 @@ function LiveTablePage({
         // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
         heroVpipThisHandRef.current = true;
         /* `raise` only. An ALL IN press may be executed as a call (see the
-           'allin' case below); the engine's echo counts a real shove as a
-           preflop raise in the lastActions effect. */
+           'allin' case below); the hero's PLAYER_ACTION echo counts a real
+           shove as a preflop raise, using the verb the engine executed. */
         if (action === 'raise') heroPfrThisHandRef.current = true;
       }
 
@@ -22742,8 +22761,9 @@ function LiveTablePage({
    * see the note in `handleInsuranceDeclineForHand` above.
    *
    * Everything `handleAllIn` did that MATTERED is in the panel path already: the
-   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound,
-   * `setIsAllInMode(true)`, the optimistic update and the revert-on-refusal. The
+   * debounce lock, `validateAndExecuteAction('allin')`, the all-in sound, the
+   * optimistic update and the revert-on-refusal. All-in mode now follows the
+   * engine's `all_in` echo, not the press. The
    * only behaviour deleted is the drift.
    */
 
@@ -25571,7 +25591,9 @@ function LiveTablePage({
                      cards is tabling its hand by definition (the same rule
                      heroHandIsTabled applies), so it holds the lift for the
                      whole runout regardless of merge jitter. */
-                  player?.holeCards?.length && (player?.showCards || player?.status === 'all_in')
+                  !feltShowsNoHand &&
+                  player?.holeCards?.length &&
+                  (player?.showCards || player?.status === 'all_in')
                     ? ' seat-wrapper--showing'
                     : ''
                 }${

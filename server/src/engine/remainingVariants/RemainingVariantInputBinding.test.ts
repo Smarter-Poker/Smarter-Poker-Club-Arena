@@ -485,7 +485,12 @@ describe('P12.1 what the proposal records', () => {
         cards: 5,
         lowPossible: variant === 'flo8' ? true : null,
       });
-      expect(inputs.board.features).toEqual(r.receipt.features);
+      // The binding records the features the proposal consumed; the P12-B
+      // net-action economics are priced after the decision and tag the
+      // receipt afterwards.
+      expect(inputs.board.features).toEqual(
+        r.receipt.features.filter((f) => f !== 'net_action_economics')
+      );
       expect(inputs.geometry.postflop!.callPrice).toBe(r.receipt.callPrice);
       expect(inputs.depth.effectiveBB).toBe(r.receipt.depthBB);
       expect(Object.isFrozen(r.receipt.equity)).toBe(true);
@@ -1048,9 +1053,13 @@ describe('P12.1 the binding validator refuses relabeling', () => {
     const legacy = { ...receipt };
     delete legacy.inputs;
     expect(remainingVariantReceiptBindingIsValid(legacy)).toBe(true);
-    expect(
-      remainingVariantReceiptBindingIsValid({ ...receipt, eligible: false, inputs: null })
-    ).toBe(true);
+    // An ineligible receipt carries no binding of either kind (the FLH/FLO8
+    // river also carries the P12-B net-action economics, which an ineligible
+    // receipt never has).
+    const refused = { ...receipt, eligible: false, inputs: null };
+    delete refused.actionEconomics;
+    refused.features = refused.features.filter((f: string) => f !== 'net_action_economics');
+    expect(remainingVariantReceiptBindingIsValid(refused)).toBe(true);
   });
 });
 

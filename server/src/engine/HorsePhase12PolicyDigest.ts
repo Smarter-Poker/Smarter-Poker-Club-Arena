@@ -78,7 +78,20 @@ export const HORSE_PHASE12_POLICY_SOURCE_REASONS: Readonly<Record<string, string
     'the reads the reference path consumes; the candidate falls back to that reference wherever it does not fire',
   'src/config/rakeSpec.ts': 'the rake arithmetic the net call price charges',
   'src/config/tableSeating.ts': 'the cash seat ceilings remainingVariantSeatCap reads',
+  'src/engine/remainingVariants/RemainingVariantActionEconomics.ts':
+    'the P12-B net-action economics priced after the decision on the FLH/FLO8 river, and the validator the worker boundary applies to them (an invalid applied receipt fails closed)',
 });
+
+/**
+ * Hashed, but its own imports are not followed: the P12-B net-action
+ * economics run strictly after the policy has fixed its reason, proposal and
+ * latency, and nothing reads their result to decide. Their settlement imports
+ * (the joint pot and deduction owners) can change the diagnostic numbers, never
+ * a candidate decision or its legal form.
+ */
+export const HORSE_PHASE12_POLICY_DIAGNOSTIC_BOUNDARY: readonly string[] = Object.freeze([
+  'src/engine/remainingVariants/RemainingVariantActionEconomics.ts',
+]);
 export const HORSE_PHASE12_POLICY_SOURCE_FILES: readonly string[] = Object.freeze(
   Object.keys(HORSE_PHASE12_POLICY_SOURCE_REASONS)
 );

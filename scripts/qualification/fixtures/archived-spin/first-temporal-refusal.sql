@@ -17,9 +17,11 @@ DO $$ DECLARE message text; actual_scope jsonb; BEGIN
  OR EXISTS(SELECT 1 FROM public.tournament_bounty_award_recipients r JOIN public.tournament_bounty_awards a ON a.id=r.award_id WHERE a.tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533') THEN RAISE EXCEPTION 'ARCHIVE_ORIGINAL_TERMINAL_MARKER_WITNESS_CHANGED'; END IF;
  -- Actual recognition uses this transaction's week, not the September8 charge.
  -- These observed bounds expire and require a new authentic capture at rollover.
- IF transaction_timestamp()<'2026-09-28T07:00:00Z'::timestamptz
- OR transaction_timestamp()>='2026-10-05T07:00:00Z'::timestamptz
- OR public.fn_union_week_start(transaction_timestamp()) IS DISTINCT FROM '2026-09-28T07:00:00Z'::timestamptz
+ -- This isolated pre-capture seed has only the host fallback scope. The bound
+ -- production capture is post-owner-authorized fee capture and has two scopes.
+ IF transaction_timestamp()<'2026-10-05T07:00:00Z'::timestamptz
+ OR transaction_timestamp()>='2026-10-12T07:00:00Z'::timestamptz
+ OR public.fn_union_week_start(transaction_timestamp()) IS DISTINCT FROM '2026-10-05T07:00:00Z'::timestamptz
  THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF;
  WITH scopes AS (
  SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533'
@@ -27,7 +29,7 @@ DO $$ DECLARE message text; actual_scope jsonb; BEGIN
  UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)
  ) SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) INTO actual_scope FROM scopes s;
  IF actual_scope IS DISTINCT FROM '[{"club_id":"fade0000-0000-0000-0000-000000000001","coordinator_union_id":"fade0000-0000-0000-0000-000000000001"}]'::jsonb
- OR EXISTS(SELECT 1 FROM public.accounting_routed_settlement_runs r WHERE r.union_id='fade0000-0000-0000-0000-000000000001' AND r.period_start<'2026-10-05T07:00:00Z'::timestamptz AND r.period_end>'2026-09-28T07:00:00Z'::timestamptz)
+ OR EXISTS(SELECT 1 FROM public.accounting_routed_settlement_runs r WHERE r.union_id='fade0000-0000-0000-0000-000000000001' AND r.period_start<'2026-10-12T07:00:00Z'::timestamptz AND r.period_end>'2026-10-05T07:00:00Z'::timestamptz)
  THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_STATE_CHANGED'; END IF;
  BEGIN
  PERFORM public.fn_accounting_earning_contract('a41434bb-8d0c-400a-8f0d-e8b3d65afed4',

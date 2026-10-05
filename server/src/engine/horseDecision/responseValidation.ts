@@ -601,7 +601,8 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, value)) return false;
-  // P12.1: a Phase 12 receipt's input binding is shape-checked at the boundary.
+  // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
+  // economics) are re-checked at the boundary.
   if (
     value.remainingVariantPolicy !== undefined &&
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)

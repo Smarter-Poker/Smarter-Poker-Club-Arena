@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 185988,
-      "sha256": "5614f8cf455b70c25e4c1aad080c7ce8a9946647aa56969519ec013d34bd8435"
+      "bytes": 186268,
+      "sha256": "f69e9ee7d744d59c56a4712316910f7f17da13095fc7acef2691ecd1365b94d9"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 30894,
-      "sha256": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d"
+      "bytes": 31711,
+      "sha256": "cfb6601d8942e9edbcfdd9af9de5768f42223d3fcb86ababf47c5f63c2b12a86"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -1617,6 +1617,35 @@
         "current": {
           "bytes": 30894,
           "sha256": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d"
+        }
+      }
+    ]
+  },
+  "phaseOneCustomizationPostgresIntegration20261005": {
+    "reason": "Add the two-step Phase 1 customization ownership and Final Table cutover qualification to accounting shard 1, and route its migrations, native runner, loaded fixtures, schema promise, durable marker and service-role sealer into the existing protected server-test verdict. No cash qualification runner, fixture, financial input, assertion, schedule or existing route changed.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 185988,
+          "sha256": "5614f8cf455b70c25e4c1aad080c7ce8a9946647aa56969519ec013d34bd8435"
+        },
+        "current": {
+          "bytes": 186268,
+          "sha256": "f69e9ee7d744d59c56a4712316910f7f17da13095fc7acef2691ecd1365b94d9"
+        }
+      },
+      {
+        "section": "files",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 30894,
+          "sha256": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d"
+        },
+        "current": {
+          "bytes": 31711,
+          "sha256": "cfb6601d8942e9edbcfdd9af9de5768f42223d3fcb86ababf47c5f63c2b12a86"
         }
       }
     ]

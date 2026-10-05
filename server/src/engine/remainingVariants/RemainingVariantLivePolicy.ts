@@ -52,7 +52,13 @@ import {
   sampleRemainingVariantEquity,
   type RemainingVariantEquityEvidence,
   type RemainingVariantRangeProvenance,
+  type RemainingVariantTerminalShowdowns,
 } from './RemainingVariantSampler.js';
+import {
+  remainingVariantActionEconomics,
+  remainingVariantActionEconomicsIsValid,
+  type RemainingVariantActionEconomics,
+} from './RemainingVariantActionEconomics.js';
 
 // Receipt shape and public geometry are common contracts. Hand shape, ranges,
 // thresholds, card rules and wager sizing are supplied by the actual variant.
@@ -223,6 +229,14 @@ export type RemainingVariantReceipt = Omit<OmahaVariantReceipt, 'equity' | 'inpu
   /** P12.1: frozen inputs of an eligible proposal; null when it was refused.
    * Absent on retained receipts. */
   inputs?: RemainingVariantInputBinding | null;
+  /**
+   * P12-B (#6151): the explicit per-action net chip economics of the FLH/FLO8
+   * river node, or a NAMED unavailable result; absent everywhere else and on
+   * retained receipts. Diagnostic: nothing reads it to decide. Priced AFTER
+   * the policy has finished, on its own budget (`netActionBudgetMs`), so its
+   * cost is not in `latencyMs`; it reports its own `analysisMs`.
+   */
+  actionEconomics?: RemainingVariantActionEconomics | null;
 };
 
 const same = (a: HorseDecision, b: HorseDecision) =>
@@ -984,6 +998,10 @@ export function remainingVariantInputBindingIsValid(
  * retained receipt without the field claims no binding and is not refused. */
 export function remainingVariantReceiptBindingIsValid(value: unknown): boolean {
   if (!object(value)) return false;
+  return inputBindingIsValid(value) && actionEconomicsBindingIsValid(value);
+}
+
+function inputBindingIsValid(value: Record<string, unknown>): boolean {
   if (!Object.hasOwn(value, 'inputs')) return true;
   if (value.inputs === null) return value.eligible === false;
   return (
@@ -991,6 +1009,30 @@ export function remainingVariantReceiptBindingIsValid(value: unknown): boolean {
     remainingVariantInputBindingIsValid(value.inputs) &&
     value.inputs.variant === value.variant &&
     value.inputs.pack.version === value.version
+  );
+}
+
+/**
+ * P12-B (#6151): the net-action field is re-checked against this running
+ * module, not merely carried: an eligible FLH/FLO8 river receipt must declare
+ * the receipt's own variant and street and a result the economics validator
+ * accepts, and the `net_action_economics` feature must be present exactly when
+ * a result is available. A receipt without the field claims no economics.
+ */
+function actionEconomicsBindingIsValid(receipt: Record<string, unknown>): boolean {
+  const features = Array.isArray(receipt.features) ? (receipt.features as unknown[]) : [];
+  const tagged = features.includes('net_action_economics');
+  if (!Object.hasOwn(receipt, 'actionEconomics')) return !tagged;
+  const economics = receipt.actionEconomics;
+  if (economics === null) return receipt.eligible === false && !tagged;
+  if (!remainingVariantActionEconomicsIsValid(economics)) return false;
+  const bound = economics as RemainingVariantActionEconomics;
+  return (
+    receipt.eligible === true &&
+    bound.variant === receipt.variant &&
+    bound.street === receipt.street &&
+    receipt.street === 'river' &&
+    tagged === (bound.unavailable === null)
   );
 }
 
@@ -1210,6 +1252,9 @@ export function evaluateRemainingVariantPolicy(
   receipt.depthBB = depth;
   if (!Number.isFinite(depth) || depth <= 0 || depth > maxStackBB || (s.ante ?? 0) / s.bigBlind > 1)
     return finish('depth_or_ante_outside_pack');
+  // Captured by the sampler below when the policy samples for itself; null
+  // when evidence arrived already aggregated from outside.
+  let terminal: RemainingVariantTerminalShowdowns | null = null;
   const rake = s.rakeConfig;
   if (
     !rake ||
@@ -1226,6 +1271,59 @@ export function evaluateRemainingVariantPolicy(
     ({ preflop: 0, flop: 3, turn: 4, river: 5 } as Record<string, number>)[s.stage]
   )
     return finish('invalid_cards');
+  /**
+   * P12.1. The pot-share price below cannot express a side pot hero is not
+   * eligible for, an uncalled-bet refund, the BBJ fee or an FLO8 quarter, so
+   * the fixed-limit river node also carries an explicit net chip result.
+   *
+   * It runs on the showdowns the sampler ALREADY scored - no extra sample,
+   * card or deck draw - and it runs STRICTLY AFTER `finish`, on its own
+   * budget. That ordering is the point: `finish` has already fixed the reason,
+   * the proposal, `changed`, `applied` and `latencyMs`, so no cost incurred
+   * here can turn a firing proposal into a `work_budget` fallback. An earlier
+   * version put this inside the policy budget and a shared CI runner proved it
+   * could: the guard bounds work units rather than wall time, so one
+   * settlement's overshoot past an in-budget deadline still crossed
+   * `liveBudgetMs` and dropped the proposal.
+   *
+   * A refused node is not priced at all, and an unavailable pass is NAMED.
+   */
+  const finishPriced = (reason: string, proposal = baseline) => {
+    const out = finish(reason, proposal);
+    if (!out.receipt.fired || s.stage !== 'river' || (variant !== 'flh' && variant !== 'flo8'))
+      return out;
+    const economicsStart = now();
+    const showdowns = terminal as RemainingVariantTerminalShowdowns | null;
+    const economics = remainingVariantActionEconomics({
+      variant,
+      stage: s.stage,
+      hero,
+      players: seats,
+      opponentIds: showdowns ? showdowns.opponentIds : [],
+      samples: showdowns ? showdowns.samples : [],
+      currentBet: s.currentBet,
+      betSize: fixedSize,
+      actionHistory: s.actionHistory ?? [],
+      // Validated non-null by the canonical-state gate above; a closure
+      // does not keep that narrowing.
+      legalActions: s.legalActions!,
+      wagersCapped: Boolean(s.wagersCapped),
+      minRaiseTo: s.minRaiseTo ?? null,
+      maxRaiseTo: s.maxRaiseTo ?? null,
+      chipUnit: s.chipUnit === 1 ? 1 : 0.01,
+      asset: s.asset === 'diamonds' ? 'diamonds' : 'chips',
+      gameMode: s.gameMode === 'tournament' ? 'tournament' : 'cash',
+      bigBlind: s.bigBlind,
+      dealerSeat: s.dealerSeat!,
+      rakeConfig: rake,
+      bbjConfig: s.bbjConfig ?? null,
+      withinBudget: () => now() - economicsStart < REMAINING_VARIANT_DOMAIN.netActionBudgetMs,
+      now,
+    });
+    out.receipt.actionEconomics = economics;
+    if (economics.unavailable === null) out.receipt.features.push('net_action_economics');
+    return out;
+  };
   const postDiscard = variant === 'pineapple' && s.stage !== 'preflop';
   let shape: ReturnType<typeof remainingVariantHandShape>;
   const dead = hero.knownDeadCards ?? [];
@@ -1504,7 +1602,10 @@ export function evaluateRemainingVariantPolicy(
       variant,
       hero,
       s,
-      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs
+      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs,
+      (showdowns) => {
+        terminal = showdowns;
+      }
     );
     if (evidence) evidence.decisionEquityCeiling = decisionEquityCeiling;
   }
@@ -1634,7 +1735,7 @@ export function evaluateRemainingVariantPolicy(
   if (e.perPot.length > 1) receipt.features.push('separate_pot_eligibility');
   if (!callCost) {
     if (!lowOnly && !quarterRisk && lower > pack.value + pressure)
-      return finish('variant_value_bet', wager(0.66));
+      return finishPriced('variant_value_bet', wager(0.66));
     if (
       s.stage !== 'river' &&
       !limit &&
@@ -1644,18 +1745,21 @@ export function evaluateRemainingVariantPolicy(
       receipt.position === 'button' &&
       equity > 0.4
     )
-      return finish('variant_draw_pressure', wager(0.5));
-    return finish(lowOnly ? 'low_only_protected_check' : 'variant_protected_check', passive());
+      return finishPriced('variant_draw_pressure', wager(0.5));
+    return finishPriced(
+      lowOnly ? 'low_only_protected_check' : 'variant_protected_check',
+      passive()
+    );
   }
-  if (upper < price + pressure) return finish('variant_price_fold', passive());
+  if (upper < price + pressure) return finishPriced('variant_price_fold', passive());
   if (lowOnly || quarterRisk)
-    return finish(
+    return finishPriced(
       equity >= price + pressure ? 'split_price_call' : 'split_price_fold',
       equity >= price + pressure ? call() : passive()
     );
   if (lower > Math.max(pack.value + pressure, price + pressure) && receipt.role !== 'call_off')
-    return finish('variant_value_raise', wager(0.66));
-  return finish(
+    return finishPriced('variant_value_raise', wager(0.66));
+  return finishPriced(
     equity >= price + pressure ? 'variant_price_call' : 'variant_price_fold',
     equity >= price + pressure ? call() : passive()
   );

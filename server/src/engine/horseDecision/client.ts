@@ -1321,10 +1321,10 @@ export class LiveHorseDecisionWorkerClient {
         noteFire('phase11_shadow_receipt_binding_dropped');
       }
       // P12.1, the same rule for Short Deck, Pineapple, FLH and FLO8: a
-      // shadow-only receipt (shadow, not applied) whose input binding fails the
-      // strict validator never owned the action, so it is dropped with its
-      // ownership record instead of taking the worker down. An applied one
-      // still fails closed below.
+      // shadow-only receipt (shadow, not applied) whose binding (inputs, or the
+      // P12-B net-action economics) fails the strict validator never owned the
+      // action, so it is dropped with its ownership record instead of taking
+      // the worker down. An applied one still fails closed below.
       const phase12Shadow = message.decision.remainingVariantPolicy;
       if (
         phase12Shadow &&

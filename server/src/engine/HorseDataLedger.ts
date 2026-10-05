@@ -2039,6 +2039,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase12'
   ),
   receipt(
+    'phase12_shadow_receipt_binding_dropped',
+    'horseDecision/client (P12.1, the P10 audit F8 rule)',
+    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose net-action binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase12'
+  ),
+  receipt(
     'phase12_variant_*',
     'HorseLogic',
     'partition entering decisions by exact variant',

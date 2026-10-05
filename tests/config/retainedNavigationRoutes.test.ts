@@ -81,7 +81,13 @@ describe('retained Club Arena navigation route contract', () => {
 
     const targets = new Set(
       routes.flatMap(
-        (route) => getArenaSectionNavigation(route)?.items.map((item) => item.path) || []
+        (route) =>
+          getArenaSectionNavigation(route, {
+            canCreateUnion: true,
+            canOperateUnionNetwork: true,
+            canOverseeCurrentUnion: true,
+            canManageCurrentUnionGames: true,
+          })?.items.map((item) => item.path) || []
       )
     );
 

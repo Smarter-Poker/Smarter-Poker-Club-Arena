@@ -282,7 +282,9 @@ describe('LAW: a person in the arena has the same heartbeat a horse has', () => 
     expect(mounts).toEqual(['src/App.tsx']);
     const hookUsers = FILES.filter(
       ({ file, blank }) =>
-        file !== 'src/hooks/usePresenceHeartbeat.ts' && blank.includes('usePresenceHeartbeat(')
+        file !== 'src/hooks/usePresenceHeartbeat.ts' &&
+        file !== 'src/components/common/PresenceHeartbeat.tsx' &&
+        blank.includes('usePresenceHeartbeat(')
     ).map((f) => f.file);
     expect(hookUsers).toEqual([]);
   });

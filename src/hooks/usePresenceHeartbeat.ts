@@ -2,11 +2,11 @@
  * The signed-in player's presence heartbeat (src/lib/presenceHeartbeat.ts):
  * one beat on load, one every PRESENCE_HEARTBEAT_MS while the tab is
  * visible, one immediately when it becomes visible again, none while hidden.
- * Mounted ONCE, at the app root, as <PresenceHeartbeat /> (App.tsx).
+ * Mounted ONCE, at the app root, as <PresenceHeartbeat /> (App.tsx,
+ * src/components/common/PresenceHeartbeat.tsx).
  */
 import { useEffect } from 'react';
 import { PRESENCE_HEARTBEAT_MS, sendPresence } from '../lib/presenceHeartbeat';
-import { useUserStore } from '../stores/useUserStore';
 import { reportError } from '../utils/errorReporter';
 
 const tabHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
@@ -43,11 +43,4 @@ export function usePresenceHeartbeat(userId: string | null | undefined): void {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [userId]);
-}
-
-/** The heartbeat's one mount point. Renders nothing. */
-export function PresenceHeartbeat(): null {
-  const userId = useUserStore((state) => state.user?.id);
-  usePresenceHeartbeat(userId);
-  return null;
 }

@@ -15,7 +15,6 @@
 import { Session, AuthChangeEvent, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
-import { signalOffline } from '../lib/presenceHeartbeat';
 import { readLocalSession as readLocalSessionShared, SPA_AUTH_BREADCRUMB } from '../lib/authUtils';
 import { masterBus } from './MasterBus';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
@@ -509,7 +508,11 @@ class IdentityDNACore {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        if (session?.user?.id) await signalOffline(session.user.id);
+        if (session?.user?.id) {
+          // Lazy: sign-out is rare, and the entry chunk is every player's first paint.
+          const { signalOffline } = await import('../lib/presenceHeartbeat');
+          await signalOffline(session.user.id);
+        }
       } catch {
         // Never let the last heartbeat stand between a player and sign-out.
       }

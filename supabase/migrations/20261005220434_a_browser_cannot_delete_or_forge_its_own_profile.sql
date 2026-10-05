@@ -36,6 +36,9 @@
 -- 20261005221203_dblink_leaves_the_schema_the_data_api_serves.sql,
 -- so that neither change can hold the other back.)
 --
+-- @live-proof: NOT has_table_privilege('authenticated', 'public.profiles', 'DELETE')
+-- @live-proof: NOT has_column_privilege('authenticated', 'public.profiles', 'kyc_status', 'UPDATE')
+--
 -- Every step asserts its own result, so a step that silently did nothing
 -- aborts the whole transaction instead of reading as applied.
 --

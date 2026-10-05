@@ -19,6 +19,9 @@
 -- new schema in this same transaction and is otherwise byte for byte the
 -- installed definition.
 --
+-- @live-proof: NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname LIKE 'dblink%')
+-- @live-proof: position('extensions.dblink' in pg_get_functiondef('public.fn_ca_ledger_refusal_record(jsonb)'::regprocedure)) > 0
+--
 -- The transaction asserts its own result, so a step that silently did nothing
 -- aborts instead of reading as applied.
 --

@@ -1057,7 +1057,9 @@ jobs:
           --output=test-results/live-table-realtime
 
       - name: Name every failed live-table test as an annotation
-        if: always() && steps.live.outputs.ready == 'true'
+        # A superseded engine stands the certificate down with no report
+        # (resumed=false); that is a non-verdict, not missing evidence.
+        if: always() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed != 'false'
         run: node scripts/ci/annotate-e2e-failures.mjs e2e-report/live-table-realtime.json
 
       - name: Did the live-table certificate actually execute?

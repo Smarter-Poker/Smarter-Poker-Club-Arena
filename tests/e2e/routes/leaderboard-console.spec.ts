@@ -68,6 +68,22 @@ async function expectNoSeriousAxeFindings(page: Page, state: string): Promise<vo
   ).toEqual([]);
 }
 
+async function expectLeaderboardNamesToStartEachWordWithACapital(
+  page: Page,
+  selector: string,
+  state: string
+): Promise<void> {
+  const names = await page
+    .locator(`${BOARD} ${selector}`)
+    .evaluateAll((elements) =>
+      elements.map((element) => element.firstChild?.textContent?.trim() || '').filter(Boolean)
+    );
+  const lowercaseWordStarts = names.flatMap((name) =>
+    [...name.matchAll(/(?:^|[^A-Za-z0-9])([a-z])/g)].map((match) => match[1])
+  );
+  expect(lowercaseWordStarts, `${state}: every name word starts with a capital`).toEqual([]);
+}
+
 for (const width of [393, 1440]) {
   test(`Leaderboard Console Is Painted And Reachable At ${width}px`, async ({ page }, testInfo) => {
     const keep = (name: string) =>
@@ -205,6 +221,7 @@ for (const width of [393, 1440]) {
       timeout: 30000,
     });
     await expect(board.locator('.lb-error-state')).toHaveCount(0);
+    await expectLeaderboardNamesToStartEachWordWithACapital(page, '.entry-name', 'Rankings');
 
     const geometry = await board.evaluate((root) => ({
       width: root.querySelector('.sc')!.getBoundingClientRect().width,
@@ -223,6 +240,11 @@ for (const width of [393, 1440]) {
     await board.getByRole('button', { name: 'My Clubs', exact: true }).click();
     await board.getByRole('tab', { name: 'Tournament Stats' }).click();
     await expect(board.getByText('All Recorded Tournaments', { exact: true })).toBeVisible();
+    await expectLeaderboardNamesToStartEachWordWithACapital(
+      page,
+      '.player-name',
+      'Tournament Stats'
+    );
     await expect(board.getByRole('button', { name: 'Previous Period' })).toHaveCount(0);
     await expect(board.locator('.lb-prize-program, .lb-settlement-card')).toHaveCount(0);
     await expectNoSeriousAxeFindings(page, 'My Clubs Tournament Stats');

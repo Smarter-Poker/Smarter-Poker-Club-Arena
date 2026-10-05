@@ -6,6 +6,7 @@ import type {
   LeaderboardSettings,
 } from '../../services/LeaderboardService';
 import { LeaderboardService } from '../../services/LeaderboardService';
+import { enumToTitleCase } from '../../utils/titleCase';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { Toggle } from '../table-config/controls';
@@ -346,8 +347,8 @@ export function LeaderboardPrizeWizard({
      before its Promo Wallet (20260906084547), and a union batch has no seed. */
   const sourceDescription =
     setup.funding_owner_type === 'union'
-      ? `This Club Belongs To ${setup.union_name || 'A Union'}, So The Union Promo Wallet Pays Its Leaderboard Prizes.`
-      : `${setup.club_name} Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.`;
+      ? `This Club Belongs To ${enumToTitleCase(setup.union_name || 'A Union')}, So The Union Promo Wallet Pays Its Leaderboard Prizes.`
+      : `${enumToTitleCase(setup.club_name)} Is Standalone, So Its Promo Wallet Pays Its Leaderboard Prizes. Any Leaderboard Prize Seed Left From Opening Is Used First.`;
   /* The Club Bank overlay exists only on a paid standalone club program: the
      switch is offered there, the answer is printed there, and planPayload()
      sends it there. Everywhere else the row is fixed and no bank is used. */
@@ -525,7 +526,7 @@ export function LeaderboardPrizeWizard({
           eyebrow="Prize Program"
           title="Leaderboard Prize Setup"
           titleId="lb-prize-wizard-title"
-          subtitle={setup.club_name}
+          subtitle={enumToTitleCase(setup.club_name)}
           pill={showingResults ? 'Results' : `${step + 1} Of 4`}
           plates={{
             // Always exactly two painted plates: the results view swaps what
@@ -640,7 +641,7 @@ export function LeaderboardPrizeWizard({
                 <div className="lb-prize-source-card">
                   <div>
                     <span>Prize Source</span>
-                    <strong>{setup.funding_label}</strong>
+                    <strong>{enumToTitleCase(setup.funding_label)}</strong>
                     <p>{sourceDescription}</p>
                   </div>
                   <div className="lb-prize-balance">
@@ -824,13 +825,13 @@ export function LeaderboardPrizeWizard({
                   Template Results
                 </h3>
                 <p>
-                  {`${setup.club_name} Published Program V${publishedSetup.program_version}. Each Other Club Is Listed With What Happened.`}
+                  {`${enumToTitleCase(setup.club_name)} Published Program V${publishedSetup.program_version}. Each Other Club Is Listed With What Happened.`}
                 </p>
                 <ul className="lb-prize-template-results" role="list" aria-live="polite">
                   {templateResults.map((result) => (
                     <li key={result.club_id} className={result.ok ? 'is-published' : 'is-refused'}>
-                      <strong>{result.club_name}</strong>
-                      <span>{result.message}</span>
+                      <strong>{enumToTitleCase(result.club_name)}</strong>
+                      <span>{enumToTitleCase(result.message)}</span>
                     </li>
                   ))}
                 </ul>
@@ -857,7 +858,7 @@ export function LeaderboardPrizeWizard({
                   </div>
                   <div>
                     <dt>Funding Source</dt>
-                    <dd>{setup.funding_label}</dd>
+                    <dd>{enumToTitleCase(setup.funding_label)}</dd>
                   </div>
                   <div>
                     <dt>Ranking Signal</dt>
@@ -920,7 +921,7 @@ export function LeaderboardPrizeWizard({
                   <fieldset className="lb-prize-template">
                     <legend>Use As A Union Template</legend>
                     <p>
-                      {`Also Publish This Plan To Other ${setup.union_name || 'Union'} Clubs You Manage. Each Club Gets It As Its Own Next Version And Can Still Be Edited On Its Own.`}
+                      {`Also Publish This Plan To Other ${enumToTitleCase(setup.union_name || 'Union')} Clubs You Manage. Each Club Gets It As Its Own Next Version And Can Still Be Edited On Its Own.`}
                     </p>
                     <div
                       className="lb-prize-template-clubs"
@@ -944,7 +945,7 @@ export function LeaderboardPrizeWizard({
                               )
                             }
                           >
-                            <strong>{club.club_name}</strong>
+                            <strong>{enumToTitleCase(club.club_name)}</strong>
                           </button>
                         );
                       })}
@@ -994,10 +995,10 @@ export function LeaderboardPrizeWizard({
                     </span>
                   )}
                 </div>
-                {enabled && <p className="lb-prize-rule-note">{shortfall.note}</p>}
+                {enabled && <p className="lb-prize-rule-note">{enumToTitleCase(shortfall.note)}</p>}
                 {error && (
                   <div className="lb-prize-inline-error" role="alert">
-                    {error}
+                    {enumToTitleCase(error)}
                   </div>
                 )}
               </div>

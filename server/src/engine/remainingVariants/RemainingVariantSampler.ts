@@ -59,6 +59,17 @@ export function choosePineappleFlopPair(cards: Card[], flop: Card[]): Card[] {
   return retained.map((c) => ({ ...c }));
 }
 
+/** P12.1: the terminal showdowns this sampler scored, offered to a caller
+ * that needs the individual runouts rather than their aggregate share. The
+ * roster is the contesting order the opponent arrays are indexed by, which is
+ * the only order those arrays can legally be read in. Retention is additive:
+ * the returned aggregate evidence is unchanged whether or not it is asked for,
+ * and no extra sample, card or iteration is drawn to supply it. */
+export interface RemainingVariantTerminalShowdowns {
+  samples: HorseEquityOutcomeSample[];
+  opponentIds: string[];
+}
+
 /** One physical deck, local RNG, bounded sequential public-line prior with a
  * declared uniform escape. Folded dealt seats still consume their full deal.
  * Hero's private known discard is excluded; opponents' private cards and
@@ -67,7 +78,8 @@ export function sampleRemainingVariantEquity(
   variant: RemainingPolicyVariant,
   hero: SeatPlayer,
   state: HorseGameStateV2,
-  withinBudget: () => boolean
+  withinBudget: () => boolean,
+  retain?: (showdowns: RemainingVariantTerminalShowdowns) => void
 ) {
   const started = performance.now(),
     pack = REMAINING_VARIANT_PACKS[variant];
@@ -207,6 +219,7 @@ export function sampleRemainingVariantEquity(
       ),
     });
   }
+  retain?.({ samples, opponentIds: active.map((p) => p.user_id) });
   const evidence = variantEquityFromShowdowns({
     variant,
     players: state.players,

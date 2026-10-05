@@ -1,0 +1,26 @@
+{
+  "_owner": "agent/codex-phase1-20261005/fix/customization-phase1-certification-closure. PROMISED until the protected prerequisite merge is installed as migration 20261005111453; exact live readback replaces this branch declaration after installation.",
+  "tables": [
+    "customization_settings_mutation_receipts",
+    "phase_one_customization_prerequisite",
+    "phase_one_customization_cutover_seals",
+    "tournament_final_table_transition_receipts",
+    "tournament_final_table_events"
+  ],
+  "functions": [
+    "fn_patch_account_settings",
+    "fn_patch_table_appearance",
+    "fn_table_studio_favorites_are_valid",
+    "fn_table_studio_loadout_is_valid",
+    "fn_table_studio_loadouts_are_valid",
+    "sp_avatar_cosmetic_vip_is_active",
+    "fn_seal_phase_one_customization_cutover",
+    "fn_claim_final_table_transition",
+    "fn_read_final_table_transition",
+    "fn_ack_final_table_announcement"
+  ],
+  "columns": {
+    "theme_preset_catalog": ["face_deck_id"],
+    "user_theme_settings": ["face_deck_id"]
+  }
+}

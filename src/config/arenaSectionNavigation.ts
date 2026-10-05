@@ -81,6 +81,16 @@ export interface ArenaSectionOptions {
    * fail-closed rule canCreateUnion follows.
    */
   canOperateUnionNetwork?: boolean;
+  /**
+   * ca_can_oversee_union explicitly admitted this player to the operational
+   * and financial workspace for the union named by the current route.
+   */
+  canOverseeCurrentUnion?: boolean;
+  /**
+   * fn_is_union_operator explicitly admitted this player to Table Management
+   * for the union named by the current route.
+   */
+  canManageCurrentUnionGames?: boolean;
 }
 
 export function getArenaSectionNavigation(
@@ -159,7 +169,6 @@ export function getArenaSectionNavigation(
   if (unionMatch) {
     const unionId = unionMatch[1];
     const gamesPath = `/unions/${unionId}/games`;
-    const ownerWorkspace = current !== gamesPath;
     const items: ArenaSectionItem[] = [
       /* A club member can reach /unions/:id/games without being allowed into
          the directory, so this entry follows the same allowlist rather than
@@ -168,12 +177,19 @@ export function getArenaSectionNavigation(
       { label: 'Overview', path: `/unions/${unionId}` },
       { label: 'Games', path: gamesPath },
     ];
-    // UnionDetailPage is owner-only and the statement/settlement routes have
-    // server-side oversight gates. Union Games can be opened by club members,
-    // so its rail deliberately omits those financial destinations.
-    if (ownerWorkspace) {
+    // A route shape is not authorization. Only explicit, per-union answers may
+    // expose the guarded workspaces, and the two database predicates remain
+    // separate because Table Management deliberately has the narrower gate.
+    if (opts?.canOverseeCurrentUnion) {
+      items.push({ label: 'Operations', path: `/unions/${unionId}/operations` });
+      if (opts?.canManageCurrentUnionGames) {
+        items.push({
+          label: 'Table Management',
+          path: `/unions/${unionId}/table-management`,
+        });
+      }
       items.push(
-        { label: 'Operations', path: `/unions/${unionId}/operations` },
+        { label: 'Union Data', path: `/unions/${unionId}/data` },
         { label: 'Statements', path: `/unions/${unionId}/statements` },
         { label: 'Settlement', path: `/unions/${unionId}/settlement` },
         /* CLUB AND UNION DIAMOND COSTS (2026-09-22): the union's back office
@@ -181,6 +197,11 @@ export function getArenaSectionNavigation(
            the same oversight gate as statements and settlement. */
         { label: 'Diamond Costs', path: `/unions/${unionId}/diamond-costs` }
       );
+    } else if (opts?.canManageCurrentUnionGames) {
+      items.push({
+        label: 'Table Management',
+        path: `/unions/${unionId}/table-management`,
+      });
     }
     return {
       id: 'union',

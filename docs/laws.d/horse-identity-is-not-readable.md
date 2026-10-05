@@ -19,3 +19,21 @@ pins that the closing migrations exist, assert their own effect, and are never
 re-granted by a later "restore client read grants" pass - which is how the
 grant got there. It also pins that exactly one god account exists, enforced by
 a partial unique index rather than by every writer remembering.
+
+2026-10-05: the fourth and fifth doors. `table_seats.horse_id` (965,180 of
+1,303,476 seat rows) and `club_members.is_bot` were still readable by `anon` and
+`authenticated` through a TABLE-level SELECT, under which a column REVOKE does
+nothing - which is why the 2026-09-07 attempt on `table_seats` rolled itself
+back. Migration 20261005115325 replaces the table-level grant with a column list
+built from the catalogue less the one column, refuses to run while any reader a
+browser can reach still names either column, and asserts the result. The
+browser stopped naming both columns first (`tests/unit/tableSeatsCountNamesAColumn`
+scans every `src` file and bans them). The law pins the migration and that no
+later migration hands either table back whole.
+
+Because those two tables are now granted column by column, a column added to
+either later is unreadable by the browser roles until it is granted. The law
+therefore also requires every later `ADD COLUMN` on `table_seats` or
+`club_members` to carry its own `GRANT SELECT (column)` to `anon` and
+`authenticated` in the same migration, or to say `WITHHELD` beside it.
+

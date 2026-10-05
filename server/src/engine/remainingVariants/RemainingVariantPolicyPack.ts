@@ -103,10 +103,16 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   liveBudgetMs: 4,
   // Leave headroom for completing a physical sample, pot receipts and GC.
   samplingDeadlineMs: 2.5,
-  // P12.1: the net-action economics stop here, inside liveBudgetMs, so a
-  // diagnostic pass can never be the reason the policy falls back to the
-  // baseline on work_budget. Checked before every terminal settlement.
-  netActionDeadlineMs: 3.4,
+  // P12.1: the net-action economics get a budget OF THEIR OWN, measured from
+  // their own start AFTER the policy has already finished and fixed its
+  // reason, proposal and latency. A deadline inside liveBudgetMs was the first
+  // design and it was wrong: the guard bounds work units, not wall time, so on
+  // a slow host one settlement's overshoot past the deadline still crossed
+  // liveBudgetMs and the diagnostic became the reason the policy fell back to
+  // the baseline. Measured, on a shared CI runner, by the test that pinned it.
+  // Now the decision cannot be reached from here at all. Checked before the
+  // hypothetical pots and before every terminal settlement.
+  netActionBudgetMs: 1,
   defaultSamples: 32,
   maxSamples: 128,
   maxActionsPerHand: 256,

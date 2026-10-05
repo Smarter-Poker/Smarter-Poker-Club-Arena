@@ -94,45 +94,79 @@ re-checked by the running module at the worker response boundary:
 - A receipt that carries no `actionEconomics` key claims no economics and is
   not refused, so every retained and legacy receipt stays valid.
 
-## Budget
+## Budget, and the defect the first design had
 
-`REMAINING_VARIANT_DOMAIN.netActionDeadlineMs = 3.4`, between the unchanged
-`samplingDeadlineMs` 2.5 and the unchanged `liveBudgetMs` 4. The pass refuses
-before INSPECTING anything when the budget is already gone, and re-checks
-before every terminal settlement, so it can never be the reason `finish` falls
-back to the baseline on `work_budget`.
+**First design, and why it was wrong.** The pass was given a deadline at 3.4 ms
+on the POLICY clock, between the unchanged `samplingDeadlineMs` 2.5 and the
+unchanged `liveBudgetMs` 4, checked before every terminal settlement. The claim
+was that it could therefore never be the reason `finish` falls back to the
+baseline on `work_budget`.
 
-Measured at the sampler's full 32 samples, warm, with an unconditional budget
-so every run completes: **Mac Studio median 0.142 ms, p95 0.233 ms**, against a
-0.90 ms residual between the sampling deadline and the net-action deadline.
+That claim was false, and the test written to pin it is what proved it. On a
+shared GitHub ubuntu runner the pass costs about 1.0 ms median with a 5.2 ms
+p95, against the 0.9 ms residual the design left it. The guard bounds WORK
+UNITS, not wall time: a check at 3.39 ms passes and then one settlement, plus
+the hypothetical pot construction that had no check at all, runs long enough to
+cross 4 ms. `reason` came back `work_budget` and the proposal was dropped. A
+diagnostic had taken the decision down, which is exactly the trap 10.86 rule 4
+describes - the fix that leaves the same trap one level up.
 
-**Measured limitation, stated rather than smoothed over.** On the shared GitHub
-ubuntu runner the same pass cost about 0.71 ms through the live policy, and on
-that host most post-warmup evaluations did not fit the residual and reported
-`work_budget_unavailable`. That is the designed outcome and it is named, not
-silent: the field is simply absent on those nodes, the proposal is untouched,
-and `reason` is never `work_budget` because of it. Production runs a dedicated
-engine box rather than a shared runner, and `EquityLoadGovernor` already cuts
-`requestedSamples` when the loop saturates, which cuts this pass with it. If
-natural coverage of the field turns out thin, the next step is a DECLARED
-per-line sample cap, not a wider deadline. A cold first call on any host is
-slower than the warm figures and reports the same named refusal.
+**Second design, which cannot do that.** The pass runs STRICTLY AFTER `finish`,
+inside a `finishPriced` wrapper on the seven postflop decision returns, on a
+budget of its own: `REMAINING_VARIANT_DOMAIN.netActionBudgetMs = 1`, measured
+from its own start. By the time it runs, `finish` has already fixed `reason`,
+`proposalAction`, `proposalAmount`, `changed`, `applied` and `latencyMs`, so no
+cost incurred here can reach the decision at all. A node the policy REFUSED is
+not priced, and the pass checks its own budget before building the hypothetical
+pots and before every settlement, so its own overshoot is one settlement.
+
+`latencyMs` therefore stays the policy's own work and does not carry this
+pass's cost; the pass reports its own `analysisMs`, and both are on the
+receipt. That separation is stated in the field's own comment, not left to be
+discovered.
+
+The ordering is the safety property, so it is pinned at the SOURCE rather than
+inferred from a timing run a fast host would pass either way: a test reads
+`RemainingVariantLivePolicy.ts` and refuses a call site that is not inside
+`finishPriced` after `finish`, a budget pointed at the policy clock, more than
+one call site, or a refused node being priced.
+
+**Measured**, at the sampler's full 32 samples, warm, with an unconditional
+budget so every run completes: Mac Studio median 0.142 ms, p95 0.233 ms; shared
+GitHub ubuntu runner median 1.009 ms, p95 5.166 ms. On a host like the runner
+the field will often be absent with `work_budget_unavailable`, which is the
+designed named outcome and costs the decision nothing.
+
+**Three named outcomes at a firing river node, not two.** Running the live pin
+inside the FULL local suite, on a loaded machine, starved the SAMPLER rather
+than the pass: fewer than `MIN_TERMINAL_SAMPLES` showdowns were retained, so
+the pass reported `terminal_samples_unavailable`. Three showdowns is not a net
+economic result and it says so by name rather than averaging them. The pin now
+holds the closed set of refusals, which is the property that matters; its first
+version asserted two outcomes and was wrong about the estate, not the code. Production runs a
+dedicated engine box, and `EquityLoadGovernor` already cuts `requestedSamples`
+when the loop saturates, which cuts this pass with it. If natural coverage of
+the field proves thin, the next step is a DECLARED per-line sample cap, not a
+wider budget.
 
 ## Verification
 
 - `RemainingVariantActionEconomics.test.ts`, 76 cases. Every expected number is
   derived in the comment beside it from the hand's own chips, never from
   another call into the module and never from the pot-share estimator.
-- `RemainingVariantNetAction.test.ts`, 26 cases: the live node, the absences,
+- `RemainingVariantNetAction.test.ts`, 27 cases: the live node, the absences,
   the named refusals, the boundary validation, the BBJ contrast that proves the
-  economics changed no decision, a pin that the live outcome is always one of
-  exactly two NAMED states, and an unconditional cost measurement that always
-  measures something rather than passing when it measured nothing.
+  economics changed no decision, the source pin on the ordering, a pin that the
+  live outcome is always one of exactly two NAMED states, and an unconditional
+  cost measurement that always measures something rather than passing when it
+  measured nothing.
 - Four source mutations of the calculation (BBJ dropped from the deduction
   call, the refund dropped from the net, the controller bound no longer
-  compared, FLO8 scored high-only) and four of the wiring (the boundary check
+  compared, FLO8 scored high-only) and six of the wiring (the boundary check
   removed, the economics re-check removed, the feature binding loosened, the
-  live call disabled) each turn the suite red. The assertions assert.
+  live call disabled, the pass moved back before `finish`, its budget pointed
+  at the policy clock, a refused node priced) each turn the suite red. The
+  assertions assert.
 - `npx tsc --noEmit` clean in `server/`.
 
 `src/engine/HorsePhase11Authority.test.ts` is red on `main` for an unrelated

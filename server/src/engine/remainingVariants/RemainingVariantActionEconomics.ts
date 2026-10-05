@@ -357,6 +357,10 @@ export function remainingVariantActionEconomics(
     level: number | null,
     amount: number | null
   ): RemainingVariantActionValue | string => {
+    if (!withinBudget()) {
+      result.budgetExhausted = true;
+      return 'work_budget_unavailable';
+    }
     let prepared: ReturnType<typeof prepareJointPots>;
     try {
       prepared = prepareJointPots(seatsFor(committed, level), unit);
@@ -425,6 +429,10 @@ export function remainingVariantActionEconomics(
           }
         : { ...p, cards: [], is_folded: true }
     );
+    if (!withinBudget()) {
+      result.budgetExhausted = true;
+      return 'work_budget_unavailable';
+    }
     let prepared: ReturnType<typeof prepareJointPots>;
     try {
       prepared = prepareJointPots(seats, unit);

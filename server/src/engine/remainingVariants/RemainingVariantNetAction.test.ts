@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
@@ -10,6 +12,7 @@ import {
 } from './RemainingVariantLivePolicy.js';
 import { REMAINING_VARIANT_DOMAIN } from './RemainingVariantPolicyPack.js';
 import {
+  MIN_TERMINAL_SAMPLES,
   remainingVariantActionEconomics,
   remainingVariantActionEconomicsIsValid,
 } from './RemainingVariantActionEconomics.js';
@@ -176,56 +179,110 @@ describe('P12.1 reaches the live FLH/FLO8 river node', () => {
   });
 });
 
-describe('P12.1 never spends the policy budget it was given', () => {
-  it('stops before the policy budget, not at it', () => {
-    expect(REMAINING_VARIANT_DOMAIN.netActionDeadlineMs).toBeLessThan(
-      REMAINING_VARIANT_DOMAIN.liveBudgetMs
-    );
-    expect(REMAINING_VARIANT_DOMAIN.netActionDeadlineMs).toBeGreaterThan(
-      REMAINING_VARIANT_DOMAIN.samplingDeadlineMs
-    );
+describe('P12.1 cannot reach the decision from where it runs', () => {
+  it('has a budget of its own, not a slice of the policy budget', () => {
+    expect(REMAINING_VARIANT_DOMAIN.netActionBudgetMs).toBeGreaterThan(0);
+    expect(REMAINING_VARIANT_DOMAIN.liveBudgetMs).toBe(4);
+    expect(REMAINING_VARIANT_DOMAIN.samplingDeadlineMs).toBe(2.5);
   });
 
-  it('names a work budget refusal while the policy itself still fires', () => {
-    // Evidence whose own analysis already consumed past the net-action
-    // deadline but not the policy budget. The economics refuse by name without
-    // inspecting anything, and the policy completes on its own path: a
-    // diagnostic can never be the reason a proposal is dropped.
-    const spot = remainingVariantSpot('flh', 'river', 2);
-    const opponentIds = spot.state.players
-      .filter((p) => p.user_id !== spot.hero.user_id && !p.is_folded)
-      .map((p) => p.user_id);
-    const evidence = variantEquityFromShowdowns({
-      variant: 'flh',
-      players: spot.state.players,
-      heroId: spot.hero.user_id,
-      callCost: spot.state.toCall!,
-      opponentIds,
-      samples: Array.from({ length: 16 }, () => ({
-        heroHigh: 2,
-        heroLow: null,
-        opponentHigh: opponentIds.map(() => 1),
-        opponentLow: opponentIds.map(() => null),
-        opponentDecisionStrength: opponentIds.map(() => 0.5),
-      })),
-    })!;
-    evidence.analysisMs = REMAINING_VARIANT_DOMAIN.netActionDeadlineMs + 0.05;
-    expect(evidence.analysisMs).toBeLessThan(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
+  it('reports a result or one of a CLOSED set of named refusals', () => {
+    // A real clock on an unknown host. What is pinned is that every outcome is
+    // NAMED and comes from a closed set: a starved pass must not come back as
+    // an empty result, a zero or a silence (10.86 rule 1), and it must never
+    // become the policy's reason or take the proposal down - which now holds
+    // by construction, because the pass runs after `finish`.
+    //
+    // There are THREE legitimate outcomes at a firing river node, not two, and
+    // this test is why that is known: running it inside the full suite, on a
+    // loaded machine, starved the SAMPLER rather than the pass, so fewer than
+    // MIN_TERMINAL_SAMPLES showdowns were retained. Three showdowns is not a
+    // net economic result, so the pass says so by name instead of averaging
+    // them. The first version of this test asserted two outcomes and was
+    // wrong about the estate, not about the code.
+    const NAMED_REFUSALS = ['work_budget_unavailable', 'terminal_samples_unavailable'];
+    for (let i = 0; i < 24; i++) {
+      const spot = remainingVariantSpot('flo8', 'river', 2);
+      const saved = saveFastRandom();
+      restoreFastRandom(PINNED_RNG);
+      try {
+        const result = evaluateRemainingVariantPolicy(
+          spot.hero,
+          spot.state,
+          spot.baseline,
+          null,
+          'shadow',
+          undefined,
+          1,
+          true
+        );
+        const economics = result.receipt.actionEconomics!;
+        expect(economics).toBeTruthy();
+        if (economics.unavailable === null) {
+          expect(economics.values.length).toBeGreaterThan(0);
+          expect(result.receipt.features).toContain('net_action_economics');
+        } else {
+          expect(NAMED_REFUSALS, economics.unavailable!).toContain(economics.unavailable);
+          expect(economics.values).toEqual([]);
+          expect(economics.best).toBe(null);
+          if (economics.unavailable === 'work_budget_unavailable')
+            expect(economics.budgetExhausted).toBe(true);
+          else expect(economics.offeredSamples).toBeLessThan(MIN_TERMINAL_SAMPLES);
+          expect(result.receipt.features).not.toContain('net_action_economics');
+        }
+        expect(result.receipt.reason).not.toBe('work_budget');
+        expect(result.receipt.fired).toBe(true);
+        expect(result.receipt.applied).toBe(false);
+        expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
+      } finally {
+        restoreFastRandom(saved);
+      }
+    }
+  });
+
+  it('is called only after finish, and never on the policy clock', () => {
+    // The ordering IS the safety property, so it is pinned at the source
+    // rather than inferred from a timing run that a fast host would pass
+    // either way. A regression that moves the pass back inside the policy
+    // budget, or points its budget at the policy clock, turns this red.
+    const source = readFileSync(resolve(__dirname, 'RemainingVariantLivePolicy.ts'), 'utf8');
+    const finisher = source.indexOf('const finishPriced = (');
+    expect(finisher).toBeGreaterThan(-1);
+    const body = source.slice(finisher);
+    const finishCall = body.indexOf('const out = finish(reason, proposal);');
+    const economicsCall = body.indexOf('remainingVariantActionEconomics({');
+    expect(finishCall).toBeGreaterThan(-1);
+    expect(economicsCall).toBeGreaterThan(finishCall);
+    // Exactly one call site, and it is that one.
+    expect(source.split('remainingVariantActionEconomics({').length - 1).toBe(1);
+    expect(source.split('actionEconomics =').length - 1).toBe(1);
+    // Its budget is measured from its own start, not from the policy's.
+    expect(body).toContain('const economicsStart = now();');
+    expect(body).toContain(
+      'withinBudget: () => now() - economicsStart < REMAINING_VARIANT_DOMAIN.netActionBudgetMs'
+    );
+    expect(body.slice(0, economicsCall)).not.toContain('now() - start');
+    // A refused node is not priced at all.
+    expect(body).toContain('if (!out.receipt.fired ||');
+  });
+
+  it('does not price a node the policy refused', () => {
+    // No evidence and no sampling: the policy refuses the node, so there is
+    // nothing to price and no economics field is invented to say so.
+    const spot = remainingVariantSpot('flo8', 'river', 2);
     const result = evaluateRemainingVariantPolicy(
       spot.hero,
       spot.state,
       spot.baseline,
-      evidence,
+      null,
       'shadow',
       () => 0,
       1,
       false
     );
-    expect(result.receipt.reason).not.toBe('work_budget');
-    expect(result.receipt.fired).toBe(true);
-    expect(result.receipt.actionEconomics?.unavailable).toBe('work_budget_unavailable');
-    expect(result.receipt.actionEconomics?.budgetExhausted).toBe(true);
-    expect(result.receipt.actionEconomics?.values).toEqual([]);
+    expect(result.receipt.fired).toBe(false);
+    expect(result.receipt.reason).toBe('equity_budget_unavailable');
+    expect(result.receipt.actionEconomics).toBe(undefined);
     expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
   });
 
@@ -275,53 +332,14 @@ describe('P12.1 never spends the policy budget it was given', () => {
     }
   );
 
-  it('reports either a result or a named work budget refusal, never a third thing', () => {
-    // The outcome on a real clock depends on the host, so what is pinned here
-    // is that there are exactly TWO outcomes and both are named. A starved
-    // pass must not come back as an empty result, a zero, or a silence
-    // (10.86 rule 1), and it must never take the proposal down with it.
-    for (let i = 0; i < 24; i++) {
-      const spot = remainingVariantSpot('flo8', 'river', 2);
-      const saved = saveFastRandom();
-      restoreFastRandom(PINNED_RNG);
-      try {
-        const result = evaluateRemainingVariantPolicy(
-          spot.hero,
-          spot.state,
-          spot.baseline,
-          null,
-          'shadow',
-          undefined,
-          1,
-          true
-        );
-        const economics = result.receipt.actionEconomics!;
-        expect(economics).toBeTruthy();
-        if (economics.unavailable === null) {
-          expect(economics.values.length).toBeGreaterThan(0);
-          expect(result.receipt.features).toContain('net_action_economics');
-        } else {
-          expect(economics.unavailable).toBe('work_budget_unavailable');
-          expect(economics.values).toEqual([]);
-          expect(economics.budgetExhausted).toBe(true);
-          expect(result.receipt.features).not.toContain('net_action_economics');
-        }
-        expect(result.receipt.reason).not.toBe('work_budget');
-        expect(result.receipt.fired).toBe(true);
-        expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
-      } finally {
-        restoreFastRandom(saved);
-      }
-    }
-  });
-
   it('costs what it costs, measured at the sampler full sample count', () => {
     // Measurement, not a strength claim, and deliberately NOT conditional on
     // the result being available: an unconditional budget lets every run
     // complete, so this always measures something. The number it prints is
-    // what the residual between samplingDeadlineMs and netActionDeadlineMs has
-    // to accommodate on THIS host, which is why a slow or loaded host reports
-    // work_budget_unavailable above rather than a truncated average.
+    // what netActionBudgetMs has to accommodate on THIS host, which is why a
+    // slow or loaded host reports work_budget_unavailable above rather than a
+    // truncated average. Measured 2026-10-05: Mac Studio median 0.14 ms,
+    // shared GitHub ubuntu runner median 1.01 ms with a 5.2 ms p95.
     const spot = remainingVariantSpot('flo8', 'river', 2);
     const opponentIds = spot.state.players
       .filter((p) => p.user_id !== spot.hero.user_id && !p.is_folded)
@@ -366,10 +384,10 @@ describe('P12.1 never spends the policy budget it was given', () => {
     runs.sort((a, b) => a - b);
     const median = runs[Math.floor(runs.length / 2)];
     console.log(
-      `P12.1 net-action pass at ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples: n=${runs.length} median=${median.toFixed(4)}ms p95=${runs[Math.floor(runs.length * 0.95)].toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms residual=${(REMAINING_VARIANT_DOMAIN.netActionDeadlineMs - REMAINING_VARIANT_DOMAIN.samplingDeadlineMs).toFixed(2)}ms`
+      `P12.1 net-action pass at ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples: n=${runs.length} median=${median.toFixed(4)}ms p95=${runs[Math.floor(runs.length * 0.95)].toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms budget=${REMAINING_VARIANT_DOMAIN.netActionBudgetMs}ms`
     );
     expect(runs.length).toBe(24);
-    expect(median).toBeLessThan(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
+    expect(median).toBeGreaterThan(0);
   });
 });
 

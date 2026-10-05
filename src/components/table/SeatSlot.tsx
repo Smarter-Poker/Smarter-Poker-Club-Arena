@@ -301,6 +301,13 @@ export interface SeatSlotProps {
    * call rather than defaulted here.
    */
   bountyUnitCents?: number;
+  /**
+   * THE CHESTS ARE LIVE (2026-10-05). In a mystery bounty event, once the
+   * chest phase opens a knockout draws a chest, not the flat head still stored
+   * for the player. The badge then reads as a mystery prize instead of that
+   * stale figure. Same badge, same art; only its text changes.
+   */
+  bountyIsMystery?: boolean;
   /*
    * `bombPotAnte` — REMOVED 2026-09-04. It hung a magenta "BOMB" pill under
    * every live seat for the length of a bomb-pot hand. Dan: "THERE SHOULDN'T
@@ -863,6 +870,7 @@ export const SeatSlot = memo(
       entryWait = null,
       bountyValue,
       bountyUnitCents,
+      bountyIsMystery,
       isWinner = false,
       netWinAmount,
       bbjCreditAmount,
@@ -3612,7 +3620,17 @@ export const SeatSlot = memo(
                 operator twelve" — and the seat's own aria-label names seat,
                 player, status and stack but not the bounty, so the figure was
                 unavailable anywhere else. */}
-        {bountyValue != null && bountyValue > 0 && (
+        {bountyIsMystery && (
+          <div className="seat__bounty" aria-label="Mystery Bounty">
+            <span className="seat__bounty-target" aria-hidden="true">
+              ◎
+            </span>
+            <span className="seat__bounty-val" aria-hidden="true">
+              ?
+            </span>
+          </div>
+        )}
+        {!bountyIsMystery && bountyValue != null && bountyValue > 0 && (
           <div
             className="seat__bounty"
             aria-label={`Bounty ${
@@ -3691,6 +3709,7 @@ export const SeatSlot = memo(
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
+    if (prev.bountyIsMystery !== next.bountyIsMystery) return false;
     /* A table SWITCH inside MultiTablePage reuses seat nodes across two
        tables. Without this a Diamond seat could keep a chip table's grid
        (or the reverse) until something else on the seat changed. */

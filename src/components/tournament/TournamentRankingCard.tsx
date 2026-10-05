@@ -441,7 +441,7 @@ export default function TournamentRankingCard({
 
   /* THE SHARE IMAGE IS PAINTED BEFORE THE TAP (2026-10-05). iOS Safari only
      opens the share sheet inside the tap's own activation, and painting
-     awaits image loads, so the PNG is made when the card opens and repainted
+     awaits image loads, so the image is made when the card opens and repainted
      if the player's name arrives after it. Share uses whatever is ready. */
   const shareImage = useRef<Blob | null>(null);
   const shareName = profile?.username ?? null;
@@ -531,7 +531,9 @@ export default function TournamentRankingCard({
       window.setTimeout(() => setShared(null), 2000);
     };
     const image = shareImage.current;
-    const filename = 'smarter-poker-result.png';
+    // Canvas may fall back to PNG on an encoder-limited browser. Keep the
+    // extension and the File MIME type bound to the actual returned bytes.
+    const filename = `smarter-poker-result.${image?.type === 'image/jpeg' ? 'jpg' : 'png'}`;
     try {
       const nav = navigator as Navigator & {
         share?: (d: ShareData) => Promise<void>;
@@ -540,7 +542,7 @@ export default function TournamentRankingCard({
       /* 1. The picture and the sentence, through the system sheet. The link
          rides in the text: most targets drop `url` once files are attached. */
       if (image && typeof nav.share === 'function' && typeof nav.canShare === 'function') {
-        const file = new File([image], filename, { type: 'image/png' });
+        const file = new File([image], filename, { type: image.type });
         const withImage: ShareData = {
           files: [file],
           title: 'Smarter.Poker',

@@ -16,7 +16,7 @@
  *
  * Painting happens AHEAD of the tap (TournamentRankingCard pre-paints when it
  * opens): iOS Safari refuses navigator.share once the tap's activation has
- * been spent awaiting image loads, so the PNG must already exist when the
+ * been spent awaiting image loads, so the image must already exist when the
  * player presses Share. Everything here fails soft - no canvas, a blocked
  * image, a missing font - by returning null, and Share falls back to the text.
  */
@@ -393,7 +393,9 @@ export async function paintRankingShareImage(input: RankingShareInput): Promise<
 
   return new Promise((resolve) => {
     try {
-      canvas.toBlob((b) => resolve(b), 'image/png');
+      // The ground is opaque: quality 0.9 preserves the chrome and text while
+      // avoiding a near-megabyte lossless payload in mobile share targets.
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9);
     } catch {
       resolve(null);
     }

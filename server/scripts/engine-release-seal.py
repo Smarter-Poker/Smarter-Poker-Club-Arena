@@ -705,6 +705,12 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
             if (value.get("sha") != target or value.get("runId") != run_id
                     or type(value.get("announcedAt")) is not int or value["announcedAt"] <= 0):
                 die("recovery window identity is corrupt or belongs to another target")
+            # A reservation written before the emergency-only rule (a routine
+            # cause, or none) is not honoured on a rerun: it would bring back
+            # the off-cycle break that rule removed.
+            if not RECOVERY_CAUSE_RE.fullmatch(str(value.get("cause") or "")):
+                print("unavailable")
+                return
             print(value["announcedAt"])
             return
 

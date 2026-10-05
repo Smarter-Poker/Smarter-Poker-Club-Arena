@@ -1340,6 +1340,11 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     value.announcedAt -= 600000;
     writeFileSync(receipt, JSON.stringify(value));
     expect(runSeal(urgent).stdout).toBe(String(value.announcedAt));
+    // A reservation on record for a ROUTINE cause (written before the
+    // emergency-only rule) is not honoured on a rerun.
+    writeFileSync(receipt, JSON.stringify({ ...value, cause: 'failed-release:411-1' }));
+    expect(runSeal(urgent).stdout).toBe('unavailable');
+    writeFileSync(receipt, JSON.stringify(value));
     expect(runSeal([...urgent.slice(0, 2), A_SHA, ...urgent.slice(3)]).stdout).toBe('unavailable');
     expect(
       runSeal(['reserve-recovery-window', '--sha', C_SHA, '--run-id', '413-1', '--repo', sandbox])

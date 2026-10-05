@@ -1,5 +1,6 @@
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
+import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceIsValid } from '../HorseTournamentUtilityEvidence.js';
 import type { HorseDecision, HorseTournamentUtilityLedger, SeatPlayer } from '../../types.js';
@@ -569,6 +570,14 @@ export function horseDecisionReceiptIsValid(
   )
     return false;
   if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, value)) return false;
+  // P12.1: a Phase 12 receipt's net-action binding is re-checked here too.
+  // Until this existed no Phase 12 receipt was shape-checked at this boundary
+  // at all; a receipt nothing verifies is the defect class P10.1 shipped.
+  if (
+    value.remainingVariantPolicy !== undefined &&
+    !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
+  )
+    return false;
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)

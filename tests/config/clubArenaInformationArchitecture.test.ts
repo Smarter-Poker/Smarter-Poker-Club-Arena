@@ -177,10 +177,6 @@ describe('Club Arena information architecture', () => {
     expect(union?.items.map((item) => item.path)).toEqual([
       '/unions/union-1',
       '/unions/union-1/games',
-      '/unions/union-1/operations',
-      '/unions/union-1/statements',
-      '/unions/union-1/settlement',
-      '/unions/union-1/diamond-costs',
     ]);
 
     const communityForOperator = getArenaSectionNavigation('/community', {
@@ -188,9 +184,34 @@ describe('Club Arena information architecture', () => {
     });
     const unionForOperator = getArenaSectionNavigation('/unions/union-1/statements', {
       canOperateUnionNetwork: true,
+      canOverseeCurrentUnion: true,
+      canManageCurrentUnionGames: true,
     });
     expect(communityForOperator?.items.map((item) => item.path)).toContain('/unions');
     expect(unionForOperator?.items.map((item) => item.path)[0]).toBe('/unions');
+    expect(unionForOperator?.items.map((item) => item.path)).toEqual(
+      expect.arrayContaining([
+        '/unions/union-1/operations',
+        '/unions/union-1/table-management',
+        '/unions/union-1/data',
+        '/unions/union-1/statements',
+        '/unions/union-1/settlement',
+        '/unions/union-1/diamond-costs',
+      ])
+    );
+    const financialOverseer = getArenaSectionNavigation('/unions/union-1/statements', {
+      canOverseeCurrentUnion: true,
+    });
+    expect(financialOverseer?.items.map((item) => item.path)).not.toContain(
+      '/unions/union-1/table-management'
+    );
+    const gameManager = getArenaSectionNavigation('/unions/union-1/games', {
+      canManageCurrentUnionGames: true,
+    });
+    expect(gameManager?.items.map((item) => item.path)).toContain(
+      '/unions/union-1/table-management'
+    );
+    expect(gameManager?.items.map((item) => item.path)).not.toContain('/unions/union-1/settlement');
     const unionGames = getArenaSectionNavigation('/unions/union-1/games');
     expect(unionGames?.items.map((item) => item.path)).not.toContain('/unions/union-1/statements');
     expect(getActiveArenaSectionPath('/unions/union-1/games', unionGames?.items || [])).toBe(

@@ -137,7 +137,7 @@ describe('leaderboard prize setup safety contract', () => {
     expect(page).toContain('LeaderboardService.getRewardProgramHistory(programHistoryClubId');
     expect(page).toContain('<section className="lb-program-history" aria-label="Program History">');
     // Only the message is announced, not the Retry button beside it.
-    expect(page).toContain('<span role="status">{programHistoryError}</span>');
+    expect(page).toContain('<span role="status">{enumToTitleCase(programHistoryError)}</span>');
   });
 
   it('never puts an aria-label on a role-less div', () => {

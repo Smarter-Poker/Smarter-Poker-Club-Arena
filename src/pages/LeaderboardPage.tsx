@@ -38,6 +38,8 @@ import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPri
 import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips } from '../utils/format';
+import { enumToTitleCase } from '../utils/titleCase';
+import { leaderboardDisplayName } from '../utils/leaderboardDisplayName';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
@@ -1057,6 +1059,7 @@ export default function LeaderboardPage() {
   };
 
   const renderPodiumPlace = (entry: LeaderboardEntry) => {
+    const displayName = leaderboardDisplayName(entry.username);
     return (
       <div
         className={`podium-place ${entry.userId === user?.id ? 'current-user' : ''}`}
@@ -1064,12 +1067,12 @@ export default function LeaderboardPage() {
         onKeyDown={rowKeyActivate(entry.userId)}
         role="button"
         tabIndex={0}
-        aria-label={`${getRankLabel(entry.rank)}, ${entry.username}, ${formatValue(entry.value, metric)}`}
+        aria-label={`${getRankLabel(entry.rank)}, ${displayName}, ${formatValue(entry.value, metric)}`}
       >
         <span className="entry-rank">{getRankLabel(entry.rank)}</span>
         <PlayerAvatar
           src={entry.avatar}
-          name={entry.username}
+          name={displayName}
           size="sm"
           level={entry.level || 1}
           showPresence={false}
@@ -1077,7 +1080,7 @@ export default function LeaderboardPage() {
           showVipRing={false}
         />
         <div className="entry-info">
-          <span className="entry-name">{entry.username}</span>
+          <span className="entry-name">{displayName}</span>
           {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
           {renderRowContext(entry)}
         </div>
@@ -1106,6 +1109,7 @@ export default function LeaderboardPage() {
   const programMetricLabel =
     METRIC_OPTIONS.find((option) => option.value === settings?.payout_metric)?.label || 'Profit';
   const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
+  const selectedClubDisplayName = enumToTitleCase(selectedClubName);
   const currentError = activeTab === 'rankings' ? loadError : tournamentError;
   const canExport =
     (entries.length > 0 && activeTab === 'rankings') ||
@@ -1175,7 +1179,7 @@ export default function LeaderboardPage() {
         title="Leaderboards"
         titleId="leaderboard-title"
         subtitle={
-          scope === 'global' ? 'Across Club Arena' : selectedClubName || 'Your Club Rankings'
+          scope === 'global' ? 'Across Club Arena' : selectedClubDisplayName || 'Your Club Rankings'
         }
         pill={
           currentError
@@ -1265,7 +1269,7 @@ export default function LeaderboardPage() {
                 <button
                   className="lb-action-btn"
                   onClick={() => void loadUserClubs(() => isMountedRef.current)}
-                  title={ownerToolsError}
+                  title={enumToTitleCase(ownerToolsError)}
                 >
                   Retry Owner Tools
                 </button>
@@ -1274,7 +1278,7 @@ export default function LeaderboardPage() {
                 <button
                   className="lb-action-btn lb-action-prize"
                   onClick={() => setSettingsReloadKey((value) => value + 1)}
-                  title={settingsError}
+                  title={enumToTitleCase(settingsError)}
                 >
                   Retry Prize Setup
                 </button>
@@ -1319,7 +1323,7 @@ export default function LeaderboardPage() {
                     >
                       {userClubs.map((club) => (
                         <option key={club.id} value={club.id}>
-                          {club.name}
+                          {enumToTitleCase(club.name)}
                         </option>
                       ))}
                     </select>
@@ -1327,7 +1331,7 @@ export default function LeaderboardPage() {
                 )}
 
                 {scope === 'my-clubs' && userClubs.length <= 1 && (
-                  <span className="lb-club-readout">{selectedClubName || 'My Club'}</span>
+                  <span className="lb-club-readout">{selectedClubDisplayName || 'My Club'}</span>
                 )}
 
                 {/* Scope Toggle */}
@@ -1522,7 +1526,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(entry.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    aria-label={`${getRankLabel(entry.rank)} ${leaderboardDisplayName(entry.username)}, ${formatValue(entry.value, metric)}`}
                     style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                   >
                     <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
@@ -1530,12 +1534,14 @@ export default function LeaderboardPage() {
                       {entry.avatar ? (
                         <img src={entry.avatar} alt="" loading="lazy" />
                       ) : (
-                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                        <span>
+                          {(leaderboardDisplayName(entry.username) || '?')[0]?.toUpperCase()}
+                        </span>
                       )}
                     </div>
                     <div className="entry-info">
                       <span className="entry-name">
-                        {entry.username}
+                        {leaderboardDisplayName(entry.username)}
                         {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       </span>
                     </div>
@@ -1564,7 +1570,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(entry.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
+                    aria-label={`${getRankLabel(entry.rank)} ${leaderboardDisplayName(entry.username)}, ${formatValue(entry.value, metric)}`}
                     style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                   >
                     <span className="entry-rank">{getRankLabel(entry.rank)}</span>
@@ -1572,12 +1578,14 @@ export default function LeaderboardPage() {
                       {entry.avatar ? (
                         <img src={entry.avatar} alt="" loading="lazy" />
                       ) : (
-                        <span>{(entry.username || '?')[0]?.toUpperCase()}</span>
+                        <span>
+                          {(leaderboardDisplayName(entry.username) || '?')[0]?.toUpperCase()}
+                        </span>
                       )}
                     </div>
                     <div className="entry-info">
                       <span className="entry-name">
-                        {entry.username}
+                        {leaderboardDisplayName(entry.username)}
                         {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                         {(entry.change || 0) >= 3 && (
                           <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
@@ -1668,7 +1676,7 @@ export default function LeaderboardPage() {
                     onKeyDown={rowKeyActivate(stat.userId)}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
+                    aria-label={`Rank ${index + 1}, ${leaderboardDisplayName(stat.username)}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="stats-cell player-cell">
@@ -1677,10 +1685,12 @@ export default function LeaderboardPage() {
                         {stat.avatar ? (
                           <img src={stat.avatar} alt="" loading="lazy" />
                         ) : (
-                          <span>{(stat.username || '?')[0]?.toUpperCase()}</span>
+                          <span>
+                            {(leaderboardDisplayName(stat.username) || '?')[0]?.toUpperCase()}
+                          </span>
                         )}
                       </div>
-                      <span className="player-name">{stat.username}</span>
+                      <span className="player-name">{leaderboardDisplayName(stat.username)}</span>
                     </div>
                     <div className="stats-cell" data-label="Tournaments">
                       {compactChips(stat.tournamentsPlayed)}
@@ -1725,7 +1735,7 @@ export default function LeaderboardPage() {
                 <span className="lb-prize-program-kicker">Prize Program</span>
                 <h2>No Prize Program Yet</h2>
                 <p>
-                  {`${settings.funding_label} Funds Leaderboard Prizes For ${settings.club_name}. Decide Whether To Reward Players, Then Publish A Plan.`}
+                  {`${enumToTitleCase(settings.funding_label)} Funds Leaderboard Prizes For ${enumToTitleCase(settings.club_name)}. Decide Whether To Reward Players, Then Publish A Plan.`}
                 </p>
               </div>
               <button
@@ -1755,8 +1765,8 @@ export default function LeaderboardPage() {
               </h2>
               <p>
                 {settings.rewards_enabled
-                  ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
-                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
+                  ? `${enumToTitleCase(settings.program_funding_label || settings.funding_label)} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${programMetricLabel}.`
+                  : `A Prize Plan Is Saved For ${enumToTitleCase(settings.club_name)}, But Rewards Are Not Published.`}
               </p>
               {settings.rewards_enabled && (
                 <ul className="lb-prize-rules" role="list" aria-label="Prize Rules">
@@ -1766,8 +1776,8 @@ export default function LeaderboardPage() {
                   <li>Tied Places Share Their Occupied Prizes.</li>
                   <li>
                     {settings.funding_status === 'underfunded'
-                      ? `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes, Once It Covers The Published Prizes.`
-                      : `Paid From ${settings.program_funding_label || settings.funding_label} After The Period Closes.`}
+                      ? `Paid From ${enumToTitleCase(settings.program_funding_label || settings.funding_label)} After The Period Closes, Once It Covers The Published Prizes.`
+                      : `Paid From ${enumToTitleCase(settings.program_funding_label || settings.funding_label)} After The Period Closes.`}
                   </li>
                   <li>
                     {
@@ -1828,7 +1838,7 @@ export default function LeaderboardPage() {
                 <span className="lb-prize-program-kicker">Program History</span>
                 {programHistoryError ? (
                   <div className="lb-program-history-error">
-                    <span role="status">{programHistoryError}</span>
+                    <span role="status">{enumToTitleCase(programHistoryError)}</span>
                     <button
                       type="button"
                       onClick={() => setProgramHistoryReloadKey((value) => value + 1)}
@@ -1858,7 +1868,7 @@ export default function LeaderboardPage() {
                                 <strong>V{entry.version}</strong>
                                 <span>
                                   {formatUtcTimestamp(entry.published_at)} ·{' '}
-                                  {entry.publisher_name || 'Publisher Unavailable'}
+                                  {enumToTitleCase(entry.publisher_name || 'Publisher Unavailable')}
                                 </span>
                               </div>
                               {changes.length > 0 && (

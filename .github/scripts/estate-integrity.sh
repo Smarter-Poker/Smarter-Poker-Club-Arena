@@ -387,6 +387,7 @@ for f in "${SHARED_FILES[@]}"; do
   LAST_PAYLOAD=""
   LAST_DIGEST=""
   PRESENT=0
+  EXEMPT=0
   MISSING=""
   RETIRED_SEEN=""
   for r in "${REPOS[@]}"; do
@@ -437,6 +438,7 @@ for f in "${SHARED_FILES[@]}"; do
       if VD=$(shasum -a256 < "$VF" | cut -c1-12) && [[ "$VD" =~ ^[0-9a-f]{12}$ ]]; then
         if [ "$D" = "$VD" ]; then
           note "$f: $r carries its recorded deliberate variant ($VD, stored at $VF), so it is held to that record rather than to the other repos"
+          EXEMPT=$((EXEMPT + 1))
           continue
         fi
         add "\`$f\` in **$r** is RECORDED AS A DELIBERATE VARIANT (stored copy \`$VF\`, \`$VD\`), and the repo now carries \`$D\`. The record is stale: either that copy changed without the record, or the record was never right. Re-read the file and update the stored copy in the same pull request, or converge it. Until then it is compared like any other copy."
@@ -481,6 +483,8 @@ $VARIANTS
   $LEAD
   The date orders the variants, it does not certify one: a repo can commit an older file later. Make them agree; do not assume the newest is right.${DELIB:+
 $DELIB}"
+  elif [ "$EXEMPT" -gt 0 ]; then
+    note "$f: identical in all $((PRESENT - EXEMPT)) compared, with $EXEMPT recorded variant(s) held to their stored copies"
   else
     note "$f: identical in all $PRESENT"
   fi

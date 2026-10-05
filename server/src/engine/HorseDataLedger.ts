@@ -532,6 +532,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V46'
   ),
   flag(
+    'v46ShortDeck',
+    'the short-deck half of the V46 chart; DEFAULT OFF since 2026-10-05 (shortdeck_v46_classes -0.51 +/- 0.15 over 960k hands)',
+    'V46'
+  ),
+  flag(
+    'v51RiverFlat',
+    'a committed river one-pair hand calls instead of jamming (league v51_river_flat)',
+    'V51'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -563,7 +573,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase12Remaining',
-    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    "separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; live candidate only from the worker's own P12.3 pack authority (cash), never from a caller",
     'Phase12'
   ),
   flag(
@@ -1985,6 +1995,32 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase12_range_*',
+    'evaluateRemainingVariantPolicy -> HorseLogic (P12.1 input binding)',
+    'range status of every bound Short Deck/Pineapple/FLH/FLO8 proposal (not_consumed_preflop, unavailable, rejected_malformed, rejected_population, consumed_unattributed, consumed); counts only, never calibration or solver evidence',
+    'Phase12',
+    'phase12_eligible',
+    0.99
+  ),
+  receipt(
+    'phase12_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P12.3)',
+    'none, shadow change (never applied), authority-backed cash selection of the deciding pack, controller acceptance or withdrawal before acceptance; never a tournament objective selection',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_authority_*',
+    'HorsePhase12Authority (HorseQualifiedAuthority, one gate per pack) -> workerRuntime / client / ServerTableEngineTurns (P12.3)',
+    'protected-release Short Deck/Pineapple/FLH/FLO8 authority admission per pack, local withdrawal and acceptance-time verdicts',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_receipt_binding_dropped',
+    'horseDecision/client (P12.1, the P10 audit F8 rule)',
+    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose binding (P12.1 inputs or the P12-B net-action economics) failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase12'
+  ),
+  receipt(
     'phase12_street_*',
     'evaluateRemainingVariantPolicy',
     'street coverage for completed policy evaluations',
@@ -2010,12 +2046,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase12_execution_*',
     'ServerTableEngineTurns',
     'authoritative action or retired decision accounting',
-    'Phase12'
-  ),
-  receipt(
-    'phase12_shadow_receipt_binding_dropped',
-    'horseDecision/client (P12.1, the P10 audit F8 rule)',
-    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose net-action binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
     'Phase12'
   ),
   receipt(
@@ -2530,10 +2560,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a horse posted a VOLUNTARY straddle; straddle-enabled tables only',
     'V48'
   ),
+  // No floor: the spot (committed, river, one pair, clearing the call bar)
+  // is rare by construction; silence on a quiet day is not a dead layer.
+  receipt(
+    'v51_river_flat',
+    'HorseLogic committed branch (V51)',
+    'a committed river one-pair hand flatted where it used to jam',
+    'V51'
+  ),
   receipt(
     'v46_class_read',
     'HorseHandClasses.handClassRead via HorseLogic (V46)',
-    'the hand SHAPE priced a preflop decision; Omaha and short-deck volume only',
+    'the hand SHAPE priced a preflop decision; Omaha volume only (the short-deck chart is off by default since 2026-10-05)',
     'V46'
   ),
   receipt(

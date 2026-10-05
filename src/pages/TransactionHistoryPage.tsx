@@ -66,7 +66,7 @@ function setTxCache(userId: string, data: Transaction[]) {
 
 export default function TransactionHistoryPage() {
   const navigate = useNavigate();
-  useVisibilityRefresh(() => loadTransactions(1, true));
+  useVisibilityRefresh(() => loadTransactions(0, true));
   const { user } = useAuthUser();
   const toast = useToast();
   const isMounted = useIsMounted();

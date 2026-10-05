@@ -57,11 +57,13 @@ import {
   recordHorsePhase8Verdict,
   recordHorsePhase10Verdict,
   recordHorsePhase11Verdict,
+  recordHorsePhase12Verdict,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
   withdrawHorsePhase8Selection,
   withdrawHorsePhase10Selection,
   withdrawHorsePhase11Selection,
+  withdrawHorsePhase12Selection,
   type HorseExecutionRetirement,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
@@ -69,6 +71,8 @@ import { liveHorsePhase8Authority } from './HorseQualifiedAuthority.js';
 import { liveHorsePhase10Authority } from './HorsePhase10Authority.js';
 import { liveHorsePhase11Authorities } from './HorsePhase11Authority.js';
 import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import { liveHorsePhase12Authorities } from './HorsePhase12Authority.js';
+import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -772,7 +776,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     userId: string,
     seat: number,
     durationSeconds: number,
-    clockKind: 'primary' | 'time_bank' = 'primary'
+    clockKind: 'primary' | 'time_bank' = 'primary',
+    graceMs: number = 2000
   ): void {
     // Deliberately does NOT call clearTurnTimer(). Now that clearTurnTimer
     // actually cancels every turn deadline on the table, calling it on each
@@ -812,7 +817,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // The auto-fold/check logic runs as the onExpiry callback via DeadlineScheduler.
     // Bible V8 §6.1: 2-second grace period for network latency is baked into the
     // timer duration so the scheduler fires after the grace window.
-    const GRACE_PERIOD_MS = 2000;
+    // A restored clock whose display deadline has already passed keeps only
+    // the grace it had left (restoreTurnClockAfterRejectedAction), so a
+    // refusal inside the grace window can never buy a fresh two seconds.
+    const GRACE_PERIOD_MS = Number.isFinite(graceMs) ? Math.max(0, Math.min(2000, graceMs)) : 2000;
     const totalDurationMs = safeDurationSeconds * 1000 + GRACE_PERIOD_MS;
 
     // ── Law 1.16 `timer_countdown` (roadmap batch 6, 2026-08-21) ─────────
@@ -2267,8 +2275,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.rearmTurnTimerIfCurrent(userId);
       return;
     }
-    const remainingSeconds = Math.max(0.001, (displayDeadlineMs - Date.now()) / 1000);
-    this.startTurnTimer(userId, seat, remainingSeconds);
+    // Keep the ORIGINAL enforcement instant (display deadline + 2s grace).
+    // Before the display deadline that is the remaining time plus the full
+    // grace. Inside the grace window only the grace still owed is given back
+    // (2026-10-05): re-arming with a fresh two-second grace let a refused
+    // action sent every two seconds hold the turn open indefinitely.
+    const displayRemainingMs = displayDeadlineMs - Date.now();
+    if (displayRemainingMs > 0) {
+      this.startTurnTimer(userId, seat, Math.max(0.001, displayRemainingMs / 1000));
+      return;
+    }
+    // The published display deadline is the one already passed: keep it, so
+    // a second refusal measures its grace from the same instant.
+    const publishedStart = this.playerTurnStartTime;
+    const publishedDuration = this.playerTurnDuration;
+    this.startTurnTimer(userId, seat, 0.001, 'primary', Math.max(0, 2000 + displayRemainingMs));
+    if (publishedStart + publishedDuration * 1000 === displayDeadlineMs) {
+      this.playerTurnStartTime = publishedStart;
+      this.playerTurnDuration = publishedDuration;
+    }
   }
 
   /** Transfer the current decision to the unspent, server-owned outage deadline. */
@@ -3795,6 +3820,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire('phase11_selection_withdrawn_before_acceptance');
             }
           }
+          // P12.3: the same acceptance law for a selected Short Deck,
+          // Pineapple, FLH or FLO8 candidate, at its own pack's gate. Only
+          // usable authority for that pack NOW lets it act; otherwise the
+          // shadow baseline is executed.
+          if (remainingLedger?.applied) {
+            const verdict = isRemainingPolicyVariant(remainingLedger.variant)
+              ? liveHorsePhase12Authorities[remainingLedger.variant].check(
+                  remainingLedger.authority
+                )
+              : 'mismatched';
+            remainingLedger.authorityVerdict = verdict;
+            noteFire(`phase12_authority_verdict_${verdict}`);
+            if (verdict === 'usable') {
+              recordHorsePhase12Verdict(decision.executionWitness, verdict);
+            } else {
+              withdrawHorsePhase12Selection(decision.executionWitness, decisionSnapshot, verdict);
+              remainingLedger.applied = false;
+              remainingLedger.selection = 'withdrawn_before_acceptance';
+              remainingLedger.finalAction = remainingLedger.baselineAction;
+              remainingLedger.finalAmount = remainingLedger.baselineAmount;
+              decision = {
+                ...decision,
+                action: remainingLedger.baselineAction,
+                amount: remainingLedger.baselineAmount ?? undefined,
+              };
+              noteFire('phase12_selection_withdrawn_before_acceptance');
+            }
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
@@ -4158,6 +4211,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               noteFire(
                 `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
               );
+              if (remainingLedger.selection === 'selected') {
+                if (remainingLedger.executionStatus === 'intended') {
+                  remainingLedger.selection = 'controller_accepted';
+                  noteFire('phase12_selection_controller_accepted');
+                } else if (
+                  (remainingLedger.executionStatus === 'fallback' ||
+                    remainingLedger.executionStatus === 'coerced') &&
+                  isRemainingPolicyVariant(remainingLedger.variant)
+                ) {
+                  // The controller refused or rewrote an authorised candidate:
+                  // an illegal-action disable of that pack, local to this
+                  // process (Phase 8 law).
+                  liveHorsePhase12Authorities[remainingLedger.variant].withdraw(
+                    `controller_${remainingLedger.executionStatus}_candidate`
+                  );
+                  noteFire('phase12_authority_controller_withdrawn');
+                }
+              }
             }
             if (jointLedger) {
               jointLedger.executedAction = executedAction;

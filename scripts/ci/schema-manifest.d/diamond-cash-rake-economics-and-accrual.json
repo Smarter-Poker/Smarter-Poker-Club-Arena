@@ -1,0 +1,14 @@
+{
+  "_owner": "agent/diamond-cash-rake-path. Migration 20261005151712_diamond_cash_rake_economics_and_accrual: the Diamond cash-game rake path - ca_diamond_economics (the settings table every Diamond economic number lives in, shared with the A-lane) and its refusing reader, the per-hand rake accrual inside the arena float, the sweep that crosses it to the house once per sweep, the settler's recompute and conservation rule, and the fence that keeps a Diamond rake out of every chip rake table. Answers B4 to B13 of docs/DIAMOND-DESTINATIONS-DESIGN-2026-09-21.md.",
+  "tables": ["ca_diamond_economics", "ca_diamond_rake_accrual"],
+  "functions": [
+    "fn_ca_diamond_economic",
+    "fn_ca_diamond_economic_text",
+    "fn_ca_diamond_economic_names",
+    "fn_ca_diamond_economic_accounts",
+    "fn_ca_diamond_economics_guard",
+    "fn_ca_diamond_rake_accrual_guard",
+    "fn_ca_diamond_sweep_cash_rake",
+    "fn_ca_reject_diamond_chip_rake_row"
+  ]
+}

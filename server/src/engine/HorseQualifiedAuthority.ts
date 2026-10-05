@@ -56,10 +56,12 @@ export interface HorseQualifiedAuthoritySelection {
  * Phase 8 record never carries (its identity and key are unchanged). Phase 11
  * (P11.3) admits it per pack through `HorsePhase11Authority.ts`, adding the
  * P11.2 contract digest, the pack variant and the natural completion evidence
- * it was admitted on. */
+ * it was admitted on. Phase 12 (P12.3) admits it per pack through
+ * `HorsePhase12Authority.ts` with the same three additions (the P12.2
+ * contract digest, the pack variant, its natural completion evidence). */
 export interface HorseQualifiedAuthority {
   readonly schema: 'horse-qualified-authority-v1';
-  readonly phase: 'phase8' | 'phase10' | 'phase11';
+  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12';
   readonly sourceSha: string;
   readonly continuationVersion: string;
   readonly policyDigest: string;
@@ -70,11 +72,12 @@ export interface HorseQualifiedAuthority {
   readonly approvalGeneration: number;
   readonly issuedAt: string;
   readonly expiresAt: string | null;
-  /** Phase 10 and Phase 11: the strength contract digest the qualification binds. */
+  /** Phases 10, 11 and 12: the strength contract digest the qualification binds. */
   readonly contractDigest?: string;
-  /** Phase 11 only: the pack variant (plo5, plo6 or plo8). */
+  /** Phases 11 and 12: the pack variant (plo5, plo6, plo8; short_deck,
+   * pineapple, flh, flo8). */
   readonly variant?: string;
-  /** Phase 11 only: the committed natural completion evidence admitted with it. */
+  /** Phases 11 and 12: the committed natural completion evidence admitted with it. */
   readonly completionPath?: string;
   readonly completionSha256?: string;
   readonly authorityKey: string;
@@ -107,7 +110,8 @@ export type HorseAuthorityRefusal =
   | 'policy_digest_mismatch'
   | 'source_mismatch'
   // Phase 11 (P11.3) natural completion-share refusals (P11.2
-  // `liveConditions.admissionAlsoRequires`), named by what failed.
+  // `liveConditions.admissionAlsoRequires`), named by what failed. Phase 12
+  // (P12.3) reuses the same names for its own completion record.
   | 'completion_evidence_missing'
   | 'completion_hash_mismatch'
   | 'completion_evidence_mismatch'
@@ -144,7 +148,7 @@ export interface HorseAuthorityReceipt {
   readonly state: HorseAuthorityState;
   readonly reason: string | null;
   /** The running code's continuation (Phase 8) or pack version (Phase 10,
-   * and the pack's own version for each Phase 11 holder), always bound even
+   * and the pack's own version for each Phase 11 and Phase 12 holder), always bound even
    * without authority. */
   readonly continuationVersion: string;
   readonly approvalGeneration: number | null;
@@ -348,7 +352,7 @@ export class HorseQualifiedAuthorityHolder {
   readonly epoch: string;
   /** The version the running code admits: Phase 8 continuation by default;
    * the Phase 10 holders pass the running PLO4 pack version, and each Phase 11
-   * holder its own pack version. */
+   * and Phase 12 holder its own pack version. */
   readonly runningVersion: string;
   private generation = 0;
   private state: HorseAuthorityState = 'unselected';
@@ -508,7 +512,8 @@ export { receiptIsWellFormed as horseAuthorityReceiptIsWellFormed };
  * Phase 10 reuses this class with its own admission and running pack version
  * (`liveHorsePhase10Authority` in `HorsePhase10Authority.ts`), and Phase 11
  * with one instance per pack (`liveHorsePhase11Authorities` in
- * `HorsePhase11Authority.ts`).
+ * `HorsePhase11Authority.ts`), as does Phase 12 (`liveHorsePhase12Authorities`
+ * in `HorsePhase12Authority.ts`).
  */
 export class HorsePhase8AuthorityGate {
   private readonly main: HorseQualifiedAuthorityHolder;

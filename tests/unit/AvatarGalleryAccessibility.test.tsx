@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   changed: vi.fn(),
   setUserAvatar: vi.fn(),
+  setCosmetics: vi.fn(),
+  getCosmeticCatalog: vi.fn(),
+  getCosmetics: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -35,19 +38,28 @@ vi.mock('../../src/services/AvatarService', () => ({
           thumbUrl: 'https://example.test/shark-thumb.png',
           category: 'free',
         },
+        {
+          id: 'vip-animal-001',
+          name: 'Wolf Enforcer',
+          imageUrl: 'https://example.test/wolf.png',
+          thumbUrl: 'https://example.test/wolf-thumb.png',
+          category: 'vip',
+          isOwned: false,
+        },
       ],
       presetsFailed: false,
       customFailed: false,
     }),
-    getCosmeticCatalog: vi.fn().mockResolvedValue({ cosmetics: [], ok: true }),
-    getCosmetics: vi.fn().mockResolvedValue({ frame: null, aura: null, ok: true }),
+    getCosmeticCatalog: mocks.getCosmeticCatalog,
+    getCosmetics: mocks.getCosmetics,
     setUserAvatar: mocks.setUserAvatar,
-    setCosmetics: vi.fn().mockResolvedValue({ ok: true }),
+    setCosmetics: mocks.setCosmetics,
     openAvatarSelector: vi.fn(),
   },
 }));
 
 import { AvatarGallery } from '../../src/components/customization/AvatarGallery';
+import { ALL_COSMETICS } from '../../src/cosmetics/avatarCosmetics';
 
 function renderGallery() {
   return render(
@@ -67,6 +79,15 @@ describe('Avatar Gallery mobile interaction contract', () => {
     mocks.changed.mockReset();
     mocks.setUserAvatar.mockReset();
     mocks.setUserAvatar.mockResolvedValue(true);
+    mocks.setCosmetics.mockReset();
+    mocks.setCosmetics.mockResolvedValue({ ok: true });
+    mocks.getCosmeticCatalog.mockReset();
+    mocks.getCosmeticCatalog.mockResolvedValue({
+      cosmetics: ALL_COSMETICS.map((cosmetic) => ({ ...cosmetic, isOwned: true })),
+      ok: true,
+    });
+    mocks.getCosmetics.mockReset();
+    mocks.getCosmetics.mockResolvedValue({ frame: null, aura: null, ok: true });
     mocks.toast.success.mockReset();
     mocks.toast.error.mockReset();
     document.body.style.overflow = '';
@@ -108,5 +129,73 @@ describe('Avatar Gallery mobile interaction contract', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mocks.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('describes a locked premium avatar through every real entitlement path', async () => {
+    renderGallery();
+    fireEvent.click(await screen.findByRole('tab', { name: /VIP/ }));
+
+    const lockedWolf = screen.getByRole('button', {
+      name: 'Wolf Enforcer, Premium; Active VIP, Club-Shop, Or Reward Unlock Required',
+    });
+    expect(lockedWolf).toHaveAttribute(
+      'title',
+      'Wolf Enforcer (Active VIP, Club-Shop, Or Reward Unlock Required)'
+    );
+    expect(screen.getByText('Premium')).toBeVisible();
+
+    fireEvent.click(lockedWolf);
+    expect(
+      screen.getByText(
+        'This Premium Avatar Requires Active VIP, A Club-Shop Purchase, Or A Reward Unlock.'
+      )
+    ).toBeVisible();
+    expect(mocks.setUserAvatar).not.toHaveBeenCalled();
+  });
+
+  it('offers ten frame designs, ten aura designs, and a None tile for each', async () => {
+    renderGallery();
+    const styleTab = await screen.findByRole('tab', { name: 'Style (20)' });
+    fireEvent.click(styleTab);
+
+    expect(screen.getByRole('heading', { name: 'Frames 10 Designs + None' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Auras 10 Designs + None' })).toBeVisible();
+    expect(screen.getAllByRole('button', { name: 'None' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /(?:Frame|Aura), Owned$/ })).toHaveLength(20);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Obsidian Frame, Owned' }));
+    await waitFor(() =>
+      expect(mocks.setCosmetics).toHaveBeenCalledWith('user-1', 'frame-obsidian', null)
+    );
+  });
+
+  it('describes locked premium styles through VIP, shop, or reward ownership', async () => {
+    mocks.getCosmeticCatalog.mockResolvedValue({
+      cosmetics: ALL_COSMETICS.map((cosmetic) => ({
+        ...cosmetic,
+        isOwned: cosmetic.tier === 'free',
+      })),
+      ok: true,
+    });
+
+    renderGallery();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Style (20)' }));
+
+    const lockedGold = screen.getByRole('button', {
+      name: 'Gold Frame, Premium; Active VIP, Club-Shop, Or Reward Unlock Required',
+    });
+    expect(lockedGold).toHaveAttribute(
+      'title',
+      'Gold (Active VIP, Club-Shop, Or Reward Unlock Required)'
+    );
+    expect(screen.getAllByText('Premium')).toHaveLength(14);
+
+    fireEvent.click(lockedGold);
+    expect(
+      screen.getByText(
+        'Premium Frames And Auras Require Active VIP, A Club-Shop Purchase, Or A Separate Reward Unlock.'
+      )
+    ).toBeVisible();
+    expect(mocks.setCosmetics).not.toHaveBeenCalled();
   });
 });

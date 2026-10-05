@@ -1269,7 +1269,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <button
               type="button"
               className={styles.quickAction}
-              onClick={() => handleNavigate(`/invite/${clubId}`)}
+              onClick={() => handleNavigate(`/clubs/${clubId}/settings`)}
             >
               Invite Players
             </button>

@@ -46,12 +46,22 @@ const USAGE =
   'Usage: tsx src/scripts/omahaVariantStrengthEvaluate.ts --variant=plo5|plo6|plo8 --output=NEW_DIRECTORY --profile=ID --seed=N --shard=K [--contract | --pairs=N]';
 const serverRoot = fileURLToPath(new URL('../../', import.meta.url));
 
+/** Git, read from this checkout whatever GIT_* variables the caller set: a git
+ * hook (pre-push) exports GIT_DIR, which would make the working directory the
+ * work tree and turn the source check into a diff of every file. */
+const gitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+);
+const git = (args: string[]) =>
+  execFileSync('git', args, {
+    encoding: 'utf8',
+    cwd: serverRoot,
+    env: gitEnv,
+    maxBuffer: 256 * 1024 * 1024,
+  });
+
 async function fingerprint() {
-  const paths = execFileSync(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '-z', 'src'],
-    { encoding: 'utf8', cwd: serverRoot }
-  )
+  const paths = git(['ls-files', '--cached', '--others', '--exclude-standard', '-z', 'src'])
     .split('\0')
     .filter(Boolean)
     .sort();
@@ -90,9 +100,9 @@ async function main(): Promise<number> {
   if (contract && args.has('pairs')) throw new Error('A contract shard plays the contract pairs');
   const pairs = args.has('pairs') ? Number(args.get('pairs')) : undefined;
   const pack = omahaVariantStrengthPack(variant);
-  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim();
-  const diff = execFileSync('git', ['diff', 'HEAD'], { encoding: 'utf8' });
+  const head = git(['rev-parse', 'HEAD']).trim();
+  const dirty = git(['status', '--porcelain']).trim();
+  const diff = git(['diff', 'HEAD']);
   if (contract && dirty) throw new Error('Contract evidence requires a clean committed checkout');
   const source = await fingerprint();
   const output = resolve(args.get('output')!);
@@ -141,7 +151,7 @@ async function main(): Promise<number> {
     );
     const sourceUnchanged =
       JSON.stringify(source) === JSON.stringify(await fingerprint()) &&
-      head === execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+      head === git(['rev-parse', 'HEAD']).trim();
     await write(`${key}.json`, { ...result, sourceUnchanged, cancelled });
     const reasons = omahaVariantStrengthShardReasons(variant, result);
     console.log(

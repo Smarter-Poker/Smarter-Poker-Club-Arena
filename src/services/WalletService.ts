@@ -57,13 +57,6 @@ export interface WalletBalance {
   lastUpdated: string;
 }
 
-export interface TransferRequest {
-  fromWallet: WalletType;
-  toWallet: WalletType;
-  amount: number;
-  note?: string;
-}
-
 export interface TransactionRecord {
   id: string;
   userId: string;
@@ -366,61 +359,6 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Transfer funds between wallets (same user)
-   */
-  async internalTransfer(userId: string, request: TransferRequest): Promise<boolean> {
-    if (!Number.isFinite(request.amount) || request.amount <= 0)
-      throw new Error('Transfer amount must be positive');
-    if (request.fromWallet === request.toWallet) throw new Error('Cannot transfer to same wallet');
-
-    const desc = request.note || `Transfer ${request.fromWallet} → ${request.toWallet}`;
-    // Atomic wallet-TYPE transfer for a single user via SECURITY DEFINER RPC.
-    // fn_wallet_type_transfer moves chips between wallet types (BUSINESS/PLAYER/PROMO)
-    // in ONE transaction, honoring the real from/to wallets — this replaces the old
-    // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
-    // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
-    // 2026-08-27: retryAsync REMOVED from this call. fn_wallet_type_transfer
-    // takes no idempotency key, so an automatic retry after a network-layer
-    // REJECT (a thrown fetch, not a resolved { error }) could re-run a
-    // transfer whose first attempt had committed - the double-move shape. The
-    // wallet_user_transfer call below argues 42501 resolves rather than
-    // throws; that argument never covered thrown rejects and was never made
-    // for this call site at all. One attempt: a failure surfaces, and the
-    // user retries deliberately.
-    const { data: transferRes, error } = await supabase.rpc('fn_wallet_type_transfer', {
-      p_user_id: userId,
-      p_from_wallet: request.fromWallet,
-      p_to_wallet: request.toWallet,
-      p_amount: request.amount,
-      p_note: desc,
-    });
-
-    if (error) throw error;
-    if (transferRes?.success !== true) {
-      throw new Error(transferRes?.error || 'Insufficient balance for transfer');
-    }
-
-    // Both history entries are part of the database transaction. A browser
-    // insert here would duplicate them and could fail after money committed.
-    if (
-      transferRes.from !== request.fromWallet ||
-      transferRes.to !== request.toWallet ||
-      transferRes.amount !== request.amount ||
-      !Number.isFinite(transferRes.from_balance) ||
-      !Number.isFinite(transferRes.to_balance) ||
-      transferRes.from_balance < 0 ||
-      transferRes.to_balance < 0
-    ) {
-      throw new Error('Transfer receipt was not confirmed for the requested wallets and amount');
-    }
-
-    // Emit bus event so UI (header balances, cashier) updates immediately
-    masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId });
-
-    return true;
-  },
-
-  /**
    * Agent self-transfer: Business → Player (to play at tables)
    */
   async agentSelfTransfer(clubId: string, amount: number): Promise<boolean> {
@@ -452,66 +390,6 @@ export const WalletService = {
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_self_stake', userId: auth.user.id });
       }
     );
-  },
-
-  /**
-   * Legacy user-to-user transfer. This RPC has no operation key, so a lost
-   * response must not trigger another submission. Only a positive server
-   * receipt can authorize success events and the application audit entries.
-   */
-  async transferToUser(
-    fromUserId: string,
-    toUserId: string,
-    amount: number,
-    fromWallet: WalletType = 'PLAYER',
-    toWallet: WalletType = 'PLAYER'
-  ): Promise<boolean> {
-    if (!Number.isFinite(amount) || amount <= 0)
-      throw new Error('Transfer amount must be positive');
-
-    const { data: transferData, error } = await supabase.rpc('wallet_user_transfer', {
-      p_from_user_id: fromUserId,
-      p_to_user_id: toUserId,
-      p_amount: amount,
-      p_from_wallet: fromWallet,
-      p_to_wallet: toWallet,
-    });
-
-    if (error) throw error;
-    const parsed = transferData as { success?: boolean; error?: string } | null;
-    if (parsed?.success !== true) {
-      throw new Error(parsed?.error || 'Transfer was not confirmed by the server');
-    }
-
-    // Log both sides of the user-to-user transfer
-    await this.logTransaction(
-      fromUserId,
-      fromWallet,
-      amount,
-      'debit',
-      'transfer',
-      `Sent ${amount} chips to user`,
-      undefined,
-      undefined,
-      toUserId
-    );
-    await this.logTransaction(
-      toUserId,
-      toWallet,
-      amount,
-      'credit',
-      'transfer',
-      `Received ${amount} chips from user`,
-      undefined,
-      undefined,
-      fromUserId
-    );
-
-    // Emit bus events for both users so their UIs update immediately
-    masterBus.emit('BALANCE_UPDATED', { source: 'transfer_sent', userId: fromUserId });
-    masterBus.emit('BALANCE_UPDATED', { source: 'transfer_received', userId: toUserId });
-
-    return true;
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

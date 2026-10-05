@@ -513,12 +513,17 @@ describe('the route and the client agree: the diamond RPCs', () => {
 /**
  * Every bucket `fn_diamond_kind_bucket` can put a ledger row in, read from
  * the migration production runs and confirmed against the live function on
- * 2026-09-29. Ten sinks, eleven sources, `transfers` on both sides.
+ * 2026-09-29. Eleven sinks, eleven sources, `transfers` on both sides.
+ *
+ * `arena_rake` joined on 2026-10-05 with the Diamond cash rake (migration
+ * 20261005151712): a rake spend used to bucket as `other_spent`, labelled
+ * "Other", which is what the diamonds-only law forbids a new arena kind.
  */
 const BUCKETS = [
   'adjustments',
   'arena',
   'arena_cash_outs',
+  'arena_rake',
   'bonuses',
   'club_chips',
   'games',

@@ -1901,6 +1901,20 @@ export interface HorseDecideOpts {
    *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
    *  (default: enabled). Hold'em is unaffected either way. */
   v46Charts?: boolean;
+  /** V46 short deck, DEFAULT OFF since 2026-10-05. The short-deck half of the
+   *  chart lost: shortdeck_v46_classes measured -0.51 +/- 0.15 bb/100 over
+   *  960,000 duplicate-deal hands (80 seeds, equity governor off), and the
+   *  nightly league's 30 runs agreed in sign (-0.24 +/- 0.24). The Omaha half
+   *  is unaffected and stays on under v46Charts. Set true to measure the
+   *  short-deck chart (league arm A of shortdeck_v46_classes). */
+  v46ShortDeck?: boolean;
+  /** V51 (2026-10-05): a committed river one-pair hand calls instead of
+   *  jamming. On the river a jam has no card left to deny and no worse hand
+   *  that pays it, so with one pair (or two pair where one pair is the
+   *  board's) the committed branch flats. Audit hand 1039665 re-jammed QJ on
+   *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
+   *  (default: enabled; league matchup v51_river_flat). */
+  v51RiverFlat?: boolean;
   /** Phase 7 Round 1: final action-specific tournament utility arbiter.
    *  Complete schema-v1 tournament decisions evaluate every legal action
    *  family after all legacy strategy layers; no global style multiplier can
@@ -1915,6 +1929,9 @@ export interface HorseDecideOpts {
   /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
   phase11Omaha?: OmahaVariantMode;
   phase11EvidenceMode?: boolean;
+  /** Phase 12 variant policies are live shadow; live candidate mode is set only
+   *  by the worker from its own P12.3 authority for the decision's pack. The
+   *  caller may only turn them off; the evidence clock is offline only. */
   phase12Remaining?: RemainingVariantMode;
   phase12EvidenceMode?: boolean;
   phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
@@ -2730,7 +2747,8 @@ export class HorseLogic {
               decision,
               phase10EquityEvidence,
               opts.phase10Plo4 ?? 'shadow',
-              opts.phase10EvidenceMode && !tele ? () => 0 : undefined
+              opts.phase10EvidenceMode && !tele ? () => 0 : undefined,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
       if (phase10) {
@@ -2755,7 +2773,9 @@ export class HorseLogic {
               null,
               opts.phase11Omaha ?? 'shadow',
               opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
-              phase11DecisionEquityCeiling ?? 1
+              phase11DecisionEquityCeiling ?? 1,
+              true,
+              (d) => this.legalize(d, player, gs, vi)
             )
           : null;
       if (phase11) {
@@ -2784,7 +2804,22 @@ export class HorseLogic {
               phase12DecisionEquityCeiling ?? 1
             )
           : null;
-      if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+      if (phase12) {
+        const legal = this.legalize(phase12.decision, player, gs, vi);
+        // P12.2, the P10.3 law (as P11.3 applies it to Phase 11): an applied
+        // candidate the legalizer would rewrite is illegal as proposed. It
+        // never reaches the table: the reference is retained. P12.3: the same
+        // guard holds for a live candidate the worker admits from its own
+        // pack authority; a caller can never request candidate mode.
+        if (
+          phase12.receipt.applied &&
+          (legal.action !== phase12.decision.action ||
+            (legal.amount ?? null) !== (phase12.decision.amount ?? null))
+        ) {
+          phase12.receipt.applied = false;
+          phase12.receipt.selectionRefusal = 'illegal_candidate';
+        } else decision = legal;
+      }
       return { decision, phase10, phase11, phase12 };
     });
     decision = variants.decision;
@@ -3122,6 +3157,14 @@ export class HorseLogic {
         }
         phase12.receipt.finalAction = decision.action;
         phase12.receipt.finalAmount = decision.amount ?? null;
+        // P12.3: `selected` only when the applied candidate is the action
+        // leaving this guard; otherwise the pack did not own the decision.
+        phase12.receipt.selection =
+          phase12.receipt.applied &&
+          (decision.action !== phase12.receipt.proposalAction ||
+            (decision.amount ?? null) !== phase12.receipt.proposalAmount)
+            ? 'shadow_change'
+            : plo4SelectionOf(phase12.receipt);
         decision = { ...decision, remainingVariantPolicy: phase12.receipt };
         if (tele) {
           noteFire('phase12_seen');
@@ -3133,6 +3176,8 @@ export class HorseLogic {
           if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
           noteFire(`phase12_reason_${phase12.receipt.reason}`);
           if (phase12.receipt.eligible) noteFire('phase12_eligible');
+          if (phase12.receipt.inputs)
+            noteFire(`phase12_range_${phase12.receipt.inputs.range.status}`);
           if (phase12.receipt.fired) {
             noteFire('phase12_fired');
             noteFire(`phase12_street_${gs.stage}`);
@@ -3140,6 +3185,7 @@ export class HorseLogic {
           if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
           if (phase12.receipt.applied) noteFire('phase12_applied');
           else noteFire('phase12_baseline_retained');
+          noteFire(`phase12_selection_${phase12.receipt.selection}`);
           noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
           if (phase12.receipt.utilityUnavailableReason)
             noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
@@ -4129,7 +4175,11 @@ export class HorseLogic {
       // read, so this is byte-identical outside Omaha and short deck.
       ...(() => {
         if ((opts.v46Charts ?? true) === false) return {};
-        const read46 = handClassRead(player.cards, vi.isOmaha, vi.isShortDeck);
+        const read46 = handClassRead(
+          player.cards,
+          vi.isOmaha,
+          vi.isShortDeck && opts.v46ShortDeck === true
+        );
         if (read46.cls === 'other' || read46.cls === 'sd_other') return {};
         if (telemetryOn(opts)) {
           noteFire('v46_class_read');
@@ -6930,9 +6980,27 @@ export class HorseLogic {
           (boatDominated15 && raisedAfterAggr) ||
           (useV21 && dominated21) ||
           planCallOnly23;
-        return toCall >= stack || preferFlat15
-          ? { action: 'call', amount: toCall, thinkTime: 0 }
-          : { action: 'all_in', thinkTime: 0 };
+        // ═══ V51 RIVER FLAT (2026-10-05) ═══ the jam above is a turn-and-
+        // earlier line: it denies equity and can fold out a draw. On the
+        // river there is nothing to deny, and the only hands that call a jam
+        // over a raise (or fold to one after betting) are the ones one pair
+        // already loses to or already beats. The 2026-10-04 audit's
+        // one_pair_river_stackoff hands were this branch: QJ on 6-5-Q-9-3
+        // bet, was raised to 15,656 and re-jammed 27,885. Two pair counts as
+        // one pair when one of its pairs is the board's.
+        const riverOnePair51 =
+          (opts.v51RiverFlat ?? true) !== false &&
+          isRiver &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard));
+        if (toCall >= stack || preferFlat15) {
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        if (riverOnePair51) {
+          if (tele15) noteFire('v51_river_flat');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        }
+        return { action: 'all_in', thinkTime: 0 };
       }
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.

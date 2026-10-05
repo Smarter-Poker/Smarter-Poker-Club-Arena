@@ -96,6 +96,17 @@ import {
   type OmahaPolicyVariant,
 } from '../omaha/OmahaVariantPolicyPack.js';
 import type { OmahaVariantMode } from '../omaha/OmahaVariantLivePolicy.js';
+import {
+  admitHorsePhase12ReleaseAuthority,
+  horsePhase12AdmittedMode,
+  HORSE_PHASE12_VARIANTS,
+} from '../HorsePhase12Authority.js';
+import {
+  isRemainingPolicyVariant,
+  REMAINING_VARIANT_PACKS,
+  type RemainingPolicyVariant,
+} from '../remainingVariants/RemainingVariantPolicyPack.js';
+import type { RemainingVariantMode } from '../remainingVariants/RemainingVariantLivePolicy.js';
 import { gtoChartCount, gtoChartStoreIdentity } from '../GtoCharts.js';
 import { gtoPostflopCount, gtoPostflopStoreIdentity } from '../GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
@@ -192,6 +203,11 @@ export interface HorseDecisionWorkerDependencies {
    * Absent in an injected test runtime means no selection: every pack stays shadow.
    */
   admitPhase11Authority?(variant: OmahaPolicyVariant): HorseAuthorityAdmission;
+  /**
+   * P12.3: admit one Phase 12 pack's committed protected-release selection.
+   * Absent in an injected test runtime means no selection: every pack stays shadow.
+   */
+  admitPhase12Authority?(variant: RemainingPolicyVariant): HorseAuthorityAdmission;
 }
 
 let ownedServicesStarted = false;
@@ -298,6 +314,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
   admitPhase10Authority: () => admitHorsePhase10ReleaseAuthority(),
   admitPhase11Authority: (variant) => admitHorsePhase11ReleaseAuthority(variant),
+  admitPhase12Authority: (variant) => admitHorsePhase12ReleaseAuthority(variant),
   decide: HorseLogic.decide.bind(HorseLogic),
   decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
   captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
@@ -481,6 +498,28 @@ export class HorseDecisionWorkerRuntime {
     plo8: new HorseQualifiedAuthorityHolder(this.phase11Epoch, OMAHA_VARIANT_PACKS.plo8.version),
   });
   private phase11AuthorityAdmitted = false;
+  /** P12.3: worker-owned Phase 12 authority, one holder per pack (the same
+   * holder class and laws), each bound to its own pack version and sharing
+   * this worker's epoch. Never obtained from a request. */
+  private readonly phase12Epoch = randomUUID();
+  private readonly phase12Authority: Readonly<
+    Record<RemainingPolicyVariant, HorseQualifiedAuthorityHolder>
+  > = Object.freeze({
+    short_deck: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.short_deck.version
+    ),
+    pineapple: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.pineapple.version
+    ),
+    flh: new HorseQualifiedAuthorityHolder(this.phase12Epoch, REMAINING_VARIANT_PACKS.flh.version),
+    flo8: new HorseQualifiedAuthorityHolder(
+      this.phase12Epoch,
+      REMAINING_VARIANT_PACKS.flo8.version
+    ),
+  });
+  private phase12AuthorityAdmitted = false;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -494,6 +533,7 @@ export class HorseDecisionWorkerRuntime {
     this.admitPhase8Authority();
     this.admitPhase10Authority();
     this.admitPhase11Authority();
+    this.admitPhase12Authority();
     this.readyPromise = this.deps.startServices();
     void this.readyPromise
       .then((readiness) => this.send({ type: 'READY', ...readiness }))
@@ -1637,6 +1677,76 @@ export class HorseDecisionWorkerRuntime {
     });
   }
 
+  private admitPhase12Authority(): void {
+    if (this.phase12AuthorityAdmitted) return;
+    this.phase12AuthorityAdmitted = true;
+    for (const variant of HORSE_PHASE12_VARIANTS) {
+      let admission: HorseAuthorityAdmission;
+      try {
+        admission = this.deps.admitPhase12Authority?.(variant) ?? {
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        };
+      } catch {
+        admission = { status: 'refused', reason: 'unreadable_evidence', transient: true };
+      }
+      const holder = this.phase12Authority[variant];
+      holder.apply(admission);
+      noteFire(`phase12_authority_worker_${variant}_${holder.currentState()}`);
+    }
+  }
+
+  /**
+   * P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 admission, the Phase 8
+   * law as P11.3 applies it: candidate mode comes from this worker's usable
+   * authority for the decision's own pack when the request RUNS, never from
+   * the caller, and only for a cash decision; a tournament decision stays
+   * shadow so Phase 7 keeps its objective. The caller may only turn the packs
+   * off. A decision of any other variant carries no Phase 12 receipt and binds
+   * none.
+   */
+  private phase12Admission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    mode: RemainingVariantMode;
+    receipt: HorseAuthorityReceipt | null;
+  } {
+    this.admitPhase12Authority();
+    const variant = request.gameState.gameVariant;
+    const holder = isRemainingPolicyVariant(variant) ? this.phase12Authority[variant] : null;
+    const receipt = holder ? holder.receipt() : null;
+    return {
+      mode: horsePhase12AdmittedMode({
+        callerMode: request.opts?.phase12Remaining,
+        gameMode: request.gameState.gameMode,
+        variant,
+        packVariant: isRemainingPolicyVariant(variant) ? variant : null,
+        verdict: holder && receipt ? holder.verdict(receipt, Date.now()) : 'missing_receipt',
+      }),
+      receipt,
+    };
+  }
+
+  /** Bind the Phase 12 admission receipt to the returned pack receipt. */
+  private bindPhase12Authority(
+    decision: HorseDecision,
+    receipt: HorseAuthorityReceipt | null
+  ): void {
+    if (decision.remainingVariantPolicy && receipt)
+      decision.remainingVariantPolicy.authority = receipt;
+  }
+
+  /** Every Phase 12 pack's current receipt, for the main scheduler's gates. */
+  private phase12AuthorityReceipts(): Readonly<
+    Record<RemainingPolicyVariant, HorseAuthorityReceipt>
+  > {
+    return Object.freeze({
+      short_deck: this.phase12Authority.short_deck.receipt(),
+      pineapple: this.phase12Authority.pineapple.receipt(),
+      flh: this.phase12Authority.flh.receipt(),
+      flo8: this.phase12Authority.flo8.receipt(),
+    });
+  }
+
   /** Bind the admission receipt to the returned Phase 8 ledger. */
   private bindPhase8Authority(decision: HorseDecision, receipt: HorseAuthorityReceipt): void {
     if (decision.tournamentPostflop) decision.tournamentPostflop.authority = receipt;
@@ -1665,6 +1775,7 @@ export class HorseDecisionWorkerRuntime {
     const phase8 = this.phase8Admission(request);
     const phase10 = this.phase10Admission(request);
     const phase11 = this.phase11Admission(request);
+    const phase12 = this.phase12Admission(request);
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
     let rngAfter: number;
     let governorScale: number;
@@ -1679,6 +1790,7 @@ export class HorseDecisionWorkerRuntime {
             phase8Postflop: phase8.mode,
             phase10Plo4: phase10.mode,
             phase11Omaha: phase11.mode,
+            phase12Remaining: phase12.mode,
             decisionTimeMs: request.decisionTimeMs,
             telemetry: true,
             observeMind: true,
@@ -1696,6 +1808,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase8Authority(captured.value, phase8.receipt);
     this.bindPhase10Authority(captured.value, phase10.receipt);
     this.bindPhase11Authority(captured.value, phase11.receipt);
+    this.bindPhase12Authority(captured.value, phase12.receipt);
     if (!horseDecisionEffectsAreValid(captured.effects)) {
       throw new Error('Horse decision captured invalid plan effects');
     }
@@ -1796,6 +1909,7 @@ export class HorseDecisionWorkerRuntime {
         phase8Authority: this.phase8Authority.receipt(),
         phase10Authority: this.phase10Authority.receipt(),
         phase11Authority: this.phase11AuthorityReceipts(),
+        phase12Authority: this.phase12AuthorityReceipts(),
         // Retain intent only when the reference wager survived every later
         // policy owner. The client separately binds its hand, horse and street.
         effects,
@@ -1864,6 +1978,7 @@ export class HorseDecisionWorkerRuntime {
     const phase8 = this.phase8Admission(request);
     const phase10 = this.phase10Admission(request);
     const phase11 = this.phase11Admission(request);
+    const phase12 = this.phase12Admission(request);
     // The latest worker stream is canonical. The second look borrows the fast
     // decision's starting point, then restores the canonical stream even if
     // a future HorseLogic version throws outside its own safety net.
@@ -1885,6 +2000,7 @@ export class HorseDecisionWorkerRuntime {
                 phase8Postflop: phase8.mode,
                 phase10Plo4: phase10.mode,
                 phase11Omaha: phase11.mode,
+                phase12Remaining: phase12.mode,
                 decisionTimeMs: request.decisionTimeMs,
                 telemetry: false,
                 deepEquity: request.deepEquity,
@@ -1903,6 +2019,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase8Authority(decision, phase8.receipt);
     this.bindPhase10Authority(decision, phase10.receipt);
     this.bindPhase11Authority(decision, phase11.receipt);
+    this.bindPhase12Authority(decision, phase12.receipt);
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     this.deps.noteDecision(`deep:${request.gameState.gameVariant || 'nlh'}`, computeMs);
     this.deps.noteFeature('v44_second_look');
@@ -1951,6 +2068,7 @@ export class HorseDecisionWorkerRuntime {
       phase8Authority: this.phase8Authority.receipt(),
       phase10Authority: this.phase10Authority.receipt(),
       phase11Authority: this.phase11AuthorityReceipts(),
+      phase12Authority: this.phase12AuthorityReceipts(),
     });
     return decision.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }

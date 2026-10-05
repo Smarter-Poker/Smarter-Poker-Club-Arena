@@ -1910,6 +1910,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-profile-appearance-postgres.py
+      - name: Phase 1 customization ownership and cutover remain atomic
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PHASE1_PG_WORK_ROOT: ${{ runner.temp }}
+        run: python3 scripts/ci/test-phase1-customization-postgres.py
       - name: Private account signals preserve source and owner isolation
         if: matrix.shard == 1
         env:

@@ -141,7 +141,7 @@ test.describe('Reserved Admin - conditional club hamburger doors', () => {
 
   const contextActions = [
     { label: 'Table Management', target: `/clubs/${CLUB_ID}/table-management` },
-    { label: 'Invite Players', target: `/invite/${CLUB_ID}` },
+    { label: 'Invite Players', target: `/clubs/${CLUB_ID}/settings` },
     { label: 'Open Finance & Risk', target: `/clubs/${CLUB_ID}/finance` },
   ];
 
@@ -151,6 +151,14 @@ test.describe('Reserved Admin - conditional club hamburger doors', () => {
       const context = dialog.locator('[aria-label="Context Actions"]');
       await expect(context).toBeVisible();
       await clickAndProve(page, context, action.label, action.target);
+      if (action.label === 'Invite Players') {
+        await expect(page.getByRole('heading', { name: 'Share Club' })).toBeVisible({
+          timeout: 15_000,
+        });
+        const copyInviteLink = page.getByRole('button', { name: 'Copy Invite Link' });
+        await expect(copyInviteLink).toBeVisible({ timeout: 15_000 });
+        await expect(copyInviteLink).toBeEnabled();
+      }
     });
   }
 

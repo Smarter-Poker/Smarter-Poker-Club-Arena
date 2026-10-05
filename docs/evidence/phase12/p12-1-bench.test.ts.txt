@@ -1,0 +1,23 @@
+import { it } from 'vitest';
+import { seedFastRandom } from '../engine/HorseEval.js';
+import { remainingVariantSpot } from '../benchmark/RemainingVariantPolicyEvidence.js';
+import { evaluateRemainingVariantPolicy } from '../engine/remainingVariants/RemainingVariantLivePolicy.js';
+it('bench', () => {
+  const rows: string[] = [];
+  for (const v of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
+    for (const st of ['preflop', 'river'] as const) {
+      const spot = remainingVariantSpot(v, st, 3);
+      const n = st === 'preflop' ? 2000 : 60;
+      const medians: number[] = [];
+      for (let round = 0; round < 7; round++) {
+        seedFastRandom(77 + round);
+        const t0 = performance.now();
+        for (let i = 0; i < n; i++)
+          evaluateRemainingVariantPolicy(spot.hero, spot.state, spot.baseline, null, 'shadow', () => 0);
+        medians.push(((performance.now() - t0) / n) * 1000);
+      }
+      medians.sort((a, b) => a - b);
+      rows.push(`BENCH ${v} ${st} median_us=${medians[3].toFixed(1)} min_us=${medians[0].toFixed(1)} max_us=${medians[6].toFixed(1)}`);
+    }
+  console.log(rows.join('\n'));
+});

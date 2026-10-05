@@ -499,6 +499,26 @@ describe('P12-A: the join cannot be faked on the same real data', () => {
     });
   });
 
+  it('refuses a forced-runout record offered as the proof of a chosen discard', async () => {
+    // A forced runout discard is committed outside the discard round
+    // (PineappleDiscardJoinContrast.test.ts). Restaged that way, the hero's
+    // real accepted discard is no longer authoritative proof for betting.
+    const { hc, live } = pineappleHandToFlop();
+    const snapshot = horseAsker(hc, live)();
+    const r = await throughTheWorker(snapshot, {
+      tamper: (request) => {
+        request.gameState.actionHistory = (request.gameState.actionHistory ?? []).map((a) =>
+          a.seat === HERO_SEAT && a.action === 'discard' ? { ...a, stage: 'flop' } : a
+        );
+      },
+    });
+    expect(r.seen).toEqual([]);
+    expect(r.last).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state pineapple post-discard cards lack authoritative discard proof',
+    });
+  });
+
   it('refuses a substituted dead card the controller never accepted', async () => {
     const { hc, live, heroThree } = pineappleHandToFlop();
     const snapshot = horseAsker(hc, live)();

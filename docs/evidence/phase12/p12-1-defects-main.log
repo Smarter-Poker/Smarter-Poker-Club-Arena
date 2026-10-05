@@ -1,0 +1,15 @@
+# P12.1 evidence: defects-main (see docs/horse-brain-phase12-1-input-binding-2026-10-05.md)
+DEFECT dead button short_deck (dealer 5 empty; engine blinds 6/7): seat 8: canonical_state_unavailable position=null | seat 1: canonical_state_unavailable position=null | seat 2: canonical_state_unavailable position=null | seat 4: canonical_state_unavailable position=null | seat 6: canonical_state_unavailable position=null | seat 7: canonical_state_unavailable position=null
+DEFECT dead small blind short_deck (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry position=big_blind | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=small_blind
+DEFECT dead button flh (dealer 5 empty; engine blinds 6/7): seat 8: canonical_state_unavailable position=null | seat 1: canonical_state_unavailable position=null | seat 2: canonical_state_unavailable position=null | seat 4: canonical_state_unavailable position=null | seat 6: canonical_state_unavailable position=null | seat 7: canonical_state_unavailable position=null
+DEFECT dead small blind flh (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=big_blind | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=small_blind
+DEFECT dead button flo8 (dealer 5 empty; engine blinds 6/7): seat 8: canonical_state_unavailable position=null | seat 1: canonical_state_unavailable position=null | seat 2: canonical_state_unavailable position=null | seat 4: canonical_state_unavailable position=null | seat 6: canonical_state_unavailable position=null | seat 7: canonical_state_unavailable position=null
+DEFECT dead small blind flo8 (button 2 occupied; BB 4 posts alone; engine order 5,1,2,4 = early,cutoff,button,big_blind): seat 5: preflop_entry_declined position=big_blind | seat 1: preflop_entry_declined position=cutoff | seat 2: preflop_entry_declined position=button | seat 4: preflop_entry_declined position=small_blind
+DEFECT census above ceiling short_deck cash 10 dealt: canonical_state_unavailable
+DEFECT census above ceiling pineapple cash 10 dealt: canonical_state_unavailable
+DEFECT census above ceiling flh cash 10 dealt: canonical_state_unavailable
+DEFECT census above ceiling flo8 cash 9 dealt: canonical_state_unavailable
+DEFECT preflop receipt echoes caller evidence short_deck: true
+DEFECT preflop receipt echoes caller evidence pineapple: true
+DEFECT preflop receipt echoes caller evidence flh: true
+DEFECT preflop receipt echoes caller evidence flo8: true

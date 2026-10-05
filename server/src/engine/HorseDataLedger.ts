@@ -563,7 +563,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase12Remaining',
-    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    "separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; live candidate only from the worker's own P12.3 pack authority (cash), never from a caller",
     'Phase12'
   ),
   flag(
@@ -1823,7 +1823,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'phase10_shadow_receipt_binding_dropped',
     'horseDecision/client (P10 audit F8)',
-    'a shadow-only PLO4 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'a shadow-only PLO4 receipt whose binding (P12.1 inputs or the P12-B net-action economics) failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
     'Phase10'
   ),
   receipt(
@@ -1985,6 +1985,32 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase12_range_*',
+    'evaluateRemainingVariantPolicy -> HorseLogic (P12.1 input binding)',
+    'range status of every bound Short Deck/Pineapple/FLH/FLO8 proposal (not_consumed_preflop, unavailable, rejected_malformed, rejected_population, consumed_unattributed, consumed); counts only, never calibration or solver evidence',
+    'Phase12',
+    'phase12_eligible',
+    0.99
+  ),
+  receipt(
+    'phase12_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P12.3)',
+    'none, shadow change (never applied), authority-backed cash selection of the deciding pack, controller acceptance or withdrawal before acceptance; never a tournament objective selection',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_authority_*',
+    'HorsePhase12Authority (HorseQualifiedAuthority, one gate per pack) -> workerRuntime / client / ServerTableEngineTurns (P12.3)',
+    'protected-release Short Deck/Pineapple/FLH/FLO8 authority admission per pack, local withdrawal and acceptance-time verdicts',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_receipt_binding_dropped',
+    'horseDecision/client (P12.1, the P10 audit F8 rule)',
+    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose input binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
+    'Phase12'
+  ),
+  receipt(
     'phase12_street_*',
     'evaluateRemainingVariantPolicy',
     'street coverage for completed policy evaluations',
@@ -2010,12 +2036,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase12_execution_*',
     'ServerTableEngineTurns',
     'authoritative action or retired decision accounting',
-    'Phase12'
-  ),
-  receipt(
-    'phase12_shadow_receipt_binding_dropped',
-    'horseDecision/client (P12.1, the P10 audit F8 rule)',
-    'a shadow-only Short Deck/Pineapple/FLH/FLO8 receipt whose net-action binding failed the strict validator was dropped with its ownership record; the decision kept its actual action and the worker stayed up (an applied receipt still fails closed)',
     'Phase12'
   ),
   receipt(

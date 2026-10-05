@@ -6,4 +6,6 @@
 - `20261004231413_the_diamond_snapshot_reads_the_register_once_per_holder` (#6117): the hourly snapshot reads the register once per holder; eleven consecutive hourly runs since apply succeeded, averaging 5.3 s (p95 was 26 s before).
 - `20261004231057_page_preferences_count_the_row_they_wrote_and_the_dead_arena` (#6118): `update_page_preferences` counts the row it wrote instead of testing FOUND after EXECUTE, and the dead `arena_withdrawals` freeze scope is retired. World Hub's preference callers merge before saving (World Hub #2117, live at `202f005f`).
 
-Not done from this session: the `diamond.smarter.poker` DNS record (it answers Vercel's 404 NOT_FOUND; only a whole-zone replace was available) and archiving the old Diamond Arena repository (settings writes refused).
+`diamond.smarter.poker` needs no deletion: it has no record of its own. The zone answers every unnamed subdomain the same way (a random name resolves to the same Vercel addresses and the same 404 NOT_FOUND), and no project serves it.
+
+Not done from this session: archiving the old Diamond Arena repository (settings writes refused).

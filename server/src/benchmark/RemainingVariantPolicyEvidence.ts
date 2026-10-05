@@ -3,6 +3,7 @@ import type { HorseGameStateV2 } from '../engine/HorseLogic.js';
 import type { RemainingPolicyVariant } from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
 import { calculatePots, calculateContestablePot } from '../engine/PokerEngine.js';
+import { occupiedButtonBlinds } from './OmahaVariantPolicyEvidence.js';
 
 export function remainingCards(value: string): Card[] {
   return value.split(' ').map((c) => ({
@@ -110,6 +111,12 @@ export function remainingVariantSpot(
           },
         ],
   };
+  // The seats HandController posts from behind an occupied button (P12.1:
+  // positions come from the posted blinds, as in the live state builder).
+  state.blindSeats = occupiedButtonBlinds(
+    state.dealerSeat!,
+    players.map((p) => p.seat)
+  );
   if (mode === 'tournament')
     state.tournament = {
       schemaVersion: 1,

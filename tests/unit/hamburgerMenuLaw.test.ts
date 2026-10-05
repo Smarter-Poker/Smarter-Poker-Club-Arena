@@ -31,6 +31,7 @@ const TICKER = read('src/components/tournament/TournamentStartingTicker.tsx');
 const MENU = read('src/components/navigation/HamburgerMenu.tsx');
 const MENU_CSS = read('src/components/navigation/HamburgerMenu.module.css');
 const APP = read('src/App.tsx');
+const CLUB_SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 
 describe('1. the ticker exists on tables and club lobbies, and never over the menu', () => {
   it('route gate covers /table/* and the exact club-lobby route only', () => {
@@ -108,6 +109,14 @@ describe('3. every menu destination is actually connected to a route', () => {
       expect(matchesRoute(item.path), `${item.path} has no route in App.tsx`).toBe(true);
     });
   }
+
+  it('sends controlling members to the working Share Club surface', () => {
+    expect(MENU).toContain('handleNavigate(`/clubs/${clubId}/settings`)');
+    expect(MENU).not.toContain('handleNavigate(`/invite/${clubId}`)');
+    expect(APP).toContain('path="clubs/:clubId/settings"');
+    expect(CLUB_SETTINGS).toContain('<h3>Share Club</h3>');
+    expect(CLUB_SETTINGS).toContain('Copy Invite Link');
+  });
 });
 
 describe('4. Table Studio takes control from the command drawer', () => {

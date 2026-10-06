@@ -1844,43 +1844,6 @@ class HorseOrchestrator {
     return Array.from(this.tables.values());
   }
 
-  /** Stop all tables and release horses */
-  async shutdown(): Promise<void> {
-    console.debug('[Orchestrator] Shutting down...');
-    this.isRunning = false;
-    this.stopAllocationLoop();
-
-    for (const [tableId, table] of this.tables) {
-      table.status = 'stopping';
-
-      // Soft-delete all seats (mark as left)
-      await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('table_id', tableId)
-        .is('left_at', null);
-
-      // Close table
-      await supabase
-        .from('tables')
-        .update({ status: 'closed', current_players: 0 })
-        .eq('id', tableId);
-
-      // Reset ALL horse statuses to available on shutdown (not just 'seated')
-      await supabase
-        .from('profiles')
-        .update({ horse_status: 'available' })
-        .eq('is_horse', true)
-        .neq('horse_status', 'available');
-
-      table.status = 'stopped';
-    }
-
-    console.debug(
-      `[Orchestrator] Shutdown complete. ${this.handCount} hands played, ${this.totalRake.toFixed(2)} rake collected`
-    );
-  }
-
   /**
    * Check if a horse can sit at a table based on multi-table limits
    * MAX_TABLES_PER_HORSE = 4 total (2 cash + 2 tournament max)

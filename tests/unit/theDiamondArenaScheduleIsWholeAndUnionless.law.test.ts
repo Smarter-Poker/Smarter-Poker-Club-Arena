@@ -19,6 +19,13 @@
  *    'diamond_satellite_is_never_settled_on_chip_rails', so a Diamond
  *    satellite could sell a seat it can never deliver.
  *
+ *  - A FREEROLL IS A REFUSAL TODAY. fn_poker_diamond_create_tournament raises
+ *    'diamond_tournament_requires_a_whole_positive_buy_in' below one Diamond,
+ *    and the recorded answer (ca_diamond_economics.freeroll_allowed) admits a
+ *    zero buy-in only together with a guarantee, which is still refused. The
+ *    spawner would instead turn it into a 1-Diamond rebuy/add-on event the
+ *    recorded answers say does not exist. So no row is unpriced.
+ *
  *  - A UNION TAKES THE MONEY DOORS OFFLINE. fn_poker_diamond_tournament only
  *    recognises a Diamond event while both the club's and the tournament's
  *    union_id are NULL, and fn_poker_guard_arena_structure refuses a Diamond
@@ -73,7 +80,6 @@ function migration(): string {
  * file it is pinning proves nothing.
  */
 const BOARD = [
-  { name: 'Diamond Freeroll', type: 'mtt', buyIn: 0, bounty: 0, stack: 5000, times: 4 },
   { name: 'Diamond Daily Turbo 300', type: 'mtt', buyIn: 300, bounty: 0, stack: 12000, times: 1 },
   {
     name: 'Diamond Daily Deep Stack 500',
@@ -130,8 +136,6 @@ describe('the Diamond Arena starter schedule', () => {
 
   describe('every price is a ladder rung that splits into whole Diamonds', () => {
     for (const row of BOARD) {
-      if (row.buyIn === 0) continue;
-
       it(`${row.name}: ${row.buyIn} is a rung the spawner will not reprice`, () => {
         expect(BUY_IN_LADDER as readonly number[]).toContain(row.buyIn);
         // The spawner snaps before it splits. A rung snaps to itself, so the
@@ -190,6 +194,21 @@ describe('the Diamond Arena starter schedule', () => {
     });
   });
 
+  it('schedules no freeroll, because the Diamond door refuses a zero buy-in today', () => {
+    const body = authoredRows(sql)
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('--'))
+      .join('\n');
+    const prices = body.match(/'buyIn',\s*(\d+)/g) ?? [];
+    expect(prices).toHaveLength(BOARD.length);
+    for (const p of prices) expect(Number(p.replace(/\D+/g, ''))).toBeGreaterThanOrEqual(1);
+    expect(body).not.toMatch(/'freeBuy'|Freeroll/);
+    // The reason is named where a reader of the file finds it, and the
+    // post-image refuses an unpriced row by itself.
+    expect(sql).toContain('diamond_tournament_requires_a_whole_positive_buy_in');
+    expect(sql).toMatch(/config->>'buyIn'\)::numeric, 0\) < 1/);
+  });
+
   it('promises no guarantee, because the Diamond door refuses one', () => {
     const promises = authoredRows(sql).match(/'guaranteedPrize',\s*(\d+)/g) ?? [];
     expect(promises).toHaveLength(BOARD.length);
@@ -236,6 +255,10 @@ describe('the Diamond Arena starter schedule', () => {
     expect(sql).toMatch(/pre-image:/);
     expect(sql).toMatch(/post-image:/);
     expect(sql).toContain('the arena switches moved');
+    // Against what the pre-image read, never against a fixed value: the cash
+    // switch is another task's to move, and this file must apply either way.
+    expect(sql).toContain("current_setting('ca.diamond_schedule_switches', true)");
+    expect(sql).not.toMatch(/v_cash IS NOT FALSE/);
     // It reads ca_arena_settings to prove the switches are untouched; it must
     // never write to it, nor to the clubs row.
     expect(sql).not.toMatch(/(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+public\.ca_arena_settings/i);

@@ -5,6 +5,16 @@ import { noteFire } from './BrainTelemetry.js';
 import { copyPhase6Attribution } from './HorsePhase6Attribution.js';
 import { horseTournamentUtilityEvidenceSha256 } from './HorseTournamentUtilityEvidence.js';
 import { plo4InputBindingSha256, type Plo4RangeStatus } from './plo4/Plo4LivePolicy.js';
+import {
+  omahaVariantInputBindingSha256,
+  type OmahaVariantRangeStatus,
+} from './omaha/OmahaVariantLivePolicy.js';
+import type { OmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import {
+  remainingVariantInputBindingSha256,
+  type RemainingVariantRangeStatus,
+} from './remainingVariants/RemainingVariantLivePolicy.js';
+import type { RemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
 import type { Phase8Selection } from './HorseTournamentPostflop.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
 import {
@@ -48,7 +58,26 @@ export interface HorseWitnessPhase8Authority {
  * whenever the decision carried a P10.3 PLO4 receipt. */
 export type HorseWitnessPhase10Authority = HorseWitnessPhase8Authority;
 
-type QualifiedAuthorityKey = 'phase8Authority' | 'phase10Authority';
+/** P11.3 PLO5/PLO6/PLO8 authority binding: the Phase 8 shape, reused as
+ * Phase 10 reuses it. `continuationVersion` is the deciding pack's running
+ * version (which names the variant), `candidate` its proposal and `reference`
+ * the shadow baseline. Present whenever the decision carried a P11.3 Phase 11
+ * receipt; absent on retained witnesses and every other variant. */
+export type HorseWitnessPhase11Authority = HorseWitnessPhase8Authority;
+
+/** P12.3 Short Deck/Pineapple/FLH/FLO8 authority binding: the Phase 8 shape,
+ * reused as Phases 10 and 11 reuse it. `continuationVersion` is the deciding
+ * pack's running version (which names the variant), `candidate` its proposal
+ * and `reference` the shadow baseline. Present whenever the decision carried a
+ * P12.3 Phase 12 receipt; absent on retained witnesses and every other
+ * variant. */
+export type HorseWitnessPhase12Authority = HorseWitnessPhase8Authority;
+
+type QualifiedAuthorityKey =
+  | 'phase8Authority'
+  | 'phase10Authority'
+  | 'phase11Authority'
+  | 'phase12Authority';
 
 export interface HorseAcceptedAction {
   readonly record: Readonly<
@@ -80,9 +109,9 @@ export interface HorseExecutionWitness {
     heroSeat: number | null;
     boardCount: number | null;
   }>;
-  /** The intent the executor will submit. Readonly except for the Phase 8 and
-   * Phase 10 authority withdrawals below, which re-select the reference before
-   * acceptance. */
+  /** The intent the executor will submit. Readonly except for the Phase 8,
+   * Phase 10, Phase 11 and Phase 12 authority withdrawals below, which re-select the
+   * reference before acceptance. */
   readonly selected: Readonly<{ action: ActionType; amount: number | null }>;
   /** Canonical controller amount expected from the original request. Calls
    * record added chips; all-ins record the resulting street total. Null is
@@ -111,11 +140,38 @@ export interface HorseExecutionWitness {
     readFrameSha256: string | null;
     rangeStatus: Plo4RangeStatus;
   }> | null;
+  /** P11.1 compact private commitment to the facts a PLO5/PLO6/PLO8 proposal
+   * used. Present only on decisions with a Phase 11 receipt that carries the
+   * binding field (null for a refused proposal); absent on retained witnesses
+   * and every other variant. The variant sampler reads the public action line
+   * only, so no read frame is bound. Never strength or calibration proof. */
+  readonly phase11Inputs?: Readonly<{
+    version: 'horse-phase11-input-binding-v1';
+    variant: OmahaPolicyVariant;
+    inputSha256: string;
+    rangeStatus: OmahaVariantRangeStatus;
+  }> | null;
+  /** P12.1 compact private commitment to the facts a Short Deck, Pineapple,
+   * FLH or FLO8 proposal used. Present only on decisions with a Phase 12
+   * receipt that carries the binding field (null for a refused proposal);
+   * absent on retained witnesses and every other variant. The sampler reads
+   * the public action line only, so no read frame is bound. Never strength or
+   * calibration proof. */
+  readonly phase12Inputs?: Readonly<{
+    version: 'horse-phase12-input-binding-v1';
+    variant: RemainingPolicyVariant;
+    inputSha256: string;
+    rangeStatus: RemainingVariantRangeStatus;
+  }> | null;
   readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   /** Optional for retained v4 compatibility; absent means no Phase 8 receipt. */
   readonly phase8Authority?: HorseWitnessPhase8Authority | null;
   /** P10.3; absent on retained witnesses and decisions without a P10.3 PLO4 receipt. */
   readonly phase10Authority?: HorseWitnessPhase10Authority | null;
+  /** P11.3; absent on retained witnesses and decisions without a P11.3 Phase 11 receipt. */
+  readonly phase11Authority?: HorseWitnessPhase11Authority | null;
+  /** P12.3; absent on retained witnesses and decisions without a P12.3 Phase 12 receipt. */
+  readonly phase12Authority?: HorseWitnessPhase12Authority | null;
   readonly computeMs: number;
   readonly governorScale: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed' | 'unverified';
@@ -176,6 +232,15 @@ export function withdrawHorsePhase10Selection(
   withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase10Authority');
 }
 
+/** P11.3: the same re-selection for a selected PLO5/PLO6/PLO8 candidate. */
+export function withdrawHorsePhase11Selection(
+  witness: HorseExecutionWitness | undefined,
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  verdict: HorseAuthorityVerdict
+): void {
+  withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase11Authority');
+}
+
 function withdrawHorseQualifiedSelection(
   witness: HorseExecutionWitness | undefined,
   snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
@@ -216,6 +281,33 @@ export function recordHorsePhase10Verdict(
   if (witness?.executionStatus === 'pending' && phase10) phase10.verdict = verdict;
 }
 
+/** P12.3: the same re-selection for a selected Short Deck/Pineapple/FLH/FLO8 candidate. */
+export function withdrawHorsePhase12Selection(
+  witness: HorseExecutionWitness | undefined,
+  snapshot: Pick<LiveHorseDecisionSnapshot, 'player' | 'gameState'>,
+  verdict: HorseAuthorityVerdict
+): void {
+  withdrawHorseQualifiedSelection(witness, snapshot, verdict, 'phase12Authority');
+}
+
+/** P12.3: record the usable Phase 12 verdict observed immediately before acceptance. */
+export function recordHorsePhase12Verdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const phase12 = witness?.phase12Authority;
+  if (witness?.executionStatus === 'pending' && phase12) phase12.verdict = verdict;
+}
+
+/** P11.3: record the usable Phase 11 verdict observed immediately before acceptance. */
+export function recordHorsePhase11Verdict(
+  witness: HorseExecutionWitness | undefined,
+  verdict: HorseAuthorityVerdict
+): void {
+  const phase11 = witness?.phase11Authority;
+  if (witness?.executionStatus === 'pending' && phase11) phase11.verdict = verdict;
+}
+
 /** The client calls this only after matching the worker FIFO, type and fence.
  * Bind the canonical request already validated by the worker, not a fresh live
  * table snapshot that may have changed while the decision was computing.
@@ -234,6 +326,11 @@ export function createHorseExecutionWitness(
   const phase8 = decision.tournamentPostflop;
   const plo4 = decision.plo4Policy;
   const phase10 = plo4 && Object.hasOwn(plo4, 'selection') && plo4.selection ? plo4 : null;
+  const omaha = decision.omahaVariantPolicy;
+  const phase11 = omaha && Object.hasOwn(omaha, 'selection') && omaha.selection ? omaha : null;
+  const remaining = decision.remainingVariantPolicy;
+  const phase12 =
+    remaining && Object.hasOwn(remaining, 'selection') && remaining.selection ? remaining : null;
   return {
     version: 'horse-execution-witness-v4',
     handAnchor: anchorHorseDecisionHand(snapshot),
@@ -278,6 +375,32 @@ export function createHorseExecutionWitness(
           rangeStatus: decision.plo4Policy.inputs.range.status,
         })
       : null,
+    ...(decision.omahaVariantPolicy && Object.hasOwn(decision.omahaVariantPolicy, 'inputs')
+      ? {
+          phase11Inputs: decision.omahaVariantPolicy.inputs
+            ? Object.freeze({
+                version: 'horse-phase11-input-binding-v1' as const,
+                variant: decision.omahaVariantPolicy.inputs.variant,
+                inputSha256: omahaVariantInputBindingSha256(decision.omahaVariantPolicy.inputs),
+                rangeStatus: decision.omahaVariantPolicy.inputs.range.status,
+              })
+            : null,
+        }
+      : {}),
+    ...(decision.remainingVariantPolicy && Object.hasOwn(decision.remainingVariantPolicy, 'inputs')
+      ? {
+          phase12Inputs: decision.remainingVariantPolicy.inputs
+            ? Object.freeze({
+                version: 'horse-phase12-input-binding-v1' as const,
+                variant: decision.remainingVariantPolicy.inputs.variant,
+                inputSha256: remainingVariantInputBindingSha256(
+                  decision.remainingVariantPolicy.inputs
+                ),
+                rangeStatus: decision.remainingVariantPolicy.inputs.range.status,
+              })
+            : null,
+        }
+      : {}),
     policyOwnership: decision.policyOwnership
       ? Object.freeze({ ...decision.policyOwnership })
       : null,
@@ -315,6 +438,44 @@ export function createHorseExecutionWitness(
             reference: Object.freeze({
               action: phase10.baselineAction,
               amount: phase10.baselineAmount,
+            }),
+          },
+        }
+      : {}),
+    ...(phase11
+      ? {
+          phase11Authority: {
+            continuationVersion: phase11.version,
+            mode: phase11.mode === 'candidate' ? ('candidate' as const) : ('shadow' as const),
+            selection: phase11.selection!,
+            authority: phase11.authority ? Object.freeze({ ...phase11.authority }) : null,
+            verdict: null,
+            candidate: Object.freeze({
+              action: phase11.proposalAction,
+              amount: phase11.proposalAmount,
+            }),
+            reference: Object.freeze({
+              action: phase11.baselineAction,
+              amount: phase11.baselineAmount,
+            }),
+          },
+        }
+      : {}),
+    ...(phase12
+      ? {
+          phase12Authority: {
+            continuationVersion: phase12.version,
+            mode: phase12.mode === 'candidate' ? ('candidate' as const) : ('shadow' as const),
+            selection: phase12.selection!,
+            authority: phase12.authority ? Object.freeze({ ...phase12.authority }) : null,
+            verdict: null,
+            candidate: Object.freeze({
+              action: phase12.proposalAction,
+              amount: phase12.proposalAmount,
+            }),
+            reference: Object.freeze({
+              action: phase12.baselineAction,
+              amount: phase12.baselineAmount,
             }),
           },
         }
@@ -448,7 +609,12 @@ export function settleHorseExecutionWitness(
       : matched
         ? 'intended'
         : 'coerced';
-  for (const key of ['phase8Authority', 'phase10Authority'] as const) {
+  for (const key of [
+    'phase8Authority',
+    'phase10Authority',
+    'phase11Authority',
+    'phase12Authority',
+  ] as const) {
     const binding = witness[key];
     if (
       binding?.selection === 'selected' &&

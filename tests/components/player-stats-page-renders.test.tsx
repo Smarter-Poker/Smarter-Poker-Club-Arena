@@ -62,6 +62,8 @@ const EMPTY_TOURNAMENTS = {
 
 let rpcPayload: Record<string, unknown> = {};
 let routeUserId: string | undefined;
+let preferencesError: Error | null;
+let authUserId = 'user-1';
 const rpcMock = vi.hoisted(() => vi.fn());
 const toastApi = vi.hoisted(() => ({
   show: vi.fn(),
@@ -76,7 +78,7 @@ vi.mock('../../src/lib/supabase', () => ({
       if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
       return { data: null, error: null };
     }),
-    from: vi.fn(() => {
+    from: vi.fn((table: string) => {
       const chain: Record<string, unknown> = {};
       const self = () => chain;
       Object.assign(chain, {
@@ -86,7 +88,10 @@ vi.mock('../../src/lib/supabase', () => ({
         gte: self,
         order: self,
         limit: self,
-        maybeSingle: async () => ({ data: null, error: null }),
+        maybeSingle: async () => ({
+          data: null,
+          error: table === 'ca_stats_workspace_preferences' ? preferencesError : null,
+        }),
         then: (resolve: (v: unknown) => unknown) => resolve({ data: [], error: null }),
       });
       return chain;
@@ -100,7 +105,7 @@ vi.mock('../../src/lib/supabase', () => ({
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({
-    user: { id: 'user-1', username: 'smarterpoker', display_name: 'Smarter Poker' },
+    user: { id: authUserId, username: 'smarterpoker', display_name: 'Smarter Poker' },
     isHydrating: false,
   }),
 }));
@@ -201,6 +206,8 @@ beforeEach(() => {
   localStorage.clear();
   clearStatsRangeMemo();
   routeUserId = undefined;
+  authUserId = 'user-1';
+  preferencesError = null;
   rpcMock.mockReset();
   rpcMock.mockImplementation(async (fn: string) => {
     if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
@@ -209,7 +216,14 @@ beforeEach(() => {
   rpcPayload = {
     contract_version: 2,
     generated_at: '2026-08-31T12:00:00.000Z',
-    scope: { target_user_id: 'user-1', club_id: null, range_days: null, visibility: 'owner' },
+    scope: {
+      target_user_id: 'user-1',
+      club_id: null,
+      asset: 'chips',
+      range_days: null,
+      range_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      visibility: 'owner',
+    },
     quality: {
       cash_money_source: 'reconstructed_actions',
       cash_money_exact: false,
@@ -264,6 +278,21 @@ describe('PlayerStatsPage mounts', () => {
     await waitFor(() => {
       expect(document.body.textContent).toBeTruthy();
     });
+  });
+
+  it('keeps private stats hidden until the privacy preference can be verified', async () => {
+    preferencesError = new Error('preferences unavailable');
+    render(<PlayerStatsPage />);
+
+    expect(
+      await screen.findByText('Private Detail Remains Hidden.', { exact: false })
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Retry Privacy Check' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Overview' })).not.toBeInTheDocument();
+
+    preferencesError = null;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Privacy Check' }));
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toBeVisible();
   });
 
   it('renders for an account WITH hands', async () => {
@@ -357,6 +386,52 @@ describe('PlayerStatsPage mounts', () => {
     expect(screen.queryByText('20,000')).not.toBeInTheDocument();
   }, 8_000);
 
+  it('rejects a valid-shaped overview payload for the wrong account scope', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      scope: { ...(rpcPayload.scope as object), target_user_id: 'another-user' },
+      overall: { ...EMPTY_OVERALL, total_hands: 123 },
+    };
+    render(<PlayerStatsPage />);
+
+    expect(await screen.findByText("Couldn't Load Your Stats")).toBeVisible();
+    expect(screen.queryByText('123')).not.toBeInTheDocument();
+  });
+
+  it('never paints an in-flight payload from the previous signed-in account', async () => {
+    let resolveFirst!: (value: { data: Record<string, unknown>; error: null }) => void;
+    let resolveSecond!: (value: { data: Record<string, unknown>; error: null }) => void;
+    let overviewCalls = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn !== 'ca_player_stats_overview_v2') return { data: null, error: null };
+      overviewCalls += 1;
+      return new Promise((resolve) => {
+        if (overviewCalls === 1) resolveFirst = resolve;
+        else resolveSecond = resolve;
+      });
+    });
+    const first = {
+      ...rpcPayload,
+      scope: { ...(rpcPayload.scope as object), target_user_id: 'user-1' },
+      overall: { ...EMPTY_OVERALL, total_hands: 111 },
+    };
+    const second = {
+      ...rpcPayload,
+      scope: { ...(rpcPayload.scope as object), target_user_id: 'user-2' },
+      overall: { ...EMPTY_OVERALL, total_hands: 222 },
+    };
+
+    const view = render(<PlayerStatsPage />);
+    await waitFor(() => expect(overviewCalls).toBe(1));
+    authUserId = 'user-2';
+    view.rerender(<PlayerStatsPage />);
+    resolveFirst({ data: first, error: null });
+    await waitFor(() => expect(overviewCalls).toBe(2));
+    expect(screen.queryByText('111')).not.toBeInTheDocument();
+    resolveSecond({ data: second, error: null });
+    expect(await screen.findByText('222')).toBeVisible();
+  });
+
   it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
     rpcPayload = {
       ...rpcPayload,
@@ -408,7 +483,13 @@ describe('PlayerStatsPage mounts', () => {
     // The tab strip mounts with the payload, not with the heading; on a loaded
     // runner the two are visibly apart (the awaited-element law, 2026-09-04).
     const analysisTab = await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 });
-    await screen.findByText('2,000');
+    // The payload has painted once the hand count is on the page. Two places
+    // print it, the headline deck and (once its chunk resolves) an Overview
+    // row, so asking for exactly one passed only while the lazy chunk was
+    // still loading and failed with "Found multiple elements" when it was
+    // already cached (2026-10-04: every full `vitest related` run on a
+    // two-core box). Either order is the payload having arrived.
+    await screen.findAllByText('2,000');
     fireEvent.click(analysisTab);
     expect(
       await screen.findByText('What To Work On', undefined, { timeout: 6_000 })

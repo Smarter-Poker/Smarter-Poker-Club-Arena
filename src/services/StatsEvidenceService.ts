@@ -77,7 +77,13 @@ export interface StatsSessionEvidencePage {
   hands: Array<Pick<StatsEvidenceHand, 'hand_id' | 'played_at' | 'club_id' | 'table_id'>>;
   has_more: boolean;
   next_cursor: StatsEvidenceCursor | null;
-  scope: unknown;
+  scope: {
+    target_user_id: string;
+    cash_session_id: string;
+    asset: StatsScope;
+    visibility: 'owner';
+  } | null;
+  contract_version?: number;
   evidence_status?: string;
 }
 
@@ -153,6 +159,7 @@ async function list(
 
 async function listCashSession(
   userId: string,
+  asset: 'chips' | 'diamonds',
   cashSessionId: string,
   cursor: StatsEvidenceCursor | null = null,
   limit = 12
@@ -160,7 +167,7 @@ async function listCashSession(
   const args = {
     p_user: userId,
     p_club_id: null,
-    p_asset: 'chips',
+    p_asset: asset,
     p_variant: null,
     p_position: null,
     p_big_blind: null,
@@ -191,6 +198,17 @@ async function listCashSession(
       return { hands: [], has_more: false, next_cursor: null, scope: null, error: error.message };
     }
     const payload = (data ?? {}) as Partial<StatsSessionEvidencePage>;
+    if (
+      payload.contract_version !== 3 ||
+      payload.scope?.target_user_id !== userId ||
+      payload.scope?.cash_session_id !== cashSessionId ||
+      payload.scope?.asset !== asset ||
+      payload.scope?.visibility !== 'owner'
+    ) {
+      const error = 'session_scope_mismatch';
+      reportError(new Error(error), 'StatsEvidenceService.cash_session_scope');
+      return { hands: [], has_more: false, next_cursor: null, scope: null, error };
+    }
     return {
       hands: Array.isArray(payload.hands) ? payload.hands : [],
       has_more: payload.has_more === true,

@@ -6,7 +6,7 @@
    studio on the black glass between its rails: the link status, the game
    type, the interface and preview switches as lit words, the live gameplay
    preview (a picture, not a framed panel), the selection ledger as
-   label/value rows, five tabs as lit words, the catalog as real artwork with
+   label/value rows, six tabs as lit words, the catalog as real artwork with
    names printed under it, and three saved looks as rows. An engraved rule (a
    black cut with a lit edge above it) separates rows. Nothing is drawn: no
    tile chrome, no gold plaque, no blue disc, no dashed slot. The only
@@ -159,10 +159,15 @@
 }
 
 .tsc__caption {
-  font-size: min(3.4cqw, 16px);
+  min-width: 0;
+  overflow: hidden;
+  font-size: min(2.65cqw, 11px);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  line-height: 1;
+  letter-spacing: 0.01em;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tsc__linkword {
@@ -397,12 +402,15 @@
 }
 
 .theme-modal__live-caption {
-  display: flex;
-  gap: 3cqw;
-  align-items: baseline;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.2cqw;
+  align-items: center;
   min-width: 0;
-  padding: 2cqw 0 1cqw;
+  /* The compact one-line ledger has a shorter line box than the former
+     wrapping caption. Keep deliberate breathing room below it while every
+     card, face-deck, and game label remains on one line. */
+  padding: 2cqw 0 calc(1cqw + 3px);
 }
 
 .tsc__ledger {
@@ -411,7 +419,7 @@
   min-width: 0;
 }
 
-/* ── The tabs: five lit words under the preview ─────────────────────────── */
+/* ── The tabs: six lit words under the preview ──────────────────────────── */
 
 .theme-modal__tabs {
   display: flex;
@@ -572,7 +580,8 @@
 }
 
 .theme-asset__preview--button,
-.theme-asset__preview--cards {
+.theme-asset__preview--cards,
+.theme-asset__preview--decks {
   aspect-ratio: 4 / 3;
 }
 
@@ -581,7 +590,8 @@
 .theme-asset__swatch,
 .theme-asset__scene,
 .theme-asset__btnstage,
-.theme-asset__cardstage {
+.theme-asset__cardstage,
+.theme-asset__facedeckstage {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -735,6 +745,31 @@
   transform: scale(1.35) rotate(7deg);
 }
 
+.theme-asset__facedeckstage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px;
+  background:
+    radial-gradient(circle at 50% 38%, rgb(54 185 255 / 16%), transparent 52%),
+    linear-gradient(145deg, #17212a, #05080b);
+}
+
+.theme-asset__facedeckstage .card-image {
+  flex: 0 0 auto;
+  transform: rotate(-5deg);
+}
+
+.theme-asset__facedeckstage .card-image:nth-child(2) {
+  z-index: 2;
+  transform: translateY(-3px);
+}
+
+.theme-asset__facedeckstage .card-image:nth-child(3) {
+  transform: rotate(5deg);
+}
+
 /* Locked: the price is a lit gold word over the dimmed art; checking: muted. */
 .theme-asset__lock {
   position: absolute;
@@ -783,6 +818,30 @@
   letter-spacing: 0.03em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.theme-asset__finish {
+  display: block;
+  overflow: hidden;
+  font-size: min(2.8cqw, 13px);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsc__catalog[data-theme-tab='decks'] .theme-asset-wrap {
+  content-visibility: visible;
+}
+
+.tsc__catalog[data-theme-tab='decks'] .theme-asset__caption {
+  min-height: 70px;
+}
+
+.tsc__catalog[data-theme-tab='decks'] .theme-asset__name,
+.tsc__catalog[data-theme-tab='decks'] .theme-asset__finish {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .theme-asset__tier-badge {
@@ -960,6 +1019,20 @@
 .theme-loadout__cards .card-image:first-child {
   right: 9px;
   transform: scale(0.54) rotate(-7deg);
+}
+
+.theme-loadout__face {
+  position: absolute;
+  z-index: 5;
+  left: 8px;
+  bottom: 4px;
+  width: 25px;
+  height: 34px;
+}
+
+.theme-loadout__face .card-image {
+  transform: scale(0.64) rotate(-4deg);
+  transform-origin: bottom left;
 }
 
 .theme-loadout__name {

@@ -59,12 +59,21 @@ import {
   type VerifiedTournamentSeatMoveReceipt,
 } from './tournamentSeatMoveRpc.js';
 import {
+  depositTournamentMovePresence,
+  withdrawTournamentMovePresence,
+} from '../engine/SeatMovePresence.js';
+import {
   CLOSED_ORPHAN_RESEAT_REASON,
   planOrphanReseats,
   describeUnmovableOrphans,
   type OrphanTableRow,
   type OrphanSeatRow,
 } from './orphanedSeatRepair.js';
+import {
+  claimFinalTableTransition,
+  hasReachedFinalTableShape,
+  mayBecomeFinalTable,
+} from './finalTableTransition.js';
 
 /** Lease owns the implementation and the actual global registry. */
 interface BreakRetirementBinding {
@@ -444,6 +453,8 @@ export class TournamentManager extends TournamentManagerEliminations {
   private static readonly BREAK_DISCOVERY_PAGE = 32;
   /** Exact manager generation that owns every live-source move fence it arms. */
   private readonly tournamentMoveBoundaryOwner = randomUUID();
+  /** Stable for this manager so a lost final-table claim response can be reconciled. */
+  private readonly finalTableTransitionOwner = randomUUID();
   /** Ambiguous replies retain the exact UUID and source fence until replay resolves. */
   private readonly pendingTournamentSeatMoveOutcomes = new Map<
     string,
@@ -3307,9 +3318,32 @@ export class TournamentManager extends TournamentManagerEliminations {
     ) {
       return Promise.reject(new Error('live-source engine generation changed before move RPC'));
     }
-    return boundary.engine.executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
-      moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
-    );
+    /* PRESENCE CROSSES WITH THE PLAYER (2026-10-05). Snapshotted here, with
+       the source parked at its hand boundary, and deposited BEFORE the RPC so
+       the destination can never see the new chair first. A refused move
+       withdraws it; see engine/SeatMovePresence.ts. Never blocks a move. */
+    try {
+      const presence = boundary.engine.presenceForTournamentMove?.(input.userId);
+      if (presence) {
+        depositTournamentMovePresence(input.userId, input.destinationTableId, {
+          requestId: input.requestId,
+          fromTableId: input.sourceTableId,
+          fsm: presence,
+        });
+      }
+    } catch {
+      /* presence is a courtesy to the destination, never a precondition */
+    }
+    return boundary.engine
+      .executeTournamentMoveAtBoundary(this.tournamentMoveBoundaryOwner, () =>
+        moveTournamentPlayerAtomically(input, { outcomeWasAlreadyUnknown })
+      )
+      .catch((error: unknown) => {
+        if (!(error instanceof TournamentSeatMoveOutcomeUnknownError)) {
+          withdrawTournamentMovePresence(input.userId, input.destinationTableId, input.requestId);
+        }
+        throw error;
+      });
   }
 
   /**
@@ -3653,9 +3687,13 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
-    // Check for final table (table_size or fewer players remaining, 2026-08-22
-    // parity: was hardcoded 9) — only announce once
-    if (!this.isFinalTable && this.durableTournamentBreaks.size === 0) {
+    // Final Table is a durable MTT lifecycle transition, never a visual label
+    // inferred from player count or a single-table fixed-format event.
+    if (
+      !this.isFinalTable &&
+      this.durableTournamentBreaks.size === 0 &&
+      mayBecomeFinalTable(this.tournamentCache)
+    ) {
       const { count: remainingPlayers, error: remainingPlayersErr } = await supabase
         .from('tournament_players')
         .select('*', { count: 'exact', head: true })
@@ -3667,28 +3705,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         10,
         Math.max(2, Number(this.tournamentCache?.table_size) || 9)
       );
-      /**
-       * ═══════════════════════════════════════════════════════════════════
-       *  A HEADCOUNT IS NOT A FINAL TABLE (2026-08-27, P0)
-       * ═══════════════════════════════════════════════════════════════════
-       *
-       * This was `remaining <= finalTableSize` and nothing else, so nine
-       * players sitting three-three-three across three felts were declared a
-       * final table: everyone got the overlay, the deal poll (which shared
-       * the same shape) opened voting, and `fn_settle_final_table_deal_atomic` would chop
-       * the pool between nine players who were never at the same table.
-       *
-       * The count stays as the CHEAP first test — it is what keeps this off
-       * the table-count query for the whole life of a big field — but the
-       * declaration now also requires exactly ONE live table still holding
-       * players. Consolidating the field is the balancer's job and happens
-       * further down this same method; this is only the gate, so a field that
-       * is short enough but not yet merged waits one cycle for the balancer
-       * and is declared on the next.
-       *
-       * `countLiveTablesWithPlayers()` returns null for UNKNOWN, which is
-       * treated as "not yet".
-       */
       if (remainingPlayersErr || remainingPlayers === null) {
         reportError(
           new Error(
@@ -3697,65 +3713,98 @@ export class TournamentManager extends TournamentManagerEliminations {
           'Tournament.final_table_count_unavailable'
         );
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      } else if (remainingPlayers <= finalTableSize) {
+      } else if (remainingPlayers > 0 && remainingPlayers <= finalTableSize) {
         const liveTables = await this.countLiveTablesWithPlayers();
         if (!this.eliminationMutationAllowed()) return;
-        if (liveTables === 1) {
-          this.isFinalTable = true;
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players on one table`
+        if (hasReachedFinalTableShape(remainingPlayers, finalTableSize, liveTables)) {
+          const transition = await claimFinalTableTransition(
+            {
+              persistIfUnset: async (ownershipToken) => {
+                const { data, error } = await supabase
+                  .rpc('fn_claim_final_table_transition', {
+                    p_tournament_id: this.tournamentId,
+                    p_ownership_token: ownershipToken,
+                  })
+                  .maybeSingle();
+                const receipt = data as { state?: unknown } | null;
+                const state = typeof receipt?.state === 'string' ? receipt.state : null;
+                return {
+                  changed: state === 'announcement_owned',
+                  error: error
+                    ? new Error(error.message)
+                    : state === 'announcement_owned' || state === 'already_persisted'
+                      ? null
+                      : new Error('final-table transition claim returned no valid state'),
+                };
+              },
+              readPersisted: async () => {
+                const { data, error } = await supabase
+                  .rpc('fn_read_final_table_transition', {
+                    p_tournament_id: this.tournamentId,
+                  })
+                  .maybeSingle();
+                const receipt = data as {
+                  triggered?: unknown;
+                  ownership_token?: unknown;
+                  announced_at?: unknown;
+                } | null;
+                return {
+                  triggered: error || !receipt ? null : receipt.triggered === true,
+                  ownershipToken:
+                    error || !receipt || typeof receipt.ownership_token !== 'string'
+                      ? null
+                      : receipt.ownership_token,
+                  announced: error || !receipt ? null : receipt.announced_at != null,
+                  error: error
+                    ? new Error(error.message)
+                    : !receipt
+                      ? new Error('tournament final-table row is unavailable')
+                      : null,
+                };
+              },
+            },
+            this.finalTableTransitionOwner
           );
-          /**
-           * ═══════════════════════════════════════════════════════════════
-           *  A ONE-SHOT BROADCAST IS NOT A STATE (Dan 2026-08-28, bug 7)
-           * ═══════════════════════════════════════════════════════════════
-           *
-           * Reported: "you can not see the final table background either."
-           *
-           * `this.isFinalTable` is an in-memory flag on this process and the
-           * announcement below is sent ONCE. Anyone not listening at that
-           * instant never learns the tournament reached its final table:
-           * a player who reconnects (which is exactly what happened — see
-           * bug 1), a second device, a spectator arriving later, or every
-           * client at once if the engine restarts.
-           *
-           * The client had a fallback, and it was a REGEX ON THE TABLE NAME:
-           *   /\bfinal table\b/i.test(table.name)
-           * on the stated grounds that "TournamentService canonically names
-           * the consolidated table 'Final Table'". Production disagrees —
-           * 4f42d847's final table is named "Union PKO Afternoon (PLO4) -
-           * Table 2" — so the fallback matched nothing and the background
-           * never loaded.
-           *
-           * `tournaments.final_table_triggered` has existed as a column the
-           * whole time and NOTHING EVER WROTE IT: 0 of 1,286 completed MTTs
-           * in thirty days had it set. Writing it makes the state durable and
-           * lets any client, at any time, ask the tournament rather than
-           * guess from a name.
-           *
-           * A failed write is logged and nothing else: the broadcast below
-           * still goes out, so the live table is unaffected, and the next
-           * sweep re-enters this branch only if the process restarts —
-           * `.eq('final_table_triggered', false)` keeps that idempotent.
-           */
-          const { error: flagErr } = await supabase
-            .from('tournaments')
-            .update({ final_table_triggered: true })
-            .eq('id', this.tournamentId)
-            .eq('final_table_triggered', false);
           if (!this.eliminationMutationAllowed()) return;
-          if (flagErr) {
+          if (transition.state === 'retry') {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] could not persist final_table_triggered (${flagErr.message}) - the announcement still went out, but a reconnecting client will not see the final-table theme`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] could not claim final_table_triggered (${transition.error.message})`
               ),
               'Tournament.final_table_flag_write_failed'
             );
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          } else {
+            this.isFinalTable = true;
+            if (this.tournamentCache) this.tournamentCache.final_table_triggered = true;
+            if (transition.state === 'newly_persisted') {
+              console.log(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players on one table`
+              );
+              const announced = await this.broadcast('final_table', {
+                playerCount: remainingPlayers,
+              });
+              if (announced) {
+                const { data: acknowledged, error: acknowledgementError } = await supabase.rpc(
+                  'fn_ack_final_table_announcement',
+                  {
+                    p_tournament_id: this.tournamentId,
+                    p_ownership_token: this.finalTableTransitionOwner,
+                  }
+                );
+                if (acknowledgementError || acknowledged !== true) {
+                  reportError(
+                    new Error(
+                      acknowledgementError?.message ??
+                        'final-table announcement receipt was not acknowledged'
+                    ),
+                    'Tournament.final_table_announcement_receipt_failed'
+                  );
+                }
+              }
+              if (!this.eliminationMutationAllowed()) return;
+            }
           }
-          await this.broadcast('final_table', {
-            playerCount: remainingPlayers,
-          });
-          if (!this.eliminationMutationAllowed()) return;
         } else if (liveTables !== null && liveTables > 1) {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] ${remainingPlayers} players left but still spread over ${liveTables} tables - NOT the final table until the balancer consolidates`
@@ -4117,73 +4166,62 @@ export class TournamentManager extends TournamentManagerEliminations {
       sourcePlans.set(move.fromTableId, { move, sourceMode });
     }
 
-    // Arm every source together. A slow current hand costs this scheduler one
-    // short probe, not one serial minute per table; its owner stays armed and
-    // the next causal sweep claims the physical park.
-    const boundaryResults = await Promise.all(
-      [...sourcePlans.entries()].map(
-        async ([sourceTableId, plan]) =>
-          [
-            sourceTableId,
-            await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode),
-          ] as const
-      )
-    );
-    const boundaries = new Map(boundaryResults);
     const retainedUnknownSources = new Set<string>();
     const refusedSources = new Set<string>();
 
-    try {
-      for (const move of batch) {
-        if (!this.eliminationMutationAllowed()) break;
-        if (refusedSources.has(move.fromTableId)) continue;
-        const boundary = boundaries.get(move.fromTableId);
-        if (!boundary) continue;
-        const requestId = randomUUID();
-        const input: TournamentSeatMoveInput = {
-          requestId,
-          tournamentId: this.tournamentId,
-          userId: move.playerId,
-          sourceTableId: move.fromTableId,
-          destinationTableId: move.toTableId,
-          destinationSeatNumber: move.toSeat,
-          sourceMode: boundary.sourceMode,
-        };
-        try {
-          const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
-          moved++;
-          // The destination may be waiting below its deal minimum on a
-          // backed-off roster read; it looks now rather than in a minute.
-          this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
-          );
-        } catch (moveErr) {
-          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
-            this.pendingTournamentSeatMoveOutcomes.set(requestId, {
-              move,
-              input,
-            });
-            retainedUnknownSources.add(move.fromTableId);
-          } else {
-            refusedSources.add(move.fromTableId);
-          }
-          reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
-            tournamentId: this.tournamentId,
+    // A receipt lookup can legitimately occupy the complete uncertainty
+    // envelope. Claim only the source whose moves are being resolved so one
+    // ambiguous operation never parks unrelated tables behind it.
+    for (const [sourceTableId, plan] of sourcePlans) {
+      if (!this.eliminationMutationAllowed()) break;
+      const boundary = await this.claimTournamentMoveBoundary(plan.move, plan.sourceMode);
+      if (!boundary) continue;
+      try {
+        for (const move of batch) {
+          if (move.fromTableId !== sourceTableId) continue;
+          if (!this.eliminationMutationAllowed() || refusedSources.has(sourceTableId)) break;
+          const requestId = randomUUID();
+          const input: TournamentSeatMoveInput = {
             requestId,
-            playerId: move.playerId,
+            tournamentId: this.tournamentId,
+            userId: move.playerId,
             sourceTableId: move.fromTableId,
             destinationTableId: move.toTableId,
-            destinationSeat: move.toSeat,
-          });
-          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-          // An unknown source shape invalidates every remaining destination
-          // chosen from the same snapshot. Resolve that UUID before planning.
-          if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) break;
+            destinationSeatNumber: move.toSeat,
+            sourceMode: boundary.sourceMode,
+          };
+          try {
+            const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
+            moved++;
+            // The destination may be waiting below its deal minimum on a
+            // backed-off roster read; it looks now rather than in a minute.
+            this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
+            );
+          } catch (moveErr) {
+            if (moveErr instanceof TournamentSeatMoveOutcomeUnknownError) {
+              this.pendingTournamentSeatMoveOutcomes.set(requestId, {
+                move,
+                input,
+              });
+              retainedUnknownSources.add(sourceTableId);
+            } else {
+              refusedSources.add(sourceTableId);
+            }
+            reportError(moveErr, 'Tournament.atomic_move_refused_or_unknown', {
+              tournamentId: this.tournamentId,
+              requestId,
+              playerId: move.playerId,
+              sourceTableId: move.fromTableId,
+              destinationTableId: move.toTableId,
+              destinationSeat: move.toSeat,
+            });
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            break;
+          }
         }
-      }
-    } finally {
-      for (const [sourceTableId, boundary] of boundaries) {
+      } finally {
         if (
           boundary?.engine &&
           !retainedUnknownSources.has(sourceTableId) &&
@@ -4192,6 +4230,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           boundary.engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
         }
       }
+      // An unknown source shape invalidates every remaining destination chosen
+      // from the same snapshot. Resolve that exact UUID before another source
+      // is ever claimed.
+      if (retainedUnknownSources.has(sourceTableId)) break;
     }
     return moved;
   }

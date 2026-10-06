@@ -1387,6 +1387,19 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Data console native PostgreSQL contracts
+        if: matrix.shard == 2
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+          STATS_PG_SCRATCH_PARENT: ${{ runner.temp }}
+          DATA_CONSOLE_PG_SCRATCH_PARENT: ${{ runner.temp }}
+        run: npm run test:data:postgres
+      - name: Managed games keep one receipted browser command door
+        if: matrix.shard == 2
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+          MANAGED_GAME_PG_SCRATCH_PARENT: ${{ runner.temp }}
+        run: bash scripts/dev/test-managed-game-one-door-postgres.sh
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         if: (matrix.shard == 3 || matrix.shard == 4)
@@ -1897,6 +1910,14 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-profile-appearance-postgres.py
+      - name: Phase 1 customization ownership and cutover remain atomic
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PHASE1_PG_WORK_ROOT: ${{ runner.temp }}
+        run: |
+          node --test scripts/ci/final-table-cleanup-batches.test.mjs
+          python3 scripts/ci/test-phase1-customization-postgres.py
       - name: Private account signals preserve source and owner isolation
         if: matrix.shard == 1
         env:

@@ -25,6 +25,7 @@ import {
   awardedCents,
   chestCounts,
   activationStatusLine,
+  SMALL_FIELD_NOTE,
   formatCents,
 } from '../../src/services/MysteryBountyService';
 import { isHeadlineTier } from '../../src/config/mysteryBountyTiers';
@@ -362,8 +363,19 @@ describe('73. before the mystery phase opens, the lobby says why', () => {
       parseInventory({ stage: 'pending', activation: 'at_the_money', tiers: [] })
     );
     expect(line).toBe(
-      'Mystery Bounties Begin After The Rebuy And Add-On Period Ends And The Tournament Reaches The Money'
+      'Mystery Bounties Begin After The Rebuy And Add-On Period Ends And The Tournament Reaches The Money. Fields Of Ten Or Fewer Entries Pay Flat Bounties Only'
     );
+  });
+
+  it('never promises chests to a field of ten or fewer (Dan 2026-10-05)', () => {
+    for (const mode of ['at_the_money', 'percent_field', 'player_count', null]) {
+      const line = activationStatusLine(
+        parseInventory({ stage: 'pending', activation: mode, activation_value: 27, tiers: [] })
+      );
+      expect(line.endsWith(SMALL_FIELD_NOTE)).toBe(true);
+    }
+    const live = activationStatusLine(parseInventory(INVENTORY_FRESH));
+    expect(live).not.toContain(SMALL_FIELD_NOTE);
   });
 
   it('adds the player count for a player_count event', () => {
@@ -387,6 +399,9 @@ describe('73. before the mystery phase opens, the lobby says why', () => {
   it('never uses an em dash, and capitalises every word (CLAUDE.md 5.7)', () => {
     const lines = [
       activationStatusLine(parseInventory({ stage: 'pending', activation: null, tiers: [] })),
+      activationStatusLine(
+        parseInventory({ stage: 'pending', activation: 'at_the_money', tiers: [] })
+      ),
       activationStatusLine(parseInventory(INVENTORY_FRESH)),
       activationStatusLine(parseInventory({ ...INVENTORY_FRESH, stage: 'complete' })),
     ];

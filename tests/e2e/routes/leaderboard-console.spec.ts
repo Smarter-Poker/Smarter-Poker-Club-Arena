@@ -21,6 +21,7 @@ interface Observed {
   pageErrors: number;
   failedArenaFiles: string[];
   otherBadResponses: string[];
+  failedOtherRequests: string[];
 }
 
 function observe(page: Page): Observed {
@@ -29,6 +30,7 @@ function observe(page: Page): Observed {
     pageErrors: 0,
     failedArenaFiles: [],
     otherBadResponses: [],
+    failedOtherRequests: [],
   };
   page.on('console', (message) => {
     if (message.type() === 'error') observed.consoleErrors.push(message.text());
@@ -49,6 +51,8 @@ function observe(page: Page): Observed {
     const url = new URL(request.url());
     if (url.pathname.startsWith(CLUB_ARENA_FILES)) {
       observed.failedArenaFiles.push(`failed ${url.host}${url.pathname}`);
+    } else {
+      observed.failedOtherRequests.push(`failed ${url.host}${url.pathname}`);
     }
   });
   return observed;
@@ -64,6 +68,22 @@ async function expectNoSeriousAxeFindings(page: Page, state: string): Promise<vo
   ).toEqual([]);
 }
 
+async function expectLeaderboardNamesToStartEachWordWithACapital(
+  page: Page,
+  selector: string,
+  state: string
+): Promise<void> {
+  const names = await page
+    .locator(`${BOARD} ${selector}`)
+    .evaluateAll((elements) =>
+      elements.map((element) => element.firstChild?.textContent?.trim() || '').filter(Boolean)
+    );
+  const lowercaseWordStarts = names.flatMap((name) =>
+    [...name.matchAll(/(?:^|[^A-Za-z0-9])([a-z])/g)].map((match) => match[1])
+  );
+  expect(lowercaseWordStarts, `${state}: every name word starts with a capital`).toEqual([]);
+}
+
 for (const width of [393, 1440]) {
   test(`Leaderboard Console Is Painted And Reachable At ${width}px`, async ({ page }, testInfo) => {
     const keep = (name: string) =>
@@ -73,7 +93,7 @@ for (const width of [393, 1440]) {
       });
     const observed = observe(page);
     await page.addInitScript(() => {
-      const metrics = { lcp: 0, cls: 0 };
+      const metrics = { lcp: null as number | null, cls: 0 };
       (window as unknown as { __lbMetrics: typeof metrics }).__lbMetrics = metrics;
       performance.setResourceTimingBufferSize(1000);
       new PerformanceObserver((list) => {
@@ -124,12 +144,15 @@ for (const width of [393, 1440]) {
         resources
           .filter((entry) => pattern.test(new URL(entry.name).pathname))
           .map((entry) => [file(entry), entry.transferSize, Math.round(entry.duration)] as const);
-      const metrics = (window as unknown as { __lbMetrics?: { lcp: number; cls: number } })
+      const metrics = (window as unknown as { __lbMetrics?: { lcp: number | null; cls: number } })
         .__lbMetrics;
       return {
         domContentLoadedMs: navigation ? Math.round(navigation.domContentLoadedEventEnd) : null,
         loadMs: navigation ? Math.round(navigation.loadEventEnd) : null,
-        lcpMs: metrics ? Math.round(metrics.lcp) : null,
+        lcpMs:
+          metrics && typeof metrics.lcp === 'number' && Number.isFinite(metrics.lcp)
+            ? Math.round(metrics.lcp)
+            : null,
         cls: metrics ? Number(metrics.cls.toFixed(3)) : null,
         resourceCount: resources.length,
         transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
@@ -146,6 +169,30 @@ for (const width of [393, 1440]) {
           ),
       };
     });
+    // Broad guardrails derived from healthy production observations. They catch
+    // a severe regression without treating small runner/network variance as a
+    // failure.
+    expect(firstReadyMs, 'the first usable board should load within 12 seconds').toBeLessThan(
+      12_000
+    );
+    expect(
+      firstLoad.lcpMs,
+      'the browser must report a largest-contentful-paint entry'
+    ).not.toBeNull();
+    expect(firstLoad.lcpMs ?? 0, 'the LCP measurement must be greater than zero').toBeGreaterThan(
+      0
+    );
+    expect(
+      firstLoad.lcpMs ?? Number.POSITIVE_INFINITY,
+      'the board should paint its main content within 8 seconds'
+    ).toBeLessThan(8_000);
+    if (firstLoad.cls !== null) {
+      expect(firstLoad.cls, 'the board should avoid disruptive layout shifts').toBeLessThan(0.15);
+    }
+    expect(
+      firstLoad.transferBytes,
+      'the full leaderboard route should stay below 12 MiB'
+    ).toBeLessThan(12 * 1024 * 1024);
     // The board painted from the real art and the real route chunk.
     expect(firstLoad.leaderboardChunks.map(([name]) => name).join(' ')).toMatch(/LeaderboardPage-/);
     expect(firstLoad.consoleArt.map(([name]) => name).sort()).toEqual(
@@ -201,6 +248,7 @@ for (const width of [393, 1440]) {
       timeout: 30000,
     });
     await expect(board.locator('.lb-error-state')).toHaveCount(0);
+    await expectLeaderboardNamesToStartEachWordWithACapital(page, '.entry-name', 'Rankings');
 
     const geometry = await board.evaluate((root) => ({
       width: root.querySelector('.sc')!.getBoundingClientRect().width,
@@ -219,6 +267,11 @@ for (const width of [393, 1440]) {
     await board.getByRole('button', { name: 'My Clubs', exact: true }).click();
     await board.getByRole('tab', { name: 'Tournament Stats' }).click();
     await expect(board.getByText('All Recorded Tournaments', { exact: true })).toBeVisible();
+    await expectLeaderboardNamesToStartEachWordWithACapital(
+      page,
+      '.player-name',
+      'Tournament Stats'
+    );
     await expect(board.getByRole('button', { name: 'Previous Period' })).toHaveCount(0);
     await expect(board.locator('.lb-prize-program, .lb-settlement-card')).toHaveCount(0);
     await expectNoSeriousAxeFindings(page, 'My Clubs Tournament Stats');
@@ -247,6 +300,7 @@ for (const width of [393, 1440]) {
           pageErrors: observed.pageErrors,
           failedArenaFiles: observed.failedArenaFiles.length,
           otherBadResponses: observed.otherBadResponses,
+          failedOtherRequests: observed.failedOtherRequests,
         })
     );
 
@@ -258,5 +312,9 @@ for (const width of [393, 1440]) {
     expect(observed.otherBadResponses, 'failed non-Club Arena requests on the leaderboard').toEqual(
       []
     );
+    expect(
+      observed.failedOtherRequests,
+      'non-Club Arena requests that failed on the leaderboard'
+    ).toEqual([]);
   });
 }

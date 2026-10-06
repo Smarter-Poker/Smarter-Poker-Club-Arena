@@ -34,7 +34,7 @@ import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
 import { TimeBankEngine, type TimeBankEvent } from './TimeBankEngine.js';
-import { DisconnectEngine } from './DisconnectEngine.js';
+import { DisconnectEngine, type DisconnectFsmEntry } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
@@ -155,7 +155,12 @@ import {
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  claimMovedPresence,
+  claimTournamentMovePresence,
+  depositMovedPresence,
+  hasMovedPresence,
+} from './SeatMovePresence.js';
 import {
   readCashMoveArrivals,
   type CashMoveArrival,
@@ -686,6 +691,20 @@ export abstract class ServerTableEngineBase {
 
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
+  }
+
+  /**
+   * Give back a hold placed for exactly `atMs` (2026-10-04).
+   *
+   * The hold only ever extends, which is right while its deadline stands. An
+   * add-on break begun inside the maintenance freeze holds for a deadline the
+   * thaw then moves; the manager withdraws that break and must take its hold
+   * with it, or the table waits out a break that is not running. Only the
+   * deadline still in force is released, so a later hold placed by another
+   * authority is never shortened.
+   */
+  public releaseDealingHold(atMs: number): void {
+    if (atMs > 0 && this.dealHoldUntilMs === atMs) this.dealHoldUntilMs = 0;
   }
 
   /**
@@ -2833,6 +2852,16 @@ export abstract class ServerTableEngineBase {
            cash seat is evicted after 2 orbits / 5 minutes and a tournament
            seat is blinded off. Counted fleet-wide so it can page (Dan
            2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced') {
+          try {
+            EngineMetrics.forcedSitOutsTotal.inc(1, {
+              audience: satPlayer?.is_horse ? 'horse' : 'human',
+              format: this.tableFormat(),
+            });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
         if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
           try {
             EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });
@@ -4770,6 +4799,58 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * The source half of a tournament move's presence handoff (2026-10-05).
+   * Read by the tournament manager while the source is parked at the hand
+   * boundary, before the move RPC. See SeatMovePresence.ts.
+   */
+  presenceForTournamentMove(playerId: string): DisconnectFsmEntry | null {
+    if (!this.isTournamentTable()) return null;
+    return this.disconnectEngine.getFsmState(this.tableId, playerId);
+  }
+
+  /**
+   * The destination half: a player the roster now seats here, with presence
+   * deposited by the move that brought them, keeps it. Runs ahead of every
+   * registration (see adoptMovedPresence), so the arriving entry is never
+   * pre-empted by a fresh CONNECTED one. A carried sit-out is written back to
+   * the new chair, which the move RPC opened with is_sitting_out=false, so the
+   * felt and the engine agree.
+   */
+  protected adoptTournamentMovePresence(): void {
+    for (const p of this.seatedPlayers) {
+      if (this.disconnectEngine.getFsmState(this.tableId, p.user_id)) continue;
+      const carried = claimTournamentMovePresence(p.user_id, this.tableId);
+      if (!carried) continue;
+      this.disconnectEngine.restoreFsmStates(this.tableId, { [p.user_id]: carried.fsm });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] presence followed ${p.user_id} from ` +
+          `${carried.fromTableId} (tournament move): ${carried.fsm.state}`
+      );
+      if (carried.fsm.state !== 'SAT_OUT' || p.is_sitting_out === true || !p.occupancy_id) continue;
+      void Promise.resolve(
+        supabase
+          .from('table_seats')
+          .update({ is_sitting_out: true })
+          .eq('table_id', this.tableId)
+          .eq('user_id', p.user_id)
+          .eq('occupancy_id', p.occupancy_id)
+          .is('left_at', null)
+      )
+        .then(({ error }) => {
+          if (error) {
+            reportError(
+              new Error(`persist carried sit-out failed: ${error.message}`),
+              'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_failed'
+            );
+          }
+        })
+        .catch((err) => {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.moved_sitout_persist_threw');
+        });
+    }
+  }
+
+  /**
    * ADOPT WHAT ARRIVED WITH THE PLAYER (2026-09-05).
    *
    * Called on every seat sweep, from BOTH the start-up wait loop and the
@@ -4790,6 +4871,7 @@ export abstract class ServerTableEngineBase {
    */
   protected async adoptMovedPresence(): Promise<boolean> {
     if (!this.lifecycleCanMutate()) return false;
+    if (this.isTournamentTable()) this.adoptTournamentMovePresence();
     const candidates = this.seatedPlayers
       .filter((p) => hasMovedPresence(p.user_id, this.tableId))
       .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));
@@ -4894,7 +4976,25 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
+    /* PRESENCE DOES NOT OUTLIVE THE SEAT (2026-10-04). The roster is the one
+       authority on who sits here, and the presence FSM is the engine's mirror
+       of those seats. Two paths filled the mirror with players the roster no
+       longer holds: a tournament departure (the seat closes in the database
+       and this engine runs no leave path for it) and a restart (the park
+       restores every entry it was written with, seated or not). Forgetting a
+       mirror entry is not a seat release: no row is read or written, and
+       TournamentGhostSeat's single database authority is untouched. A cash
+       stay that ended is torn down whole by the loop below, so on that path
+       this runs after it and finds only what the loop could not know about.
+       See DisconnectEngine.retainOnly for what a stale entry costs. */
+    const forgetUnseatedPresence = (): void => {
+      this.disconnectEngine.retainOnly(
+        this.tableId,
+        nextRoster.map((p) => p.user_id)
+      );
+    };
     if (this.isTournamentTable()) {
+      forgetUnseatedPresence();
       // A tournament seat closes in the database (a balancing move or an
       // accepted elimination) and is simply absent from the next roster; the
       // engine runs no leave path of its own for it (TournamentGhostSeat.law).
@@ -4933,6 +5033,7 @@ export abstract class ServerTableEngineBase {
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.chipContinuity.forget(userId);
     }
+    forgetUnseatedPresence();
     this.applyParkedTimeBanks(nextRoster);
     return replaced;
   }

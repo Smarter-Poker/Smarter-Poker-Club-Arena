@@ -25,6 +25,7 @@ import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import GameCreationActions from '../components/club/GameCreationActions';
 import { unionService } from '../services/UnionService';
+import { ErrorState } from '../components/common/EmptyState';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
@@ -104,6 +105,8 @@ export default function UnionGamesPage() {
   const [unionId, setUnionId] = useState<string | null>(paramUnionId || null);
   const [unionName, setUnionName] = useState('');
   const [canManageGames, setCanManageGames] = useState(false);
+  const [authorityError, setAuthorityError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
@@ -126,6 +129,8 @@ export default function UnionGamesPage() {
     setTab('tournaments');
     setTournFilter('all');
     setCanManageGames(false);
+    setAuthorityError(null);
+    setLoadError(null);
     loadingRef.current = false;
   }, [paramUnionId]);
 
@@ -138,9 +143,10 @@ export default function UnionGamesPage() {
       loadingRef.current = true;
       try {
         setLoading(true);
+        setLoadError(null);
 
         // Load union info + clubs
-        const [{ data: unionData }, { data: unionClubs }] = await Promise.all([
+        const [unionResult, unionClubsResult] = await Promise.all([
           supabase
             .from('unions')
             .select('id, name, code, description, owner_id, created_at')
@@ -148,6 +154,10 @@ export default function UnionGamesPage() {
             .maybeSingle(),
           supabase.from('union_clubs').select('club_id').eq('union_id', targetUnion),
         ]);
+        if (unionResult.error) throw unionResult.error;
+        if (unionClubsResult.error) throw unionClubsResult.error;
+        const unionData = unionResult.data;
+        const unionClubs = unionClubsResult.data;
 
         if (!mountedRef.current) return;
         setUnionName(unionData?.name || 'Union');
@@ -160,7 +170,7 @@ export default function UnionGamesPage() {
         }
 
         // Parallel load
-        const [{ data: tournData }, { data: tableData }, { data: bbjData }] = await Promise.all([
+        const [tournamentResult, tableResult, bbjResult] = await Promise.all([
           // PRIVACY FIX 2026-08-19: this listed tournaments by member club id,
           // so every club's PRIVATE tournaments were exposed union-wide. The
           // union lobby shows union-OWNED games only; private club games carry
@@ -185,6 +195,12 @@ export default function UnionGamesPage() {
             .limit(200),
           supabase.rpc('get_bbj_pool', { p_union_id: targetUnion }).maybeSingle(),
         ]);
+        if (tournamentResult.error) throw tournamentResult.error;
+        if (tableResult.error) throw tableResult.error;
+        if (bbjResult.error) throw bbjResult.error;
+        const tournData = tournamentResult.data;
+        const tableData = tableResult.data;
+        const bbjData = bbjResult.data;
 
         if (!mountedRef.current) return;
 
@@ -206,8 +222,11 @@ export default function UnionGamesPage() {
         setTournaments(sorted);
         setTables(tableData || []);
         setBbjPool(bbjData as BBJPool | null);
-      } catch (err: any) {
-        console.warn('[UnionGames] Load fail:', err.message);
+      } catch (error) {
+        reportError(error, 'UnionGamesPage.load');
+        if (mountedRef.current) {
+          setLoadError('Union Games Could Not Be Loaded. No Game Counts Were Changed.');
+        }
       } finally {
         loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
@@ -221,39 +240,50 @@ export default function UnionGamesPage() {
     if (!user) return;
     let isMounted = true;
     const init = async () => {
-      let targetUnion = paramUnionId || searchParams.get('union') || searchParams.get('unionId');
+      try {
+        setAuthorityError(null);
+        let targetUnion = paramUnionId || searchParams.get('union') || searchParams.get('unionId');
 
-      if (!targetUnion) {
-        // Find user's union through their club membership
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        if (mem?.club_id) {
-          const { data: uc } = await supabase
-            .from('union_clubs')
-            .select('union_id')
-            .eq('club_id', mem.club_id)
+        if (!targetUnion) {
+          // Find user's union through their club membership
+          const { data: mem, error: membershipError } = await supabase
+            .from('club_members')
+            .select('club_id')
+            .eq('user_id', user.id)
             .limit(1)
             .maybeSingle();
-          targetUnion = uc?.union_id || null;
+          if (membershipError) throw membershipError;
+          if (mem?.club_id) {
+            const { data: uc, error: unionClubError } = await supabase
+              .from('union_clubs')
+              .select('union_id')
+              .eq('club_id', mem.club_id)
+              .limit(1)
+              .maybeSingle();
+            if (unionClubError) throw unionClubError;
+            targetUnion = uc?.union_id || null;
+          }
         }
-      }
 
-      if (targetUnion && isMounted) {
-        setUnionId(targetUnion);
-        const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+        if (targetUnion && isMounted) {
+          setUnionId(targetUnion);
+          const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+          if (!isMounted) return;
+          setCanManageGames(operator);
+          await loadUnionData(targetUnion);
+        } else if (isMounted) {
+          toast.error('No Union Found');
+          setLoading(false);
+        }
+      } catch (error) {
+        reportError(error, 'UnionGamesPage.management_authority');
         if (!isMounted) return;
-        setCanManageGames(operator);
-        loadUnionData(targetUnion);
-      } else if (isMounted) {
-        toast.error('No union found.');
+        setCanManageGames(false);
+        setAuthorityError('Union Game Management Access Could Not Be Verified. Please Try Again.');
         setLoading(false);
       }
     };
-    init();
+    void init();
     return () => {
       isMounted = false;
     };
@@ -368,6 +398,22 @@ export default function UnionGamesPage() {
   };
 
   if (loading) return <PageSkeleton variant="dashboard" />;
+
+  if (authorityError) {
+    return (
+      <div className={styles.page}>
+        <div role="alert">{authorityError}</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.page}>
+        <ErrorState message={loadError} onRetry={() => void loadUnionData(unionId || undefined)} />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>

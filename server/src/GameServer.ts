@@ -1,6 +1,7 @@
 import {
   findMixedF06Transfer,
   admitMixedF06Transfer,
+  disposeDeadOriginMixedF06Originals,
   mixedF06PendingOriginals,
   type MixedF06Transfer,
 } from './tournament/mixedF06Custody.js';
@@ -101,6 +102,10 @@ import {
   MTT_PRESTART_TICK_MS,
   seatFirstStartStalled,
   SEAT_FIRST_START_STALL_MS,
+  seatFirstHumanPartnerHoldUntilMs,
+  seatFirstHumanPartnerHoldJitterMs,
+  firstHumanSeatedAtMs,
+  HUMAN_SEAT_DEMAND_TTL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
@@ -518,6 +523,21 @@ const PER_TABLE_LIVENESS_SAMPLE_CAP = 40;
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Consecutive short fills before a horse-only seat-first board is reported
+ * stuck: 12 s, 24 s ... 384 s of backoff, about 12 minutes in all. See the
+ * alarm in topUpPartialSeatFirst.
+ */
+export const SEAT_FIRST_STUCK_AFTER_MISSES = 6;
+
+/** Who sits at a REGISTERING seat-first game, as the fast lane needs it. */
+interface SeatFirstOccupancy {
+  paid: number;
+  hasHuman: boolean;
+  /** Earliest live human seat, ms; NaN when no human sits. */
+  firstHumanAtMs: number;
+}
 
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
@@ -2952,6 +2972,22 @@ export class GameServer {
     let mixedTerminalProof: unknown = null;
     if (mode === 'resume' || packet || durableMixed) {
       try {
+        if (!packet && durableMixed && mixedF06PendingOriginals(durableMixed).length > 0) {
+          // The process that held these originals is gone; only this
+          // successor can give them a terminal disposition. See
+          // disposeDeadOriginMixedF06Originals (2026-10-04).
+          const disposed = await disposeDeadOriginMixedF06Originals(
+            tournamentId,
+            lease.leaseGeneration,
+            durableMixed
+          );
+          if (disposed.absentReleased > 0 || disposed.handsVoided > 0)
+            console.warn(
+              `[GameServer] tournament ${tournamentId.slice(0, 8)}: dead origin of transfer ` +
+                `${durableMixed.transferId.slice(0, 8)} disposed - ${disposed.handsVoided} reserved ` +
+                `hand(s) voided as misdeals, ${disposed.absentReleased} never-begun permit(s) released`
+            );
+        }
         const state =
           !packet && durableMixed
             ? await admitMixedF06Transfer(tournamentId, lease.leaseGeneration, durableMixed)
@@ -7785,9 +7821,14 @@ export class GameServer {
                     target,
                     { pass: topUpPass }
                   );
+                  /* A partner hold refusing the ask is a deliberate wait,
+                     not an empty pool: it does not back the event off. */
+                  const held =
+                    added === 0 &&
+                    this.tournamentRecurring.seatFirstPartnerHoldUntil(tournament.id) > Date.now();
                   this.pastStartTopUpClock.set(tournament.id, {
                     at: now,
-                    misses: added > 0 ? 0 : misses + 1,
+                    misses: added > 0 ? 0 : held ? misses : misses + 1,
                   });
                   if (added > 0) {
                     console.log(
@@ -9895,7 +9936,7 @@ export class GameServer {
           // prize_pool_finalized: a board whose pool is finalized has left
           // registration (see the fill gate below), whatever its status says.
           .select(
-            'format_contract, id, name, max_players, variant, start_time, prize_pool_finalized'
+            'format_contract, id, name, max_players, variant, start_time, created_at, prize_pool_finalized'
           )
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
@@ -9962,7 +10003,9 @@ export class GameServer {
              * from the first seconds of boot — now owns the human case too:
              * a partially-paid seat-first game with a HUMAN in a seat is
              * topped up immediately, per Dan's 2026-08-26 rule ("the moment
-             * one does, topUpWithHorses fills the remaining seats"). A
+             * one does, topUpWithHorses fills the remaining seats") - since
+             * 2026-10-04 the moment that human's partner hold ends, so two
+             * people can meet at one table (seatFirstHumanPartnerHoldUntilMs). A
              * partial game with only horses is left alone on purpose: that
              * is the horse-opened board holding its last seat for a human
              * (60-150s window), and the held-empty rotation — filling those
@@ -9988,7 +10031,14 @@ export class GameServer {
               const startMs = t.start_time ? Date.parse(String(t.start_time)) : NaN;
               const windowClosed = Number.isFinite(startMs) && startMs <= Date.now();
               this.launchDiscoveryJob(
-                this.fillPartialSeatFirstGame(id, seats, paid, windowClosed),
+                this.fillPartialSeatFirstGame(
+                  id,
+                  seats,
+                  paid,
+                  windowClosed,
+                  startMs,
+                  Date.parse(String((t as { created_at?: string | null }).created_at ?? ''))
+                ),
                 'GameServer.human_seat_first_fill_error',
                 { tournamentId: id }
               );
@@ -10380,6 +10430,8 @@ export class GameServer {
   private seatFirstFillMisses = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
+  /** Horse-only boards already reported stuck (once each; cleared when filled). */
+  private seatFirstStuckReported = new Set<string>();
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -10390,7 +10442,10 @@ export class GameServer {
    * with SOME seats paid but not all. If one of those seats belongs to a
    * HUMAN, the game is committed (Dan 2026-08-26: "The moment one does,
    * topUpWithHorses fills the remaining seats") and the remaining seats are
-   * filled immediately. If every occupant is a horse, this does nothing -
+   * filled the moment its partner hold ends (2026-10-04: the open seats are
+   * kept for people until the board's window closes, and for at least 90 s
+   * after the first human sat, so two players can meet at one table - see
+   * seatFirstHumanPartnerHoldUntilMs). If every occupant is a horse, this does nothing -
    * that partial game is the horse-opened board deliberately holding its
    * last seat for a human, and taking it here would erase that design.
    *
@@ -10403,7 +10458,9 @@ export class GameServer {
     tournamentId: string,
     seats: number,
     paid: number,
-    windowClosed: boolean
+    windowClosed: boolean,
+    startMs: number = NaN,
+    createdAtMs: number = NaN
   ): Promise<void> {
     /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
 
@@ -10430,9 +10487,34 @@ export class GameServer {
        is cached per paid count (seatFirstHasHuman), so a board is asked "who
        is here" once per change in its seats, not once per attempt - which
        keeps the saving round 15 bought for the stuck-board case. */
-    const hasHuman = await this.seatFirstHasHuman(tournamentId, paid);
-    if (hasHuman === null) return;
+    const occupancy = await this.seatFirstHasHuman(tournamentId, paid);
+    if (occupancy === null) return;
+    const hasHuman = occupancy.hasHuman;
     if (!hasHuman && !windowClosed) return;
+    /* A HUMAN'S OPPONENT SEAT IS KEPT FOR PEOPLE FIRST (2026-10-04, Dan: "HEADS
+       UP SIT N GO'S DID NOT WORK WHEN 2 HUMAN PLAYERS TRIED TO SIT DOWN AND
+       PLAY TOGETHER"). See seatFirstHumanPartnerHoldUntilMs: a seated human's
+       board keeps its open seats for people until its window closes, and for
+       at least 90 s after the first human sat. topUpWithHorses refuses inside
+       the hold too; asking it here would only count a "miss" and raise the
+       CANNOT FILL alarm for a board that is waiting on purpose. In the hold's
+       last HUMAN_SEAT_DEMAND_TTL_MS the seats are declared, so the horses
+       this human will need are still free the moment the hold ends. */
+    if (hasHuman) {
+      const holdUntil = seatFirstHumanPartnerHoldUntilMs(
+        startMs,
+        occupancy.firstHumanAtMs,
+        seatFirstHumanPartnerHoldJitterMs(tournamentId),
+        createdAtMs
+      );
+      const now = Date.now();
+      if (holdUntil > now) {
+        if (holdUntil - now <= HUMAN_SEAT_DEMAND_TTL_MS) {
+          this.tournamentRecurring.noteHumanSeatDemand(tournamentId, seats - paid);
+        }
+        return;
+      }
+    }
     const misses = hasHuman ? 0 : (this.seatFirstFillMisses.get(tournamentId) ?? 0);
     const interval = Math.min(12_000 * 2 ** Math.min(misses, 6), 10 * 60_000);
     // Check and set with no await between, after the read: two passes that
@@ -10451,7 +10533,10 @@ export class GameServer {
   }
 
   /** Last "is a human seated here" answer per seat-first game, keyed by its paid count. */
-  private seatFirstOccupancy = new Map<string, { paid: number; hasHuman: boolean }>();
+  private seatFirstOccupancy = new Map<
+    string,
+    { paid: number; hasHuman: boolean; firstHumanAtMs: number }
+  >();
 
   /**
    * Is a live seat on this seat-first game held by a human? Read once per
@@ -10461,11 +10546,14 @@ export class GameServer {
    * (reported); the caller then does nothing this pass rather than guess.
    * is_horse is used to IDENTIFY the occupant only (CLAUDE.md 10.5).
    */
-  private seatFirstOccupancyReads = new Map<string, Promise<boolean | null>>();
+  private seatFirstOccupancyReads = new Map<string, Promise<SeatFirstOccupancy | null>>();
 
-  private seatFirstHasHuman(tournamentId: string, paid: number): Promise<boolean | null> {
+  private seatFirstHasHuman(
+    tournamentId: string,
+    paid: number
+  ): Promise<SeatFirstOccupancy | null> {
     const cached = this.seatFirstOccupancy.get(tournamentId);
-    if (cached && cached.paid === paid) return Promise.resolve(cached.hasHuman);
+    if (cached && cached.paid === paid) return Promise.resolve(cached);
     // The fast lane asks every second; one read per board is in flight at a time.
     const inFlight = this.seatFirstOccupancyReads.get(tournamentId);
     if (inFlight) return inFlight;
@@ -10476,7 +10564,10 @@ export class GameServer {
     return read;
   }
 
-  private async readSeatFirstHasHuman(tournamentId: string, paid: number): Promise<boolean | null> {
+  private async readSeatFirstHasHuman(
+    tournamentId: string,
+    paid: number
+  ): Promise<SeatFirstOccupancy | null> {
     const { data: primaryId, error: primErr } = await supabase.rpc('fn_tournament_primary_table', {
       p_tournament_id: tournamentId,
     });
@@ -10492,7 +10583,7 @@ export class GameServer {
 
     const { data: occupants, error: occErr } = await supabase
       .from('table_seats')
-      .select('user_id')
+      .select('user_id, joined_at')
       .eq('table_id', String(primaryId))
       .is('left_at', null);
     if (occErr) {
@@ -10507,7 +10598,7 @@ export class GameServer {
       .filter((v) => v.length > 0);
     // Nobody on the primary table (seats split onto a duplicate): no human to
     // serve here, and a closed window still fills it, exactly as before.
-    if (ids.length === 0) return false;
+    if (ids.length === 0) return { paid, hasHuman: false, firstHumanAtMs: NaN };
 
     const { data: profiles, error: profErr } = await supabase
       .from('profiles')
@@ -10520,9 +10611,21 @@ export class GameServer {
       );
       return null;
     }
-    const hasHuman = (profiles || []).some((p) => !(p as { is_horse?: boolean }).is_horse);
-    this.seatFirstOccupancy.set(tournamentId, { paid, hasHuman });
-    return hasHuman;
+    const humans = new Set(
+      (profiles || [])
+        .filter((p) => !(p as { is_horse?: boolean }).is_horse)
+        .map((p) => String((p as { id?: string }).id ?? ''))
+    );
+    const answer: SeatFirstOccupancy = {
+      paid,
+      hasHuman: humans.size > 0,
+      firstHumanAtMs: firstHumanSeatedAtMs(
+        (occupants || []) as Array<{ user_id?: string | null; joined_at?: string | null }>,
+        (id) => humans.has(id)
+      ),
+    };
+    this.seatFirstOccupancy.set(tournamentId, answer);
+    return answer;
   }
 
   /**
@@ -10548,6 +10651,25 @@ export class GameServer {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats, {
       forHuman,
     });
+    /* THE HOLD REFUSED IT, THE POOL DID NOT (2026-10-04 audit). This lane's
+       "who is seated" answer is cached per paid count, so it can be stale -
+       a human who left and another who sat at the same count, or a board
+       first read as horse-only. topUpWithHorses always reads the seats fresh
+       and refuses inside a running partner hold. That refusal is a
+       deliberate wait: forget the cached answer so the next pass re-reads
+       who is here, and neither count a miss (which backs the board off for
+       minutes) nor raise CANNOT FILL. */
+    if (
+      added === 0 &&
+      this.tournamentRecurring.seatFirstPartnerHoldUntil(tournamentId) > Date.now()
+    ) {
+      this.seatFirstOccupancy.delete(tournamentId);
+      this.seatFirstFillMisses.delete(tournamentId);
+      // Declared from a stale answer: the next pass re-declares it in the
+      // hold's last stretch if the board still needs it.
+      this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
+      return;
+    }
     let shortfall = seats - paid;
     /* THE ALARM IS JUDGED ON WHAT THE TOP-UP SAW, NOT ON THE COUNT THIS LANE
        READ A SECOND EARLIER (2026-09-11). `paid` is this lane's read; the
@@ -10567,6 +10689,7 @@ export class GameServer {
     // misses, a short one counts another.
     if (added >= shortfall) {
       this.seatFirstFillMisses.delete(tournamentId);
+      this.seatFirstStuckReported.delete(tournamentId);
       this.seatFirstOccupancy.delete(tournamentId);
       this.tournamentRecurring.clearHumanSeatDemand(tournamentId);
     } else
@@ -10581,16 +10704,42 @@ export class GameServer {
       );
     }
     if (added < shortfall) {
+      /* THE ALARM IS FOR A PERSON WHO IS WAITING (2026-10-05). It was raised
+         for every short board, and almost all of them have nobody in them:
+         measured after the 02:03 UTC break on 2026-10-05, 7-10 "CANNOT FILL"
+         a minute, every one a horse-only board whose window had closed while
+         the fleet was still re-seating ("the pool is thin"), not one with a
+         human seated. Those boards are not failing - they wait, backed off,
+         for the next free horse and fill within minutes. A human in a seat
+         keeps the once-a-minute alarm. A horse-only board says so ONCE, and
+         only when it has stayed short through the whole backoff ladder
+         (SEAT_FIRST_STUCK_AFTER_MISSES, about 12 minutes) - the shape of the
+         2026-09-02 boards stuck for hours, which is the case worth a line. */
       const now = Date.now();
-      const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
-      if (now - lastReport >= 60_000) {
-        this.lastHumanWaitReportAt.set(tournamentId, now);
+      if (forHuman) {
+        const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
+        if (now - lastReport >= 60_000) {
+          this.lastHumanWaitReportAt.set(tournamentId, now);
+          reportError(
+            new Error(
+              `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
+                `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            ),
+            'GameServer.seat_first_human_waiting'
+          );
+        }
+      } else if (
+        (this.seatFirstFillMisses.get(tournamentId) ?? 0) >= SEAT_FIRST_STUCK_AFTER_MISSES &&
+        !this.seatFirstStuckReported.has(tournamentId)
+      ) {
+        if (this.seatFirstStuckReported.size > 1000) this.seatFirstStuckReported.clear();
+        this.seatFirstStuckReported.add(tournamentId);
         reportError(
           new Error(
-            `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
-              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
+            `[GameServer] SEAT-FIRST BOARD STUCK ${tournamentId.slice(0, 8)}: ` +
+              `${paid}/${seats} paid, still short after ${SEAT_FIRST_STUCK_AFTER_MISSES} backed-off fills (${why})`
           ),
-          'GameServer.seat_first_human_waiting'
+          'GameServer.seat_first_board_stuck'
         );
       }
     }

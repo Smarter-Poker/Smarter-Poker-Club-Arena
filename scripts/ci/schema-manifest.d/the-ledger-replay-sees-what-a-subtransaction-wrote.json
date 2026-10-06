@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/the-ledger-replay-sees-what-a-subtransaction-wrote. NOT YET APPLIED when pushed (2026-10-04): migration 20261004124640_the_ledger_replay_sees_what_a_subtransaction_wrote_and_a_uni adds public.chip_ledger.top_xid (stamped by fn_ca_chip_ledger_enrich) and is applied after merge through Apply Merged Migration, followed by 20261004125201 (records only). Until then the credentialed CI run of check-migrations-applied correctly reports this column absent.",
+  "tables": [],
+  "functions": [],
+  "columns": {
+    "chip_ledger": ["top_xid"]
+  }
+}

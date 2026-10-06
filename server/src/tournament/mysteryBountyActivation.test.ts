@@ -18,9 +18,11 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  totalEntriesFromRows,
   shouldActivateMysteryBounty,
   mysteryBountyThresholdReached,
   mysteryPoolCents,
+  mysteryBountyFieldTooSmall,
   type MysteryBountyActivationInputs,
 } from './mysteryBountyActivation.js';
 import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
@@ -178,5 +180,96 @@ describe('mysteryPoolCents', () => {
     expect(mysteryPoolCents(0, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
     expect(mysteryPoolCents(-5, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
     expect(mysteryPoolCents(100_000, 0, 0, 0, CHIP_UNIT_CENTS)).toBe(0);
+  });
+});
+
+describe('totalEntriesFromRows', () => {
+  it('counts one entry per row plus every rebuy and re-entry on it', () => {
+    expect(totalEntriesFromRows([{ rebuys: 0 }, { rebuys: 2 }, { rebuys: null }, {}])).toBe(6);
+  });
+
+  it('never lets a bad rebuy figure shrink the field', () => {
+    expect(totalEntriesFromRows([{ rebuys: -3 }, { rebuys: 'x' }, { rebuys: 1.7 }])).toBe(4);
+  });
+
+  it('an empty field is zero entries, which the threshold refuses', () => {
+    expect(totalEntriesFromRows([])).toBe(0);
+  });
+});
+
+/* Dan, 2026-10-05, verbatim: "MYSTERY BOUNTY OF 10 OR FEWER DON'T GET CHESTS,
+   ITS TREATING LIKE A SINGLE TABLE TOURNAMENTS WITH 50 30 20 PAYOUT
+   PERCENTAGES". The threshold of every mode is reached in these cases, so the
+   only thing that can refuse is the entry count. */
+describe('a mystery bounty of 10 or fewer entries never opens chests', () => {
+  const reached = {
+    at_the_money: { modeValue: null, paidPlaces: 3 },
+    percent_field: { modeValue: 100, paidPlaces: 3 },
+    player_count: { modeValue: 9, paidPlaces: 3 },
+  } as const;
+
+  for (const mode of ['at_the_money', 'percent_field', 'player_count'] as const) {
+    it(`${mode}: refuses at 10 or fewer entries and opens at 11`, () => {
+      for (const totalEntries of [2, 3, 9, 10]) {
+        const d = shouldActivateMysteryBounty({
+          ...base,
+          ...reached[mode],
+          mode,
+          playersRemaining: 2,
+          totalEntries,
+        });
+        expect(d).toEqual({ activate: false, reason: 'small_field', drawCount: 0 });
+      }
+      const eleven = shouldActivateMysteryBounty({
+        ...base,
+        ...reached[mode],
+        mode,
+        playersRemaining: 3,
+        totalEntries: 11,
+      });
+      expect(eleven.activate).toBe(true);
+      expect(eleven.drawCount).toBe(2);
+    });
+  }
+
+  it('re-entries count: 8 players with 3 re-entries is 11 entries and opens', () => {
+    const entries = totalEntriesFromRows([
+      { rebuys: 2 },
+      { rebuys: 1 },
+      ...Array.from({ length: 6 }, () => ({ rebuys: 0 })),
+    ]);
+    expect(entries).toBe(11);
+    expect(
+      shouldActivateMysteryBounty({
+        ...base,
+        playersRemaining: 3,
+        paidPlaces: 3,
+        totalEntries: entries,
+      }).activate
+    ).toBe(true);
+  });
+
+  it('an unknown or nonsensical entry count waits instead of opening chests', () => {
+    for (const totalEntries of [0, -1, Number.NaN, 10.5]) {
+      expect(
+        shouldActivateMysteryBounty({ ...base, playersRemaining: 3, paidPlaces: 3, totalEntries })
+          .reason
+      ).toBe('entry_count_unknown');
+    }
+  });
+
+  it('entry still open is reported before the field size', () => {
+    expect(
+      shouldActivateMysteryBounty({ ...base, entryClosed: false, totalEntries: 5 }).reason
+    ).toBe('entry_still_open');
+  });
+
+  it('mysteryBountyFieldTooSmall never calls an unknown count small', () => {
+    expect(mysteryBountyFieldTooSmall(10)).toBe(true);
+    expect(mysteryBountyFieldTooSmall(1)).toBe(true);
+    expect(mysteryBountyFieldTooSmall(11)).toBe(false);
+    expect(mysteryBountyFieldTooSmall(null)).toBe(false);
+    expect(mysteryBountyFieldTooSmall(0)).toBe(false);
+    expect(mysteryBountyFieldTooSmall(Number.NaN)).toBe(false);
   });
 });

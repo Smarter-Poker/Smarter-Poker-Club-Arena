@@ -4,7 +4,7 @@
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
 # observed_at: 2026-10-03T13:25:00Z
-# active: 125
+# active: 126
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -92,6 +92,10 @@
 #     the estate that could have seen either case, which is why both are written
 #     down rather than reconciled quietly.
 # jobname	schedule
+# 2026-10-04: 125 -> 126. postgrest-pool-renew-10m was scheduled by migration
+# the_api_pool_is_renewed_before_it_outgrows_the_host: PostgREST's pool
+# connections grow ~20 MB/min each until the pool is replaced, and the
+# Management API exposes no pool lifetime. The argument is in that header.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -182,6 +186,7 @@ leaderboard-payout-waterfall-daily	20 0 * * *
 managed-game-schedules-minute	* * * * *
 pgrst-reload-watchdog	6,21,36,51 * * * *
 pnm-locations-refresh	*/30 * * * *
+postgrest-pool-renew-10m	2,12,22,32,42,52 * * * *
 prune-ca-hand-facts	17 * * * *
 prune_idempotency_keys	0 * * * *
 rake-attribution-drift-audit-hourly	47 * * * *

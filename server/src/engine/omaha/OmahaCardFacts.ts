@@ -5,7 +5,11 @@
 import type { Card } from '../../types.js';
 const ranks = '23456789TJQKA';
 const suits: Card['suit'][] = ['clubs', 'diamonds', 'hearts', 'spades'];
-const value = (c: Card) => ranks.indexOf(c.rank) + 2;
+const RANK_VALUE: Record<string, number> = Object.fromEntries(
+  [...ranks].map((rank, index) => [rank, index + 2])
+);
+// Called only after the cards are validated, so every rank is in the table.
+const value = (c: Card) => RANK_VALUE[c.rank];
 const key = (c: Card) => `${c.rank}:${c.suit}`;
 const mask = (cards: Card[]) => cards.reduce((m, c) => m | (1 << (value(c) - 2)), 0);
 const straightMasks = Array.from({ length: 10 }, (_, i) => {
@@ -13,39 +17,49 @@ const straightMasks = Array.from({ length: 10 }, (_, i) => {
   const values = high === 5 ? [14, 2, 3, 4, 5] : [high - 4, high - 3, high - 2, high - 1, high];
   return { high, mask: values.reduce((m, v) => m | (1 << (v - 2)), 0) };
 });
-const pairs = <T>(cards: T[]): T[][] =>
-  cards.flatMap((a, i) => cards.slice(i + 1).map((b) => [a, b]));
-const triples = <T>(cards: T[]): T[][] =>
-  cards.flatMap((a, i) =>
-    cards.slice(i + 1).flatMap((b, j) => cards.slice(i + j + 2).map((c) => [a, b, c]))
-  );
 const bits = (n: number) => {
   let count = 0;
   for (; n; n &= n - 1) count++;
   return count;
 };
+const STRAIGHT_HIGH_BY_MASK = new Map(straightMasks.map((s) => [s.mask, s.high]));
+const rankBits = (cards: Card[]) => cards.map((c) => 1 << (value(c) - 2));
+/** Best straight from exactly two hole and three board cards (0 if none). */
 function straightHigh(hole: Card[], board: Card[]): number {
+  const h = rankBits(hole);
+  const b = rankBits(board);
   let best = 0;
-  for (const h of pairs(hole))
-    for (const b of triples(board)) {
-      const m = mask([...h, ...b]);
-      if (bits(m) !== 5) continue;
-      for (const s of straightMasks) if (s.mask === m) best = Math.max(best, s.high);
+  for (let i = 0; i < h.length; i++)
+    for (let j = i + 1; j < h.length; j++) {
+      const pair = h[i] | h[j];
+      if (h[i] === h[j]) continue; // a paired hand cannot hold five distinct ranks
+      for (let x = 0; x < b.length; x++)
+        for (let y = x + 1; y < b.length; y++)
+          for (let z = y + 1; z < b.length; z++) {
+            const m = pair | b[x] | b[y] | b[z];
+            if (bits(m) !== 5) continue;
+            const high = STRAIGHT_HIGH_BY_MASK.get(m);
+            if (high !== undefined && high > best) best = high;
+          }
     }
   return best;
 }
-function possibleStraightHigh(available: Card[], board: Card[]): number {
-  const availableRanks = mask(available);
+/** Best straight an opponent could hold with two of `availableRanks` (a rank
+ * mask) and three board cards. */
+function possibleStraightHighOfRanks(availableRanks: number, board: Card[]): number {
+  const b = rankBits(board);
   let best = 0;
-  for (const b of triples(board)) {
-    const m = mask(b);
-    if (bits(m) !== 3) continue;
-    for (const s of straightMasks) {
-      const missing = s.mask & ~m;
-      if ((m & s.mask) === m && bits(missing) === 2 && (availableRanks & missing) === missing)
-        best = Math.max(best, s.high);
-    }
-  }
+  for (let x = 0; x < b.length; x++)
+    for (let y = x + 1; y < b.length; y++)
+      for (let z = y + 1; z < b.length; z++) {
+        const m = b[x] | b[y] | b[z];
+        if (bits(m) !== 3) continue;
+        for (const s of straightMasks) {
+          const missing = s.mask & ~m;
+          if ((m & s.mask) === m && bits(missing) === 2 && (availableRanks & missing) === missing)
+            best = Math.max(best, s.high);
+        }
+      }
   return best;
 }
 function lowScore(hole: Card[], board: Card[]): number | null {
@@ -99,20 +113,24 @@ function isNutLow(score: number | null, available: Card[], board: Card[]): boole
   // can remove every physical copy of a required opponent rank.
   return opponentBest === null || score <= opponentBest;
 }
-function flushFacts(hole: Card[], board: Card[], available: Card[]) {
-  return suits.flatMap((suit) => {
-    const h = hole
+/** Values of one suit's cards, highest first, per suit in `suits` order. */
+const bySuit = (cards: Card[]) =>
+  suits.map((suit) =>
+    cards
       .filter((c) => c.suit === suit)
       .map(value)
-      .sort((a, b) => b - a);
-    const b = board
-      .filter((c) => c.suit === suit)
-      .map(value)
-      .sort((a, b) => b - a);
-    const a = available
-      .filter((c) => c.suit === suit)
-      .map(value)
-      .sort((a, b) => b - a);
+      .sort((a, b) => b - a)
+  );
+function flushFactsOfSuits(
+  holeBySuit: number[][],
+  boardBySuit: number[][],
+  availableBySuit: number[][],
+  boardLength: number
+) {
+  return suits.flatMap((suit, index) => {
+    const h = holeBySuit[index];
+    const b = boardBySuit[index];
+    const a = availableBySuit[index];
     if (h.length < 2 || b.length < 2) return [];
     const compare = (pair: number[]) =>
       [...pair, ...b.slice(0, 3)].sort((a, b) => b - a).reduce((n, v) => n * 15 + v, 0);
@@ -121,7 +139,7 @@ function flushFacts(hole: Card[], board: Card[], available: Card[]) {
       {
         suit,
         made: b.length >= 3,
-        draw: b.length === 2 && board.length < 5,
+        draw: b.length === 2 && boardLength < 5,
         higherFlushPossible: beaten,
         highestHoleRanks: h.slice(0, 2),
       },
@@ -164,8 +182,8 @@ export function omahaCardFacts(
   const opponentStraightFlushHigh = Math.max(
     0,
     ...suits.map((suit) =>
-      possibleStraightHigh(
-        available.filter((c) => c.suit === suit),
+      possibleStraightHighOfRanks(
+        mask(available.filter((c) => c.suit === suit)),
         board.filter((c) => c.suit === suit)
       )
     )
@@ -175,34 +193,64 @@ export function omahaCardFacts(
   const lowHoleRanks = [
     ...new Set(hole.map((c) => (c.rank === 'A' ? 1 : value(c))).filter((v) => v <= 8)),
   ].sort((a, b) => a - b);
+  const holeBySuit = bySuit(hole);
+  const boardBySuit = bySuit(board);
+  const availableBySuit = bySuit(available);
+  const flushes = flushFactsOfSuits(holeBySuit, boardBySuit, availableBySuit, board.length);
+  const flushMade = flushes.some((f) => f.made);
+  // How many available cards hold each rank: removing one card removes its
+  // rank from the opponents' ranks only if it was the last of that rank.
+  const availableRankCount = new Array<number>(15).fill(0);
+  for (const c of available) availableRankCount[value(c)]++;
+  const availableRanks = mask(available);
   const nextCards =
     includeTransitions && board.length >= 3 && board.length < 5
       ? available.map((card) => {
           const next = [...board, card];
-          const rest = available.filter((c) => key(c) !== key(card));
+          const v = value(card);
+          const restRanks =
+            availableRankCount[v] === 1 ? availableRanks & ~(1 << (v - 2)) : availableRanks;
           const straight = straightHigh(hole, next);
           const low = includeLow ? lowScore(hole, next) : null;
-          const flushes = flushFacts(hole, next, rest);
+          // This card's suit gains it on the board and loses it from the
+          // opponents' cards; every other suit is unchanged.
+          const suitIndex = suits.indexOf(card.suit);
+          const nextBoardBySuit = boardBySuit.map((values, index) =>
+            index === suitIndex ? [...values, v].sort((a, b) => b - a) : values
+          );
+          const restBySuit = availableBySuit.map((values, index) =>
+            index === suitIndex ? values.filter((x) => x !== v) : values
+          );
+          const nextFlushes = flushFactsOfSuits(
+            holeBySuit,
+            nextBoardBySuit,
+            restBySuit,
+            next.length
+          );
           return {
             card,
             straightHigh: straight,
             makesStraight: currentStraight === 0 && straight > 0,
-            nutStraight: straight > 0 && straight >= possibleStraightHigh(rest, next),
-            makesFlush:
-              flushes.some((f) => f.made) &&
-              !flushFacts(hole, board, available).some((f) => f.made),
-            nutFlush: flushes.some((f) => f.made && !f.higherFlushPossible),
+            nutStraight: straight > 0 && straight >= possibleStraightHighOfRanks(restRanks, next),
+            makesFlush: nextFlushes.some((f) => f.made) && !flushMade,
+            nutFlush: nextFlushes.some((f) => f.made && !f.higherFlushPossible),
             pairsBoard: board.some((c) => c.rank === card.rank),
             completesPocketSet:
               hole.filter((c) => c.rank === card.rank).length >= 2 &&
               !board.some((c) => c.rank === card.rank),
             repeatsLowHoleRank: lowHoleRanks.includes(card.rank === 'A' ? 1 : value(card)),
             qualifiesLow: includeLow ? low !== null : null,
-            nutLow: includeLow ? isNutLow(low, rest, next) : null,
+            nutLow: includeLow
+              ? low !== null &&
+                isNutLow(
+                  low,
+                  available.filter((c) => c !== card),
+                  next
+                )
+              : null,
           };
         })
       : [];
-  const flushes = flushFacts(hole, board, available);
   return {
     version: 'omaha-exact-card-facts-v1' as const,
     lowFactsIncluded: includeLow,
@@ -214,7 +262,8 @@ export function omahaCardFacts(
     straightFlushHigh,
     opponentStraightFlushHigh,
     nutStraightFlush: straightFlushHigh > 0 && straightFlushHigh >= opponentStraightFlushHigh,
-    nutStraight: currentStraight > 0 && currentStraight >= possibleStraightHigh(available, board),
+    nutStraight:
+      currentStraight > 0 && currentStraight >= possibleStraightHighOfRanks(availableRanks, board),
     straightOutCards: nextCards.filter((c) => c.makesStraight).map((c) => c.card),
     nutStraightOutCards: nextCards
       .filter((c) => c.makesStraight && c.nutStraight)

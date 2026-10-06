@@ -170,9 +170,15 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     expect(routeElement('engine')).toContain('<PlatformStaffGuard>');
     expect(routeElement('financial-alerts')).toContain('<PlatformStaffGuard>');
     expect(routeElement('financial-incidents')).toContain('<FinancialAdminGate>');
-    for (const suffix of ['operations', 'table-management', 'data', 'statements', 'settlement']) {
+    for (const suffix of ['operations', 'data', 'statements', 'settlement']) {
       expect(routeElement(`unions/:unionId/${suffix}`)).toContain('<UnionOverseerGuard>');
     }
+    // Table Management deliberately uses the narrower game-management
+    // authority. Appointed union operators may manage games without gaining
+    // the broader financial/data overseer surface.
+    expect(routeElement('unions/:unionId/table-management')).toContain(
+      '<UnionOverseerGuard authority="game-management">'
+    );
     // The club settlement route keeps its member guard; the union twin now
     // carries the overseer guard - neither is an open door.
     expect(routeElement('clubs/:clubId/settlement')).toContain('<ClubMemberGuard>');

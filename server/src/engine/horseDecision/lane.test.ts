@@ -1,4 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The pool clamps an explicit worker request to the host's logical CPUs
+// (horseDecisionWorkerCount). The pool tests below ask for two workers to
+// test routing, readiness and the fleet status, not the host; on a runner with
+// fewer than four logical CPUs the clamp left one worker and those tests
+// failed for a reason that is not theirs. The count policy itself is tested
+// directly with explicit core counts.
+vi.mock('node:os', async (importOriginal) => {
+  const os = await importOriginal<typeof import('node:os')>();
+  return { ...os, availableParallelism: () => 8 };
+});
 import type { HorseDecisionWorkerReady, HorseDecisionWorkerResponse } from './protocol.js';
 import type { WorkerLike } from './client.js';
 import {

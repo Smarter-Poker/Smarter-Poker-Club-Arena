@@ -57,6 +57,18 @@ for (const brokenDiamond of [false, true]) {
       await page.waitForFunction(() =>
         window.__dailyMissionArt?.missionArt.some((asset) => asset.name.includes('diamond'))
       );
+      // The same hero requested again (a remount, or a context without an HTTP
+      // cache) is still one file of payload (2026-10-04).
+      await page.evaluate(async () => {
+        await (
+          await fetch('/images/challenges/daily-missions-casino-v2.webp', { cache: 'no-store' })
+        ).arrayBuffer();
+      });
+      await page.waitForFunction(() =>
+        window.__dailyMissionArt?.missionArt.some(
+          (asset) => asset.name === 'daily-missions-casino-v2.webp' && asset.requests >= 2
+        )
+      );
       const evidence = await page.evaluate(() => {
         const observation = window.__dailyMissionArt!;
         observation.finish();
@@ -84,6 +96,7 @@ for (const brokenDiamond of [false, true]) {
         hero.byteLength,
         brokenDiamond ? Buffer.byteLength('not an image') : diamond.byteLength,
       ]);
+      expect(evidence.art.map((asset) => asset.requests)).toEqual([2, 1]);
       if (brokenDiamond) {
         await expect(expectMissionArtworkDecoded(page)).rejects.toThrow(
           'Mission artwork did not decode'

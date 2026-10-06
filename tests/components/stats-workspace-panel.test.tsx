@@ -48,9 +48,11 @@ const workspace: StatsWorkspaceSnapshot = {
           note: { handId: 'hand-1', note: 'Review Turn', tags: ['study'], updatedAt: null },
         },
       ],
+      handsCapped: false,
     },
   ],
   preferences: { dashboardLayout: ['overview'], privacyPresentationMode: true },
+  coverage: { capped: false, rowLimit: 100 },
   alerts: [
     {
       id: 'alert-1',

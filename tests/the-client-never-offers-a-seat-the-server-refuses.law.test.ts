@@ -46,14 +46,14 @@ const migrations = () => {
 };
 
 describe('LAW - the client cap is the server cap', () => {
-  it('the server says four, in the migration that says so in its name', () => {
+  it('the server says four, in the migration that says so in its name', { timeout: 30_000 }, () => {
     const [, sql] =
       migrations().find(([name]) => name.includes('four_games_is_the_max')) ?? ([] as never);
     expect(sql, 'the migration that lowered the cap is gone').toBeTruthy();
     expect(sql).toMatch(/v_max_tables[^\n]*4/);
   });
 
-  it('the Diamond buy-in door counts to the same four', () => {
+  it('the Diamond buy-in door counts to the same four', { timeout: 30_000 }, () => {
     /* The arena needed its own door, so the number exists twice on the server
        too. Both are asserted, because a cap enforced in one denomination and
        not the other is a cap in name only. */

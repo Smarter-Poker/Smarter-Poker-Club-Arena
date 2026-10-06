@@ -123,8 +123,11 @@ describe('LAW: horses count where players count (CLAUDE.md 10.5)', () => {
     expect(code(FRIEND_SUGGESTIONS)).not.toContain("eq('profiles.is_horse', false)");
   });
 
-  it('still SELECTS is_horse, because identification stays legal', () => {
-    // 10.5 permits the flag as DATA (a badge, a column). Only exclusion is banned.
-    expect(code(FRIEND_SUGGESTIONS)).toContain('is_horse');
+  it('does not read is_horse at all: a browser cannot, and asking refused every opponent', () => {
+    /* 2026-10-05 audit. This test used to require the column in the read.
+       The browser roles hold no SELECT on profiles.is_horse (horse identity
+       is not readable by a player), so the read was refused with 42501 and
+       the recent-opponents suggestions were empty for everybody. */
+    expect(code(FRIEND_SUGGESTIONS)).not.toContain('is_horse');
   });
 });

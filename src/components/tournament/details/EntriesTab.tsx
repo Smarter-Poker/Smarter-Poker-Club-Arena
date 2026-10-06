@@ -98,7 +98,12 @@ function publicId(entry: TournamentEntry, detail?: EntryDetail): string | null {
   return null;
 }
 
-export default function EntriesTab({ tournament, entries, onWatchPlayer }: TournamentTabProps) {
+export default function EntriesTab({
+  tournament,
+  entries,
+  currentUserId,
+  onWatchPlayer,
+}: TournamentTabProps) {
   const [details, setDetails] = useState<Record<string, EntryDetail>>({});
   /**
    * Whether the one detail query has landed.
@@ -361,7 +366,15 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
           const addOn = detail?.addOn || (entry.add_ons ?? 0) > 0;
           const avatarUrl = detail?.avatarUrl || entry.avatar_url;
           const isReentry = reentryIds.has(entry.id);
-          const isSatellite = detail?.isSatelliteQualifier || false;
+          /* The props carry this flag too and realtime keeps it current; the
+             detail query alone meant a seat won through a satellite showed no
+             badge until the next 20 second poll, and none at all if that query
+             was refused. */
+          const isSatellite = detail?.isSatelliteQualifier ?? entry.is_satellite_qualifier ?? false;
+          /* YOUR OWN ROW (2026-10-04 review pass). Ranking has always lit the
+             signed-in player's row; the register did not, so finding yourself
+             in a field of several hundred meant reading every name. */
+          const isHero = !!currentUserId && entry.user_id === currentUserId;
 
           /* Dan 2026-08-25: "see any player and be redirected to that table
              directly." `table_id` has always been on these rows and was never
@@ -395,6 +408,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
               </span>
 
               <span className="et-marks">
+                {isHero && <span className="tl-badge tl-badge--action">You</span>}
                 {isSatellite && <SatelliteSeatBadge />}
                 {isReentry && (
                   <span className="tl-badge tl-badge--action" title="Re-Entry">
@@ -417,7 +431,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
 
           if (!watchable) {
             return (
-              <li key={entry.id} className="tl-row et-row">
+              <li key={entry.id} className={`tl-row et-row${isHero ? ' tl-row--hero' : ''}`}>
                 {body}
               </li>
             );
@@ -427,9 +441,11 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
             <li key={entry.id} className="et-item">
               <button
                 type="button"
-                className="tl-row tl-row--interactive et-row et-row--watch"
+                className={`tl-row tl-row--interactive et-row et-row--watch${
+                  isHero ? ' tl-row--hero' : ''
+                }`}
                 onClick={() => onWatchPlayer?.(entry.table_id as string)}
-                aria-label={`Watch ${entry.username} At Their Table`}
+                aria-label={isHero ? 'Go To Your Table' : `Watch ${entry.username} At Their Table`}
               >
                 {body}
               </button>

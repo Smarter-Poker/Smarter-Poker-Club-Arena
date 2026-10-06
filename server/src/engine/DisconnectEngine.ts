@@ -15,7 +15,7 @@
  */
 
 import { reconnectProtectionSeconds, type ReconnectMembership } from './reconnectProtection.js';
-import { thawTableReconnectClock } from '../maintenance/reconnectFreeze.js';
+import { thawTableReconnectClock, thawTablePresenceClock } from '../maintenance/reconnectFreeze.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
@@ -43,6 +43,12 @@ export interface PlayerConnectionState {
   reconnectDeadlineMs?: number;
   reconnectGrantedAtMs?: number;
   reconnectThawedAtMs?: number;
+  /**
+   * Frozen maintenance time already given back to the absence stamps below
+   * (`sitOutSince`, `disconnectedAt`, `pageLeftAt`). See
+   * maintenance/reconnectFreeze.ts, thawPresenceClock.
+   */
+  presenceThawedAtMs?: number;
   isConnected: boolean;
   lastHeartbeat: number;
   consecutiveTimeouts: number;
@@ -151,6 +157,7 @@ export interface DisconnectFsmEntry {
   reconnectDeadlineMs?: number;
   reconnectGrantedAtMs?: number;
   reconnectThawedAtMs?: number;
+  presenceThawedAtMs?: number;
   /* ═══ 2026-09-04 (disconnect audit items 2, 3, 4): THE ENTRY CARRIES WHAT
      THE RESTORE NEEDS. Until today it was three fields, `sinceMs` was
      `lastHeartbeat` for a sat-out player (so a restore reset their 5-minute
@@ -342,6 +349,41 @@ export class DisconnectEngine {
   }
 
   /**
+   * PRESENCE DOES NOT OUTLIVE THE SEAT (2026-10-04, timeout and reconnect audit).
+   *
+   * Forget every player of this table who is not in `seatedPlayerIds`, and
+   * answer who was forgotten. Called with each authoritative seat roster.
+   *
+   * Two paths left an entry standing for a player who no longer held a seat:
+   * a tournament seat closes in the database (balancing move, elimination)
+   * and the engine runs no leave path of its own for it, and a restart
+   * restored every parked entry without asking whether its player was still
+   * seated. Neither was ever removed again, and each hourly park wrote it
+   * back, so it lived as long as the table did. Measured on production
+   * 2026-10-04, parks of the last two hours: 473 of 2,849 entries were
+   * DISCONNECTED or MISSING horses. The engine heartbeats every seated horse
+   * each ten seconds, so each of those is an entry for a seat the engine no
+   * longer held. The oldest was 41 hours old.
+   *
+   * What a stale entry costs: it is broadcast in every snapshot as a
+   * disconnected player, it is announced as PLAYER_DISCONNECTED thirty seconds
+   * after the player left, and a player who later returns to the same table
+   * inherits it whole, including a sit-out they are no longer in, strikes
+   * from a previous stay and a reconnect allowance that expired hours ago.
+   */
+  retainOnly(tableId: string, seatedPlayerIds: Iterable<string>): string[] {
+    const keep = new Set(seatedPlayerIds);
+    const forgotten: string[] = [];
+    const prefix = `${tableId}:`;
+    for (const [key, state] of this.playerStates) {
+      if (!key.startsWith(prefix) || keep.has(state.playerId)) continue;
+      forgotten.push(state.playerId);
+    }
+    for (const playerId of forgotten) this.unregisterPlayer(tableId, playerId);
+    return forgotten;
+  }
+
+  /**
    * Process a heartbeat from a connected player.
    * Should be called periodically (e.g., every 5s via WebSocket ping).
    */
@@ -365,6 +407,17 @@ export class DisconnectEngine {
     state.pageLeftAt = null;
 
     if (wasDisconnected) {
+      // Observation only: how long this absence lasted (2026-10-05).
+      try {
+        const goneSince = state.disconnectedAt;
+        if (typeof goneSince === 'number' && Number.isFinite(goneSince)) {
+          EngineMetrics.disconnectSeconds.observe(
+            Math.max(0, state.lastHeartbeat - goneSince) / 1000
+          );
+        }
+      } catch {
+        /* metrics must never affect gameplay */
+      }
       state.disconnectedAt = undefined;
       /* A HEARTBEAT IS PROOF OF A SOCKET, NOT PROOF OF A PLAYER (2026-09-09).
 
@@ -855,6 +908,8 @@ export class DisconnectEngine {
       const state = this.playerStates.get(`${tableId}:${playerId}`);
       if (!state || state.isSittingOut) continue;
       if (!this.isAway(tableId, playerId)) continue;
+      // The break gives its frozen minutes back before the clock is judged.
+      thawTablePresenceClock(tableId, state);
       const stamps = [state.disconnectedAt, state.pageLeftAt].filter(
         (t): t is number => typeof t === 'number' && Number.isFinite(t)
       );
@@ -912,6 +967,20 @@ export class DisconnectEngine {
       state = this.playerStates.get(key);
       if (!state) return;
     }
+
+    /* A STAMP READ FROM THE DATABASE AFTER THE THAW IS ALREADY CREDITED
+       (2026-10-05). fn_thaw_platform moves `table_seats.sit_out_at` forward by
+       the frozen interval. An engine that seeds `sitOutSince` from that row
+       once the break has completed holds a stamp the break no longer owes
+       anything, but without a compensated-through marker thawPresenceClock
+       assumed the marker was the freeze start and credited the interval a
+       second time on the next sweep: a ten-minute limit instead of five.
+       So bring this entry's own stamps up to date first (a no-op when no
+       freeze has completed, or when the entry is already credited), which
+       leaves `presenceThawedAtMs` at that freeze's end, and only then take
+       the database stamp, which is in the same post-thaw terms. Before the
+       thaw the database stamp is unshifted and is credited with the rest. */
+    if (Number.isFinite(sinceMs as number)) thawTablePresenceClock(tableId, state);
 
     // Stamp the clock only on the TRANSITION into sitting out, so a repeated
     // sitOut() call cannot keep resetting the 5-minute eviction window.
@@ -1009,6 +1078,8 @@ export class DisconnectEngine {
     for (const playerId of playerIds) {
       const state = this.playerStates.get(`${tableId}:${playerId}`);
       if (!state || !state.isSittingOut) continue;
+      // The break gives its frozen minutes back before the clock is judged.
+      thawTablePresenceClock(tableId, state);
       if (opts.countOrbit) {
         state.sitOutOrbits = (state.sitOutOrbits ?? 0) + 1;
       }
@@ -1096,6 +1167,7 @@ export class DisconnectEngine {
     const s = this.playerStates.get(key);
     if (!s) return null;
     thawTableReconnectClock(tableId, s);
+    thawTablePresenceClock(tableId, s);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
     // Everything a restore needs to continue rather than restart (item 2/4).
@@ -1110,6 +1182,7 @@ export class DisconnectEngine {
       reconnectDeadlineMs: s.reconnectDeadlineMs,
       reconnectGrantedAtMs: s.reconnectGrantedAtMs,
       reconnectThawedAtMs: s.reconnectThawedAtMs,
+      presenceThawedAtMs: s.presenceThawedAtMs,
     };
     if (s.isSittingOut) {
       // sinceMs is the sit-out's own start (item 4). It used to be
@@ -1192,6 +1265,9 @@ export class DisconnectEngine {
             : undefined,
         reconnectGrantedAtMs: entry.reconnectGrantedAtMs,
         reconnectThawedAtMs: entry.reconnectThawedAtMs,
+        presenceThawedAtMs: Number.isFinite(entry.presenceThawedAtMs)
+          ? entry.presenceThawedAtMs
+          : undefined,
         lastHeartbeat: entry.sinceMs || Date.now(),
         // 2026-09-04 (item 2): strikes, the blind budget, the sit-out reason
         // and the /away stamp survive a restart when the snapshot carries
@@ -1268,7 +1344,17 @@ export class DisconnectEngine {
       (state.disconnectedAt ?? Date.now()) +
         reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
     state.reconnectDeadlineMs = deadline;
-    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, deadline, () => {
+    /* AN EXPIRED ALLOWANCE STILL WAITS A BEAT (2026-10-05). Once a seat's
+       reconnect protection has run out (a player gone for longer than the
+       allowance, still away at a later turn), `deadline` is in the past and
+       the timer fired on the scheduler's next 100 ms tick: the seat was acted
+       for at machine speed on every later turn of the absence, exactly the
+       rhythm sitOutBeat.ts exists to remove (CLAUDE.md 10.5, "timing is part
+       of the treatment"). The action never lands sooner than the same beat a
+       sat-out seat and a horse act on. The protection deadline itself is
+       unchanged; only when the auto-action fires. */
+    const armAt = Math.max(deadline, Date.now() + sitOutAutoActionDelayMs(canCheck));
+    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, armAt, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;
 
@@ -1309,6 +1395,12 @@ export class DisconnectEngine {
         this.reportSuspectedSilentClient(tableId, playerId, state);
         this.sitOut(tableId, playerId, 'forced');
       }
+    }
+
+    try {
+      EngineMetrics.disconnectAutoActionsTotal.inc(1, { action, reason });
+    } catch {
+      /* metrics must never affect gameplay */
     }
 
     const disconnectAction: DisconnectAction = {

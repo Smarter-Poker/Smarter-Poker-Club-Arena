@@ -3,6 +3,29 @@ import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
+/**
+ * A PostgREST-shaped update: `.eq` filters chain, and the write lands only on
+ * a row every non-id filter still matches (the level-clock persist is fenced
+ * on status and current_level).
+ */
+function fencedUpdate(row: Record<string, any>, patch: Record<string, unknown>) {
+  const filters: Array<[string, unknown]> = [];
+  const builder: any = {
+    eq(column: string, value: unknown) {
+      filters.push([column, value]);
+      return builder;
+    },
+    then(resolve: (value: { error: null }) => unknown, reject?: (reason: unknown) => unknown) {
+      const matches = filters.every(
+        ([column, value]) => column === 'id' || row[column] === undefined || row[column] === value
+      );
+      if (matches) Object.assign(row, patch);
+      return Promise.resolve({ error: null }).then(resolve, reject);
+    },
+  };
+  return builder;
+}
+
 // The Horse tournament context reads the committed clock through its own
 // lifecycle; these tests pin when the manager asks it to.
 const brainContext = vi.hoisted(() => ({ refreshAfterClockCommit: vi.fn() }));
@@ -87,12 +110,7 @@ function fixture() {
   }));
   vi.spyOn(supabase, 'from').mockReturnValue({
     select: () => ({ eq: () => ({ maybeSingle: read }) }),
-    update: (patch: Record<string, unknown>) => ({
-      eq: async () => {
-        Object.assign(row, patch);
-        return { error: null };
-      },
-    }),
+    update: (patch: Record<string, unknown>) => fencedUpdate(row, patch),
   } as never);
   const rpc = vi
     .spyOn(supabase as unknown as { rpc: (name: string, args: any) => Promise<any> }, 'rpc')

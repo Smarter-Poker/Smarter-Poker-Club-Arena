@@ -581,11 +581,11 @@
     },
     {
       "identity": "fn_guard_profile_privileged_columns()",
-      "md5": "d40c547c47f3d0516dc24f22ab53da7e",
-      "len": 3480,
+      "md5": "b140541b68ba8f97ce74d7e0a5e7680f",
+      "len": 3357,
       "owner": "postgres",
       "grants": "service_role",
-      "bytes_from": "transported from production 2026-09-30 (read-only pg_get_functiondef)"
+      "bytes_from": "production text read 2026-10-04 (read-only pg_get_functiondef, md5 d40c547c47f3d0516dc24f22ab53da7e) less the two retired fn_arena_* allowlist lines; this is the postimage migration 20261004214251 asserts byte for byte before it commits"
     },
     {
       "identity": "fn_is_owner_operational_notification(p_user uuid, p_type text, p_title text, p_data jsonb)",
@@ -1588,7 +1588,7 @@
     "public.fn_guard_horse_profile_authority()": "515acecbbd2af70b7d3384c83c468fad",
     "public.fn_guard_managed_game_lifecycle()": "b90cc1cb27839211a82715c4741410c1",
     "public.fn_guard_one_live_tournament_seat()": "f55ac7c4e07131b85e42bd8e0b39cacc",
-    "public.fn_guard_profile_privileged_columns()": "d40c547c47f3d0516dc24f22ab53da7e",
+    "public.fn_guard_profile_privileged_columns()": "b140541b68ba8f97ce74d7e0a5e7680f",
     "public.fn_guard_registered_tournament_contract()": "8c110d7334b93cc527b6d4dfe8bb5fcb",
     "public.fn_guard_retired_club_mutation()": "b82be212e7ccf2a15637c231861ff993",
     "public.fn_is_platform_admin()": "ed89787c7b832e76a886734e16a27c3d",

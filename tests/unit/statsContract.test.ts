@@ -3,6 +3,7 @@ import {
   STATS_CONTRACT_VERSION,
   STATS_METRIC_DEFINITIONS,
   normalizeStatsContractMetadata,
+  statsContractMatchesRequest,
   canonicalCashPerformanceOverlay,
 } from '../../src/services/statsContract';
 
@@ -14,7 +15,9 @@ describe('normalizeStatsContractMetadata', () => {
       scope: {
         target_user_id: 'player-1',
         club_id: 'club-1',
+        asset: 'chips',
         range_days: 30,
+        range_tz: 'America/Chicago',
         visibility: 'owner',
       },
       quality: {
@@ -62,6 +65,26 @@ describe('normalizeStatsContractMetadata', () => {
       wtsd_opportunities: 18,
     });
     expect(result.coverage.analysis_hands_capped).toBe(true);
+    expect(
+      statsContractMatchesRequest(result, {
+        targetUserId: 'player-1',
+        clubId: 'club-1',
+        asset: 'chips',
+        rangeDays: 30,
+        timezone: 'America/Chicago',
+        visibility: 'owner',
+      })
+    ).toBe(true);
+    expect(
+      statsContractMatchesRequest(result, {
+        targetUserId: 'another-player',
+        clubId: 'club-1',
+        asset: 'chips',
+        rangeDays: 30,
+        timezone: 'America/Chicago',
+        visibility: 'owner',
+      })
+    ).toBe(false);
   });
 
   it('fails closed to reconstructed, owner-only metadata for malformed input', () => {

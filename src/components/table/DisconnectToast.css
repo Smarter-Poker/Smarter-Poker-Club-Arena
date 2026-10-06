@@ -15,25 +15,51 @@
   /* 2026-09-23: --sp-brand-top is the wordmark's TOP edge now, not its centre,
      so the pill's bottom sits half a point above it rather than six. */
   top: calc(var(--sp-brand-top, 56%) - 0.5%);
-  left: 50%;
-  transform: translate(-50%, -100%);
+  /* ─── IT WAS CUT OFF, AND THIS IS WHY (Dan 2026-10-04) ────────────────────
+     "THE 'RECONNECTING YOUR SEAT' NEEDS TO BE FULLY DISPLAYED AND NOT CUT OFF
+      WHEN YOU ARE ACTUALLY HAVING CONNECTION ISSUES."
+
+     The pill was `left: 50%` + `translate(-50%)`. An absolutely positioned
+     box with only `left` set may be no wider than the space from that edge to
+     its container's far side - HALF the felt - so `max-width: 92%` was never
+     reachable, and with `white-space: nowrap` + `text-overflow: ellipsis` the
+     sentence was clipped at about half the table's width on a phone.
+
+     Both edges are pinned now and the box centres itself with auto margins,
+     so its shrink-to-fit width really is up to 92% of the felt; and the copy
+     is allowed to wrap, so a sentence longer than that takes a second line
+     instead of losing its end. Nothing here may ellipsize. */
+  left: 4%;
+  right: 4%;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: min(92%, 420px);
+  transform: translateY(-100%);
   z-index: 70;
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: min(92%, 420px);
   padding: 7px 14px;
-  border-radius: 999px;
+  border-radius: 16px;
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: #fff;
   pointer-events: none;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
   animation: disconnect-toast-fade 220ms ease-out;
+}
+
+/* Dan 2026-10-04: the tournament carried this seat here. Not a fault, so no
+   warning ink and no spinner - the house blue the rest of the felt uses for
+   information. */
+.disconnect-toast--moved {
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(0, 229, 255, 0.55);
 }
 
 .disconnect-toast--missing {

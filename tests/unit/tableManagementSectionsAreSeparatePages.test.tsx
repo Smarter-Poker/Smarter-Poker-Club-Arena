@@ -16,7 +16,7 @@
  * pinned by the suites beside this one.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -173,6 +173,23 @@ const renderAt = (entry: string) =>
     </MemoryRouter>
   );
 
+const renderInBrowser = () =>
+  render(
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/clubs/:clubId/table-management"
+          element={
+            <>
+              <GameManagementPage scope="club" />
+              <LocationProbe />
+            </>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+
 const BASE = '/clubs/deep-stack-society/table-management';
 /** Every painted frame on the page. SpadeConsole's root always carries `sc`. */
 const frames = () => Array.from(document.querySelectorAll<HTMLElement>('.sc'));
@@ -199,6 +216,72 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(screen.queryByRole('heading', { name: 'Club Messages' })).toBeNull();
   });
 
+  it('normalizes dynamic game, readiness, and command labels before painting them', async () => {
+    mocks.list = async () => ({
+      items: [
+        {
+          id: 'tournament-copy',
+          kind: 'tournament',
+          name: 'Friday Flight',
+          status: 'late_registration',
+          club_id: 'club-uuid-1',
+          players: 0,
+          max_players: 90,
+          bucket: 0,
+          contract: {
+            gameId: 'tournament-copy',
+            version: 3,
+            contractHash: 'abcdef1234567890',
+            publishedAt: '2026-10-04T12:00:00Z',
+            changeReason: 'operator_update',
+            contractLocked: false,
+            readiness: {
+              state: 'incomplete',
+              canStart: false,
+              contractLocked: false,
+              guaranteeEnforced: false,
+              guaranteedPrize: 0,
+              satelliteSeatGuarantee: 0,
+              effectiveGuarantee: 0,
+              currentPrizePool: 0,
+              overlayRequired: 0,
+              bankType: 'club',
+              bankBalance: 0,
+              bankFloor: 0,
+              otherLiveExposure: 0,
+              shortBy: 0,
+            },
+          },
+          lastCommand: {
+            gameId: 'tournament-copy',
+            commandId: '12345678-aaaa-bbbb-cccc-123456789000',
+            action: 'close',
+            status: 'rejected',
+            versionBefore: 2,
+            versionAfter: 2,
+            createdAt: '2026-10-04T12:00:00Z',
+            completedAt: '2026-10-04T12:00:01Z',
+            reconciliationState: 'confirmed',
+          },
+        },
+      ],
+      counts: {
+        total: 1,
+        live: 1,
+        scheduled: 0,
+        closed: 0,
+        closedWithinHorizon: 0,
+        closedHorizonDays: 7,
+      },
+      nextCursor: null,
+    });
+    renderAt(BASE);
+
+    expect(await screen.findByText('Late Registration')).toBeTruthy();
+    expect(screen.getByText('Incomplete')).toBeTruthy();
+    expect(screen.getByText('Rejected Close')).toBeTruthy();
+  });
+
   it('keeps the section strip outside every frame', async () => {
     renderAt(BASE);
     await screen.findByText('Friday Deep Stack');
@@ -216,6 +299,10 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(document.getElementById('table-management-title')).toBeNull();
     expect(screen.queryByText('Friday Deep Stack')).toBeNull();
     expect(within(drawn[0]).getByRole('button', { name: 'Save Ticker' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Add Table/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Event/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Spins/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Sit N Go/ })).toBeEnabled();
   });
 
   it('draws Club Messages as its own riveted console, with no board around it', async () => {
@@ -227,6 +314,7 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(drawn[0].contains(heading)).toBe(true);
     expect(document.getElementById('table-management-title')).toBeNull();
     expect(within(drawn[0]).getByRole('button', { name: 'Save Identity' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Add Table/ })).toBeEnabled();
   });
 
   it('gives the three principal sections three different frame families', async () => {
@@ -285,6 +373,82 @@ describe('each Table Management section is its own page on its own frame', () =>
     expect(screen.getByRole('heading', { name: 'Ticker Management' })).toBeTruthy();
   });
 
+  it('uses the same draft guard before a Ticker creation shortcut changes pages', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    renderAt(`${BASE}?section=ticker`);
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Keep the final table alert' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Add Table/ }));
+    });
+
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Discard the unsaved changes on this management section?',
+      })
+    );
+    expect(screen.getByTestId('location').textContent).toBe(`${BASE}?section=ticker`);
+    expect(screen.queryByTestId('create-table-selector')).toBeNull();
+  });
+
+  it('restores the exact browser-history entry when Back is refused for a dirty draft', async () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal('confirm', confirm);
+    window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+    window.history.pushState({ idx: 1, marker: 'draft' }, '', `${BASE}?section=ticker`);
+    const anchorUrl = window.location.href;
+    const anchorState = window.history.state;
+    const go = vi.spyOn(window.history, 'go').mockImplementation(() => {
+      window.history.replaceState(anchorState, '', anchorUrl);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: anchorState }));
+    });
+    renderInBrowser();
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Keep this draft' } });
+
+    act(() => {
+      window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { idx: 0, marker: 'before' } }));
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Leave Table Management And Discard Your Unsaved Changes?'
+    );
+    expect(go).toHaveBeenCalledWith(1);
+    expect(window.location.href).toBe(anchorUrl);
+    expect(window.history.state).toEqual(anchorState);
+    expect(screen.getByRole('heading', { name: 'Ticker Management' })).toBeTruthy();
+    go.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('allows the browser-history transition when a dirty-draft warning is accepted', async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+    window.history.pushState({ idx: 1, marker: 'draft' }, '', `${BASE}?section=ticker`);
+    const go = vi.spyOn(window.history, 'go');
+    renderInBrowser();
+    const composer = await screen.findByLabelText('New Custom Ticker Message');
+    await waitFor(() => expect((composer as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(composer, { target: { value: 'Discard this draft' } });
+
+    act(() => {
+      window.history.replaceState({ idx: 0, marker: 'before' }, '', BASE);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { idx: 0, marker: 'before' } }));
+    });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(go).not.toHaveBeenCalled();
+    expect(window.location.pathname + window.location.search).toBe(BASE);
+    expect(window.history.state).toEqual({ idx: 0, marker: 'before' });
+    go.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it('shows the Add Table selector as its own page instead of inside the board', async () => {
     renderAt(`${BASE}?create=table`);
     const selector = await screen.findByTestId('create-table-selector');
@@ -319,10 +483,74 @@ describe('each Table Management section is its own page on its own frame', () =>
   it('checks access on the flat-headed spade, not a borrowed crest', async () => {
     mocks.access = () => new Promise(() => {});
     renderAt(BASE);
-    await screen.findByText('Verifying Game-Management Access…');
+    expect(await screen.findByText('Verifying Game-Management Access…')).toHaveAttribute(
+      'role',
+      'status'
+    );
     const drawn = frames();
     expect(drawn).toHaveLength(1);
     expect(drawn[0].classList).toContain('sc--crest-flat');
+  });
+
+  it('marks the board busy while its authoritative game read is pending', async () => {
+    mocks.list = () => new Promise(() => {});
+    renderAt(BASE);
+    const loadingState = await screen.findByText('Loading Live Game Controls…');
+    expect(loadingState.closest('.sc')).toHaveAttribute('aria-busy', 'true');
+    expect(loadingState).toHaveAttribute('role', 'status');
+  });
+
+  it('announces an authoritative empty board without presenting it as an error', async () => {
+    mocks.list = async () => ({
+      items: [],
+      counts: {
+        total: 0,
+        live: 0,
+        scheduled: 0,
+        closed: 0,
+        closedWithinHorizon: 0,
+        closedHorizonDays: 7,
+      },
+      nextCursor: null,
+    });
+    renderAt(BASE);
+    const empty = await screen.findByText('No Games In This View');
+    expect(empty.closest('section')).toHaveAttribute('role', 'status');
+    expect(empty.closest('.sc')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('announces a refused club-management route as an alert', async () => {
+    mocks.access = async () => ({ allowed: true, unionId: 'union-1', reason: 'ok' });
+    renderAt(BASE);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'When A Club Joins A Union, Its Staff Can No Longer Create'
+    );
+  });
+
+  it('identifies an insufficient standalone-club role without claiming union affiliation', async () => {
+    mocks.access = async () => ({
+      allowed: false,
+      unionId: null,
+      reason: 'not_owner_or_admin',
+    });
+    renderAt(BASE);
+    expect(await screen.findByRole('heading', { name: 'Club Staff Access Required' })).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.'
+    );
+    expect(screen.queryByText(/Managed By Its Union/i)).toBeNull();
+  });
+
+  it('reports an unverifiable access check without inventing a union affiliation', async () => {
+    mocks.access = async () => ({ allowed: false, unionId: null, reason: 'check_failed' });
+    renderAt(BASE);
+    expect(
+      await screen.findByRole('heading', { name: 'Management Access Could Not Be Verified' })
+    ).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The Authoritative Game-Management Access Check Is Unavailable'
+    );
+    expect(screen.queryByText(/Managed By Its Union/i)).toBeNull();
   });
 });
 
@@ -377,6 +605,46 @@ describe('the dialogs over the board wear their own families', () => {
     const frame = frames()[0];
     expect(frame.classList).toContain('sc--family-shark');
     expect(frame.querySelectorAll('.sc-plate')).toHaveLength(1);
+  });
+
+  it('normalizes readiness and change-reason values in contract history', () => {
+    render(
+      <ContractHistoryDialog
+        game={
+          {
+            ...game,
+            kind: 'tournament',
+            contract: {
+              version: 4,
+              contractLocked: false,
+              readiness: {
+                state: 'incomplete',
+                satelliteSeatGuarantee: 0,
+                effectiveGuarantee: 0,
+                overlayRequired: 0,
+                bankType: 'club',
+                bankBalance: 0,
+                otherLiveExposure: 0,
+                shortBy: 0,
+              },
+            },
+          } as any
+        }
+        versions={[
+          {
+            version: 4,
+            contractHash: 'abcdef1234567890',
+            contract: {},
+            publishedAt: '2026-10-04T12:00:00Z',
+            changeReason: 'scheduled_update',
+          },
+        ]}
+        loading={false}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getByText('Incomplete')).toBeTruthy();
+    expect(screen.getByText('Scheduled Update')).toBeTruthy();
   });
 });
 
@@ -435,9 +703,10 @@ describe('the Game Board error state speaks plainly', () => {
   it('prints a plain sentence, never the raw fetch error', async () => {
     vi.stubEnv('DEV', false);
     renderAt(BASE);
-    expect(
-      await screen.findByText('Connection Problem. Please Check Your Internet And Try Again.')
-    ).toBeTruthy();
+    const errorMessage = await screen.findByText(
+      'Connection Problem. Please Check Your Internet And Try Again.'
+    );
+    expect(errorMessage.closest('section')).toHaveAttribute('role', 'alert');
     expect(screen.queryByText(/TypeError|Failed to fetch/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
   });
@@ -446,5 +715,18 @@ describe('the Game Board error state speaks plainly', () => {
     renderAt(BASE);
     expect(await screen.findByText('Management Health Unavailable')).toBeTruthy();
     expect(screen.queryByText('Reading Management Health')).toBeNull();
+  });
+
+  it('reports unknown game counts after the first read fails instead of painting zeroes', async () => {
+    renderAt(BASE);
+    expect(
+      await screen.findByText(
+        (_content, element) =>
+          element?.tagName === 'SPAN' && element.textContent === 'Unavailable Game Counts'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText('0 Live')).toBeNull();
+    expect(screen.queryByText('0 Scheduled')).toBeNull();
+    expect(screen.queryByText('0 Total')).toBeNull();
   });
 });

@@ -110,7 +110,9 @@ import { shuffleChests } from './mysteryBountyDraw.js';
 import {
   mysteryBountyThresholdReached,
   mysteryPoolCents,
+  mysteryBountyFieldTooSmall,
   shouldActivateMysteryBounty,
+  totalEntriesFromRows,
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
@@ -4029,6 +4031,13 @@ export abstract class TournamentManagerBase {
   protected mysteryBountyStage: MysteryBountyStage = 'pending';
   /** Guard against two sweeps overlapping across an await. */
   private mysteryBountySeeding = false;
+  /**
+   * Every entry this event took - one per registration plus one per rebuy or
+   * re-entry, which both increment `tournament_players.rebuys` on the one row
+   * a player holds. Read once, after entry closes, because it cannot change
+   * after that. `null` until read. See readMysteryTotalEntries.
+   */
+  protected mysteryTotalEntries: number | null = null;
 
   /**
    * THE MYSTERY PHASE OPENS AT A HAND BOUNDARY THE ENGINE HOLDS (2026-10-01).
@@ -4072,11 +4081,25 @@ export abstract class TournamentManagerBase {
     const after = hint - busted;
     // The bust that leaves one player ends the event; there is nothing to open.
     if (after <= 1) return false;
+    const mode = (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode;
+    /* TOTAL ENTRIES, NOT `current_players` (2026-10-05). `current_players`
+       drains to the players still in, so "the last 20% of the field" was
+       measured against the survivors and could never be reached. The real
+       entry count is read once entry closes (readMysteryTotalEntries); before
+       that the phase cannot open at all, and an unread count after the close
+       holds the boundary rather than guessing. */
+    const totalEntries = this.mysteryTotalEntries;
+    /* EVERY MODE NEEDS THE COUNT NOW (2026-10-05): a mystery bounty of 10 or
+       fewer entries never opens chests (Dan, mysteryBountyFieldTooSmall), and
+       its 50/30/20 ladder would otherwise read as "at the money" at three
+       players left. Unread after the close holds and lets the sweep read it. */
+    if (totalEntries == null) return this.prizePoolFinalized;
+    if (mysteryBountyFieldTooSmall(totalEntries)) return false;
     return mysteryBountyThresholdReached(
-      (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      mode,
       t.mystery_bounty_activation_value,
       after,
-      Number(t.current_players) || hint,
+      totalEntries,
       countPaidPlaces(t.payout_structure)
     );
   }
@@ -4260,15 +4283,39 @@ export abstract class TournamentManagerBase {
     const paidPlaces =
       countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
 
+    const entryClosed = Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized;
+    const activationMode = (fresh.mystery_bounty_activation ||
+      'at_the_money') as MysteryBountyActivationMode;
+    /* THE FIELD IS THE ENTRIES, NOT THE SURVIVORS (2026-10-05). This passed
+       `fresh.current_players`, which the engine drains to the players still
+       in. "Open at the last N% of the field" then compared the survivors with
+       N% of the survivors, which is never true for N < 100, so a
+       percent_field event never opened a chest. The count is read from the
+       entry rows once entry has closed (it cannot move after that); an
+       unreadable count waits for the next sweep rather than guessing. */
+    /* AND IT IS READ FOR EVERY MODE (2026-10-05). Dan: "MYSTERY BOUNTY OF 10
+       OR FEWER DON'T GET CHESTS". Whether the event has chests at all is a
+       question of its entries, whichever threshold the club chose, so the
+       predicate is given the real count in every mode; `0` before the close
+       is never consulted (entry_still_open answers first). */
+    let totalEntries = 0;
+    if (entryClosed) {
+      if (this.mysteryTotalEntries == null) {
+        this.mysteryTotalEntries = await this.readMysteryTotalEntries();
+      }
+      if (this.mysteryTotalEntries == null) return;
+      totalEntries = this.mysteryTotalEntries;
+    }
+
     const decision = shouldActivateMysteryBounty({
       isMysteryBounty: true,
       stage: 'pending',
-      entryClosed: Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized,
+      entryClosed,
       allTablesBetweenHands: this.allTablesBetweenHands(),
       playersRemaining,
-      totalEntries: Number(fresh.current_players) || playersRemaining,
+      totalEntries,
       paidPlaces,
-      mode: (fresh.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode,
+      mode: activationMode,
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
     });
@@ -4298,6 +4345,21 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    /* A BUST ALREADY PLAYED IS NOT A CHEST STILL OWED (2026-10-05). The
+       heads above are paid flat from the regular half, so the players they
+       belong to will never be knocked out for a chest. Counting them among
+       the players remaining built one chest per such bust that no knockout
+       could ever draw, and the terminal settle handed every one of them to
+       the champion (b5102d84). The chests are drawn for the players who can
+       still be knocked out, and the seed is told the same figure, because it
+       derives its chest count from it (players - 1). */
+    const unrecordedKnockouts = await this.readUnrecordedKnockoutCount();
+    if (unrecordedKnockouts == null) return;
+    const chestPlayers = playersRemaining - unrecordedKnockouts;
+    // Nobody left who can be knocked out for a chest: nothing to open.
+    if (chestPlayers <= 1) return;
+    const drawCount = chestPlayers - 1;
+
     if (unrecordedCents > 0) {
       try {
         poolCents = mysteryPoolCents(
@@ -4326,7 +4388,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)
+        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
@@ -4335,8 +4397,9 @@ export abstract class TournamentManagerBase {
            count from it (players - 1) and also records it as
            mystery_bounty_activated_players, which is the figure the audit
            trail prints as "Mystery Stage Activated: 150 Players Remaining".
-           Sending drawCount here would log 149 for a 150-player field. */
-        p_players_remaining: playersRemaining,
+           Sending drawCount here would log 149 for a 150-player field.
+           Net of the busts already played (above), which have left. */
+        p_players_remaining: chestPlayers,
         p_chests: chests,
       });
 
@@ -4368,17 +4431,99 @@ export abstract class TournamentManagerBase {
       this.mysteryBountyStage = 'active';
       await this.broadcast('mystery_bounty_activated', {
         poolCents: Number(res.pool_cents) || poolCents,
-        chests: decision.drawCount,
+        chests: drawCount,
         profile,
       });
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${drawCount} chests, ${poolCents}c, profile ${profile}`
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
     } finally {
       this.mysteryBountySeeding = false;
     }
+  }
+
+  /**
+   * How many entries this event took: one per entry row plus every rebuy and
+   * re-entry, which the purchase door counts on that row's `rebuys`. Read in
+   * pages so a field larger than PostgREST's row cap is counted whole, and
+   * checked against the exact row count so a short read is refused rather
+   * than taken as a smaller field. `null` means it could not be read.
+   */
+  protected async readMysteryTotalEntries(): Promise<number | null> {
+    const PAGE = 1000;
+    const rows: Array<{ rebuys: unknown }> = [];
+    let expected: number | null = null;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error, count } = await supabase
+        .from('tournament_players')
+        .select('id, rebuys', { count: 'exact' })
+        .eq('tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error || !data || count == null) {
+        reportError(
+          error ?? new Error('tournament entry rows unreadable'),
+          'Tournament.mystery_total_entries_unreadable'
+        );
+        return null;
+      }
+      expected = count;
+      rows.push(...(data as Array<{ rebuys: unknown }>));
+      if (data.length < PAGE || rows.length >= count) break;
+    }
+    if (expected == null || rows.length !== expected) {
+      reportError(
+        new Error(`tournament entry rows read ${rows.length} of ${String(expected)}`),
+        'Tournament.mystery_total_entries_unreadable'
+      );
+      return null;
+    }
+    return totalEntriesFromRows(rows);
+  }
+
+  /**
+   * How many players have busted in a hand already committed (knockout
+   * candidate 'pending') but are still recorded as playing - the same players
+   * whose heads fn_mystery_bounty_unrecorded_head_cents reserves from the
+   * regular half. `null` means it could not be read.
+   */
+  protected async readUnrecordedKnockoutCount(): Promise<number | null> {
+    const { data: pending, error: pendingErr } = await supabase
+      .from('tournament_knockout_candidates')
+      .select('eliminated_user_id')
+      .eq('tournament_id', this.tournamentId)
+      .eq('state', 'pending');
+    if (pendingErr || !pending) {
+      reportError(
+        pendingErr ?? new Error('pending knockout candidates unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    const userIds = [
+      ...new Set(
+        (pending as Array<{ eliminated_user_id: unknown }>)
+          .map((r) => (r.eliminated_user_id == null ? '' : String(r.eliminated_user_id)))
+          .filter((id) => id.length > 0)
+      ),
+    ];
+    if (userIds.length === 0) return 0;
+    const { count, error } = await supabase
+      .from('tournament_players')
+      .select('*', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing')
+      .in('user_id', userIds);
+    if (error || count == null) {
+      reportError(
+        error ?? new Error('unrecorded knockout count unreadable'),
+        'Tournament.mystery_unrecorded_knockouts_unreadable'
+      );
+      return null;
+    }
+    return count;
   }
 
   /**
@@ -9257,12 +9402,18 @@ export abstract class TournamentManagerBase {
     // Persist the level clock (wall-clock start of THIS level's remaining
     // window) so a restart resumes the level mid-flight. Detached from the
     // caller, but still drained by this exact lifecycle before replacement.
+    // Fenced like the break release and the publication RPC: the anchor
+    // belongs to the level this process armed, on a RUNNING event, and can
+    // never land on a level the row has since moved past.
+    const armedLevel = this.currentLevel;
     void this.trackLifecycleJob(
       Promise.resolve(
         supabase
           .from('tournaments')
           .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
           .eq('id', this.tournamentId)
+          .eq('status', 'RUNNING')
+          .eq('current_level', armedLevel)
       )
         .then(({ error }: { error: { message?: string } | null }) => {
           if (error && !/column|schema/i.test(error.message || '')) {
@@ -9912,6 +10063,11 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    // The durable window says this break has not started yet. A break that is
+    // already active here was begun from a deadline the window has since left
+    // behind; see withdrawAddOnBreakBegunBeforeItsStart.
+    if (this.addOnBreakActive) this.withdrawAddOnBreakBegunBeforeItsStart();
+
     this.addOnBreakStartTimer = this.setLifecycleTimeout(() => {
       this.addOnBreakStartTimer = null;
       return this.beginAddOnBreak(endMs).catch((error) =>
@@ -10017,6 +10173,125 @@ export abstract class TournamentManagerBase {
       this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
     }
     this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A BREAK BEGUN INSIDE THE FREEZE HAS NOT BEGUN (2026-10-04)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break is the last `addon_break_minutes` of the durable add-on
+   * window, and its start is a wall-clock timer. The platform clock stops for
+   * the maintenance freeze and fn_thaw_platform then moves
+   * `addon_period_ends_at` forward by the frozen duration, so a break whose
+   * pre-thaw start fell INSIDE the freeze starts, after the thaw, that same
+   * duration later. The timer does not know that. It fired inside the freeze,
+   * beginAddOnBreak adopted the pause, and the thaw re-read re-armed the START
+   * timer for the shifted deadline but left the adopted break active. Nothing
+   * lifted it until the shifted END, so the one-minute break held every table
+   * from the thaw to the shifted end with no break announced.
+   *
+   * Measured 2026-10-04, $100 Freeroll e51546f6: the window opened 11:02:11
+   * and runs 58 minutes (57 of entry plus the one-minute break), so its break
+   * start fell at 11:59:11, inside the 11:55 freeze; the thawed row ends
+   * 12:05:55. Last hand 11:54:07, next hand 12:06:12, on all 44 tables; every
+   * other event resumed at 12:01. Same shape on 03ba4530, a7d24468, bfcbea31
+   * (2026-10-04), afe0949c, da75d640 (2026-10-03) and 33a093ca (2026-10-02):
+   * each dealt zero hands in the five minutes before its add-on break. The
+   * hourly $100 Freeroll starts on the hour, so its break start lands in the
+   * freeze whenever the window opened within about three minutes of the
+   * start.
+   *
+   * The durable window is the only authority for this phase. When it says the
+   * break starts in the future, an active break is given back exactly as
+   * finishAddOnBreak gives one back, and the caller arms the start timer for
+   * the real deadline. This runs from the thaw re-read while the maintenance
+   * break still holds every dealer, so `resumeDealing` only lowers this
+   * manager's own pause and the tables resume with the rest of the platform.
+   * A break that began before the freeze is never withdrawn: its shifted start
+   * is in the past and scheduleAddOnBreak re-enters beginAddOnBreak instead.
+   */
+  private withdrawAddOnBreakBegunBeforeItsStart(): void {
+    if (!this.addOnBreakActive) return;
+    const heldUntilMs = this.addOnBreakEndsAtMs;
+    const ownsLevelClock = this.addOnBreakOwnsLevelClock;
+    this.addOnBreakActive = false;
+    this.addOnBreakEndsAtMs = 0;
+    this.addOnBreakOwnsLevelClock = false;
+    this.addOnBreakOwnsPause = false;
+    if (!this.running) return;
+
+    const releasePause = !this.onBreak && !this.handForHandActive && !this.stageEndPause;
+    for (const engine of this.tableEngines.values()) {
+      try {
+        // The absolute hold was placed for the deadline that no longer exists.
+        engine.releaseDealingHold(heldUntilMs);
+        if (releasePause) engine.resumeDealing();
+      } catch (error) {
+        reportError(error, 'TournamentManagerBase.addon_break_withdraw_resume');
+      }
+    }
+
+    if (ownsLevelClock && !this.onBreak && !this.stageEndPause) {
+      const blindStructure = this.tournamentCache?.blind_structure || [];
+      const measured = this.savedBlindTimerRemaining;
+      this.savedBlindTimerRemaining = 0;
+      this.rearmLevelClockFromThawedAnchor(blindStructure, measured);
+    }
+    this.advanceHandForHandBarrier();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A WITHDRAWN BREAK GIVES THE LEVEL CLOCK BACK FROM THE THAWED ROW (2026-10-05)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The add-on break that was withdrawn above suspended the level clock when it
+   * began, INSIDE the freeze. suspendLevelClock measured the remaining time
+   * against the pre-freeze anchor, so every minute from the freeze start to the
+   * break start was counted as played. Re-arming from that measurement through
+   * startBlindTimer burned those minutes, and startBlindTimer also persisted
+   * the burned anchor with an unfenced, detached write. The thaw re-read in
+   * GameServer runs resyncLevelClockAfterMaintenanceThaw straight after this:
+   * when its read beat the detached write, memory followed the correctly
+   * thawed anchor and the row was then overwritten with the burned one, so the
+   * next restart resumed the level up to the whole freeze short.
+   *
+   * The add-on break never moved the durable anchor (suspendLevelClock is
+   * memory only) and fn_thaw_platform has already shifted it by the frozen
+   * duration, so the row IS the correct clock. Nothing is written here. The
+   * measured remainder only arms a provisional local wake, and the thaw-resync
+   * flag makes the clock follow the durable anchor: the thaw re-read re-arms
+   * from it at once, and if that read does not land, the wake itself rereads
+   * the anchor before it may publish a level (advanceBlindLevel).
+   */
+  private rearmLevelClockFromThawedAnchor(
+    blindStructure: any[],
+    measuredRemainingMs: number
+  ): void {
+    if (this.blindClockTerminalCommitted || blindStructure.length === 0) return;
+    // A publication retry and a booked future start keep their own clocks and
+    // never persist an anchor from startBlindTimer.
+    if (
+      this.pendingBlindTransition ||
+      Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()
+    ) {
+      this.startBlindTimer(
+        blindStructure,
+        measuredRemainingMs > 0 ? measuredRemainingMs : undefined
+      );
+      return;
+    }
+    const current = this.resolveBlindLevel(blindStructure, this.currentLevel) || blindStructure[0];
+    const durationMs = this.levelDurationMs(current);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    const armMs =
+      measuredRemainingMs > 0
+        ? Math.min(Math.max(1000, measuredRemainingMs), durationMs)
+        : durationMs;
+    this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
+    this.blindClockNeedsThawResync = true;
+    this.scheduleBlindLevelWake(blindStructure, armMs);
   }
 
   /**

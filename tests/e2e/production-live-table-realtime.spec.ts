@@ -802,12 +802,12 @@ async function certifyReadOnlyTournamentFormat(
   const caseStartedAt = Date.now();
   const observationDeadline = caseStartedAt + testInfo.timeout;
   /* A heads-up Sit & Go can finish its last hand while the browser watches
-     it, and then it is COMPLETED, not broken. Only that format reads the rows
-     that prove it. Every other failure keeps its own message and evidence. */
-  const boardReader = gameFormat === 'sng' ? await createHudClockReader() : undefined;
+     it; an MTT board can close after balancing. Read durable facts for all
+     tournament formats. Every unproven failure retains its evidence. */
+  const boardReader = await createHudClockReader();
   /* The MTT alone needs a natural blind-level clock after recovery, so it alone
      qualifies its table by that clock at selection instead of by seat count. */
-  const hudReader = gameFormat === 'mtt' ? await createHudClockReader() : undefined;
+  const hudReader = gameFormat === 'mtt' ? boardReader : undefined;
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
@@ -853,7 +853,7 @@ async function certifyReadOnlyTournamentFormat(
         contentType: 'application/json',
       });
     if (boardReader) await boardReader.close().catch(() => {});
-    if (hudReader) await hudReader.close().catch(() => {});
+    if (hudReader && hudReader !== boardReader) await hudReader.close().catch(() => {});
   }
 }
 
@@ -1226,6 +1226,18 @@ async function observeTournamentBoard(
       const reader = await createHudClockReader();
       try {
         hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        /* A LEVEL ABOUT TO ROLL OVER IS NOT A MISSING CLOCK (2026-10-04).
+           eligibleHudClock refuses a level with 20 s or less left, because
+           that level-up may fire before both HUDs are watching. Run
+           37246061086 read tournament 8c42b2c2 at 00:13:04Z, 14 s before its
+           level 7 began at 00:13:18Z, and failed "no eligible natural HUD
+           clock" on a healthy RUNNING event. Ask again across the rollover:
+           the next level is the baseline, and mttCaseTimeoutMs below sizes
+           the deadline from it. Every other refusal is still a refusal. */
+        for (let retry = 0; !hudClock && retry < 9; retry++) {
+          await new Promise((settle) => setTimeout(settle, 5_000));
+          hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        }
       } finally {
         await testInfo.attach('mtt-hud-clock-qualification', {
           body: Buffer.from(JSON.stringify(reader.qualifications, null, 2)),
@@ -1349,7 +1361,25 @@ async function observeTournamentBoard(
         atFailure = null;
       }
     }
+    if (boardReader && selected.boardFacts && atFailure) {
+      try {
+        atFailure = await boardReader.accountClosedBoard(selected.boardFacts, atFailure);
+      } catch {
+        // Missing custody evidence cannot excuse a continuity failure.
+        atFailure = null;
+      }
+    }
+    const lastGameplayAt = journal.gameplayEvents(candidate.id, navigationStartedAt).at(-1)?.at;
+    const restartFrames = journal.countReceivedEvents(
+      candidate.id,
+      'engine_restarting',
+      navigationStartedAt
+    );
     const outcome = classifyCaseFailure({
+      terminalTeardownOnly:
+        restartFrames === 1 &&
+        lastGameplayAt !== undefined &&
+        journal.countReceivedEvents(candidate.id, 'engine_restarting', lastGameplayAt) === 1,
       engineRestartFrames: journal.countReceivedEvents(
         candidate.id,
         'engine_restarting',

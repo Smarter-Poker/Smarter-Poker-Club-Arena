@@ -3,7 +3,9 @@ export const STATS_CONTRACT_VERSION = 2 as const;
 export interface StatsScopeContract {
   target_user_id: string | null;
   club_id: string | null;
+  asset: 'chips' | 'diamonds' | null;
   range_days: number | null;
+  range_tz: string | null;
   visibility: 'owner' | 'shared_club';
 }
 
@@ -241,7 +243,9 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
     scope: {
       target_user_id: typeof scope.target_user_id === 'string' ? scope.target_user_id : null,
       club_id: typeof scope.club_id === 'string' ? scope.club_id : null,
+      asset: scope.asset === 'chips' || scope.asset === 'diamonds' ? scope.asset : null,
       range_days: nullableFinite(scope.range_days),
+      range_tz: typeof scope.range_tz === 'string' ? scope.range_tz : null,
       visibility: scope.visibility === 'shared_club' ? 'shared_club' : 'owner',
     },
     quality: {
@@ -305,4 +309,26 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
       rollup_updated_at: isoOrNull(coverage.rollup_updated_at),
     },
   };
+}
+
+export function statsContractMatchesRequest(
+  contract: StatsContractMetadata,
+  request: {
+    targetUserId: string;
+    clubId: string | null;
+    asset: 'chips' | 'diamonds';
+    rangeDays: number | null;
+    timezone: string;
+    visibility: StatsScopeContract['visibility'];
+  }
+): boolean {
+  return (
+    contract.valid &&
+    contract.scope.target_user_id === request.targetUserId &&
+    contract.scope.club_id === request.clubId &&
+    contract.scope.asset === request.asset &&
+    contract.scope.range_days === request.rangeDays &&
+    contract.scope.range_tz === request.timezone &&
+    contract.scope.visibility === request.visibility
+  );
 }

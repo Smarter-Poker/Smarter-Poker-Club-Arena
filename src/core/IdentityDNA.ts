@@ -365,7 +365,13 @@ class IdentityDNACore {
     setTimeout(async () => {
       try {
         const profile = await this.loadUserProfile(userId);
-        if (profile && (profile as { status?: string | null }).status === 'deleted') {
+        const activeSessionUserId = readLocalSessionShared()?.userId || null;
+        const activeStoreUserId = useUserStore.getState().user?.id || null;
+        // A background response belongs to the identity that requested it.
+        // It may neither repopulate a later account nor sign that account out
+        // because the earlier profile was closed while the request was open.
+        if (!profile || activeSessionUserId !== userId || activeStoreUserId !== userId) return;
+        if ((profile as { status?: string | null }).status === 'deleted') {
           /* THIS ACCOUNT WAS CLOSED (2026-09-29) - here, or on another device.
              Closing it removed its sessions but not the access token this
              device holds, which outlives the closure by days; the app kept
@@ -377,28 +383,26 @@ class IdentityDNACore {
           );
           return;
         }
-        if (profile) {
-          useUserStore.getState().setUser({
-            id: profile.id,
-            username: profile.username,
-            display_name: profile.display_name,
-            /* The name columns travel WITH the profile. Without them this
+        useUserStore.getState().setUser({
+          id: profile.id,
+          username: profile.username,
+          display_name: profile.display_name,
+          /* The name columns travel WITH the profile. Without them this
                write - the last one to land on a cold load - replaced a store
                that already knew the alias with one that did not. */
-            alias: profile.alias ?? null,
-            first_name: profile.first_name ?? null,
-            last_name: profile.last_name ?? null,
-            full_name: profile.full_name ?? null,
-            display_name_preference: profile.display_name_preference ?? null,
-            use_real_name: profile.use_real_name ?? null,
-            avatar_url: profile.avatar_url,
-            vip_level: ((profile as any).tier ||
-              profile.vip_level ||
-              'bronze') as UserProfile['vip_level'],
-            player_number: profile.player_number,
-          });
-          console.debug('[IdentityDNA] Full profile loaded from database');
-        }
+          alias: profile.alias ?? null,
+          first_name: profile.first_name ?? null,
+          last_name: profile.last_name ?? null,
+          full_name: profile.full_name ?? null,
+          display_name_preference: profile.display_name_preference ?? null,
+          use_real_name: profile.use_real_name ?? null,
+          avatar_url: profile.avatar_url,
+          vip_level: ((profile as any).tier ||
+            profile.vip_level ||
+            'bronze') as UserProfile['vip_level'],
+          player_number: profile.player_number,
+        });
+        console.debug('[IdentityDNA] Full profile loaded from database');
       } catch (e) {
         console.warn('[PROFILE] Could not load from database, using session data');
       }
@@ -497,6 +501,21 @@ class IdentityDNACore {
    */
   async logout(): Promise<void> {
     try {
+      /* The last heartbeat, sent while the session can still send it: a
+         player who signs out reads offline now, not five minutes from now.
+         Bounded and never fatal (src/lib/presenceHeartbeat.ts). */
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          // Lazy: sign-out is rare, and the entry chunk is every player's first paint.
+          const { signalOffline } = await import('../lib/presenceHeartbeat');
+          await signalOffline(session.user.id);
+        }
+      } catch {
+        // Never let the last heartbeat stand between a player and sign-out.
+      }
       const { error } = await supabase.auth.signOut();
       if (error && isAuthSessionMissingError(error)) {
         // Rare, so loaded when needed rather than in first paint.

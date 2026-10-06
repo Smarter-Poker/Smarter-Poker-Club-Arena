@@ -88,3 +88,16 @@ export function buildStatsTournamentEvidencePath(tournamentId: string): string {
   const params = new URLSearchParams({ source: 'stats' });
   return `/tournaments/${encodeURIComponent(tournamentId)}?${params.toString()}`;
 }
+
+export function buildStatsSessionEvidencePath(
+  sessionId: string,
+  options: { clubId?: string | null; asset: 'chips' | 'diamonds' }
+): string {
+  const params = new URLSearchParams({
+    source: 'stats',
+    statsSession: sessionId,
+    statsAsset: options.asset,
+  });
+  if (options.clubId) params.set('statsClub', options.clubId);
+  return `/hand-history?${params.toString()}`;
+}

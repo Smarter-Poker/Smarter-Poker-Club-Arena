@@ -75,12 +75,41 @@ export interface MysteryBountyActivationDecision {
     | 'not_a_mystery_bounty'
     | 'already_activated'
     | 'entry_still_open'
+    | 'entry_count_unknown'
+    | 'small_field'
     | 'hand_in_progress'
     | 'threshold_not_reached'
     | 'no_players'
     | 'empty_pool';
   /** How many chests to build. Meaningful only when `activate` is true. */
   readonly drawCount: number;
+}
+
+/**
+ * ═══ A MYSTERY BOUNTY OF 10 OR FEWER ENTRIES NEVER OPENS CHESTS (2026-10-05) ═══
+ *
+ * Dan, verbatim: "MYSTERY BOUNTY OF 10 OR FEWER DON'T GET CHESTS, ITS TREATING
+ * LIKE A SINGLE TABLE TOURNAMENTS WITH 50 30 20 PAYOUT PERCENTAGES".
+ *
+ * An event whose TOTAL ENTRIES (entry rows plus every rebuy and re-entry, the
+ * count `totalEntriesFromRows` produces) is at most this number plays the whole
+ * event on the flat pre-activation bounty, whatever activation mode the club
+ * chose. Its prize pool is paid 50/30/20 by the entry close
+ * (`fn_finalize_tournament_entry_pool_locked`). Before this rule the chests stayed shut at
+ * 10 or fewer only by accident - one paid place meant "at the money" was the
+ * last two players - and the 3-place ladder would have opened them at three
+ * players left, so the rule is stated here rather than left to the ladder.
+ */
+export const MYSTERY_BOUNTY_SMALL_FIELD_MAX_ENTRIES = 10;
+
+/**
+ * Is this a small-field mystery bounty that never opens chests? `false` for an
+ * unknown count: callers must treat unknown as "wait", never as small.
+ */
+export function mysteryBountyFieldTooSmall(totalEntries: number | null | undefined): boolean {
+  if (typeof totalEntries !== 'number' || !Number.isSafeInteger(totalEntries)) return false;
+  if (totalEntries < 1) return false;
+  return totalEntries <= MYSTERY_BOUNTY_SMALL_FIELD_MAX_ENTRIES;
 }
 
 /**
@@ -123,6 +152,22 @@ export function mysteryBountyThresholdReached(
   }
 }
 
+/**
+ * The field a 'percent_field' threshold is measured against: every entry the
+ * event took. A player holds one `tournament_players` row for the whole event,
+ * and each rebuy or re-entry increments that row's `rebuys`, so the entries are
+ * the rows plus their rebuys. Never `tournaments.current_players`, which the
+ * engine drains to the players still in (2026-10-05).
+ */
+export function totalEntriesFromRows(rows: ReadonlyArray<{ rebuys?: unknown }>): number {
+  let total = 0;
+  for (const row of rows) {
+    const extra = Math.floor(Number(row.rebuys) || 0);
+    total += 1 + (extra > 0 ? extra : 0);
+  }
+  return total;
+}
+
 /** The whole predicate. Pure. */
 export function shouldActivateMysteryBounty(
   input: MysteryBountyActivationInputs
@@ -136,6 +181,14 @@ export function shouldActivateMysteryBounty(
   if (!input.isMysteryBounty) return no('not_a_mystery_bounty');
   if (input.stage !== 'pending') return no('already_activated');
   if (!input.entryClosed) return no('entry_still_open');
+  /* THE ENTRY COUNT DECIDES WHETHER THERE ARE CHESTS AT ALL (2026-10-05). It
+     cannot move once entry is closed, so an unreadable or nonsensical count
+     waits for the next sweep (fail closed) rather than opening chests for a
+     field that may be ten or fewer. */
+  if (!Number.isSafeInteger(input.totalEntries) || input.totalEntries < 1) {
+    return no('entry_count_unknown');
+  }
+  if (mysteryBountyFieldTooSmall(input.totalEntries)) return no('small_field');
   /* <= 1, not <= 0. With N-1 chests a heads-up field would ask for one chest
      and a one-player field for zero, and an event that is already down to its
      champion has no eliminations left to pay for. Refuse rather than seed an

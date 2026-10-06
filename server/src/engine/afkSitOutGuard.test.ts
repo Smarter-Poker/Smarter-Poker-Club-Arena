@@ -20,7 +20,7 @@
  *    DisconnectEngine.onPlayerTurn when action reaches them.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DisconnectEngine } from './DisconnectEngine.js';
@@ -253,5 +253,72 @@ describe('tournament sit-outs are dealt in and blinded off (bug 2)', () => {
     expect(base).toMatch(/PLAYER_SAT_BACK/);
     expect(base).toMatch(/\.update\(\{ is_sitting_out: sittingOut \}\)/);
     expect(base).toMatch(/\.is\('left_at', null\)/);
+  });
+});
+
+/** mkAdvancingEngine with Date.now() on the same clock: presence stamps read it. */
+function mkWallClockEngine() {
+  let now = 2_000_000;
+  let tick: (() => void) | null = null;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const sched = new DeadlineScheduler({
+    tickMs: 100,
+    now: () => now,
+    setInterval: (cb: () => void) => {
+      tick = cb;
+      return 1 as any;
+    },
+    clearInterval: () => {},
+  });
+  sched.start();
+  const eng = new DisconnectEngine(new PreciseActionTimer(undefined, sched, () => now));
+  return {
+    eng,
+    advance(ms: number) {
+      now += ms;
+      tick?.();
+    },
+  };
+}
+
+describe('an expired reconnect allowance is still acted on a beat (2026-10-05)', () => {
+  afterEach(() => vi.restoreAllMocks());
+  /* A disconnected seat whose protection ran out on an earlier turn used to
+     be folded on the scheduler's next 100 ms tick at every later turn. It
+     now waits the same beat a sat-out seat and a horse act on. */
+  it.each([
+    [true, SIT_OUT_FREE_BEAT_MS],
+    [false, SIT_OUT_FACING_BEAT_MS],
+  ])('canCheck=%s waits at least %i ms', (canCheck, floor) => {
+    const h = mkWallClockEngine();
+    h.eng.configure('t', { disconnectTimeoutSeconds: 30 });
+    h.eng.registerPlayer('t', 'p1');
+    const actions: Array<{ playerId: string; action: string; reason: string }> = [];
+    h.eng.onAutoAction('t', (a) => actions.push(a));
+    h.eng.markDisconnected('t', 'p1');
+    h.advance(120_000); // the allowance expired long ago; still away
+
+    expect(h.eng.onPlayerTurn('t', 'p1', canCheck)).toBe(false);
+    h.advance(100); // the next scheduler tick
+    expect(actions).toHaveLength(0);
+    h.advance(floor - 200);
+    expect(actions).toHaveLength(0);
+    h.advance(SIT_OUT_BEAT_JITTER_MS + 200);
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ playerId: 'p1', reason: 'timeout' });
+  });
+
+  it('a live allowance still runs to its own deadline', () => {
+    const h = mkWallClockEngine();
+    h.eng.configure('t', { disconnectTimeoutSeconds: 30 });
+    h.eng.registerPlayer('t', 'p1');
+    const actions: unknown[] = [];
+    h.eng.onAutoAction('t', (a) => actions.push(a));
+    h.eng.markDisconnected('t', 'p1');
+    h.eng.onPlayerTurn('t', 'p1', false);
+    h.advance(29_900);
+    expect(actions).toHaveLength(0);
+    h.advance(200);
+    expect(actions).toHaveLength(1);
   });
 });

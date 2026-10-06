@@ -30,7 +30,68 @@ import { test, expect } from '@playwright/test';
 
 const CLUB = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
-const ROUTES = ['profile', 'friends', 'wallet', 'settings', 'hand-history', `clubs/${CLUB}`];
+const ROUTES = [
+  'profile',
+  'friends',
+  'wallet',
+  'settings',
+  'hand-history',
+  `clubs/${CLUB}`,
+  `clubs/${CLUB}/data`,
+  'stats',
+  `rate-audit?club=${CLUB}`,
+  'settlement-history',
+];
+const REQUIRED_DATA_ROUTES = new Set([
+  `clubs/${CLUB}/data`,
+  'stats',
+  `rate-audit?club=${CLUB}`,
+  'settlement-history',
+]);
+
+async function requireDataRouteReady(page: import('@playwright/test').Page, route: string) {
+  if (!REQUIRED_DATA_ROUTES.has(route)) return;
+  await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  const routePath = route.split('?')[0];
+  if (route === `clubs/${CLUB}/data`) {
+    // Club entry accepts an id, then deliberately canonicalizes it to the
+    // public slug (for example, /clubs/shark-club/data). Require the exact
+    // Club Data route shape and its page identity instead of mistaking that
+    // supported redirect for a failed navigation. Every other required route
+    // remains exact below.
+    await expect(page.locator('[data-page="club-data"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Read The Room', exact: true })).toBeVisible();
+    const dataLink = page
+      .getByRole('navigation', { name: 'Club Operations Sections' })
+      .getByRole('link', { name: 'Club Data', exact: true });
+    await expect(dataLink).toBeVisible();
+    const canonicalHref = await dataLink.getAttribute('href');
+    expect(canonicalHref).toMatch(/\/clubs\/[^/]+\/data\/?$/);
+    const canonicalPath = new URL(canonicalHref!, page.url()).pathname;
+    await expect.poll(() => new URL(page.url()).pathname).toBe(canonicalPath);
+    return;
+  } else {
+    expect(new URL(page.url()).pathname.endsWith(`/${routePath}`)).toBe(true);
+  }
+  if (route === 'stats') {
+    await expect(
+      page.getByRole('heading', { name: 'Player Intelligence', exact: true })
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+  } else if (route.startsWith('rate-audit')) {
+    await expect(page.getByRole('heading', { name: 'Rate Audit Trail', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+  } else {
+    await expect(
+      page.getByRole('heading', { name: 'Settlement History', exact: true })
+    ).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('region', { name: 'Settlement Summary' })).toBeVisible();
+  }
+}
 
 /** Apple HIG minimum, in CSS px. */
 /* ── THE ONE ACCEPTED EXCEPTION, NAMED AND ARGUED (2026-08-30) ─────────────
@@ -116,6 +177,7 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
 
   const misses: Miss[] = [];
   const skipped: string[] = [];
+  const routeCoverage = new Map<string, number>();
   let checked = 0;
 
   for (const route of ROUTES) {
@@ -123,11 +185,13 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
       await page.goto(route, { waitUntil: 'domcontentloaded' });
     } catch (err) {
       if (!String(err).includes('ERR_ABORTED')) {
+        if (REQUIRED_DATA_ROUTES.has(route)) throw err;
         skipped.push(`${route}: navigation failed`);
         continue;
       }
     }
     await page.waitForTimeout(2600);
+    await requireDataRouteReady(page, route);
     if (page.url().includes('/auth')) {
       skipped.push(route);
       continue;
@@ -281,6 +345,7 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
     );
 
     checked += found.n;
+    routeCoverage.set(route, found.n);
     for (const u of found.unmeasured) skipped.push(`${route}: ${u}`);
     for (const f of found.out) {
       if (KNOWN_DESIGN_LIMITED.includes(f.sel)) {
@@ -298,6 +363,12 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
     checked,
     'no controls were found on any route — the sweep asserted nothing'
   ).toBeGreaterThan(0);
+  for (const route of REQUIRED_DATA_ROUTES) {
+    expect(
+      routeCoverage.get(route) ?? 0,
+      `${route} did not reach its real page and contribute a measured mobile control`
+    ).toBeGreaterThan(0);
+  }
 
   if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
     expect(

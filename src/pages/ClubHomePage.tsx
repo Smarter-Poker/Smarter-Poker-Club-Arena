@@ -728,14 +728,42 @@ import { useArenaAccess } from '../components/arena/arenaAccess';
 import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { publicOrigin } from '../lib/appBase';
 
-export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+/**
+ * Dan 2026-10-04: `initialGameType` opens the embedded lobby ON a named list.
+ * The Quick Join sheet's Browse Full Lobby passes it from a tournament table,
+ * where the lobby a player means is the club's tournaments, not its cash board.
+ * It is a landing, not a preference: nothing is saved, and the first tab the
+ * player taps takes over exactly as it does on any other visit.
+ *
+ * It is also ONE-SHOT. It is read when this page mounts and belongs to that
+ * mount only; `onInitialGameTypeConsumed` tells the tab strip the landing has
+ * been applied, so the strip can drop the request and the NEXT mount of this
+ * page (Back out of a tournament, a cash table's "+") opens on the player's
+ * own tab instead of being sent to tournaments again.
+ */
+type EmbeddedLobbyList = 'MTT' | 'SNG';
+interface ClubHomePageProps {
+  clubIdOverride?: string;
+  initialGameType?: EmbeddedLobbyList;
+  onInitialGameTypeConsumed?: () => void;
+}
+
+export default function ClubHomePage({
+  clubIdOverride,
+  initialGameType,
+  onInitialGameTypeConsumed,
+}: ClubHomePageProps = {}) {
   // Routed entry is checked by ClubMemberGuard. Embedded table lobbies need
   // the same boundary because they do not mount that route guard.
   return (
     <PageErrorBoundary pageName="ClubHomePage">
       {clubIdOverride ? (
         <ArenaAccessBoundary clubKey={clubIdOverride} cashLobby>
-          <ClubHomePageContent clubIdOverride={clubIdOverride} />
+          <ClubHomePageContent
+            clubIdOverride={clubIdOverride}
+            initialGameType={initialGameType}
+            onInitialGameTypeConsumed={onInitialGameTypeConsumed}
+          />
         </ArenaAccessBoundary>
       ) : (
         <ClubHomePageContent />
@@ -744,7 +772,11 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   );
 }
 
-function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+function ClubHomePageContent({
+  clubIdOverride,
+  initialGameType,
+  onInitialGameTypeConsumed,
+}: ClubHomePageProps = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
@@ -929,7 +961,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
      single visit. All Games is the landing view of a dense lobby. */
-  const [gameType, setGameType] = useState<GameType>('ALL');
+  const [gameType, setGameType] = useState<GameType>(initialGameType ?? 'ALL');
+  /* The landing this MOUNT was opened on. Held here, not re-read from the
+     prop: the strip clears the prop as soon as the landing is reported
+     applied, and the database's later correction of the saved view must still
+     land on the requested list for this visit. A club switch drops it. */
+  const landingGameTypeRef = useRef<EmbeddedLobbyList | undefined>(initialGameType);
+  const landingReportedRef = useRef(false);
+  const onInitialGameTypeConsumedRef = useRef(onInitialGameTypeConsumed);
+  onInitialGameTypeConsumedRef.current = onInitialGameTypeConsumed;
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
   const [allStatusFilter, setAllStatusFilter] = useState<AllStatusFilter>('ALL');
   /* `sortOpen` used to live here. It was assigned false in three places,
@@ -2015,18 +2055,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const switchingClubs = viewPrefsOwner.current !== null;
     viewPrefsOwner.current = resolvedClubId;
     if (switchingClubs) viewPrefsTouched.current = false;
+    // The landing was a request about the club it was made in.
+    if (switchingClubs) landingGameTypeRef.current = undefined;
 
     const saved = loadViewPrefs(resolvedClubId);
     setViewPrefs(saved);
 
     const applyView = (p: LobbyViewPrefs) => {
-      const tab = p.tab ?? 'ALL';
+      /* A requested landing list outranks the saved tab for this mount only
+         (see `initialGameType`); the saved sort and Favorites still apply. */
+      const tab = landingGameTypeRef.current ?? p.tab ?? 'ALL';
       setGameType(tab);
       setSortKey(sortForTab(p, tab));
       setFavoritesOnly(p.favoritesOnly);
     };
 
     if (!viewPrefsTouched.current) applyView(saved);
+
+    /* The initial view is applied (or the player already chose their own):
+       either way the landing request is spent. Reported once per mount. */
+    if (!landingReportedRef.current) {
+      landingReportedRef.current = true;
+      if (landingGameTypeRef.current) onInitialGameTypeConsumedRef.current?.();
+    }
 
     /* ── THEN THE DATABASE CORRECTS IT (Dan 2026-09-07, item 5) ─────────────
        "THEY SHOULD BE SAVED REGARDLESS OF WHICH DEVICE YOU LOG INTO."

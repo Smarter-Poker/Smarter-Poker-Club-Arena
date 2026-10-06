@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const page = readFileSync(join(__dirname, '../../src/pages/LeaderboardPage.tsx'), 'utf8');
+const cache = readFileSync(join(__dirname, '../../src/utils/leaderboardCache.ts'), 'utf8');
 const service = readFileSync(join(__dirname, '../../src/services/LeaderboardService.ts'), 'utf8');
 const wizard = readFileSync(
   join(__dirname, '../../src/components/leaderboard/LeaderboardPrizeWizard.tsx'),
@@ -15,10 +16,12 @@ const migration = readFileSync(
 
 describe('leaderboard phase two operational hardening', () => {
   it('bounds and expires the session cache instead of keeping raw rankings forever', () => {
-    expect(page).toContain("const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_'");
-    expect(page).toContain('const LB_CACHE_TTL_MS = 5 * 60 * 1000');
-    expect(page).toContain('const LB_CACHE_MAX_RECORDS = 20');
-    expect(page).toContain('sessionStorage.removeItem(storageKey)');
+    expect(cache).toContain("export const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_'");
+    expect(cache).toContain('export const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000');
+    expect(cache).toContain('export const LEADERBOARD_CACHE_MAX_RECORDS = 20');
+    expect(cache).toContain('sessionStorage.removeItem(storageKey)');
+    expect(page).toContain('getCachedLeaderboardEntries(cacheKey)');
+    expect(page).toContain('setCachedLeaderboardEntries(cacheKey, data)');
   });
 
   it('does not poll or respond to game events while the leaderboard is hidden', () => {

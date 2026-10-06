@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   awaitEngineGameplay,
+  BREAK_START_MINUTE,
+  CERTIFICATE_LEAD_MS,
   gameplayHasResumed,
   GAMEPLAY_WAIT_MS,
+  LAST_HAND_LEAD_MINUTES,
+  msUntilNextAnnouncement,
 } from '../scripts/ci/await-engine-gameplay.mjs';
 import { HUD_RESERVE_MS, MTT_HUD_LEVEL_CAP_MS } from './e2e/support/tournamentHudWitness';
 
@@ -284,5 +288,52 @@ describe('the existing certification waits only for its engine maintenance bound
       await expect(awaitEngineGameplay(SHA, { fetchImpl })).rejects.toThrow();
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe('the live-table certificate does not start into the next scheduled break', () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it('measures the time to the next :53 announcement', () => {
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:47:00Z'))).toBe(6 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:53:00Z'))).toBe(60 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T23:01:00Z'))).toBe(52 * 60_000);
+  });
+
+  it('reads the announcement minute from the engine that schedules it', () => {
+    const engine = readFileSync('server/src/maintenance/MaintenanceBreak.ts', 'utf8');
+    expect(engine).toContain(`static readonly BREAK_START_MINUTE = ${BREAK_START_MINUTE};`);
+    expect(engine).toContain(
+      `static readonly LAST_HAND_LEAD_MS = ${LAST_HAND_LEAD_MINUTES} * 60 * 1000;`
+    );
+  });
+
+  it('waits out the break when the certificate would straddle the announcement', async () => {
+    const pause = vi.fn();
+    const report = vi.fn();
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl: async () => reply(health(idle)),
+        pause,
+        report,
+        wallClock: () => at('2026-10-04T22:47:00Z'),
+      })
+    ).toEqual(resumed);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(pause).toHaveBeenCalledWith(6 * 60_000 + 30_000);
+    expect(report.mock.calls[0][0]).toMatch(/starts after that break/);
+  });
+
+  it('starts at once with enough of the hour left', async () => {
+    const pause = vi.fn();
+    expect(
+      await awaitEngineGameplay(SHA, {
+        fetchImpl: async () => reply(health(idle)),
+        pause,
+        wallClock: () => at('2026-10-04T23:01:00Z'),
+      })
+    ).toEqual(resumed);
+    expect(pause).not.toHaveBeenCalled();
+    expect(CERTIFICATE_LEAD_MS).toBe(15 * 60_000);
   });
 });

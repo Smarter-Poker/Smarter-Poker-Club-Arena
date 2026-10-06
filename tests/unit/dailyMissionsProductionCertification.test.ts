@@ -91,6 +91,19 @@ describe('Daily Missions production certification', () => {
     expect(spec.indexOf('routedRealtimeServers.splice(0)')).toBeLessThan(
       spec.indexOf('name: /^Claim (?:All|Next) / })')
     );
+    const realtimeClose = spec.indexOf('await server.close({ code: 4000');
+    const realtimeDegraded = spec.indexOf(
+      "const realtimeDegraded = expect(page.getByText('Reconnecting'))"
+    );
+    const degradedObserved = spec.indexOf('await realtimeDegraded;');
+    const liveRecovery = spec.indexOf("const liveRecovery = expect(page.getByText('Live Now'))");
+    const claimRecovery = spec.indexOf('name: /^Claim (?:All|Next) / })');
+    expect(realtimeDegraded).toBeLessThan(realtimeClose);
+    expect(degradedObserved).toBeGreaterThan(realtimeClose);
+    expect(degradedObserved).toBeLessThan(liveRecovery);
+    expect(liveRecovery).toBeGreaterThan(spec.indexOf('routedRealtimeServers.splice(0)'));
+    expect(spec.indexOf('await Promise.all([', liveRecovery)).toBeGreaterThan(liveRecovery);
+    expect(liveRecovery).toBeLessThan(claimRecovery);
     expect(spec).not.toMatch(/revision cursor watchdog/);
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
@@ -125,13 +138,19 @@ describe('Daily Missions production certification', () => {
       )
     );
     expect(historicalFixture).toContain("'add_diamonds_to_balance'");
-    expect(historicalFixture).toContain('p_amount: HISTORICAL_MILESTONE_RAW_DIAMONDS');
+    expect(historicalFixture).toContain('p_amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
     expect(historicalFixture).toContain(
-      'daily-missions-historical-multiplier:${account.id}:${historicalRunId}'
+      'daily_mission_milestones:${account.id}:${historicalRunId}:777'
     );
     expect(historicalFixture).toContain('new_balance: boostedBalance');
     expect(historicalFixture).toContain('amount: HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
-    expect(historicalFixture).toContain("source: 'the_mint'");
+    expect(historicalFixture).toContain("p_type: 'daily_mission_milestone'");
+    expect(historicalFixture).not.toContain(
+      "insertServiceRows(environment, 'diamond_transactions'"
+    );
+    expect(source('scripts/ci/test-daily-missions-hand-trigger-postgres.py')).toContain(
+      'legacy_multiplier_journal_total'
+    );
     expect(historicalFixture).not.toContain("'fn_ca_mint'");
     expect(historicalFixture).not.toContain('registered_by_op_id');
     expect(spec).toContain('for (const [index, assignedDate]');
@@ -172,7 +191,25 @@ describe('Daily Missions production certification', () => {
     expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
     expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
     expect(helper).toContain("{ table: 'users', column: 'id' as const }");
-    expect(spec).toContain('hand history: exact fixture row remains');
+    // Production never receives a synthetic hand, so there is no hand fixture
+    // to clean up: the settled-hand trigger is certified on native PostgreSQL
+    // (scripts/ci/test-daily-missions-hand-trigger-postgres.py, board #5070).
+    expect(spec).not.toMatch(/['"`]hand_history['"`]/);
+    // Production still certifies the half the trigger hands off to: the exact
+    // outbox row the trigger writes, booked by the live pg_cron drainer. The
+    // spec must never book the event itself (the service enqueue RPC records
+    // it inline and deletes the outbox row, which skips the drainer).
+    expect(spec).toMatch(
+      /insertServiceRows<[\s\S]*?>\(environment, 'daily_challenge_event_outbox', \{\s*user_id: account!\.id,\s*event_key: eventKey,\s*amounts,\s*magnitudes,\s*threshold_values: thresholdValues,\s*occurred_at: occurredAt,\s*\}\)/
+    );
+    expect(spec).toContain('const eventKey = `certification:outbox:${randomUUID()}`;');
+    expect(spec).toContain(
+      'const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };'
+    );
+    expect(spec).toContain("'the pg_cron outbox drainer must book the queued event'");
+    expect(spec).toContain('timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT');
+    expect(spec).not.toContain('enqueue_daily_challenge_event');
+    expect(spec).not.toMatch(/fn_drain_daily_challenge_event_outbox_user['"`]/);
     expect(helper).toContain('reserved fixture residue remains after cleanup');
     // Certification owns and removes the exact UUID it creates. Listing the
     // entire Auth tenant first makes an unrelated damaged account capable of

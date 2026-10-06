@@ -187,7 +187,12 @@ function reachableTargets(): Set<string> {
     '/unions/U',
     '/unions/U/games',
   ]) {
-    const s = getArenaSectionNavigation(probe);
+    const s = getArenaSectionNavigation(probe, {
+      canCreateUnion: true,
+      canOperateUnionNetwork: true,
+      canOverseeCurrentUnion: true,
+      canManageCurrentUnionGames: true,
+    });
     if (s) for (const i of s.items) targets.add(i.path);
   }
   for (const i of getClubOperationItems('C', CAPS)) targets.add(i.path);

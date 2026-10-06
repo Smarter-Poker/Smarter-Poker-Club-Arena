@@ -11,6 +11,7 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
+import { readPresence } from '../lib/ownProfile';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
@@ -635,14 +636,11 @@ class AgentServiceClass {
 
     // Batch-fetch profiles for all player user_ids
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<
-      string,
-      NameableProfile & { avatar_url?: string; is_online?: boolean }
-    > = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_online`)
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -650,6 +648,15 @@ class AgentServiceClass {
     } catch (e) {
       reportError(e, 'AgentService.map');
       /* non-critical */
+    }
+    /* Online-now is the presence door's answer (the flag AND a heartbeat
+       under five minutes old), never the raw is_online flag, which stays true
+       long after somebody leaves. Unreadable presence is offline. */
+    let presence = new Map<string, boolean>();
+    try {
+      presence = await readPresence(userIds);
+    } catch (e) {
+      reportError(e, 'AgentService.presence');
     }
 
     return data.map((m) => ({
@@ -660,7 +667,7 @@ class AgentServiceClass {
       chipBalance: m.chip_balance || 0,
       rakebackPercent: 0, // rakeback_percent column does not exist yet
       joinedAt: m.joined_at,
-      isOnline: profileMap[m.user_id]?.is_online || false,
+      isOnline: presence.get(m.user_id) === true,
     }));
   }
 

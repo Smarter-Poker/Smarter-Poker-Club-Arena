@@ -13,7 +13,7 @@
  * elsewhere — it is to guarantee that no panel can throw during render again.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import type React from 'react';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -253,6 +253,15 @@ describe('every stats panel mounts without throwing', () => {
   it('PositionalRadar', () => {
     render(<PositionalRadar positions={POSITIONS} />);
     expect(screen.getByRole('heading', { name: /Positional Shape/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Focus BTN Position' }));
+    expect(
+      screen.getByText((_, element) =>
+        Boolean(
+          element?.classList.contains('pos-radar-readout') &&
+          element.textContent?.includes('BTN: 3,000 Hands')
+        )
+      )
+    ).toBeInTheDocument();
   });
 
   it('EVLuckChart', async () => {

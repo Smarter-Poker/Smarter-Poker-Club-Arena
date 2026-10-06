@@ -23,7 +23,6 @@ import {
   cleanupTemporaryCustomizationAccount,
   CLEANUP_FREEZE_ALLOWANCE_MS,
   createTemporaryCustomizationAccount,
-  deleteServiceRows,
   insertServiceRows,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -183,6 +182,13 @@ function exactQuery(select: string, column: string, value: string): URLSearchPar
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
 
+// The outbox is drained by four pg_cron shards once a minute, each with a
+// 45-second budget. Measured production lag from occurred_at to the booked
+// receipt (2026-09-27, 3 hours, 266,771 hand events): p50 29 s, p95 58 s,
+// p99 69 s, max 173 s. The certification waits past that observed maximum so
+// a healthy drainer never fails it and a stalled one always does.
+const DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT = 180_000;
+
 async function serviceRows<T>(
   environment: CustomizationCertificationEnvironment,
   table: string,
@@ -320,31 +326,10 @@ test.describe('production Daily Missions certification', () => {
     const environment = requireCustomizationCertificationEnvironment();
     const contexts: BrowserContext[] = [];
     let account: TemporaryCustomizationAccount | null = null;
-    let certificationHandHistoryId: string | null = null;
     let compatibilityCycleRowId: string | null = null;
     let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
     const cleanupErrors: string[] = [];
-    // A run cancelled mid-certification (CI cancellation, a SIGTERM from the
-    // runner) still reaches this handler even though it never reaches the
-    // finally block's own cleanup below - Node delivers the signal, but the
-    // process is free to exit before an interrupted await resumes. Reading
-    // certificationHandHistoryId here is a closure read, so it always sees
-    // whatever the try block has assigned by the time the signal lands. This
-    // is a backstop for cancellation only: it cannot run after SIGKILL or a
-    // host loss, which is why the retention sweep fix in
-    // 20260926151328_prune_e2e_certification_hand_history_fixtures.sql exists
-    // as the durable backstop underneath it (board #5070).
-    const deleteFixtureOnSignal = () => {
-      if (!certificationHandHistoryId) return;
-      void deleteServiceRows(
-        environment,
-        'hand_history',
-        new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
-      ).catch(() => undefined);
-    };
-    process.once('SIGTERM', deleteFixtureOnSignal);
-    process.once('SIGINT', deleteFixtureOnSignal);
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -539,7 +524,12 @@ test.describe('production Daily Missions certification', () => {
           ])
         );
         expect(vitals.missionArtBytes).toBeGreaterThan(0);
-        expect(vitals.missionArtBytes).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
+        // The assets are named in the message so a red run's annotation says
+        // which file was over budget, not only the total (2026-10-04).
+        expect(
+          vitals.missionArtBytes,
+          `initial mission art ${JSON.stringify(vitals.missionArt)}`
+        ).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
       });
 
       await test.step('warm in-app return restores the ledger inside its route budget', async () => {
@@ -746,13 +736,22 @@ test.describe('production Daily Missions certification', () => {
         await expect(page).toHaveURL(challengesURL.toString());
       });
 
-      await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
-        certificationHandHistoryId = randomUUID();
+      // The settled-hand trigger (hand_history -> daily_challenge_event_outbox)
+      // is certified on a private native PostgreSQL by
+      // scripts/ci/test-daily-missions-hand-trigger-postgres.py, never here:
+      // production never receives a synthetic hand (board #5070, incident
+      // e2e-synthetic-hands). This step certifies the production half the
+      // trigger hands off to. It writes the exact outbox row
+      // fn_enqueue_hand_daily_missions writes for a settled hand (same columns,
+      // same mixed exact threshold candidates) and waits for the live pg_cron
+      // drainer (sp_drain_daily_challenge_event_outbox ->
+      // fn_drain_daily_challenge_event_outbox_user) to book it: the receipt
+      // appears in daily_challenge_progress_events and the outbox row is gone.
+      // It never books the event itself, so a stalled or broken drainer fails
+      // here. tests/operations/production-e2e-ledger-write-guard refuses any
+      // production spec that writes a hand or ledger table.
+      await test.step('the mission outbox drainer preserves mixed exact threshold candidates', async () => {
         const occurredAt = new Date().toISOString();
-        const handNumber =
-          1_700_000_000 +
-          (Number.parseInt(certificationHandHistoryId.replaceAll('-', '').slice(0, 7), 16) %
-            100_000_000);
         const amounts = {
           hands_played: 1,
           hands_won: 1,
@@ -763,37 +762,37 @@ test.describe('production Daily Missions certification', () => {
         };
         const magnitudes = { big_pots: 500, strong_hands: 7 };
         const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
+        const eventKey = `certification:outbox:${randomUUID()}`;
 
-        const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
-          id: certificationHandHistoryId,
-          table_id: null,
-          tournament_id: null,
-          hand_number: handNumber,
-          game_variant: 'nlh',
-          small_blind: 1,
-          big_blind: 2,
-          pot_size: 600,
-          rake_amount: 0,
-          community_cards: [],
-          winners: [],
-          players: [],
-          actions: [],
-          started_at: occurredAt,
-          ended_at: occurredAt,
-          has_human: false,
-          daily_mission_events: [
-            {
-              user_id: account!.id,
-              amounts,
-              magnitudes,
-              values: thresholdValues,
-            },
-          ],
+        // Exactly the row the settled-hand trigger inserts: user_id,
+        // event_key, amounts, magnitudes, threshold_values, occurred_at.
+        // attempts, next_attempt_at and created_at take their table defaults,
+        // as they do for a real hand.
+        const queued = await insertServiceRows<{
+          user_id: string;
+          event_key: string;
+          amounts: JsonObject;
+          magnitudes: JsonObject;
+          threshold_values: JsonObject;
+          dead_lettered_at: string | null;
+        }>(environment, 'daily_challenge_event_outbox', {
+          user_id: account!.id,
+          event_key: eventKey,
+          amounts,
+          magnitudes,
+          threshold_values: thresholdValues,
+          occurred_at: occurredAt,
         });
-        expect(inserted).toHaveLength(1);
-        expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
+        expect(queued).toHaveLength(1);
+        expect(queued[0]).toMatchObject({
+          user_id: account!.id,
+          event_key: eventKey,
+          amounts,
+          magnitudes,
+          threshold_values: thresholdValues,
+          dead_lettered_at: null,
+        });
 
-        const eventKey = `hand:${certificationHandHistoryId}`;
         await expect
           .poll(
             async () => {
@@ -810,9 +809,22 @@ test.describe('production Daily Missions certification', () => {
               );
               return receipts.find((receipt) => receipt.event_key === eventKey) ?? null;
             },
-            { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+            {
+              message: 'the pg_cron outbox drainer must book the queued event',
+              timeout: DAILY_MISSIONS_OUTBOX_DRAIN_TIMEOUT,
+            }
           )
           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
+
+        // Booking an event removes its outbox row; a row that survives its own
+        // receipt would be booked twice.
+        const remaining = await serviceRows<{ event_key: string }>(
+          environment,
+          'daily_challenge_event_outbox',
+          account!.id,
+          'event_key'
+        );
+        expect(remaining.filter((row) => row.event_key === eventKey)).toEqual([]);
       });
 
       await test.step('reroll confirmation charges one Diamond exactly once', async () => {
@@ -1666,6 +1678,9 @@ test.describe('production Daily Missions certification', () => {
           // did not request, and the close is forwarded to the page.
           const socketsBeforeInterruption = interceptedRealtimeSockets;
           const cursorReadsBeforeInterruption = cursorReads;
+          const realtimeDegraded = expect(page.getByText('Reconnecting')).toBeVisible({
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
           for (const server of routedRealtimeServers.splice(0)) {
             try {
               await server.close({ code: 4000, reason: 'Certification Realtime Interruption' });
@@ -1674,14 +1689,23 @@ test.describe('production Daily Missions certification', () => {
               // The reconnect proof below is what decides that.
             }
           }
-          await expect
-            .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
-            .toBeGreaterThan(socketsBeforeInterruption);
-          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
-          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-          await expect(page.getByText('Live Now')).toBeVisible({
+          await realtimeDegraded;
+          // Observe the live recovery while the replacement socket is being
+          // established. The dashboard read below may finish after a valid
+          // transient SUBSCRIBED state, and starting this assertion only after
+          // the Claim control renders can miss that recovery when the provider
+          // degrades again immediately afterward.
+          const liveRecovery = expect(page.getByText('Live Now')).toBeVisible({
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           });
+          await Promise.all([
+            expect
+              .poll(() => interceptedRealtimeSockets, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+              .toBeGreaterThan(socketsBeforeInterruption),
+            liveRecovery,
+          ]);
+          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
+          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
           const catchUpReads = cursorReads - cursorReadsBeforeInterruption;
           expect(
             catchUpReads,
@@ -2102,28 +2126,8 @@ test.describe('production Daily Missions certification', () => {
         contentType: 'application/json',
       });
     } finally {
-      process.removeListener('SIGTERM', deleteFixtureOnSignal);
-      process.removeListener('SIGINT', deleteFixtureOnSignal);
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
-      }
-      if (certificationHandHistoryId) {
-        await deleteServiceRows(
-          environment,
-          'hand_history',
-          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
-        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
-        await readServiceRows<{ id: string }>(
-          environment,
-          'hand_history',
-          new URLSearchParams({ select: 'id', id: `eq.${certificationHandHistoryId}`, limit: '1' })
-        )
-          .then((rows) => {
-            if (rows.length > 0) cleanupErrors.push('hand history: exact fixture row remains');
-          })
-          .catch((error) =>
-            cleanupErrors.push(`hand history verification: ${(error as Error).message}`)
-          );
       }
       if (account) {
         await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>

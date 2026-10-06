@@ -1,0 +1,77 @@
+// P12.3 PIN harness. Appended verbatim to the end of
+// server/src/engine/horseDecision/workerRuntime.test.ts at 4fe703f8 (P12.1
+// merged with P12.2 and the integration fix; no P12.3 change applied), run once
+// with -t 'TEMP P12.3 PIN' in a `git archive` copy of that commit. It uses only
+// that file's own harness, fastRequest, rekey, phase6TournamentRequest and
+// buildTournamentMState, and the base's remainingVariantSpot.
+// Output: p12-3-pin-base.log.
+
+describe('TEMP P12.3 PIN on the unmodified base', () => {
+  it('prints the live actions', async () => {
+    const { remainingVariantSpot } = await import('../../benchmark/RemainingVariantPolicyEvidence.js');
+    type Street = 'preflop' | 'flop' | 'turn' | 'river';
+    const build = (format: 'cash' | 'tournament', variant: string, street: Street, seats: number) => {
+      const s = remainingVariantSpot(variant as never, street, seats, format);
+      if (format === 'cash')
+        return rekey({ ...fastRequest(621), player: s.hero, gameState: s.state, style: 'balanced', mods: {}, opts: { mind: false } });
+      const tournament = {
+        ...phase6TournamentRequest(621).gameState.tournament!,
+        ...s.state.tournament!,
+        gameVariant: variant,
+        playersAtTable: seats,
+        nextAnte: 0,
+      } as any;
+      tournament.m = buildTournamentMState({
+        stackChips: s.hero.stack,
+        smallBlind: tournament.currentSmallBlind,
+        bigBlind: tournament.currentBigBlind,
+        ante: tournament.currentAnte,
+        anteType: tournament.anteType,
+        playersAtTable: tournament.playersAtTable,
+        nextSmallBlind: tournament.nextSmallBlind ?? null,
+        nextBigBlind: tournament.nextBigBlind ?? null,
+        nextAnte: tournament.nextAnte ?? null,
+        minutesToNextLevel: tournament.nextBlindInMin ?? null,
+        opponentStacks: s.state.players
+          .filter((p: any) => p.user_id !== s.hero.user_id)
+          .map((p: any) => ({ userId: p.user_id, stackChips: p.stack })),
+      });
+      return rekey({ ...fastRequest(621), player: s.hero, gameState: { ...s.state, format: 'mtt', tournament }, style: 'balanced', mods: {}, opts: { mind: false } } as FastHorseDecisionRequest);
+    };
+    for (const variant of ['short_deck', 'pineapple', 'flh', 'flo8'])
+      for (const format of ['cash', 'tournament'] as const)
+        for (const street of ['preflop', 'flop', 'turn', 'river'] as const)
+          for (const seats of [2, 3])
+            for (const seed of [10_301_204, 4040, 100101])
+            for (const packOff of [false, true]) {
+              const h = harness(true);
+              const decide = h.deps.decide;
+              h.deps.decide = (player, gameState, style, mods, opts) => {
+                const rng = saveFastRandom();
+                seedFastRandom(seed);
+                try {
+                  return decide(player, gameState, style, mods, packOff ? { ...opts, phase12Remaining: 'off' } : opts);
+                } finally {
+                  restoreFastRandom(rng);
+                }
+              };
+              const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+              try {
+                h.runtime.receive(build(format, variant, street, seats));
+                await h.runtime.drain();
+              } finally {
+                clock.mockRestore();
+              }
+              const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+              if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+              const d = result.decision;
+              const r = d.remainingVariantPolicy;
+              console.log(JSON.stringify({
+                variant, format, street, seats, seed, packOff,
+                workerMode: h.decisionOpts[0].phase12Remaining ?? null,
+                action: d.action, amount: d.amount ?? null,
+                receipt: r ? { mode: r.mode, reason: r.reason, eligible: r.eligible, changed: r.changed, applied: r.applied, owner: r.utilityOwner, base: [r.baselineAction, r.baselineAmount], prop: [r.proposalAction, r.proposalAmount] } : null,
+              }));
+            }
+  }, 120_000);
+});

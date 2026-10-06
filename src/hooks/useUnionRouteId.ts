@@ -12,8 +12,16 @@ import { resolveUnionUUID, resolveUnionUUIDSync } from '../utils/unionIdResolver
  * into the same union (/unions/${unionRef}/games): a link built from the UUID
  * would work, but only via a SlugEnforcer redirect on every click.
  */
-export function useUnionRouteId(): { unionId: string | undefined; unionRef: string | undefined } {
-  const { unionId: unionRef } = useParams<{ unionId: string }>();
+export function useUnionRouteId(routeUnionRef?: string | null): {
+  unionId: string | undefined;
+  unionRef: string | undefined;
+} {
+  const { unionId: matchedUnionRef } = useParams<{ unionId: string }>();
+  /* Layout chrome is rendered by the parameterless parent route, so its
+     useParams() context cannot see a child route's :unionId. Callers such as
+     the hamburger and section rail pass the segment they read from the current
+     pathname; route pages keep using the inherited match exactly as before. */
+  const unionRef = routeUnionRef === null ? undefined : (routeUnionRef ?? matchedUnionRef);
   const [resolved, setResolved] = useState<{
     ref: string | undefined;
     id: string | undefined;

@@ -12,6 +12,37 @@ import { requireReadyEngineSha, UNKNOWN_EXIT_CODE } from './production-e2e-prove
 // observed path. It is a fixed prerequisite limit, not a future-release promise.
 export const GAMEPLAY_WAIT_MS = 12 * 60_000;
 const POLL_MS = 5_000;
+
+/*
+ * THE CERTIFICATE DOES NOT START INTO THE NEXT BREAK (2026-10-04).
+ *
+ * The hourly break is announced at :53 (BREAK_START_MINUTE 55 minus the
+ * two-minute LAST_HAND_LEAD in server/src/maintenance/MaintenanceBreak.ts;
+ * tests/await-engine-gameplay.test.ts reads both). Once it is announced every
+ * table finishes its hand and parks, and the live-table certificate reads
+ * that, correctly, as "not dealing". Run 37241065892 started its cases at
+ * about 22:47Z and all three failed on the 22:53Z announcement: two on
+ * "production engine is in scheduled maintenance (last_hand)" and the SPIN
+ * case on 45 s with no poker event after the hand that ended at 22:53:04Z.
+ * None of that was a defect; the certificate had straddled a stop we schedule.
+ *
+ * The cases took about ten minutes on 2026-10-04. A certificate that would
+ * begin with less than CERTIFICATE_LEAD_MS before the next announcement waits
+ * for that break first, and the ordinary wait below then holds it until the
+ * engine has resumed every table.
+ */
+export const BREAK_START_MINUTE = 55;
+export const LAST_HAND_LEAD_MINUTES = 2;
+export const CERTIFICATE_LEAD_MS = 15 * 60_000;
+const BREAK_ANNOUNCED_SETTLE_MS = 30_000;
+
+/** Milliseconds from `wallMs` (UTC epoch) to the next :53:00 announcement. */
+export function msUntilNextAnnouncement(wallMs) {
+  const hour = 60 * 60_000;
+  const offset = (BREAK_START_MINUTE - LAST_HAND_LEAD_MINUTES) * 60_000;
+  const intoHour = ((wallMs % hour) + hour) % hour;
+  return intoHour < offset ? offset - intoHour : hour - intoHour + offset;
+}
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /**
@@ -118,9 +149,22 @@ export async function awaitEngineGameplay(
     pause = sleep,
     report = (message) => console.error(message),
     isForwardRelease = isForwardMainRelease,
+    // Wall clock for the break schedule. Only the CLI passes it, so a caller
+    // that does not ask for the schedule gets exactly the old behaviour.
+    wallClock = null,
   } = {}
 ) {
   if (!/^[0-9a-f]{40}$/.test(expected)) throw new Error('Expected one full engine SHA.');
+  if (wallClock) {
+    const untilBreak = msUntilNextAnnouncement(wallClock());
+    if (untilBreak < CERTIFICATE_LEAD_MS) {
+      report(
+        `Waiting ${Math.ceil((untilBreak + BREAK_ANNOUNCED_SETTLE_MS) / 1000)}s: the next scheduled break ` +
+          'is announced before a live-table certificate could finish, so it starts after that break.'
+      );
+      await pause(untilBreak + BREAK_ANNOUNCED_SETTLE_MS);
+    }
+  }
   const deadline = now() + GAMEPLAY_WAIT_MS;
   let announced = false;
   let silence = null;
@@ -177,7 +221,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   (async () => {
     if (args.length !== 1) throw new Error('Usage: await-engine-gameplay.mjs <exact-engine-sha>');
-    const result = await awaitEngineGameplay(args[0]);
+    const result = await awaitEngineGameplay(args[0], { wallClock: () => Date.now() });
     if (result.verdict === 'resumed') {
       console.log(result.sha);
       return;

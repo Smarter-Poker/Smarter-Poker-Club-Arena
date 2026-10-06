@@ -72,9 +72,10 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
     expect(PAGE).toContain('if (e?.definitive) sendKeyRef.current = null;');
   });
 
-  it("moves chips between the player's own wallets through the store", () => {
-    expect(PAGE).toContain('internalTransfer(user.id, transferFrom, transferTo, amount)');
-    expect(PAGE).toMatch(/if \(!transferred\)/);
+  it('routes chip operations to the club cashier without a global-pool transfer', () => {
+    expect(PAGE).toContain('Open Club Cashier');
+    expect(PAGE).toContain("currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier'");
+    expect(PAGE).not.toContain('internalTransfer');
   });
 
   it('receives: player id, profile link and every credit in the diamond ledger', () => {

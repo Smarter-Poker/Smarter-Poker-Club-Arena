@@ -145,6 +145,8 @@ export interface DisconnectStateEntry {
   awayBlindSbCharged?: boolean;
   awayBlindBbCharged?: boolean;
   pageLeftAtMs?: number | null;
+  /** Frozen maintenance time already credited to the absence stamps. */
+  presenceThawedAtMs?: number;
 }
 
 /**

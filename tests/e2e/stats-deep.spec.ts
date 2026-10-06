@@ -52,6 +52,54 @@ test.describe('Player Stats production experience', () => {
     }
   });
 
+  test('traverses every owner Stats surface and preserves club and range scope', async ({
+    page,
+  }) => {
+    for (const tabName of [
+      'Performance',
+      'Positions',
+      'Hands',
+      'Tournaments',
+      'Analysis',
+      'Trophies',
+      'Rake',
+      'Workspace',
+      'Overview',
+    ]) {
+      const tab = page.getByRole('tab', { name: tabName });
+      await expect(tab, `${tabName} must remain available`).toBeVisible();
+      await tab.click();
+      await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator(`#stats-panel-${tabName.toLowerCase()}`)).toBeVisible();
+    }
+
+    const clubGroup = page.getByRole('group', { name: 'Statistics Club' });
+    const clubButtons = clubGroup.getByRole('button');
+    await expect(clubButtons.first()).toHaveText('All Clubs');
+    expect(await clubButtons.count()).toBeGreaterThan(2);
+    await clubButtons.nth(1).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('statsClub')).not.toBeNull();
+
+    await page.getByRole('button', { name: '30 Days' }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('range')).toBe('30d');
+
+    const compare = page.getByRole('button', { name: 'Compare Clubs' });
+    await expect(compare).toBeVisible();
+    await compare.click();
+    await expect(page.getByRole('heading', { name: 'Club Comparison' })).toBeVisible();
+    await page.getByRole('button', { name: 'Profit' }).click();
+    await expect(page.getByRole('button', { name: 'Profit' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 60_000 });
+    expect(new URL(page.url()).searchParams.get('statsClub')).not.toBeNull();
+    expect(new URL(page.url()).searchParams.get('range')).toBe('30d');
+    expect(new URL(page.url()).searchParams.get('clubSort')).toBe('profit');
+  });
+
   for (const width of [375, 393]) {
     test(`fits a ${width}px phone and keeps all interactive targets usable`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 });

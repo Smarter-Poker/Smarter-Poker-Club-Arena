@@ -40,6 +40,7 @@ import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useToast } from '../../components/common/Toast';
 import styles from './ClubBombPotReportPage.module.css';
 
 interface ReportRow {
@@ -172,6 +173,7 @@ export default function ClubBombPotReportPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const navigate = useNavigate();
   const { user } = useAuthUser();
+  const toast = useToast();
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(30);
   const scopeKey = `${user?.id ?? 'signed-out'}:${clubId ?? ''}:${days}`;
   const [snapshot, setSnapshot] = useState<ReportSnapshot | null>(null);
@@ -316,8 +318,10 @@ export default function ClubBombPotReportPage() {
     };
   }, [rows]);
 
-  const exportCsv = useCallback(() => {
+  const exportCsv = useCallback(async () => {
     if (!rows) return;
+    const exportScope = scopeKey;
+    const isCurrent = () => isMounted.current && activeScopeRef.current === exportScope;
     const header =
       'table,trigger,boards,variant,hands,avg_players,avg_pot,total_pot,total_rake,total_antes,scoops,splits,unrecorded';
     const body = rows.map((d) =>
@@ -339,8 +343,21 @@ export default function ClubBombPotReportPage() {
         .map((v) => csvEscape(String(v)))
         .join(',')
     );
-    downloadCsv(`bomb-pot-report-${clubId}-${days}d.csv`, [header, ...body].join('\n'));
-  }, [rows, clubId, days]);
+    try {
+      const downloaded = await downloadCsv(
+        `bomb-pot-report-${clubId}-${days}d.csv`,
+        [header, ...body].join('\n'),
+        isCurrent
+      );
+      if (isCurrent() && !downloaded) {
+        toast.error('This Browser Could Not Start The Download');
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      reportError(error, 'ClubBombPotReportPage.Export_failed');
+      toast.error('This Browser Could Not Start The Download');
+    }
+  }, [rows, clubId, days, isMounted, scopeKey, toast]);
 
   if (notFound) {
     return (

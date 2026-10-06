@@ -761,7 +761,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
   // ── V16 strategy matchups (2026-08-26) ──
-  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
+  // 2026-10-05: the overlay resolved NEGATIVE here (-0.26 +/- 0.10 pooled
+  // over 31 nights) and is default OFF. Same matchup, same sign: arm A is
+  // still "overlay on". The 6-max card measures it where it mostly fires, in
+  // ring pots that have come down to two players.
+  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: { v16Hu: true }, b: {} },
+  { name: 'v16_hu_overlay_6max', pairs: 6000, a: { v16Hu: true }, b: {} },
   /*
    * v16_ratio_rescale is NOT on the card (2026-09-05). Measured 2026-09-04:
    * 0.00 bb100 with 0.00 stderr over 12,000 hands - the flag changed no
@@ -897,13 +902,20 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // honestly: both arms see the same shapes, only one reads them.
   { name: 'plo4_v46_classes', variant: 'plo4', pairs: 6000, a: {}, b: { v46Charts: false } },
   { name: 'plo6_v46_classes', variant: 'plo6', pairs: 6000, a: {}, b: { v46Charts: false } },
+  // 2026-10-05: the short-deck chart resolved NEGATIVE (-0.51 +/- 0.15 over
+  // 960k hands) and is default OFF behind v46ShortDeck. Same matchup, same
+  // sign: arm A is still "chart on", so the nightly series stays continuous.
   {
     name: 'shortdeck_v46_classes',
     variant: 'short_deck',
     pairs: 6000,
-    a: {},
-    b: { v46Charts: false },
+    a: { v46ShortDeck: true },
+    b: {},
   },
+  // V51 (2026-10-05): a committed river one-pair hand calls instead of
+  // jamming. Measured on the standard NLH card, where the committed river
+  // spot arises from ordinary 100bb raise wars.
+  { name: 'v51_river_flat', pairs: 6000, a: {}, b: { v51RiverFlat: false } },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -955,6 +967,8 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v41Leaks: false,
       v43Tempo: false,
       v46Charts: false,
+      v46ShortDeck: false,
+      v51RiverFlat: false,
       mind: false,
       streetIQ: false,
       handReading: false,

@@ -140,7 +140,10 @@ function harness(opts: {
       running = false;
     }),
     ensureTournamentManagerAdmission: vi.fn(async () => undefined),
-    tournamentRecurring: { topUpWithHorses: vi.fn(async () => 0) },
+    tournamentRecurring: {
+      topUpWithHorses: vi.fn(async () => 0),
+      seatFirstPartnerHoldUntil: vi.fn(() => -Infinity),
+    },
   });
   return { server, rosterReads };
 }

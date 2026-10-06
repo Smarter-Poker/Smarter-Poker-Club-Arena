@@ -182,6 +182,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             src={cardImageUrl}
             alt={`${clubName} Card`}
             className="club-card-viewport-img"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             loading="lazy"
             decoding="async"
             onLoad={() => setImgLoaded(true)}

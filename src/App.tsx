@@ -25,7 +25,7 @@ import WaitlistBanner from './components/common/WaitlistBanner';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
-import { useSettingsStore } from './stores/useSettingsStore';
+import { useInterfaceThemeHydration } from './hooks/useInterfaceThemeHydration';
 import { useShellUpdateGate } from './hooks/useShellUpdateGate';
 import { startShellTelemetry } from './services/ShellTelemetryService';
 
@@ -82,6 +82,8 @@ const PushSubscriptionSync = lazyWithRetry(
 const FirstRunPushPrompt = lazyWithRetry(
   () => import('./components/notifications/FirstRunPushPrompt')
 );
+// The presence heartbeat: lazy for the same reason, it is not first paint.
+const PresenceHeartbeat = lazyWithRetry(() => import('./components/common/PresenceHeartbeat'));
 // The ticker is another application-root overlay, but it renders only on a
 // live table or club lobby and does not contribute to the first paint. Load it
 // after the shell so its polling, settings, and announcement graph is paid for
@@ -352,6 +354,10 @@ function ClubFooterProbe() {
 
 function FullApp() {
   const location = useLocation();
+  // Fence the interface mode to the authenticated account before route
+  // children paint, then reconcile the durable profile preference. The
+  // deterministic customization harness supplies its own isolated identity.
+  useInterfaceThemeHydration(location.pathname !== '/dev/customization');
   const inTabLobbyActive = useInTabLobbyActive();
   const inTabLobbyClubId = useInTabLobbyClubId();
   /* A signed-out visitor on a public page (landing, Help Center, legal) is
@@ -598,6 +604,12 @@ function FullApp() {
         <GlobalBalanceSync />
         <HeaderAppearanceSync />
         <ProfileAccountSync />
+        {/* The signed-in player's presence heartbeat, mounted once: without it a
+          person using only the arena read offline everywhere while a horse could
+          read online (src/lib/presenceHeartbeat.ts). */}
+        <Suspense fallback={null}>
+          <PresenceHeartbeat />
+        </Suspense>
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
           should ever see the union skins." A union is a `clubs` row, so every
@@ -1121,7 +1133,7 @@ function FullApp() {
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
-                      <UnionOverseerGuard>
+                      <UnionOverseerGuard authority="game-management">
                         <PageErrorBoundary pageName="Union Table Management">
                           <GameManagementPage scope="union" />
                         </PageErrorBoundary>

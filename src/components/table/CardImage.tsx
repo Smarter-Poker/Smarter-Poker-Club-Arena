@@ -14,6 +14,7 @@ import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
 import { reportError } from '../../utils/errorReporter';
 import { cardWords, FACE_DOWN_WORDS } from '../../utils/cardWords';
+import { normalizeFaceDeckId, type FaceDeckId } from '../../lib/faceDeck';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -29,6 +30,8 @@ export interface Card {
 export interface CardImageProps {
   card: Card;
   deckStyle?: DeckStyle;
+  /** Optional per-card preview override; gameplay normally inherits its table root. */
+  faceDeckId?: FaceDeckId | string;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   isHighlighted?: boolean;
   isFolded?: boolean;
@@ -206,6 +209,7 @@ export const SUIT_COLOR: Record<string, string> = {
 export function CardImage({
   card,
   deckStyle,
+  faceDeckId,
   size = 'md',
   isHighlighted = false,
   isFolded = false,
@@ -226,6 +230,7 @@ export function CardImage({
   // wins, which is what the felt passes.
   const preferredDeckStyle = useDeckStyle();
   const effectiveDeckStyle = deckStyle ?? preferredDeckStyle;
+  const explicitFaceDeckId = faceDeckId ? normalizeFaceDeckId(faceDeckId) : undefined;
   const imagePath = getCardImagePath(card, effectiveDeckStyle);
   const sizeClass = SIZE_CLASSES[size];
   /* `null` means the card could not be read at all. See getCardImagePath:
@@ -271,6 +276,7 @@ export function CardImage({
     return (
       <div
         className={classes}
+        data-face-deck={explicitFaceDeckId}
         role="img"
         aria-label="Card Could Not Be Read"
         title="This Card Could Not Be Read. Do Not Act On It, Reload The Table."
@@ -283,7 +289,7 @@ export function CardImage({
   }
 
   return (
-    <div className={classes}>
+    <div className={classes} data-face-deck={explicitFaceDeckId}>
       <img
         loading={loading}
         decoding="async"

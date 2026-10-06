@@ -39,7 +39,7 @@ const read = (p: string) => readFileSync(join(root, p), 'utf8');
 const ci = parse(read('.github/workflows/ci.yml'));
 const wrapper = read(WRAPPER);
 
-/* THE TWENTY-FOUR RUNNERS, NAMED, AND COUNTED IN WORDS.
+/* THE TWENTY-SEVEN RUNNERS, NAMED, AND COUNTED IN WORDS.
 
    Every other assertion here derives the population from the directory, which
    is right and is not enough on its own: a directory read agrees with itself
@@ -49,9 +49,11 @@ const wrapper = read(WRAPPER);
    money door nobody executes. */
 const EVERY_DIAMOND_RUNNER = [
   'run-diamond-accepted-hand.py',
+  'run-diamond-bad-beat-jackpot.py',
   'run-diamond-bomb-pot.py',
   'run-diamond-cash-admission.py',
   'run-diamond-cash-custody.py',
+  'run-diamond-cash-rake.py',
   'run-diamond-club-commerce-admission.py',
   'run-diamond-club-commerce-completion.py',
   'run-diamond-club-commerce-earnings.py',
@@ -61,6 +63,7 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-club-commerce.py',
   'run-diamond-concurrency.py',
   'run-diamond-controlled-play.py',
+  'run-diamond-cross-format-conservation.py',
   'run-diamond-incident-resolution.py',
   'run-diamond-plain-cash-rule.py',
   'run-diamond-run-it-twice.py',
@@ -73,9 +76,11 @@ const EVERY_DIAMOND_RUNNER = [
   'run-diamond-wallet-transfer.py',
   'run-poker-diamond-custody.py',
 ];
-/* The eleven that stand up a cluster of their own. Declared in the wrapper and
-   repeated here, so the split cannot move in one file alone. */
+/* The thirteen that stand up a cluster of their own. Declared in the wrapper
+   and repeated here, so the split cannot move in one file alone. */
 const A_PRIVATE_CLUSTER = [
+  'run-diamond-bad-beat-jackpot.py',
+  'run-diamond-cash-rake.py',
   'run-diamond-club-commerce-admission.py',
   'run-diamond-club-commerce-completion.py',
   'run-diamond-club-commerce-earnings.py',
@@ -84,12 +89,13 @@ const A_PRIVATE_CLUSTER = [
   'run-diamond-club-commerce-refunds.py',
   'run-diamond-club-commerce.py',
   'run-diamond-concurrency.py',
+  'run-diamond-cross-format-conservation.py',
   'run-diamond-stats-asset-dimension.py',
   'run-diamond-tournament-doors.py',
   'run-diamond-tournament-lifecycle.py',
 ];
-const HOW_MANY_RUNNERS = 24;
-const HOW_MANY_ON_A_PRIVATE_CLUSTER = 11;
+const HOW_MANY_RUNNERS = 27;
+const HOW_MANY_ON_A_PRIVATE_CLUSTER = 14;
 const HOW_MANY_ON_THE_WRAPPER_CLUSTER = 13;
 /* No environment variable but PG_BIN may choose a runner's server. PG17_BINDIR
    is the estate's other name for a bin directory, and two variables naming one
@@ -253,6 +259,9 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-concurrency-doors.manifest.json',
     'tests/sql/diamond-concurrency-schema.sql',
     'tests/sql/diamond-concurrency-seed.sql',
+    /* The cross-format conservation runner's md5 pin list. Its two .sql
+       fixtures are poker-diamond-* and are swept up by the glob above. */
+    'tests/sql/diamond-cross-format-conservation-doors.manifest.json',
     'scripts/ci/run-diamond-sql-acceptance.py',
     'scripts/ci/check-diamond-runners-listed.mjs',
   ])('%s selects the PostgreSQL accounting job', (path) => {
@@ -274,8 +283,8 @@ const socketPort = /^PORT = '([0-9]+)'$/m.exec(wrapper)?.[1];
 
 /* TWO SHAPES OF RUNNER, AND EVERY RUNNER IS EXACTLY ONE OF THEM.
  *
- * Thirteen are hard-wired to the wrapper's socket and port. Four stand up a
- * private cluster of their own, because they load the estate's historical
+ * Thirteen are hard-wired to the wrapper's socket and port. Fourteen stand up
+ * a private cluster of their own, because they load the estate's historical
  * schema base and pin the installed doors against it: they need a cluster
  * nothing else has written to, and two postmasters cannot own one socket and
  * one port, so they cannot be moved onto the shared one.

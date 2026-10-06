@@ -112,6 +112,26 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
   { chicagoHour: 0, tier: 'standard', label: 'Midnight Free Buy' },
 ];
 
+/**
+ * The name a slot's event is published under (`freeBuyTournamentRow`), and so
+ * the only rows that belong to the board.
+ *
+ * WHY THE BOARD IS READ BY NAME, NOT BY `free_buy` (2026-10-05). Dan made every
+ * freeroll a Free Buy ("FREE ROLLS MUST ALWAYS BE SET AS 'FREE BUY'"), so
+ * `freeBuyColumns()` writes `free_buy: true` on the $100 Freerolls, the Coffee
+ * Break and Early Bird freerolls and every DSS freeroll as well. The hourly
+ * watch and `freebuy:verify` selected `free_buy = true` and audited all of
+ * them against the five-slot board, so a correct $100 Freeroll at 6:00 AM
+ * Chicago read as "not one of the five slots" and the watch held a warning
+ * open since 2026-09-11 that described no fault in the board at all.
+ */
+export function freeBuyBoardName(slot: FreeBuySlot): string {
+  return `${slot.label} (NLH)`;
+}
+
+/** Every name the board publishes under, for selecting its rows. */
+export const FREE_BUY_BOARD_NAMES: readonly string[] = FREE_BUY_SLOTS.map(freeBuyBoardName);
+
 export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
@@ -393,7 +413,10 @@ export interface FreeBuyHost {
 }
 
 /**
- * The two hosts, in the order their boards are filled.
+ * The Free Buy hosts, in the order their boards are filled.
+ *
+ * Deep Stack Society is commented out under the 2026-10-04 operator hold; the
+ * note on its entry below has the detail. Restoring it makes this two again.
  *
  * Midway Union stamps club_id AND union_id with the union id, which is the
  * shape every house-owned event on this platform has always had and is what
@@ -407,12 +430,68 @@ export const FREE_BUY_HOSTS: FreeBuyHost[] = [
     unionId: MIDWAY_UNION_ID,
     label: 'Midway Union',
   },
+];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HELD HOST STOPS BEING PUBLISHED FOR. IT DOES NOT STOP BEING A HOST.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * OPERATOR HOLD 2026-10-04 (owner: "pause any and all horses and games that are
+ * running inside of deep stack society until further notice", then "disable any
+ * and all games now"). Deep Stack Society's Spin and SNG boards were stopped at
+ * source with fn_spin_deactivate, which drops the club from
+ * activatedSpinOwners(). This board had no such database gate: FREE_BUY_HOSTS is
+ * a constant and checkAndCreateFreeBuys walked it every FREE_BUY_TICK_MS, so DSS
+ * kept gaining a Free Buy MTT per due slot after everything else had stopped.
+ *
+ * IT HAS ONE NOW (2026-10-05). checkAndCreateFreeBuys reads each host's
+ * effective fleet policy and declines to publish for a held club, failing
+ * CLOSED on an unreadable policy - so holding a club no longer needs a
+ * release. This list is still the HARD hold: a constant no database write can
+ * undo, and the one place a host is taken off the board for good. The two
+ * brakes are independent on purpose, and neither weakens the other.
+ *
+ * THE REGRESSION THIS LIST EXISTS FOR. Taking the club out of FREE_BUY_HOSTS
+ * alone was not enough, because that list answers TWO different questions and
+ * only one of them changes under a hold:
+ *
+ *   who do we PUBLISH a board for?   -> FREE_BUY_HOSTS, active hosts only,
+ *                                       and of those, only the ones whose
+ *                                       fleet policy is not held
+ *   whose rows are LEGITIMATE?       -> FREE_BUY_KNOWN_HOSTS, held included
+ *
+ * auditFreeBuyRow resolves every row's club against the host list and reports
+ * `club <id> is not a Free Buy host` when it cannot. The club's already
+ * published events do not disappear when the hold lands - measured on
+ * production 2026-10-05, 32 Deep Stack rows sat inside the audit's rolling
+ * 24h-and-ahead window, the furthest starting 2026-10-07 - so every one of them
+ * became a problem, and auditFreeBuyBoardOnce raises a `warning`
+ * financial_alerts row saying "The Free Buy board is not what it was specified
+ * to be" once the count moves. A deliberate hold must not read as a wrong board.
+ *
+ * So the entry stays here, with its real shape: `unionId: null`, because Deep
+ * Stack is standalone and fn_ca_fund_overlay_on_lock picks the overlay bank by
+ * that field alone. Its rows keep being validated against it, including the
+ * union_id check. Lifting the hold is moving this entry back into
+ * FREE_BUY_HOSTS above - not re-typing it.
+ */
+export const FREE_BUY_HELD_HOSTS: FreeBuyHost[] = [
   {
     hostId: DSS_CLUB_ID,
     clubId: DSS_CLUB_ID,
     unionId: null,
     label: 'Deep Stack Society',
   },
+];
+
+/**
+ * Every club that may legitimately own a Free Buy row: published for, or held.
+ * This is the list a row's club is resolved against, never the publish list.
+ */
+export const FREE_BUY_KNOWN_HOSTS: readonly FreeBuyHost[] = [
+  ...FREE_BUY_HOSTS,
+  ...FREE_BUY_HELD_HOSTS,
 ];
 
 /**
@@ -497,7 +576,7 @@ export function freeBuyTournamentRow(opts: {
   return {
     club_id: opts.host.clubId,
     union_id: opts.host.unionId,
-    name: `${opts.due.slot.label} (NLH)`,
+    name: freeBuyBoardName(opts.due.slot),
     game_type: 'NLH',
     variant: 'freezeout',
     tournament_type: 'MTT',
@@ -593,7 +672,9 @@ export interface FreeBuyRowUnderAudit {
  */
 export function auditFreeBuyRow(
   row: FreeBuyRowUnderAudit,
-  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS
+  // KNOWN, not active: a held host's published rows are still its own. See
+  // FREE_BUY_HELD_HOSTS for the alert this default prevents.
+  hosts: readonly FreeBuyHost[] = FREE_BUY_KNOWN_HOSTS
 ): string[] {
   const problems: string[] = [];
   const num = (v: unknown): number => Number(v);
@@ -683,11 +764,15 @@ export function auditFreeBuyRow(
 export function auditFreeBuyBoard(
   rows: readonly FreeBuyRowUnderAudit[],
   nowMs: number,
-  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS
+  // Who a board is EXPECTED from: the slot-came-and-went report below.
+  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS,
+  // Whose rows are legitimate: every active host plus every held one, so a
+  // hold never turns the club's existing events into a wrong board.
+  knownHosts: readonly FreeBuyHost[] = [...hosts, ...FREE_BUY_HELD_HOSTS]
 ): { problems: string[]; checked: number } {
   const problems: string[] = [];
   for (const row of rows) {
-    for (const p of auditFreeBuyRow(row, hosts)) {
+    for (const p of auditFreeBuyRow(row, knownHosts)) {
       problems.push(`${String(row.name ?? 'unnamed')} @ ${String(row.start_time ?? '?')}: ${p}`);
     }
   }

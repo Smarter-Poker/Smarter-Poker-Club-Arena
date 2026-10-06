@@ -73,3 +73,52 @@ describe('pristine welcome-package reset contract', () => {
     });
   });
 });
+
+describe('welcome package persisted identifiers', () => {
+  beforeEach(() => backend.rpc.mockReset());
+
+  it.each(['a0000000-0000-0000-0000-000000000001', '11111111-1111-4111-8111-111111111111'])(
+    'accepts the server not-eligible state for %s',
+    async (clubId) => {
+      backend.rpc.mockResolvedValue({
+        data: {
+          ok: true,
+          club_id: clubId,
+          package_version: 'welcome-v1',
+          eligible: false,
+          status: 'not_eligible',
+          owner_acceptance_required: true,
+          items: [],
+        },
+        error: null,
+      });
+      await expect(clubWelcomePackageService.get(clubId)).resolves.toMatchObject({
+        clubId,
+        eligible: false,
+        status: 'not_eligible',
+        items: [],
+      });
+    }
+  );
+
+  it.each([
+    'not-a-uuid',
+    'a0000000-0000-0000-0000-00000000000z',
+    '',
+    'a0000000-0000-0000-0000-000000000001.extra',
+  ])('refuses a malformed persisted identifier %s', async (clubId) => {
+    backend.rpc.mockResolvedValue({
+      data: {
+        ok: true,
+        club_id: clubId,
+        package_version: 'welcome-v1',
+        eligible: false,
+        status: 'not_eligible',
+        owner_acceptance_required: true,
+        items: [],
+      },
+      error: null,
+    });
+    await expect(clubWelcomePackageService.get(clubId)).rejects.toThrow();
+  });
+});

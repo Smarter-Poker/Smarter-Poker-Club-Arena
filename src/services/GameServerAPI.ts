@@ -15,6 +15,8 @@
 import { supabase } from '../lib/supabase';
 import { AUTH_STORAGE_KEY, parseJwtPayload, readLocalSession } from '../lib/authUtils';
 import { captureClientError, isClientErrorSinkEnabled, reportError } from '../utils/errorReporter';
+import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from './heartbeatCodes';
+import { PRE_ACTION_REFUSED, PRE_ACTION_TABLE_NOT_RUNNING } from '../lib/preActionSync';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -251,6 +253,46 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
   } catch {
     return resp;
   }
+}
+
+/**
+ * engineFetch with a deadline (2026-10-04, timeout and reconnect audit).
+ *
+ * `fetch` has no timeout of its own. On a link that has gone quiet without
+ * closing - a phone leaving Wi-Fi for cellular, a NAT that forgot the flow -
+ * a request neither succeeds nor fails; it waits on the browser's transport
+ * timeout, which is tens of seconds to minutes. Three calls cannot afford
+ * that, because each is answering a clock the player can lose to: the action
+ * itself, the time bank posted at expiry, and the five-second heartbeat that
+ * is the engine's only proof the player is there. A heartbeat that hangs is
+ * also never counted as a miss, so nothing that watches for misses can see it.
+ *
+ * The deadline turns silence into an ordinary rejection, which every caller
+ * here already handles. It aborts the request; it says nothing about whether
+ * the engine received it, which is why only /action - the one call with an
+ * idempotency key - is retried on it.
+ */
+export const ENGINE_CLOCKED_CALL_TIMEOUT_MS = 4_000;
+async function engineFetchWithin(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = ENGINE_CLOCKED_CALL_TIMEOUT_MS
+): Promise<Response> {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  if (!controller) return engineFetch(url, init);
+  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  try {
+    return await engineFetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** True for the rejection engineFetchWithin produces when its deadline passes. */
+function isDeadlineAbort(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError'
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -526,14 +568,62 @@ export async function submitAction(
     // custom request header would fail preflight in every browser.
     const idempotencyKey = newActionKey();
 
+    /* ONLY A DECISION-BOUND ACTION IS RE-SENT (2026-10-05). The engine
+       refuses a re-send whose turn has moved on only when the action carries
+       its decision context. A context-less action (the Lightning fast fold:
+       the pool session id outlives the hand) would otherwise be delivered to
+       whichever hand that seat is in NOW, and fold a hand the player has not
+       seen. Those are sent once; an undelivered one is reported, not repeated. */
+    const canResend = typeof actionContext === 'string' && actionContext.length > 0;
     const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
+    const startedAt = Date.now();
+    let undelivered = 0;
     for (let attempt = 0; attempt <= BACKOFFS_MS.length; attempt++) {
       lastActionSentAt.set(tableId, Date.now());
-      const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ tableId, action, amount, idempotencyKey, actionContext }),
-      });
+      /* ── AN ACTION THAT DID NOT ARRIVE IS SENT AGAIN, AS THE SAME ACTION ──
+         (2026-10-04). A thrown fetch, a request that outlived its deadline,
+         and a 502/503/504 all mean one thing: nobody told this client what
+         happened to the tap. Until today that was reported as "Server
+         unreachable", which the felt's error door suppresses as a
+         self-healing message - and nothing was healing. The tap was simply
+         gone: no retry, no toast, the action bar back, and the clock still
+         running against a player who believed they had acted.
+
+         The key and the decision context are what make the repeat safe, and
+         they were built for exactly this (server/src/http/
+         actionIdempotency.ts): the engine answers a key it has already run
+         with the first answer, verbatim, and refuses a context whose turn has
+         moved on. So the same body goes again, inside a budget short enough
+         to finish within the turn it is answering. */
+      let response: Response;
+      try {
+        const budgetLeft = ACTION_DELIVERY_BUDGET_MS - (Date.now() - startedAt);
+        response = await engineFetchWithin(
+          `${GAME_SERVER_URL}/action`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ tableId, action, amount, idempotencyKey, actionContext }),
+          },
+          Math.min(ENGINE_CLOCKED_CALL_TIMEOUT_MS, Math.max(500, budgetLeft))
+        );
+      } catch (err) {
+        // A changed login is a refusal by this client, never a lost request.
+        if (err instanceof Error && err.message === 'Engine request login changed') throw err;
+        if (canResend && (await waitToResendUndelivered(undelivered++, startedAt))) {
+          attempt--;
+          continue;
+        }
+        reportError(err, 'GameServerAPI.submitAction');
+        return actionNotDelivered();
+      }
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        if (canResend && (await waitToResendUndelivered(undelivered++, startedAt))) {
+          attempt--;
+          continue;
+        }
+        return actionNotDelivered();
+      }
 
       if (response.ok) {
         const result = await response.json();
@@ -574,9 +664,45 @@ export async function submitAction(
     // Unreachable: the loop returns on every path.
     return { success: false, error: 'The table is busy - please try again' };
   } catch (err: unknown) {
+    // Reached only when the action was never sent: no sign-in to send it
+    // with, or the login changed underneath it.
     reportError(err, 'GameServerAPI.submitAction');
     return { success: false, error: 'Server unreachable' };
   }
+}
+
+/**
+ * How long one tap may spend being re-sent, and how the re-sends are spaced.
+ * Ten seconds fits inside the shortest action clock in use (15s) with room
+ * for the player to act again if it fails, and two re-sends cover the
+ * ordinary cases: a request cut by a network change, and a proxy that
+ * answered for an engine it could not reach.
+ */
+export const ACTION_DELIVERY_BUDGET_MS = 10_000;
+const UNDELIVERED_BACKOFFS_MS = [400, 900];
+
+/** True when the same action should be sent again; waits out the backoff. */
+async function waitToResendUndelivered(undelivered: number, startedAt: number): Promise<boolean> {
+  if (undelivered >= UNDELIVERED_BACKOFFS_MS.length) return false;
+  const wait = UNDELIVERED_BACKOFFS_MS[undelivered];
+  if (Date.now() - startedAt + wait >= ACTION_DELIVERY_BUDGET_MS) return false;
+  await sleep(wait);
+  return true;
+}
+
+/**
+ * What the player is told when every re-send has failed. In words, Title Case
+ * and with no em dash (CLAUDE.md 5.7), and deliberately NOT one of the
+ * sentences the felt suppresses as self-healing: by this point nothing is
+ * still trying, and the only thing that can save the hand is the player
+ * acting again. The outcome is unknown rather than failed, so it says to look
+ * at the table first - the socket's next snapshot is the authority on whether
+ * the action landed.
+ */
+export const ACTION_NOT_DELIVERED_MESSAGE =
+  'Your Action Did Not Reach The Table. Check The Table And Try Again';
+function actionNotDelivered(): ActionResult {
+  return { success: false, error: ACTION_NOT_DELIVERED_MESSAGE, code: 'ACTION_NOT_DELIVERED' };
 }
 
 /** Test-only: clear the per-table spacing map between cases. */
@@ -596,6 +722,9 @@ export function __resetActionSpacingForTests(): void {
 export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
+    // No client deadline (2026-10-05): this call carries no idempotency key,
+    // so aborting a slow grant turned "outcome unknown" into "refused" and
+    // the ring hid a bank the engine had already spent.
     const response = await engineFetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
       headers,
@@ -713,7 +842,9 @@ export async function sendHeartbeat(
   }
   try {
     const headers = await getAuthHeaders();
-    const response = await engineFetch(`${GAME_SERVER_URL}/heartbeat`, {
+    // Shorter than the five-second cadence, so a beat that gets no answer is
+    // a counted miss before the next one is due (see engineFetchWithin).
+    const response = await engineFetchWithin(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -722,6 +853,19 @@ export async function sendHeartbeat(
         ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
       }),
     });
+    if (response.status === 404) {
+      /* THE ENGINE ANSWERED: IT HAS NO GAME FOR THIS TABLE (2026-10-04).
+         That is a fact about one table, from a server that is plainly
+         reachable, and it was being counted toward the breaker that means
+         "the server is unreachable". The breaker is shared by every table
+         this player has open, so a closed table left mounted beside a live
+         one was three beats away from silencing the live table's heartbeat
+         for thirty seconds - which is how the engine concludes a player has
+         gone. Production, the two days to 2026-10-04: 3,141 of these 404s
+         from two players' open tables. Reachable, so the breaker is told so. */
+      circuitBreaker.recordSuccess();
+      return { success: false, error: 'Server error (404)', code: HEARTBEAT_TABLE_NOT_RUNNING };
+    }
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');
       return { success: false, error: `Server error (${response.status})` };
@@ -729,8 +873,15 @@ export async function sendHeartbeat(
     circuitBreaker.recordSuccess();
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    circuitBreaker.recordFailure(err, 'GameServerAPI.heartbeat');
-    return { success: false, error: 'Server unreachable' };
+    /* A beat that outlived its deadline is a miss, and is reported as one, but
+       it is not evidence for the breaker. The breaker answers a server that
+       refuses outright by pausing every table's heartbeat for thirty seconds;
+       applied to a link that is merely slow or briefly silent, that pause
+       would outlast the trouble and stop the beats exactly when the engine
+       most needs to hear one. A deadline costs one request per beat and
+       nothing more, so there is no storm for the breaker to prevent. */
+    if (!isDeadlineAbort(err)) circuitBreaker.recordFailure(err, 'GameServerAPI.heartbeat');
+    return { success: false, error: 'Server unreachable', code: HEARTBEAT_NOT_DELIVERED };
   }
 }
 
@@ -813,16 +964,47 @@ export async function setPreAction(
         handId ? { tableId, action, maxCallAmount, handId } : { tableId, action, maxCallAmount }
       ),
     });
+    if (response.status === 400 || response.status === 404) {
+      /* THE ENGINE ANSWERED, AND ITS ANSWER IS KEPT (2026-10-04).
+         A 400 is the engine refusing this pre-action for this player right
+         now - "No active hand", "Player not found at this table" - and a 404
+         is the engine running no game for this table. Both come from a server
+         that is plainly reachable, and both are an expected state rather than
+         a fault.
+
+         This used to return `Server error (400)` and drop the engine's
+         sentence, so a caller could not tell "there is no hand, nothing is
+         armed" from "the request never arrived". TablePage read every refused
+         clear as the second, restored the pre-action and re-armed it into the
+         next hand: one armed fold folded thirteen hands (src/lib/preActionSync.ts
+         has the account). The sentence now travels with a code that says the
+         engine answered.
+
+         And the 404 used to be counted toward the breaker that means "the
+         server is unreachable". That breaker is shared by every table the
+         player has open, and a clear is attempted three times, so one closed
+         table was enough to pause every live table's heartbeat for thirty
+         seconds. Same finding, and the same treatment, as the heartbeat's own
+         404 above: reachable, so the breaker is told so. */
+      if (response.status === 404) circuitBreaker.recordSuccess();
+      const refusal = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        code?: unknown;
+      } | null;
+      const sentence =
+        typeof refusal?.error === 'string' && refusal.error
+          ? refusal.error
+          : `Server error (${response.status})`;
+      return {
+        success: false,
+        error: sentence,
+        code: response.status === 404 ? PRE_ACTION_TABLE_NOT_RUNNING : PRE_ACTION_REFUSED,
+        ...(typeof refusal?.code === 'string' && refusal.code
+          ? { hint: { engineCode: refusal.code } }
+          : {}),
+      };
+    }
     if (!response.ok) {
-      // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
-      // this is an expected user-state mismatch, NOT a server bug. Do not
-      // report to error reporting; just return the error for the caller to handle.
-      if (response.status === 400) {
-        console.debug(
-          `[GameServerAPI] setPreAction rejected (HTTP 400) - player not in hand or not their turn`
-        );
-        return { success: false, error: `Server error (${response.status})` };
-      }
       circuitBreaker.recordFailure(
         new Error(`HTTP ${response.status}`),
         'GameServerAPI.setPreAction'
@@ -861,6 +1043,23 @@ export async function addChips(
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      /* A REFUSAL IS AN ANSWER, NOT A LOST CONNECTION (launch audit 2026-10-05).
+         The engine answers every refusal it makes - the maintenance break, the
+         table maximum, a wallet that cannot cover it - with 4xx and its own
+         sentence. Throwing here sent all of them down the catch below, which
+         labels the outcome TRANSPORT, and the table then told the player "The
+         Connection Dropped ... Your Chips May Have Been Added" about a request
+         the engine had plainly declined. Only a refusal the engine explained
+         is treated as one; a 5xx, or a 4xx with no sentence, is still an
+         outcome nobody can state and stays TRANSPORT. */
+      if (
+        res.status >= 400 &&
+        res.status < 500 &&
+        typeof errorData?.error === 'string' &&
+        errorData.error
+      ) {
+        return { success: false, error: errorData.error };
+      }
       throw new Error(errorData.error || 'Failed to add chips via GameServerAPI');
     }
 

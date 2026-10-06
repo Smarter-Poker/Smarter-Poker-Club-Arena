@@ -57,6 +57,7 @@ import {
   clockText,
   effectivePlaceLadderPool,
   effectivePrizePool,
+  finishedFieldSummary,
   isPlayerLive,
   lastPaidPlace,
   ordinal,
@@ -81,6 +82,7 @@ import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import MultiDayStagePanel from './MultiDayStagePanel';
 import { isBaggedStatus } from '../../../utils/multiDaySchedule';
+import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
   activationStatusLine,
   formatCents,
@@ -197,6 +199,13 @@ export default function DetailOverviewTab({
   const isRunning = status === 'RUNNING';
   const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
+  /* CANCELLED IS ITS OWN STATE (2026-10-04 review pass). It is neither running
+     nor completed, so it fell through to the pre-start branch: the hero band
+     counted down "Starts In" to an event that will never start (or sat on
+     0:00), ticking once a second, over tiles for Remaining, Blinds Up and
+     Late Reg. The header and the footer both said Cancelled; this tab said
+     the opposite. */
+  const isCancelled = status === 'CANCELLED';
   /* BAGGED (multi-day, between days): live, but no table and no clock. It is
      neither finished nor about to start, so it gets its own hero line and no
      one-second heartbeat. */
@@ -260,11 +269,11 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted || isBagged) return;
+    if (isCompleted || isBagged || isCancelled) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
-  }, [isCompleted, isBagged, isRunning, startsWithinADay]);
+  }, [isCompleted, isBagged, isCancelled, isRunning, startsWithinADay]);
 
   /* Who is still in, counted ONCE. `field` below builds its figures from this
      same list, so the deal gate and the displayed count cannot disagree -- and
@@ -404,9 +413,61 @@ export default function DetailOverviewTab({
     return 'Closed';
   }, [tournament?.late_reg_levels, tournament?.rebuy_levels, tournament?.late_reg_mins]);
 
+  /* A finished field, summarised once for this tab and Ranking alike. */
+  const finished = useMemo(
+    () => finishedFieldSummary(tournament, Array.isArray(entries) ? entries : []),
+    [tournament, entries]
+  );
+
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
     const maxPlayers = tournament ? getTournamentEntryCapacity(tournament) : null;
+    /* A FINISHED EVENT (2026-10-04). The nine tiles below describe an event in
+       progress. On a finished one they read "Remaining 7" (the seat winners,
+       who are not playing), "Tables 0", "Blinds Up -" and "Late Reg Closed":
+       four tiles of nothing and one that contradicted Ranking. A finished
+       event says what happened instead. */
+    if (isCompleted) {
+      const done: StatTile[] = [
+        { key: 'entries', label: 'Entries', value: chips(finished.entries) },
+        {
+          key: 'prize',
+          label: 'Prize Pool',
+          value: prize.effective > 0 ? chipsCompact(prize.effective) : '-',
+          sub: prize.guarantee > 0 ? `${chipsCompact(prize.guarantee)} GTD` : undefined,
+          tone: 'accent',
+        },
+      ];
+      if (finished.qualified > 0) {
+        done.push({
+          key: 'qualified',
+          label: 'Qualified',
+          value: chips(finished.qualified),
+          sub: finished.qualified === 1 ? 'Seat Won' : 'Seats Won',
+        });
+      } else {
+        const paid = finished.paid > 0 ? finished.paid : payoutStructure.length;
+        done.push({ key: 'paid', label: 'Places Paid', value: paid > 0 ? chips(paid) : '-' });
+      }
+      return done;
+    }
+    /* A cancelled event has no field in play and no clock. It says how many
+       had entered and what it would have cost, and nothing that implies it is
+       still going to happen. */
+    if (isCancelled) {
+      return [
+        { key: 'entries', label: 'Entries', value: chips(field.entries) },
+        {
+          key: 'buyin',
+          label: 'Buy-In',
+          value: formatBuyIn(
+            Number(tournament?.buy_in_amount) || 0,
+            Number(tournament?.buy_in_fee) || 0
+          ),
+        },
+        { key: 'state', label: 'Status', value: 'Cancelled', tone: 'warn' },
+      ];
+    }
     return [
       {
         key: 'remaining',
@@ -452,7 +513,20 @@ export default function DetailOverviewTab({
       },
       { key: 'out', label: 'Eliminated', value: chips(field.eliminated) },
     ];
-  }, [field, tables, level, isRunning, isCompleted, clockPaused, lateRegText, prize, tournament]);
+  }, [
+    field,
+    tables,
+    level,
+    isRunning,
+    isCompleted,
+    isCancelled,
+    clockPaused,
+    lateRegText,
+    prize,
+    tournament,
+    finished,
+    payoutStructure,
+  ]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
   const tags = useMemo(() => {
@@ -493,9 +567,19 @@ export default function DetailOverviewTab({
         answers (prize pool, entries, late reg). ── */
   const info = useMemo<InfoItem[]>(() => {
     const t = tournament || ({} as Record<string, unknown>);
-    const rebuyThrough = Number(t.late_reg_levels ?? t.rebuy_levels ?? 8) || 8;
+    /* THE REBUY WINDOW IS READ, NOT ASSUMED (2026-10-04 review pass). This was
+       `late_reg_levels ?? rebuy_levels ?? 8, || 8`: an event that configured
+       neither column was advertised as "Rebuy thru Lv 8" and "Add-On Lv 8-9",
+       two figures nobody had set, on the same screen as a Late Reg tile that
+       (reading the same columns with no default) said Closed. It also read the
+       columns in the opposite order from the rule that decides a rebuy,
+       `TournamentService.canRebuy` (`rebuy_levels ?? late_reg_levels`), so an
+       event with both set quoted the late-registration level as the rebuy
+       level. Zero means the row does not say, and then no level is printed. */
+    const rebuyThrough = Math.max(0, Number(t.rebuy_levels ?? t.late_reg_levels) || 0);
     const addonFrom = rebuyThrough;
     const addonTo = rebuyThrough + (Number(t.addon_levels ?? 1) || 1);
+    const throughText = rebuyThrough > 0 ? ` thru Lv ${rebuyThrough}` : '';
     const structure = describeMttStructure(
       (blindLevels || []).map((row) => ({
         durationMinutes: row.duration,
@@ -537,21 +621,23 @@ export default function DetailOverviewTab({
         key: 'rebuy',
         label: 'Rebuy',
         value: t.is_rebuy
-          ? `${chipsCompact(Number(t.rebuy_chips) || Number(t.starting_chips) || 0)} thru Lv ${rebuyThrough}`
+          ? `${chipsCompact(Number(t.rebuy_chips) || Number(t.starting_chips) || 0)}${throughText}`
           : t.is_reentry
-            ? `Re-Entry thru Lv ${rebuyThrough}`
+            ? `Re-Entry${throughText}`
             : 'None',
       },
       {
         key: 'addon',
         label: 'Add-On',
         value: t.add_on_available
-          ? `${chipsCompact(Number(t.addon_chips) || Number(t.starting_chips) || 0)} Lv ${addonFrom}-${addonTo}`
+          ? `${chipsCompact(Number(t.addon_chips) || Number(t.starting_chips) || 0)}${
+              rebuyThrough > 0 ? ` Lv ${addonFrom}-${addonTo}` : ''
+            }`
           : 'None',
       },
       {
         key: 'when',
-        label: isRunning ? 'Started' : isCompleted ? 'Ended' : 'Starts',
+        label: isRunning ? 'Started' : isCompleted ? 'Ended' : isCancelled ? 'Was Due' : 'Starts',
         value: shortDate(
           isRunning ? t.started_at : isCompleted ? t.ended_at || t.started_at : t.start_time
         ),
@@ -623,6 +709,7 @@ export default function DetailOverviewTab({
     blindLevels,
     isRunning,
     isCompleted,
+    isCancelled,
     field.entries,
     mysteryBounty?.inventory,
     overviewUnitCents,
@@ -663,11 +750,37 @@ export default function DetailOverviewTab({
    */
   const finishers = useMemo(() => {
     if (!isCompleted) return [];
-    return (Array.isArray(entries) ? entries : [])
+    const list = Array.isArray(entries) ? entries : [];
+    /* "In The Money" has to mean it (2026-10-04). This listed the next ten
+       finishing positions whoever they were, so a satellite printed 10th,
+       11th and 12th - who won nothing - under "In The Money Behind Them".
+       Where prizes are recorded per player, only the paid ones are listed.
+       An event settled before prizes were recorded keeps the old list, since
+       there is nothing to tell paid from unpaid by. */
+    const prizesRecorded = list.some((e) => Number(e.prize) > 0);
+    return list
       .filter((e) => typeof e.position === 'number' && (e.position as number) > 3)
+      .filter((e) => !prizesRecorded || Number(e.prize) > 0)
       .sort((a, b) => (a.position || 999) - (b.position || 999))
       .slice(0, 10);
   }, [isCompleted, entries]);
+
+  /**
+   * A SATELLITE'S WINNERS ARE NOT A PODIUM (2026-10-04).
+   *
+   * A satellite ends when the seats are won, and everybody still holding chips
+   * at that moment wins one. The settlement records them as `winner` with NO
+   * finishing position - they tied - so a podium built from positions 1 to 3
+   * found nobody and this panel told a finished event's players that results
+   * were "Being Finalised", indefinitely. They are listed here as what they
+   * are, in name order: there is no rank among them to print.
+   */
+  const qualifiers = useMemo(() => {
+    if (!isCompleted) return [];
+    return (Array.isArray(entries) ? entries : [])
+      .filter((e) => isRecordedSatelliteQualifier(tournament, e))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [isCompleted, entries, tournament]);
 
   /* ── Final-table deal gate: one table left, on an FT-deal event. ── */
   const dealPanel = useMemo(() => {
@@ -747,7 +860,7 @@ export default function DetailOverviewTab({
       : '-'
     : isRunning
       ? clockText(level.remaining)
-      : isCompleted || isBagged
+      : isCompleted || isBagged || isCancelled
         ? '-'
         : untilText(secondsToStart);
   const heroEyebrow = clockPaused
@@ -758,7 +871,9 @@ export default function DetailOverviewTab({
         : `Level ${level.index + 1} Ends In`
       : isBagged
         ? 'Day Complete'
-        : 'Starts In';
+        : isCancelled
+          ? 'Cancelled'
+          : 'Starts In';
   const heroNote = clockPaused
     ? `Level ${level.index + 1} Clock Paused`
     : maintenanceNote ||
@@ -766,7 +881,9 @@ export default function DetailOverviewTab({
         ? `Running Since ${shortDate(tournament.started_at)}`
         : isBagged
           ? 'Chips Are Bagged Until The Next Day Starts'
-          : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
+          : isCancelled
+            ? 'This Event Was Cancelled And Will Not Run'
+            : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -784,7 +901,21 @@ export default function DetailOverviewTab({
             <h3>Final Results</h3>
             <span className="tl-section-note">{chips(field.entries)} Entries</span>
           </div>
-          {podium.length === 0 ? (
+          {podium.length === 0 && qualifiers.length > 0 ? (
+            <>
+              <span className="dov-finishers__label">
+                {qualifiers.length === 1 ? 'Won The Seat' : 'Won A Seat'}
+              </span>
+              <ul className="dov-finishers dov-finishers--all" aria-label="Players Who Won A Seat">
+                {qualifiers.map((player) => (
+                  <li key={player.user_id} className="dov-finisher dov-finisher--qualified">
+                    <span className="dov-finisher__pos">Seat</span>
+                    <span className="dov-finisher__name">{player.username}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : podium.length === 0 ? (
             <div className="tl-empty">
               Results Are Being Finalised
               <span className="tl-empty__hint">Check Back In A Moment</span>
@@ -807,7 +938,9 @@ export default function DetailOverviewTab({
           )}
           {finishers.length > 0 && (
             <>
-              <span className="dov-finishers__label">In The Money Behind Them</span>
+              <span className="dov-finishers__label">
+                {qualifiers.length > 0 ? 'Also In The Money' : 'In The Money Behind Them'}
+              </span>
               <ul
                 className="dov-finishers tl-scroll"
                 aria-label="Finishing Positions Below The Podium"
@@ -850,7 +983,9 @@ export default function DetailOverviewTab({
                       : 'Blinds'
                     : isBagged
                       ? 'Blinds'
-                      : 'Opening Blinds'}
+                      : isCancelled
+                        ? 'Planned Blinds'
+                        : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
                   {level.amountsKnown

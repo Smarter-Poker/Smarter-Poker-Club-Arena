@@ -24,6 +24,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
+import type { GameCreationAccess } from '../lib/gameCreationAccess';
 import {
   gameManagementService,
   type ManagedGameCommandReceipt,
@@ -319,8 +320,8 @@ export function ScheduleCloseDialog({
           }}
         >
           <p className="sc-copy sc-copy--center">
-            {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
-            Registered When The Command Runs.
+            {titleCase(game.name)} Will Close Only If Its Contract Is Unchanged And No Players Are
+            Seated Or Registered When The Command Runs.
           </p>
           <label className={styles.dialogField}>
             Execute At
@@ -630,7 +631,7 @@ export function ContractHistoryDialog({
         <SpadeConsole
           onClose={onClose}
           eyebrow="Published Contract History"
-          title={game.name}
+          title={titleCase(game.name)}
           titleId="contract-title"
           subtitle="Hashed, Versioned, Append-Only"
           pill={`V${game.contract?.version || versions[0]?.version || 0}`}
@@ -645,7 +646,7 @@ export function ContractHistoryDialog({
             <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
               <span>
                 <small>Readiness</small>
-                <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
+                <strong>{titleCase(game.contract.readiness.state.replace(/_/g, ' '))}</strong>
               </span>
               <span>
                 <small>Effective Guarantee</small>
@@ -693,7 +694,7 @@ export function ContractHistoryDialog({
                     <code>{version.contractHash.slice(0, 12)}</code>
                   </summary>
                   <div className={styles.contractMeta}>
-                    <span>{version.changeReason.replace(/_/g, ' ')}</span>
+                    <span>{titleCase(version.changeReason.replace(/_/g, ' '))}</span>
                     <span>SHA-256 {version.contractHash}</span>
                   </div>
                   <pre>{JSON.stringify(version.contract, null, 2)}</pre>
@@ -725,6 +726,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const requestedGameType =
     requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [clubAccess, setClubAccess] = useState<GameCreationAccess | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
   const [hosts, setHosts] = useState<HostClub[]>([]);
@@ -738,6 +740,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     closedWithinHorizon: 0,
     closedHorizonDays: 7,
   });
+  const [countsKnown, setCountsKnown] = useState(false);
   const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -768,8 +771,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   */
   const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
+  const contractEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
+  /** Includes union member clubs, which are labels on rows but never creation hosts. */
+  const hostNamesRef = useRef<Record<string, string>>({});
   /** Latest rows, so the refresh below never closes over a stale board. */
   const gamesRef = useRef<ManagedGame[]>([]);
   /** Games named by events since the last flush, deduplicated by kind and id. */
@@ -825,6 +831,54 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const load = useCallback(
     async (silent = false) => {
       if (!user?.id) return;
+      /*
+       * Invalidate the previous answer BEFORE consulting the in-flight
+       * coalescer. A route or bucket can change while the old request is still
+       * running; if its epoch is not retired here, that old response is still
+       * considered current and can briefly publish on the new page.
+       */
+      const routeKey = `${scope}:${scope === 'union' ? unionRef || unionId || '' : clubId || ''}`;
+      const routeChanged = loadedRouteRef.current !== routeKey;
+      const viewChanged = loadedViewRef.current !== view;
+      if (routeChanged || viewChanged) loadEpochRef.current += 1;
+      if (viewChanged) {
+        loadedViewRef.current = view;
+        setGames([]);
+        setNextCursor(null);
+      }
+      if (routeChanged) {
+        loadedRouteRef.current = routeKey;
+        contractEpochRef.current += 1;
+        hostNamesRef.current = {};
+        setAllowed(null);
+        setClubAccess(null);
+        setScopeId(null);
+        setHosts([]);
+        setHostClubId('');
+        setGames([]);
+        setCounts({
+          total: 0,
+          live: 0,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        });
+        setCountsKnown(false);
+        setNextCursor(null);
+        setLoadingMore(false);
+        setHealth(null);
+        setHealthFailed(false);
+        setSurfaceDirty(false);
+        setEditing(null);
+        setScheduling(null);
+        setContractGame(null);
+        setContractVersions([]);
+        setContractLoading(false);
+        busyKeysRef.current.clear();
+        setBusyKeys(new Set());
+      }
+      if (!silent || routeChanged || viewChanged) setLoading(true);
       // A slug in the URL is still being resolved; the resolved id re-arms load.
       if (scope === 'union' && !unionId) return;
       // Coalesce instead of stacking. Every management event for this scope
@@ -848,41 +902,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       loadInFlightRef.current = true;
       const requestId = ++loadEpochRef.current;
       const isCurrent = () => loadEpochRef.current === requestId;
-      const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
-      // A different club or union than the one on screen. The reset below empties
-      // the board, so this can never be served silently: without the spinner the
-      // operator reads the empty board as "this club has no games".
-      const routeChanged = loadedRouteRef.current !== routeKey;
-      // Switching tabs asks a different question of the server, so the rows on
-      // screen belong to the previous answer. Clear them and show the spinner
-      // rather than leaving the old tab's games under the new tab's heading.
-      const viewChanged = loadedViewRef.current !== view;
-      if (viewChanged) {
-        loadedViewRef.current = view;
-        setGames([]);
-        setNextCursor(null);
-      }
-      if (routeChanged) {
-        loadedRouteRef.current = routeKey;
-        setAllowed(null);
-        setScopeId(null);
-        setHosts([]);
-        setHostClubId('');
-        setGames([]);
-        setCounts({
-          total: 0,
-          live: 0,
-          scheduled: 0,
-          closed: 0,
-          closedWithinHorizon: 0,
-          closedHorizonDays: 7,
-        });
-        setNextCursor(null);
-        setHealth(null);
-        setHealthFailed(false);
-        setSurfaceDirty(false);
-      }
-      if (!silent || routeChanged || viewChanged) setLoading(true);
       setLoadError(null);
       try {
         let resolvedScopeId: string;
@@ -902,6 +921,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           // A member club is operated from its union console, even for a union
           // owner who technically has authority over the underlying rows.
           const standaloneAccess = access.allowed && !access.unionId;
+          setClubAccess(access);
           setAllowed(standaloneAccess);
           if (!standaloneAccess) {
             setScopeId(resolvedScopeId);
@@ -992,6 +1012,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           ...nextMemberNames,
           ...Object.fromEntries(nextHosts.map((host) => [host.id, host.name])),
         };
+        hostNamesRef.current = hostNames;
         const rows: ManagedGame[] = page.items.map((row: any) =>
           toManagedGame(row, hostNames, resolvedScopeName)
         );
@@ -1004,7 +1025,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setGames((current) => mergeManagedGames(current, rows));
         // Null counts mean unchanged, not zero: a paged read does not recount
         // the scope, and reading null as 0 would blank the header.
-        if (page.counts) setCounts(page.counts);
+        if (page.counts) {
+          setCounts(page.counts);
+          setCountsKnown(true);
+        }
         setNextCursor(page.nextCursor);
         /*
           A refused read must not silently replace the numbers already on
@@ -1025,10 +1049,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setHealthFailed(true);
       } finally {
         loadInFlightRef.current = false;
-        // Unconditional. The in-flight guard means the load that reaches this
-        // line is the only one running, so it is always the one that raised the
-        // flag. Gating this on isCurrent() is exactly what starved it before.
-        setLoading(false);
+        // A superseded request must not lower the new route's loading curtain.
+        if (isCurrent()) setLoading(false);
         if (rerunRef.current && mountedRef.current) {
           rerunRef.current = false;
           const rerunSilent = rerunSilentRef.current;
@@ -1044,7 +1066,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         }
       }
     },
-    [clubId, scope, unionId, user?.id, view]
+    [clubId, scope, unionId, unionRef, user?.id, view]
   );
   loadRef.current = load;
 
@@ -1059,33 +1081,40 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => {
       mountedRef.current = false;
       loadEpochRef.current += 1;
+      contractEpochRef.current += 1;
     };
   }, []);
 
   const loadMore = useCallback(async () => {
     if (!scopeId || !nextCursor || loadingMore) return;
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     setLoadingMore(true);
     try {
       const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
       // Same as the first page: the rows already carry their contract and
       // their last command, so Load More is one request, not five.
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = page.items.map((row: any) =>
-        toManagedGame(row, hostNames, scopeName)
+        toManagedGame(row, hostNamesRef.current, scopeName)
       );
       setGames((current) => {
         const seen = new Set(current.map(managedGameKey));
         return [...current, ...rows.filter((game) => !seen.has(managedGameKey(game)))];
       });
       // Null on a paged read means unchanged, not zero.
-      if (page.counts) setCounts(page.counts);
+      if (page.counts) {
+        setCounts(page.counts);
+        setCountsKnown(true);
+      }
       setNextCursor(page.nextCursor);
     } catch (error) {
+      if (loadEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load more games.');
     } finally {
-      setLoadingMore(false);
+      if (loadEpochRef.current === requestEpoch) setLoadingMore(false);
     }
-  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
+  }, [loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
 
   useEffect(() => {
     void load();
@@ -1098,6 +1127,34 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return holdInAppNavigation(() =>
       window.confirm('Leave Table Management And Discard Your Unsaved Changes?')
     );
+  }, [surfaceDirty]);
+
+  // popstate has already moved the browser by the time React Router hears it.
+  // Stop that event when the operator refuses, then put the history cursor
+  // back on the exact entry where the draft was created.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    const anchorUrl = window.location.href;
+    const anchorState = window.history.state;
+    const anchorIndex = Number.isInteger(anchorState?.idx) ? anchorState.idx : null;
+    let restoring = false;
+    const onPopState = (event: PopStateEvent) => {
+      if (restoring) {
+        restoring = false;
+        return;
+      }
+      if (window.confirm('Leave Table Management And Discard Your Unsaved Changes?')) return;
+      event.stopImmediatePropagation();
+      const destinationIndex = Number.isInteger(event.state?.idx) ? event.state.idx : null;
+      if (anchorIndex !== null && destinationIndex !== null && destinationIndex !== anchorIndex) {
+        restoring = true;
+        window.history.go(anchorIndex - destinationIndex);
+      } else {
+        window.history.pushState(anchorState, '', anchorUrl);
+      }
+    };
+    window.addEventListener('popstate', onPopState, true);
+    return () => window.removeEventListener('popstate', onPopState, true);
   }, [surfaceDirty]);
 
   // BrowserRouter links do not fire beforeunload. Protect drafts when an
@@ -1181,6 +1238,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
    *   - a changed game is not on the board (created, or on another page)
    *   - the row is gone from this scope (null)
    *   - the row changed BUCKET, so it belongs under a different tab now
+   *   - a tournament's start time changed, so its ordered position moved
    *   - more games changed at once than a full read is worth
    * The bucket case matters twice over: the counters are per-bucket totals, so
    * a row that stays in its bucket cannot move any of them, and one that
@@ -1206,13 +1264,22 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       requestBoardRefresh();
       return;
     }
+    const requestEpoch = loadEpochRef.current;
+    const requestScopeId = scopeId;
     try {
-      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const fresh = await Promise.all(
         known.map((game) => gameManagementService.getGame(scope, scopeId, game.kind, game.id))
       );
-      const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
-      const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
+      if (loadEpochRef.current !== requestEpoch || scopeId !== requestScopeId) return;
+      const mapped = fresh.map((row) =>
+        row ? toManagedGame(row, hostNamesRef.current, scopeName) : null
+      );
+      const splicable = mapped.every(
+        (row, index) =>
+          row &&
+          row.bucket === known[index].bucket &&
+          (row.kind !== 'tournament' || row.startTime === known[index].startTime)
+      );
       if (!splicable) {
         requestBoardRefresh();
         return;
@@ -1224,7 +1291,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       reportError(error, 'GameManagementPage.refreshChangedGames');
       requestBoardRefresh();
     }
-  }, [hosts, requestBoardRefresh, scope, scopeId, scopeName]);
+  }, [requestBoardRefresh, scope, scopeId, scopeName]);
 
   // Accumulate every event. The decider below is debounced, and a debounced
   // subscription only ever sees the LAST payload of a burst - which would
@@ -1321,7 +1388,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     A zero next to the word Live is read as "counting"; a sentence is read as
     an answer. The sentence waits for the read.
   */
-  const countsAreKnown = !loading;
+  const countsCanBeExplained = countsKnown && !loadError;
   /* The tab decides what "of" means: paging the Closed tab reaches the closed
      games within the horizon, not the whole board. */
   const viewTotal =
@@ -1378,8 +1445,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const confirmed = await confirmDialog({
         message:
           game.kind === 'table'
-            ? `Close ${game.name}? Only an empty table can be closed.`
-            : `Cancel ${game.name}? This is allowed only before the first registration.`,
+            ? `Close ${titleCase(game.name)}? Only an empty table can be closed.`
+            : `Cancel ${titleCase(game.name)}? This is allowed only before the first registration.`,
         variant: 'danger',
       });
       if (!confirmed) return;
@@ -1396,17 +1463,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   };
 
   const openContractHistory = async (game: ManagedGame) => {
+    const requestEpoch = ++contractEpochRef.current;
     setContractGame(game);
     setContractVersions([]);
     setContractLoading(true);
     try {
-      setContractVersions(await gameManagementService.getContractHistory(game.kind, game.id));
+      const versions = await gameManagementService.getContractHistory(game.kind, game.id);
+      if (contractEpochRef.current !== requestEpoch) return;
+      setContractVersions(versions);
     } catch (error) {
+      if (contractEpochRef.current !== requestEpoch) return;
       toast.error(error instanceof Error ? error.message : 'Could not load contract history.');
       setContractGame(null);
     } finally {
-      setContractLoading(false);
+      if (contractEpochRef.current === requestEpoch) setContractLoading(false);
     }
+  };
+
+  const closeContractHistory = () => {
+    contractEpochRef.current += 1;
+    setContractGame(null);
+    setContractVersions([]);
+    setContractLoading(false);
   };
 
   if (allowed === null) {
@@ -1420,18 +1498,41 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           crest="flat"
           className={styles.stateConsole}
         >
-          <section className={styles.empty}>Verifying Game-Management Access…</section>
+          <section className={styles.empty} role="status" aria-live="polite">
+            Verifying Game-Management Access…
+          </section>
         </SpadeConsole>
       </main>
     );
   }
 
   if (allowed === false) {
+    const unionManagedClub =
+      scope === 'club' && Boolean(clubAccess?.unionId || clubAccess?.reason === 'union_only');
+    const clubAccessUnverified = scope === 'club' && clubAccess?.reason === 'check_failed';
+    const clubAccessTitle = unionManagedClub
+      ? 'This Club Is Managed By Its Union'
+      : clubAccessUnverified
+        ? 'Management Access Could Not Be Verified'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'Club Not Found'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Required'
+            : 'Club Staff Access Required';
+    const clubAccessMessage = unionManagedClub
+      ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+      : clubAccessUnverified
+        ? 'The Authoritative Game-Management Access Check Is Unavailable. Try Again Before Making Changes.'
+        : clubAccess?.reason === 'unknown_club'
+          ? 'This Club Could Not Be Found, So Its Game-Management Controls Cannot Be Opened.'
+          : clubAccess?.reason === 'not_signed_in'
+            ? 'Sign In Before Opening Club Game-Management Controls.'
+            : 'Only The Club Owner And Club Admins Can Manage Games For A Standalone Club.';
     return (
       <main className={styles.page}>
         <SpadeConsole
           eyebrow="Management Locked"
-          title={scope === 'club' ? 'This Club Is Managed By Its Union' : 'Union Admin Required'}
+          title={scope === 'club' ? clubAccessTitle : 'Union Admin Required'}
           subtitle="Game Management Is Restricted"
           pill="Locked"
           pillInk="red"
@@ -1445,10 +1546,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             },
           }}
         >
-          <section className={styles.denied}>
+          <section className={styles.denied} role="alert">
             <p className="sc-copy sc-copy--center">
               {scope === 'club'
-                ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+                ? clubAccessMessage
                 : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
             </p>
           </section>
@@ -1466,6 +1567,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ? 'config'
         : 'selector'
       : null;
+  const unionHostUnavailable = scope === 'union' && !loading && hosts.length === 0;
+  const creationDisabledReason = unionHostUnavailable
+    ? 'Game Creation Is Unavailable Until This Union Has A House Club Row.'
+    : undefined;
 
   return (
     <main className={styles.page} data-management-surface={surface}>
@@ -1502,6 +1607,22 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ))}
       </nav>
 
+      {surface !== 'games' && !creatorStage && (
+        <section className={styles.sectionCreationActions} aria-label="Game Creation Controls">
+          <GameCreationActions
+            managementPath={managementPath}
+            disabled={!hostClubId}
+            disabledReason={creationDisabledReason}
+            onNavigate={(path) => void openCreationFromHeader(path)}
+          />
+          {unionHostUnavailable && (
+            <p className={styles.creationUnavailable} role="status" aria-live="polite">
+              {creationDisabledReason}
+            </p>
+          )}
+        </section>
+      )}
+
       {surface === 'games' && !creatorStage && (
         <SpadeConsole
           eyebrow={scope === 'union' ? 'Union Command' : 'Club Command'}
@@ -1509,12 +1630,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           titleId="table-management-title"
           /* The club or union name alone: with a suffix, a long union name
              fitted down to seven pixels. The line under it says the rest. */
-          subtitle={scopeName}
+          subtitle={titleCase(scopeName)}
           /* A board that has not read yet, or could not, does not claim to
              hold zero games. */
           pill={loadError ? 'Unavailable' : loading ? 'Loading' : `${reachableTotal} Games`}
           className={styles.boardConsole}
           aria-labelledby="table-management-title"
+          aria-busy={loading}
         >
           <header className={styles.commandHeader}>
             <div className={styles.heroCopy}>
@@ -1530,23 +1652,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                   <strong>{realtimeStatus === 'current' ? 'Updated' : 'Recovering'}</strong>{' '}
                   Automatically
                 </span>
-                <span>
-                  <strong>{liveCount}</strong> Live
-                </span>
-                <span>
-                  <strong>{scheduledCount}</strong> Scheduled
-                </span>
-                <span
-                  title={
-                    archivedBeyondHorizon
-                      ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                      : countsAreKnown
-                        ? 'Every Game In This Scope Is On The Board'
-                        : undefined
-                  }
-                >
-                  <strong>{reachableTotal}</strong> Total
-                </span>
+                {countsKnown ? (
+                  <>
+                    <span>
+                      <strong>{liveCount}</strong> Live
+                    </span>
+                    <span>
+                      <strong>{scheduledCount}</strong> Scheduled
+                    </span>
+                    <span
+                      title={
+                        archivedBeyondHorizon
+                          ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                          : countsCanBeExplained
+                            ? 'Every Game In This Scope Is On The Board'
+                            : undefined
+                      }
+                    >
+                      <strong>{reachableTotal}</strong> Total
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    <strong>{loadError ? 'Unavailable' : 'Reading'}</strong> Game Counts
+                  </span>
+                )}
               </div>
               <div className={styles.healthRail} aria-label="Management Health">
                 {/*
@@ -1583,6 +1713,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               </div>
               <GameCreationActions
                 managementPath={managementPath}
+                disabled={!hostClubId}
+                disabledReason={creationDisabledReason}
                 onNavigate={(path) => void openCreationFromHeader(path)}
               />
             </div>
@@ -1594,7 +1726,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            to club." The host is the union itself, stated, not selectable. */
             <p className={styles.hostPicker} aria-label="Host">
               Host
-              <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
+              <strong>
+                {titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
+              </strong>
             </p>
           )}
 
@@ -1618,14 +1752,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           </nav>
 
           {loadError ? (
-            <section className={styles.empty}>
+            <section className={styles.empty} role="alert">
               <p>{loadError}</p>
               <button onClick={() => void load()}>Try Again</button>
             </section>
           ) : loading ? (
-            <section className={styles.empty}>Loading Live Game Controls…</section>
+            <section className={styles.empty} role="status" aria-live="polite">
+              Loading Live Game Controls…
+            </section>
           ) : filteredGames.length === 0 ? (
-            <section className={styles.empty}>
+            <section className={styles.empty} role="status" aria-live="polite">
               <h2>No Games In This View</h2>
               <p>Use The Controls Above To Add The First One.</p>
             </section>
@@ -1648,8 +1784,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       data={{
                         id: game.id,
                         family: managedGameFamily(game),
-                        title: game.name,
-                        subtitle: game.hostName,
+                        title: titleCase(game.name),
+                        subtitle: titleCase(game.hostName),
                         gameType: game.variant.toUpperCase(),
                         stakes:
                           game.kind === 'table' ? `${game.smallBlind}/${game.bigBlind}` : undefined,
@@ -1667,7 +1803,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         status: managedGameStatus(game),
                         statusLabel: isBaggedStatus(game.status)
                           ? DAY_COMPLETE_LABEL
-                          : game.status.replace(/_/g, ' '),
+                          : titleCase(game.status.replace(/_/g, ' ')),
                         rules: [],
                       }}
                       actions={{
@@ -1712,7 +1848,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                             >
                               {game.contract.readiness.state === 'funding_blocked'
                                 ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
-                                : game.contract.readiness.state.replace(/_/g, ' ')}
+                                : titleCase(game.contract.readiness.state.replace(/_/g, ' '))}
                             </span>
                           )}
                         </div>
@@ -1730,8 +1866,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           <span>
                             {game.lastCommand.status === 'succeeded'
                               ? 'Confirmed'
-                              : game.lastCommand.status}{' '}
-                            {game.lastCommand.action}
+                              : titleCase(game.lastCommand.status.replace(/_/g, ' '))}{' '}
+                            {titleCase(game.lastCommand.action.replace(/_/g, ' '))}
                           </span>
                           <code>{game.lastCommand.commandId.slice(0, 8)}</code>
                           <span>
@@ -1926,7 +2062,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             onClick={openTableSelector}
             aria-label="Back To Game Types"
           >
-            ‹‹
+            Back
           </button>
           <TableConfigPage
             key={`${hostClubId}:${requestedGameType}`}
@@ -1945,18 +2081,41 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <TickerManagementPanel
           scope={scope}
           scopeId={scopeId}
-          scopeName={scopeName}
+          scopeName={titleCase(scopeName)}
           onDirtyChange={setSurfaceDirty}
         />
       )}
 
-      {surface === 'messages' && allowed && hostClubId && (
-        <ClubMessageManagementPanel
-          clubId={hostClubId}
-          clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
-          onDirtyChange={setSurfaceDirty}
-        />
-      )}
+      {surface === 'messages' &&
+        allowed &&
+        (hostClubId ? (
+          <ClubMessageManagementPanel
+            clubId={hostClubId}
+            clubName={titleCase(hosts.find((host) => host.id === hostClubId)?.name || scopeName)}
+            onDirtyChange={setSurfaceDirty}
+          />
+        ) : (
+          <SpadeConsole
+            eyebrow={scope === 'union' ? 'Union Communications' : 'Club Communications'}
+            title="Club Messages"
+            subtitle={titleCase(scopeName)}
+            pill={loading ? 'Loading' : 'Unavailable'}
+            pillInk={loading ? 'blue' : 'gold'}
+            family="riveted"
+            foot="foot"
+            aria-busy={loading}
+          >
+            <section
+              className={styles.empty}
+              role={loading ? 'status' : 'alert'}
+              aria-live={loading ? 'polite' : undefined}
+            >
+              {loading
+                ? 'Reading The Club Message Host…'
+                : 'Club Messages Are Unavailable Until This Union Has A House Club Row.'}
+            </section>
+          </SpadeConsole>
+        ))}
 
       {tournamentModalOpen && hostClubId && (
         <CreateTournamentModal
@@ -2030,7 +2189,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           game={contractGame}
           versions={contractVersions}
           loading={contractLoading}
-          onClose={() => setContractGame(null)}
+          onClose={closeContractHistory}
         />
       )}
     </main>

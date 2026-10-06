@@ -78,11 +78,19 @@ describe('TablePage on a pool-session id', () => {
     expect(PAGE).toContain(
       'preActionBelongsToHand(lightningArmRef.current.key, lightningHandKeyNow)'
     );
-    expect(PAGE).toMatch(
+    /* 2026-10-04: the engine sync moved, with these two lines unchanged, from
+       TablePage's effect into src/lib/preActionSync.ts. The page still decides
+       which hand the arm names and hands that to the sync; the pins followed
+       the code. tests/unit/preActionSync.test.ts drives both behaviours. */
+    const SYNC = read('src/lib/preActionSync.ts');
+    expect(SYNC).toMatch(
       /if \(lightningRoomRef\.current\) \{\s*\/\/ Lightning: left disarmed \(see above\)\.\s*\} else if \(armed\) setPreAction\(armed\);/
     );
-    expect(PAGE).toContain(
+    expect(SYNC).toContain(
       'await serverSetPreAction(tableId, serverAction, armCap, lightningArmHandId)'
+    );
+    expect(PAGE).toMatch(
+      /lightningArmHandId: \(\) =>\s*lightningRoomRef\.current\s*\? lightningHandId\(engineSnapshotRef\.current as LightningSnapshotFields\)\s*: null,/
     );
   });
 

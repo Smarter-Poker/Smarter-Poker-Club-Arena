@@ -158,7 +158,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
+    "tests/cashier-weekly-statements.test.tsx": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "c3d521a79889e716b7dd181ca94c595fca8bf22054240fee59cc61a6936b6afb",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+    "scripts/ci/classify-ci-changes.mjs": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "ee0adf6a76392a1e3e5a7eedf9f4ea3098eed9f7bce9d0372c02be4f2ff7ec74",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -442,7 +442,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "3ff9c25bfc14eb2349a65f27939e3063cfc2cf3470a68fdf1e94d2c85a57999f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2606,6 +2606,76 @@
       "to": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
       "on": "2026-10-02",
       "why": "Cascade of the 2026-10-02 restamp of server/src/tournament/completionSettlementReceipt.ts and tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs for migration 20261002034540 (PR #5779): the custody origin is read from the database, not a compiled event list. No other pinned byte in this binding changed."
+    },
+    {
+      "file": "tests/cashier-weekly-statements.test.tsx",
+      "from": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
+      "to": "e4a318ff36071922a22a943a098c9e551172c6059a0c2c17b281e1b65dc106da",
+      "on": "2026-10-04",
+      "why": "The Cashier weekly-statement test follows the console-wide Title Case status label Balances Synchronized; statement scope, exact cents, club isolation and player refusal assertions are unchanged."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c",
+      "to": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
+      "on": "2026-10-04",
+      "why": "The managed-game one-door migration, native fixture, runner and migration law now select the existing PostgreSQL accounting verdict. The change is one additive selector and one additive classifier branch; no existing financial route, fixture, source or assertion changed."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f",
+      "to": "9497c519b17d767f64b8d859d20ad0fa82b4e2077cc13e67ec5e71655e59ce61",
+      "on": "2026-10-04",
+      "why": "UnionService now binds and throws both union-admin lookup errors instead of silently converting failed reads into false authorization. Its allowance tightens from 11 to 9; no baseline is widened and no financial source or assertion changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "8d6afed5af4cf1a861a7eef17fe682083057e115ec29cc7c717e2296e5e977c5",
+      "to": "ef927bbf51e1dfad3a25715e457d663ca7dded21ca73ab7df9e0002fb01977f6",
+      "on": "2026-10-04",
+      "why": "Cascade of the additive managed-game one-door classifier restamp. The nested binding changes only that reviewed classifier pin and its audit row; every fee-finality fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "f44017293d766b4ba14d60669990d9f56640726e4e3888eb8152be5d0200de99",
+      "to": "c60934152ec234276a64ab51b1c35e20ac86c43bd6550dd9c2eae1430fdb9c0d",
+      "on": "2026-10-04",
+      "why": "Cascade of the additive managed-game one-door classifier restamp. The nested binding changes only that reviewed classifier pin and its audit row; every Spin custody fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "9497c519b17d767f64b8d859d20ad0fa82b4e2077cc13e67ec5e71655e59ce61",
+      "to": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+      "on": "2026-10-04",
+      "why": "Union Games now binds both membership-discovery errors and exits with a reported, visible fail-closed authority state. Its discarded-read allowance tightens from 2 to 0; no baseline is widened and no financial source, fixture or assertion changed."
+    },
+    {
+      "file": "scripts/ci/classify-ci-changes.mjs",
+      "from": "a8ffd7b1738cb04128ad7d940ae92659686bd85b98bbac73a15e42676601814d",
+      "to": "cfb6601d8942e9edbcfdd9af9de5768f42223d3fcb86ababf47c5f63c2b12a86",
+      "on": "2026-10-05",
+      "why": "Restamped for the additive Phase 1 customization PostgreSQL route. The exact diff adds one isolated classifier family for the two migrations, native runner, loaded fixtures, schema promise, durable marker and service-role sealer; no existing accounting selector, fixture, financial source or assertion changed."
+    },
+    {
+      "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+      "from": "ef927bbf51e1dfad3a25715e457d663ca7dded21ca73ab7df9e0002fb01977f6",
+      "to": "1c55b93f5c7b6e35b0b7ad8b41a30ddf6cf49a396678b03f961d6d30f5a57d28",
+      "on": "2026-10-05",
+      "why": "Cascade of the reviewed Phase 1 customization classifier restamp. The nested binding changes only its active classifier pin and append-only audit row; every fee-finality source, fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "from": "c60934152ec234276a64ab51b1c35e20ac86c43bd6550dd9c2eae1430fdb9c0d",
+      "to": "1ea43ed9d36a1ea3705e1e618db1e836faf48797010dfe736ac1b93b95ef8b21",
+      "on": "2026-10-05",
+      "why": "Cascade of the reviewed Phase 1 customization classifier restamp. The nested binding changes only its active classifier pin and append-only audit row; every Spin custody source, fixture and assertion is unchanged."
+    },
+    {
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+      "to": "cc161efbcbd11dd8e9a55991259b707b2cf64ce40e92abb14c7f3e1f69bf5aab",
+      "on": "2026-10-05",
+      "why": "HorseOrchestrator's dead browser-side horse seating methods (ensureHorsesAt4Tables, enforceMinimumPlayers, smartSeatSelection, dynamicPersonaRotation) are removed, so its discarded-read allowance tightens from 8 to 2; no baseline is widened and no financial source, fixture or assertion changed."
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -3406,5 +3476,138 @@
     ],
     "reason": "The Club Data console audit keeps the maintained accounting observation components and tests aligned with scope-safe reads, operator-visible failures and painted status output. UnionAccountingRunStatus and WeeklyAccountingWorkspace assertions now exercise the current console presentation and reporting behavior; ClubWeeklyAccountingReader covers the stricter read contract; discardedErrorReadRatchet tightens the allowed discarded reads for the changed Data surfaces. No assertion, captured financial fixture, native accounting component or production object is removed or weakened.",
     "verification": "Each replacement is the exact SHA-256 of the reviewed file bytes in this branch. The changed tests passed in the candidate suites, and scripts/ci/verify-source-bindings.py re-reads every repository and fixture pin after this targeted restamp. The binding edit preserves all prior audit history and changes only these four hashes plus this audit block."
+  },
+  "diamondCrossFormatConservationRoute20261004": {
+    "reason": "Restamped 2026-10-04 with the Diamond Phase 9 cross-format conservation runner. The only change to this classifier is one alternation widened so tests/sql/diamond-cross-format-*.manifest.json reaches the accounting job that executes the runner reading it, plus the comment saying why its two .sql fixtures are named poker-diamond-* instead. No existing route, lane, financial source or assertion in this file was altered, and the two Diamond lanes it already declares are byte-identical. Diff read before restamping.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "c89b4a8ee214872257977991b819ce71f12aae407768e1d8bcb02f8074338056",
+        "current": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8"
+      }
+    ]
+  },
+  "diamondCrossFormatConservationRouteNested20261004": {
+    "reason": "Restamped 2026-10-04 for the same change one level up: the legacy-fee-finality and sep8-spin-custody bindings are themselves pinned here, and each restamped scripts/ci/classify-ci-changes.mjs in its own audit block in this pull request. Nothing in either binding changed but that one pin and its audit entry.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "ce0741eed6953bd24ef2405db7cc541a615ec7e5a321f045423c37de72f960c7",
+        "current": "cc16de627c8f54101315a2e0899f830abcc888ac1e67643fbe0d8e77811e9b1e"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "890f63a5d1679778b959650e5643e3fc7ee1cf4d784ec8835007124ecb5f99df",
+        "current": "7c803caa0c458d1625e147c4dd32b18d524363adb832cf1729c83c01f79b2c16"
+      }
+    ]
+  },
+  "clubCreateCapacityRoutingIntegration20261004": {
+    "reason": "Integrate protected main's additive Diamond cross-format route with the additive read-only Club Create capacity route. Both selectors and both histories are retained; no financial source, fixture, assertion, or existing route changed. The nested binding hashes move only because each binding records the integrated classifier bytes and audit history.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "465f5cd3637d223094050dd40ef02e06b5fa2ac3306a8218114c1696df672bc8",
+        "current": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "cc16de627c8f54101315a2e0899f830abcc888ac1e67643fbe0d8e77811e9b1e",
+        "current": "1cf6d300f552660a75b00f2a75e4ec40a1588a9df01adccb003a8456ad08adcb"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "7c803caa0c458d1625e147c4dd32b18d524363adb832cf1729c83c01f79b2c16",
+        "current": "e270bd7bd9d50b489e65154b95c35b6cefc43ece90fc600691ab257988238abc"
+      }
+    ],
+    "verification": "The merged classifier retains protected main's Diamond selector and this branch's Club Create selector. Source binding verification and both routing suites are required on this candidate."
+  },
+  "clubDataDeepCertificationRebinding20261004": {
+    "source_branch": "agent/codex/club-data-deep-cert-20261004",
+    "reason": "The deep Club Data launch certification adds fail-closed native Data/Stats routing and a page-specific discarded-read regression. The classifier addition selects existing server/test jobs for the exact new wrapper and fixtures; the ratchet addition forbids ClubDataPage from discarding a Supabase error. Leaf binding changes record only the reviewed classifier restamp. No financial SQL image, accounting fixture, assertion threshold, existing route or audit history is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "fb28e190fff1c72cbb4dab7444653c27aaebac219f5bba4c512e7af3e82f878d",
+        "sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "90e95b596b000b2bc380470508cc7709f87734d4a13addb53bf81299ffdf722e",
+        "sha256": "3edec55d47bc71d2e619cb39499cd484e6310c25745b974962f49b7948aa7d7f"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "1cf6d300f552660a75b00f2a75e4ec40a1588a9df01adccb003a8456ad08adcb",
+        "sha256": "3999de0f957b2ff7a8c111e38f414cf3e1437c6563b9cec4e89e1406742d2bb4"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "e270bd7bd9d50b489e65154b95c35b6cefc43ece90fc600691ab257988238abc",
+        "sha256": "b145afc94814d3f1ebd1062f9191e35d49b5fb26e2ff4c24a2c1951549f2f9c5"
+      }
+    ],
+    "verification": "Reviewed exact diffs; focused component/contract suites passed, all nine native PostgreSQL contracts passed, and verify-source-bindings.py must re-read every pin after this targeted cascade."
+  },
+  "unionOpsFinancialAdminNativeRouting20261004": {
+    "reason": "Route the source-bound Union Operations Financial Admin PostgreSQL fixture through the existing required Data Console accounting job. The classifier change is one additive fixture-directory alternation, and both nested financial bindings move only because they record the same reviewed classifier bytes and append their own audit entry. No financial SQL image, assertion threshold, existing route or historical audit entry is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "191e1240fc6d408df160a33d2a67142032450aa2828b1b9ff1431b9860f1f626",
+        "sha256": "97c86e7e47f3364b699b4ea373c6510777636b5ee9445963aecb8be6c6f3fd0c"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "3999de0f957b2ff7a8c111e38f414cf3e1437c6563b9cec4e89e1406742d2bb4",
+        "sha256": "8d6afed5af4cf1a861a7eef17fe682083057e115ec29cc7c717e2296e5e977c5"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "b145afc94814d3f1ebd1062f9191e35d49b5fb26e2ff4c24a2c1951549f2f9c5",
+        "sha256": "f44017293d766b4ba14d60669990d9f56640726e4e3888eb8152be5d0200de99"
+      }
+    ],
+    "verification": "The exact classifier and nested-binding diffs were reviewed. Focused routing passes, the Union Operations PostgreSQL 17 fixture passes, and verify-source-bindings.py must re-read the complete pin graph after this targeted cascade."
+  },
+  "phaseOneCustomizationErrorRatchet20261005": {
+    "source_pr": 6153,
+    "failed_run": 37320143447,
+    "failed_job": 111796833294,
+    "reason": "Phase 1 customization closes AvatarService's last discarded VIP-profile read: the service now binds and reports the PostgREST failure instead of treating an unreadable account as non-VIP. The reviewed ratchet moves only that allowance from one to zero; no accounting SQL image, financial fixture, or existing assertion is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "db52ad3a298a4eb11d398509d55f156a195e5c88fabf92646bebf0e291a52ce9",
+        "sha256": "4a93b4d0c6accb48973518276c1bba022cc20238733f5f6ca79f542dbc3d59d7"
+      }
+    ],
+    "verification": "The exact one-line threshold tightening and its explanatory comment were reviewed. The focused ratchet test and complete source-binding verifier must pass on the corrected candidate."
+  },
+  "phaseOneCustomizationProtectedMainIntegration20261005": {
+    "protected_main": "a72cb154fedec2664d5827dd8683d57a07b59c3c",
+    "reason": "Integrates protected main's HorseOrchestrator discarded-read tightening with Phase 1 customization's independent AvatarService tightening. The merged ratchet preserves both reductions, widens no allowance, and changes no financial SQL image, fixture, or accounting assertion.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "protected_main_sha256": "cc161efbcbd11dd8e9a55991259b707b2cf64ce40e92abb14c7f3e1f69bf5aab",
+        "feature_sha256": "4a93b4d0c6accb48973518276c1bba022cc20238733f5f6ca79f542dbc3d59d7",
+        "sha256": "12aca8db85e2fc33320718e2d3fb4c631bef7688e55bf6ccd97841ad72fff9ef"
+      }
+    ],
+    "verification": "The exact merged test diff was reviewed. The focused ratchet and complete source-binding verifier must pass on the integrated candidate."
+  },
+  "finalTableBoundedCleanupRouting20261005": {
+    "changed": "scripts/ci/classify-ci-changes.mjs",
+    "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
+    "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+    "nested_bindings": "Refresh the two reviewed nested classifier-only binding documents in the parent binding; runtime and historical fixture data unchanged."
   }
 }

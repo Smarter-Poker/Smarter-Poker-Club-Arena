@@ -16,6 +16,7 @@ const DEFAULT_SELECTION = {
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
+  face_deck_id: 'house-classic',
   updated_at: '2026-08-30T07:00:00.000Z',
 };
 
@@ -66,6 +67,15 @@ async function mockStudioBackend(
       await fulfillJson(route, body?.p_theme || 'dark');
       return;
     }
+    if (path.endsWith('/rpc/fn_patch_table_appearance')) {
+      server.saved = {
+        ...server.saved,
+        game_type: String(body?.p_game_type || 'ALL'),
+        ...(body?.p_patch || {}),
+      };
+      await fulfillJson(route, server.saved);
+      return;
+    }
     if (path.endsWith('/rpc/fn_mutate_table_studio_preferences')) {
       if (body?.p_favorite_key) {
         favorites = body.p_favorite_enabled
@@ -83,13 +93,7 @@ async function mockStudioBackend(
       return;
     }
     if (path.endsWith('/user_theme_settings')) {
-      if (request.method() === 'GET') {
-        await fulfillJson(route, [server.saved]);
-      } else {
-        const patch = Array.isArray(body) ? body[0] : body;
-        server.saved = { ...server.saved, ...(patch || {}) };
-        await fulfillJson(route, [], 201);
-      }
+      await fulfillJson(route, [server.saved]);
       return;
     }
     if (path.endsWith('/feature_pricing')) {

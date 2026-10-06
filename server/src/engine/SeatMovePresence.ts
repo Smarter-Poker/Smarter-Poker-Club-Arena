@@ -198,3 +198,84 @@ export function movedPresenceCount(): number {
 export function resetMovedPresence(): void {
   inTransit.clear();
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ *  A TOURNAMENT MOVE CARRIES PRESENCE TOO (2026-10-05)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `fn_move_tournament_player` closes the source chair and opens the
+ * destination chair with `is_sitting_out=false, sit_out_at=NULL`, and until
+ * today nothing engine-side crossed with the player. So a balancing move or a
+ * table break handed an absent player a clean CONNECTED entry at every new
+ * table: a sat-out player was offered the whole action clock again, a dropped
+ * player got a fresh reconnect allowance, and the strike ladder restarted.
+ * In a horse-heavy MTT that is a clock tell and a stall per table they visit.
+ *
+ * The tournament manager parks the source at a hand boundary before it calls
+ * the move RPC, so it snapshots the source entry there and deposits it here,
+ * BEFORE the RPC: the destination's roster sweep can never see the new chair
+ * before the deposit exists, and the claim runs ahead of any registration in
+ * both of the destination's loops (`adoptMovedPresence`). A refused move
+ * withdraws its deposit. Proof of arrival is the destination's own roster:
+ * a tournament player only reaches another table of the event through that
+ * RPC. One pending deposit per player and destination; the newest wins.
+ *
+ * The time bank is not carried: the tournament bank is still dealt per table
+ * (see ServerTableEngineBase.forgetTimeBank), and changing that is a separate
+ * rule, not presence.
+ */
+interface TournamentMovedPresence {
+  requestId: string;
+  fsm: DisconnectFsmEntry;
+  fromTableId: string;
+  depositedAtMs: number;
+}
+
+const tournamentInTransit = new Map<string, TournamentMovedPresence>();
+
+export function depositTournamentMovePresence(
+  playerId: string,
+  toTableId: string,
+  presence: Omit<TournamentMovedPresence, 'depositedAtMs'>,
+  nowMs: number = Date.now()
+): void {
+  if (!playerId || !toTableId || !presence.requestId || toTableId === presence.fromTableId) return;
+  for (const [k, v] of tournamentInTransit) {
+    if (nowMs - v.depositedAtMs > MOVED_PRESENCE_FRESH_MS) tournamentInTransit.delete(k);
+  }
+  const k = `${playerId}:${toTableId}`;
+  if (tournamentInTransit.size >= MOVED_PRESENCE_MAX && !tournamentInTransit.has(k)) {
+    const oldest = tournamentInTransit.keys().next();
+    if (!oldest.done) tournamentInTransit.delete(oldest.value);
+  }
+  tournamentInTransit.set(k, { ...presence, depositedAtMs: nowMs });
+}
+
+/** A refused move never landed; its deposit must not be adopted later. */
+export function withdrawTournamentMovePresence(
+  playerId: string,
+  toTableId: string,
+  requestId: string
+): void {
+  const k = `${playerId}:${toTableId}`;
+  if (tournamentInTransit.get(k)?.requestId === requestId) tournamentInTransit.delete(k);
+}
+
+/** The destination, seeing the player seated at this table, takes it once. */
+export function claimTournamentMovePresence(
+  playerId: string,
+  tableId: string,
+  nowMs: number = Date.now()
+): TournamentMovedPresence | null {
+  const k = `${playerId}:${tableId}`;
+  const found = tournamentInTransit.get(k);
+  if (!found) return null;
+  tournamentInTransit.delete(k);
+  if (nowMs - found.depositedAtMs > MOVED_PRESENCE_FRESH_MS) return null;
+  return found;
+}
+
+/** Test hook only. */
+export function resetTournamentMovePresence(): void {
+  tournamentInTransit.clear();
+}

@@ -70,3 +70,42 @@ break. On 20:18 nothing named the database for 20 minutes, and
 2. Read `cron.job_run_details` for runs with `return_message = 'server
    restarted'`. Those are the jobs that were running at the moment it died.
 3. Search the Postgres logs for `temporary file` from before the stop.
+
+## Update 2026-10-04 00:40 UTC - a fourth stop, and the compute upgrade
+
+The settings caps did not stop it. Postgres stopped again at 23:44:27 with the
+same signature: no error, logs stop, and the VM is unreachable. The
+Management API restart at 23:49:12 brought it back at 23:56:30.
+
+**The deciding measurement** came from a 30-second sampler of the project's
+metrics endpoint (`GET /v1/projects/{ref}/analytics/endpoints/metrics`). After
+the 00:00 break ended, at ordinary load with about 105 backends (70 of them
+PostgREST's pool), the 2XL went:
+
+| UTC | AnonPages | MemAvailable | load1 (8 vCPU) |
+|---|---|---|---|
+| 23:59 | 1.8 GB | 21.4 GB | 1.2 |
+| 00:01 | 9.6 GB | 12.7 GB | 34 |
+| 00:03 | 12.9 GB | 9.0 GB | 50 |
+| 00:04 | 14.0 GB | 8.0 GB | 49 |
+
+On top of 8.9 GB of shared buffers, 1.3 GB of page tables (huge pages are off)
+and 1 GB of swap, that leaves nothing for page cache. The CPU was also 6x
+oversubscribed. The same pattern showed on 4XL straight after the resize:
+AnonPages reached 19.2 GB within 7 minutes, then swung 8-13 GB minute to
+minute with no single long query running. The memory belongs to the many
+concurrently active backends, not to one runaway statement. No one job lines
+up with all four stops. The job 227 payout-guarantee check, the 15-minute
+`club-stats-maintenance` roll and the agents' `mgmt-api` probes were each
+running at some of the stops but not all of them.
+
+**Action, 00:06:09 UTC:**
+`PATCH /v1/projects/{ref}/billing/addons {"addon_type":"compute_instance","addon_variant":"ci_4xlarge"}`.
+That is 2XL -> 4XL (64 GB, 16 vCPU, ~$964 a month instead of ~$410), with
+about 4 minutes of resize downtime; healthy from 00:10:54. Supabase retuned
+shared_buffers to 16 GB, work_mem to 32 MB and max_connections to 480. The
+three overrides above survived the resize.
+
+Before going back to 2XL, cut the concurrency first. Two options: a
+PostgREST `db_pool` below its current 70, or moving the heavy stats and
+audit work off the request pool.

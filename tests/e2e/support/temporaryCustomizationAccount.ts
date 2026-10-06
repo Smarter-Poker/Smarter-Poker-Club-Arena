@@ -6,6 +6,7 @@ import {
   freezeBudgetMs,
   PLATFORM_FREEZE_WORST_CASE_MS,
 } from '../../../scripts/ci/platform-freeze-window.mjs';
+import { assertProductionLedgerWriteAllowed } from './productionLedgerWritePolicy.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-';
 const SHARED_POST_DEPLOY_PREFIX = 'ca-customization-cert-postdeploy-';
@@ -135,6 +136,9 @@ async function serviceRequest<T>(
   retrySafe = false
 ): Promise<T> {
   const method = (init.method || 'GET').toUpperCase();
+  // Every service-role write passes here. A hand or ledger write is refused
+  // before it reaches production, whatever helper or path built it.
+  assertProductionLedgerWriteAllowed({ method, path, body: init.body });
   const methodIsIdempotent =
     retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
 

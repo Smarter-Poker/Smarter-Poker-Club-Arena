@@ -1,0 +1,3 @@
+# tests/a-dead-origins-originals-are-disposed-by-the-successor-that-holds-the-event.law.test.ts
+
+A mixed custody transfer whose origin process is gone must not wait for that origin: the successor that holds a live protocol-2 lease at the transfer's successor generation asks `public.fn_f06_dispose_dead_origin_originals` before its admission, which records the absence of every original whose permit never reached the database (refusing if any start witness of that hand or a later one exists on the table) and runs the reviewed stranded void for each reserved original. `smarter_private.f06_mixed_custody_snapshot` witnesses a never-begun permit only by that recorded absence, and the release contract pins carry its post-image.

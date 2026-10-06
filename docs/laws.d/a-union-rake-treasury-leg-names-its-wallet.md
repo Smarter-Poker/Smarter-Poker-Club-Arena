@@ -1,0 +1,3 @@
+# tests/a-union-rake-treasury-leg-names-its-wallet.law.test.ts
+
+Every hand-written chip_ledger leg that debits a union's rake treasury names the column it debits (`from_label = 'union_wallets.rake_wallet'`): each club's weekly rakeback and the retained share of the union close, and legacy rounds 1 and 3 when the union pays. An unlabeled union_wallet leg is unkeyable to the nightly ledger replay, so the first close it judged (2026-10-01) read as -1,489,348.47 of drift and tripped the kill switch on 2026-10-04 with every chip journaled. Migration 20261004123650; later migrations may not hand-write a union_wallet leg without a label.

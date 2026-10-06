@@ -982,6 +982,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // atomic_distribute_rake's weighted per-player attribution.
           this.currentHandContributions.clear();
           this.currentHandReturnedUncalled.clear();
+          /* THE HAND'S OWN FLOP FACT, CAPTURED WHERE ITS MONEY IS (2026-10-05).
+             `handSawFlopForMoney()` is the expression priceDeductions prices
+             the rake with - the flag AND a board that corroborates it - and
+             this is the last moment the controller is guaranteed to be the one
+             that played the hand. A Diamond cash hand sends it to the settler
+             as `hand_saw_flop` on every stack element, where the owner's
+             `cash_rake_no_flop_no_drop` answer reads it. */
+          this.currentHandSawFlopForMoney = this.handController.handSawFlopForMoney();
           for (const enginePlayer of state.players) {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
             if (localPlayer) localPlayer.stack = enginePlayer.stack;

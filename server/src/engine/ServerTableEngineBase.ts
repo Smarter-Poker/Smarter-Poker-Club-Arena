@@ -1790,6 +1790,16 @@ export abstract class ServerTableEngineBase {
    */
   protected currentHandContributions: Map<string, number> = new Map();
   /**
+   * DID THIS HAND SEE A FLOP, FOR MONEY (2026-10-05). Captured at WINNERS from
+   * `HandController.handSawFlopForMoney()` — the exact expression
+   * `priceDeductions` prices the rake with — beside the contributions above,
+   * because by the time postHandTasks builds the settlement payload the
+   * controller may already be gone. Sent to the database as `hand_saw_flop` on
+   * every element of a Diamond cash hand's stacks payload, where the owner's
+   * `cash_rake_no_flop_no_drop` answer reads it. See diamondCashRakeFacts.ts.
+   */
+  protected currentHandSawFlopForMoney: boolean = false;
+  /**
    * userId → uncalled amount returned to the player this hand. Persisted for
    * audit alongside contributions (gross = eligible + returned). Zero-entry
    * players are omitted.

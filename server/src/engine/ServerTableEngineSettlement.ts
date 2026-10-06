@@ -1,4 +1,5 @@
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
+import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
 import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
  * ServerTableEngine, layer 6/8 — the HAND_COMPLETE settlement pipeline and post-hand tasks.
@@ -1597,6 +1598,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       pots: this.currentHandPots,
       actions: [...this.currentHandActions],
       contributions: new Map(this.currentHandContributions),
+      sawFlopForMoney: this.currentHandSawFlopForMoney,
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
@@ -2437,6 +2439,31 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 stack_before: cents(
                   handStackBefore(snap.seatGenerations, snap.dealtStacks, p.user_id, p.stack)
                 ),
+                /* ═══ A DIAMOND CASH HAND SENDS ITS RAKE FACTS (2026-10-05) ══
+                   Migration 20261005183028 made the Diamond settler recompute
+                   the rake from the owner's published economics, and with
+                   `cash_rake_enabled` reading `yes` it refuses by name
+                   (`diamond_cash_rake_facts_required`) any hand whose roster
+                   does not carry `contributed`, `dealt_in` and
+                   `hand_saw_flop`. The router forwards this payload unchanged,
+                   so the facts ride on it.
+
+                   DIAMOND ONLY, DELIBERATELY. The chip path builds its own
+                   canonical roster from a fixed key list, so these keys are
+                   additive there too - but a chip hand has nothing to say with
+                   them, and the chip payload stays byte-identical rather than
+                   "probably ignored".
+
+                   Nothing is computed here: diamondCashRakeFacts.ts reads each
+                   fact from the one place the engine already keeps it. */
+                ...(isDiamondCash
+                  ? diamondCashRakeFactsFor({
+                      userId: p.user_id,
+                      contributions: snap.contributions,
+                      dealtStacks: snap.dealtStacks,
+                      handSawFlop: snap.sawFlopForMoney,
+                    })
+                  : {}),
               })),
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,

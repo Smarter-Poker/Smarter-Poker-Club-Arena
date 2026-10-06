@@ -398,8 +398,16 @@ export async function startFixtureActors({
         actor.state = stateShape(patched(actor.state, message.patch), tableId, actorIds);
         actor.seq = message.seq;
         break;
-      case 'EVENT':
       case 'USER_EVENT':
+        // TableStateHub private envelopes use kind, not the public event type.
+        // They cannot drive authoritative decisions or the financial proof route.
+        protocol(
+          record(message.payload) &&
+            ['hole_cards', 'pre_action', 'add_on_adjusted'].includes(message.payload.kind),
+          'USER_EVENT'
+        );
+        return;
+      case 'EVENT':
         // Cards, clocks and animation events cannot replace authoritative state.
         protocol(record(message.payload) && typeof message.payload.type === 'string', 'EVENT');
         if (financial) void financial.event(message.payload).catch((error) => fail(error.message));

@@ -61,7 +61,9 @@ class ThrowableSoundServiceClass {
     this.unlockInstalled = true;
     const tryResume = () => {
       if (this.ctx && this.ctx.state === 'suspended') {
-        void this.ctx.resume();
+        void this.ctx.resume().catch(() => {
+          // Autoplay refusal leaves the context suspended; the next gesture retries.
+        });
       }
     };
     window.addEventListener('pointerdown', tryResume, { passive: true });
@@ -96,7 +98,9 @@ class ThrowableSoundServiceClass {
       }
       this.installUnlockListeners();
       if (this.ctx.state === 'suspended') {
-        void this.ctx.resume();
+        void this.ctx.resume().catch(() => {
+          // Autoplay refusal leaves the context suspended; the next gesture retries.
+        });
       }
       return !!this.bus;
     } catch {

@@ -160,7 +160,7 @@ describe('Leaderboard Page Recovery States', () => {
     const retryButton = await screen.findByRole('button', { name: 'Retry Position' });
     fireEvent.click(retryButton);
 
-    expect(retryButton).toBeDisabled();
+    await waitFor(() => expect(retryButton).toBeDisabled());
     expect(h.getUserRank).toHaveBeenCalledTimes(2);
     fireEvent.click(retryButton);
     expect(h.getUserRank).toHaveBeenCalledTimes(2);

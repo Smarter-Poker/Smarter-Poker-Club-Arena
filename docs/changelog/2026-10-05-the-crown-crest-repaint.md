@@ -8,7 +8,7 @@ compared at 393px against the approved spade; candidate three was selected.
 
 The new files are `source/crest-vip-v2.png` and `top-vip-v2.png`. The original
 crown source, head, and source README all have sealed bytes and remain intact.
-The recipe therefore lives in `source/README-vip-v2.md`, rather than changing
+The recipe therefore lives in `docs/crown-crest-v2-recipe.md`, rather than changing
 the sealed README proposed by the handoff. The existing immutable-media law
 also seals the new source and head. No card copy, layout, money formatting,
 engine, database, or first-paint loading behavior changed.

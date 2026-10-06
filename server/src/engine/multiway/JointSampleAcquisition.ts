@@ -32,6 +32,26 @@ export const JOINT_LIVE_DOMAIN = Object.freeze({
   // keep 1.5 ms reserved for candidate pots, responses and final accounting.
   samplingDeadlineMs: 2.5,
 });
+/**
+ * P13.3: the full sample count for a table of `dealtPlayers`, the count the
+ * request has with the equity governor off (scale 1). The P13.2 matrix runs
+ * with the governor off, so this is what every matrix proposal was priced on,
+ * and the P13.3 completion record counts a smaller live request as
+ * governor-reduced against it.
+ */
+export function jointFullSamples(dealtPlayers: number): number {
+  return dealtPlayers > JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers
+    ? JOINT_LIVE_DOMAIN.largeTableSamples
+    : JOINT_LIVE_DOMAIN.defaultSamples;
+}
+/** The live request at governor `scale`: the full count scaled, never below
+ * the domain minimum. `jointRequestedSamples(n, 1) === jointFullSamples(n)`. */
+export function jointRequestedSamples(dealtPlayers: number, scale: number): number {
+  return Math.max(
+    JOINT_LIVE_DOMAIN.minSamples,
+    Math.floor(jointFullSamples(dealtPlayers) * Math.max(0, Math.min(1, scale)))
+  );
+}
 /** Shared limits remain the existing live Phase 13 limits. Phase 7 consumes
  * the same physical samples without enabling the Phase 13 action policy. */
 export const JOINT_SAMPLE_WORK_BUDGET_MS = JOINT_LIVE_DOMAIN.liveBudgetMs;
@@ -237,14 +257,7 @@ export function acquireJointSamples(
     return finish('history_budget');
   if (s.players.some((p) => !Array.isArray(p.cards) || p.cards.length || p.knownDeadCards?.length))
     return finish('private_state_rejected');
-  const requested = Math.max(
-    JOINT_LIVE_DOMAIN.minSamples,
-    Math.floor(
-      (ids.length > JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers
-        ? JOINT_LIVE_DOMAIN.largeTableSamples
-        : JOINT_LIVE_DOMAIN.defaultSamples) * Math.max(0, Math.min(1, equityGovernor.current()))
-    )
-  );
+  const requested = jointRequestedSamples(ids.length, equityGovernor.current());
   eligible = true;
   requestedSamples = requested;
   try {

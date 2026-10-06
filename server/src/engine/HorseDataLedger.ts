@@ -581,7 +581,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase13Joint',
-    'joint multiway and bomb policy; live shadow with offline-only candidate selection',
+    "joint multiway and bomb policy; shadow by default; live candidate only from the worker's own P13.3 authority for the decision's variant (cash), never from a caller",
     'Phase13'
   ),
   flag(
@@ -2177,6 +2177,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase13_selection_refused_*',
     'HorseLogic (P13.1)',
     'an applied Phase 13 candidate refused before it could act: illegal_candidate (the legalizer would rewrite it) or earlier_phase_applied (a Phase 10/11/12 candidate already owned the action)',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_selection_*',
+    'HorseLogic -> ServerTableEngineTurns (P13.3)',
+    "none, shadow change (never applied), authority-backed cash selection of the decision's variant, controller acceptance or withdrawal before acceptance; never a tournament objective selection, never on top of an applied Phase 10/11/12 candidate (the named refusals are phase13_selection_refused_*)",
+    'Phase13'
+  ),
+  receipt(
+    'phase13_authority_*',
+    'HorsePhase13Authority (HorseQualifiedAuthority, one gate per joint variant) -> workerRuntime / client / ServerTableEngineTurns (P13.3)',
+    'protected-release joint authority admission per variant, local withdrawal and acceptance-time verdicts',
     'Phase13'
   ),
   receipt(

@@ -1,5 +1,7 @@
 import type { HorseDecision, SeatPlayer, HorseTournamentUtilityLedger } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
+import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from '../HorseQualifiedAuthority.js';
+import type { Plo4Selection } from '../plo4/Plo4LivePolicy.js';
 import { horseVariantRulesFor } from '../VariantRules.js';
 import type { JointRangeSamples } from './JointRangeSampler.js';
 import {
@@ -120,6 +122,18 @@ export interface JointPolicyReceipt {
    * (the Phase 10/11/12 `illegal_candidate` law, and a candidate on top of an
    * applied earlier-phase candidate). Absent on retained receipts. */
   selectionRefusal?: JointSelectionRefusal | null;
+  /** P13.3 selection outcome, the Phase 8/10/11/12 vocabulary: `none`,
+   * `shadow_change`, `selected` (under usable worker Phase 13 authority for
+   * this variant), and the acceptance-time `controller_accepted` or
+   * `withdrawn_before_acceptance` set by the table. Absent on retained
+   * receipts, which claim no authority. */
+  selection?: Plo4Selection;
+  /** P13.3: the worker's authority receipt for this variant's joint holder;
+   * null outside the worker. */
+  authority?: HorseAuthorityReceipt | null;
+  /** P13.3: the main scheduler's acceptance-time verdict for an applied
+   * candidate; null until the table checks it. */
+  authorityVerdict?: HorseAuthorityVerdict | null;
 }
 const same = (a: HorseDecision, b: HorseDecision) =>
   a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
@@ -262,6 +276,9 @@ export function evaluateJointLivePolicy(
     responseTree: null,
     inputs: null,
     selectionRefusal: null,
+    selection: 'none',
+    authority: null,
+    authorityVerdict: null,
   };
   /** Assembled only once the acquisition's canonical checks have passed. */
   let bind: (() => JointInputBinding) | null = null;
@@ -290,6 +307,7 @@ export function evaluateJointLivePolicy(
     receipt.changed = !same(proposal, baseline);
     const decision = mode === 'candidate' && receipt.fired ? proposal : baseline;
     receipt.applied = !same(decision, baseline);
+    receipt.selection = receipt.applied ? 'selected' : receipt.changed ? 'shadow_change' : 'none';
     return { decision, proposal, receipt, jointEvidence };
   };
   if (mode === 'off') return finish('off');

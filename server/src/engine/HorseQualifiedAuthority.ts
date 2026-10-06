@@ -58,10 +58,12 @@ export interface HorseQualifiedAuthoritySelection {
  * P11.2 contract digest, the pack variant and the natural completion evidence
  * it was admitted on. Phase 12 (P12.3) admits it per pack through
  * `HorsePhase12Authority.ts` with the same three additions (the P12.2
- * contract digest, the pack variant, its natural completion evidence). */
+ * contract digest, the pack variant, its natural completion evidence). Phase 13
+ * (P13.3) admits it per variant through `HorsePhase13Authority.ts` for the
+ * joint multiway owner, with the same three additions. */
 export interface HorseQualifiedAuthority {
   readonly schema: 'horse-qualified-authority-v1';
-  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12';
+  readonly phase: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13';
   readonly sourceSha: string;
   readonly continuationVersion: string;
   readonly policyDigest: string;
@@ -72,12 +74,12 @@ export interface HorseQualifiedAuthority {
   readonly approvalGeneration: number;
   readonly issuedAt: string;
   readonly expiresAt: string | null;
-  /** Phases 10, 11 and 12: the strength contract digest the qualification binds. */
+  /** Phases 10 to 13: the strength contract digest the qualification binds. */
   readonly contractDigest?: string;
-  /** Phases 11 and 12: the pack variant (plo5, plo6, plo8; short_deck,
-   * pineapple, flh, flo8). */
+  /** Phases 11 to 13: the pack variant (plo5, plo6, plo8; short_deck,
+   * pineapple, flh, flo8; any of the nine joint variants). */
   readonly variant?: string;
-  /** Phases 11 and 12: the committed natural completion evidence admitted with it. */
+  /** Phases 11 to 13: the committed natural completion evidence admitted with it. */
   readonly completionPath?: string;
   readonly completionSha256?: string;
   readonly authorityKey: string;

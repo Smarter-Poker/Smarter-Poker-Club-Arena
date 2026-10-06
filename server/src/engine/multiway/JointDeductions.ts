@@ -1,6 +1,6 @@
 import type { HandConfig, RakeConfig } from '../../types.js';
 import { calculateRake } from '../PokerEngine.js';
-import { scaleMultiBoardWinnerUnits, scaleWinnerCentsForRake } from '../HandController.js';
+import { scaleMultiBoardWinnerUnits, scaleWinnerCentsForRake } from '../WinnerUnitScaling.js';
 import type { settleJointScores } from './JointPotDistribution.js';
 
 /** Exact final payout scaling uses the controller's existing cent allocator.

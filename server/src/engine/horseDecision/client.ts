@@ -34,6 +34,8 @@ import { HORSE_PHASE11_VARIANTS, liveHorsePhase11Authorities } from '../HorsePha
 import { isOmahaPolicyVariant } from '../omaha/OmahaVariantPolicyPack.js';
 import { HORSE_PHASE12_VARIANTS, liveHorsePhase12Authorities } from '../HorsePhase12Authority.js';
 import { isRemainingPolicyVariant } from '../remainingVariants/RemainingVariantPolicyPack.js';
+import { HORSE_PHASE13_VARIANTS, liveHorsePhase13Authorities } from '../HorsePhase13Authority.js';
+import { isJointVariant } from '../multiway/JointInputBinding.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
 import { remainingVariantReceiptBindingIsValid } from '../remainingVariants/RemainingVariantLivePolicy.js';
@@ -466,6 +468,8 @@ export class LiveHorseDecisionWorkerClient {
   private phase11WorkerEpoch: string | null = null;
   /** P12.3: epoch of this client's worker Phase 12 holders (one per worker). */
   private phase12WorkerEpoch: string | null = null;
+  /** P13.3: epoch of this client's worker Phase 13 holders (one per worker). */
+  private phase13WorkerEpoch: string | null = null;
 
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
     this.onFatal = options.onFatal;
@@ -476,6 +480,7 @@ export class LiveHorseDecisionWorkerClient {
     liveHorsePhase10Authority.refresh();
     for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
     for (const variant of HORSE_PHASE12_VARIANTS) liveHorsePhase12Authorities[variant].refresh();
+    for (const variant of HORSE_PHASE13_VARIANTS) liveHorsePhase13Authorities[variant].refresh();
     this.jobTimeoutMs = Math.max(
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
@@ -711,6 +716,21 @@ export class LiveHorseDecisionWorkerClient {
         this.retireDecisionEffects(result, 'decision_finalized');
         return Promise.reject(
           new Error(`Horse plan commit refused: Phase 12 authority ${verdict}`)
+        );
+      }
+    }
+    // P13.3: the same effect law for a selected joint candidate, checked at
+    // its own variant's gate.
+    const phase13 = result.decision.jointPolicy;
+    if (phase13?.applied) {
+      const verdict = isJointVariant(phase13.variant)
+        ? liveHorsePhase13Authorities[phase13.variant].check(phase13.authority)
+        : 'mismatched';
+      if (verdict !== 'usable') {
+        noteFire(`phase13_authority_effects_${verdict}`);
+        this.retireDecisionEffects(result, 'decision_finalized');
+        return Promise.reject(
+          new Error(`Horse plan commit refused: Phase 13 authority ${verdict}`)
         );
       }
     }
@@ -1423,6 +1443,20 @@ export class LiveHorseDecisionWorkerClient {
         remainingReceipt.authority = liveHorsePhase12Authorities[remainingReceipt.variant].stamp(
           remainingReceipt.authority
         );
+      // P13.3: the same mirror and stamp, per joint variant.
+      if (message.phase13Authority) {
+        for (const variant of HORSE_PHASE13_VARIANTS) {
+          const receipt = message.phase13Authority[variant];
+          if (!receipt) continue;
+          this.phase13WorkerEpoch = receipt.epoch;
+          liveHorsePhase13Authorities[variant].observeWorker(receipt);
+        }
+      }
+      const jointReceipt = message.decision.jointPolicy;
+      if (jointReceipt?.authority && isJointVariant(jointReceipt.variant))
+        jointReceipt.authority = liveHorsePhase13Authorities[jointReceipt.variant].stamp(
+          jointReceipt.authority
+        );
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -1511,6 +1545,8 @@ export class LiveHorseDecisionWorkerClient {
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)
       liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
+    for (const variant of HORSE_PHASE13_VARIANTS)
+      liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
     this.lastError = errorMessage(error);
     this.phase = 'failed';
     clearTimeout(this.readyTimer);
@@ -1662,6 +1698,8 @@ export class LiveHorseDecisionWorkerClient {
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)
       liveHorsePhase12Authorities[variant].forgetWorker(this.phase12WorkerEpoch);
+    for (const variant of HORSE_PHASE13_VARIANTS)
+      liveHorsePhase13Authorities[variant].forgetWorker(this.phase13WorkerEpoch);
     if (!this.terminationPromise) {
       this.terminationPromise = this.worker.terminate().then(() => undefined);
     }

@@ -3322,6 +3322,13 @@ export class HorseLogic {
         receipt.changed = !sameAction(proposal, beforePhase13);
         receipt.applied = !sameAction(decision, beforePhase13);
         receipt.selectionRefusal = receipt.applied ? null : selectionRefusal;
+        // P13.3: `selected` only when the applied candidate is the action
+        // leaving this node, the Phase 10/11/12 vocabulary.
+        receipt.selection = receipt.applied
+          ? 'selected'
+          : receipt.changed
+            ? 'shadow_change'
+            : 'none';
         receipt.finalAction = decision.action;
         receipt.finalAmount = decision.amount ?? null;
         for (const prior of [
@@ -3364,6 +3371,7 @@ export class HorseLogic {
             noteFire(`phase13_response_refused_${receipt.reason}`);
           if (receipt.selectionRefusal)
             noteFire(`phase13_selection_refused_${receipt.selectionRefusal}`);
+          noteFire(`phase13_selection_${receipt.selection}`);
         }
       }
       return { decision };

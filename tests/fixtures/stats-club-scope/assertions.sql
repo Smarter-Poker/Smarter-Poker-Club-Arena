@@ -1,7 +1,5 @@
 \set ON_ERROR_STOP on
 
-BEGIN;
-
 INSERT INTO public.clubs(id,name,lifecycle_status,asset) VALUES
   ('10000000-0000-0000-0000-000000000001','Own Club','active','chips'),
   ('10000000-0000-0000-0000-000000000002','Other Club','active','chips'),
@@ -17,7 +15,7 @@ INSERT INTO public.club_members(club_id,user_id,status) VALUES
 
 INSERT INTO public.tournaments(id,club_id,name,start_time,ended_at,status,variant,buy_in_amount,buy_in_fee)
 VALUES
- ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',(date_trunc('day',now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')+interval '3 minutes','COMPLETED','nlh',10,1),
+ ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',now()-interval '1 hour','COMPLETED','nlh',10,1),
  ('40000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','Still Running',now()-interval '1 hour',NULL,'RUNNING','nlh',10,1);
 INSERT INTO public.tournament_players(id,tournament_id,user_id,status,position,prize,rebuys,add_on)
 VALUES
@@ -55,7 +53,7 @@ INSERT INTO public.ca_hand_facts(hand_id,user_id,club_id,played_at,game_variant,
   players_dealt,invested,returned,net,net_bb,rake_paid,vpip,pfr)
 SELECT ('31000000-0000-0000-0000-'||lpad(g::text,12,'0'))::uuid,
  '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
- (date_trunc('day',now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')+interval '2 minutes','nlh',1,'BTN',6,1,2,1,1,0.01,true,false
+ now()-interval '2 hours','nlh',1,'BTN',6,1,2,1,1,0.01,true,false
 FROM generate_series(1,751) g;
 
 INSERT INTO public.hand_history(id,club_id)
@@ -70,7 +68,7 @@ SELECT user_id,hand_id,played_at,tournament_id IS NULL,tournament_id,game_varian
 INSERT INTO public.ca_hand_player_stat(user_id,hand_id,created_at,is_cash,game_variant,big_blind,
   seat_position,my_blind,won_amt,is_winner,invested_actions,vpip,pfr,profit,asset)
 VALUES ('20000000-0000-0000-0000-000000000001','32000000-0000-0000-0000-000000000001',
-  (date_trunc('day',now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')+interval '1 minute',true,'nlh',1,'CO',0,3,true,1,true,false,2,'chips');
+  now()-interval '3 hours',true,'nlh',1,'CO',0,3,true,1,true,false,2,'chips');
 GRANT EXECUTE ON FUNCTION public.fixture_expect_refusal(text,text) TO authenticated;
 
 SET ROLE authenticated;
@@ -248,5 +246,3 @@ DO $$ DECLARE sig text; BEGIN
 END $$;
 
 SELECT 'PASS: Stats club-scope migration, authorization, comparison and grants' AS result;
-
-COMMIT;

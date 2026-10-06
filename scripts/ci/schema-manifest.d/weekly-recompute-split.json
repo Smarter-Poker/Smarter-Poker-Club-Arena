@@ -1,0 +1,11 @@
+{
+  "_owner": "PR6031 native qualification; pending protected merge and exact production installation/readback. These names are declarations verified in isolated PostgreSQL, not a live installation claim.",
+  "tables": ["accounting_recompute_split_parts"],
+  "functions": [
+    "fn_rakeback_split_counts",
+    "fn_rakeback_split_check",
+    "fn_rakeback_split_write",
+    "fn_accounting_preparation_calculating",
+    "fn_rakeback_recompute_split"
+  ]
+}

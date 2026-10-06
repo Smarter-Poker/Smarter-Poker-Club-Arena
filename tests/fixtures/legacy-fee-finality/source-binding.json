@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+    "scripts/ci/classify-ci-changes.mjs": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -686,5 +686,14 @@
     "changed": "scripts/ci/classify-ci-changes.mjs",
     "reason": "Route the manual final-table page runner, its tests, forward migrations and schema fragment into the existing required accounting and source-test lanes. Existing financial selection and runtime sources are unchanged. Reviewed diff and native customization proof; this restamp does not certify weekly settlement or expand historical claims.",
     "sha256": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b"
+  },
+  "weeklyRecomputeQualification20261006": {
+    "reason": "Add exact split-recompute native qualification to the existing accounting shard and select its fixture-only changes. Default weekly fixture behavior and all financial SQL remain unchanged; current protected-main integration is preserved.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "before": "732f731aa929df1e7b43aa58a5ef7d06c2e6c24ad3be2dc3d64abe2765e3fe7b",
+        "after": "2fc728ea5555ced40641d89f8c85b8f094a09f9f14d5decaa405ffbc5e11ea2a"
+      }
+    }
   }
 }

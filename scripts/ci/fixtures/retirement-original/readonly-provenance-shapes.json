@@ -1,0 +1,699 @@
+{
+  "scope": "Current provenance relation shapes for read-only helper/retirement predicates. No funding/relocation/cashout mutation qualification or game rows.",
+  "observed_at": "2026-10-06 19:13:40 UTC",
+  "tables": [
+    {
+      "name": "tournament_seat_move_receipts",
+      "owner": "postgres",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "destination_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "destination_seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "destination_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_mode",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stack",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "moved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_seat_move_receipts_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_table_id <> destination_table_id))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_check1",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_seat_id <> destination_seat_id))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_destination_seat_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (destination_seat_id) REFERENCES table_seats(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_seat_move_receipts_destination_seat_number_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((destination_seat_number >= 1) AND (destination_seat_number <= 10)))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_destination_table_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (destination_table_id) REFERENCES tables(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_seat_move_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (request_id)"
+        },
+        {
+          "name": "tournament_seat_move_receipts_source_mode_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((source_mode = ANY (ARRAY['live_source'::text, 'closed_orphan'::text])))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_source_seat_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (source_seat_id) REFERENCES table_seats(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_seat_move_receipts_source_seat_number_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((source_seat_number >= 1) AND (source_seat_number <= 10)))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_source_table_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (source_table_id) REFERENCES tables(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_seat_move_receipts_stack_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((stack)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (stack > (0)::numeric)))"
+        },
+        {
+          "name": "tournament_seat_move_receipts_tournament_id_fkey",
+          "type": "f",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_seat_move_receipts_tournament_id_user_id_request_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (tournament_id, user_id, request_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_seat_move_receipts_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_seat_move_receipts_pkey ON public.tournament_seat_move_receipts USING btree (request_id)"
+        },
+        {
+          "name": "tournament_seat_move_receipts_tournament_id_user_id_request_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_seat_move_receipts_tournament_id_user_id_request_key ON public.tournament_seat_move_receipts USING btree (tournament_id, user_id, request_id)"
+        }
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        }
+      ],
+      "policies": null,
+      "triggers": null
+    },
+    {
+      "name": "tournament_participant_funding_receipts",
+      "owner": "postgres",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "default": "pg_current_xact_id()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registration_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "operation",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "purchase_key",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "asset",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entitlement_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_transaction_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "funding_club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registration_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entitlement_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_snapshot",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "custody_result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_participant_funding_receip_wallet_transaction_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (wallet_transaction_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_amount_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_asset_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((((asset = 'chips'::text) AND (amount > (0)::numeric) AND (entitlement_id IS NOT NULL) AND (ledger_id IS NOT NULL) AND (wallet_transaction_id IS NOT NULL) AND (funding_club_id IS NOT NULL)) OR ((asset = 'chips'::text) AND (amount = (0)::numeric) AND (entitlement_id IS NULL) AND (ledger_id IS NULL)) OR ((asset = 'diamonds'::text) AND (entitlement_id IS NULL) AND (ledger_id IS NULL))))"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_entitlement_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (entitlement_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_ledger_id_key",
+          "type": "u",
+          "validated": true,
+          "definition": "UNIQUE (ledger_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_operation_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((operation = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])))"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_participant_fundin_tournament_id_registration_id_idx",
+          "constraint": false,
+          "definition": "CREATE INDEX tournament_participant_fundin_tournament_id_registration_id_idx ON public.tournament_participant_funding_receipts USING btree (tournament_id, registration_id, observed_at)"
+        },
+        {
+          "name": "tournament_participant_funding_receip_wallet_transaction_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_participant_funding_receip_wallet_transaction_id_key ON public.tournament_participant_funding_receipts USING btree (wallet_transaction_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_entitlement_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_participant_funding_receipts_entitlement_id_key ON public.tournament_participant_funding_receipts USING btree (entitlement_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_ledger_id_key",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_participant_funding_receipts_ledger_id_key ON public.tournament_participant_funding_receipts USING btree (ledger_id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX tournament_participant_funding_receipts_pkey ON public.tournament_participant_funding_receipts USING btree (id)"
+        },
+        {
+          "name": "tournament_participant_funding_receipts_registration",
+          "constraint": false,
+          "definition": "CREATE INDEX tournament_participant_funding_receipts_registration ON public.tournament_participant_funding_receipts USING btree (registration_id)"
+        }
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ],
+      "policies": null,
+      "triggers": null
+    },
+    {
+      "name": "seat_cashout_receipts",
+      "owner": "postgres",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "occupancy_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "receipt",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "seat_cashout_receipts_pkey",
+          "type": "p",
+          "validated": true,
+          "definition": "PRIMARY KEY (occupancy_id)"
+        },
+        {
+          "name": "seat_cashout_receipts_receipt_check",
+          "type": "c",
+          "validated": true,
+          "definition": "CHECK ((jsonb_typeof(receipt) = 'object'::text))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "seat_cashout_receipts_pkey",
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX seat_cashout_receipts_pkey ON public.seat_cashout_receipts USING btree (occupancy_id)"
+        }
+      ],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        }
+      ],
+      "policies": null,
+      "triggers": null
+    }
+  ]
+}

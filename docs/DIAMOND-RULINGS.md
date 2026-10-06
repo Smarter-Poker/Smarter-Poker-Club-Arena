@@ -287,3 +287,14 @@ Dan, verbatim: "these are all for you to decide not me ... FIX AND FINISH ALL OF
 **One exception, decided the same day:** a club's own staff, and a member's upline agent, keep that member's last-login date (`ca_club_member_detail`, `ca_club_members_export`, behind their staff/downline gates). It is the club's credit-risk view of its own members, not a stranger's read, and it shows a date, never a location.
 
 Migration `20260930234000`'s comments and the two new doors' database comments call this ruling 22: it was written under that number the same night rulings 22 to 24 above landed, and the applied file is a record that does not change. The database comments are corrected by the revoke migration. It is ruling 25.
+
+## Diamond cash games are open (Dan, 2026-10-06; migrations 20261006154344 and 20261006154844; docs/changelog/2026-10-06-the-diamond-cash-felt-reopens.md)
+
+Dan opened Diamond cash games for his certified run, and on 2026-10-06
+approved reopening them after `20261006021858` closed them by mistake ("YES,
+GO AHEAD AND PROCEED"), once the rake path was live and a Diamond cash hand
+was proved to settle. Both conditions were met first: a rolled-back
+production rehearsal of the engine's own request found and fixed the commit
+door's refusal of every raked Diamond hand (`20261006154344`), then settled
+the hand with its rake. `cash_games_enabled` being true is Dan's decision. It
+is not an unexplained open, and closing it again is his call.

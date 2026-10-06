@@ -2593,9 +2593,22 @@ export class HandController {
     const sorted = [...withMoney].sort((a, b) => b.matched - a.matched);
     const top = sorted[0];
     const second = sorted[1];
-    // Only a UNIQUE, non-folded highest contributor can have an uncalled bet.
+    // Only a UNIQUE highest contributor can have an uncalled bet.
     if (top.matched <= second.matched) return 0;
-    if (top.p.is_folded) return 0;
+    /*
+     * FOLDED OR NOT (launch audit 2026-10-05). This returned 0 when the unique
+     * top contributor had folded, on the reasoning that a folded player's
+     * chips are forfeit. The part of a contribution nobody matched was never
+     * at risk to anyone: no other player put in a chip against it, so there is
+     * no pot it can belong to. The only way a folded seat is the unique top
+     * contributor is a forced bet larger than every stack still in the hand
+     * (a blind facing an all-in for less). Probe on the old code, heads-up,
+     * blinds 0.5/1, BB all-in for 0.2: the SB folds and the BB is paid 0.7,
+     * having matched 0.4. The SB's unmatched 0.3 now goes back to the SB, as
+     * it already did when the SB called instead. Money a folded player put in
+     * that WAS matched (two players who bet level and both folded) is tied at
+     * the top, returns nothing above, and stays in the pot as before.
+     */
     const uncalled = cents(top.matched - second.matched);
     if (uncalled <= 0) return 0;
     const fromLive = Math.min(uncalled, top.live);

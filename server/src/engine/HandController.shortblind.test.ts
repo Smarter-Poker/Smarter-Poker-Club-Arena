@@ -49,8 +49,7 @@ function harness(config: HandConfig, players: SeatPlayer[], dealerSeat: number) 
   const hc = new HandController(config, players, dealerSeat);
   const st = () => (hc as unknown as { state: any }).state;
   const seat = (n: number) => st().players.find((p: SeatPlayer) => p.seat === n);
-  const total = () =>
-    st().players.reduce((s: number, p: SeatPlayer) => s + p.stack, 0) + st().pot;
+  const total = () => st().players.reduce((s: number, p: SeatPlayer) => s + p.stack, 0) + st().pot;
   return { hc, st, seat, total };
 }
 
@@ -96,5 +95,65 @@ describe('short all-in blind (Bible V8 §4.2 / §7.2)', () => {
     h.hc.start();
     expect(h.st().currentBet).toBe(2);
     expect(h.st().pot).toBe(3);
+  });
+});
+
+/**
+ * A FOLDED BLIND IS NOT PAID TO A STACK THAT NEVER MATCHED IT (launch audit
+ * 2026-10-05). Before the fix the unique top contributor got nothing back if
+ * it had folded, so a blind that folded to an all-in for less paid the short
+ * stack chips the short stack never put up.
+ */
+describe('a folded blind is not paid to a stack that never matched it', () => {
+  function seats(stacks: number[]) {
+    return stacks.map((stack, i) => ({
+      seat: i + 1,
+      user_id: `u${i + 1}`,
+      username: `P${i + 1}`,
+      stack,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    })) as any;
+  }
+  function play(stacks: number[], dealer: number) {
+    const events: any[] = [];
+    const players = seats(stacks);
+    const total = stacks.reduce((a, b) => a + b, 0);
+    const hc = new HandController(
+      {
+        tableId: 't-uncalled',
+        handNumber: 1,
+        gameVariant: 'nlh',
+        smallBlind: 0.5,
+        bigBlind: 1,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      } as any,
+      players,
+      dealer
+    );
+    hc.onEvent((e: any) => events.push(e));
+    hc.start();
+    return { hc, events, players, total, state: () => (hc as any).state };
+  }
+
+  it('heads-up: the SB folds to a BB all-in for 0.2 and gets its unmatched 0.3 back', () => {
+    // Heads-up the dealer is the small blind. Seat 1 = SB (100), seat 2 = BB (0.2).
+    const h = play([100, 0.2], 1);
+    const sbSeat = h.state().currentPlayerSeat;
+    expect(h.hc.performAction(sbSeat, 'fold' as any, 0)).toBe(true);
+    const returned = h.events.filter((e) => e.type === 'UNCALLED_BET_RETURNED');
+    expect(returned).toHaveLength(1);
+    expect(returned[0].amount).toBeCloseTo(0.3, 2);
+    const after = h.state().players as Array<{ user_id: string; stack: number }>;
+    const sb = after.find((p) => p.user_id === `u${sbSeat}`)!;
+    const bb = after.find((p) => p.user_id !== `u${sbSeat}`)!;
+    // The SB lost only the 0.2 that was matched; the BB won 0.2 + 0.2.
+    expect(sb.stack).toBeCloseTo(99.8, 2);
+    expect(bb.stack).toBeCloseTo(0.4, 2);
+    expect(sb.stack + bb.stack).toBeCloseTo(h.total, 2);
   });
 });

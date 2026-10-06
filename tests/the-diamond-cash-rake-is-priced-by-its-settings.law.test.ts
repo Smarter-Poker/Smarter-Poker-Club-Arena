@@ -22,6 +22,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceEnclosingBlock } from './helpers/sourceWindow.js';
 import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
@@ -276,6 +277,231 @@ describe('the Diamond cash rake is priced by its settings and by nothing else', 
     expect(migration).toMatch(
       /fn_ca_declare_guard_redefinition\(\s*'fn_poker_diamond_settle_cash_hand'/
     );
+  });
+
+  /* ═══ THE ENGINE SIDE OF THE SAME LAW (2026-10-06) ═══════════════════════
+     Section 5 asks that the ENGINE and the settler both read
+     ca_diamond_economics "and never RAKE_SPEC, ca_rake_tier or the table's
+     rake columns". Until this lane there was nothing on the engine side to
+     hold to it: no TypeScript file mentioned a single one of these names, the
+     engine's only pricer was the chip ladder in config/rakeSpec.ts, and every
+     Diamond cash hand therefore declared a rake of zero and refused on the
+     settler's recompute. Now that a Diamond pricer exists, the same law
+     applies to it, and the whole value of the settings table depends on it:
+     one INSERT must change the answer, with no rebuild. */
+
+  const PRICER = 'server/src/domain/diamondCashRakeSchedule.ts';
+  const READER = 'server/src/services/supabase/diamondCashRakeSettings.ts';
+  const CONTROLLER = 'server/src/engine/HandController.ts';
+  const BOUNDARY = 'server/src/domain/DiamondCashBoundary.ts';
+
+  /** One file's TypeScript with its comments removed. A rule written in a
+   *  comment is a rule the comment would then break. */
+  function ts(path: string): string {
+    return read(path)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n');
+  }
+
+  it('holds no published rake number anywhere in the engine', () => {
+    const code = ts(PRICER) + '\n' + ts(READER);
+    /* THE WHOLE LADDER, and the three percents, as the owner published them.
+       Not one of them may appear as a literal: the row is the number. */
+    for (const published of [
+      5, 30, 37, 75, 150, 250, 300, 375, 400, 500, 625, 750, 800, 1250, 1500, 2000,
+    ]) {
+      expect(
+        new RegExp(`(?<![0-9.])${published}(?![0-9.])`).test(code),
+        `${published} is a published Diamond rake answer and must not be a literal in the engine`
+      ).toBe(false);
+    }
+    /* And no ladder, under any spelling: a stake rung is a SCOPE built from
+       the table's own big blind, never a key in a table of numbers. */
+    expect(code).not.toMatch(/bb:(?!\$\{|'|")/);
+    expect(code).toMatch(/`bb:\$\{bigBlind\}`/);
+  });
+
+  it('declares exactly two numeric constants, and says what each one means', () => {
+    /* A percent is per hundred and a decimal digit is worth ten of the next.
+       Those two are the DEFINITIONS OF THE WORDS and cannot be rows. Every
+       other number in the pricer is accounted for here, by name and reason,
+       so a third constant cannot arrive unnoticed. */
+    const code = ts(PRICER);
+    expect(code).toMatch(/const PER_CENT = 100n;/);
+    expect(code).toMatch(/const RADIX = 10n;/);
+    /* ... and those are the ONLY places those digits appear. */
+    expect(code.match(/(?<![0-9A-Za-z_.$])100n(?![0-9A-Za-z_.])/g)).toHaveLength(1);
+    expect(code.match(/(?<![0-9A-Za-z_.$])10n(?![0-9A-Za-z_.])/g)).toHaveLength(1);
+    /* ... and neither digit string appears anywhere as a plain number, which
+       is the shape a percent or a cap would arrive in. */
+    expect(code.match(/(?<![0-9A-Za-z_.$])100(?![0-9A-Za-z_.n])/g)).toBeNull();
+    expect(code.match(/(?<![0-9A-Za-z_.$])10(?![0-9A-Za-z_.n])/g)).toBeNull();
+    /* Every numeric literal in the pricer, on one allowlist with its reason:
+         0, 1, 2, 3   arithmetic, and the dealt-in bracket boundaries. These
+                      are the SETTLER's own branch points - `v_dealt < 2`,
+                      `v_dealt <= 2`, `v_dealt = 3` - and not economics: the
+                      settings table has no scope for them, it has a NAME per
+                      bracket, so a bracket cannot be a row
+         2n, 10n,
+         100n         the exact-decimal arithmetic above
+         15           the significant digits a published answer may carry
+         2147483647   the int4 ceiling every Diamond amount is held to */
+    const allowed = new Set(['0', '1', '2', '3', '2n', '10n', '100n', '15', '2147483647']);
+    /* Strings and regular expressions are not numbers: the decimal-notation
+       validator spells a digit range as [1-9], and a settings NAME is a
+       string. Both are removed before the scan so the law is about numeric
+       literals and not about the alphabet. */
+    const numbersOnly = code
+      .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+      .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+      .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+      .replace(/\/(?:[^/\\\n]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[gimsuy]*/g, '/RE/');
+    for (const literal of numbersOnly.match(
+      /(?<![0-9A-Za-z_.$])[0-9][0-9_]*n?(?![0-9A-Za-z_.])/g
+    ) ?? []) {
+      expect(allowed.has(literal), `unexplained numeric literal ${literal} in ${PRICER}`).toBe(
+        true
+      );
+    }
+  });
+
+  it('reads the settings table, and never the chip schedule or the table columns', () => {
+    const code = ts(PRICER) + '\n' + ts(READER);
+    expect(ts(READER)).toContain("from('ca_diamond_economics')");
+    for (const chip of [
+      'RAKE_SPEC',
+      'rakeSpec',
+      'ca_rake_tier',
+      'getRakeConfig',
+      'getFullRakeConfig',
+      'calculateRake',
+      'rake_cap_bb',
+      'bbj_percent',
+      'getPlayerCountCaps',
+    ]) {
+      expect(code, `the Diamond pricer reads ${chip}`).not.toContain(chip);
+    }
+    /* The chip TABLE COLUMN `rake_percent`, which is a different name from
+       the setting `cash_rake_percent` and must never be the one read. */
+    expect(code, 'the Diamond pricer reads the chip rake_percent column').not.toMatch(
+      /(?<!cash_)\brake_percent\b/
+    );
+  });
+
+  it('prices the Diamond hand from the schedule and the chip hand from the ladder', () => {
+    /* ONE BRANCH, and the chip path on the other side of it. The Diamond arm
+       must not reach `calculateRake` and the chip arm must not reach the
+       pricer, or the two economies would be sharing a number. */
+    const code = ts(CONTROLLER);
+    expect(code).toContain('const diamondSchedule = this.config.diamondRakeSchedule;');
+    const branch = code.slice(
+      code.indexOf('const diamondSchedule = this.config.diamondRakeSchedule;'),
+      code.indexOf('const rake = calculateRake(')
+    );
+    expect(branch).toContain('priceDiamondCashRake(');
+    expect(branch).not.toContain('calculateRake(');
+    expect(branch).not.toContain('rakeConfig');
+    /* And the chip arm is still exactly the call it always was. */
+    expect(code).toContain(
+      'const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);'
+    );
+  });
+
+  it('prices the Diamond hand on the pot the SETTLER adds up, not on state.pot', () => {
+    /* MUTATION FINDING (2026-10-06). `this.state.pot` and the sum of every
+       seat's `totalInvested` are the same number in any hand the engine can
+       produce - the uncalled bet is returned off both before the rake is
+       priced - so swapping one for the other left every test green. They are
+       not the same QUESTION. The settler recomputes from `sum(contributed)`
+       over the roster it is sent, and `contributed` IS `totalInvested`; a
+       pricer that reads `state.pot` instead agrees only for as long as that
+       invariant holds, and the day it does not, every hand at that table
+       refuses with the engine and the database each confident in its own pot.
+       So the SOURCE is pinned: the Diamond arm sums the contributions, and
+       does not read the pot it was handed.
+
+       The chip arm is the other half of the same pin: it prices on the `pot`
+       argument, exactly as it always has. */
+    const code = ts(CONTROLLER);
+    const branch = code.slice(
+      code.indexOf('const diamondSchedule = this.config.diamondRakeSchedule;'),
+      code.indexOf('const rake = calculateRake(')
+    );
+    expect(branch).toContain('wholeDiamondsContributed(player.totalInvested ?? 0)');
+    expect(branch).not.toMatch(/this\.state\.pot/);
+    expect(branch).not.toMatch(/\bpot\b\s*:\s*pot\b/);
+    /* The bracket is the dealt roster, never the chip ladder's count of
+       seats that are not sitting out. */
+    expect(branch).toContain('dealtIn: this.state.players.length');
+    expect(branch).not.toContain('playerCount');
+    /* And the one normalisation is the facts module's own, so the number
+       summed here is the number each roster element will carry. */
+    expect(code).toContain("import { wholeDiamondsContributed } from './diamondCashRakeFacts.js';");
+  });
+
+  it('re-prices the accepted hand rather than trusting the number it is handed', () => {
+    const code = ts(BOUNDARY);
+    expect(code).toContain('priceDiamondCashRake(');
+    expect(code).toContain('diamond_cash_rake_disagrees');
+    /* A rake must still be whole and non-negative, and a hand with no
+       published schedule may still declare nothing but zero. */
+    expect(code).toContain('diamond_whole_rake_required');
+    expect(code).toMatch(/input\.rake !== 0/);
+    /* The whole-amount rule it always had is still there. */
+    expect(code).toContain('diamond_whole_amount_required');
+  });
+
+  it('leaves no is_horse filter anywhere on the engine rake path (CLAUDE.md 10.5)', () => {
+    for (const path of [PRICER, READER]) {
+      expect(ts(path), `${path} filters horses`).not.toMatch(/is_horse|horses?_only|isHorse/i);
+    }
+    /* The pricer's inputs cannot express the distinction: a pot, a count and
+       a flop fact, and no seat, user or identity of any kind. */
+    expect(ts(PRICER)).toMatch(/export interface DiamondCashRakeFactsForPricing \{[^}]*\}/);
+    const facts = ts(PRICER).match(/export interface DiamondCashRakeFactsForPricing \{([^}]*)\}/);
+    expect(facts).not.toBeNull();
+    expect(facts![1]).not.toMatch(/user|seat|player|horse|id\b/i);
+  });
+
+  it('is a fix and not a repair loop on the engine side either (CLAUDE.md 10.11)', () => {
+    const code = ts(PRICER) + '\n' + ts(READER);
+    for (const loop of ['setInterval', 'setTimeout', 'cron', 'reconcile', 'backfill', 'repair']) {
+      expect(code, `${loop} appears on the Diamond rake path`).not.toMatch(new RegExp(loop, 'i'));
+    }
+  });
+
+  it('caches nothing across hands: the schedule is read at the deal and frozen', () => {
+    /* THE INVALIDATION STORY, as a law. There is no module-level cache, no
+       time-to-live and no refresh interval, because each is a window in which
+       a hand could be priced on a number the owner had already changed. The
+       read happens once per hand, before the hand number is allocated, and
+       the snapshot dies with the hand. */
+    const reader = ts(READER);
+    expect(reader).not.toMatch(/\b(cache|Cache|ttl|TTL|expires?At|staleAfter)\b/);
+    const dealingSource = read('server/src/engine/ServerTableEngineDealing.ts');
+    const dealing = ts('server/src/engine/ServerTableEngineDealing.ts');
+    const call = dealing.indexOf('readDiamondCashRakeSchedule(');
+    expect(call).toBeGreaterThan(-1);
+    /* Read BEFORE the hand number is allocated, so a failed read costs no
+       hand number and deals no cards. The allocation meant is dealHand's own
+       - the one that sets this.handCount - not the speculative one taken
+       under the between-hands rest. */
+    const allocation = dealing.indexOf(
+      'this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());'
+    );
+    expect(allocation).toBeGreaterThan(-1);
+    expect(call).toBeLessThan(allocation);
+    /* And a failed read deals nothing at all: the refusal returns out of
+       dealHand rather than carrying on without a schedule. Bounded by the
+       catch block that handles it, so the window grows with the code. */
+    const refusal = sliceEnclosingBlock(
+      dealingSource,
+      'ServerTableEngineDealing.diamond_cash_rake_schedule_unreadable'
+    );
+    expect(refusal).toContain('reportError(');
+    expect(refusal).toContain('return;');
   });
 
   it('never opens the cash-game door', () => {

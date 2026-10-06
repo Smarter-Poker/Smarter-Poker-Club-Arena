@@ -1,4 +1,9 @@
 import type { ArenaIdentity } from './ArenaContext.js';
+import {
+  priceDiamondCashRake,
+  type DiamondCashRakeFactsForPricing,
+  type DiamondCashRakeSchedule,
+} from './diamondCashRakeSchedule.js';
 
 /**
  * The first custody-backed game is plain NLH; optional financial paths are not
@@ -278,6 +283,51 @@ export function assertDiamondTable(table: Record<string, unknown>): void {
   }
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE RAKE THIS GUARD REFUSES (2026-10-06)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It used to refuse ANY non-zero rake on a Diamond hand, and it was right to:
+ * there was no Diamond rake. Nothing could price one - `calculateRake` reads
+ * the chip schedule, which a Diamond table's explicitly-zero `rake_percent`
+ * and `rake_cap_bb` columns answer as zero - so a non-zero rake arriving here
+ * could only be the chip economy leaking into this arena, and a flat zero was
+ * the sharpest possible statement of that.
+ *
+ * The owner has since published a Diamond cash rake, and
+ * `fn_poker_diamond_settle_cash_hand` recomputes it from those rows. "Rake
+ * must be zero" is therefore no longer true, and a guard that keeps asserting
+ * a thing that has stopped being true does not protect the arena - it closes
+ * it. So the check is NARROWED to what is still true, and nothing else about
+ * this guard moves: the lease proof, the variant list, the jackpot and
+ * insurance zeros and the whole-amount rule are all exactly as they were.
+ *
+ * WHAT A RAKE MUST STILL BE, AND WHAT IS STILL REFUSED:
+ *
+ *   - a WHOLE, NON-NEGATIVE number of Diamonds. A Diamond is indivisible;
+ *     0.5 and -1 are refused by name as they always were, and now by their
+ *     own name rather than by "not zero".
+ *   - THE NUMBER THE OWNER'S SETTINGS PRICE FOR THIS HAND. The rake is
+ *     re-priced here from the hand's own three facts and the schedule it was
+ *     dealt under, and a declared rake that differs is refused. This is the
+ *     settler's recompute, run one step earlier: a disagreement is named by
+ *     the engine that produced it instead of arriving as a database refusal
+ *     with the hand already played.
+ *   - ANY rake at all on a hand with no Diamond schedule. A Diamond
+ *     tournament hand, and any path that reaches this door without having
+ *     read the settings, is held to the original rule - exactly zero -
+ *     because a rake nothing published is a rake nothing can justify.
+ *   - a rake on a hand the settings say is UNRAKED. No separate branch: the
+ *     re-price answers zero for an unflopped hand under no-flop-no-drop, for
+ *     a pot under the minimum, for fewer than two players dealt in and for a
+ *     switch that is off, and a non-zero declaration then fails the
+ *     comparison above.
+ *
+ * HORSES ARE PLAYERS (CLAUDE.md 10.5). The re-price takes a pot, a count and
+ * a flop fact. No seat, no user, no `is_horse` - there is nothing here that
+ * could price a horse's seat differently, by any mechanism.
+ */
 /** Refuse unsupported facts rather than suppressing a deduction after it was paid. */
 export function assertDiamondAcceptedHand(input: {
   arena?: ArenaIdentity;
@@ -288,21 +338,51 @@ export function assertDiamondAcceptedHand(input: {
   inflow: number;
   insuranceCount: number;
   amounts: number[];
+  /** The schedule this hand was dealt under. Absent on a non-cash Diamond hand. */
+  rakeSchedule?: DiamondCashRakeSchedule | null;
+  /** The three facts the settler recomputes from, as this hand will send them. */
+  rakeFacts?: DiamondCashRakeFactsForPricing | null;
 }): void {
   if (input.arena?.asset !== 'diamonds') return;
   if (!input.verifiedLease) throw new Error('atomic hand commit refused (diamond_lease_required)');
   if (
     !isDiamondCashVariant(input.variant) ||
-    input.rake !== 0 ||
     input.bbj !== 0 ||
     input.inflow !== 0 ||
     input.insuranceCount !== 0
   )
     throw new Error('atomic hand commit refused (diamond_plain_cash_required)');
+  /* EVERY AMOUNT WHOLE, FIRST. This ran last until the re-price arrived, and
+     it has to run before it: the pot the re-price is handed is the sum of
+     these same contributions, so a fractional one must be refused by its own
+     long-standing name rather than reaching the pricer as a fractional pot. */
   if (
     input.amounts.some(
       (amount) => !Number.isSafeInteger(amount) || amount < 0 || amount > 2147483647
     )
   )
     throw new Error('atomic hand commit refused (diamond_whole_amount_required)');
+  /* A Diamond does not divide, and a rake is never owed back to the house. */
+  if (!Number.isSafeInteger(input.rake) || input.rake < 0 || input.rake > 2147483647)
+    throw new Error('atomic hand commit refused (diamond_whole_rake_required)');
+  if (input.rakeSchedule && input.rakeFacts) {
+    let priced: number;
+    try {
+      priced = priceDiamondCashRake(input.rakeSchedule, input.rakeFacts);
+    } catch (refusal) {
+      throw new Error(
+        `atomic hand commit refused (diamond_cash_rake_unpriceable: ${
+          refusal instanceof Error ? refusal.message : String(refusal)
+        })`
+      );
+    }
+    if (input.rake !== priced)
+      throw new Error(
+        `atomic hand commit refused (diamond_cash_rake_disagrees: engine ${input.rake}, ` +
+          `settings ${priced} at pot ${input.rakeFacts.pot}, ${input.rakeFacts.dealtIn} dealt, ` +
+          `flop ${input.rakeFacts.sawFlop})`
+      );
+  } else if (input.rake !== 0) {
+    throw new Error('atomic hand commit refused (diamond_plain_cash_required)');
+  }
 }

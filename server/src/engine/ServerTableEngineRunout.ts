@@ -98,6 +98,40 @@ export function insurablePotBreakdown(
   }
 }
 
+/**
+ * INSURANCE IS OFFERED ONLY ON A ONE-POT HAND (launch audit 2026-10-05).
+ *
+ * The contract the dialog shows is "the leader wins the insured pot, or is
+ * paid for losing it". InsuranceEngine.settle decides it on "is the insured
+ * player among the hand's winners", and with a side pot that is a different
+ * question, so real money moved to the wrong party:
+ *
+ *   - a short stack wins the main pot and the insured leader wins only the
+ *     side pot. Two winners, so the settle called it a chop and paid the
+ *     leader nothing for the pot he lost;
+ *   - a short-stacked leader wins everything he insured while someone else
+ *     wins a side pot he was never in. Two winners again, so no fee.
+ *
+ * So the offer is made only when the hand has ONE live pot (the uncalled bet
+ * has already gone back when the runout starts): there, the pot's winners
+ * and the hand's winners are the same people and the settle is exact. A hand
+ * with a side pot is run out with no offer, which is what a table without
+ * insurance does. Nothing is adjusted afterwards.
+ *
+ * A controller with no computeLivePots is a test double that predates it;
+ * the real HandController always has one. A read that throws offers nothing.
+ */
+export function insuranceContractIsExact(
+  controller: { computeLivePots?: () => Array<{ amount: number }> } | null | undefined
+): boolean {
+  if (!controller || typeof controller.computeLivePots !== 'function') return true;
+  try {
+    return controller.computeLivePots().filter((pot) => pot.amount > 0).length === 1;
+  } catch {
+    return false;
+  }
+}
+
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
    * All-in run-out pacing (Dan 2026-08-19, item 16). Chosen so a player can
@@ -1174,7 +1208,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Optional call: RIT test harnesses inject minimal HandController mocks
     // that predate this method — absent method means single board.
     const doubleBoardHand = this.handController.isDoubleBoardActive?.() ?? false;
-    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    const insuranceOnThisHand = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
+    const insuranceEnabled = insuranceOnThisHand && insuranceContractIsExact(this.handController);
     const insuranceCanPriceStandingBoard =
       insuranceEnabled && board.length < 5 && allInPlayers.length >= 2;
     let standaloneEquityRequested = false;

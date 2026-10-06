@@ -1,9 +1,9 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  AGENT PORTAL PAGE — Agent Financial Command Center (routable wrapper)
+ *  AGENT PORTAL PAGE — Agent Financial Command Center
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Wraps AgentFinancialPortal component with a routable page, replaces prompt()
- *  with a proper transfer modal, and adds bus listeners for real-time updates.
+ *  Owns the routed agent wallet, commission ledger, invoice and transaction
+ *  experience. Transfers use a scoped dialog and live updates arrive by bus.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -571,7 +571,7 @@ export default function AgentPortalPage() {
       </section>
 
       <SpadeConsole
-        family="shark"
+        family="spade"
         crest="flat"
         eyebrow="Seven Day Window"
         title="Commission Ledger"

@@ -98,8 +98,8 @@ export default function CashIntelligencePanel({
   const state = loading ? 'Loading' : error ? 'Unavailable' : data ? 'Exact Facts' : 'Not Measured';
   return (
     <SpadeConsole
-      family="riveted"
-      crest="club"
+      family="spade"
+      crest="spade"
       eyebrow="Cash Decisions"
       title="Cash Intelligence"
       subtitle="Opportunity-Based Rates From Accepted Hands"

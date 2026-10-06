@@ -58,6 +58,23 @@ export interface GatePanelData {
   generated_at: string;
 }
 
+export type BalanceEntityType = 'club' | 'union' | 'player' | 'agent';
+
+export type BalanceAsOfReadout =
+  | {
+      found: false;
+      accountType: BalanceEntityType;
+      asOf: string;
+    }
+  | {
+      found: true;
+      accountType: BalanceEntityType;
+      asOf: string;
+      balance: number;
+      recordedAt: string;
+      direction: 'Incoming' | 'Outgoing';
+    };
+
 /** One entry in an incident's event timeline. */
 export interface IncidentEvent {
   at: string;
@@ -85,6 +102,8 @@ export interface DriftMetrics {
 /** Full incident row as returned by fn_ca_incident_dashboard. */
 export interface DriftIncident {
   id: string;
+  /** True only when the unchanged per-incident action door admits this caller. */
+  can_act: boolean;
   detected_at: string;
   deadline_at: string | null;
   classification: string; // 21-value enum (ledger_imbalance, settlement_error, duplicate_payment, ..., unknown)
@@ -150,6 +169,10 @@ const AUTO_REPAIR_STATUSES = new Set<AutoRepairStatus>([
   'manual_needed',
   'not_applicable',
 ]);
+const BALANCE_ENTITY_TYPES = new Set<BalanceEntityType>(['club', 'union', 'player', 'agent']);
+const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const NO_BALANCE_NOTE = 'no ledger row with a recorded balance at or before this time';
+const MAX_GATE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function objectValue(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -206,6 +229,203 @@ function nullableBoolean(value: unknown, label: string): boolean | null {
   return value;
 }
 
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${label} could not be verified`);
+  return value;
+}
+
+function nonnegativeNumber(value: unknown, label: string): number {
+  const number = numberValue(value, label);
+  if (number < 0) throw new Error(`${label} could not be verified`);
+  return number;
+}
+
+function nullableNonnegativeNumber(value: unknown, label: string): number | null {
+  return value === null ? null : nonnegativeNumber(value, label);
+}
+
+function stringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${label} could not be verified`);
+  return value.map((entry, index) => textValue(entry, `${label} ${index + 1}`));
+}
+
+function uuidValue(value: unknown, label: string): string {
+  const id = textValue(value, label);
+  if (!UUID_PATTERN.test(id)) throw new Error(`${label} could not be verified`);
+  return id;
+}
+
+function requireStrictlyAscending(times: string[], label: string): void {
+  let prior = Number.NEGATIVE_INFINITY;
+  for (const time of times) {
+    const next = Date.parse(time);
+    if (next <= prior) throw new Error(`${label} could not be verified`);
+    prior = next;
+  }
+}
+
+function normalizeBalanceAsOf(
+  value: unknown,
+  expectedType: BalanceEntityType,
+  expectedEntityId: string,
+  expectedAsOf: string
+): BalanceAsOfReadout {
+  const row = objectValue(value, 'Balance reconstruction');
+  const found = booleanValue(row.found, 'Balance reconstruction state');
+  const accountType = textValue(
+    row.account_type,
+    'Balance reconstruction account type'
+  ) as BalanceEntityType;
+  const entityId = uuidValue(row.entity_id, 'Balance reconstruction entity');
+  const asOf = timestampValue(row.as_of, 'Balance reconstruction time');
+
+  if (
+    !BALANCE_ENTITY_TYPES.has(accountType) ||
+    accountType !== expectedType ||
+    entityId.toLowerCase() !== expectedEntityId.toLowerCase() ||
+    Date.parse(asOf) !== Date.parse(expectedAsOf)
+  ) {
+    throw new Error('Balance reconstruction scope could not be verified');
+  }
+
+  if (!found) {
+    if (textValue(row.note, 'Balance reconstruction note') !== NO_BALANCE_NOTE) {
+      throw new Error('Balance reconstruction empty state could not be verified');
+    }
+    return { found: false, accountType, asOf };
+  }
+
+  const recordedAt = timestampValue(row.recorded_at, 'Balance reconstruction record time');
+  if (Date.parse(recordedAt) > Date.parse(asOf)) {
+    throw new Error('Balance reconstruction timeline could not be verified');
+  }
+  // Validate the durable source identity even though internal IDs never reach
+  // the operator readout.
+  uuidValue(row.ledger_row, 'Balance reconstruction ledger row');
+  const side = textValue(row.side, 'Balance reconstruction ledger side');
+  if (side !== 'from' && side !== 'to') {
+    throw new Error('Balance reconstruction ledger side could not be verified');
+  }
+
+  return {
+    found: true,
+    accountType,
+    asOf,
+    balance: numberValue(row.balance, 'Balance reconstruction balance'),
+    recordedAt,
+    direction: side === 'to' ? 'Incoming' : 'Outgoing',
+  };
+}
+
+function normalizeGatePanel(value: unknown): GatePanelData {
+  const row = objectValue(value, 'Burn-in gate panel');
+  const generatedAt = timestampValue(row.generated_at, 'Burn-in gate generation time');
+  const generatedAtMs = Date.parse(generatedAt);
+  if (generatedAtMs > Date.now() + MAX_GATE_CLOCK_SKEW_MS) {
+    throw new Error('Burn-in gate generation time could not be verified');
+  }
+
+  let gate: GatePanelData['gate'] = null;
+  if (row.gate !== null) {
+    const gateRow = objectValue(row.gate, 'Burn-in gate');
+    const pass = booleanValue(gateRow.pass, 'Burn-in gate state');
+    const runAt = timestampValue(gateRow.run_at, 'Burn-in gate run time');
+    if (Date.parse(runAt) > generatedAtMs) {
+      throw new Error('Burn-in gate timeline could not be verified');
+    }
+    const failing =
+      gateRow.failing === null ? null : stringArray(gateRow.failing, 'Burn-in failing check');
+    if (pass && failing && failing.length > 0) {
+      throw new Error('Burn-in gate result could not be verified');
+    }
+    gate = {
+      run_at: runAt,
+      pass,
+      window_hours: countValue(gateRow.window_hours, 'Burn-in gate window', 1),
+      failing,
+      result: objectValue(gateRow.result, 'Burn-in gate result'),
+    };
+  }
+
+  if (!Array.isArray(row.supply_series) || row.supply_series.length > 48) {
+    throw new Error('Burn-in chip supply series could not be verified');
+  }
+  const supplySeries = row.supply_series.map((value, index) => {
+    const point = objectValue(value, `Burn-in chip supply point ${index + 1}`);
+    return {
+      taken_at: timestampValue(point.taken_at, `Burn-in chip supply point ${index + 1} time`),
+      // Unexplained deltas are signed by design; every absolute quantity is not.
+      unexplained: nullableNumber(
+        point.unexplained,
+        `Burn-in chip supply point ${index + 1} unexplained`
+      ),
+      total: nonnegativeNumber(point.total, `Burn-in chip supply point ${index + 1} total`),
+      cert_wallets: nullableNonnegativeNumber(
+        point.cert_wallets,
+        `Burn-in chip supply point ${index + 1} certified wallets`
+      ),
+      leaderboard_liability: nullableNonnegativeNumber(
+        point.leaderboard_liability,
+        `Burn-in chip supply point ${index + 1} leaderboard liability`
+      ),
+    };
+  });
+
+  if (!Array.isArray(row.diamond_series) || row.diamond_series.length > 48) {
+    throw new Error('Burn-in diamond supply series could not be verified');
+  }
+  const diamondSeries = row.diamond_series.map((value, index) => {
+    const point = objectValue(value, `Burn-in diamond supply point ${index + 1}`);
+    return {
+      taken_at: timestampValue(point.taken_at, `Burn-in diamond supply point ${index + 1} time`),
+      unexplained: nullableNumber(
+        point.unexplained,
+        `Burn-in diamond supply point ${index + 1} unexplained`
+      ),
+      total: nonnegativeNumber(point.total, `Burn-in diamond supply point ${index + 1} total`),
+    };
+  });
+
+  requireStrictlyAscending(
+    supplySeries.map((point) => point.taken_at),
+    'Burn-in chip supply timeline'
+  );
+  requireStrictlyAscending(
+    diamondSeries.map((point) => point.taken_at),
+    'Burn-in diamond supply timeline'
+  );
+  if (
+    supplySeries.some((point) => Date.parse(point.taken_at) > generatedAtMs) ||
+    diamondSeries.some((point) => Date.parse(point.taken_at) > generatedAtMs)
+  ) {
+    throw new Error('Burn-in supply timeline could not be verified');
+  }
+
+  let openCounts: Record<string, number> | null = null;
+  if (row.open_counts !== null) {
+    const counts = objectValue(row.open_counts, 'Burn-in open incident counts');
+    const allowed = new Set<IncidentSeverity>(['critical', 'warning', 'info']);
+    openCounts = {};
+    for (const [severity, count] of Object.entries(counts)) {
+      if (!allowed.has(severity as IncidentSeverity)) {
+        throw new Error('Burn-in open incident severity could not be verified');
+      }
+      openCounts[severity] = countValue(count, `Burn-in open ${severity} incident count`);
+    }
+  }
+  if (gate?.pass && (openCounts?.critical ?? 0) > 0) {
+    throw new Error('Burn-in green gate with critical incidents could not be verified');
+  }
+
+  return {
+    gate,
+    supply_series: supplySeries,
+    diamond_series: diamondSeries,
+    open_counts: openCounts,
+    generated_at: generatedAt,
+  };
+}
+
 function eventDetail(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -217,33 +437,40 @@ function eventDetail(value: unknown): string | null {
     const parts = [headline, note, action].filter(Boolean) as string[];
     if (parts.length > 0) return parts.join(' | ');
   }
-  return JSON.stringify(value);
+  return null;
 }
 
 function normalizeIncident(value: unknown): DriftIncident {
   const row = objectValue(value, 'Drift incident');
-  const severity = textValue(row.severity, 'Drift incident severity') as IncidentSeverity;
-  const status = textValue(row.status, 'Drift incident status') as IncidentStatus;
+  const id = uuidValue(row.id, 'Drift incident identity');
+  const label = `Drift incident ${id}`;
+  const severity = textValue(row.severity, `${label} severity`) as IncidentSeverity;
+  const status = textValue(row.status, `${label} status`) as IncidentStatus;
   const repair = nullableText(
     row.auto_repair_status,
-    'Drift incident repair status'
+    `${label} repair status`
   ) as AutoRepairStatus | null;
   if (
     !INCIDENT_SEVERITIES.has(severity) ||
     !INCIDENT_STATUSES.has(status) ||
     (repair !== null && !AUTO_REPAIR_STATUSES.has(repair))
   ) {
-    throw new Error('Drift incident state could not be verified');
+    throw new Error(`${label} state could not be verified`);
   }
-  if (!Array.isArray(row.events)) throw new Error('Drift incident events could not be verified');
-  const detectedAt = timestampValue(row.detected_at, 'Drift incident detection time');
-  const deadlineAt = nullableTimestamp(row.deadline_at, 'Drift incident deadline');
-  const resolvedAt = nullableTimestamp(row.resolved_at, 'Drift incident resolution time');
+  if (!Array.isArray(row.events)) throw new Error(`${label} events could not be verified`);
+  const detectedAt = timestampValue(row.detected_at, `${label} detection time`);
+  const deadlineAt = nullableTimestamp(row.deadline_at, `${label} deadline`);
+  const resolvedAt = nullableTimestamp(row.resolved_at, `${label} resolution time`);
   if (
     (deadlineAt !== null && Date.parse(deadlineAt) < Date.parse(detectedAt)) ||
     (resolvedAt !== null && Date.parse(resolvedAt) < Date.parse(detectedAt))
   ) {
-    throw new Error('Drift incident timeline could not be verified');
+    throw new Error(`${label} timeline could not be verified`);
+  }
+  // Reopen deliberately preserves prior acknowledgement fields, so only the
+  // resolution timestamp is status-defining in the server contract.
+  if ((status === 'resolved') !== (resolvedAt !== null)) {
+    throw new Error(`${label} resolution state could not be verified`);
   }
   const metadata =
     row.metadata === null ? null : objectValue(row.metadata, 'Drift incident metadata');
@@ -258,7 +485,8 @@ function normalizeIncident(value: unknown): DriftIncident {
   });
 
   return {
-    id: textValue(row.id, 'Drift incident identity'),
+    id,
+    can_act: booleanValue(row.can_act, 'Drift incident action authority'),
     detected_at: detectedAt,
     deadline_at: deadlineAt,
     classification: textValue(row.classification, 'Drift incident classification'),
@@ -314,29 +542,39 @@ function normalizeMetrics(value: unknown): DriftMetrics {
     'past_target',
     'auto_repairing',
     'resolved_today',
-    'ledger_write_failures_24h',
-    'ledger_rows_today',
   ];
   for (const key of counts) {
-    if (row[key] !== undefined) result[key] = countValue(row[key], `Drift metric ${key}`);
+    result[key] = countValue(row[key], `Drift metric ${key}`);
   }
-  if (row.median_resolve_min !== undefined) {
-    result.median_resolve_min =
-      row.median_resolve_min === null
-        ? null
-        : Math.max(numberValue(row.median_resolve_min, 'Drift resolution median'), 0);
+  result.median_resolve_min =
+    row.median_resolve_min === null
+      ? null
+      : nonnegativeNumber(row.median_resolve_min, 'Drift resolution median');
+  result.worst_open_drift = nonnegativeNumber(row.worst_open_drift, 'Worst open drift');
+  // Global ledger/supply facts are deliberately absent for a scoped
+  // club/union incident recipient. When any one is present, require the whole
+  // server-owned bundle so a partial privileged response cannot look valid.
+  const globalKeys = [
+    'suspense_today',
+    'ledger_write_failures_24h',
+    'supply_unexplained_last',
+    'ledger_rows_today',
+  ] as const;
+  const globalKeyCount = globalKeys.filter((key) => row[key] !== undefined).length;
+  if (globalKeyCount !== 0 && globalKeyCount !== globalKeys.length) {
+    throw new Error('Global drift metrics could not be verified');
   }
-  if (row.worst_open_drift !== undefined) {
-    result.worst_open_drift = Math.max(numberValue(row.worst_open_drift, 'Worst open drift'), 0);
-  }
-  if (row.suspense_today !== undefined) {
+  if (globalKeyCount === globalKeys.length) {
     result.suspense_today = numberValue(row.suspense_today, 'Unclassified flow');
-  }
-  if (row.supply_unexplained_last !== undefined) {
+    result.ledger_write_failures_24h = countValue(
+      row.ledger_write_failures_24h,
+      'Ledger write failures'
+    );
     result.supply_unexplained_last = nullableNumber(
       row.supply_unexplained_last,
       'Latest unexplained supply'
     );
+    result.ledger_rows_today = countValue(row.ledger_rows_today, 'Ledger rows today');
   }
   return result;
 }
@@ -394,9 +632,9 @@ export const DriftIncidentService = {
     const { data, error } = await retryAsync(() => supabase.rpc('fn_ca_gate_panel'));
     if (error) {
       reportError(error, 'DriftIncidentService.getGatePanel');
-      return null;
+      throw error;
     }
-    return (data as GatePanelData) ?? null;
+    return data === null ? null : normalizeGatePanel(data);
   },
 
   /**
@@ -407,19 +645,26 @@ export const DriftIncidentService = {
     entityType: string,
     entityId: string,
     asOfIso: string
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<BalanceAsOfReadout | null> {
+    if (!BALANCE_ENTITY_TYPES.has(entityType as BalanceEntityType)) {
+      throw new Error('Balance reconstruction entity type is invalid');
+    }
+    const verifiedEntityId = uuidValue(entityId, 'Balance reconstruction entity');
+    const verifiedAsOf = timestampValue(asOfIso, 'Balance reconstruction time');
     const { data, error } = await retryAsync(() =>
       supabase.rpc('fn_ca_balance_asof_admin', {
         p_entity_type: entityType,
-        p_entity_id: entityId,
-        p_asof: asOfIso,
+        p_entity_id: verifiedEntityId,
+        p_asof: verifiedAsOf,
       })
     );
     if (error) {
       reportError(error, 'DriftIncidentService.getBalanceAsOf', { entityType, entityId });
       throw error;
     }
-    return data === null ? null : objectValue(data, 'Balance reconstruction');
+    return data === null
+      ? null
+      : normalizeBalanceAsOf(data, entityType as BalanceEntityType, verifiedEntityId, verifiedAsOf);
   },
 
   /**

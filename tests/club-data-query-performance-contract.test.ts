@@ -35,6 +35,10 @@ const playerCoveringIndex = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataPage.tsx'), 'utf8');
+const pageStyles = readFileSync(
+  resolve(__dirname, '../src/pages/club/ClubDataPage.module.css'),
+  'utf8'
+);
 const reportingFacts = readFileSync(
   resolve(
     __dirname,
@@ -481,5 +485,21 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain('useVirtualScroll(sortedPlayers');
     expect(page).toContain('aria-setsize={snapshot?.row_count}');
     expect(page).toContain('aria-setsize={players?.player_count}');
+  });
+
+  it('keeps virtual spacers at their measured height and labels loaded rows truthfully', () => {
+    // `.virtualList` is also a column flexbox. Without a non-shrinking spacer,
+    // the browser collapses the generated top/bottom heights to zero and rows
+    // after the first mounted window can never be reached by scrolling.
+    expect(page.match(/className=\{styles\.virtualSpacer\}/g)).toHaveLength(4);
+    expect(pageStyles).toMatch(/\.virtualSpacer\s*\{[^}]*flex:\s*0 0 auto;/s);
+
+    // These totals describe fetched rows, not the much smaller DOM window.
+    expect(page).toContain(
+      'Loaded {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games'
+    );
+    expect(page).toContain(
+      '` Loaded ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players'
+    );
   });
 });

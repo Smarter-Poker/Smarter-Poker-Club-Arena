@@ -126,7 +126,8 @@ export const STATS_METRIC_DEFINITIONS: Readonly<Record<string, StatsMetricDefini
     unit: 'count',
     source: 'hand_actions',
     minimumSample: 1,
-    definition: 'Hands included in the selected analysis window after the documented cap.',
+    definition:
+      'Every recorded hand in the selected calendar window. Analysis panels may separately use the cap named by the coverage contract.',
   },
   total_profit: {
     key: 'total_profit',

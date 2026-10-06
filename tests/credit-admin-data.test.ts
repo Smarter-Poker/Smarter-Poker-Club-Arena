@@ -47,6 +47,13 @@ describe('Credit admin money is recorded debt, not unused capacity', () => {
     expect(readCreditMoney('1.2300')).toBe(1.23);
   });
 
+  it('keeps exact cents in data while compacting forward-facing chip display', () => {
+    expect(readCreditMoney('100.25')).toBe(100.25);
+    expect(creditAdminMoney(100)).toBe('100');
+    expect(creditAdminMoney(100.25)).toBe('100');
+    expect(creditAdminMoney(1290.99)).toBe('1.2K');
+  });
+
   it('refuses cents lost during number conversion even below the safe integer cent bound', () => {
     expect(readCreditMoney('90071992547409.91')).toBeNull();
     expect(readCreditMoney('90071992547409.90')).toBeNull();

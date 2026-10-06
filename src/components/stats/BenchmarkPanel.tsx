@@ -14,6 +14,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import StatsFactsService, { type DistributionRow } from '../../services/StatsFactsService';
+import { ordinal } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import { benchmark, type BenchmarkResult } from './statBenchmarks';
 import './BenchmarkPanel.css';
 
@@ -190,7 +192,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
                     ? `Top ${Math.max(1, Math.round(100 - r.percentile))}%`
                     : r.percentile <= 10
                       ? `Bottom ${Math.max(1, Math.round(r.percentile))}%`
-                      : `${Math.round(r.percentile)}th`}
+                      : ordinal(Math.round(r.percentile))}
                 </span>
               ) : (
                 <span className={`bench-pill tone-${r.tone}`}>
@@ -199,7 +201,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
               )}
             </div>
             <Bar result={r} />
-            <p className="bench-readout">{r.readout}</p>
+            <p className="bench-readout">{titleCase(r.readout)}</p>
           </li>
         ))}
       </ul>

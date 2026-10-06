@@ -13,7 +13,7 @@
  * club owner could not answer the first question anybody asks about a forced
  * ante: is it bringing players to my tables or driving them away.
  *
- * Data: fn_club_bomb_pot_report — SECURITY DEFINER, gated server-side on the
+ * Data: fn_club_bomb_pot_report_v2 — SECURITY DEFINER, gated server-side on the
  * same owner / co_owner / admin test fn_request_manual_bomb_pot uses, raising
  * ERRCODE 42501 like its siblings. The client gate below is cosmetic.
  *
@@ -64,6 +64,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+const BOMB_POT_REPORT_CONTRACT = 'fn_club_bomb_pot_report.v2';
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function reportText(value: unknown, label: string, nullable = false): string | null {
   if (value === null && nullable) return null;
   if (typeof value !== 'string' || value.length === 0) {
@@ -89,12 +92,45 @@ function reportAmount(value: unknown, label: string, nullable = false): number |
 
 /** A successful RPC response is still untrusted until every row is safe to
  * total, paint and export. */
-export function parseClubBombPotReport(value: unknown): ReportRow[] {
-  if (!Array.isArray(value)) throw new Error('Bomb pot report response is invalid');
+export function parseClubBombPotReport(
+  value: unknown,
+  expectedClubId: string,
+  expectedDays: number
+): ReportRow[] {
+  if (!isRecord(value)) throw new Error('Bomb pot report response is invalid');
+  if (
+    !UUID_TOKEN.test(expectedClubId) ||
+    value.contract !== BOMB_POT_REPORT_CONTRACT ||
+    value.contract_version !== 2 ||
+    value.club_id !== expectedClubId ||
+    value.requested_days !== expectedDays ||
+    value.window_days !== expectedDays
+  ) {
+    throw new Error('Bomb pot report scope receipt is invalid');
+  }
+  const windowStart = reportText(value.window_start, 'window start') as string;
+  const windowEnd = reportText(value.window_end, 'window end') as string;
+  const startMs = Date.parse(`${windowStart}T00:00:00.000Z`);
+  const endMs = Date.parse(`${windowEnd}T00:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(windowStart) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(windowEnd) ||
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    new Date(startMs).toISOString().slice(0, 10) !== windowStart ||
+    new Date(endMs).toISOString().slice(0, 10) !== windowEnd ||
+    (endMs - startMs) / 86_400_000 !== expectedDays ||
+    typeof value.generated_at !== 'string' ||
+    !Number.isFinite(Date.parse(value.generated_at)) ||
+    !Array.isArray(value.rows)
+  ) {
+    throw new Error('Bomb pot report window receipt is invalid');
+  }
   const identities = new Set<string>();
-  return value.map((candidate) => {
+  return value.rows.map((candidate) => {
     if (!isRecord(candidate)) throw new Error('Bomb pot report row is invalid');
     const tableId = reportText(candidate.table_id, 'table identity') as string;
+    if (!UUID_TOKEN.test(tableId)) throw new Error('Bomb pot report table identity is invalid');
     const tableName = reportText(candidate.table_name, 'table name', true);
     const triggerReason = reportText(candidate.trigger_reason, 'trigger', true);
     const variant = reportText(candidate.variant, 'variant', true);
@@ -243,7 +279,7 @@ export default function ClubBombPotReportPage() {
       }
 
       if (!isCurrent()) return;
-      const { data, error: rpcError } = await supabase.rpc('fn_club_bomb_pot_report', {
+      const { data, error: rpcError } = await supabase.rpc('fn_club_bomb_pot_report_v2', {
         p_club_id: resolved,
         p_days: days,
       });
@@ -263,7 +299,10 @@ export default function ClubBombPotReportPage() {
           );
         }
       } else {
-        setSnapshot({ scope: requestScope, rows: parseClubBombPotReport(data) });
+        setSnapshot({
+          scope: requestScope,
+          rows: parseClubBombPotReport(data, resolved, days),
+        });
       }
     } catch (e) {
       if (!isCurrent()) return;
@@ -326,7 +365,7 @@ export default function ClubBombPotReportPage() {
       'table,trigger,boards,variant,hands,avg_players,avg_pot,total_pot,total_rake,total_antes,scoops,splits,unrecorded';
     const body = rows.map((d) =>
       [
-        d.table_name ?? d.table_id,
+        d.table_name ?? 'Table Name Unavailable',
         triggerLabel(d.trigger_reason),
         d.board_count ?? 1,
         d.variant ?? '',
@@ -364,7 +403,7 @@ export default function ClubBombPotReportPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          family="shark"
+          family="spade"
           eyebrow="Bomb Pots"
           title="Club Not Found"
           titleId="bomb-pot-report-title"
@@ -394,7 +433,7 @@ export default function ClubBombPotReportPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          family="shark"
+          family="spade"
           eyebrow="Bomb Pots"
           title="Bomb Pot Report"
           titleId="bomb-pot-report-title"
@@ -532,9 +571,7 @@ export default function ClubBombPotReportPage() {
                   >
                     <div className={styles.recordHead}>
                       <span className={`${styles.recordName} sc-ink--silver`}>
-                        {d.table_name
-                          ? titleCase(d.table_name)
-                          : `Table ${d.table_id.slice(0, 8).toUpperCase()}`}
+                        {d.table_name ? titleCase(d.table_name) : 'Table Name Unavailable'}
                       </span>
                       <span className={`${styles.recordMeta} sc-ink--blue`}>
                         {triggerLabel(d.trigger_reason)}

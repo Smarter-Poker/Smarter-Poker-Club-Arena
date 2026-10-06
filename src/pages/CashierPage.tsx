@@ -2136,13 +2136,6 @@ function CashierContent() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/financial-alerts')}
-                className={`${styles.quickLink} sc-ink--red`}
-              >
-                Alerts
-              </button>
-              <button
-                type="button"
                 onClick={() => clubId && navigate(`/clubs/${clubId}/financials`)}
                 className={`${styles.quickLink} sc-ink--blue`}
               >

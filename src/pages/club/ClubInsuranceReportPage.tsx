@@ -83,6 +83,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+const INSURANCE_REPORT_CONTRACT = 'ca_club_insurance_report.v2';
+const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function reportCount(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`Insurance report ${label} is invalid`);
@@ -135,8 +138,21 @@ function reportTimestamp(value: unknown): string {
 
 /** Bind a report to the requested window and reconcile every exported count
  * and amount before any server success is allowed to paint. */
-export function parseClubInsuranceReport(value: unknown, expectedDays: number): Report {
+export function parseClubInsuranceReport(
+  value: unknown,
+  expectedClubId: string,
+  expectedDays: number
+): Report {
   if (!isRecord(value)) throw new Error('Insurance report response is invalid');
+  if (
+    !UUID_TOKEN.test(expectedClubId) ||
+    value.contract !== INSURANCE_REPORT_CONTRACT ||
+    value.contract_version !== 2 ||
+    value.club_id !== expectedClubId ||
+    value.requested_days !== expectedDays
+  ) {
+    throw new Error('Insurance report scope receipt is invalid');
+  }
   if (value.window_days !== expectedDays) throw new Error('Insurance report window is invalid');
   const windowStart = reportDate(value.window_start, 'window start');
   const windowEnd = reportDate(value.window_end, 'window end');
@@ -403,7 +419,10 @@ export default function ClubInsuranceReportPage() {
           );
         }
       } else {
-        setSnapshot({ scope: requestScope, report: parseClubInsuranceReport(data, days) });
+        setSnapshot({
+          scope: requestScope,
+          report: parseClubInsuranceReport(data, resolved, days),
+        });
       }
     } catch (e) {
       if (!isCurrent()) return;
@@ -471,7 +490,7 @@ export default function ClubInsuranceReportPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          family="riveted"
+          family="spade"
           eyebrow="Insurance"
           title="Club Not Found"
           titleId="insurance-report-title"
@@ -501,7 +520,7 @@ export default function ClubInsuranceReportPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          family="riveted"
+          family="spade"
           eyebrow="Insurance"
           title="Insurance Report"
           titleId="insurance-report-title"

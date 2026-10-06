@@ -28,6 +28,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   DriftIncidentService,
   DriftIncident,
@@ -42,12 +43,15 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
 import { reportError } from '../utils/errorReporter';
 import { compactChips } from '../utils/format';
+import { enumToTitleCase, stripEmDashes, titleCase } from '../utils/titleCase';
+import { isAuthzError } from '../utils/clubDashboard';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import './DriftIncidentsPage.css';
 
 const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
+const INCIDENT_DASHBOARD_LIMIT = 500;
 
 const STATUS_TABS: { key: IncidentStatus; label: string }[] = [
   { key: 'open', label: 'Open' },
@@ -72,12 +76,32 @@ const SEVERITY_INK: Record<string, ConsoleInk> = {
   info: 'blue',
 };
 
+const UUID_TOKEN = /\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi;
+const LONG_MACHINE_TOKEN = /\b[0-9a-f]{24,}\b/gi;
+
+function cleanOperatorText(value: string, maxLength = 240): string {
+  const withoutControls = Array.from(stripEmDashes(value), (character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || (code >= 127 && code <= 159) ? ' ' : character;
+  }).join('');
+  return withoutControls.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function redactMachineIdentifiers(value: string): string {
+  return value
+    .replace(UUID_TOKEN, 'Withheld Reference')
+    .replace(LONG_MACHINE_TOKEN, 'Withheld Reference');
+}
+
 /** HIGH_HAND -> "High Hand" (KNOWN BUG PATTERN: format raw DB enums before display). */
 function formatEnum(value: string): string {
-  return value
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const clean = redactMachineIdentifiers(cleanOperatorText(value)).replace(/[_.:/\\]+/g, ' ');
+  return clean ? enumToTitleCase(clean) : 'Unavailable';
+}
+
+function formatOperatorText(value: string): string {
+  const clean = redactMachineIdentifiers(cleanOperatorText(value)).replace(/_/g, ' ');
+  return clean ? titleCase(clean) : 'Unavailable';
 }
 
 function formatAmount(n: number | null | undefined): string {
@@ -92,10 +116,6 @@ function formatMinutes(mins: number): string {
   return `${h}h ${m}m`;
 }
 
-function shortId(id: string): string {
-  return id.length > 8 ? `${id.slice(0, 8)}...` : id;
-}
-
 export default function DriftIncidentsPage() {
   const { user } = useAuthUser();
   const scopeKey = useCashoutScopeKey(user?.id, 'drift-incidents');
@@ -104,11 +124,15 @@ export default function DriftIncidentsPage() {
 
 function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   const isCurrent = useCashoutScope(actorId, 'drift-incidents');
+  const navigate = useNavigate();
   const toast = useToast();
   useVisibilityRefresh(() => loadIncidents());
 
   const [incidents, setIncidents] = useState<DriftIncident[]>([]);
   const [metrics, setMetrics] = useState<DriftMetrics>({});
+  const [incidentsVerified, setIncidentsVerified] = useState(false);
+  const [incidentsError, setIncidentsError] = useState<string | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<IncidentStatus>('open');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -130,40 +154,79 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const loadingRef = useRef(false);
+  const accessRevokedRef = useRef(false);
+
+  const revokeAccess = useCallback(() => {
+    // A same-user authority change does not remount FinancialAdminGate. Clear
+    // every protected byte immediately on either a read or mutation refusal,
+    // then leave the route. Transport failures may retain last-verified data;
+    // an explicit database authorization refusal may not.
+    accessRevokedRef.current = true;
+    setIncidents([]);
+    setMetrics({});
+    setIncidentsVerified(false);
+    setIncidentsError(null);
+    setMetricsError(null);
+    setExpanded(new Set());
+    setPinned(new Set());
+    setActing(null);
+    setDeepLinkId(null);
+    navigate('/financial-admin', { replace: true });
+  }, [navigate]);
 
   const loadIncidents = useCallback(
     async (getIsMounted?: () => boolean) => {
-      if (loadingRef.current) return;
+      if (loadingRef.current || accessRevokedRef.current) return;
       if (!isCurrent()) {
         setIncidents([]);
         setMetrics({});
+        setIncidentsVerified(false);
+        setIncidentsError(null);
+        setMetricsError(null);
         setLoading(false);
         return;
       }
       loadingRef.current = true;
       setLoading(true);
       try {
-        // Always load ALL statuses: the stat cards need the full picture and
-        // tab filtering happens client-side.
-        const [data, m] = await Promise.all([
-          DriftIncidentService.getDashboard(null, 500),
+        // Dashboard and metrics are independent reads. A metrics outage must
+        // not hide a verified incident queue, and a rejected dashboard must
+        // never be converted into an empty/all-clear result.
+        const [dashboardResult, metricsResult] = await Promise.allSettled([
+          DriftIncidentService.getDashboard(null, INCIDENT_DASHBOARD_LIMIT),
           DriftIncidentService.getMetrics(),
         ]);
         if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
-        setIncidents(data);
-        setMetrics(m);
-      } catch (err) {
-        if (!isCurrent() || (getIsMounted && !getIsMounted())) return;
-        setIncidents([]);
-        setMetrics({});
-        reportError(err, 'DriftIncidentsPage.Failed_to_load_incidents');
-        toast.error('Failed to load drift incidents');
+        const accessRevoked =
+          (dashboardResult.status === 'rejected' && isAuthzError(dashboardResult.reason)) ||
+          (metricsResult.status === 'rejected' && isAuthzError(metricsResult.reason));
+        if (accessRevoked) {
+          revokeAccess();
+          return;
+        }
+        if (dashboardResult.status === 'fulfilled') {
+          setIncidents(dashboardResult.value);
+          setIncidentsVerified(true);
+          setIncidentsError(null);
+        } else {
+          setIncidentsError('Incident Timeline Unavailable. No Clear State Can Be Verified.');
+          reportError(dashboardResult.reason, 'DriftIncidentsPage.Failed_to_load_incidents');
+          toast.error('Failed to verify drift incidents');
+        }
+        if (metricsResult.status === 'fulfilled') {
+          setMetrics(metricsResult.value);
+          setMetricsError(null);
+        } else {
+          setMetrics({});
+          setMetricsError('Live Incident Metrics Are Unavailable.');
+          reportError(metricsResult.reason, 'DriftIncidentsPage.Failed_to_load_metrics');
+        }
       } finally {
         loadingRef.current = false;
         if (isCurrent() && (!getIsMounted || getIsMounted())) setLoading(false);
       }
     },
-    [isCurrent, toast]
+    [isCurrent, revokeAccess, toast]
   );
 
   useEffect(() => {
@@ -293,6 +356,10 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
         incidentId: incident.id,
         action,
       });
+      if (isAuthzError(err)) {
+        revokeAccess();
+        return;
+      }
       toast.error('Incident action failed');
     }
     if (isCurrent()) setActing(null);
@@ -306,6 +373,7 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   const actionsFor = (
     i: DriftIncident
   ): { action: IncidentAction; label: string; ink: ConsoleInk }[] => {
+    if (!i.can_act) return [];
     if (i.status === 'resolved') {
       return [
         { action: 'reopen', label: 'Reopen', ink: 'gold' },
@@ -364,8 +432,34 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   };
 
   // ── Stats (computed over ALL loaded incidents, not just the visible tab) ──
-  const openCount = incidents.filter((i) => i.status === 'open').length;
+  const unresolvedCount = incidents.filter((i) => i.status !== 'resolved').length;
+  const dashboardMayBeTruncated =
+    incidentsVerified && incidents.length === INCIDENT_DASHBOARD_LIMIT;
+  const metricOpenTotal = metrics.open_total;
+  // Metrics owns the full unresolved count. The dashboard is a bounded detail
+  // window, so hitting its ceiling can never be presented as an exact zero or
+  // an all-clear when metrics are unavailable. Separate reads can race; if an
+  // older loaded queue exceeds the live metric, keep that contradiction red.
+  const metricBehindLoadedQueue =
+    metricOpenTotal !== undefined && metricOpenTotal < unresolvedCount;
+  const openCountDisplay = !incidentsVerified
+    ? '--'
+    : metricBehindLoadedQueue
+      ? `${unresolvedCount}+ Loaded`
+      : metricOpenTotal !== undefined
+        ? String(metricOpenTotal)
+        : dashboardMayBeTruncated
+          ? `${unresolvedCount}+`
+          : String(unresolvedCount);
+  const openCountBounded =
+    incidentsVerified && (metricBehindLoadedQueue || metricOpenTotal === undefined);
+  const openNeedsAttention = unresolvedCount > 0 || (metricOpenTotal ?? 0) > 0 || openCountBounded;
   const pastTargetCount = incidents.filter((i) => i.status !== 'resolved' && i.past_target).length;
+  const pastTargetDisplay = !incidentsVerified
+    ? '--'
+    : metrics.past_target !== undefined
+      ? String(metrics.past_target)
+      : `${pastTargetCount}${dashboardMayBeTruncated ? '+' : ''}`;
   const unresolvedWithDrift = incidents.filter(
     (i) => i.status !== 'resolved' && i.discrepancy_amount !== null
   );
@@ -388,6 +482,11 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
       : null;
 
   const countFor = (status: IncidentStatus) => incidents.filter((i) => i.status === status).length;
+  const countLabelFor = (status: IncidentStatus) => {
+    if (!incidentsVerified) return '--';
+    const count = countFor(status);
+    return `${count}${dashboardMayBeTruncated ? '+' : ''}`;
+  };
 
   const filteredIncidents = incidents.filter((i) => i.status === filter || pinned.has(i.id));
 
@@ -398,26 +497,32 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
   const metricRows: { label: string; value: string; ink: ConsoleInk }[] = [
     {
       label: 'Open Incidents',
-      value: String(openCount),
-      ink: openCount > 0 ? 'red' : 'silver',
+      value: openCountDisplay,
+      ink: !incidentsVerified || openNeedsAttention ? 'red' : 'silver',
     },
     {
       label: 'Past 20m Target',
-      value: String(pastTargetCount),
-      ink: pastTargetCount > 0 ? 'red' : 'silver',
+      value: pastTargetDisplay,
+      ink:
+        !incidentsVerified || pastTargetCount > 0 || (metrics.past_target ?? 0) > 0
+          ? 'red'
+          : 'silver',
     },
     {
       label: 'Worst Discrepancy',
       value: worst
         ? `${formatAmount(Math.abs(worst.discrepancy_amount || 0))}${
-            worst.currency ? ` ${worst.currency}` : ''
+            worst.currency ? ` ${formatEnum(worst.currency)}` : ''
           }`
         : '--',
       ink: worst !== null ? 'red' : 'silver',
     },
     {
-      label: 'Avg Resolution Age',
-      value: avgResolutionMins === null ? '--' : formatMinutes(avgResolutionMins),
+      label: dashboardMayBeTruncated ? 'Avg Loaded Resolution Age' : 'Avg Resolution Age',
+      value:
+        avgResolutionMins === null
+          ? '--'
+          : `${formatMinutes(avgResolutionMins)}${dashboardMayBeTruncated ? ' Loaded Window' : ''}`,
       ink: 'silver',
     },
     {
@@ -437,7 +542,8 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
       <StandardContentLayout className="drift-incidents-page">
         <SpadeConsole
           className="di-console"
-          family="shark"
+          family="spade"
+          crest="spade"
           aria-busy
           eyebrow="Club Arena Ops"
           title="Drift Incidents"
@@ -458,12 +564,27 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
       {/* ── The ops readout: six figures as rows on the glass ─────────── */}
       <SpadeConsole
         className="di-console"
-        family="riveted"
+        family="spade"
+        crest="spade"
         aria-busy={loading || undefined}
         eyebrow="Club Arena Ops"
         title="Drift Incidents"
-        pill={loading ? 'Syncing' : openCount > 0 ? `${openCount} Open` : 'Clear'}
-        pillInk={loading ? 'muted' : openCount > 0 ? 'red' : 'green'}
+        pill={
+          loading
+            ? 'Syncing'
+            : incidentsError
+              ? incidentsVerified
+                ? 'Last Verified'
+                : 'Unavailable'
+              : openCountBounded && unresolvedCount === 0
+                ? dashboardMayBeTruncated
+                  ? 'Open Count Bounded'
+                  : 'Open Count Unavailable'
+                : openNeedsAttention
+                  ? `${openCountDisplay} Open`
+                  : 'Clear'
+        }
+        pillInk={loading ? 'muted' : incidentsError || openNeedsAttention ? 'red' : 'green'}
         foot="foot"
       >
         <dl className="di-facts">
@@ -474,6 +595,17 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
             </div>
           ))}
         </dl>
+        {incidentsError && (
+          <p className="sc-copy sc-ink--red" role="alert">
+            {incidentsError}
+            {incidentsVerified ? ' Showing The Last Verified Queue.' : ''}
+          </p>
+        )}
+        {metricsError && (
+          <p className="sc-copy sc-ink--gold" role="status">
+            {metricsError}
+          </p>
+        )}
         {/* ONE ACTION, SO NO PLATES. The foot paints both plates or neither,
             and a single lit refresh would leave the other painted and empty. */}
         <button
@@ -488,9 +620,8 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
       </SpadeConsole>
 
       {/* Burn-In Gate + Supply Trends + Balance As-Of (management only).
-          DriftGatePanel is its own component with its own markup and is not
-          part of this rebuild; it keeps the `dgp-` section of the stylesheet
-          below, untouched. */}
+          It owns one approved spade-crest console and never draws a second
+          frame inside this page's painted chassis. */}
       <DriftGatePanel />
 
       {/* ── The queue ─────────────────────────────────────────────────── */}
@@ -499,8 +630,12 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
         family="spade"
         eyebrow={`${formatEnum(filter)} Queue`}
         title="Incidents"
-        pill={String(filteredIncidents.length)}
-        pillInk={filteredIncidents.length === 0 ? 'muted' : 'blue'}
+        pill={
+          incidentsVerified
+            ? `${filteredIncidents.length}${dashboardMayBeTruncated ? '+' : ''}`
+            : '--'
+        }
+        pillInk={!incidentsVerified || filteredIncidents.length === 0 ? 'muted' : 'blue'}
         foot="foot"
       >
         {/* The four views are lit words cut into the glass. The master paints
@@ -515,27 +650,46 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
               className={`di-rail__word ${filter === tab.key ? 'sc-ink--silver' : 'sc-ink--muted'}`}
               onClick={() => changeFilter(tab.key)}
             >
-              {tab.label} ({countFor(tab.key)})
+              {tab.label} ({countLabelFor(tab.key)})
             </button>
           ))}
         </div>
 
-        {filteredIncidents.length === 0 ? (
+        {!incidentsVerified ? (
           <div className="di-empty">
-            <span className="sc-label sc-ink--green">All Clear</span>
-            <p className="sc-copy sc-copy--center">No {formatEnum(filter)} Incidents.</p>
+            <span className="sc-label sc-ink--red">Queue Unavailable</span>
+            <p className="sc-copy sc-copy--center">
+              Incident Status Could Not Be Verified. Retry Before Making An Operational Decision.
+            </p>
+            <button
+              type="button"
+              className="di-word sc-ink--blue"
+              onClick={() => loadIncidents()}
+              disabled={loading}
+            >
+              Retry
+            </button>
+          </div>
+        ) : filteredIncidents.length === 0 ? (
+          <div className="di-empty">
+            <span className="sc-label sc-ink--muted">
+              {formatEnum(filter)} Queue {dashboardMayBeTruncated ? 'Bounded' : 'Empty'}
+            </span>
+            <p className="sc-copy sc-copy--center">
+              {dashboardMayBeTruncated
+                ? `No ${formatEnum(filter)} Incidents Were Loaded In The Latest ${INCIDENT_DASHBOARD_LIMIT}-Row Window.`
+                : `No ${formatEnum(filter)} Incidents.`}
+            </p>
           </div>
         ) : (
           <ol className="di-list">
             {filteredIncidents.map((incident) => {
               const isExpanded = expanded.has(incident.id);
-              const refChips: { label: string; value: string }[] = [];
-              if (incident.table_id) refChips.push({ label: 'Table', value: incident.table_id });
-              if (incident.tournament_id)
-                refChips.push({ label: 'Tournament', value: incident.tournament_id });
-              if (incident.hand_id) refChips.push({ label: 'Hand', value: incident.hand_id });
-              if (incident.settlement_id)
-                refChips.push({ label: 'Settlement', value: incident.settlement_id });
+              const linkedRecords: string[] = [];
+              if (incident.table_id) linkedRecords.push('Table');
+              if (incident.tournament_id) linkedRecords.push('Tournament');
+              if (incident.hand_id) linkedRecords.push('Hand');
+              if (incident.settlement_id) linkedRecords.push('Settlement');
 
               return (
                 <li key={incident.id} id={`di-${incident.id}`} className="di-row">
@@ -579,7 +733,7 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                       <dt className="di-fact__label sc-label sc-ink--blue">Discrepancy</dt>
                       <dd className="di-fact__value sc-ink--red">
                         {formatAmount(incident.discrepancy_amount)}
-                        {incident.currency ? ` ${incident.currency}` : ''}
+                        {incident.currency ? ` ${formatEnum(incident.currency)}` : ''}
                       </dd>
                     </div>
                     <div className="di-fact">
@@ -609,19 +763,25 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                     {incident.club_name && (
                       <div className="di-fact">
                         <dt className="di-fact__label sc-label sc-ink--blue">Club</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.club_name}</dd>
+                        <dd className="di-fact__value sc-ink--silver">
+                          {formatOperatorText(incident.club_name)}
+                        </dd>
                       </div>
                     )}
                     {incident.union_name && (
                       <div className="di-fact">
                         <dt className="di-fact__label sc-label sc-ink--blue">Union</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.union_name}</dd>
+                        <dd className="di-fact__value sc-ink--silver">
+                          {formatOperatorText(incident.union_name)}
+                        </dd>
                       </div>
                     )}
                     {incident.source && (
                       <div className="di-fact">
                         <dt className="di-fact__label sc-label sc-ink--blue">Source</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.source}</dd>
+                        <dd className="di-fact__value sc-ink--silver">
+                          {formatEnum(incident.source)}
+                        </dd>
                       </div>
                     )}
                     {incident.layer && (
@@ -644,15 +804,10 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                   {isExpanded && (
                     <div className="di-detail">
                       <dl className="di-facts">
-                        {refChips.map((chip) => (
-                          <div key={`${chip.label}-${chip.value}`} className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">{chip.label}</dt>
-                            <dd
-                              className="di-fact__value di-fact__value--mono sc-ink--silver"
-                              title={chip.value}
-                            >
-                              {shortId(chip.value)}
-                            </dd>
+                        {linkedRecords.map((label) => (
+                          <div key={label} className="di-fact">
+                            <dt className="di-fact__label sc-label sc-ink--blue">{label}</dt>
+                            <dd className="di-fact__value sc-ink--silver">Linked Record</dd>
                           </div>
                         ))}
                         {incident.suspected_cause && (
@@ -661,7 +816,7 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                               Suspected Cause
                             </dt>
                             <dd className="di-fact__value sc-ink--silver">
-                              {incident.suspected_cause}
+                              {formatOperatorText(incident.suspected_cause)}
                             </dd>
                           </div>
                         )}
@@ -692,9 +847,7 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                         {incident.assigned_to && (
                           <div className="di-fact">
                             <dt className="di-fact__label sc-label sc-ink--blue">Assigned To</dt>
-                            <dd className="di-fact__value sc-ink--silver">
-                              {incident.assigned_to}
-                            </dd>
+                            <dd className="di-fact__value sc-ink--silver">Assigned Operator</dd>
                           </div>
                         )}
                         {incident.acknowledged_at && (
@@ -702,28 +855,30 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                             <dt className="di-fact__label sc-label sc-ink--blue">Acknowledged</dt>
                             <dd className="di-fact__value sc-ink--silver">
                               {new Date(incident.acknowledged_at).toLocaleString()}
-                              {incident.acknowledged_by ? ` By ${incident.acknowledged_by}` : ''}
+                              {incident.acknowledged_by ? ' By Authorized Operator' : ''}
                             </dd>
                           </div>
                         )}
                         {incident.root_cause && (
                           <div className="di-fact">
                             <dt className="di-fact__label sc-label sc-ink--blue">Root Cause</dt>
-                            <dd className="di-fact__value sc-ink--silver">{incident.root_cause}</dd>
+                            <dd className="di-fact__value sc-ink--silver">
+                              {formatOperatorText(incident.root_cause)}
+                            </dd>
                           </div>
                         )}
                         {incident.correction_ref && (
                           <div className="di-fact">
                             <dt className="di-fact__label sc-label sc-ink--blue">Correction Ref</dt>
-                            <dd className="di-fact__value di-fact__value--mono sc-ink--silver">
-                              {incident.correction_ref}
-                            </dd>
+                            <dd className="di-fact__value sc-ink--silver">Recorded</dd>
                           </div>
                         )}
                         {incident.resolution && (
                           <div className="di-fact">
                             <dt className="di-fact__label sc-label sc-ink--blue">Resolution</dt>
-                            <dd className="di-fact__value sc-ink--silver">{incident.resolution}</dd>
+                            <dd className="di-fact__value sc-ink--silver">
+                              {formatOperatorText(incident.resolution)}
+                            </dd>
                           </div>
                         )}
                       </dl>
@@ -748,11 +903,13 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                                   {new Date(ev.at).toLocaleString()}
                                 </span>
                                 {ev.actor && (
-                                  <span className="di-event__actor sc-ink--muted">{ev.actor}</span>
+                                  <span className="di-event__actor sc-ink--muted">
+                                    Authorized Operator
+                                  </span>
                                 )}
                                 {ev.detail && (
                                   <span className="di-event__detail sc-ink--muted">
-                                    {ev.detail}
+                                    {formatOperatorText(ev.detail)}
                                   </span>
                                 )}
                               </div>
@@ -763,26 +920,35 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
                       {incident.metadata && Object.keys(incident.metadata).length > 0 && (
                         <details className="di-metadata">
                           <summary className="sc-label sc-ink--blue">Metadata</summary>
-                          <pre>{JSON.stringify(incident.metadata, null, 2)}</pre>
+                          <p className="sc-copy sc-ink--muted">
+                            Additional Metadata Is Retained In The Durable Incident Record And
+                            Withheld From This Operator View.
+                          </p>
                         </details>
                       )}
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="di-row__actions">
-                    {actionsFor(incident).map((btn) => (
-                      <button
-                        key={btn.action}
-                        type="button"
-                        className={`di-word sc-ink--${btn.ink}`}
-                        disabled={acting !== null}
-                        onClick={() => handleAction(incident, btn.action)}
-                      >
-                        {acting === `${incident.id}:${btn.action}` ? 'Working...' : btn.label}
-                      </button>
-                    ))}
-                  </div>
+                  {/* A platform reader is not automatically a registered
+                      incident actor. Never paint a control the server will
+                      refuse; the receipt explicitly supplies can_act. */}
+                  {incident.can_act ? (
+                    <div className="di-row__actions">
+                      {actionsFor(incident).map((btn) => (
+                        <button
+                          key={btn.action}
+                          type="button"
+                          className={`di-word sc-ink--${btn.ink}`}
+                          disabled={acting !== null}
+                          onClick={() => handleAction(incident, btn.action)}
+                        >
+                          {acting === `${incident.id}:${btn.action}` ? 'Working...' : btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="sc-copy sc-ink--muted">Read Only For This Operator</p>
+                  )}
                 </li>
               );
             })}

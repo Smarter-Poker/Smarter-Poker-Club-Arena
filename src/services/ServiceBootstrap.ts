@@ -96,12 +96,12 @@ export async function bootServices(_options?: {
     '[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)'
   );
 
-  // 4. No financial schedule runs in a browser (2026-10-05). The old
-  //    FinancialCronService.start() here ran a credit-suspension scan of
-  //    `agents` in every tab, signed out included, which is where the
-  //    "permission denied for table agents" errors came from. The admin runs
-  //    that check on demand from FinancialHealthPage; `financialCron` stays in
-  //    BootResult as a compatibility field and is always false.
+  // 4. No financial schedule or estate-wide credit scan runs in a browser
+  //    (2026-10-06). The retired client service queried `agents` from every
+  //    tab, signed out included, which is where the "permission denied for
+  //    table agents" errors came from. FinancialHealthPage reports the absent
+  //    server-owned scan honestly; `financialCron` stays in BootResult as a
+  //    compatibility field and is always false.
 
   // 5. Warm only the auth-token cache. Opening /ws/multi here made every
   //    authenticated route depend on the game engine even when the player was

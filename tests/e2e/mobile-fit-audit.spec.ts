@@ -37,6 +37,7 @@ const ROUTES = [
   'community',
   'data',
   'disputes',
+  'financial-admin',
   'financial-alerts',
   'financial-health',
   'flash-pool',

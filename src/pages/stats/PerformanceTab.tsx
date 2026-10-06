@@ -18,6 +18,7 @@ import type { StatsMetricAvailabilityContract } from '../../services/statsContra
 import { formatRateEvidence, formatSampleEvidence } from './binomialConfidence';
 import type { CashOpportunityStats } from '../../services/StatsFactsService';
 import type { CashEvidenceMetric } from '../../components/stats/CashIntelligencePanel';
+import { compactChips } from '../../utils/format';
 
 const EVLuckChart = lazy(() => import('../../components/stats/EVLuckChart'));
 const CashIntelligencePanel = lazy(() => import('../../components/stats/CashIntelligencePanel'));
@@ -110,14 +111,22 @@ export default function PerformanceTab({
         <div className="stats-grid">
           <StatRow
             label="VPIP"
-            value={`${(overall.vpip * 100).toFixed(1)}%`}
+            value={ratioOrUnmeasured(
+              overall.vpip,
+              overall.total_hands,
+              (v) => `${(v * 100).toFixed(1)}%`
+            )}
             color="#00d4ff"
             scope={SCOPE_ALL_GAMES}
             evidence={formatRateEvidence(overall.vpip, overall.total_hands)}
           />
           <StatRow
             label="PFR"
-            value={`${(overall.pfr * 100).toFixed(1)}%`}
+            value={ratioOrUnmeasured(
+              overall.pfr,
+              overall.total_hands,
+              (v) => `${(v * 100).toFixed(1)}%`
+            )}
             color="#8b5cf6"
             scope={SCOPE_ALL_GAMES}
             evidence={formatRateEvidence(overall.pfr, overall.total_hands)}
@@ -209,7 +218,7 @@ export default function PerformanceTab({
               metricAvailability?.aggression_factor !== true
                 ? NOT_YET_MEASURED
                 : ratioOrUnmeasured(overall.aggression_factor, overall.total_hands, (v) =>
-                    v.toFixed(2)
+                    v.toFixed(1)
                   )
             }
             color="#f59e0b"
@@ -241,38 +250,38 @@ export default function PerformanceTab({
         <div className="stats-grid">
           <StatRow
             label="Cash Profit"
-            value={overall.total_profit.toLocaleString()}
+            value={compactChips(overall.total_profit)}
             color="#22c55e"
             highlight
           />
           <StatRow
             label="BB/100"
-            value={ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(2))}
+            value={ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(1))}
             color="#4169E1"
             scope={SCOPE_CASH}
             evidence={formatSampleEvidence(overall.cash_hands, 'Cash Hand')}
           />
           <StatRow
             label="Total Won"
-            value={overall.total_winnings.toLocaleString()}
+            value={compactChips(overall.total_winnings)}
             color="#10b981"
             scope={SCOPE_CASH}
           />
           <StatRow
             label="Total Invested"
-            value={overall.total_invested.toLocaleString()}
+            value={compactChips(overall.total_invested)}
             color="#06b6d4"
             scope={SCOPE_CASH}
           />
           <StatRow
             label="Biggest Pot Won"
-            value={overall.biggest_pot_won.toLocaleString()}
+            value={compactChips(overall.biggest_pot_won)}
             color="#10b981"
             scope={SCOPE_CASH}
           />
           <StatRow
             label="Biggest Hand Loss"
-            value={overall.biggest_hand_loss.toLocaleString()}
+            value={compactChips(overall.biggest_hand_loss)}
             color="#ef4444"
             scope={SCOPE_CASH}
           />

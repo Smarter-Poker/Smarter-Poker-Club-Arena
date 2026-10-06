@@ -66,7 +66,7 @@ import { ratioOrUnmeasured } from './stats/format';
 import { RANGES, num, str, type FullStats, type HandMode, type HandRow } from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useStatsPulse } from '../hooks/useStatsPulse';
-import { resolvedTimeZone, localDateFromYmd } from '../lib/localTime';
+import { resolvedTimeZone } from '../lib/localTime';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
@@ -84,11 +84,6 @@ import {
   normalizeStatsContractMetadata,
   statsContractMatchesRequest,
 } from '../services/statsContract';
-import {
-  exportStatsOverview,
-  exportStatsSessions,
-  type StatsExportMetadata,
-} from './stats/statsCsvExport';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
 import {
@@ -105,8 +100,8 @@ import {
   EMPTY_OVERALL,
   TAB_LABELS,
   getCachedFull,
+  isFullStatsPayload,
   normalizeFull,
-  normalizeHands,
   normalizeDashboardLayout,
   setCachedFull,
   validClubSort,
@@ -309,6 +304,7 @@ export default function PlayerStatsPage() {
       import('./stats/TournamentsTab'),
       import('./stats/AnalysisTab'),
       import('../components/stats/StatsCharts'),
+      import('../components/stats/StatsPositionPiePlot'),
       import('../components/stats/EVLuckChart'),
       import('../components/stats/BankrollTracker'),
       import('../components/stats/PositionWinRates'),
@@ -751,7 +747,7 @@ export default function PlayerStatsPage() {
         clearStatsRangeMemo();
       } else {
         const memoPayload = readStatsRangeMemo(cacheIdentityFor(rangeKey, windowDays));
-        const memo = memoPayload ? normalizeFull(memoPayload) : null;
+        const memo = isFullStatsPayload(memoPayload) ? normalizeFull(memoPayload) : null;
         if (memo) {
           setFull(memo);
           loadedRangeKeyRef.current = loadScopeKey;
@@ -810,7 +806,8 @@ export default function PlayerStatsPage() {
           timezone: statsTimezone,
           visibility: 'owner',
         });
-        if (!error && data && data.overall && scopeMatches) {
+        const payloadMatches = isFullStatsPayload(data);
+        if (!error && scopeMatches && payloadMatches) {
           const resolved = normalizeFull(data);
           const loadedAt = resolved.contract.generated_at
             ? Date.parse(resolved.contract.generated_at)
@@ -840,29 +837,9 @@ export default function PlayerStatsPage() {
             cache_source: 'network',
             outcome: 'success',
           });
-          // A PAGE VIEW MUST NOT TRIGGER A MAINTENANCE JOB. (removed 2026-08-24)
-          //
-          // This used to fire ca_refresh_hand_player_index({ p_max_hands: 3000 })
-          // whenever a player opened their stats page. The comment claimed the
-          // batch was "sized to finish inside the 8s statement_timeout".
-          // Production disagreed: pg_stat_statements put that RPC at a 73,901 ms
-          // MEAN and a 173,487 ms max, and it was caught live in pg_stat_activity
-          // at 26.9s waiting on IO/DataFileRead - i.e. dragging the 10GB
-          // hand_history table off disk and evicting everyone else's working set
-          // from shared_buffers. That is why unrelated queries all over the
-          // platform went slow at once; a trivial PostgREST health probe was
-          // taking 14.4 SECONDS while raw Postgres answered the same shape in
-          // 0.17ms.
-          //
-          // The 5-minute guard below did not bound it either: lastIndexRefreshRef
-          // is per component instance, so it throttled one tab, not the platform.
-          //
-          // It is already done properly server-side:
-          // pages/api/cron/club-stats-maintenance.js runs the same RPC every 15
-          // minutes with p_max_hands: 60000, under service_role, off the request
-          // path. That route's own comment records the decision to own it there.
-          // So this call was redundant as well as harmful, and the index it
-          // maintains stays just as fresh without it.
+          // A page view must never run index maintenance. The retired client RPC
+          // exceeded the authenticated timeout and evicted the shared Postgres
+          // working set; the server-owned maintenance path owns that work.
         } else {
           if (hasStatsRef.current && loadedRangeKeyRef.current === loadScopeKey) {
             // Something is already on screen (cache or an earlier load). Keep it,
@@ -875,6 +852,16 @@ export default function PlayerStatsPage() {
             setLoadError(true);
           }
           if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_overview_v2');
+          else if (!scopeMatches || !payloadMatches) {
+            reportError(
+              new Error(
+                scopeMatches
+                  ? 'Player Stats Payload Could Not Be Verified'
+                  : 'Player Stats Scope Could Not Be Verified'
+              ),
+              'PlayerStatsPage.rpc_ca_player_stats_overview_v2'
+            );
+          }
           capture('stats_rpc_load', {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: 0,
@@ -947,40 +934,55 @@ export default function PlayerStatsPage() {
     let alive = true;
     setHandsLoading(true);
     setHandsError(false);
-    supabase
-      .rpc(statsRpcName('ca_player_hands_v2', selectedClubId), {
-        ...statsScopeArgs(statsScope, selectedClubId),
-        p_user: targetUserId,
-        p_mode: handMode,
-        p_limit: 10,
-      })
-      .then(
-        ({ data, error }: any) => {
-          if (!alive || !isMounted.current) return;
-          if (error) {
-            // An empty list and a failed read are different statements. This
-            // used to render both as "No Hands In This Range Yet." - the same
-            // lie about a player's history that this page was rebuilt to stop
-            // telling, reintroduced one section further down.
-            reportError(error, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+    Promise.all([
+      supabase
+        .rpc(statsRpcName('ca_player_hands_v2', selectedClubId), {
+          ...statsScopeArgs(statsScope, selectedClubId),
+          p_user: targetUserId,
+          p_mode: handMode,
+          p_limit: 10,
+        })
+        .then((result: any) => result),
+      import('./stats/notableHandsContract'),
+    ]).then(
+      ([{ data, error }, { normalizeHands }]) => {
+        if (!alive || !isMounted.current) return;
+        if (error) {
+          // An empty list and a failed read are different statements. This
+          // used to render both as "No Hands In This Range Yet." - the same
+          // lie about a player's history that this page was rebuilt to stop
+          // telling, reintroduced one section further down.
+          reportError(error, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+          setHandsError(true);
+          setHands([]);
+        } else {
+          const verifiedHands = normalizeHands(data, {
+            targetUserId,
+            clubId: selectedClubId,
+            asset: statsScope,
+            visibility: 'owner',
+          });
+          if (verifiedHands === null) {
+            reportError(
+              new Error('notable hands payload did not match its v2 request contract'),
+              'PlayerStatsPage.rpc_ca_player_hands_v2_shape'
+            );
             setHandsError(true);
             setHands([]);
           } else {
-            // The only place on this page that formats numbers straight off the
-            // wire. `as HandRow[]` is a compile-time claim, not a runtime one,
-            // so harden here the way normalizeFull hardens the main payload.
-            setHands(normalizeHands(data));
+            setHands(verifiedHands);
           }
-          setHandsLoading(false);
-        },
-        (err: unknown) => {
-          if (!alive || !isMounted.current) return;
-          reportError(err, 'PlayerStatsPage.rpc_ca_player_hands_v2');
-          setHandsError(true);
-          setHands([]);
-          setHandsLoading(false);
         }
-      );
+        setHandsLoading(false);
+      },
+      (err: unknown) => {
+        if (!alive || !isMounted.current) return;
+        reportError(err, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+        setHandsError(true);
+        setHands([]);
+        setHandsLoading(false);
+      }
+    );
     return () => {
       alive = false;
     };
@@ -1007,23 +1009,8 @@ export default function PlayerStatsPage() {
       behavior: reduceMotion ? 'auto' : 'smooth',
     });
   }, [category, reduceMotion]);
-  /* Kept current for the debouncer and the in-flight replay above.
-   *
-   * ASSIGNED IN A LAYOUT EFFECT, NOT DURING RENDER. This used to be a bare
-   * `loadRef.current = loadAllData` at render scope. Mutating a ref while
-   * rendering is a side effect in a function React is allowed to call more than
-   * once and to throw away - StrictMode double-invokes it in development, and
-   * concurrent rendering may abandon a render entirely - so an abandoned render
-   * could leave the ref pointing at a loader belonging to state that was never
-   * committed. That is precisely the stale-closure bug the ref exists to prevent,
-   * reintroduced one level up.
-   *
-   * useLayoutEffect runs synchronously after every commit and before paint, and
-   * both readers are post-commit: one is inside an async load's `finally`, the
-   * other inside a setTimeout owned by a MasterBus subscription created in a
-   * passive effect. Passive effects run after layout effects, so the ref is
-   * always populated before anything can read it.
-   */
+  /* Keep the shared debouncer on the last committed loader. Assigning during
+   * render lets an abandoned concurrent render publish a stale closure. */
   useLayoutEffect(() => {
     loadRef.current = loadAllData;
   });
@@ -1033,23 +1020,9 @@ export default function PlayerStatsPage() {
   useLayoutEffect(() => {
     activeClubIdRef.current = selectedClubId;
   }, [selectedClubId]);
-  /**
-   * ── ONE debounce window for everything that says "something changed" ────
-   *
-   * MEASURED 2026-08-25. The underlying overview rollup costs 2.6s warm and 15s
-   * COLD for a heavy account, against an 8s statement_timeout on the
-   * `authenticated` role. This used to be five INDEPENDENT `subscribeDebounced`
-   * calls, each with its own 2000ms window - and a single completed hand emits
-   * HAND_COMPLETED, BALANCE_UPDATED and CHIPS_DISTRIBUTED within milliseconds
-   * of each other. Three windows, three refetches per hand, plus the
-   * pendingRefreshRef replay for a fourth. One shared debouncer collapses
-   * that to one, and the pulse below feeds the same window, so a hand that
-   * arrives by both routes still costs one refetch.
-   *
-   * The loader goes through loadRef so the timer always calls the CURRENT
-   * loader: `loadAllData` closes over `rangeKey`, and firing a stale copy
-   * refetches the previous window and overwrites newer data with it.
-   */
+  /** One debounce window collapses the several events emitted by one hand and
+   * the pulse fallback into one read. The committed loadRef prevents an old
+   * range closure from overwriting the current window. */
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleRefresh = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -1153,7 +1126,7 @@ export default function PlayerStatsPage() {
   useEffect(() => {
     if (!targetUserId || !isOwnProfile || !wantsAllTime || rangeKey === 'all') return;
     const memoPayload = readStatsRangeMemo(cacheIdentityFor('all', null));
-    if (memoPayload) {
+    if (isFullStatsPayload(memoPayload)) {
       const memo = normalizeFull(memoPayload);
       setAllTimeFetched(memo);
       setAllTimeError(false);
@@ -1173,8 +1146,27 @@ export default function PlayerStatsPage() {
         ({ data, error }: any) => {
           if (cancelled || !isMounted.current) return;
           const contract = normalizeStatsContractMetadata(data);
-          if (error || !data?.overall || !contract.valid) {
+          const scopeMatches = statsContractMatchesRequest(contract, {
+            targetUserId,
+            clubId: selectedClubId,
+            asset: statsScope,
+            rangeDays: null,
+            timezone: statsTimezone,
+            visibility: 'owner',
+          });
+          const payloadMatches = isFullStatsPayload(data);
+          if (error || !scopeMatches || !payloadMatches) {
             if (error) reportError(error, 'PlayerStatsPage.rpc_all_time_for_trophies');
+            else {
+              reportError(
+                new Error(
+                  scopeMatches
+                    ? 'Player Stats Lifetime Payload Could Not Be Verified'
+                    : 'Player Stats Lifetime Scope Could Not Be Verified'
+                ),
+                'PlayerStatsPage.rpc_all_time_for_trophies'
+              );
+            }
             setAllTimeError(true);
             return;
           }
@@ -1345,51 +1337,6 @@ export default function PlayerStatsPage() {
       ),
     [overall]
   );
-  // Chart series with cumulative line
-  const dailySeries = useMemo(() => {
-    let cumulative = 0;
-    return (full?.daily || []).map((d) => {
-      cumulative += d.profit || 0;
-      return {
-        // 'YYYY-MM-DD' is a LOCAL day the server cut in the player's zone;
-        // new Date('YYYY-MM-DD') would read it as UTC midnight and label a
-        // Chicago player's Sep 3 as Sep 2.
-        date: localDateFromYmd(d.date).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }),
-        profit: d.profit || 0,
-        hands: d.hands || 0,
-        cumulative: Math.round(cumulative * 100) / 100,
-      };
-    });
-  }, [full]);
-  const positionPie = useMemo(
-    () =>
-      (full?.positions || [])
-        .filter((p) => p.hands_won > 0)
-        .map((p) => ({ name: p.position, value: p.hands_won })),
-    [full]
-  );
-  /** Text alternatives for the three charts, from the same memos they plot. */
-  const profitChartSummary = useMemo(() => {
-    if (dailySeries.length === 0) return 'No cash results in this range.';
-    const last = dailySeries[dailySeries.length - 1];
-    const best = dailySeries.reduce((a, b) => (b.profit > a.profit ? b : a));
-    const worst = dailySeries.reduce((a, b) => (b.profit < a.profit ? b : a));
-    return `Cumulative cash profit across ${dailySeries.length.toLocaleString()} days, ${dailySeries[0].date} to ${last.date}, ending at ${last.cumulative.toLocaleString()}. Best day ${best.date} at ${best.profit.toLocaleString()}. Worst day ${worst.date} at ${worst.profit.toLocaleString()}.`;
-  }, [dailySeries]);
-  const dailyChartSummary = useMemo(() => {
-    if (dailySeries.length === 0) return 'No daily results in this range.';
-    const up = dailySeries.filter((d) => d.profit > 0).length;
-    return `Daily cash result for ${dailySeries.length.toLocaleString()} days. ${up.toLocaleString()} winning days, ${(dailySeries.length - up).toLocaleString()} losing or break-even.`;
-  }, [dailySeries]);
-  const positionChartSummary = useMemo(() => {
-    if (positionPie.length === 0) return 'No positional data in this range.';
-    return `Hands won by position: ${positionPie
-      .map((p) => `${p.name} ${p.value.toLocaleString()}`)
-      .join(', ')}.`;
-  }, [positionPie]);
   const intelligenceBrief = useMemo(
     () =>
       buildStatsIntelligenceBrief({
@@ -1457,116 +1404,6 @@ export default function PlayerStatsPage() {
         />
       </Suspense>
     ) : null;
-  const exportMetadata = (): StatsExportMetadata => ({
-    clubId: selectedClubId,
-    clubName: clubLabel,
-    range: rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`,
-    timezone: statsTimezone,
-    asset: statsScope,
-    unit: statsScope,
-    coverage: JSON.stringify({
-      analysis_hand_cap: statsContract.coverage.analysis_hand_cap,
-      analysis_hands_capped: statsContract.coverage.analysis_hands_capped,
-      lifetime_index_complete: statsContract.coverage.lifetime_index_complete,
-      rollup_covered_through: statsContract.coverage.rollup_covered_through,
-      club_breakdown_starts_at: statsContract.quality.club_breakdown_starts_at,
-    }),
-    source: statsContract.quality.cash_money_source,
-    schemaVersion: statsContract.contract_version,
-    generatedAt: statsContract.generated_at,
-    privacyPresentationMode,
-  });
-  const exportSessionsCSV = () => {
-    try {
-      // buy_in, cash_out and ended are on every SessionRow and were dropped.
-      // They are the figures anyone reconciling a bankroll in a spreadsheet
-      // actually needs - profit alone cannot tell you what you sat down with.
-      // Appended, not inserted, so an existing import template still works.
-      // The range is recorded too: a file exported under "7 Days" was
-      // indistinguishable from a lifetime export once it left the browser.
-      exportStatsSessions(
-        sessionRows.map((s) => ({
-          date: new Date(s.date).toLocaleString(),
-          ended: s.ended ? new Date(s.ended).toLocaleString() : '',
-          duration_minutes: s.duration_minutes,
-          hands: s.hands_played,
-          buy_in: s.buy_in,
-          cash_out: s.cash_out,
-          profit: s.profit_loss,
-        })),
-        exportMetadata(),
-        `player_session_history_${selectedClubId ?? 'all_clubs'}_${rangeKey}.csv`
-      );
-    } catch (e) {
-      reportError(e, 'PlayerStatsPage.exportSessionsCSV');
-    }
-  };
-  const exportOverviewCSV = () => {
-    try {
-      // The RPC returns rates as fractions. Export them the way the page shows
-      // them (percentages, with a unit column) so CSV and screen agree.
-      const RATE_FIELDS = new Set([
-        'vpip',
-        'pfr',
-        'three_bet_percent',
-        'fold_to_three_bet',
-        'cbet_flop',
-        'wtsd',
-        'itm_percent',
-        'roi',
-      ]);
-      const source: Record<string, unknown> = {
-        ...overall,
-        three_bet_percent:
-          selectedClubId && !statsContract.quality.metric_availability.three_bet_percent
-            ? 'Unavailable'
-            : overall.three_bet_percent,
-        fold_to_three_bet:
-          selectedClubId && !statsContract.quality.metric_availability.fold_to_three_bet
-            ? 'Unavailable'
-            : overall.fold_to_three_bet,
-        cbet_flop:
-          selectedClubId && !statsContract.quality.metric_availability.cbet_flop
-            ? 'Unavailable'
-            : overall.cbet_flop,
-        aggression_factor:
-          selectedClubId && !statsContract.quality.metric_availability.aggression_factor
-            ? 'Unavailable'
-            : overall.aggression_factor,
-        wtsd:
-          selectedClubId && !statsContract.quality.metric_availability.wtsd
-            ? 'Unavailable'
-            : overall.wtsd,
-        hours_played:
-          selectedClubId && !statsContract.quality.metric_availability.hours_played
-            ? 'Unavailable'
-            : overall.hours_played,
-        tournament_entries: tourn.entries,
-        tournament_cashes: tourn.cashes,
-        tournament_wins: tourn.wins,
-        tournament_best_finish: tourn.best_finish ?? '',
-        tournament_total_buyins: tourn.total_buyins,
-        tournament_total_winnings: tourn.total_winnings,
-        /* Section 37: the export carries the halves as well as the sum, so a
-           spreadsheet can separate placement money from bounty money without
-           re-deriving one from the other. */
-        tournament_total_prizes: tourn.total_prizes,
-        tournament_total_bounty_winnings: tourn.total_bounty_winnings,
-        tournament_total_bounties: tourn.total_bounties,
-        tournament_net_profit: tourn.net_profit,
-        itm_percent: tourn.itm_percent,
-        roi: tourn.roi,
-      };
-      exportStatsOverview(
-        source,
-        RATE_FIELDS,
-        exportMetadata(),
-        `player_stats_overview_${selectedClubId ?? 'all_clubs'}_${rangeKey}.csv`
-      );
-    } catch (e) {
-      reportError(e, 'PlayerStatsPage.exportOverviewCSV');
-    }
-  };
   if (!isOwnProfile) {
     return (
       <SharedClubStatsView
@@ -1940,16 +1777,17 @@ export default function PlayerStatsPage() {
                     rangeLabel={rangeLabel}
                     printing={printing}
                     advancedInitialData={advancedInitialData}
-                    dailySeries={dailySeries}
-                    positionPie={positionPie}
-                    profitChartSummary={profitChartSummary}
-                    dailyChartSummary={dailyChartSummary}
-                    positionChartSummary={positionChartSummary}
                     sessionRows={sessionRows}
                     sessionsAvailable={statsContract.quality.section_availability.sessions}
                     sessionsReason={statsContract.quality.section_availability.sessions_reason}
-                    exportSessionsCSV={exportSessionsCSV}
-                    exportOverviewCSV={exportOverviewCSV}
+                    exportContext={{
+                      clubName: clubLabel,
+                      timezone: statsTimezone,
+                      asset: statsScope,
+                      contract: statsContract,
+                      tournaments: tourn,
+                      privacyPresentationMode,
+                    }}
                     handMode={handMode}
                     setHandMode={setHandMode}
                     hands={hands}

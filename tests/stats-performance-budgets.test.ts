@@ -19,6 +19,7 @@ describe('Stats performance budgets', () => {
       'TournamentsTab',
       'AnalysisTab',
       'StatsCharts',
+      'StatsPositionPiePlot',
       'EVLuckChart',
       'BankrollTracker',
       'PositionWinRates',

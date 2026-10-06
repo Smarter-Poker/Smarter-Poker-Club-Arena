@@ -28,6 +28,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
+import { compactChips } from '../../utils/format';
 import './BankrollTracker.css';
 
 interface BankrollDataPoint {
@@ -148,7 +149,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
           <div className="amount-value" style={{ color: trendColor }}>
             <span className="amount-number">
               {totalProfit > 0 ? '+' : ''}
-              {totalProfit.toLocaleString()}
+              {compactChips(totalProfit)}
             </span>
           </div>
           <span className="amount-period">{windowLabel}</span>
@@ -180,7 +181,11 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               stroke={still ? '#374151' : 'rgba(255,255,255,0.5)'}
               fontSize={11}
             />
-            <YAxis stroke={still ? '#374151' : 'rgba(255,255,255,0.5)'} fontSize={11} />
+            <YAxis
+              stroke={still ? '#374151' : 'rgba(255,255,255,0.5)'}
+              fontSize={11}
+              tickFormatter={(value) => compactChips(Number(value))}
+            />
             <Tooltip
               contentStyle={{
                 background: 'rgba(14, 14, 28, 0.95)',
@@ -190,9 +195,9 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               labelStyle={{ color: '#fff' }}
               formatter={(value, name) => {
                 if (name === 'Cumulative Session P/L')
-                  return [Number(value).toLocaleString(), 'Cumulative Session P/L'];
+                  return [compactChips(Number(value)), 'Cumulative Session P/L'];
                 if (name === '7 Session Average')
-                  return [Number(value).toLocaleString(), '7 Session Avg'];
+                  return [compactChips(Number(value)), '7 Session Avg'];
                 return [String(value), String(name)];
               }}
             />
@@ -231,13 +236,13 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
           <div className="stat-card stat-card--peak">
             <div className="stat-content">
               <span className="stat-label">Window High</span>
-              <span className="stat-value">{peak.toLocaleString()}</span>
+              <span className="stat-value">{compactChips(peak)}</span>
             </div>
           </div>
           <div className="stat-card stat-card--trough">
             <div className="stat-content">
               <span className="stat-label">Window Low</span>
-              <span className="stat-value">{trough.toLocaleString()}</span>
+              <span className="stat-value">{compactChips(trough)}</span>
             </div>
           </div>
           <div className="stat-card stat-card--drawdown">
@@ -247,7 +252,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
                 className="stat-value"
                 style={{ color: maxDrawdown > 0 ? '#ef4444' : '#8a9aaa' }}
               >
-                {maxDrawdown > 0 ? `-${maxDrawdown.toLocaleString()}` : '0'}
+                {maxDrawdown > 0 ? `-${compactChips(maxDrawdown)}` : '0'}
               </span>
             </div>
           </div>
@@ -256,7 +261,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({
               <span className="stat-label">Window P/L</span>
               <span className="stat-value" style={{ color: trendColor }}>
                 {totalProfit > 0 ? '+' : ''}
-                {totalProfit.toLocaleString()}
+                {compactChips(totalProfit)}
               </span>
             </div>
           </div>

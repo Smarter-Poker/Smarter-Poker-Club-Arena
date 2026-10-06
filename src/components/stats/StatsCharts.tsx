@@ -19,10 +19,11 @@
  * print dossier renders every tab at once, so `printing` forces this to mount
  * even from Overview - see showTab() on the page.
  *
- * Everything here is presentational. The memos it renders (dailySeries,
- * positionPie and the three screen-reader summaries) stay on the page, because
- * the CSV exports and the empty-state logic read them too.
+ * Everything here is presentational. The Analysis tab owns the series and
+ * screen-reader summaries; the optional polar renderer has its own lazy edge.
  */
+
+import { lazy, Suspense } from 'react';
 
 import {
   ResponsiveContainer,
@@ -30,8 +31,6 @@ import {
   Area,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
   Cell,
   XAxis,
   YAxis,
@@ -39,8 +38,9 @@ import {
   Tooltip,
 } from 'recharts';
 import StatsDataTable from './StatsDataTable';
+import { compactChips } from '../../utils/format';
 
-const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
+const StatsPositionPiePlot = lazy(() => import('./StatsPositionPiePlot'));
 
 export interface StatsChartsProps {
   dailySeries: Array<{ date: string; profit: number; cumulative: number; hands: number }>;
@@ -123,7 +123,11 @@ export default function StatsCharts({
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
-              <YAxis stroke={axisStroke} fontSize={11} />
+              <YAxis
+                stroke={axisStroke}
+                fontSize={11}
+                tickFormatter={(value) => compactChips(Number(value))}
+              />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -131,6 +135,7 @@ export default function StatsCharts({
                   borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
+                formatter={(value, name) => [compactChips(Number(value)), String(name)]}
               />
               <Area
                 isAnimationActive={!still}
@@ -153,7 +158,7 @@ export default function StatsCharts({
             {
               key: 'cumulative',
               label: 'Cumulative Profit',
-              render: (row) => row.cumulative.toLocaleString(),
+              render: (row) => compactChips(row.cumulative),
             },
           ]}
         />
@@ -171,7 +176,11 @@ export default function StatsCharts({
             <BarChart data={dailySeries}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
-              <YAxis stroke={axisStroke} fontSize={11} />
+              <YAxis
+                stroke={axisStroke}
+                fontSize={11}
+                tickFormatter={(value) => compactChips(Number(value))}
+              />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -179,6 +188,7 @@ export default function StatsCharts({
                   borderRadius: '2px',
                 }}
                 labelStyle={{ color: '#fff' }}
+                formatter={(value, name) => [compactChips(Number(value)), String(name)]}
               />
               <Bar dataKey="profit" name="Profit" radius={[1, 1, 0, 0]} isAnimationActive={!still}>
                 {dailySeries.map((entry, index) => (
@@ -194,7 +204,7 @@ export default function StatsCharts({
           rowKey={(row) => row.date}
           columns={[
             { key: 'date', label: 'Date', render: (row) => row.date },
-            { key: 'profit', label: 'Profit', render: (row) => row.profit.toLocaleString() },
+            { key: 'profit', label: 'Profit', render: (row) => compactChips(row.profit) },
             { key: 'hands', label: 'Hands', render: (row) => row.hands.toLocaleString() },
           ]}
         />
@@ -208,34 +218,11 @@ export default function StatsCharts({
             <p className="sr-only">{positionChartSummary}</p>
           </div>
           <div className="chart-container pie-chart">
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  isAnimationActive={!still}
-                  data={positionPie}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={2}
-                  dataKey="value"
-                  nameKey="name"
-                  label={({ name, value }) => `${name}: ${value}`}
-                  labelLine={{ stroke: 'rgba(255,255,255,0.3)' }}
-                >
-                  {positionPie.map((_entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    background: 'rgba(14, 14, 28, 0.95)',
-                    border: '1px solid rgba(0, 212, 255, 0.2)',
-                    borderRadius: '2px',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <Suspense
+              fallback={<div className="hand-empty hand-loading">Loading Position Chart...</div>}
+            >
+              <StatsPositionPiePlot data={positionPie} compactChips={compactChips} still={still} />
+            </Suspense>
           </div>
           <StatsDataTable
             caption="Hands Won By Position"

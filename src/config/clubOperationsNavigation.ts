@@ -118,7 +118,9 @@ const DEFINITIONS: OperationDefinition[] = [
     description: 'Hierarchy, Downlines, And Agent Management',
     suffix: 'agents',
     group: 'people',
-    access: 'staff',
+    // This is the administrative console: every writer requires the club
+    // owner, co-owner or admin. Agents use the separate Agent Network route.
+    access: 'control',
   },
   {
     id: 'reports',
@@ -487,6 +489,7 @@ const FINANCE_SUFFIXES = new Set([
 
 const CONTROL_SUFFIXES = new Set([
   'control',
+  'agents',
   'blacklist',
   'settings',
   'bomb-pot-report',

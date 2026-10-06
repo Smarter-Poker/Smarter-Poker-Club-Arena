@@ -140,7 +140,8 @@ const UnionNetworkGuard = lazyWithRetry(() => import('./components/auth/UnionNet
    PlatformStaffGuard closes /engine and /financial-alerts to platform staff;
    UnionOverseerGuard closes a union's money and operations routes to the
    union's overseers (ca_can_oversee_union); FinancialAdminGate closes
-   /financial-incidents to finance roles. 2026-09-10. */
+   /financial-incidents to platform staff or the server-owned incident
+   recipient registry. */
 const PlatformStaffGuard = lazyWithRetry(() => import('./components/auth/PlatformStaffGuard'));
 const UnionOverseerGuard = lazyWithRetry(() => import('./components/auth/UnionOverseerGuard'));
 const FinancialAdminGate = lazyWithRetry(() => import('./components/auth/FinancialAdminGate'));
@@ -216,7 +217,6 @@ const customizationHarnessEnabled =
   import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
 const financialDecisionHarnessEnabled =
   import.meta.env.DEV || import.meta.env.VITE_FINANCIAL_DECISION_TEST_HARNESS === 'true';
-const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
 const DriftIncidentsPage = lazyWithRetry(() => import('./pages/DriftIncidentsPage'));
@@ -477,8 +477,8 @@ function FullApp() {
     // every one of them was a STATIC import at the top of this file — so its
     // whole dependency tree was welded into the entry chunk and had to be
     // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
-    // how SettlementCronService and FinancialCronService, neither of which the
-    // lobby has any use for, ended up on the critical path of every boot.
+    // how settlement and financial background jobs, neither of which the lobby
+    // has any use for, ended up on the critical path of every boot.
     //
     // Importing them here instead is behaviour-neutral (they already only ran
     // from this effect) and takes them out of the first paint entirely.
@@ -1950,9 +1950,7 @@ function FullApp() {
                   element={
                     <AuthGuard>
                       <PlatformStaffGuard>
-                        <PageErrorBoundary pageName="Financial Alerts">
-                          <FinancialAlertsPage />
-                        </PageErrorBoundary>
+                        <Navigate replace to="/financial-incidents" />
                       </PlatformStaffGuard>
                     </AuthGuard>
                   }
@@ -1995,9 +1993,11 @@ function FullApp() {
                   path="financial-health"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Financial Health">
-                        <FinancialHealthPage />
-                      </PageErrorBoundary>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Financial Health">
+                          <FinancialHealthPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />

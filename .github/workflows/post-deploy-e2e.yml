@@ -600,6 +600,13 @@ jobs:
           run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
 
+          # Financial Admin is the staff-scoped sibling of the Stats and Club
+          # Data deep certificates. It runs against this job's disposable,
+          # prepared staff account in its own process and report so a skip or
+          # missing spec cannot hide behind the broader sweep.
+          run_suite financial-admin.json tests/e2e/financial-admin-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          financial_admin_rc=$?; [ $financial_admin_rc -ne 0 ] && rc=$financial_admin_rc
+
           # These contracts either mutate the standing authenticated player or
           # create and destroy isolated production fixtures. Each gets its own
           # single-worker process so a waitlist/realtime update cannot
@@ -668,7 +675,7 @@ jobs:
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  gameplay customization exit=$gameplay_customization_runtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  financial admin exit=$financial_admin_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  gameplay customization exit=$gameplay_customization_runtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -690,6 +697,7 @@ jobs:
           e2e-report/cashier.json
           e2e-report/cashier-statements.json
           e2e-report/stats.json
+          e2e-report/financial-admin.json
           e2e-report/lobby.json
           e2e-report/club-members.json
           e2e-report/table-management.json
@@ -708,6 +716,7 @@ jobs:
           e2e-report/cashier.json
           e2e-report/cashier-statements.json
           e2e-report/stats.json
+          e2e-report/financial-admin.json
           e2e-report/lobby.json
           e2e-report/club-members.json
           e2e-report/table-management.json

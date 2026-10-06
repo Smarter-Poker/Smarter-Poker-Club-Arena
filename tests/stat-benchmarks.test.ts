@@ -264,3 +264,16 @@ describe('win_rate is a complete, working benchmark', () => {
     expect(r.def.label).toBe('Hands Won');
   });
 });
+
+describe('percentile copy uses real ordinal suffixes', () => {
+  it('renders a 21st-percentile readout without the 21th defect', () => {
+    // Interpolate to the 21st percentile between the production-shaped p10 and
+    // p25 breakpoints. The exact value is secondary; the rounded rank is not.
+    const valueAt21st = -52.1 + ((21 - 10) / (25 - 10)) * (-30 - -52.1);
+    const result = benchmark('bb100', valueAt21st, ROWS)!;
+
+    expect(Math.round(result.percentile!)).toBe(21);
+    expect(result.readout).toContain('21st percentile');
+    expect(result.readout).not.toContain('21th');
+  });
+});

@@ -100,6 +100,11 @@ function UnionOpsPanelForUnion({ unionId, canRun }: { unionId: string; canRun: b
   const [rounds, setRounds] = useState<SettlementRound[]>([]);
   const [dist, setDist] = useState<DistributionCheck | null>(null);
   const [law, setLaw] = useState<LawSelfTest | null>(null);
+  const lawFindingCount = law ? law.breaches.length + law.warnings.length : 0;
+  // A producer's `healthy` bit cannot overrule the findings printed directly
+  // beneath it. Any breach or warning is an attention state, never a green
+  // "Healthy" headline.
+  const lawNeedsAttention = Boolean(law && (!law.healthy || lawFindingCount > 0));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SettlementPreview | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -502,13 +507,16 @@ function UnionOpsPanelForUnion({ unionId, canRun }: { unionId: string; canRun: b
               </div>
             ) : law ? (
               <div
-                className={`union-ops-panel__engraved ${law.healthy ? '' : 'union-ops-panel__engraved--error'}`}
+                className={`union-ops-panel__engraved ${lawNeedsAttention ? 'union-ops-panel__engraved--error' : ''}`}
                 style={{
                   padding: 12,
                 }}
               >
-                <strong className={law.healthy ? 'sc-ink--green' : 'sc-ink--red'}>
-                  Union Law {law.healthy ? 'Healthy' : `- ${law.breaches.length} Breach(es)`}
+                <strong className={lawNeedsAttention ? 'sc-ink--red' : 'sc-ink--green'}>
+                  Union Law{' '}
+                  {lawNeedsAttention
+                    ? `Attention Required - ${lawFindingCount} Finding(s)`
+                    : 'Healthy'}
                 </strong>
                 {law.breaches.length > 0 && (
                   <ul
@@ -603,7 +611,7 @@ function SettlementConfirm({
     >
       <div className="union-ops-panel__dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
-          family="riveted"
+          family="spade"
           crest="flat"
           eyebrow="Union Operations"
           title="Scheduled Settlement Review"

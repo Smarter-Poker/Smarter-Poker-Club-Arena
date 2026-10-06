@@ -142,6 +142,6 @@ describe('LAW: staff read the Diamond books', () => {
     );
     const hub = src('src/pages/FinancialAdminHub.tsx');
     expect(hub).toMatch(/path: '\/diamond-staff-desk',[\s\S]*?staffOnly: true,/);
-    expect(hub).toContain('item.staffOnly && !scope.isPlatformStaff ? null');
+    expect(hub).toMatch(/\(item\.staffOnly && !scope\.isPlatformStaff\)\s*\|\|/);
   });
 });

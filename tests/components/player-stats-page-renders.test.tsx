@@ -58,13 +58,18 @@ const EMPTY_TOURNAMENTS = {
   itm_percent: 0,
   total_buyins: 0,
   total_winnings: 0,
+  total_prizes: 0,
+  total_bounty_winnings: 0,
+  total_bounties: 0,
 };
 
 let rpcPayload: Record<string, unknown> = {};
+let notableHandsPayload: Record<string, unknown> = {};
 let routeUserId: string | undefined;
 let preferencesError: Error | null;
 let authUserId = 'user-1';
 const rpcMock = vi.hoisted(() => vi.fn());
+const statsRouteState = vi.hoisted(() => ({ search: '' }));
 const toastApi = vi.hoisted(() => ({
   show: vi.fn(),
   success: vi.fn(),
@@ -76,6 +81,7 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: rpcMock.mockImplementation(async (fn: string) => {
       if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+      if (fn === 'ca_player_hands_v2') return { data: notableHandsPayload, error: null };
       return { data: null, error: null };
     }),
     from: vi.fn((table: string) => {
@@ -121,8 +127,14 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
 vi.mock('react-router-dom', () => ({
   useParams: () => (routeUserId ? { userId: routeUserId } : {}),
   useNavigate: () => vi.fn(),
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
-  useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
+  useSearchParams: () => [new URLSearchParams(statsRouteState.search), vi.fn()],
+  useLocation: () => ({
+    pathname: '/stats',
+    search: statsRouteState.search,
+    hash: '',
+    state: null,
+    key: 'test',
+  }),
   // JSX (automatic runtime) rather than React.createElement: a vi.mock factory
   // is hoisted above the imports, so referencing an imported React binding
   // inside it would blow up before initialisation.
@@ -201,16 +213,20 @@ vi.mock('../../src/components/common/Toast', () => ({
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
 import { clearStatsRangeMemo } from '../../src/lib/statsCache';
+import { isFullStatsPayload } from '../../src/pages/stats/playerStatsPageModel';
+import { normalizeHands } from '../../src/pages/stats/notableHandsContract';
 
 beforeEach(() => {
   localStorage.clear();
   clearStatsRangeMemo();
   routeUserId = undefined;
+  statsRouteState.search = '';
   authUserId = 'user-1';
   preferencesError = null;
   rpcMock.mockReset();
   rpcMock.mockImplementation(async (fn: string) => {
     if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    if (fn === 'ca_player_hands_v2') return { data: notableHandsPayload, error: null };
     return { data: null, error: null };
   });
   rpcPayload = {
@@ -225,8 +241,9 @@ beforeEach(() => {
       visibility: 'owner',
     },
     quality: {
-      cash_money_source: 'reconstructed_actions',
-      cash_money_exact: false,
+      cash_money_source: 'exact_settlement',
+      cash_money_exact: true,
+      exact_cash_hands: 0,
       advanced_facts_source: 'ca_hand_player_stat',
       historical_club_breakdown_available: false,
       live_tail_included: false,
@@ -252,6 +269,17 @@ beforeEach(() => {
     recent_tournaments: [],
     window_days: null,
   };
+  notableHandsPayload = {
+    contract_version: 2,
+    scope: {
+      target_user_id: 'user-1',
+      club_id: null,
+      asset: 'chips',
+      visibility: 'owner',
+    },
+    hands: [],
+    generated_at: '2026-08-31T12:00:00.000Z',
+  };
 });
 
 afterEach(() => cleanup());
@@ -274,10 +302,10 @@ describe('PlayerStatsPage mounts', () => {
   it('renders for an account with NO hands without hitting the error boundary', async () => {
     // This is the exact shape smarterpoker returns in production, and the
     // state the page was crashing in.
+    expect(isFullStatsPayload(rpcPayload)).toBe(true);
     expect(() => render(<PlayerStatsPage />)).not.toThrow();
-    await waitFor(() => {
-      expect(document.body.textContent).toBeTruthy();
-    });
+    expect(await screen.findByText('No Stats Yet')).toBeVisible();
+    expect(screen.queryByText("Couldn't Load Your Stats")).not.toBeInTheDocument();
   });
 
   it('keeps private stats hidden until the privacy preference can be verified', async () => {
@@ -302,7 +330,9 @@ describe('PlayerStatsPage mounts', () => {
         ...EMPTY_OVERALL,
         total_hands: 20000,
         cash_hands: 18000,
+        tourney_hands: 2000,
         hands_won: 4200,
+        hands_lost: 15800,
         vpip: 0.41,
         pfr: 0.09,
         bb_per_100: -22.5,
@@ -312,6 +342,16 @@ describe('PlayerStatsPage mounts', () => {
         showdowns_won: 430,
         fold_to_three_bet: 0.81,
         cbet_flop: 0.91,
+      },
+      quality: {
+        ...(rpcPayload.quality as Record<string, unknown>),
+        cash_money_source: 'exact_settlement',
+        cash_money_exact: true,
+        exact_cash_hands: 18000,
+      },
+      coverage: {
+        ...(rpcPayload.coverage as Record<string, unknown>),
+        analysis_hands_capped: true,
       },
       positions: [
         {
@@ -362,12 +402,83 @@ describe('PlayerStatsPage mounts', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Analysis Panels Use Your Most Recent 750 Hands. Headline Totals Still Include Every Hand In This Range.'
+      )
+    ).toBeVisible();
+  });
+
+  it('renders the owner mystery-bounty split and net from verified v2 fields', async () => {
+    statsRouteState.search = '?tab=tournaments';
+    rpcPayload = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 1,
+        tourney_hands: 1,
+        tournaments_with_hands: 1,
+        hands_lost: 1,
+      },
+      lifetime: { hands: 1, first_hand_at: null, last_hand_at: null, indexed_complete: true },
+      tournaments: {
+        ...EMPTY_TOURNAMENTS,
+        entries: 1,
+        cashes: 1,
+        itm_percent: 1,
+        total_buyins: 25,
+        total_winnings: 60,
+        total_prizes: 40,
+        total_bounty_winnings: 20,
+        total_bounties: 1,
+        net_profit: 35,
+        roi: 1.4,
+      },
+      recent_tournaments: [
+        {
+          tournament_id: '11111111-1111-4111-8111-111111111111',
+          name: 'mystery sunday',
+          start_time: '2026-10-05T10:00:00Z',
+          ended_at: '2026-10-05T14:00:00Z',
+          variant: 'nlh',
+          is_mystery_bounty: true,
+          finish_rank: 2,
+          status: 'eliminated',
+          prize: 40,
+          bounty_winnings: 20,
+          bounties: 1,
+          total_won: 60,
+          buyin: 25,
+        },
+      ],
+    };
+
+    render(<PlayerStatsPage />);
+
+    expect(await screen.findByText('Mystery Sunday')).toBeVisible();
+    expect(screen.getByText(/Mystery Bounty/)).toBeVisible();
+    expect(screen.getByText(/Prize 40.*1 KO 20.*Total 60/)).toBeVisible();
+    expect(document.querySelector('.tournament-item-net')).toHaveTextContent('+35');
   });
 
   it('never relabels a prior payload when a new range fails', async () => {
     rpcPayload = {
       ...rpcPayload,
-      overall: { ...EMPTY_OVERALL, total_hands: 20000, cash_hands: 18000 },
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 20000,
+        cash_hands: 18000,
+        tourney_hands: 2000,
+        hands_lost: 20000,
+      },
+      quality: {
+        ...(rpcPayload.quality as Record<string, unknown>),
+        exact_cash_hands: 18000,
+      },
+      coverage: {
+        ...(rpcPayload.coverage as Record<string, unknown>),
+        analysis_hands_capped: true,
+      },
     };
     render(<PlayerStatsPage />);
     expect(await screen.findByText('20,000')).toBeInTheDocument();
@@ -390,12 +501,305 @@ describe('PlayerStatsPage mounts', () => {
     rpcPayload = {
       ...rpcPayload,
       scope: { ...(rpcPayload.scope as object), target_user_id: 'another-user' },
-      overall: { ...EMPTY_OVERALL, total_hands: 123 },
+      overall: { ...EMPTY_OVERALL, total_hands: 123, cash_hands: 123, hands_lost: 123 },
     };
     render(<PlayerStatsPage />);
 
     expect(await screen.findByText("Couldn't Load Your Stats")).toBeVisible();
     expect(screen.queryByText('123')).not.toBeInTheDocument();
+  });
+
+  it('rejects a scope-matching malformed success instead of rewriting it as zero stats', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 'not-a-count',
+        total_profit: 'not-an-amount',
+      },
+    };
+
+    render(<PlayerStatsPage />);
+
+    expect(await screen.findByText("Couldn't Load Your Stats")).toBeVisible();
+    expect(screen.queryByText('No Stats Yet')).not.toBeInTheDocument();
+    expect(toastApi.error).not.toHaveBeenCalledWith(expect.stringContaining('No Stats'));
+  });
+
+  it('rejects finite but impossible owner rates and count relationships', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 100,
+        cash_hands: 80,
+        tourney_hands: 20,
+        hands_won: 12,
+        hands_lost: 88,
+        vpip: 1.01,
+        pfr: 0.2,
+      },
+      lifetime: { hands: 100, first_hand_at: null, last_hand_at: null, indexed_complete: true },
+      quality: {
+        ...(rpcPayload.quality as Record<string, unknown>),
+        cash_money_source: 'exact_settlement',
+        cash_money_exact: true,
+        exact_cash_hands: 80,
+      },
+    };
+
+    render(<PlayerStatsPage />);
+
+    expect(await screen.findByText("Couldn't Load Your Stats")).toBeVisible();
+    expect(screen.queryByText('101.0%')).not.toBeInTheDocument();
+  });
+
+  it('validates owner rate, hand-total, tournament-total, and count domains', () => {
+    const valid = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 100,
+        cash_hands: 80,
+        tourney_hands: 20,
+        tournaments_with_hands: 2,
+        hands_won: 12,
+        hands_lost: 88,
+        showdowns_total: 20,
+        showdowns_won: 8,
+        vpip: 0.3,
+        pfr: 0.2,
+        three_bet_percent: 0.08,
+        fold_to_three_bet: 0.5,
+        cbet_flop: 0.6,
+        wtsd: 0.25,
+        aggression_factor: 1.2,
+        total_winnings: 120,
+        total_invested: 100,
+        biggest_pot_won: 20,
+        hours_played: 4,
+      },
+      lifetime: { hands: 100, first_hand_at: null, last_hand_at: null, indexed_complete: true },
+      quality: {
+        ...(rpcPayload.quality as Record<string, unknown>),
+        exact_cash_hands: 80,
+      },
+      tournaments: {
+        ...EMPTY_TOURNAMENTS,
+        entries: 10,
+        cashes: 3,
+        wins: 1,
+        best_finish: 1,
+        itm_percent: 0.3,
+        total_buyins: 100,
+        total_winnings: 150,
+        total_prizes: 120,
+        total_bounty_winnings: 30,
+        net_profit: 50,
+        roi: 0.5,
+      },
+    };
+
+    expect(isFullStatsPayload(valid)).toBe(true);
+    expect(isFullStatsPayload({ ...valid, overall: { ...valid.overall, vpip: 1.01 } })).toBe(false);
+    expect(isFullStatsPayload({ ...valid, overall: { ...valid.overall, pfr: -0.01 } })).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...valid,
+        overall: { ...valid.overall, three_bet_percent: 1.01 },
+      })
+    ).toBe(false);
+    expect(isFullStatsPayload({ ...valid, overall: { ...valid.overall, cash_hands: 81 } })).toBe(
+      false
+    );
+    expect(
+      isFullStatsPayload({ ...valid, tournaments: { ...valid.tournaments, cashes: 11 } })
+    ).toBe(false);
+    expect(isFullStatsPayload({ ...valid, tournaments: { ...valid.tournaments, wins: 11 } })).toBe(
+      false
+    );
+    expect(isFullStatsPayload({ ...valid, tournaments: { ...valid.tournaments, wins: 4 } })).toBe(
+      false
+    );
+    expect(
+      isFullStatsPayload({ ...valid, overall: { ...valid.overall, total_hands: 100.5 } })
+    ).toBe(false);
+    expect(isFullStatsPayload({ ...valid, overall: { ...valid.overall, hand_cap: 0 } })).toBe(
+      false
+    );
+    expect(
+      isFullStatsPayload({
+        ...valid,
+        overall: { ...valid.overall, hand_cap: 50, hands_capped: false },
+        coverage: {
+          ...(valid.coverage as Record<string, unknown>),
+          analysis_hand_cap: 50,
+          analysis_hands_capped: true,
+        },
+      })
+    ).toBe(true);
+
+    const withFinancialDetails = {
+      ...valid,
+      sessions: [
+        {
+          id: 1,
+          date: '2026-10-05T12:00:00Z',
+          ended: '2026-10-05T13:00:00Z',
+          duration_minutes: 60,
+          hands_played: 20,
+          buy_in: 100,
+          cash_out: 125,
+          profit_loss: 25,
+        },
+      ],
+      recent_tournaments: [
+        {
+          tournament_id: '11111111-1111-4111-8111-111111111111',
+          name: 'Mystery Sunday',
+          start_time: '2026-10-05T10:00:00Z',
+          ended_at: '2026-10-05T14:00:00Z',
+          variant: 'nlh',
+          is_mystery_bounty: true,
+          finish_rank: 2,
+          status: 'eliminated',
+          prize: 40,
+          bounty_winnings: 20,
+          bounties: 1,
+          total_won: 60,
+          buyin: 25,
+        },
+      ],
+    };
+    expect(isFullStatsPayload(withFinancialDetails)).toBe(true);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        tournaments: { ...valid.tournaments, total_winnings: 149.99 },
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        tournaments: { ...valid.tournaments, net_profit: 49.99 },
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        tournaments: { ...valid.tournaments, itm_percent: 0.3001 },
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        tournaments: { ...valid.tournaments, roi: 0.5001 },
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        sessions: [{ ...withFinancialDetails.sessions[0], cash_out: 124.99 }],
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        sessions: [{ ...withFinancialDetails.sessions[0], duration_minutes: 0 }],
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        sessions: [{ ...withFinancialDetails.sessions[0], ended: '2026-10-05T11:59:59Z' }],
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        recent_tournaments: [{ ...withFinancialDetails.recent_tournaments[0], total_won: 59.99 }],
+      })
+    ).toBe(false);
+    const { is_mystery_bounty: _missingFlag, ...missingMysteryFlag } =
+      withFinancialDetails.recent_tournaments[0];
+    expect(
+      isFullStatsPayload({ ...withFinancialDetails, recent_tournaments: [missingMysteryFlag] })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...withFinancialDetails,
+        quality: { ...valid.quality, cash_money_source: 'mixed' },
+      })
+    ).toBe(false);
+    expect(
+      isFullStatsPayload({
+        ...valid,
+        positions: [
+          {
+            position: null,
+            hands_played: 10,
+            vpip_count: 3,
+            pfr_count: 2,
+            hands_won: 1,
+            total_profit: 4,
+            bb100: null,
+          },
+        ],
+      })
+    ).toBe(true);
+  });
+
+  it('refuses a scope-mismatched all-time payload instead of painting lifetime trophies', async () => {
+    statsRouteState.search = '?range=30d&tab=trophies';
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const rangedPayload = {
+      ...rpcPayload,
+      scope: {
+        ...(rpcPayload.scope as Record<string, unknown>),
+        range_days: 30,
+        range_tz: timezone,
+      },
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 10,
+        cash_hands: 10,
+        hands_won: 2,
+        hands_lost: 8,
+      },
+      lifetime: { hands: 10, first_hand_at: null, last_hand_at: null, indexed_complete: true },
+      quality: {
+        ...(rpcPayload.quality as Record<string, unknown>),
+        exact_cash_hands: 10,
+      },
+      window_days: 30,
+    };
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn !== 'ca_player_stats_overview_v2') return { data: null, error: null };
+      if (args?.p_days === null) {
+        return {
+          data: {
+            ...rangedPayload,
+            scope: {
+              ...(rangedPayload.scope as Record<string, unknown>),
+              target_user_id: 'wrong-owner',
+              range_days: null,
+            },
+            window_days: null,
+          },
+          error: null,
+        };
+      }
+      return { data: rangedPayload, error: null };
+    });
+
+    render(<PlayerStatsPage />);
+
+    expect(
+      await screen.findByText('Your All-Time Stats Could Not Be Loaded For The Trophy Room.', {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(screen.queryByText('First Hand')).not.toBeInTheDocument();
   });
 
   it('never paints an in-flight payload from the previous signed-in account', async () => {
@@ -413,12 +817,14 @@ describe('PlayerStatsPage mounts', () => {
     const first = {
       ...rpcPayload,
       scope: { ...(rpcPayload.scope as object), target_user_id: 'user-1' },
-      overall: { ...EMPTY_OVERALL, total_hands: 111 },
+      overall: { ...EMPTY_OVERALL, total_hands: 111, cash_hands: 111, hands_lost: 111 },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 111 },
     };
     const second = {
       ...rpcPayload,
       scope: { ...(rpcPayload.scope as object), target_user_id: 'user-2' },
-      overall: { ...EMPTY_OVERALL, total_hands: 222 },
+      overall: { ...EMPTY_OVERALL, total_hands: 222, cash_hands: 222, hands_lost: 222 },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 222 },
     };
 
     const view = render(<PlayerStatsPage />);
@@ -435,7 +841,14 @@ describe('PlayerStatsPage mounts', () => {
   it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
     rpcPayload = {
       ...rpcPayload,
-      overall: { ...EMPTY_OVERALL, total_hands: 2_000, cash_hands: 2_000 },
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 2_000,
+        cash_hands: 2_000,
+        hands_lost: 2_000,
+      },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 2_000 },
+      coverage: { ...(rpcPayload.coverage as object), analysis_hands_capped: true },
     };
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
@@ -467,6 +880,7 @@ describe('PlayerStatsPage mounts', () => {
         ...EMPTY_OVERALL,
         total_hands: 2_000,
         cash_hands: 2_000,
+        hands_lost: 2_000,
         vpip: 0.41,
         pfr: 0.09,
         three_bet_percent: 0.04,
@@ -478,6 +892,8 @@ describe('PlayerStatsPage mounts', () => {
         showdowns_won: 180,
         bb_per_100: -12,
       },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 2_000 },
+      coverage: { ...(rpcPayload.coverage as object), analysis_hands_capped: true },
     };
     render(<PlayerStatsPage />);
     // The tab strip mounts with the payload, not with the heading; on a loaded
@@ -500,6 +916,118 @@ describe('PlayerStatsPage mounts', () => {
       expect(screen.queryByRole('heading', { name: /Core Tendencies/i })).not.toBeInTheDocument();
     });
   });
+
+  it('accepts only exact v2 notable-hand evidence for the requested owner scope', () => {
+    const request = {
+      targetUserId: 'user-1',
+      clubId: null,
+      asset: 'chips' as const,
+      visibility: 'owner' as const,
+    };
+    const hand = {
+      id: '11111111-1111-4111-8111-111111111111',
+      played_at: '2026-08-31T11:30:00.000Z',
+      variant: 'NLH',
+      big_blind: 2,
+      is_tournament: false,
+      position: 'BTN',
+      pot_size: 120.5,
+      won: 120.5,
+      profit: 80.5,
+      is_winner: true,
+      players: 6,
+      board: ['As', 'Kh', '2d'],
+      hole_cards: ['Ah', 'Ad'],
+    };
+    const envelope = {
+      ...notableHandsPayload,
+      scope: {
+        target_user_id: 'user-1',
+        club_id: null,
+        asset: 'chips',
+        visibility: 'owner',
+      },
+      hands: [hand],
+    };
+
+    expect(normalizeHands(envelope, request)).toEqual([hand]);
+    expect(normalizeHands([], request)).toBeNull();
+    expect(
+      normalizeHands(
+        { ...envelope, scope: { ...envelope.scope, target_user_id: 'another-user' } },
+        request
+      )
+    ).toBeNull();
+    expect(
+      normalizeHands({ ...envelope, hands: [{ ...hand, id: 'invent-me' }] }, request)
+    ).toBeNull();
+    expect(
+      normalizeHands({ ...envelope, hands: [{ ...hand, pot_size: Number.NaN }] }, request)
+    ).toBeNull();
+    expect(normalizeHands({ ...envelope, hands: [] }, request)).toEqual([]);
+  });
+
+  it('shows unavailable and no evidence link for a wrong-scope notable-hands success', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 1,
+        cash_hands: 1,
+        hands_lost: 1,
+      },
+      lifetime: { hands: 1, first_hand_at: null, last_hand_at: null, indexed_complete: true },
+      quality: { ...(rpcPayload.quality as object), exact_cash_hands: 1 },
+    };
+    notableHandsPayload = {
+      ...notableHandsPayload,
+      scope: {
+        ...(notableHandsPayload.scope as Record<string, unknown>),
+        target_user_id: 'another-user',
+      },
+      hands: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          played_at: '2026-08-31T11:30:00.000Z',
+          variant: 'NLH',
+          big_blind: 2,
+          is_tournament: false,
+          position: 'BTN',
+          pot_size: 120.5,
+          won: 120.5,
+          profit: 80.5,
+          is_winner: true,
+          players: 6,
+          board: ['As', 'Kh', '2d'],
+          hole_cards: ['Ah', 'Ad'],
+        },
+      ],
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      render(<PlayerStatsPage />);
+      fireEvent.click(await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 }));
+      await waitFor(() =>
+        expect(rpcMock).toHaveBeenCalledWith(
+          'ca_player_hands_v2',
+          expect.objectContaining({ p_user: 'user-1', p_asset: 'chips' })
+        )
+      );
+
+      expect(
+        await screen.findByText(
+          /Could Not Load Notable Hands\./,
+          { selector: '.hand-empty' },
+          { timeout: 6_000 }
+        )
+      ).toBeVisible();
+      expect(screen.queryByRole('link', { name: /Open Hand From/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('No Cash Hands Recorded Yet.')).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  }, 8_000);
 
   it('survives a completely malformed RPC payload', async () => {
     // normalizeFull() is supposed to harden every field. If it ever stops

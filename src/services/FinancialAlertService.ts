@@ -217,8 +217,8 @@ export const FinancialAlertService = {
     }
 
     // NOTE: Financial alerts are ops-only signals. They are NOT shown as user-facing toasts.
-    // They appear on the admin Financial Alerts page (/financial-alerts) via the
-    // FINANCIAL_ALERT bus event and Supabase real-time subscription.
+    // The database mirrors critical alert rows into the server-authorized
+    // Financial Incidents queue. This local bus event is observability only.
   },
 
   /**

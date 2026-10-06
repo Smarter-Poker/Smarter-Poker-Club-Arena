@@ -64,6 +64,57 @@ interface RequestState {
   error: string | null;
 }
 
+interface StatementIssueReceipt {
+  issued: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function parseStatementIssueReceipt(
+  value: unknown,
+  expectedUnionId: string,
+  expectedPeriodEnd: string | null
+): StatementIssueReceipt {
+  if (!isRecord(value) || value.success !== true) {
+    throw new Error('Statement issue response did not declare literal success');
+  }
+
+  const issued = value.issued;
+  const invoices = value.invoices;
+  const hasIssued = Object.prototype.hasOwnProperty.call(value, 'issued');
+  const hasInvoices = Object.prototype.hasOwnProperty.call(value, 'invoices');
+  if (!hasIssued && !hasInvoices) {
+    throw new Error('Statement issue response omitted its issued count');
+  }
+  if (
+    (hasIssued && (!Number.isSafeInteger(issued) || Number(issued) < 0)) ||
+    (hasInvoices && (!Number.isSafeInteger(invoices) || Number(invoices) < 0)) ||
+    (hasIssued && hasInvoices && issued !== invoices)
+  ) {
+    throw new Error('Statement issue response carried an invalid issued count');
+  }
+
+  const receiptUnion = value.union_id ?? value.unionId;
+  if (receiptUnion !== undefined && receiptUnion !== expectedUnionId) {
+    throw new Error('Statement issue response belonged to another union');
+  }
+
+  const receiptPeriodEnd = value.period_end ?? value.periodEnd;
+  if (
+    receiptPeriodEnd !== undefined &&
+    (typeof receiptPeriodEnd !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(receiptPeriodEnd) ||
+      (expectedPeriodEnd !== null &&
+        receiptPeriodEnd.slice(0, 10) !== expectedPeriodEnd.slice(0, 10)))
+  ) {
+    throw new Error('Statement issue response belonged to another period');
+  }
+
+  return { issued: Number(hasIssued ? issued : invoices) };
+}
+
 function money(n: number | null | undefined): string {
   const value = Number(n ?? 0);
   if (Number.isFinite(value) && value !== 0 && Math.abs(value) < 1) {
@@ -322,8 +373,9 @@ export default function UnionStatementsPage() {
   }, [load]);
 
   const issue = useCallback(async () => {
-    if (!unionId) return;
+    if (!unionId || !board || board.union_id !== unionId) return;
     const actionScope = scopeIdentity;
+    const expectedPeriodEnd = period === null ? board.period_end : null;
     if (issueInFlightRef.current === actionScope) return;
     issueInFlightRef.current = actionScope;
     const isCurrent = () => isMounted.current && activeScopeRef.current === actionScope;
@@ -347,15 +399,30 @@ export default function UnionStatementsPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'issue', unionId }),
       });
-      const json = await res.json();
+      const json: unknown = await res.json();
       if (!isCurrent()) return;
-      if (!res.ok || json?.success === false) {
-        toast.error(json?.error || 'Could Not Issue Statements');
+      if (!res.ok) {
+        toast.error(
+          isRecord(json) && typeof json.error === 'string'
+            ? json.error
+            : 'Could Not Issue Statements'
+        );
+        return;
+      }
+      let receipt: StatementIssueReceipt;
+      try {
+        receipt = parseStatementIssueReceipt(json, unionId, expectedPeriodEnd);
+      } catch (receiptError) {
+        reportError(receiptError, 'UnionStatementsPage.issue_receipt', {
+          unionId,
+          periodEnd: expectedPeriodEnd,
+        });
+        toast.error('Statement Delivery Receipt Could Not Be Verified. Review The Board.');
         return;
       }
       // A period that was already issued comes back with nothing new. That is
       // the idempotency working, not a failure, so the two are said apart.
-      const n = Number(json?.issued ?? json?.invoices ?? 0);
+      const n = receipt.issued;
       toast.success(
         n > 0
           ? `Issued And Delivered ${n} Statements`
@@ -373,7 +440,7 @@ export default function UnionStatementsPage() {
       if (issueInFlightRef.current === actionScope) issueInFlightRef.current = null;
       if (isCurrent()) setIssuingScope(null);
     }
-  }, [isMounted, load, period, routeIdentity, scopeIdentity, toast, unionId]);
+  }, [board, isMounted, load, period, routeIdentity, scopeIdentity, toast, unionId]);
 
   // Recording that a statement was settled. This moves NO chips: the weekly
   // square-up is the bookkeeping record of what was owed for a period, paid
@@ -541,7 +608,7 @@ export default function UnionStatementsPage() {
             pill="Loading"
             pillInk="gold"
             crest="flat"
-            family="shark"
+            family="spade"
             foot="foot"
           >
             <p className={`sc-copy ${styles.stateBody}`}>Preparing The Statement Board.</p>
@@ -560,7 +627,7 @@ export default function UnionStatementsPage() {
             pill="Locked"
             pillInk="red"
             crest="spade"
-            family="riveted"
+            family="spade"
             foot="foot"
           >
             <p className={`sc-copy ${styles.stateBody}`}>Sign In To View Statements.</p>
@@ -632,7 +699,7 @@ export default function UnionStatementsPage() {
                     void issue();
                   }
                 : () => setConfirmIssue(true),
-              disabled: issuing || !unionId,
+              disabled: issuing || !unionId || !board || board.union_id !== unionId,
               ink: 'white',
             },
           }}

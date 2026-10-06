@@ -111,7 +111,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function openForm() {
-  fireEvent.click(await screen.findByRole('button', { name: '+ Request Credit' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Request Credit' }));
   fireEvent.change(screen.getByRole('spinbutton', { name: 'New Credit Limit' }), {
     target: { value: '200.25' },
   });
@@ -127,7 +127,7 @@ describe('Credit requests belong to an account and club', () => {
     render(<CreditRequestManagerInbox clubId="club-a" />);
     expect(await screen.findByRole('button', { name: 'Approve Alice' })).toBeInTheDocument();
     expect(screen.queryByText('Of 0.00')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '+ Request Credit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request Credit' })).not.toBeInTheDocument();
     expect(mocks.pending).toHaveBeenCalledWith('club-a', 'user-a');
   });
 
@@ -188,7 +188,7 @@ describe('Credit requests belong to an account and club', () => {
     const view = render(<CreditRequestWidget {...props} />);
     await waitFor(() => expect(mocks.mine).toHaveBeenCalled());
     view.rerender(<CreditRequestWidget {...props} clubId="club-b" />);
-    await screen.findByRole('button', { name: '+ Request Credit' });
+    await screen.findByRole('button', { name: 'Request Credit' });
     await act(async () => {
       gate.resolve([request()]);
       await gate.promise;
@@ -239,7 +239,7 @@ describe('Credit requests belong to an account and club', () => {
       gate.resolve({ ...pending, status: 'approved', approvedAmount: 200.25 });
       await gate.promise;
     });
-    expect(mocks.toast.success).toHaveBeenCalledWith('Credit limit updated to 200.25');
+    expect(mocks.toast.success).toHaveBeenCalledWith('Credit limit updated to 200');
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 

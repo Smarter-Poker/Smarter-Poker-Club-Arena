@@ -68,7 +68,7 @@ const BASELINE = new Map<string, number>([
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
-  ['src/services/AgentService.ts', 7],
+  ['src/services/AgentService.ts', 2],
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
   ['src/pages/UnionDashboardPage.tsx', 7],
@@ -103,7 +103,7 @@ const BASELINE = new Map<string, number>([
   // 3 -> 1 on 2026-09-20: submitDispute and withdrawDispute stopped doing raw
   // table writes and now call fn_dispute_submit / fn_dispute_withdraw, which
   // report a reason instead of an ignored error.
-  ['src/services/DisputeService.ts', 1],
+  ['src/services/DisputeService.ts', 0],
   // 1 -> 0 on 2026-10-01: the balance read goes through the owner door
   // (ruling 25) and reports its error.
   ['src/services/DiamondService.ts', 0],

@@ -21,8 +21,10 @@ interface LedgerEntry {
   id: string;
   performed_by: string;
   from_type: string;
+  from_entity_id: string | null;
   from_label: string | null;
   to_type: string;
+  to_entity_id: string | null;
   to_label: string | null;
   amount: number;
   category: string;
@@ -40,29 +42,145 @@ function isNullableText(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
 
+function isNullableUUID(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && isUUID(value));
+}
+
 function isLedgerEntry(value: unknown): value is LedgerEntry {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
+    value.id.trim() !== '' &&
     typeof value.performed_by === 'string' &&
+    isUUID(value.performed_by) &&
     typeof value.from_type === 'string' &&
+    value.from_type.trim() !== '' &&
+    isNullableUUID(value.from_entity_id) &&
     isNullableText(value.from_label) &&
     typeof value.to_type === 'string' &&
+    value.to_type.trim() !== '' &&
+    isNullableUUID(value.to_entity_id) &&
     isNullableText(value.to_label) &&
     typeof value.amount === 'number' &&
     Number.isFinite(value.amount) &&
     value.amount > 0 &&
     typeof value.category === 'string' &&
+    value.category.trim() !== '' &&
     isNullableText(value.description) &&
     typeof value.created_at === 'string' &&
     Number.isFinite(Date.parse(value.created_at)) &&
-    isNullableText(value.club_id) &&
-    isNullableText(value.union_id)
+    isNullableUUID(value.club_id) &&
+    isNullableUUID(value.union_id)
   );
 }
 
-function ledgerRows(value: unknown): LedgerEntry[] | null {
-  return Array.isArray(value) && value.every(isLedgerEntry) ? value : null;
+function ledgerRows(
+  value: unknown,
+  limit: number,
+  scope: Pick<Props, 'unionId' | 'clubId' | 'userId'>
+): LedgerEntry[] | null {
+  if (!Array.isArray(value) || value.length > limit || !value.every(isLedgerEntry)) return null;
+  if (new Set(value.map((row) => row.id)).size !== value.length) return null;
+  const scoped = value.every(
+    (row) =>
+      (!scope.clubId || row.club_id === scope.clubId) &&
+      (!scope.unionId || row.union_id === scope.unionId) &&
+      (!scope.userId ||
+        row.performed_by === scope.userId ||
+        row.from_entity_id === scope.userId ||
+        row.to_entity_id === scope.userId)
+  );
+  return scoped ? value : null;
+}
+
+function clubLedgerRows(value: unknown, clubId: string, limit: number): LedgerEntry[] | null {
+  if (
+    !isRecord(value) ||
+    value.contract !== 'ca_club_chip_ledger.v2' ||
+    value.contract_version !== 2 ||
+    value.club_id !== clubId ||
+    value.requested_limit !== limit ||
+    value.requested_before !== null ||
+    value.requested_include_hand_rows !== false ||
+    value.hand_rows_included !== false
+  ) {
+    return null;
+  }
+  return ledgerRows(value.rows, limit, { clubId });
+}
+
+const PUBLIC_ACCOUNT_LABELS: Readonly<Record<string, string>> = {
+  agent_credit: 'Agent Credit',
+  agent_wallet: 'Agent Wallet',
+  club_bank: 'Club Bank',
+  club_treasury: 'Club Treasury',
+  diamond_wallet: 'Diamond Wallet',
+  external: 'External Account',
+  platform_revenue: 'Platform Revenue',
+  player_wallet: 'Player Wallet',
+  prize_liability: 'Prize Pool',
+  prize_pool: 'Prize Pool',
+  promo_wallet: 'Promotion Wallet',
+  rake_receivable: 'Rake Account',
+  settlement_suspense: 'Settlement Review',
+  spin_reserve: 'Spin Reserve',
+  table_escrow: 'Table',
+  table_stack: 'Table',
+  tournament_escrow: 'Tournament',
+  union_bank: 'Union Bank',
+  union_reserve: 'Union Reserve',
+};
+
+const PUBLIC_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  adjustment: 'Adjustment',
+  buy_in: 'Buy In',
+  cash_in: 'Cash In',
+  cash_out: 'Cash Out',
+  commission: 'Commission',
+  deposit: 'Deposit',
+  entry: 'Tournament Entry',
+  fee: 'Fee',
+  payout: 'Payout',
+  rake: 'Rake',
+  rakeback: 'Rakeback',
+  rebuy: 'Rebuy',
+  refund: 'Refund',
+  reversal: 'Reversal',
+  settlement: 'Settlement',
+  spin_entry: 'Spin Entry',
+  spin_prize: 'Spin Prize',
+  transfer: 'Transfer',
+  withdrawal: 'Withdrawal',
+};
+
+const INTERNAL_COPY =
+  /(?:\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b|\b[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\b|\b[a-z][a-z0-9]*_[a-z0-9_]+\b|\bauto[- ]ledgered\b|\bidempotency\b|\brpc\b)/i;
+
+function publicAccountLabel(type: string, label: string | null): string {
+  const fallback = PUBLIC_ACCOUNT_LABELS[type.toLowerCase()] || 'Recorded Account';
+  const candidate = label?.trim();
+  if (!candidate || INTERNAL_COPY.test(candidate) || /^[0-9a-f-]{12,}$/i.test(candidate)) {
+    return fallback;
+  }
+  return formatPopupText(candidate);
+}
+
+function publicDescription(description: string | null): string | null {
+  const candidate = description?.trim();
+  if (!candidate || INTERNAL_COPY.test(candidate)) return null;
+  const withoutZeroCents = candidate.replace(/\b(\d[\d,]*)\.00\b/g, '$1');
+  // A free-form journal note does not declare whether a decimal is chips,
+  // cents, a rate or a version. Never guess and never leak a decimal onto a
+  // forward-facing Console: the row's separately formatted amount remains the
+  // authoritative value.
+  if (/\b\d[\d,]*\.\d+\b/.test(withoutZeroCents)) return null;
+  return formatPopupText(withoutZeroCents);
+}
+
+function publicLedgerAmount(amount: number): string {
+  // Forward-facing Console values never print decimals, but a real positive
+  // cent-scale movement must not be rounded down to a false zero.
+  return amount < 1 ? 'Under 1 Chip' : compactChips(amount);
 }
 
 function visibleLedgerCopy(entry: LedgerEntry) {
@@ -86,11 +204,12 @@ function visibleLedgerCopy(entry: LedgerEntry) {
     };
   }
   return {
-    category: formatPopupText(entry.category.replace(/_/g, ' ')),
-    path: `${formatPopupText(entry.from_label || entry.from_type)} To ${formatPopupText(
-      entry.to_label || entry.to_type
+    category: PUBLIC_CATEGORY_LABELS[entry.category.toLowerCase()] || 'Recorded Movement',
+    path: `${publicAccountLabel(entry.from_type, entry.from_label)} To ${publicAccountLabel(
+      entry.to_type,
+      entry.to_label
     )}`,
-    description: entry.description ? formatPopupText(entry.description) : null,
+    description: publicDescription(entry.description),
   };
 }
 
@@ -163,7 +282,7 @@ export default function TransactionLedgerView({
             setError('The Club Ledger Could Not Be Loaded');
           }
         } else {
-          const rows = ledgerRows((data as { rows?: unknown } | null)?.rows);
+          const rows = clubLedgerRows(data, clubId, limit);
           if (!rows) {
             reportError(
               new Error('Club ledger response did not contain valid rows'),
@@ -217,7 +336,7 @@ export default function TransactionLedgerView({
         reportError(readError, 'TransactionLedgerView.read');
         setError('The Ledger Could Not Be Loaded');
       } else {
-        const rows = ledgerRows(data);
+        const rows = ledgerRows(data, limit, { unionId, clubId, userId });
         if (!rows) {
           reportError(
             new Error('Ledger response did not contain valid rows'),
@@ -260,8 +379,12 @@ export default function TransactionLedgerView({
 
   if (denied) {
     return (
-      <div className="tlv-state sc-copy sc-copy--center sc-ink--muted">
-        This Ledger Is Available To Club Owners, Admins And Super Agents.
+      <div
+        className="tlv-state sc-copy sc-copy--center sc-ink--muted"
+        role="status"
+        aria-live="polite"
+      >
+        This Ledger Is Available To Club Owners, CO Owners, Admins And Super Agents.
       </div>
     );
   }
@@ -279,7 +402,13 @@ export default function TransactionLedgerView({
 
   if (entries.length === 0) {
     return (
-      <div className="tlv-state sc-copy sc-copy--center sc-ink--muted">No Transactions Yet</div>
+      <div
+        className="tlv-state sc-copy sc-copy--center sc-ink--muted"
+        role="status"
+        aria-live="polite"
+      >
+        No Transactions Yet
+      </div>
     );
   }
 
@@ -303,7 +432,7 @@ export default function TransactionLedgerView({
                 )}
               </div>
               <div className="tlv-amount">
-                <div className="tlv-value sc-ink--silver">{compactChips(Number(e.amount))}</div>
+                <div className="tlv-value sc-ink--silver">{publicLedgerAmount(e.amount)}</div>
                 <time className="tlv-time sc-ink--muted" dateTime={e.created_at}>
                   {timeStr}
                 </time>

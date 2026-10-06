@@ -34,6 +34,7 @@ import StatsFactsService, {
 import { CHIP_STATS, type StatsClubId, type StatsScope } from '../../services/statsScope';
 import './NemesisPanel.css';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
+import { compactChips } from '../../utils/format';
 
 interface Props {
   userId?: string;
@@ -53,7 +54,7 @@ function initials(name: string | null): string {
 }
 
 function chips(n: number): string {
-  return Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return compactChips(Math.abs(n));
 }
 
 function Avatar({ flow }: { flow: OpponentFlow }) {

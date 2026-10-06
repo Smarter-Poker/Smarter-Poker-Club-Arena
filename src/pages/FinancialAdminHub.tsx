@@ -3,7 +3,8 @@
  *  FINANCIAL ADMIN HUB — Single-Pane-of-Glass Financial Operations
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Central admin page consolidating all financial management tools.
- *  Quick links to: Alerts, Health, Disputes, Rate Audit, Settlements, Financials.
+ *  Quick links to: Drift Incidents, Health, Disputes, Rate Audit,
+ *  Settlement History, Settlement Center, and verified club financial exports.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -26,16 +27,14 @@ import './AdminDashboardPage.css';
 import styles from './FinancialAdminHub.module.css';
 
 interface HubStats {
-  totalAlerts: number;
-  openIncidents: number;
+  openIncidents: number | null;
   openDisputes: number;
   rateChanges: number;
-  healthChecks: number;
-  lastCheckPassed: boolean | null;
 }
 
 interface HubReading {
   stats: HubStats;
+  incidentStatus: 'ready' | 'not_authorized' | 'unavailable';
   revenue: { day: string; amount: number }[];
   revenueTotal: number;
   windowStart: string;
@@ -50,6 +49,7 @@ const REVENUE_CONTRACT = 'ca_financial_admin_revenue_series_v1';
 const REVENUE_BASIS = 'cash_rake_plus_tournament_fees';
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const STRICT_NUMERIC = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+const CREDIT_ADMIN_ROLES = new Set(['owner', 'co_owner', 'admin']);
 
 function parseLedgerNumber(value: unknown): number {
   if (typeof value !== 'number' && typeof value !== 'string') {
@@ -143,9 +143,16 @@ function parseRevenueSeries(
 const NAV_ITEMS: Array<{
   label: string;
   description: string;
-  path: string;
+  path?: string;
+  clubPath?: string;
+  platformLabel?: string;
+  platformDescription?: string;
   tone: 'blue' | 'red' | 'gold' | 'silver';
   staffOnly?: boolean;
+  preserveClubScope?: boolean;
+  requiresClubScope?: boolean;
+  requiresCreditClubRole?: boolean;
+  requiresDriftAccess?: boolean;
 }> = [
   {
     label: 'Diamond Staff Desk',
@@ -155,28 +162,29 @@ const NAV_ITEMS: Array<{
     staffOnly: true,
   },
   {
-    label: 'Financial Alerts',
-    description: 'Critical Warnings And System Notifications',
-    path: '/financial-alerts',
-    tone: 'red',
-    staffOnly: true,
-  },
-  {
     label: 'Drift Incidents',
     description: 'Ledger Drift Detection And 20-Minute Reconciliation Queue',
     path: '/financial-incidents',
     tone: 'red',
+    requiresDriftAccess: true,
   },
   {
     label: 'System Health',
-    description: 'Ledger Reconciliation & Cron Status',
+    description: 'Server-Owned Financial Integrity Controls',
     path: '/financial-health',
     tone: 'blue',
+    staffOnly: true,
   },
   {
-    label: 'Disputes',
-    description: 'Open Disputes Needing Resolution',
+    label: 'Club Disputes',
+    description: 'Open Club Disputes Needing Resolution',
+    // The unscoped route is the signed-in person's own casework. It is not a
+    // platform-wide admin queue, so the platform presentation names that
+    // narrower contract while a selected club opens the guarded club queue.
     path: '/disputes',
+    clubPath: 'disputes',
+    platformLabel: 'My Disputes',
+    platformDescription: 'Your Submitted Disputes And Resolution Status',
     tone: 'gold',
   },
   {
@@ -184,47 +192,47 @@ const NAV_ITEMS: Array<{
     description: 'Commission & Rake Rate Change History',
     path: '/rate-audit',
     tone: 'silver',
+    preserveClubScope: true,
   },
   {
     label: 'Agent Portal',
-    description: 'Triple Wallet, Credit Lines, Commissions',
+    description: 'Your Wallets, Credit Line, Commissions And Invoices',
     path: '/agent-portal',
     tone: 'blue',
-  },
-  {
-    label: 'Rakeback Dashboard',
-    description: 'Player Rakeback Tiers & Pending Payouts',
-    path: '/rakeback',
-    tone: 'silver',
+    // AgentPortalPage resolves the signed-in person's record in the selected
+    // club. A platform-wide scope has no honest agent wallet to open.
+    requiresClubScope: true,
   },
   {
     label: 'Credit Admin',
     description: 'Set & Adjust Agent Credit Limits',
     path: '/credit-admin',
     tone: 'gold',
+    preserveClubScope: true,
+    requiresCreditClubRole: true,
   },
   {
     label: 'Settlement History',
     description: 'Weekly Settlement Cycles & Revenue Trends',
     path: '/settlement-history',
     tone: 'blue',
+    preserveClubScope: true,
+    requiresClubScope: true,
   },
   {
     label: 'Settlement Center',
-    description: 'Canary Checks, Payout Execution & Monitoring',
+    description: 'Weekly Accounting & Verified Transaction Records',
     path: '/settlement-dashboard',
     tone: 'silver',
-  },
-  {
-    label: 'Settlements',
-    description: 'Club & Agent Settlement Management',
-    path: '/wallet',
-    tone: 'blue',
+    preserveClubScope: true,
   },
   {
     label: 'CSV Exports',
-    description: 'Financial Reports & Data Exports',
-    path: '/wallet',
+    description: 'Export Exact Club Financial Records',
+    // Club Financials owns the verified, club-authorized exact CSV. There is
+    // no honest platform-wide equivalent, so this door is absent until the
+    // financial scope has named one club.
+    clubPath: 'financials',
     tone: 'silver',
   },
 ];
@@ -307,8 +315,9 @@ export default function FinancialAdminHub() {
   }, [scopeStatus, loadUnionOptions]);
 
   // Every result belongs to one signed-in viewer, one club scope and one
-  // captured seven-day window. A failed source fails the reading; it never
-  // becomes a plausible zero or a false all-clear.
+  // captured seven-day window. A failed financial source fails the reading;
+  // the separately authorized drift queue is isolated and becomes explicitly
+  // unavailable rather than erasing otherwise verified club figures.
   const loadStats = useCallback(async () => {
     const viewerId = user?.id;
     if (!viewerId || scopeStatus !== 'ready' || scope.userId !== viewerId) return;
@@ -324,59 +333,36 @@ export default function FinancialAdminHub() {
     setLoadedStatsScope(null);
     const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
     try {
-      const [
-        disputeResult,
-        commResult,
-        rakeResult,
-        healthCountResult,
-        alertResult,
-        incidentResult,
-        lastCheckResult,
-        rakeDataResult,
-      ] = await Promise.all([
-        clubScoped(
-          supabase
-            .from('disputes')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['open', 'under_review', 'escalated']),
-          /* error bound by disputeResult below */
-          scopeKey
-        ),
-        clubScoped(
-          supabase.from('commission_rate_audit').select('*', { count: 'exact', head: true }),
-          /* error bound by commResult below */
-          scopeKey
-        ),
-        clubScoped(
-          supabase.from('rake_rate_audit').select('*', { count: 'exact', head: true }),
-          /* error bound by rakeResult below */
-          scopeKey
-        ),
-        supabase.from('financial_health_checks').select('*', { count: 'exact', head: true }),
-        supabase
-          .from('financial_alerts')
-          .select('*', { count: 'exact', head: true })
-          .eq('resolved', false),
-        supabase.rpc('fn_ca_incident_dashboard', { p_status: null, p_limit: 500 }),
-        supabase
-          .from('financial_health_checks')
-          .select('passed')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase.rpc('ca_financial_admin_revenue_series', {
-          p_club_id: scopePlatformWide ? null : scopeClubId,
-          p_days: 7,
-        }),
-      ]);
+      const [disputeResult, commResult, rakeResult, rakeDataResult, incidentAccessResult] =
+        await Promise.all([
+          clubScoped(
+            supabase
+              .from('disputes')
+              .select('*', { count: 'exact', head: true })
+              .in('status', ['open', 'under_review', 'escalated']),
+            /* error bound by disputeResult below */
+            scopeKey
+          ),
+          clubScoped(
+            supabase.from('commission_rate_audit').select('*', { count: 'exact', head: true }),
+            /* error bound by commResult below */
+            scopeKey
+          ),
+          clubScoped(
+            supabase.from('rake_rate_audit').select('*', { count: 'exact', head: true }),
+            /* error bound by rakeResult below */
+            scopeKey
+          ),
+          supabase.rpc('ca_financial_admin_revenue_series', {
+            p_club_id: scopePlatformWide ? null : scopeClubId,
+            p_days: 7,
+          }),
+          supabase.rpc('fn_ca_can_view_drift_console'),
+        ]);
       const named = [
         ['Disputes', disputeResult],
         ['Commission Rates', commResult],
         ['Rake Rates', rakeResult],
-        ['Health Checks', healthCountResult],
-        ['Financial Alerts', alertResult],
-        ['Drift Incidents', incidentResult],
-        ['Latest Health Check', lastCheckResult],
         ['Revenue', rakeDataResult],
       ] as const;
       for (const [name, result] of named) {
@@ -386,8 +372,6 @@ export default function FinancialAdminHub() {
         ['Disputes', disputeResult],
         ['Commission Rates', commResult],
         ['Rake Rates', rakeResult],
-        ['Health Checks', healthCountResult],
-        ['Financial Alerts', alertResult],
       ] as const) {
         if (
           typeof result.count !== 'number' ||
@@ -397,47 +381,69 @@ export default function FinancialAdminHub() {
           throw new Error(`${name} Count Was Not Returned`);
         }
       }
-      if (!Array.isArray(incidentResult.data)) throw new Error('Drift Incidents Were Not Returned');
       const revenueReading = parseRevenueSeries(
         rakeDataResult.data,
         scopePlatformWide ? null : scopeClubId,
         scopePlatformWide
       );
-      const incidents = incidentResult.data;
-      if (
-        incidents.some(
-          (incident) =>
-            !isRecord(incident) ||
-            typeof incident.status !== 'string' ||
-            (incident.club_id != null && typeof incident.club_id !== 'string')
-        )
-      ) {
-        throw new Error('Drift Incidents Could Not Be Verified');
+
+      let incidentStatus: HubReading['incidentStatus'] = 'unavailable';
+      let openIncidents: number | null = null;
+      if (incidentAccessResult.error) {
+        reportError(incidentAccessResult.error, 'FinancialAdminHub.Incident_access_failed');
+      } else if (incidentAccessResult.data === false) {
+        incidentStatus = 'not_authorized';
+      } else if (incidentAccessResult.data === true) {
+        const incidentResult = await supabase.rpc('fn_ca_incident_dashboard', {
+          p_status: null,
+          p_limit: 500,
+        });
+        if (incidentResult.error) {
+          reportError(incidentResult.error, 'FinancialAdminHub.Incident_read_failed');
+        } else if (!Array.isArray(incidentResult.data)) {
+          reportError(
+            new Error('Drift Incidents Were Not Returned'),
+            'FinancialAdminHub.Incident_read_failed'
+          );
+        } else if (
+          incidentResult.data.some(
+            (incident) =>
+              !isRecord(incident) ||
+              typeof incident.status !== 'string' ||
+              (incident.club_id != null && typeof incident.club_id !== 'string')
+          )
+        ) {
+          reportError(
+            new Error('Drift Incidents Could Not Be Verified'),
+            'FinancialAdminHub.Incident_read_failed'
+          );
+        } else {
+          const verifiedIncidents = incidentResult.data as Array<{
+            status: string;
+            club_id: string | null;
+          }>;
+          openIncidents = verifiedIncidents.filter(
+            (incident) =>
+              incident.status !== 'resolved' &&
+              (scopePlatformWide || incident.club_id === scopeClubId)
+          ).length;
+          incidentStatus = 'ready';
+        }
+      } else {
+        reportError(
+          new Error('Drift Incident Access Could Not Be Verified'),
+          'FinancialAdminHub.Incident_access_failed'
+        );
       }
-      const verifiedIncidents = incidents as Array<{ status: string; club_id: string | null }>;
-      const latestHealth = lastCheckResult.data;
-      if (
-        latestHealth != null &&
-        (!isRecord(latestHealth) || typeof latestHealth.passed !== 'boolean')
-      ) {
-        throw new Error('Latest Health Check Could Not Be Verified');
-      }
-      const latestHealthPassed = latestHealth == null ? null : (latestHealth.passed as boolean);
       if (!isCurrent()) return;
 
       setReading({
         stats: {
-          totalAlerts: alertResult.count!,
-          openIncidents: verifiedIncidents.filter(
-            (incident) =>
-              incident?.status !== 'resolved' &&
-              (scopePlatformWide || incident?.club_id === scopeClubId)
-          ).length,
+          openIncidents,
           openDisputes: disputeResult.count!,
           rateChanges: commResult.count! + rakeResult.count!,
-          healthChecks: healthCountResult.count!,
-          lastCheckPassed: latestHealthPassed,
         },
+        incidentStatus,
         ...revenueReading,
       });
       setLoadedStatsScope(requestScope);
@@ -502,7 +508,7 @@ export default function FinancialAdminHub() {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     setVisibleCards(new Set());
-    [0, 1, 2, 3, 4].forEach((i) => {
+    [0, 1, 2].forEach((i) => {
       timers.push(setTimeout(() => setVisibleCards((prev) => new Set(prev).add(i)), i * 80));
     });
     setVisibleNavs(new Set());
@@ -514,15 +520,17 @@ export default function FinancialAdminHub() {
 
   const kpiRows = stats
     ? [
-        { label: 'Drift Incidents', value: stats.openIncidents, alert: stats.openIncidents > 0 },
+        ...(reading?.incidentStatus === 'ready' && stats.openIncidents !== null
+          ? [
+              {
+                label: 'Loaded Drift Incidents',
+                value: stats.openIncidents,
+                alert: stats.openIncidents > 0,
+              },
+            ]
+          : []),
         { label: 'Open Disputes', value: stats.openDisputes, alert: stats.openDisputes > 0 },
         { label: 'Rate Changes', value: stats.rateChanges, alert: false },
-        {
-          label: 'Health Checks',
-          value: stats.healthChecks,
-          alert: stats.lastCheckPassed === false,
-        },
-        { label: 'Active Alerts', value: stats.totalAlerts, alert: stats.totalAlerts > 0 },
       ]
     : [];
 
@@ -530,14 +538,11 @@ export default function FinancialAdminHub() {
     ? 'System Status Unverified'
     : !stats
       ? 'Reading Financial Status'
-      : stats.lastCheckPassed === false ||
-          stats.totalAlerts > 0 ||
-          stats.openIncidents > 0 ||
-          stats.openDisputes > 0
-        ? 'Attention Required'
-        : stats.lastCheckPassed === true
-          ? 'Checks Passing'
-          : 'Awaiting Verification';
+      : reading?.incidentStatus === 'unavailable'
+        ? 'Incident Status Unavailable'
+        : (stats.openIncidents ?? 0) > 0 || stats.openDisputes > 0
+          ? 'Attention Required'
+          : 'Scope Reading Complete';
 
   if (scope.status !== 'ready' || scope.userId !== user?.id) {
     return (
@@ -657,16 +662,33 @@ export default function FinancialAdminHub() {
               </h2>
               <nav className={styles.toolRows} aria-label="Financial Tools">
                 {NAV_ITEMS.map((item, idx) =>
-                  item.staffOnly && !scope.isPlatformStaff ? null : (
+                  (item.staffOnly && !scope.isPlatformStaff) ||
+                  (item.requiresCreditClubRole &&
+                    (!scopeClubId || !CREDIT_ADMIN_ROLES.has(scope.clubRole || ''))) ||
+                  (item.requiresDriftAccess && reading?.incidentStatus !== 'ready') ||
+                  (item.requiresClubScope && !scopeClubId) ||
+                  (item.clubPath && !scopeClubId && !item.path) ? null : (
                     <Link
                       key={item.label}
-                      to={item.path}
+                      to={
+                        item.clubPath && scopeClubId
+                          ? `/clubs/${encodeURIComponent(scopeClubId)}/${item.clubPath}`
+                          : item.preserveClubScope && scopeClubId
+                            ? `${item.path}?club=${encodeURIComponent(scopeClubId)}`
+                            : item.path!
+                      }
                       className={`${styles.toolRow} ${styles[`tone${titleCase(item.tone)}`]}`}
                       data-visible={visibleNavs.has(idx)}
                     >
                       <span className={styles.toolCopy}>
-                        <strong>{item.label}</strong>
-                        <small>{item.description}</small>
+                        <strong>
+                          {!scopeClubId && item.platformLabel ? item.platformLabel : item.label}
+                        </strong>
+                        <small>
+                          {!scopeClubId && item.platformDescription
+                            ? item.platformDescription
+                            : item.description}
+                        </small>
                       </span>
                       <span className={styles.openWord}>Open</span>
                     </Link>
@@ -683,7 +705,13 @@ export default function FinancialAdminHub() {
               <div className={styles.statusRow}>
                 <span>System Status</span>
                 <strong
-                  className={systemStatus === 'Checks Passing' ? 'sc-ink--green' : 'sc-ink--gold'}
+                  className={
+                    systemStatus === 'Attention Required'
+                      ? 'sc-ink--gold'
+                      : systemStatus === 'Incident Status Unavailable'
+                        ? 'sc-ink--red'
+                        : 'sc-ink--blue'
+                  }
                 >
                   {systemStatus}
                 </strong>
@@ -702,8 +730,8 @@ export default function FinancialAdminHub() {
       </SpadeConsole>
 
       <SpadeConsole
-        family="shark"
-        crest="flat"
+        family="spade"
+        crest="spade"
         eyebrow="Authorized Union"
         title="Union Operations"
         pill={selectedUnion ? 'Selected' : 'Choose'}

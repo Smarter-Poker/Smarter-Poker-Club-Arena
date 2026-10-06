@@ -1,6 +1,7 @@
 import { RANGES, type FullStats, type LifetimeStats, type OverallStats } from './types';
 import { ratioOrUnmeasured } from './format';
 import { HandsWonGauge, type StatCategory } from './playerStatsPageModel';
+import { compactChips } from '../../utils/format';
 
 interface Props {
   statsEyebrow: string;
@@ -130,7 +131,7 @@ export default function StatsHeadlineDeck(props: Props) {
                 className={`hero-stat-value ${overall.total_profit >= 0 ? 'positive' : 'negative'}`}
               >
                 {overall.total_profit >= 0 ? '+' : ''}
-                {overall.total_profit.toLocaleString()}
+                {compactChips(overall.total_profit)}
               </span>
             </div>
             <div className="hero-stat">
@@ -141,7 +142,7 @@ export default function StatsHeadlineDeck(props: Props) {
                   (!overall.cash_hands ? '' : overall.bb_per_100 >= 0 ? ' positive' : ' negative')
                 }
               >
-                {ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(2))}
+                {ratioOrUnmeasured(overall.bb_per_100, overall.cash_hands, (v) => v.toFixed(1))}
               </span>
             </div>
           </div>
@@ -157,6 +158,13 @@ export default function StatsHeadlineDeck(props: Props) {
       {/* Analysis-window and staleness notices: never present a truncated or
       stale figure as though it were a current lifetime total. */}
       <div className="stats-notice-deck" aria-live="polite">
+        {hasData && statsContract.coverage.analysis_hands_capped && (
+          <div className="stats-notice">
+            Analysis Panels Use Your Most Recent{' '}
+            {statsContract.coverage.analysis_hand_cap.toLocaleString()} Hands. Headline Totals Still
+            Include Every Hand In This Range.
+          </div>
+        )}
         {hasData && overall.hands_capped && (
           <div className="stats-notice">
             Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands

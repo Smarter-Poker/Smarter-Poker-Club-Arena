@@ -37,7 +37,7 @@ export interface PositionalRadarRow {
   three_bet_opps?: number;
   hands_won?: number;
   total_profit?: number;
-  bb100?: number;
+  bb100?: number | null;
 }
 
 interface Props {

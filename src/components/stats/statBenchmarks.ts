@@ -22,6 +22,7 @@
  */
 
 import type { DistributionRow } from '../../services/StatsFactsService';
+import { ordinal } from '../../utils/format';
 
 export type Direction = 'higher_better' | 'lower_better' | 'band_optimal';
 
@@ -174,11 +175,11 @@ function percentileFrom(value: number, d: DistributionRow): number {
   return 50;
 }
 
-function ordinal(p: number): string {
+function percentileDescription(p: number): string {
   const r = Math.round(p);
   if (r >= 90) return `top ${Math.max(1, 100 - r)}%`;
   if (r <= 10) return `bottom ${Math.max(1, r)}%`;
-  return `${r}th percentile`;
+  return `${ordinal(r)} percentile`;
 }
 
 /**
@@ -277,7 +278,7 @@ export function benchmark(
     value,
     percentile,
     bandPosition: null,
-    readout: `${value.toFixed(1)}${def.unit === 'bb/100' ? ' bb/100' : def.unit} - ${ordinal(
+    readout: `${value.toFixed(1)}${def.unit === 'bb/100' ? ' bb/100' : def.unit} - ${percentileDescription(
       percentile
     )} of the field.`,
     barPosition,

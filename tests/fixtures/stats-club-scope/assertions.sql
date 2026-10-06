@@ -13,9 +13,11 @@ INSERT INTO public.club_members(club_id,user_id,status) VALUES
   ('10000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','active'),
   ('10000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','active');
 
+-- Keep every row expected by the one-day assertion inside the current Chicago
+-- calendar window. Subtracting hours here makes the fixture fail after midnight.
 INSERT INTO public.tournaments(id,club_id,name,start_time,ended_at,status,variant,buy_in_amount,buy_in_fee)
 VALUES
- ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',now()-interval '1 hour','COMPLETED','nlh',10,1),
+ ('40000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','Finished Inside',now()-interval '10 days',now(),'COMPLETED','nlh',10,1),
  ('40000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','Still Running',now()-interval '1 hour',NULL,'RUNNING','nlh',10,1);
 INSERT INTO public.tournament_players(id,tournament_id,user_id,status,position,prize,rebuys,add_on)
 VALUES
@@ -53,7 +55,7 @@ INSERT INTO public.ca_hand_facts(hand_id,user_id,club_id,played_at,game_variant,
   players_dealt,invested,returned,net,net_bb,rake_paid,vpip,pfr)
 SELECT ('31000000-0000-0000-0000-'||lpad(g::text,12,'0'))::uuid,
  '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
- now()-interval '2 hours','nlh',1,'BTN',6,1,2,1,1,0.01,true,false
+ now(),'nlh',1,'BTN',6,1,2,1,1,0.01,true,false
 FROM generate_series(1,751) g;
 
 INSERT INTO public.hand_history(id,club_id)
@@ -68,7 +70,7 @@ SELECT user_id,hand_id,played_at,tournament_id IS NULL,tournament_id,game_varian
 INSERT INTO public.ca_hand_player_stat(user_id,hand_id,created_at,is_cash,game_variant,big_blind,
   seat_position,my_blind,won_amt,is_winner,invested_actions,vpip,pfr,profit,asset)
 VALUES ('20000000-0000-0000-0000-000000000001','32000000-0000-0000-0000-000000000001',
-  now()-interval '3 hours',true,'nlh',1,'CO',0,3,true,1,true,false,2,'chips');
+  now(),true,'nlh',1,'CO',0,3,true,1,true,false,2,'chips');
 GRANT EXECUTE ON FUNCTION public.fixture_expect_refusal(text,text) TO authenticated;
 
 SET ROLE authenticated;

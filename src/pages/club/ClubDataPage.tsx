@@ -54,6 +54,7 @@ import {
 import {
   auditClubDataSnapshot,
   formatClubDataAge,
+  isVerifiedClubDataSnapshot,
   preserveExpandedClubDataRows,
 } from '../../lib/clubDataIntegrity';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
@@ -119,6 +120,7 @@ interface SnapshotSummary {
 interface Snapshot {
   range: { start: string; end: string; days: number };
   previous_range: { start: string; end: string; days: number };
+  filters: { game: GameFilter; stakes: StakesFilter; search: string | null };
   summary: SnapshotSummary;
   // the same summary for the window immediately before this one, same filters
   previous: SnapshotSummary;
@@ -164,6 +166,18 @@ interface PageCursor {
 }
 
 interface GamePage {
+  contract: 'ca_club_game_page.v2';
+  contract_version: 2;
+  club_id: string;
+  requested_start: string;
+  requested_end: string;
+  requested_game: GameFilter;
+  requested_stakes: StakesFilter;
+  requested_search: string | null;
+  requested_sort: GameSort;
+  requested_cursor: PageCursor | null;
+  requested_limit: number;
+  sort: GameSort;
   rows: SnapshotRow[];
   next_cursor: PageCursor | null;
   has_more: boolean;
@@ -172,6 +186,16 @@ interface GamePage {
 }
 
 interface PlayerPage {
+  contract: 'ca_club_player_page.v2';
+  contract_version: 2;
+  club_id: string;
+  requested_start: string;
+  requested_end: string;
+  requested_sort: PlayerSort;
+  requested_search: string | null;
+  requested_cursor: PageCursor | null;
+  requested_limit: number;
+  sort: PlayerSort;
   rows: PlayerRow[];
   next_cursor: PageCursor | null;
   has_more: boolean;
@@ -498,6 +522,275 @@ function isInvoiceRow(value: unknown): value is InvoiceRow {
   return Math.round(value.outstanding * 100) === Math.max(amountCents - paidCents, 0);
 }
 
+function isValidDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+function isValidRange(value: unknown): value is Snapshot['range'] {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.start !== 'string' ||
+    typeof value.end !== 'string' ||
+    !isNonNegativeInteger(value.days) ||
+    value.days < 1 ||
+    value.days > 93
+  ) {
+    return false;
+  }
+  const start = Date.parse(`${value.start}T00:00:00Z`);
+  const end = Date.parse(`${value.end}T00:00:00Z`);
+  return (
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    Math.round((end - start) / 86_400_000) + 1 === value.days
+  );
+}
+
+function isSnapshotSummary(value: unknown): value is SnapshotSummary {
+  if (!isRecord(value)) return false;
+  return (
+    isNonNegativeInteger(value.games) &&
+    isNonNegativeInteger(value.hands) &&
+    isExactCent(value.total_winnings) &&
+    isExactCent(value.mtt_winnings) &&
+    isExactCent(value.cash_winnings) &&
+    isExactCent(value.fee) &&
+    (value.cash_fee === undefined || isExactCent(value.cash_fee)) &&
+    (value.mtt_fee === undefined || isExactCent(value.mtt_fee))
+  );
+}
+
+function isImmediatelyPrecedingRange(
+  current: Snapshot['range'],
+  previous: Snapshot['previous_range']
+): boolean {
+  const currentStart = Date.parse(`${current.start}T00:00:00Z`);
+  const previousEnd = Date.parse(`${previous.end}T00:00:00Z`);
+  return current.days === previous.days && previousEnd + 86_400_000 === currentStart;
+}
+
+function isExactAbsoluteDelta(actual: unknown, current: number, previous: number): boolean {
+  return (
+    isExactCent(actual) &&
+    Math.round(actual * 100) === Math.round(current * 100) - Math.round(previous * 100)
+  );
+}
+
+function isExactPercentageDelta(actual: unknown, current: number, previous: number): boolean {
+  if (previous === 0) return actual === null;
+  if (typeof actual !== 'number' || !Number.isFinite(actual)) return false;
+  const expected = Math.round(((current - previous) / Math.abs(previous)) * 1_000) / 10;
+  return Math.abs(actual - expected) <= 1e-9;
+}
+
+function isPageCursor(value: unknown): value is PageCursor | null {
+  if (value === null) return true;
+  if (!isRecord(value) || Object.keys(value).length === 0) return false;
+  return Object.values(value).every(
+    (part) =>
+      (typeof part === 'string' && part.length > 0) ||
+      (typeof part === 'number' && Number.isFinite(part))
+  );
+}
+
+interface ExpectedRange {
+  start: string;
+  end: string;
+}
+
+interface ExpectedSnapshotRequest extends ExpectedRange {
+  game: GameFilter;
+  stakes: StakesFilter;
+  search: string | null;
+}
+
+interface ExpectedGamePageRequest extends ExpectedSnapshotRequest {
+  clubId: string;
+  sort: GameSort;
+  cursor: PageCursor | null;
+  limit: number;
+}
+
+interface ExpectedPlayerPageRequest extends ExpectedRange {
+  clubId: string;
+  sort: PlayerSort;
+  search: string | null;
+  cursor: PageCursor | null;
+  limit: number;
+}
+
+function isExactPageCursor(value: unknown, expected: PageCursor | null): boolean {
+  if (!isPageCursor(value)) return false;
+  if (value === null || expected === null) return value === expected;
+  const actualKeys = Object.keys(value).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return (
+    actualKeys.length === expectedKeys.length &&
+    actualKeys.every((key, index) => key === expectedKeys[index] && value[key] === expected[key])
+  );
+}
+
+function isExactRequestedRange(
+  value: unknown,
+  expected: ExpectedRange
+): value is Snapshot['range'] {
+  return isValidRange(value) && value.start === expected.start && value.end === expected.end;
+}
+
+function isVerifiedSnapshot(value: unknown, expected: ExpectedSnapshotRequest): value is Snapshot {
+  if (!isVerifiedClubDataSnapshot(value) || !isRecord(value)) return false;
+  const rows = value.rows;
+  const delta = value.delta;
+  const filters = value.filters;
+  if (
+    !isExactRequestedRange(value.range, expected) ||
+    !isValidRange(value.previous_range) ||
+    !isRecord(filters) ||
+    filters.game !== expected.game ||
+    filters.stakes !== expected.stakes ||
+    filters.search !== expected.search ||
+    !isSnapshotSummary(value.summary) ||
+    !isSnapshotSummary(value.previous) ||
+    !isRecord(delta)
+  ) {
+    return false;
+  }
+  return (
+    isImmediatelyPrecedingRange(value.range, value.previous_range) &&
+    isExactPercentageDelta(delta.fee_pct, value.summary.fee, value.previous.fee) &&
+    isExactPercentageDelta(delta.games_pct, value.summary.games, value.previous.games) &&
+    isExactAbsoluteDelta(
+      delta.winnings_abs,
+      value.summary.total_winnings,
+      value.previous.total_winnings
+    ) &&
+    isExactAbsoluteDelta(delta.fee_abs, value.summary.fee, value.previous.fee) &&
+    Array.isArray(rows) &&
+    rows.every(isSnapshotExportRow) &&
+    isNonNegativeInteger(value.row_count) &&
+    isStringOrNull(value.union_id) &&
+    isStringOrNull(value.data_updated_at) &&
+    (value.data_updated_at === null || isValidDate(value.data_updated_at)) &&
+    isValidDate(value.generated_at)
+  );
+}
+
+// Exported for the request-receipt regression harness as well as this page.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isVerifiedGamePage(
+  value: unknown,
+  expected: ExpectedGamePageRequest
+): value is GamePage {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return false;
+  const identities = value.rows.map((row) => {
+    if (!isSnapshotExportRow(row)) return '';
+    return `${row.kind}:${row.id}`;
+  });
+  return (
+    identities.every(Boolean) &&
+    new Set(identities).size === identities.length &&
+    value.contract === 'ca_club_game_page.v2' &&
+    value.contract_version === 2 &&
+    value.club_id === expected.clubId &&
+    value.requested_start === expected.start &&
+    value.requested_end === expected.end &&
+    value.requested_game === expected.game &&
+    value.requested_stakes === expected.stakes &&
+    value.requested_search === expected.search &&
+    value.requested_sort === expected.sort &&
+    isExactPageCursor(value.requested_cursor, expected.cursor) &&
+    value.requested_limit === expected.limit &&
+    value.sort === expected.sort &&
+    isPageCursor(value.next_cursor) &&
+    typeof value.has_more === 'boolean' &&
+    (!value.has_more || value.next_cursor !== null) &&
+    (value.filtered_count === undefined ||
+      value.filtered_count === null ||
+      (isNonNegativeInteger(value.filtered_count) && value.filtered_count >= value.rows.length)) &&
+    isValidDate(value.generated_at)
+  );
+}
+
+function isVerifiedPlayerBreakdown(
+  value: unknown,
+  expected: ExpectedRange
+): value is PlayerBreakdown {
+  if (!isRecord(value) || !isRecord(value.totals) || !Array.isArray(value.players)) return false;
+  const totals = value.totals;
+  const playerIds = value.players.map((row) => (isPlayerExportRow(row) ? row.user_id : ''));
+  return (
+    isExactRequestedRange(value.range, expected) &&
+    isStringOrNull(value.rake_complete_through) &&
+    (value.rake_complete_through === null || isValidDate(value.rake_complete_through)) &&
+    isNonNegativeInteger(totals.players) &&
+    isExactCent(totals.net) &&
+    isExactCent(totals.rake) &&
+    isNonNegativeInteger(totals.hands) &&
+    isNonNegativeInteger(value.player_count) &&
+    totals.players === value.player_count &&
+    value.player_count >= value.players.length &&
+    playerIds.every(Boolean) &&
+    new Set(playerIds).size === playerIds.length &&
+    isValidDate(value.generated_at)
+  );
+}
+
+// Exported for the request-receipt regression harness as well as this page.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isVerifiedPlayerPage(
+  value: unknown,
+  expected: ExpectedPlayerPageRequest
+): value is PlayerPage {
+  if (!isRecord(value) || !Array.isArray(value.rows)) return false;
+  const playerIds = value.rows.map((row) => (isPlayerExportRow(row) ? row.user_id : ''));
+  return (
+    playerIds.every(Boolean) &&
+    new Set(playerIds).size === playerIds.length &&
+    value.contract === 'ca_club_player_page.v2' &&
+    value.contract_version === 2 &&
+    value.club_id === expected.clubId &&
+    value.requested_start === expected.start &&
+    value.requested_end === expected.end &&
+    value.requested_sort === expected.sort &&
+    value.requested_search === expected.search &&
+    isExactPageCursor(value.requested_cursor, expected.cursor) &&
+    value.requested_limit === expected.limit &&
+    value.sort === expected.sort &&
+    isPageCursor(value.next_cursor) &&
+    typeof value.has_more === 'boolean' &&
+    (!value.has_more || value.next_cursor !== null) &&
+    isNonNegativeInteger(value.filtered_count) &&
+    value.filtered_count >= value.rows.length &&
+    isValidDate(value.generated_at)
+  );
+}
+
+function isVerifiedCachedGameLedger(
+  value: unknown,
+  expected: ExpectedSnapshotRequest
+): value is CachedGameLedger {
+  return (
+    isRecord(value) &&
+    isVerifiedSnapshot(value.snapshot, expected) &&
+    isPageCursor(value.cursor) &&
+    typeof value.hasMore === 'boolean' &&
+    (!value.hasMore || value.cursor !== null)
+  );
+}
+
+function isVerifiedCachedPlayerLedger(
+  value: unknown,
+  expected: ExpectedRange
+): value is CachedPlayerLedger {
+  return (
+    isRecord(value) &&
+    isVerifiedPlayerBreakdown(value.players, expected) &&
+    isPageCursor(value.cursor) &&
+    typeof value.hasMore === 'boolean' &&
+    (!value.hasMore || value.cursor !== null)
+  );
+}
+
 function rowsToCsv(rows: SnapshotRow[]): string {
   const esc = csvEscape;
   const head = [
@@ -712,6 +1005,21 @@ export default function ClubDataPage() {
     d.setUTCDate(d.getUTCDate() - (preset - 1));
     return toISODate(d);
   }, [endDate, preset]);
+
+  const expectedGameSnapshot = useMemo<ExpectedSnapshotRequest>(
+    () => ({
+      start: startDate,
+      end: endDate,
+      game,
+      stakes,
+      search: search || null,
+    }),
+    [startDate, endDate, game, stakes, search]
+  );
+  const expectedPlayerRange = useMemo<ExpectedRange>(
+    () => ({ start: startDate, end: endDate }),
+    [startDate, endDate]
+  );
 
   const isToday = endDate >= toISODate(new Date());
 
@@ -997,12 +1305,23 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError)) setSnapshot(null);
           return false;
         } else if (
-          !auditClubDataSnapshot(data).renderable ||
-          (gameSort !== 'recent' && (!page || !Array.isArray(page.rows)))
+          !isVerifiedSnapshot(data, expectedGameSnapshot) ||
+          (gameSort !== 'recent' &&
+            !isVerifiedGamePage(page, {
+              ...expectedGameSnapshot,
+              clubId: clubUuid,
+              sort: gameSort,
+              cursor: null,
+              limit: GAME_PAGE_SIZE * 2,
+            }))
         ) {
-          // A null or shapeless payload used to be stored as success, leaving a
-          // page with no data, no skeleton and no message.
-          reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
+          // A transport-level success is not a financial success. Only a fully
+          // reconciled payload may replace the last verified rows, become
+          // "Live", or enter the short-lived cache.
+          reportError(
+            new Error('snapshot payload did not pass verified integrity'),
+            'ClubDataPage.snapshot_shape'
+          );
           const outcome = clubDataReadFailure({
             preserveOnError,
             holdingVerifiedData: snapshotRef.current !== null,
@@ -1029,6 +1348,21 @@ export default function ClubDataPage() {
             rows,
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
+          if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+            reportError(
+              new Error('composed snapshot did not pass verified integrity'),
+              'ClubDataPage.snapshot_shape'
+            );
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: snapshotRef.current !== null,
+              message: CLUB_GAMES_UNAVAILABLE_COPY,
+            });
+            setError(outcome.error);
+            if (outcome.degraded) setLedgerSource('degraded');
+            if (outcome.clearData) setSnapshot(null);
+            return false;
+          }
           const keptExpandedRows = rows.length > refreshedRows.length;
           const prefetchedRows =
             gameSort !== 'recent' && !keepExpandedMetricRows
@@ -1059,11 +1393,13 @@ export default function ClubDataPage() {
           const cachedSnapshot = prefetchedRows.length
             ? { ...nextSnapshot, rows: [...rows, ...prefetchedRows] }
             : nextSnapshot;
-          writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
-            snapshot: cachedSnapshot,
-            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
-            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
-          });
+          if (isVerifiedSnapshot(cachedSnapshot, expectedGameSnapshot)) {
+            writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
+              snapshot: cachedSnapshot,
+              cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
+              hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
+            });
+          }
 
           // Recent first paint is intentionally lighter than the ranked sorts.
           // Warm its continuation only after the authoritative 100-row snapshot
@@ -1089,7 +1425,16 @@ export default function ClubDataPage() {
             )
               .then(({ data: prefetchedData, error: prefetchError }) => {
                 const prefetchPage = prefetchedData as GamePage | null;
-                if (prefetchError || !prefetchPage || !Array.isArray(prefetchPage.rows))
+                if (
+                  prefetchError ||
+                  !isVerifiedGamePage(prefetchPage, {
+                    ...expectedGameSnapshot,
+                    clubId: clubUuid,
+                    sort: 'recent',
+                    cursor: nextCursor,
+                    limit: GAME_PAGE_SIZE,
+                  })
+                )
                   return null;
                 return {
                   key: prefetchKey,
@@ -1104,9 +1449,14 @@ export default function ClubDataPage() {
               if (stale() || prefetchedGameRequestRef.current?.promise !== prefetchPromise) return;
               prefetchedGameRequestRef.current = null;
               if (!prefetchedPage) return;
+              const prefetchedSnapshot = {
+                ...nextSnapshot,
+                rows: [...rows, ...prefetchedPage.rows],
+              };
+              if (!isVerifiedSnapshot(prefetchedSnapshot, expectedGameSnapshot)) return;
               prefetchedGamePageRef.current = prefetchedPage;
               writeClubDataCache<CachedGameLedger>(userId, clubUuid, prefetchKey, {
-                snapshot: { ...nextSnapshot, rows: [...rows, ...prefetchedPage.rows] },
+                snapshot: prefetchedSnapshot,
                 cursor: prefetchedPage.nextCursor,
                 hasMore: prefetchedPage.hasMore,
               });
@@ -1155,6 +1505,7 @@ export default function ClubDataPage() {
       stakes,
       search,
       gameSort,
+      expectedGameSnapshot,
       isHydrating,
       userId,
       gameCacheKey,
@@ -1183,7 +1534,7 @@ export default function ClubDataPage() {
     gameCursorRef.current = null;
     restoredGameCacheHitRef.current = false;
     const cached = readClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey);
-    if (!cached?.snapshot || !auditClubDataSnapshot(cached.snapshot).renderable) {
+    if (!isVerifiedCachedGameLedger(cached, expectedGameSnapshot)) {
       if (cached) removeClubDataCaches(userId, clubUuid);
       setLoading(true);
       return;
@@ -1199,7 +1550,7 @@ export default function ClubDataPage() {
     setLedgerSource('cached');
     const generatedAt = Date.parse(cached.snapshot.generated_at);
     setLastVerifiedAt(Number.isFinite(generatedAt) ? generatedAt : Date.now());
-  }, [clubUuid, gameCacheKey, gameScopeKey, isHydrating, userId]);
+  }, [clubUuid, expectedGameSnapshot, gameCacheKey, gameScopeKey, isHydrating, userId]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -1299,12 +1650,21 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError)) setPlayers(null);
           return false;
         } else if (
-          !data ||
-          !Array.isArray((data as PlayerBreakdown).players) ||
-          !page ||
-          !Array.isArray(page.rows)
+          !isVerifiedPlayerBreakdown(data, expectedPlayerRange) ||
+          !isVerifiedPlayerPage(page, {
+            ...expectedPlayerRange,
+            clubId: clubUuid,
+            sort: playerSort,
+            search: null,
+            cursor: null,
+            limit: PLAYER_PAGE_SIZE,
+          }) ||
+          page.filtered_count !== data.player_count
         ) {
-          reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
+          reportError(
+            new Error('player payload did not pass verified integrity'),
+            'ClubDataPage.players_shape'
+          );
           const outcome = clubDataReadFailure({
             preserveOnError,
             holdingVerifiedData: playersRef.current !== null,
@@ -1323,6 +1683,20 @@ export default function ClubDataPage() {
           const playerCount = Number(page.filtered_count ?? breakdown.player_count);
           const keptExpandedRows = rows.length > page.rows.length;
           const nextPlayers = { ...breakdown, players: rows, player_count: playerCount };
+          if (!isVerifiedPlayerBreakdown(nextPlayers, expectedPlayerRange)) {
+            reportError(
+              new Error('composed player payload did not pass verified integrity'),
+              'ClubDataPage.players_shape'
+            );
+            const outcome = clubDataReadFailure({
+              preserveOnError,
+              holdingVerifiedData: playersRef.current !== null,
+              message: CLUB_PLAYERS_UNAVAILABLE_COPY,
+            });
+            setPlayersError(outcome.error);
+            if (outcome.clearData) setPlayers(null);
+            return false;
+          }
           const nextCursor = keptExpandedRows ? playerCursorRef.current : page.next_cursor || null;
           const nextHasMore = playerCount > rows.length;
           setPlayersError(null);
@@ -1360,7 +1734,17 @@ export default function ClubDataPage() {
         }
       }
     },
-    [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey, playerScopeKey]
+    [
+      clubUuid,
+      startDate,
+      endDate,
+      playerSort,
+      expectedPlayerRange,
+      isHydrating,
+      userId,
+      playerCacheKey,
+      playerScopeKey,
+    ]
   );
 
   useLayoutEffect(() => {
@@ -1380,7 +1764,7 @@ export default function ClubDataPage() {
       setPlayersLoadingMore(false);
       setPlayersPageError(null);
       const cached = readClubDataCache<CachedPlayerLedger>(userId, clubUuid, playerCacheKey);
-      if (cached?.players && Array.isArray(cached.players.players)) {
+      if (isVerifiedCachedPlayerLedger(cached, expectedPlayerRange)) {
         setPlayers(cached.players);
         playersRef.current = cached.players;
         setPlayerCursor(cached.cursor);
@@ -1400,7 +1784,16 @@ export default function ClubDataPage() {
       }
     }
     void loadPlayers(preserveExistingRows);
-  }, [tab, loadPlayers, clubUuid, isHydrating, userId, playerCacheKey, playerScopeKey]);
+  }, [
+    tab,
+    loadPlayers,
+    clubUuid,
+    expectedPlayerRange,
+    isHydrating,
+    userId,
+    playerCacheKey,
+    playerScopeKey,
+  ]);
 
   const loadMoreGames = useCallback(async () => {
     if (
@@ -1445,6 +1838,14 @@ export default function ClubDataPage() {
         ],
       };
       prefetchedGamePageRef.current = null;
+      if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+        reportError(
+          new Error('prefetched game page did not pass verified integrity'),
+          'ClubDataPage.games_page_shape'
+        );
+        setGamesPageError('Could Not Load More Games.');
+        return;
+      }
       setSnapshot(nextSnapshot);
       snapshotRef.current = nextSnapshot;
       setGameCursor(prefetched.nextCursor);
@@ -1485,7 +1886,16 @@ export default function ClubDataPage() {
       );
       if (stale()) return;
       const page = data as GamePage | null;
-      if (pageError || !page || !Array.isArray(page.rows)) {
+      if (
+        pageError ||
+        !isVerifiedGamePage(page, {
+          ...expectedGameSnapshot,
+          clubId: clubUuid,
+          sort: gameSort,
+          cursor,
+          limit: GAME_PAGE_SIZE,
+        })
+      ) {
         if (pageError && !isAuthzError(pageError))
           reportError(pageError, 'ClubDataPage.games_page_rpc');
         setGamesPageError(
@@ -1510,6 +1920,14 @@ export default function ClubDataPage() {
             ...page.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
           ],
         };
+        if (!isVerifiedSnapshot(nextSnapshot, expectedGameSnapshot)) {
+          reportError(
+            new Error('composed game page did not pass verified integrity'),
+            'ClubDataPage.games_page_shape'
+          );
+          setGamesPageError('Could Not Load More Games.');
+          return;
+        }
         setSnapshot(nextSnapshot);
         snapshotRef.current = nextSnapshot;
       }
@@ -1537,6 +1955,7 @@ export default function ClubDataPage() {
     stakes,
     search,
     gameSort,
+    expectedGameSnapshot,
     gameCacheKey,
     gameScopeKey,
     loading,
@@ -1582,7 +2001,17 @@ export default function ClubDataPage() {
       );
       if (stale()) return;
       const page = data as PlayerPage | null;
-      if (pageError || !page || !Array.isArray(page.rows)) {
+      if (
+        pageError ||
+        !isVerifiedPlayerPage(page, {
+          ...expectedPlayerRange,
+          clubId: clubUuid,
+          sort: playerSort,
+          search: null,
+          cursor,
+          limit: PLAYER_PAGE_SIZE,
+        })
+      ) {
         if (pageError && !isAuthzError(pageError))
           reportError(pageError, 'ClubDataPage.players_page_rpc');
         setPlayersPageError(
@@ -1604,6 +2033,14 @@ export default function ClubDataPage() {
           ...current,
           players: [...current.players, ...page.rows.filter((row) => !known.has(row.user_id))],
         };
+        if (!isVerifiedPlayerBreakdown(nextPlayers, expectedPlayerRange)) {
+          reportError(
+            new Error('composed player page did not pass verified integrity'),
+            'ClubDataPage.players_page_shape'
+          );
+          setPlayersPageError('Could Not Load More Players.');
+          return;
+        }
         setPlayers(nextPlayers);
         playersRef.current = nextPlayers;
       }
@@ -1629,6 +2066,7 @@ export default function ClubDataPage() {
     startDate,
     endDate,
     playerSort,
+    expectedPlayerRange,
     playerScopeKey,
   ]);
 
@@ -2279,7 +2717,7 @@ export default function ClubDataPage() {
           pill="Checking"
           pillInk="blue"
           crest="flat"
-          family="shark"
+          family="spade"
           foot="foot"
           className={styles.console}
           aria-busy="true"
@@ -2300,7 +2738,8 @@ export default function ClubDataPage() {
           pill="Restricted"
           pillInk="red"
           crest="flat"
-          family="riveted"
+          family="shark"
+          foot="plates"
           className={styles.console}
           plates={{
             primary: { label: 'Go Back', onClick: () => navigate('/') },
@@ -2514,7 +2953,7 @@ export default function ClubDataPage() {
         pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
         pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
         crest="flat"
-        family="shark"
+        family="spade"
         foot="foot"
         className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
         aria-labelledby="club-data-integrity-title"
@@ -2566,10 +3005,30 @@ export default function ClubDataPage() {
         eyebrow="Performance Ledger"
         title="Club Pulse"
         titleId="club-data-pulse-title"
-        pill={loading ? 'Syncing' : 'Live'}
-        pillInk={loading ? 'blue' : 'green'}
+        pill={
+          loading
+            ? 'Syncing'
+            : !snapshot
+              ? 'Unavailable'
+              : ledgerSource === 'cached'
+                ? 'Cached'
+                : ledgerSource === 'degraded'
+                  ? 'Delayed'
+                  : 'Live'
+        }
+        pillInk={
+          loading
+            ? 'blue'
+            : !snapshot
+              ? 'red'
+              : ledgerSource === 'cached'
+                ? 'gold'
+                : ledgerSource === 'degraded'
+                  ? 'red'
+                  : 'green'
+        }
         crest="spade"
-        family="riveted"
+        family="spade"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-pulse-title"
@@ -2696,7 +3155,7 @@ export default function ClubDataPage() {
           pill={invoicePill}
           pillInk={invoicePillInk}
           crest="flat"
-          family="shark"
+          family="spade"
           foot="foot"
           className={styles.console}
           aria-labelledby="club-data-statement-title"
@@ -2907,7 +3366,7 @@ export default function ClubDataPage() {
         pill={ledgerPill}
         pillInk="blue"
         crest="flat"
-        family="riveted"
+        family="spade"
         foot="foot"
         className={styles.console}
         aria-labelledby="club-data-ledger-title"
@@ -3065,7 +3524,11 @@ export default function ClubDataPage() {
               )}
 
               {!error && gameVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingTop }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: gameVirtual.paddingTop }}
+                />
               )}
 
               {!error &&
@@ -3090,10 +3553,9 @@ export default function ClubDataPage() {
                         month: '2-digit',
                       })
                     : '';
-                  const idLabel = titleCase(
-                    row.creator_name ||
-                      (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8))
-                  );
+                  const creatorLabel = row.creator_name
+                    ? titleCase(row.creator_name)
+                    : 'Creator Name Unavailable';
                   const gameName = titleCase(row.name);
 
                   return (
@@ -3136,8 +3598,8 @@ export default function ClubDataPage() {
                             {(row.name || '?').slice(0, 1).toUpperCase()}
                           </span>
                         )}
-                        <span className={`sc-ink--muted ${styles.rowId}`} title={idLabel}>
-                          {idLabel}
+                        <span className={`sc-ink--muted ${styles.rowId}`} title={creatorLabel}>
+                          {creatorLabel}
                         </span>
                       </div>
 
@@ -3183,7 +3645,11 @@ export default function ClubDataPage() {
                 })}
 
               {!error && gameVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingBottom }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: gameVirtual.paddingBottom }}
+                />
               )}
             </div>
 
@@ -3219,7 +3685,7 @@ export default function ClubDataPage() {
             {snapshot && (
               <p className={`sc-copy ${styles.note}`}>
                 {clubLabel ? `${clubLabel} - ` : ''}
-                Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
+                Loaded {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
                 {snapshot.data_updated_at
                   ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
                   : ''}
@@ -3306,7 +3772,11 @@ export default function ClubDataPage() {
               )}
 
               {!playersError && playerVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingTop }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: playerVirtual.paddingTop }}
+                />
               )}
 
               {!playersError &&
@@ -3371,7 +3841,11 @@ export default function ClubDataPage() {
                 })}
 
               {!playersError && playerVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingBottom }} />
+                <div
+                  className={styles.virtualSpacer}
+                  aria-hidden="true"
+                  style={{ height: playerVirtual.paddingBottom }}
+                />
               )}
             </div>
 
@@ -3420,7 +3894,7 @@ export default function ClubDataPage() {
                     : '';
                 })()}
                 {players.player_count > sortedPlayers.length
-                  ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
+                  ? ` Loaded ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
                   : ''}
               </p>
             )}

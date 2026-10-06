@@ -13,8 +13,9 @@ describe('Club Data painted-console contract', () => {
 
     expect(clubData).toContain('family="spade"');
     expect(clubData).toContain('family="shark"');
-    expect(clubData).toContain('family="riveted"');
-    expect(rake).toContain('family="shark"');
+    expect(clubData).not.toContain('family="riveted"');
+    expect(rake).toContain('family="spade"');
+    expect(rake).not.toMatch(/family="(?:shark|riveted)"/);
     expect(union).toContain('family="riveted"');
     expect(`${clubData}\n${rake}\n${union}`).not.toMatch(/crest="(?:club|diamond)"/);
   });
@@ -44,8 +45,8 @@ describe('Club Data painted-console contract', () => {
   it('keeps the connected financial health consoles on explicit approved families', () => {
     for (const path of [
       'src/pages/FinancialHealthPage.tsx',
-      'src/pages/FinancialAlertsPage.tsx',
       'src/pages/DriftIncidentsPage.tsx',
+      'src/pages/DriftGatePanel.tsx',
     ]) {
       const source = read(path);
       const consoles = source.match(/<SpadeConsole\b[\s\S]*?>/g) ?? [];

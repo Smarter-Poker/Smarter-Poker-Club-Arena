@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   SharedClubStatsService,
+  type SharedClubStatsPayload,
   type SharedStatsClub,
 } from '../../services/SharedClubStatsService';
 import { reportError } from '../../utils/errorReporter';
+import { titleCase } from '../../utils/titleCase';
+import { ratioOrUnmeasured } from './format';
 import { RANGES } from './types';
 
 interface Props {
@@ -20,7 +23,9 @@ interface Props {
 export default function SharedClubStatsView(props: Props) {
   const [clubs, setClubs] = useState<SharedStatsClub[]>([]);
   const [clubId, setClubId] = useState<string | null>(null);
-  const [payload, setPayload] = useState<{ scope: string; data: any } | null>(null);
+  const [payload, setPayload] = useState<{ scope: string; data: SharedClubStatsPayload } | null>(
+    null
+  );
   const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [errorStage, setErrorStage] = useState<'clubs' | 'overview' | null>(null);
   const [clubsScope, setClubsScope] = useState<string | null>(null);
@@ -156,8 +161,8 @@ export default function SharedClubStatsView(props: Props) {
     if (errorStage === 'overview') setOverviewAttempt((attempt) => attempt + 1);
   };
 
-  const o = readyPayload?.overview ?? {};
-  const t = readyPayload?.tournaments ?? {};
+  const o = readyPayload?.overview ?? null;
+  const t = readyPayload?.tournaments ?? null;
   return (
     <div className="stats-page">
       <section className="stats-command-deck">
@@ -183,7 +188,7 @@ export default function SharedClubStatsView(props: Props) {
           <div className="stats-club-command-copy">
             <span className="stats-section-kicker">Exact Shared Scope</span>
             <h2 id="shared-club-title">
-              {visibleClubs.find((c) => c.id === displayClubId)?.name ?? 'Shared Club'}
+              {titleCase(visibleClubs.find((c) => c.id === displayClubId)?.name ?? 'Shared Club')}
             </h2>
             <p>No All-Clubs, Private Financial, Hand, Note, Or Opponent Data Is Exposed.</p>
             <div className="stats-club-selector" role="group" aria-label="Shared Statistics Club">
@@ -195,7 +200,7 @@ export default function SharedClubStatsView(props: Props) {
                   aria-pressed={c.id === displayClubId}
                   onClick={() => choose(c.id)}
                 >
-                  {c.name}
+                  {titleCase(c.name)}
                 </button>
               ))}
             </div>
@@ -211,7 +216,7 @@ export default function SharedClubStatsView(props: Props) {
             aria-pressed={r.key === props.rangeKey}
             onClick={() => props.onRangeChange(r.key)}
           >
-            {r.label}
+            {titleCase(r.label)}
           </button>
         ))}
       </div>
@@ -241,7 +246,7 @@ export default function SharedClubStatsView(props: Props) {
           </button>
         </div>
       )}
-      {displayState === 'ready' && readyPayload && (
+      {displayState === 'ready' && readyPayload && o && t && (
         <section className="stats-club-comparison" aria-label="Shared Club Public Aggregates">
           <div className="stats-club-comparison-head">
             <div>
@@ -267,9 +272,15 @@ export default function SharedClubStatsView(props: Props) {
                 <tr>
                   <td>{o.hands ?? 0}</td>
                   <td>{o.hands_won ?? 0}</td>
-                  <td>{o.bb_per_100 ?? 0}</td>
-                  <td>{((o.vpip ?? 0) * 100).toFixed(1)}%</td>
-                  <td>{((o.pfr ?? 0) * 100).toFixed(1)}%</td>
+                  <td>
+                    {ratioOrUnmeasured(o.bb_per_100, o.cash_hands, (value) => value.toFixed(1))}
+                  </td>
+                  <td>
+                    {ratioOrUnmeasured(o.vpip, o.hands, (value) => `${(value * 100).toFixed(1)}%`)}
+                  </td>
+                  <td>
+                    {ratioOrUnmeasured(o.pfr, o.hands, (value) => `${(value * 100).toFixed(1)}%`)}
+                  </td>
                   <td>{t.entries ?? 0}</td>
                   <td>{t.cashes ?? 0}</td>
                   <td>{t.wins ?? 0}</td>

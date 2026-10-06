@@ -1,4 +1,6 @@
 import { CHIP_STATS } from '../../services/statsScope';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
 import { NOT_YET_MEASURED } from './format';
 import {
   CLUB_SORTS,
@@ -59,7 +61,7 @@ export default function ClubScopeConsole(props: Props) {
           />
           <div className="stats-club-command-copy">
             <span className="stats-section-kicker">Authorized Club Ledger</span>
-            <h2 id="stats-club-scope-title">{clubLabel}</h2>
+            <h2 id="stats-club-scope-title">{titleCase(clubLabel)}</h2>
             <p>
               {selectedClub
                 ? 'Every Readout Below Is Restricted To This Club.'
@@ -82,7 +84,7 @@ export default function ClubScopeConsole(props: Props) {
                   className={selectedClubId === club.id ? 'active' : ''}
                   onClick={() => changeClub(club.id)}
                 >
-                  {club.name}
+                  {titleCase(club.name)}
                 </button>
               ))}
             </div>
@@ -172,24 +174,24 @@ export default function ClubScopeConsole(props: Props) {
                     <tr key={row.club.id}>
                       <th scope="row">
                         <button type="button" onClick={() => changeClub(row.club.id)}>
-                          {row.club.name}
+                          {titleCase(row.club.name)}
                         </button>
                       </th>
                       <td>{row.hands.toLocaleString()}</td>
                       <td className={row.profit >= 0 ? 'positive' : 'negative'}>
                         {row.profit >= 0 ? '+' : ''}
-                        {row.profit.toLocaleString()}
+                        {compactChips(row.profit)}
                       </td>
-                      <td>{row.hands ? row.bb100.toFixed(2) : NOT_YET_MEASURED}</td>
+                      <td>{row.hands ? row.bb100.toFixed(1) : NOT_YET_MEASURED}</td>
                       <td>{row.hands ? `${(row.vpip * 100).toFixed(1)}%` : NOT_YET_MEASURED}</td>
                       <td>{row.hands ? `${(row.pfr * 100).toFixed(1)}%` : NOT_YET_MEASURED}</td>
                       <td>{row.hours === null ? 'Unavailable' : row.hours.toFixed(1)}</td>
-                      <td>{row.rake.toLocaleString()}</td>
+                      <td>{compactChips(row.rake)}</td>
                       <td>
                         {row.tournamentEntries.toLocaleString()} Entries //{' '}
                         {row.tournamentCashes.toLocaleString()} Cashes //{' '}
                         {row.tournamentWins.toLocaleString()} Wins //{' '}
-                        {row.tournamentWinnings.toLocaleString()} Won
+                        {compactChips(row.tournamentWinnings)} Won
                       </td>
                       <td>
                         {row.lastPlayedAt

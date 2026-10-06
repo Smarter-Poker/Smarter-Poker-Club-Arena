@@ -10,6 +10,10 @@
   margin-inline: auto;
 }
 
+.ledgerConsole {
+  margin: 1rem auto 0;
+}
+
 .backButton {
   min-height: 44px;
   margin: 0;
@@ -39,4 +43,44 @@
   margin: 0;
   padding: 6cqw 0;
   text-align: center;
+}
+
+.scopeChooser {
+  padding: 4cqw 0;
+  color: #d7dee7;
+  text-align: center;
+}
+
+.scopeChooser p {
+  margin: 0;
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+  line-height: 1.5;
+}
+
+.scopeActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2cqw;
+  margin-top: 3cqw;
+}
+
+.scopeActions button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 3cqw;
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font: inherit;
+  font-size: clamp(0.72rem, 3.2cqw, 0.92rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.scopeActions button:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
 }

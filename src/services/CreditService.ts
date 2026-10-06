@@ -84,8 +84,8 @@ export type InvoiceStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'disput
  * how a cancelled invoice got an agent suspended. `checkSuspension` used to
  * ask `status !== 'paid'`, which counts a VOID invoice as debt - and after
  * 20260901000001 there are 224 of those, 184 of them past their due date.
- * The suspension check (FinancialCronService, run on demand by an admin) reads
- * that answer and suspends people.
+ * Current invoice views and any future server-owned suspension authority must
+ * read this same set instead of inventing their own definition of debt.
  */
 export const OWED_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
   'pending',

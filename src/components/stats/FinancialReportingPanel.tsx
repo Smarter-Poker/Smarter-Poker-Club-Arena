@@ -57,8 +57,9 @@ export default function FinancialReportingPanel(p: Props) {
   if (state === 'loading')
     return (
       <SpadeConsole
-        family="riveted"
-        crest={p.asset === 'diamonds' ? 'diamond' : 'spade'}
+        family="spade"
+        foot="foot"
+        crest="spade"
         eyebrow="Verified Financial Ledger"
         title="Opening Receipt Vault..."
         pill="Verifying"
@@ -69,8 +70,9 @@ export default function FinancialReportingPanel(p: Props) {
   if (state === 'error')
     return (
       <SpadeConsole
-        family="riveted"
-        crest={p.asset === 'diamonds' ? 'diamond' : 'spade'}
+        family="spade"
+        foot="foot"
+        crest="spade"
         eyebrow="Financial Readout Interrupted"
         title="Receipts Could Not Be Verified"
         pill="Interrupted"
@@ -98,8 +100,9 @@ export default function FinancialReportingPanel(p: Props) {
   const payouts = rows(rake.payout_receipts);
   return (
     <SpadeConsole
-      family="riveted"
-      crest={p.asset === 'diamonds' ? 'diamond' : 'spade'}
+      family="spade"
+      foot="foot"
+      crest="spade"
       eyebrow={`Verified Financial Ledger // ${label(p.clubLabel)}`}
       title="Financial Reporting Vault"
       titleId="financial-console-title"

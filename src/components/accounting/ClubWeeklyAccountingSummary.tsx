@@ -7,6 +7,7 @@ import {
   CLUB_WEEKLY_STATEMENT_LIMIT,
   type ClubWeeklyStatement,
 } from '../../services/ClubWeeklyAccountingReader';
+import { FinancialExportService } from '../../services/FinancialExportService';
 import { reportError } from '../../utils/errorReporter';
 import styles from './ClubWeeklyAccountingSummary.module.css';
 
@@ -17,16 +18,27 @@ interface Observation {
   rows: ClubWeeklyStatement[];
 }
 
+function retire(counter: { current: number }) {
+  counter.current += 1;
+}
+
 /** Every club surface reads the same issued weekly summaries. */
 export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   const { user, isHydrating } = useAuthUser();
   const scope = useCashoutScope(user?.id, JSON.stringify(['weekly-statements', clubId]));
   const sequence = useRef(0);
+  const exportSequence = useRef(0);
   const [observation, setObservation] = useState<Observation | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<{
+    tone: 'ready' | 'unavailable';
+    message: string;
+  } | null>(null);
   const refresh = useCallback(async () => {
     const read = ++sequence.current;
     const current = () => scope() && sequence.current === read;
     if (!user?.id || isHydrating || !clubId || !current()) return;
+    setExportNotice(null);
     setObservation({ scope, read, phase: 'loading', rows: [] });
     try {
       const result = await readClubWeeklyStatements({
@@ -47,9 +59,43 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
   useEffect(() => {
     void refresh();
     return () => {
-      ++sequence.current;
+      retire(sequence);
+      retire(exportSequence);
     };
   }, [refresh]);
+
+  const exportSummaries = useCallback(async () => {
+    const read = ++exportSequence.current;
+    const current = () => scope() && exportSequence.current === read;
+    if (!user?.id || isHydrating || !clubId || !current()) return;
+    setExporting(true);
+    setExportNotice(null);
+    try {
+      const result = await FinancialExportService.exportCSV({
+        type: 'settlement_club',
+        clubId,
+        userId: user.id,
+        expectedActorId: user.id,
+        limit: CLUB_WEEKLY_STATEMENT_LIMIT,
+        isCurrent: current,
+      });
+      if (!current()) return;
+      setExportNotice(
+        result.success
+          ? { tone: 'ready', message: 'Weekly Summary Export Prepared.' }
+          : { tone: 'unavailable', message: 'Weekly Summary Export Is Unavailable.' }
+      );
+    } catch (error) {
+      if (!current()) return;
+      reportError(error, 'ClubWeeklyAccountingSummary.export');
+      setExportNotice({
+        tone: 'unavailable',
+        message: 'Weekly Summary Export Is Unavailable.',
+      });
+    } finally {
+      if (current()) setExporting(false);
+    }
+  }, [clubId, user?.id, isHydrating, scope]);
 
   const current =
     scope() && observation?.scope === scope && observation.read === sequence.current
@@ -68,15 +114,41 @@ export function ClubWeeklyAccountingSummary({ clubId }: { clubId: string }) {
         <p className={styles.meta}>
           Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Issued Weekly Summaries.
         </p>
-        <button
-          type="button"
-          className={styles.word}
-          disabled={!available || loading}
-          onClick={() => void refresh()}
-        >
-          Refresh Weekly Summaries
-        </button>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.word}
+            disabled={!available || loading}
+            onClick={() => void refresh()}
+          >
+            Refresh Weekly Summaries
+          </button>
+          <button
+            type="button"
+            className={styles.word}
+            disabled={
+              !available ||
+              loading ||
+              exporting ||
+              current?.phase !== 'ready' ||
+              current.rows.length === 0
+            }
+            onClick={() => void exportSummaries()}
+          >
+            {exporting ? 'Preparing Weekly Export...' : 'Export Weekly Summaries'}
+          </button>
+        </div>
       </div>
+      {exportNotice && (
+        <p
+          className={`${styles.exportNotice} ${
+            exportNotice.tone === 'unavailable' ? 'sc-ink--red' : 'sc-ink--blue'
+          }`}
+          role={exportNotice.tone === 'unavailable' ? 'alert' : 'status'}
+        >
+          {exportNotice.message}
+        </p>
+      )}
       {loading && (
         <p className={`${styles.state} sc-ink--muted`} role="status">
           Loading Weekly Summaries...

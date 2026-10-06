@@ -6,6 +6,9 @@
  * claim tied to the sample shown beside it.
  */
 
+import { enumToTitleCase } from '../../utils/titleCase';
+import { compactChips } from '../../utils/format';
+
 interface BriefOverall {
   total_hands: number;
   cash_hands: number;
@@ -14,7 +17,7 @@ interface BriefOverall {
 interface BriefPosition {
   position: string;
   hands_played: number;
-  bb100: number;
+  bb100: number | null;
 }
 
 interface BriefVariant {
@@ -44,6 +47,10 @@ function signed(value: number, digits = 1): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
 }
 
+function signedChips(value: number): string {
+  return `${value > 0 ? '+' : ''}${compactChips(value)}`;
+}
+
 export function buildStatsIntelligenceBrief(input: {
   overall: BriefOverall;
   positions?: BriefPosition[] | null;
@@ -69,7 +76,12 @@ export function buildStatsIntelligenceBrief(input: {
 
   const sampleIsReliable = overall.cash_hands >= MIN_TOTAL_CASH_HANDS;
   const qualifiedPositions = positions
-    .filter((row) => row.hands_played >= MIN_SEGMENT_HANDS && Number.isFinite(row.bb100))
+    .filter(
+      (row): row is BriefPosition & { bb100: number } =>
+        row.hands_played >= MIN_SEGMENT_HANDS &&
+        typeof row.bb100 === 'number' &&
+        Number.isFinite(row.bb100)
+    )
     .sort((a, b) => b.bb100 - a.bb100);
   const bestPosition = qualifiedPositions[0];
 
@@ -143,7 +155,7 @@ export function buildStatsIntelligenceBrief(input: {
       value: !sampleIsReliable
         ? 'Not Yet Reliable'
         : bestVariant?.variant
-          ? bestVariant.variant.toUpperCase()
+          ? enumToTitleCase(bestVariant.variant)
           : 'Building Sample',
       detail: !sampleIsReliable
         ? `Needs ${MIN_TOTAL_CASH_HANDS.toLocaleString()} cash hands before ranking games.`
@@ -163,7 +175,7 @@ export function buildStatsIntelligenceBrief(input: {
       value: trendValue,
       detail:
         recent.length > 0
-          ? `${signed(recentProfit, 0)} across ${recentHands.toLocaleString()} hands, ${recentRange}.`
+          ? `${signedChips(recentProfit)} across ${recentHands.toLocaleString()} hands, ${recentRange}.`
           : `No cash results recorded from ${recentRange}.`,
       tone: recentProfit > 0 ? 'positive' : recentProfit < 0 ? 'negative' : 'neutral',
     },

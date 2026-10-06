@@ -9,6 +9,7 @@ import { readCreditMoney, creditAdminMoney } from '../../utils/creditAdminData';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { QUERY_LIMITS } from '../../lib/constants';
+import { titleCase } from '../../utils/titleCase';
 import './CreditRequestWidget.css';
 
 interface CreditRequestWidgetProps {
@@ -75,8 +76,8 @@ function CreditManagerInboxForScope({ userId, clubId }: { userId: string; clubId
   if (authority === 'error') return <p>Credit Request Access Could Not Be Verified.</p>;
   if (authority !== 'allowed') return null;
   return (
-    <section aria-label="Credit Requests">
-      <h2>Credit Requests</h2>
+    <section className="credit-request-inbox" aria-label="Credit Requests">
+      <h2 className="credit-request-heading">Credit Requests</h2>
       <CreditRequestWidget
         userId={userId}
         clubId={clubId}
@@ -274,17 +275,19 @@ function CreditRequestsForScope({
 
   const limit = readCreditMoney(currentCreditLimit);
   const used = readCreditMoney(currentCreditUsed);
+  const usedPercent =
+    limit !== null && used !== null && limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
   return (
     <div className="credit-request-widget">
       {showCreditStatus && (
         <div className="credit-status">
           {limit !== null && used !== null && (
-            <div className="credit-bar">
-              <div
-                className="credit-used"
-                style={{ width: `${Math.min(100, (used / (limit || 1)) * 100)}%` }}
-              />
-            </div>
+            <progress
+              className="credit-meter"
+              aria-label="Credit Used"
+              max={100}
+              value={usedPercent}
+            />
           )}
           <div className="credit-info">
             <span>{creditAdminMoney(used)} Used</span>
@@ -298,7 +301,7 @@ function CreditRequestsForScope({
           disabled={busy}
           onClick={() => setShowRequestForm(!showRequestForm)}
         >
-          {showRequestForm ? 'Cancel' : '+ Request Credit'}
+          {showRequestForm ? 'Cancel' : 'Request Credit'}
         </button>
       )}
       {canRequest && !approverUserId && (
@@ -338,11 +341,11 @@ function CreditRequestsForScope({
           {pendingApprovals.map((req) => (
             <div key={req.id} className="approval-card">
               <div className="approval-info">
-                <span className="requester">{req.requesterName}</span>
+                <span className="requester">{titleCase(req.requesterName)}</span>
                 <span className="amount">
                   {creditAdminMoney(readCreditMoney(req.requestedAmount))}
                 </span>
-                <span className="reason">{req.reason}</span>
+                <span className="reason">{titleCase(req.reason)}</span>
               </div>
               {canReview && (
                 <div className="approval-actions">
@@ -352,7 +355,7 @@ function CreditRequestsForScope({
                     aria-label={`Approve ${req.requesterName}`}
                     onClick={() => void handleReview(req, 'approved')}
                   >
-                    ✓
+                    Approve
                   </button>
                   <button
                     className="deny-btn"
@@ -360,7 +363,7 @@ function CreditRequestsForScope({
                     aria-label={`Deny ${req.requesterName}`}
                     onClick={() => void handleReview(req, 'denied')}
                   >
-                    ✕
+                    Deny
                   </button>
                 </div>
               )}
@@ -379,7 +382,7 @@ function CreditRequestsForScope({
               <span className="request-amount">
                 {creditAdminMoney(readCreditMoney(req.requestedAmount))}
               </span>
-              <span className="status-badge">{req.status}</span>
+              <span className="status-badge">{titleCase(req.status)}</span>
               <span className="request-date">{new Date(req.createdAt).toLocaleDateString()}</span>
             </div>
           ))}

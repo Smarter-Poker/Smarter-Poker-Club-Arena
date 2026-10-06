@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './StatsShareCard.css';
 import { IS_NATIVE_BUILD, isNativePlatform } from '../../lib/appBase';
+import { compactChips } from '../../utils/format';
 
 /**
  * The system share sheet (src/lib/native/share.ts). App build only, and a
@@ -220,7 +221,7 @@ export default function StatsShareCard({
     ctx.fillText(
       privacyPresentationMode
         ? 'PRIVATE'
-        : `${n(stats.profit) >= 0 ? '+' : '-'}${Math.round(Math.abs(n(stats.profit))).toLocaleString()}`,
+        : `${n(stats.profit) > 0 ? '+' : ''}${compactChips(n(stats.profit))}`,
       470,
       278
     );

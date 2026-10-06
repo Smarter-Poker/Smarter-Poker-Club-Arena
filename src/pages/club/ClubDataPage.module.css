@@ -358,6 +358,12 @@
   scrollbar-color: #304659 #000;
 }
 
+/* The list is a column flexbox. Virtual padding is measured scroll space, not
+   content that may shrink to fit the viewport. */
+.virtualSpacer {
+  flex: 0 0 auto;
+}
+
 .virtualList:focus-visible {
   outline: 0.6cqw solid #8fd4ff;
   outline-offset: 0.2cqw;

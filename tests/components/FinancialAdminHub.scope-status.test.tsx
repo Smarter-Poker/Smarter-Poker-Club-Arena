@@ -306,6 +306,9 @@ describe('financial admin reading identity and health truth', () => {
 
     expect(await screen.findByText('6K Chips')).toBeInTheDocument();
     expect(screen.getByLabelText('Seven Complete Days Revenue')).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Seven Complete Days Revenue Chart' })
+    ).toBeInTheDocument();
     expect(screen.getByText(/Reading Window/).parentElement).toHaveTextContent(/UTC/);
     expect(m.response).toHaveBeenCalledWith(
       expect.objectContaining({

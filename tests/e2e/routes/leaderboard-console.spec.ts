@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { HeldRouteLifecycle } from '../support/heldRouteLifecycle';
 
 // Read-only production coverage. The post-deploy workflow already runs routes/.
 // Never publish a program or invoke settlement against a real account here.
@@ -384,27 +385,19 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     { key: cacheKey, marker: cachePaintMarker }
   );
 
-  let releaseWarmRefresh!: () => void;
-  let notifyWarmRequest!: () => void;
-  const warmGate = new Promise<void>((resolve) => {
-    releaseWarmRefresh = resolve;
-  });
-  const warmRequestSeen = new Promise<void>((resolve) => {
-    notifyWarmRequest = resolve;
-  });
-  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', async (route) => {
-    notifyWarmRequest();
-    await warmGate;
-    await route.continue();
-  });
+  const warmRoutes = new HeldRouteLifecycle();
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', warmRoutes.handler);
 
   const warmStartedAt = Date.now();
-  const warmResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  const warmResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 }).then(
+    (response) => ({ ok: true as const, response }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
   let warmCachedPaintMs = 0;
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await board.getByRole('button', { name: 'Global', exact: true }).click();
-    await warmRequestSeen;
+    await warmRoutes.seen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
     await expect(firstRankedName).toContainText(cachePaintMarker);
     warmCachedPaintMs = Date.now() - warmStartedAt;
@@ -414,10 +407,13 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     );
     expect(sameCacheStillPresent, 'the warm reload should reuse its own cached record').toBe(true);
   } finally {
-    releaseWarmRefresh();
-    await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
+    await warmRoutes.finish(() =>
+      page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**', warmRoutes.handler)
+    );
   }
-  expect((await warmResponse).ok(), 'warm leaderboard revalidation should succeed').toBe(true);
+  const warmOutcome = await warmResponse;
+  if (!warmOutcome.ok) throw warmOutcome.error;
+  expect(warmOutcome.response.ok(), 'warm leaderboard revalidation should succeed').toBe(true);
   const warmRpcResponseMs = Date.now() - warmStartedAt;
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
@@ -435,26 +431,18 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     { key: cacheKey, ttlMs: LEADERBOARD_CACHE_TTL_MS }
   );
 
-  let releaseExpiredRefresh!: () => void;
-  let notifyExpiredRequest!: () => void;
-  const expiredGate = new Promise<void>((resolve) => {
-    releaseExpiredRefresh = resolve;
-  });
-  const expiredRequestSeen = new Promise<void>((resolve) => {
-    notifyExpiredRequest = resolve;
-  });
-  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', async (route) => {
-    notifyExpiredRequest();
-    await expiredGate;
-    await route.continue();
-  });
+  const expiredRoutes = new HeldRouteLifecycle();
+  await page.route('**/rest/v1/rpc/fn_global_leaderboard_period**', expiredRoutes.handler);
 
   const expiredStartedAt = Date.now();
-  const expiredResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 });
+  const expiredResponse = page.waitForResponse(isLeaderboardRefresh, { timeout: 30000 }).then(
+    (response) => ({ ok: true as const, response }),
+    (error: unknown) => ({ ok: false as const, error })
+  );
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await board.getByRole('button', { name: 'Global', exact: true }).click();
-    await expiredRequestSeen;
+    await expiredRoutes.seen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');
     const expiredKeyWasRemoved = await page.evaluate(
       (key) => sessionStorage.getItem(key) === null,
@@ -464,10 +452,13 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
       true
     );
   } finally {
-    releaseExpiredRefresh();
-    await page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**');
+    await expiredRoutes.finish(() =>
+      page.unroute('**/rest/v1/rpc/fn_global_leaderboard_period**', expiredRoutes.handler)
+    );
   }
-  expect((await expiredResponse).ok(), 'expired leaderboard refresh should succeed').toBe(true);
+  const expiredOutcome = await expiredResponse;
+  if (!expiredOutcome.ok) throw expiredOutcome.error;
+  expect(expiredOutcome.response.ok(), 'expired leaderboard refresh should succeed').toBe(true);
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
   });

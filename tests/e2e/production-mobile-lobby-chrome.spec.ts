@@ -1,5 +1,6 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
 
 /**
@@ -25,6 +26,23 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
 /** The MY WALLETS title's optical centre on the my-wallets-v1 master, as a
  *  percentage of the plate; the count line is centred on it. */
 const TITLE_CENTRE_PCT = 54.65;
+
+const diagnostics = new WeakMap<Page, ReturnType<typeof observeCashierFailure>>();
+test.beforeEach(async ({ page }) => {
+  diagnostics.set(page, observeCashierFailure(page));
+});
+test.afterEach(async ({ page }, testInfo) => {
+  const observer = diagnostics.get(page);
+  if (!observer) return;
+  observer.stop();
+  if (testInfo.status !== testInfo.expectedStatus) {
+    await testInfo.attach('mobile-lobby-network-diagnostics', {
+      body: Buffer.from(JSON.stringify(observer.snapshot())),
+      contentType: 'application/json',
+    });
+  }
+  diagnostics.delete(page);
+});
 
 test.use({ ...devices['iPhone 13'] });
 

@@ -75,7 +75,14 @@ SET ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','20000000-0000-0000-0000-000000000001',false);
 
 DO $$ DECLARE v jsonb; BEGIN
-  v:=public.ca_player_stats_overview_v2('20000000-0000-0000-0000-000000000001',1,'America/Chicago','chips');
+  -- A TWO-day window, not one (2026-10-06). The window is whole calendar days
+  -- in the caller's zone and every fixture row sits at now() minus one to
+  -- three hours, so with a one-day window this assertion failed for any run
+  -- between 00:00 and 03:00 Chicago time: the rows were "yesterday" and only
+  -- the single now() row was counted. It stopped every pull request for three
+  -- hours a night. Two days holds the same rows at every hour; nothing in this
+  -- fixture is older than that except the tournament's start, ten days back.
+  v:=public.ca_player_stats_overview_v2('20000000-0000-0000-0000-000000000001',2,'America/Chicago','chips');
   IF (v#>>'{overall,total_hands}')::integer<>754 OR (v#>>'{overall,exact_cash_hands}')::integer<>752
      OR v#>>'{quality,cash_money_source}'<>'mixed' OR (v#>>'{quality,cash_money_exact}')::boolean
      OR (v#>>'{coverage,analysis_sample_hands}')::integer<>750

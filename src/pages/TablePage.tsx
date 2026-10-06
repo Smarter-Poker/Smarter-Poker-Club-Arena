@@ -3572,6 +3572,8 @@ function LiveTablePage({
   const [diamondBalance, setDiamondBalance] = useState<number | null>(null);
   // Bible V8 §6.2: one bank = 20 seconds, not the 15s decision clock.
   const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(20);
+  const timeBankTimeRemainingRef = useRef(timeBankTimeRemaining);
+  timeBankTimeRemainingRef.current = timeBankTimeRemaining;
   /**
    * Seconds the CURRENT bank granted. The TimeBank panel's progress bar is
    * `timeRemaining / totalTime`, and totalTime used to be the 15s action clock
@@ -12545,6 +12547,8 @@ function LiveTablePage({
     let durableCompletionFailureReported = false;
     async function loadTableInfo() {
       if (!tableId) return;
+      const bootstrapBlinds = tableStateRef.current.blinds;
+      const bootstrapTimeBankSeconds = timeBankTimeRemainingRef.current;
       /* LIGHTNING PHASE 6: a pool session has no `tables` row to read. Its
          felt is described from its Cluster (seeded below) and then by the
          engine snapshot, so there is nothing to bootstrap and nothing to
@@ -12630,6 +12634,7 @@ function LiveTablePage({
           )
           .eq('id', tableId)
           .maybeSingle();
+        if (!isMounted) return;
         table = res.data as TableBootstrapRow | null;
         error = res.error;
         if (table && !res.error) break;
@@ -12692,77 +12697,89 @@ function LiveTablePage({
           return;
         }
         let loadedTournamentStatus: string | null = null;
-        setTableState((prev) => ({
-          ...prev,
-          tableId: table.id,
-          arenaAsset: arenaIdentity.asset,
-          arenaId: arenaIdentity.id,
-          tableName: formatGameTitle(table.name) || 'Poker Table',
-          gameType: (table.game_variant || table.game_type || 'NLH') as any,
-          isTournament: table.game_type === 'tournament' || !!table.tournament_id,
-          tournamentId: table.tournament_id || undefined,
-          minBuyIn: cashBuyInRange({
-            big_blind: table.big_blind,
-            min_buy_in: table.min_buy_in,
-            max_buy_in: table.max_buy_in,
-          }).min,
-          maxBuyIn: cashBuyInRange({
-            big_blind: table.big_blind,
-            min_buy_in: table.min_buy_in,
-            max_buy_in: table.max_buy_in,
-          }).max,
-          // Final Table is restored from the persisted MTT flag below. A table
-          // name is presentation copy and cannot grant a tournament lifecycle.
-          isFinalTable: false,
-          /**
-           * ═══════════════════════════════════════════════════════════════════
-           *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
-           * ═══════════════════════════════════════════════════════════════════
-           *
-           * `tables.stakes` is written ONCE, at table creation, as the level-1
-           * blinds (TournamentManagerBase.createTablesAndSeatPlayers:
-           * `stakes: ${firstLevel.smallBlind}/${firstLevel.bigBlind}`), and
-           * advanceBlindLevel never touches it again — it updates
-           * small_blind/big_blind/ante and leaves `stakes` frozen forever.
-           *
-           * Preferring `stakes` therefore pinned every tournament table to its
-           * opening level for life. Measured 2026-08-23 on "Prime Time Main
-           * Event (NLH) - Table 4": stakes '25/50' against small_blind 750,
-           * big_blind 1500. The masthead read "LEVEL 1 · 25/50" nine levels in,
-           * and because every seat's depth badge is stack / safeBB(blinds),
-           * EVERY STACK ON THE TABLE WAS DISPLAYED THIRTY TIMES TOO DEEP. A
-           * player reading 697 BB actually had 23.
-           *
-           * small_blind/big_blind are the engine's own live values, written on
-           * every level-up, so a tournament table trusts those and nothing
-           * else. Cash tables keep the old preference: their `stakes` string is
-           * the authored display value and it does not drift.
-           */
-          blinds:
-            (table.game_type === 'tournament' || !!table.tournament_id) &&
-            table.small_blind != null &&
-            table.big_blind != null
-              ? formatBlindPair(table.small_blind, table.big_blind)
-              : table.stakes &&
-                  table.stakes !== 'undefined/undefined' &&
-                  !table.stakes.includes('undefined') &&
-                  table.stakes.includes('/')
-                ? table.stakes
-                : table.small_blind != null && table.big_blind != null
+        setTableState((prev) => {
+          if (!isMounted) return prev;
+          // Metadata can resolve after the socket has already painted a hand.
+          // Only bootstrap the ring before that table's engine owns it.
+          const engineOwnsRoster = prev.tableId === table.id && engineSnapshotRef.current !== null;
+          return {
+            ...prev,
+            tableId: table.id,
+            arenaAsset: arenaIdentity.asset,
+            arenaId: arenaIdentity.id,
+            tableName: formatGameTitle(table.name) || 'Poker Table',
+            gameType: (table.game_variant || table.game_type || 'NLH') as any,
+            isTournament: table.game_type === 'tournament' || !!table.tournament_id,
+            tournamentId: table.tournament_id || undefined,
+            minBuyIn: cashBuyInRange({
+              big_blind: table.big_blind,
+              min_buy_in: table.min_buy_in,
+              max_buy_in: table.max_buy_in,
+            }).min,
+            maxBuyIn: cashBuyInRange({
+              big_blind: table.big_blind,
+              min_buy_in: table.min_buy_in,
+              max_buy_in: table.max_buy_in,
+            }).max,
+            // Final Table is restored from the persisted MTT flag below. A table
+            // name is presentation copy and cannot grant a tournament lifecycle.
+            isFinalTable: prev.tableId === table.id ? prev.isFinalTable : false,
+            /**
+             * ═══════════════════════════════════════════════════════════════════
+             *  A TOURNAMENT'S BLINDS COME FROM ITS BLINDS, NOT ITS BIRTH CERTIFICATE
+             * ═══════════════════════════════════════════════════════════════════
+             *
+             * `tables.stakes` is written ONCE, at table creation, as the level-1
+             * blinds (TournamentManagerBase.createTablesAndSeatPlayers:
+             * `stakes: ${firstLevel.smallBlind}/${firstLevel.bigBlind}`), and
+             * advanceBlindLevel never touches it again — it updates
+             * small_blind/big_blind/ante and leaves `stakes` frozen forever.
+             *
+             * Preferring `stakes` therefore pinned every tournament table to its
+             * opening level for life. Measured 2026-08-23 on "Prime Time Main
+             * Event (NLH) - Table 4": stakes '25/50' against small_blind 750,
+             * big_blind 1500. The masthead read "LEVEL 1 · 25/50" nine levels in,
+             * and because every seat's depth badge is stack / safeBB(blinds),
+             * EVERY STACK ON THE TABLE WAS DISPLAYED THIRTY TIMES TOO DEEP. A
+             * player reading 697 BB actually had 23.
+             *
+             * small_blind/big_blind are the engine's own live values, written on
+             * every level-up, so a tournament table trusts those and nothing
+             * else. Cash tables keep the old preference: their `stakes` string is
+             * the authored display value and it does not drift.
+             */
+            blinds:
+              prev.tableId === table.id && prev.blinds !== bootstrapBlinds
+                ? prev.blinds
+                : (table.game_type === 'tournament' || !!table.tournament_id) &&
+                    table.small_blind != null &&
+                    table.big_blind != null
                   ? formatBlindPair(table.small_blind, table.big_blind)
-                  : '?/?',
-          maxPlayers: table.max_players || 6,
-          /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
+                  : table.stakes &&
+                      table.stakes !== 'undefined/undefined' &&
+                      !table.stakes.includes('undefined') &&
+                      table.stakes.includes('/')
+                    ? table.stakes
+                    : table.small_blind != null && table.big_blind != null
+                      ? formatBlindPair(table.small_blind, table.big_blind)
+                      : '?/?',
+            maxPlayers: engineOwnsRoster ? prev.maxPlayers : table.max_players || 6,
+            /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
              a floor of 0 is no floor. Same columns fn_nit_evictions judges by. */
-          vpipFloor:
-            table.nit_game === true && Number(table.maintain_percent_min) > 0
-              ? Number(table.maintain_percent_min)
-              : null,
-          players: createEmptySeats(table.max_players || 6),
-          positions: Array(table.max_players || 6).fill(null),
-          lastActions: Array(table.max_players || 6).fill(null),
-          lastBetAmounts: Array(table.max_players || 6).fill(0),
-        }));
+            vpipFloor:
+              table.nit_game === true && Number(table.maintain_percent_min) > 0
+                ? Number(table.maintain_percent_min)
+                : null,
+            players: engineOwnsRoster ? prev.players : createEmptySeats(table.max_players || 6),
+            positions: engineOwnsRoster ? prev.positions : Array(table.max_players || 6).fill(null),
+            lastActions: engineOwnsRoster
+              ? prev.lastActions
+              : Array(table.max_players || 6).fill(null),
+            lastBetAmounts: engineOwnsRoster
+              ? prev.lastBetAmounts
+              : Array(table.max_players || 6).fill(0),
+          };
+        });
 
         const settings = (table.settings as any) || {};
         /* WIRING FIX 2026-08-28: COLUMNS FIRST, settings jsonb as fallback.
@@ -13139,6 +13156,7 @@ function LiveTablePage({
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
+          if (!isMounted) return;
           if (tournError) {
             reportError(tournError, 'TablePage.loadTableInfo_tournament_row', {
               tournamentId: table.tournament_id,
@@ -13338,11 +13356,14 @@ function LiveTablePage({
             setTableState((prev) => ({
               ...prev,
               currentLevel,
-              blinds: tableHasLiveBlinds
-                ? formatBlindPair(table.small_blind, table.big_blind)
-                : sb > 0 && bbl > 0
-                  ? formatBlindPair(sb, bbl)
-                  : prev.blinds,
+              blinds:
+                prev.tableId === table.id && prev.blinds !== bootstrapBlinds
+                  ? prev.blinds
+                  : tableHasLiveBlinds
+                    ? formatBlindPair(table.small_blind, table.big_blind)
+                    : sb > 0 && bbl > 0
+                      ? formatBlindPair(sb, bbl)
+                      : prev.blinds,
             }));
 
             /**
@@ -14890,9 +14911,14 @@ function LiveTablePage({
               tableId: table.id,
             });
           }
+          if (!isMounted) return;
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
           setTableState((prev) => {
+            // A late database bootstrap cannot replace newer live seats,
+            // stacks, cards or hero ownership supplied by the engine.
+            if (!isMounted || (prev.tableId === table.id && engineSnapshotRef.current !== null))
+              return prev;
             // FIX: Start from CLEAN slate — DB is the source of truth for seated players.
             // This prevents ghost players from stale engine broadcasts or failed buy-ins.
             /* SIZED TO THE SEAT ROWS, NOT TO WHAT WE ALREADY DREW
@@ -15042,13 +15068,19 @@ function LiveTablePage({
           // No second setTableState needed — avoids unnecessary re-render
         }
 
+        // Bootstrap only: preserve a known allowance and any timer change
+        // since this request began, even when the snapshot omitted time-bank fields.
         // ─── Initialize Time Bank state from DB (server-authoritative) ───
-        if (userId && userId !== 'guest') {
+        if (isMounted && userId && userId !== 'guest') {
           const heroSeatData = existingSeats?.find((s) => s.user_id === userId);
           const dbRemaining = (heroSeatData as any)?.time_bank_remaining;
           const dbUses = (heroSeatData as any)?.time_bank_uses_remaining;
-          if (dbRemaining != null) setTimeBankTimeRemaining(dbRemaining);
-          if (dbUses != null) setTimeBanksRemaining(dbUses);
+          if (dbRemaining != null)
+            setTimeBankTimeRemaining((current) =>
+              isMounted && current === bootstrapTimeBankSeconds ? dbRemaining : current
+            );
+          if (dbUses != null)
+            setTimeBanksRemaining((current) => (isMounted && current === null ? dbUses : current));
         }
       }
     }

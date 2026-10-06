@@ -111,17 +111,28 @@ describe('Leaderboard Page Recovery States', () => {
     expect(screen.queryByText('Your Club List Could Not Be Loaded.')).not.toBeInTheDocument();
   });
 
-  it('Turns A Hung Membership Read Into A Retryable Error', async () => {
+  it('Keeps Membership Recovery Pending Beyond Five Seconds Until The Read Resolves', async () => {
     vi.useFakeTimers();
-    h.getMemberships.mockReturnValueOnce(new Promise(() => undefined));
+    let resolveMemberships!: (value: typeof memberships) => void;
+    h.getMemberships.mockReturnValueOnce(
+      new Promise<typeof memberships>((resolve) => {
+        resolveMemberships = resolve;
+      })
+    );
     renderPage();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(8000);
     });
 
-    expect(screen.getByText('Your Club List Could Not Be Loaded.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry Club List' })).toBeInTheDocument();
+    expect(screen.queryByText('Your Club List Could Not Be Loaded.')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveMemberships(memberships);
+    });
+
+    expect(screen.getByText('The Club')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry Club List' })).not.toBeInTheDocument();
   });
 
   it('Reports A Personal-Rank Failure And Clears It After Retry', async () => {
@@ -135,5 +146,30 @@ describe('Leaderboard Page Recovery States', () => {
 
     await waitFor(() => expect(screen.getByText('Of 20')).toBeInTheDocument());
     expect(screen.queryByText('Your Position Could Not Be Loaded.')).not.toBeInTheDocument();
+  });
+
+  it('Disables Position Retry While The Rank-Only Request Is In Flight', async () => {
+    let resolveRank!: (value: { rank: number; total: number; value: number }) => void;
+    h.getUserRank.mockRejectedValueOnce(new Error('Rank Read Unavailable')).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRank = resolve;
+      })
+    );
+    renderPage();
+
+    const retryButton = await screen.findByRole('button', { name: 'Retry Position' });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => expect(retryButton).toBeDisabled());
+    expect(h.getUserRank).toHaveBeenCalledTimes(2);
+    fireEvent.click(retryButton);
+    expect(h.getUserRank).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveRank({ rank: 6, total: 20, value: 100 });
+    });
+
+    await waitFor(() => expect(screen.getByText('Of 20')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Retry Position' })).not.toBeInTheDocument();
   });
 });

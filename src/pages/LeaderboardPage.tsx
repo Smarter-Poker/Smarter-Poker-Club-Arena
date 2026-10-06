@@ -53,6 +53,7 @@ import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../ut
 import { describeProgramChanges } from '../utils/leaderboardProgramHistory';
 import {
   getCachedLeaderboardEntries,
+  leaderboardCacheKey,
   setCachedLeaderboardEntries,
 } from '../utils/leaderboardCache';
 
@@ -193,9 +194,13 @@ export default function LeaderboardPage() {
     null
   );
   const [userRankError, setUserRankError] = useState(false);
+  const [userRankLoading, setUserRankLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const membershipRequestRef = useRef(0);
+  const userRankRequestRef = useRef(0);
+  const userRankLoadingRef = useRef(false);
 
   // Club selection
 
@@ -515,19 +520,15 @@ export default function LeaderboardPage() {
   }, [selectedClubId, activeTab, scope]);
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
+    const requestId = ++membershipRequestRef.current;
     setClubsLoading(true);
     setClubsError(false);
-    let membershipTimeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const memberships = await Promise.race([
-        getUserMemberships(user),
-        new Promise<never>((_resolve, reject) => {
-          membershipTimeout = setTimeout(
-            () => reject(new Error('Club Memberships Timed Out')),
-            5000
-          );
-        }),
-      ]);
+      // getUserMemberships owns bounded retry/backoff. Do not race it against a
+      // shorter UI timeout: that reported failure before its fourth retry and
+      // left the original read running after the user pressed Retry.
+      const memberships = await getUserMemberships(user);
+      if (requestId !== membershipRequestRef.current) return;
       let rewardContexts: LeaderboardRewardContext[] = [];
       try {
         rewardContexts = await LeaderboardService.getManageableRewardContexts(true);
@@ -567,7 +568,7 @@ export default function LeaderboardPage() {
         });
       }
 
-      if (getIsMounted && !getIsMounted()) return;
+      if (requestId !== membershipRequestRef.current || (getIsMounted && !getIsMounted())) return;
       setUserClubs(clubs);
       setRewardContexts(rewardContexts);
       setClubsError(false);
@@ -622,7 +623,7 @@ export default function LeaderboardPage() {
         return clubs[0]?.id || null;
       });
     } catch (error) {
-      if (!getIsMounted || getIsMounted()) {
+      if (requestId === membershipRequestRef.current && (!getIsMounted || getIsMounted())) {
         reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
         setUserClubs([]);
         setSelectedClubId(null);
@@ -630,10 +631,10 @@ export default function LeaderboardPage() {
         toast.error('Your Club List Could Not Be Loaded.');
       }
     } finally {
-      if (membershipTimeout) clearTimeout(membershipTimeout);
+      if (requestId === membershipRequestRef.current && (!getIsMounted || getIsMounted())) {
+        setClubsLoading(false);
+      }
     }
-    if (getIsMounted && !getIsMounted()) return;
-    setClubsLoading(false);
   };
 
   /**
@@ -677,9 +678,71 @@ export default function LeaderboardPage() {
   const reqSeqRef = useRef(0);
   const activeRankingRequestRef = useRef(0);
 
+  const readCurrentUserRank = async (
+    rankRequestId: number,
+    boardRequestId: number,
+    getIsMounted?: () => boolean
+  ) => {
+    if (!user?.id) return;
+    try {
+      const rank =
+        scope === 'global'
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period,
+              periodOffset
+            );
+      if (
+        rankRequestId !== userRankRequestRef.current ||
+        boardRequestId !== reqSeqRef.current ||
+        (getIsMounted && !getIsMounted())
+      ) {
+        return;
+      }
+      setUserRank(rank);
+      setUserRankError(false);
+    } catch (error) {
+      if (
+        rankRequestId === userRankRequestRef.current &&
+        boardRequestId === reqSeqRef.current &&
+        (!getIsMounted || getIsMounted())
+      ) {
+        reportError(error, 'LeaderboardPage.Personal_rank_failed');
+        setUserRankError(true);
+      }
+    } finally {
+      if (
+        rankRequestId === userRankRequestRef.current &&
+        boardRequestId === reqSeqRef.current &&
+        (!getIsMounted || getIsMounted())
+      ) {
+        userRankLoadingRef.current = false;
+        setUserRankLoading(false);
+      }
+    }
+  };
+
+  const retryUserRank = () => {
+    if (!user?.id || userRankLoadingRef.current || (!selectedClubId && scope !== 'global')) return;
+    const rankRequestId = ++userRankRequestRef.current;
+    const boardRequestId = reqSeqRef.current;
+    userRankLoadingRef.current = true;
+    setUserRankLoading(true);
+    void readCurrentUserRank(rankRequestId, boardRequestId, () => isMountedRef.current);
+  };
+
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
     const isGlobal = scope === 'global';
     if (!isGlobal && !selectedClubId) {
+      ++reqSeqRef.current;
+      ++userRankRequestRef.current;
+      userRankLoadingRef.current = false;
+      setUserRankLoading(false);
+      setUserRank(null);
+      setUserRankError(false);
       setLoading(false);
       return;
     }
@@ -688,9 +751,19 @@ export default function LeaderboardPage() {
     // response that is no longer current is discarded rather than rendered.
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
     activeRankingRequestRef.current = myReq;
+    const rankRequestId = ++userRankRequestRef.current;
+    userRankLoadingRef.current = false;
+    setUserRankLoading(false);
 
     // SWR: show cached data instantly
-    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
+    const cacheKey = leaderboardCacheKey(
+      isGlobal
+        ? { kind: 'global' }
+        : { kind: 'club', clubId: selectedClubId as string, userId: user?.id || 'unknown' },
+      metric,
+      period,
+      periodOffset
+    );
     if (isGlobal) {
       setSettlementStatus(null);
       setRewardPlan(null);
@@ -706,6 +779,7 @@ export default function LeaderboardPage() {
         !isGlobal && Boolean(selectedClubId) && (period === 'weekly' || period === 'monthly')
       );
       setUserRank(null);
+      setUserRankError(false);
       const cached = getCachedLeaderboardEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
         setEntries(cached.entries);
@@ -797,29 +871,12 @@ export default function LeaderboardPage() {
               }
             });
 
+      if (user?.id) {
+        userRankLoadingRef.current = true;
+        setUserRankLoading(true);
+      }
       const rankPromise = user?.id
-        ? (isGlobal
-            ? LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
-            : LeaderboardService.getUserRank(
-                user.id,
-                selectedClubId as string,
-                metric,
-                period,
-                periodOffset
-              )
-          )
-            .then((rank) => {
-              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                setUserRank(rank);
-                setUserRankError(false);
-              }
-            })
-            .catch((error) => {
-              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                reportError(error, 'LeaderboardPage.Personal_rank_failed');
-                setUserRankError(true);
-              }
-            })
+        ? readCurrentUserRank(rankRequestId, myReq, getIsMounted)
         : Promise.resolve();
 
       await Promise.allSettled([periodMetadataPromise, rankPromise]);
@@ -832,6 +889,10 @@ export default function LeaderboardPage() {
     } finally {
       if (myReq === reqSeqRef.current) {
         activeRankingRequestRef.current = 0;
+        if (!user?.id) {
+          userRankLoadingRef.current = false;
+          setUserRankLoading(false);
+        }
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     }
@@ -879,7 +940,14 @@ export default function LeaderboardPage() {
           if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           const next = [...prev, ...more.filter((m) => !seen.has(m.userId))];
-          const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
+          const cacheKey = leaderboardCacheKey(
+            isGlobal
+              ? { kind: 'global' }
+              : { kind: 'club', clubId: selectedClubId as string, userId: user?.id || 'unknown' },
+            metric,
+            period,
+            periodOffset
+          );
           setCachedLeaderboardEntries(cacheKey, next);
           return next;
         });
@@ -1255,7 +1323,7 @@ export default function LeaderboardPage() {
                   {userRank
                     ? 'Your Position Could Not Be Refreshed. Showing The Last Verified Position.'
                     : 'Your Position Could Not Be Loaded.'}
-                  <button type="button" onClick={retryCurrentView}>
+                  <button type="button" onClick={retryUserRank} disabled={userRankLoading}>
                     Retry Position
                   </button>
                 </span>

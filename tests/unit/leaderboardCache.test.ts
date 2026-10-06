@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getCachedLeaderboardEntries,
+  leaderboardCacheKey,
   LEADERBOARD_CACHE_MAX_RECORDS,
   LEADERBOARD_CACHE_PREFIX,
   LEADERBOARD_CACHE_TTL_MS,
@@ -35,6 +36,29 @@ describe('leaderboard session cache', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('partitions club-board cache entries by account while retaining a shared public global key', () => {
+    const alice = leaderboardCacheKey(
+      { kind: 'club', clubId: 'club-a', userId: 'account-a' },
+      'profit',
+      'weekly',
+      0
+    );
+    const bob = leaderboardCacheKey(
+      { kind: 'club', clubId: 'club-a', userId: 'account-b' },
+      'profit',
+      'weekly',
+      0
+    );
+    const globalForAlice = leaderboardCacheKey({ kind: 'global' }, 'profit', 'weekly', 0);
+    const globalForBob = leaderboardCacheKey({ kind: 'global' }, 'profit', 'weekly', 0);
+
+    setCachedLeaderboardEntries(alice, [entry(0)]);
+    expect(alice).not.toBe(bob);
+    expect(getCachedLeaderboardEntries(alice)?.entries).toEqual([entry(0)]);
+    expect(getCachedLeaderboardEntries(bob)).toBeNull();
+    expect(globalForAlice).toBe(globalForBob);
   });
 
   it('returns a cold miss, then round-trips a fresh ranking record', () => {

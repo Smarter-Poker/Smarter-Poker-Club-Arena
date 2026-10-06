@@ -4,6 +4,21 @@ export const LEADERBOARD_CACHE_PREFIX = 'lb_cache_v2_';
 export const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 export const LEADERBOARD_CACHE_MAX_RECORDS = 20;
 
+export type LeaderboardCacheScope =
+  | { kind: 'global' }
+  | { kind: 'club'; clubId: string; userId: string };
+
+export function leaderboardCacheKey(
+  scope: LeaderboardCacheScope,
+  metric: string,
+  period: string,
+  periodOffset: number
+): string {
+  const scopeKey =
+    scope.kind === 'global' ? 'global' : `club_${scope.clubId}_account_${scope.userId}`;
+  return `${scopeKey}_${metric}_${period}_${periodOffset}`;
+}
+
 export interface LeaderboardCacheRecord {
   version: 2;
   storedAt: number;

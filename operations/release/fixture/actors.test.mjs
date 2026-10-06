@@ -243,6 +243,18 @@ test('financial actor transports top-up replay and offer acceptance over authent
     deadlineAt: Date.now() + 10000,
     offers: [{ playerId: ids[1], fullPremium: 4 }],
   };
+  h.broadcast({
+    type: 'USER_EVENT',
+    tableId,
+    payload: { ...payload, kind: 'pre_action', action: null, to_call_at_set: null },
+  });
+  await wait(30);
+  assert.equal(
+    h.financialRequests.length,
+    3,
+    'private events must never enter the financial event route'
+  );
+  assert.deepEqual(h.failures, []);
   h.broadcast({ type: 'EVENT', tableId, payload });
   await until(() => checkpoints.some((x) => x.phase === 'insurance.accepted'));
   h.broadcast({
@@ -374,9 +386,38 @@ test('PING is answered; animation/user events never become a decision', async (t
   fixture.send({
     type: 'USER_EVENT',
     tableId,
-    payload: { type: 'hole_cards', cards: ['As', 'Ks'] },
+    payload: {
+      kind: 'hole_cards',
+      row: {
+        table_id: tableId,
+        user_id: ids[0],
+        seat_number: 1,
+        hand_number: 1,
+        cards: ['As', 'Ks'],
+      },
+    },
+  });
+  fixture.send({
+    type: 'USER_EVENT',
+    tableId,
+    payload: { kind: 'pre_action', hand_number: 1, action: null, to_call_at_set: null },
+  });
+  fixture.send({
+    type: 'USER_EVENT',
+    tableId,
+    payload: {
+      kind: 'add_on_adjusted',
+      addon_kind: 'add_on',
+      pending_id: 'local-pending',
+      requested: 10,
+      applied: 5,
+      refunded: 5,
+      max_buy_in: 200,
+      hand_number: 1,
+    },
   });
   await until(() => fixture.frames.some((x) => x.type === 'PONG'));
+  await wait(30);
   assert.deepEqual(
     fixture.frames.find((x) => x.type === 'PONG'),
     { type: 'PONG', ts: 1234 }
@@ -386,6 +427,16 @@ test('PING is answered; animation/user events never become a decision', async (t
 });
 
 for (const [name, message, expected] of [
+  ...[null, [], {}, { type: 'hole_cards' }, { kind: 'unknown' }, { kind: 1 }].map((payload, i) => [
+    `malformed private event ${i}`,
+    { type: 'USER_EVENT', tableId, payload },
+    'USER_EVENT',
+  ]),
+  [
+    'private kind on public event',
+    { type: 'EVENT', tableId, payload: { kind: 'hole_cards' } },
+    'EVENT',
+  ],
   ['unknown protocol', { type: 'MAYBE_ACTION', tableId }, 'UNKNOWN_FRAME'],
   ['wrong table', { type: 'SUBSCRIBED', tableId: spectatorId }, 'WRONG_TABLE'],
   ['server refusal', { type: 'ERROR', tableId, code: 'AUTH_DENIED' }, 'ENGINE_ERROR'],

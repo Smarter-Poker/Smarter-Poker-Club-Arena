@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const SOURCE = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
 
@@ -29,10 +30,9 @@ function deepLinkEffect(): string {
 
 describe('the ?buyin=1 seat-offer link waits for the table before it spends its one tap', () => {
   it('handleSeatClick still refuses a tap while the table asset is unread', () => {
-    const handler = SOURCE.slice(
-      SOURCE.indexOf('const handleSeatClick = (seatNumber: number) => {')
-    );
-    expect(handler.slice(0, 200)).toContain('if (!tableState.arenaAsset) {');
+    const handler = sliceMethod(SOURCE, 'const handleSeatClick = (seatNumber: number) => {');
+    expect(handler).toContain('if (!tableState.arenaAsset) {');
+    expect(handler).toContain("toast.warning('Verifying Table Funding');");
   });
 
   it('waits for the asset before latching, so the tap is not spent on that refusal', () => {

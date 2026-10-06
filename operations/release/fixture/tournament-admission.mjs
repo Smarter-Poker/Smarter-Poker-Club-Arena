@@ -11,6 +11,11 @@ function validateTournamentWitness(w, ids) {
   }
   assert.equal(new Set(w.seats.map((s) => s.user_id)).size, w.seats.length);
   assert.equal(new Set(w.seats.map((s) => s.occupancy_id)).size, w.seats.length);
+  assert.equal(
+    new Set(w.seats.map((s) => s.table_id + ':' + s.seat_number)).size,
+    w.seats.length,
+    'duplicate chair coordinates'
+  );
   for (const s of w.seats) {
     assert.ok(ids.includes(s.user_id) && tables.has(s.table_id));
     assert.match(s.occupancy_id, uuid);
@@ -21,6 +26,11 @@ function validateTournamentWitness(w, ids) {
       w.players.find((p) => p.user_id === s.user_id).table_id,
       s.table_id,
       'registration/seat table disagreement'
+    );
+    assert.equal(
+      w.players.find((p) => p.user_id === s.user_id).seat_number,
+      s.seat_number,
+      'registration/seat number disagreement'
     );
   }
 }
@@ -40,7 +50,7 @@ export async function readCoherentAdmission({
   url.search = new URLSearchParams({
     id: 'eq.' + tournamentId,
     select:
-      'id,status,current_players,ended_at,players:tournament_players(user_id,table_id,status,position,eliminated_at,chip_count),tables:tables(id,tournament_id,status,seats:table_seats!table_seats_table_id_fkey(user_id,table_id,seat_number,occupancy_id,stack,left_at))',
+      'id,status,current_players,ended_at,players:tournament_players(user_id,table_id,status,seat_number,position,eliminated_at,chip_count),tables:tables(id,tournament_id,status,seats:table_seats!table_seats_table_id_fkey(user_id,table_id,seat_number,occupancy_id,stack,left_at))',
     limit: '2',
     'players.limit': String(users.length + 1),
     'tables.limit': String(users.length + 1),
@@ -83,21 +93,35 @@ export async function readCoherentAdmission({
   };
   assert.equal(w.tournament.id, tournamentId);
   assert.deepEqual(w.players.map((p) => p.user_id).sort(), users.map((u) => u.id).sort());
-  if (String(r.status).toUpperCase() !== 'RUNNING') {
-    assert.ok(
-      ['REGISTERING', 'ANNOUNCED'].includes(String(r.status).toUpperCase()),
-      'unexpected admission status'
-    );
-    return { ready: false, witness: w };
-  }
+  assert.ok(
+    ['REGISTERING', 'ANNOUNCED', 'RUNNING'].includes(String(r.status).toUpperCase()),
+    'unexpected admission status'
+  );
   validateTournamentWitness(
     w,
     users.map((u) => u.id)
   );
-  assert.equal(w.seats.length, users.length, 'complete actual seating required');
-  assert.ok(
-    w.players.every((p) => p.status === 'playing'),
-    'full playing cohort required'
-  );
-  return { ready: true, witness: w };
+  for (const p of w.players) {
+    if (p.status === 'registered') {
+      assert.equal(p.table_id, null, 'unassigned registration coordinates required');
+      assert.equal(p.seat_number, null, 'unassigned registration coordinates required');
+      assert.equal(
+        w.seats.filter((seat) => seat.user_id === p.user_id).length,
+        0,
+        'registered player already seated'
+      );
+    } else {
+      assert.equal(p.status, 'playing', 'unsupported admission player state');
+      assert.equal(
+        w.seats.filter((seat) => seat.user_id === p.user_id).length,
+        1,
+        'playing player exact chair required'
+      );
+    }
+  }
+  const ready =
+    String(r.status).toUpperCase() === 'RUNNING' &&
+    w.seats.length === users.length &&
+    w.players.every((p) => p.status === 'playing');
+  return { ready, witness: w };
 }

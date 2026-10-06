@@ -9,7 +9,12 @@ function field(status = 'RUNNING') {
     status,
     current_players: 2,
     ended_at: null,
-    players: users.map((u) => ({ user_id: u.id, table_id: id(4), status: 'playing' })),
+    players: users.map((u, i) => ({
+      user_id: u.id,
+      table_id: id(4),
+      seat_number: i + 1,
+      status: 'playing',
+    })),
     tables: [
       {
         id: id(4),
@@ -55,6 +60,9 @@ test('one statement owns complete live roster and seats', async () =>
 test('incomplete launch is retained as nonacting admission', async () => {
   const r = field('REGISTERING');
   r.players[0].table_id = null;
+  r.players[0].seat_number = null;
+  r.players[0].status = 'registered';
+  r.tables[0].seats.shift();
   assert.equal((await read(r)).ready, false);
 });
 test('running mismatch remains a refusal', async () => {
@@ -65,11 +73,33 @@ test('running mismatch remains a refusal', async () => {
 test('truncated or duplicate cohort remains refused', async () => {
   const r = field();
   r.tables[0].seats.pop();
-  await assert.rejects(read(r), /complete actual seating required/);
+  await assert.rejects(read(r), /playing player exact chair required/);
   r.players.pop();
   await assert.rejects(read(r));
 });
 test('terminal or unknown outcomes never activate cohort', async () => {
   await assert.rejects(read(field('COMPLETED')));
   await assert.rejects(read(field('UNKNOWN')));
+});
+
+test('coherent RUNNING subset remains nonacting until full assignments', async () => {
+  const r = field();
+  r.players[0].status = 'registered';
+  r.players[0].table_id = null;
+  r.players[0].seat_number = null;
+  r.tables[0].seats.shift();
+  assert.equal((await read(r)).ready, false);
+  assert.equal((await read(field())).ready, true);
+});
+test('seat number disagreement refuses activation', async () => {
+  const r = field();
+  r.players[0].seat_number = 9;
+  await assert.rejects(read(r), /registration\/seat number disagreement/);
+});
+
+test('duplicate chair coordinates refuse admission', async () => {
+  const r = field();
+  r.players[1].seat_number = 1;
+  r.tables[0].seats[1].seat_number = 1;
+  await assert.rejects(read(r), /duplicate chair coordinates/);
 });

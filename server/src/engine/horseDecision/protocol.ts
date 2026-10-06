@@ -388,7 +388,19 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
    * decision (one holder per pack, the Phase 8 shape and laws). Absent is
    * never usable authority. */
   phase12Authority?: HorsePhase12AuthorityReceipts;
+  /** P13.3: the worker's authority receipt for each joint variant after this
+   * decision (one holder per variant, the Phase 8 shape and laws). Absent is
+   * never usable authority. */
+  phase13Authority?: HorsePhase13AuthorityReceipts;
 }
+
+/** P13.3: one worker authority receipt per Phase 13 joint variant. */
+export type HorsePhase13AuthorityReceipts = Readonly<
+  Record<
+    import('../multiway/JointInputBinding.js').JointVariant,
+    import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt
+  >
+>;
 
 /** P12.3: one worker authority receipt per Phase 12 pack. */
 export type HorsePhase12AuthorityReceipts = Readonly<
@@ -417,6 +429,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase11Authority?: HorsePhase11AuthorityReceipts;
   phase12Authority?: HorsePhase12AuthorityReceipts;
+  phase13Authority?: HorsePhase13AuthorityReceipts;
 }
 
 export interface HorseDecisionWorkerAck extends HorseDecisionFence {

@@ -4,6 +4,9 @@ import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
+import { HorseQualifiedAuthorityHolder } from '../HorseQualifiedAuthority.js';
+import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
+import { qualifiedPhase13TestAdmission } from '../HorsePhase13Authority.test-support.js';
 import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
 import {
   horseDecisionReceiptIsValid,
@@ -463,12 +466,17 @@ describe('P13.1 the joint receipt binding at the worker boundary', () => {
     const retained = structuredClone(valid) as HorseDecision & {
       jointPolicy: Record<string, unknown>;
     };
+    // P13.3: a receipt retained from before P13.1 carries none of the later
+    // fields either (selection, authority and verdict are P13.3's).
     for (const key of [
       'inputs',
       'rangePackVersion',
       'actionPackVersion',
       'uniformEscapes',
       'selectionRefusal',
+      'selection',
+      'authority',
+      'authorityVerdict',
     ])
       delete retained.jointPolicy[key];
     expect(horseDecisionReceiptIsValid(retained, 'plo4')).toBe(true);
@@ -482,7 +490,21 @@ describe('P13.1 the joint receipt binding at the worker boundary', () => {
 
   it('refuses an unnamed selection refusal and a refusal on an applied candidate', () => {
     const applied = decide('candidate');
-    expect(applied.jointPolicy).toMatchObject({ applied: true, selectionRefusal: null });
+    expect(applied.jointPolicy).toMatchObject({
+      applied: true,
+      selectionRefusal: null,
+      selection: 'selected',
+    });
+    // P13.3 (replaces the P13.1 pin that accepted this offline receipt): an
+    // applied joint receipt passes the boundary only under usable worker
+    // authority for its own variant.
+    expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(false);
+    const holder = new HorseQualifiedAuthorityHolder(
+      'p133-rv',
+      horsePhase13ContinuationVersion('plo4')
+    );
+    holder.apply(qualifiedPhase13TestAdmission('plo4'));
+    applied.jointPolicy!.authority = holder.receipt();
     expect(horseDecisionReceiptIsValid(structuredClone(applied), 'plo4')).toBe(true);
     const refusedButApplied = structuredClone(applied);
     refusedButApplied.jointPolicy!.selectionRefusal = 'illegal_candidate';

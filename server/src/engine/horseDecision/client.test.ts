@@ -36,6 +36,13 @@ import { OMAHA_VARIANT_PACKS } from '../omaha/OmahaVariantPolicyPack.js';
 import { liveHorsePhase12Authorities } from '../HorsePhase12Authority.js';
 import { qualifiedPhase12TestAdmission } from '../HorsePhase12Authority.test-support.js';
 import {
+  horsePhase13ContinuationVersion,
+  HORSE_PHASE13_VARIANTS,
+  liveHorsePhase13Authorities,
+} from '../HorsePhase13Authority.js';
+import { qualifiedPhase13TestAdmission } from '../HorsePhase13Authority.test-support.js';
+import type { JointVariant } from '../multiway/JointInputBinding.js';
+import {
   REMAINING_VARIANT_PACKS,
   type RemainingPolicyVariant,
 } from '../remainingVariants/RemainingVariantPolicyPack.js';
@@ -127,6 +134,35 @@ vi.mock('../HorsePhase12Authority.js', async (importOriginal) => {
       flh: gate('flh'),
       flo8: gate('flo8'),
     }),
+  };
+});
+
+// P13.3: the nine Phase 13 main gates, each replaced the same way.
+const phase13Main = vi.hoisted(() => ({
+  admission: {} as Record<string, unknown>,
+}));
+vi.mock('../HorsePhase13Authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../HorsePhase13Authority.js')>();
+  const { HorsePhase8AuthorityGate } = await import('../HorseQualifiedAuthority.js');
+  return {
+    ...actual,
+    liveHorsePhase13Authorities: Object.freeze(
+      Object.fromEntries(
+        actual.HORSE_PHASE13_VARIANTS.map((variant) => [
+          variant,
+          new HorsePhase8AuthorityGate(
+            () =>
+              (phase13Main.admission[variant] as HorseAuthorityAdmission | null | undefined) ?? {
+                status: 'refused',
+                reason: 'unselected',
+                transient: false,
+              },
+            `client-test-phase13-main-${variant}`,
+            actual.horsePhase13ContinuationVersion(variant)
+          ),
+        ])
+      )
+    ),
   };
 });
 
@@ -2992,6 +3028,14 @@ describe('P13.1: a joint multiway receipt whose input binding fails validation',
   it('still fails closed for an applied receipt', async () => {
     const applied = jointDecision('candidate');
     expect(applied.jointPolicy).toMatchObject({ mode: 'candidate', applied: true });
+    // P13.3: an applied receipt is well formed only with usable worker
+    // authority for its own variant; give it one so only the binding fails.
+    const holder = new HorseQualifiedAuthorityHolder(
+      'p131-applied',
+      horsePhase13ContinuationVersion('nlh')
+    );
+    holder.apply(qualifiedPhase13TestAdmission('nlh'));
+    applied.jointPolicy!.authority = holder.receipt();
     expect(horseDecisionReceiptIsValid(structuredClone(applied), 'nlh')).toBe(true);
     enableBrainTelemetry();
     drainFires();
@@ -3269,6 +3313,186 @@ describe('P12.3 per-pack authority at the client boundary', () => {
         ...fastResult(1, fence),
         decision: selectedFlh(authority),
         phase12Authority: receipts(),
+      });
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+    }
+  );
+});
+
+describe('P13.3 per-variant joint authority at the client boundary', () => {
+  let approval = 400;
+  /** A fresh lane whose NLH main gate admits a usable test-fixture authority. */
+  function lane() {
+    approval += 1;
+    phase13Main.admission.nlh = qualifiedPhase13TestAdmission('nlh', approval);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    // One worker epoch shared by its nine variant holders, as workerRuntime builds them.
+    const epoch = `client-test-p13-worker-${approval}`;
+    const holders = Object.fromEntries(
+      HORSE_PHASE13_VARIANTS.map((v) => [
+        v,
+        new HorseQualifiedAuthorityHolder(epoch, horsePhase13ContinuationVersion(v)),
+      ])
+    ) as Record<JointVariant, HorseQualifiedAuthorityHolder>;
+    holders.nlh.apply(qualifiedPhase13TestAdmission('nlh', approval));
+    const receipts = () =>
+      Object.fromEntries(HORSE_PHASE13_VARIANTS.map((v) => [v, holders[v].receipt()])) as Record<
+        JointVariant,
+        ReturnType<HorseQualifiedAuthorityHolder['receipt']>
+      >;
+    return { worker, client, holders, receipts };
+  }
+  /** A real NLH cash joint candidate (a bomb-pot flop the worker would select). */
+  const selectedJoint = (authority: unknown) => {
+    const spot = jointPolicyFixture('nlh', 2, 'cash', 'flop');
+    seedFastRandom(130999);
+    const decision = structuredClone(
+      HorseLogic.decide(
+        spot.hero,
+        spot.state,
+        'balanced',
+        {},
+        {
+          telemetry: false,
+          mind: false,
+          decisionTimeMs: 0,
+          phase13Joint: 'candidate',
+          phase13EvidenceMode: true,
+        }
+      )
+    );
+    decision.jointPolicy!.authority = authority as never;
+    return decision;
+  };
+  function request(client: LiveHorseDecisionWorkerClient, fence: string) {
+    const input = snapshot(fence);
+    input.gameState.gameVariant = 'nlh';
+    input.decisionKey = buildHorseDecisionKey(input);
+    return client.decideFast(input);
+  }
+
+  it('stamps the receipt at its own variant gate, binds the witness, and a worker exit restarts it', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const pending = request(client, 'p13-3-fence-1');
+    const decision = selectedJoint(holders.nlh.receipt());
+    expect(decision.jointPolicy).toMatchObject({ applied: true, selection: 'selected' });
+    worker.emitMessage({
+      ...fastResult(1, 'p13-3-fence-1'),
+      decision,
+      phase13Authority: receipts(),
+    });
+    const result = await pending;
+    const receipt = result.decision.jointPolicy!;
+    const nlh = liveHorsePhase13Authorities.nlh;
+    expect(receipt.authority).toMatchObject({
+      state: 'usable',
+      generation: holders.nlh.currentGeneration(),
+      mainGeneration: nlh.mainGeneration(),
+      continuationVersion: horsePhase13ContinuationVersion('nlh'),
+    });
+    expect(result.decision.executionWitness?.phase13Authority).toMatchObject({
+      continuationVersion: receipt.version,
+      mode: 'candidate',
+      selection: 'selected',
+      verdict: null,
+      candidate: { action: receipt.proposalAction, amount: receipt.proposalAmount },
+      reference: { action: receipt.baselineAction, amount: receipt.baselineAmount },
+    });
+    expect(result.decision.executionWitness?.phase12Authority).toBeUndefined();
+    expect(nlh.check(receipt.authority)).toBe('usable');
+    // Every other variant's gate refuses the same receipt, and no Phase 12
+    // gate accepts it either.
+    for (const other of HORSE_PHASE13_VARIANTS.filter((v) => v !== 'nlh'))
+      expect(liveHorsePhase13Authorities[other].check(receipt.authority), other).not.toBe('usable');
+    expect(liveHorsePhase12Authorities.flh.check(receipt.authority)).not.toBe('usable');
+    worker.emitExit(1);
+    expect(nlh.check(receipt.authority)).toBe('restarted');
+    void client;
+  });
+
+  it('an NLH withdrawal reported by a later result stales already returned NLH work', async () => {
+    const { worker, client, holders, receipts } = lane();
+    const first = request(client, 'p13-3-fence-2');
+    worker.emitMessage({
+      ...fastResult(1, 'p13-3-fence-2'),
+      decision: selectedJoint(holders.nlh.receipt()),
+      phase13Authority: receipts(),
+    });
+    const returned = (await first).decision.jointPolicy!;
+    const nlh = liveHorsePhase13Authorities.nlh;
+    expect(nlh.check(returned.authority)).toBe('usable');
+    holders.nlh.withdraw('controller_fallback_candidate');
+    const second = request(client, 'p13-3-fence-3');
+    worker.emitMessage({ ...fastResult(2, 'p13-3-fence-3'), phase13Authority: receipts() });
+    await second;
+    expect(nlh.check(returned.authority)).toBe('withdrawn');
+    expect(nlh.mainState()).toBe('withdrawn');
+  });
+
+  it.each([
+    ['plo4', 'no authority', 'missing_receipt'],
+    ['plo4', 'a usable PLO4 worker receipt at an unselected gate', 'unselected'],
+    ['stud', 'no authority', 'mismatched'],
+  ] as const)(
+    'an effect commit beside an applied %s joint receipt with %s is refused (%s) and retired',
+    async (variant, authorityCase, verdict) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      phase13Main.admission.plo4 = null;
+      liveHorsePhase13Authorities.plo4.refresh();
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const holder = new HorseQualifiedAuthorityHolder(
+        'client-test-p13-commit',
+        horsePhase13ContinuationVersion('plo4')
+      );
+      holder.apply(qualifiedPhase13TestAdmission('plo4'));
+      (owned.decision as { jointPolicy?: unknown }).jointPolicy = {
+        variant,
+        applied: true,
+        authority: authorityCase === 'no authority' ? null : holder.receipt(),
+      };
+      enableBrainTelemetry();
+      drainFires();
+      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+        `Horse plan commit refused: Phase 13 authority ${verdict}`
+      );
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(0);
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'RETIRE_DECISION_EFFECTS' });
+      expect(drainFires().map((row) => row.feature)).toContain(
+        `phase13_authority_effects_${verdict}`
+      );
+    }
+  );
+
+  it.each(['missing', 'withdrawn', 'another variant', 'a Phase 12 pack'] as const)(
+    'refuses an applied NLH joint receipt whose worker authority is %s',
+    async (mode) => {
+      const { worker, client, holders, receipts } = lane();
+      if (mode === 'withdrawn') holders.nlh.withdraw('test');
+      const authority =
+        mode === 'missing'
+          ? null
+          : mode === 'another variant'
+            ? {
+                ...holders.nlh.receipt(),
+                continuationVersion: horsePhase13ContinuationVersion('plo4'),
+              }
+            : mode === 'a Phase 12 pack'
+              ? {
+                  ...holders.nlh.receipt(),
+                  continuationVersion: REMAINING_VARIANT_PACKS.flh.version,
+                }
+              : holders.nlh.receipt();
+      const fence = `p13-3-fence-${mode.replaceAll(' ', '-')}`;
+      const pending = request(client, fence);
+      worker.emitMessage({
+        ...fastResult(1, fence),
+        decision: selectedJoint(authority),
+        phase13Authority: receipts(),
       });
       await expect(pending).rejects.toThrow('invalid policy receipt');
       expect(client.status().phase).toBe('failed');

@@ -19,6 +19,7 @@ import {
   alignFixtureAuthPlatformHelperGrants,
 } from '/opt/qualification/runtime/service-role-boundary.mjs';
 import { exerciseEvCashout } from './actor.mjs';
+import { schemaCacheDiagnostics } from './diagnostics.mjs';
 
 const command = promisify(execFile),
   bin = '/usr/lib/postgresql/17/bin',
@@ -279,6 +280,22 @@ try {
     })
   );
 } catch (error) {
+  let providerDiagnostics;
+  if (stage === 'postgrest') {
+    const authorities = JSON.parse(await readFile('/ev/captured-authorities.json', 'utf8'));
+    const allowed = [
+      'public',
+      'auth',
+      'extensions',
+      'smarter_private',
+      ...authorities.relations.map((r) => r.name),
+      ...authorities.functions.map((f) => f.signature.split('(')[0]),
+    ];
+    providerDiagnostics = schemaCacheDiagnostics(
+      await readFile('/run/ev/postgrest.log', 'utf8').catch(() => ''),
+      allowed.flatMap((name) => [name, name.split('.').at(-1)])
+    );
+  }
   // Deliberately omit raw SQL, tokens, bodies, service logs and environment.
   console.error(
     JSON.stringify({
@@ -288,6 +305,7 @@ try {
       stage,
       readiness_http_status: stage === 'postgrest' ? readinessStatus : undefined,
       readiness_error_code: stage === 'postgrest' ? readinessCode : undefined,
+      provider_diagnostics: providerDiagnostics,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

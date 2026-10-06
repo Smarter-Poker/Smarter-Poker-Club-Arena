@@ -33,7 +33,7 @@ def execute(repo, image, output):
         output.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='ev-native-',dir=output.parent) as scratch:
             source=Path(scratch);source.chmod(0o755)
-            for f in ['native.mjs','actor.mjs','captured-authorities.json']:
+            for f in ['native.mjs','actor.mjs','diagnostics.mjs','captured-authorities.json']:
                 assert prefix+f in paths
                 shutil.copyfile(repo/prefix/f,source/f)
             chunks=run(['python3',prefix+'bootstrap.py'])

@@ -1,3 +1,4 @@
+-- @live-proof: EXISTS (SELECT 1 FROM public.ad_catalog WHERE ad_key = 'spins_jackpot' AND headline = 'Spins Pay Up To 100X' AND poster_url = '/hub/club-arena/assets/ads/spins-jackpot-poster-v2.webp') AND NOT EXISTS (SELECT 1 FROM public.ad_placement p JOIN public.ad_catalog c ON c.id = p.ad_id WHERE c.ad_key = 'spins_jackpot' AND p.is_active AND p.image_url LIKE '%spins-jackpot-%-v1.webp')
 -- Correct the owner-identified Spins advertising claim; no game or payout changes.
 -- Publish the four v2 creative assets before installing this catalog update.
 -- Existing v1 URLs remain immutable for old clients.

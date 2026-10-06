@@ -541,3 +541,52 @@ describe('LAW: no browser query names a horse column', () => {
     }
   });
 });
+
+describe('LAW: the content engine is not readable by a browser', () => {
+  /* bot_profiles (139 rows, 100 usernames matching live profiles) and personas
+     were publicly readable, as were the content engine's settings, runs,
+     schedule, stats and clip library; trivia PvP participants could read
+     which side of their match was a horse. World Hub #2151 moved the last
+     browser readers behind operator routes first. */
+  const ENGINE = '20261006024500_the_content_engine_is_not_readable_by_a_browser.sql';
+  const strip = (sql: string) => sql.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const TABLES =
+    'bot_profiles|personas|content_settings|pipeline_runs|content_schedule|content_stats|clip_library|content_sources|content_asset_use|pipeline_stats';
+
+  it('the closing migration exists and asserts its effect', () => {
+    expect(files).toContain(ENGINE);
+    const sql = strip(read(ENGINE));
+    expect(sql).toContain(
+      'DROP POLICY IF EXISTS "Public can read bot profiles" ON public.bot_profiles;'
+    );
+    expect(sql).toContain(
+      "EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC, anon, authenticated', t);"
+    );
+    expect(sql).toContain("('trivia_pvp_matches', ARRAY['horse_side'])");
+    expect(sql).toContain('a browser role still reaches');
+    expect(sql).toContain('a participant can still read a trivia horse column');
+  });
+
+  it('nothing after the close hands any of it back to a browser', () => {
+    const offenders = files
+      .filter((f) => f > ENGINE)
+      .filter((f) => {
+        const sql = strip(read(f));
+        return (
+          new RegExp(
+            `GRANT\\s+[^;]*ON\\s+(TABLE\\s+)?(public\\.)?(${TABLES})\\b[^;]*TO[^;]*\\b(anon|authenticated|PUBLIC)\\b`,
+            'i'
+          ).test(sql) ||
+          new RegExp(
+            `CREATE\\s+POLICY[^;]*ON\\s+(public\\.)?(${TABLES})\\b[^;]*TO[^;]*\\b(anon|authenticated|public)\\b`,
+            'i'
+          ).test(sql) ||
+          /GRANT\s+(SELECT|ALL)[^;(]*ON\s+(TABLE\s+)?public\.trivia_pvp_(matches|queue)\b[^;]*TO[^;]*\b(anon|authenticated)\b/i.test(
+            sql
+          ) ||
+          /GRANT\s+SELECT\s*\([^)]*\bhorse_(side|wait_seconds|eligible_at)\b/i.test(sql)
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+});

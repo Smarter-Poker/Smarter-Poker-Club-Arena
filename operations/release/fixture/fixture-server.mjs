@@ -505,6 +505,7 @@ async function checkPackage() {
     'auth-bootstrap-proof.mjs',
     'service-role-boundary.mjs',
     'actors.mjs',
+    'tournament-admission.mjs',
     'financial-route-phase.mjs',
     'seed-fixture.mjs',
     'observation-bridge.mjs',

@@ -46,6 +46,11 @@ const STANDALONE_CLUB = process.env.E2E_TEMPLATE_CLUB_ID || '2a1132b9-5ba2-42e6-
 const UNION_MEMBER_CLUB = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 const BOARD = `clubs/${STANDALONE_CLUB}/table-management`;
+const ROUTE_NAVIGATION_TIMEOUT_MS = 30_000;
+const ROUTE_OUTCOME_TIMEOUT_MS = 45_000;
+const MOBILE_SURFACE_COUNT = 9;
+const MOBILE_SWEEP_TIMEOUT_MS =
+  MOBILE_SURFACE_COUNT * (ROUTE_NAVIGATION_TIMEOUT_MS + ROUTE_OUTCOME_TIMEOUT_MS) + 15_000;
 
 /** Every painted frame on the page: SpadeConsole's root always carries `sc`. */
 const FRAMES = '.sc';
@@ -67,10 +72,10 @@ const returnPlate = (page: Page) => page.getByRole('button', { name: 'Return' })
  * itself is observable.
  */
 async function open(page: Page, path: string): Promise<Outcome> {
-  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: ROUTE_NAVIGATION_TIMEOUT_MS });
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: Table Management is behind a login');
 
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + ROUTE_OUTCOME_TIMEOUT_MS;
   for (;;) {
     if ((await strip(page).count()) > 0) return 'board';
     if ((await returnPlate(page).count()) > 0) return 'refused';
@@ -230,6 +235,9 @@ test.describe('Table Management is its own page on its own frame, in production'
   });
 
   test('no surface scrolls sideways on a phone', async ({ page }) => {
+    // This one case visits nine production surfaces. Its outer budget must not
+    // undercut the explicit navigation plus outcome allowance of any surface.
+    test.setTimeout(MOBILE_SWEEP_TIMEOUT_MS);
     await page.setViewportSize({ width: 393, height: 852 });
 
     for (const [path, family] of [

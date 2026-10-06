@@ -94,7 +94,7 @@ export function useClubRole(clubId: string): {
  */
 export function useClubMembers(clubId: string) {
   const [members, setMembers] = useState<ClubMembership[]>([]);
-  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0, online: 0 });
+  const [counts, setCounts] = useState({ total: 0, active: 0, pending: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {

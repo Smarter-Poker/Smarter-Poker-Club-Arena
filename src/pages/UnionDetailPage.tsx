@@ -17,7 +17,8 @@ import { getUserMemberships } from '../services/ClubsService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
-import { COUNT_UNKNOWN_TEXT } from '../lib/countFigure';
+import { COUNT_UNKNOWN, countText, type CountFigure } from '../lib/countFigure';
+import { PRESENCE_RECHECK_MS } from '../lib/profilePresence';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Tournament } from '../types/database.types';
@@ -215,13 +216,37 @@ export default function UnionDetailPage() {
     prevLevelRef.current = currentLevel;
   }, [union?.level]);
 
-  /* ONLINE NOW IS THE DATABASE'S ANSWER OR NONE (2026-10-05). This counted
-     the people holding this page open on a Realtime presence channel - only
-     people can join one, never a house player - and the header read
-     unions.online_count, a column that does not exist, so it was always 0.
-     "Online" has one definition (fn_profile_presence: the flag AND a heartbeat
-     under five minutes old) and no database function yet answers it for a
-     union, so the figure says Unavailable rather than inventing a number. */
+  /* ONLINE NOW IS THE DATABASE'S ANSWER (2026-10-05). This counted the people
+     holding this page open on a Realtime presence channel - only people can
+     join one, never a house player - and the header read unions.online_count,
+     a column that does not exist, so it was always 0. Both figures now come
+     from fn_union_online_count (seated, or a heartbeat under five minutes old:
+     the one definition), re-asked on the presence cadence so the figure
+     follows heartbeats going stale. A failed read says Unavailable. */
+  const [onlineNow, setOnlineNow] = useState<CountFigure>(null);
+  useEffect(() => {
+    if (!unionId) return;
+    let alive = true;
+    setOnlineNow(null);
+    const ask = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      unionService.getOnlineCount(unionId).then(
+        (n) => {
+          if (alive) setOnlineNow(n);
+        },
+        (e) => {
+          reportError(e, 'UnionDetailPage.onlineCount');
+          if (alive) setOnlineNow(COUNT_UNKNOWN);
+        }
+      );
+    };
+    ask();
+    const timer = setInterval(ask, PRESENCE_RECHECK_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [unionId]);
 
   const loadingRef = useRef(false);
 
@@ -742,7 +767,7 @@ export default function UnionDetailPage() {
         metrics={[
           { label: 'Clubs', value: union.clubCount },
           { label: 'Players', value: union.memberCount.toLocaleString(), tone: 'live' },
-          { label: 'Online', value: COUNT_UNKNOWN_TEXT, tone: 'attention' },
+          { label: 'Online', value: countText(onlineNow), tone: 'attention' },
         ]}
       />
       <div className={styles.header}>
@@ -841,7 +866,9 @@ export default function UnionDetailPage() {
                 <span className={styles.statLabel}>Total Players</span>
               </div>
               <div className={styles.statCard}>
-                <span className={`${styles.statValue} ${styles.online}`}>{COUNT_UNKNOWN_TEXT}</span>
+                <span className={`${styles.statValue} ${styles.online}`}>
+                  {countText(onlineNow)}
+                </span>
                 <span className={styles.statLabel}>Online Now</span>
               </div>
               {financialSummary && (

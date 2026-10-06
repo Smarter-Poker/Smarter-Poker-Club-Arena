@@ -192,6 +192,7 @@ export default function LeaderboardPage() {
   const [userRank, setUserRank] = useState<{ rank: number; total: number; value: number } | null>(
     null
   );
+  const [userRankError, setUserRankError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
@@ -231,6 +232,7 @@ export default function LeaderboardPage() {
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
+  const [clubsError, setClubsError] = useState(false);
 
   // Tournament stats (club-scoped)
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('rankings');
@@ -260,7 +262,6 @@ export default function LeaderboardPage() {
     const timeout = setTimeout(() => {
       if (!isMountedRef.current) return;
       setLoading(false);
-      setClubsLoading(false);
     }, 5000);
     return () => {
       isMountedRef.current = false;
@@ -281,6 +282,7 @@ export default function LeaderboardPage() {
     setUserClubs([]);
     setSelectedClubId(null);
     setUserRank(null);
+    setUserRankError(false);
     setSettlementStatus(null);
     setSettlementError(null);
     setSettings(null);
@@ -288,6 +290,7 @@ export default function LeaderboardPage() {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
       setClubsLoading(false);
+      setClubsError(false);
       setUserClubs([]);
       setSelectedClubId(null);
     }
@@ -513,8 +516,18 @@ export default function LeaderboardPage() {
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
+    setClubsError(false);
+    let membershipTimeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const memberships = await getUserMemberships(user);
+      const memberships = await Promise.race([
+        getUserMemberships(user),
+        new Promise<never>((_resolve, reject) => {
+          membershipTimeout = setTimeout(
+            () => reject(new Error('Club Memberships Timed Out')),
+            5000
+          );
+        }),
+      ]);
       let rewardContexts: LeaderboardRewardContext[] = [];
       try {
         rewardContexts = await LeaderboardService.getManageableRewardContexts(true);
@@ -557,6 +570,7 @@ export default function LeaderboardPage() {
       if (getIsMounted && !getIsMounted()) return;
       setUserClubs(clubs);
       setRewardContexts(rewardContexts);
+      setClubsError(false);
 
       /* ── THE REPORTED BUG LIVED IN THE LINE BELOW (Dan, 2026-09-02) ───────
          It used to read:
@@ -608,12 +622,15 @@ export default function LeaderboardPage() {
         return clubs[0]?.id || null;
       });
     } catch (error) {
-      reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
       if (!getIsMounted || getIsMounted()) {
+        reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
         setUserClubs([]);
         setSelectedClubId(null);
+        setClubsError(true);
+        toast.error('Your Club List Could Not Be Loaded.');
       }
-      toast.error('Failed to load clubs');
+    } finally {
+      if (membershipTimeout) clearTimeout(membershipTimeout);
     }
     if (getIsMounted && !getIsMounted()) return;
     setClubsLoading(false);
@@ -790,11 +807,19 @@ export default function LeaderboardPage() {
                 period,
                 periodOffset
               )
-          ).then((rank) => {
-            if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-              setUserRank(rank);
-            }
-          })
+          )
+            .then((rank) => {
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                setUserRank(rank);
+                setUserRankError(false);
+              }
+            })
+            .catch((error) => {
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                reportError(error, 'LeaderboardPage.Personal_rank_failed');
+                setUserRankError(true);
+              }
+            })
         : Promise.resolve();
 
       await Promise.allSettled([periodMetadataPromise, rankPromise]);
@@ -1225,6 +1250,16 @@ export default function LeaderboardPage() {
               <span>
                 {userRank ? `Of ${userRank.total.toLocaleString('en-US')}` : 'Enter The Field'}
               </span>
+              {userRankError && (
+                <span className="lb-position-warning" role="status">
+                  {userRank
+                    ? 'Your Position Could Not Be Refreshed. Showing The Last Verified Position.'
+                    : 'Your Position Could Not Be Loaded.'}
+                  <button type="button" onClick={retryCurrentView}>
+                    Retry Position
+                  </button>
+                </span>
+              )}
             </div>
             <div>
               <span className="lb-telemetry-label">Measured By</span>
@@ -1461,6 +1496,17 @@ export default function LeaderboardPage() {
             <p className="lb-loading" role="status">
               Loading Your Clubs...
             </p>
+          ) : scope === 'my-clubs' && clubsError ? (
+            <div className="empty-state lb-error-state" role="alert">
+              <p>Your Club List Could Not Be Loaded.</p>
+              <p className="empty-sub">Your Memberships Are Safe. Retry To Check Them Again.</p>
+              <button
+                className="join-club-btn"
+                onClick={() => loadUserClubs(() => isMountedRef.current)}
+              >
+                Retry Club List
+              </button>
+            </div>
           ) : scope === 'my-clubs' && userClubs.length === 0 ? (
             <div className="empty-state">
               <p>Join A Club To See Leaderboard Rankings, Or Switch To Global.</p>

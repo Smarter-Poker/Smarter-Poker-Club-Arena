@@ -1,0 +1,139 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+const h = vi.hoisted(() => ({
+  user: { id: 'leaderboard-player' },
+  getMemberships: vi.fn(),
+  getUserRank: vi.fn(),
+  toastError: vi.fn(),
+}));
+
+vi.mock('../../src/hooks/useAuthUser', () => ({
+  useAuthUser: () => ({ user: h.user, isHydrating: false }),
+}));
+
+vi.mock('../../src/services/ClubsService', () => ({
+  getUserMemberships: h.getMemberships,
+}));
+
+vi.mock('../../src/services/LeaderboardService', () => ({
+  LeaderboardService: {
+    getClubLeaderboard: vi
+      .fn()
+      .mockResolvedValue([
+        { rank: 1, userId: 'leaderboard-player', username: 'Player One', value: 100, change: 0 },
+      ]),
+    getGlobalLeaderboard: vi.fn().mockResolvedValue([]),
+    getClubTournamentStats: vi.fn().mockResolvedValue([]),
+    getUserRank: h.getUserRank,
+    getGlobalUserRank: h.getUserRank,
+    getPeriodWindow: vi.fn().mockResolvedValue({ start_date: '2026-09-28' }),
+    getLeaderboardSettlementStatus: vi.fn().mockResolvedValue({ program: null }),
+    getManageableRewardContexts: vi.fn().mockResolvedValue([]),
+    getLeaderboardRewardSetup: vi.fn().mockResolvedValue(null),
+    getRewardProgramHistory: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock('../../src/components/common/Toast', () => ({
+  useToast: () => ({ error: h.toastError, success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+}));
+
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: { subscribeDebounced: vi.fn(() => vi.fn()) },
+}));
+
+vi.mock('../../src/hooks/useVisibilityRefresh', () => ({
+  useVisibilityRefresh: () => ({ isRefreshing: false }),
+}));
+
+vi.mock('../../src/components/console/SpadeConsole', () => ({
+  SpadeConsole: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+}));
+
+vi.mock('../../src/components/avatars/PlayerAvatar', () => ({
+  PlayerAvatar: () => <span>Player Avatar</span>,
+}));
+
+vi.mock('../../src/components/leaderboard/LeaderboardPrizeWizard', () => ({
+  LeaderboardPrizeWizard: () => null,
+}));
+
+vi.mock('../../src/components/leaderboard/LeaderboardSettlementCard', () => ({
+  LeaderboardSettlementCard: () => null,
+}));
+
+import LeaderboardPage from '../../src/pages/LeaderboardPage';
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={['/leaderboard']}>
+      <Routes>
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+const memberships = [
+  {
+    club_id: 'club-one',
+    role: 'player',
+    club: { id: 'club-one', name: 'The Club', slug: 'the-club', club_id: '100001' },
+  },
+];
+
+describe('Leaderboard Page Recovery States', () => {
+  beforeEach(() => {
+    h.getMemberships.mockReset().mockResolvedValue(memberships);
+    h.getUserRank.mockReset().mockResolvedValue({ rank: 6, total: 20, value: 100 });
+    h.toastError.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows A Retryable Membership Error Instead Of A False Empty Club State', async () => {
+    h.getMemberships.mockRejectedValueOnce(new Error('Network Unavailable'));
+    renderPage();
+
+    expect(await screen.findByText('Your Club List Could Not Be Loaded.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Join A Club To See Leaderboard Rankings, Or Switch To Global.')
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Club List' }));
+
+    await waitFor(() => expect(screen.getByText('The Club')).toBeInTheDocument());
+    expect(screen.queryByText('Your Club List Could Not Be Loaded.')).not.toBeInTheDocument();
+  });
+
+  it('Turns A Hung Membership Read Into A Retryable Error', async () => {
+    vi.useFakeTimers();
+    h.getMemberships.mockReturnValueOnce(new Promise(() => undefined));
+    renderPage();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(screen.getByText('Your Club List Could Not Be Loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry Club List' })).toBeInTheDocument();
+  });
+
+  it('Reports A Personal-Rank Failure And Clears It After Retry', async () => {
+    h.getUserRank
+      .mockRejectedValueOnce(new Error('Rank Read Unavailable'))
+      .mockResolvedValueOnce({ rank: 6, total: 20, value: 100 });
+    renderPage();
+
+    expect(await screen.findByText('Your Position Could Not Be Loaded.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Position' }));
+
+    await waitFor(() => expect(screen.getByText('Of 20')).toBeInTheDocument());
+    expect(screen.queryByText('Your Position Could Not Be Loaded.')).not.toBeInTheDocument();
+  });
+});

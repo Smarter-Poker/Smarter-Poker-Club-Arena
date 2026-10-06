@@ -30,7 +30,6 @@ export interface Union {
   avatarUrl?: string;
   isPublic: boolean;
   memberCount: number;
-  onlineCount: number;
   clubCount: number;
   totalRake: number;
   level: number;
@@ -700,13 +699,13 @@ class UnionServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get union stats
+   * Get union stats. No online figure: it was 20% of the member total, a
+   * number nobody measured. Online comes from getOnlineCount() below.
    */
   async getStats(unionId: string): Promise<{
     totalPlayers: number;
     totalClubs: number;
     weeklyRake: number;
-    onlinePlayers: number;
   }> {
     const clubs = await this.getUnionClubs(unionId);
 
@@ -737,8 +736,31 @@ class UnionServiceClass {
       totalPlayers: totalPlayers || 0,
       totalClubs: clubs.length,
       weeklyRake: clubs.reduce((sum, c) => sum + c.weeklyRake, 0),
-      onlinePlayers: Math.floor((totalPlayers || 0) * 0.2), // Estimate 20% online
     };
+  }
+
+  /**
+   * Who is online now in this union, by the one definition of online:
+   * fn_union_online_count counts the union's members who are seated at an
+   * open table or whose heartbeat is fresh (profiles.is_online AND last_seen
+   * under five minutes) - the same rule fn_profile_presence answers per
+   * person, so a horse and a person count alike. A number only; no name or id
+   * leaves the database. Throws when the database cannot answer, so a caller
+   * shows "Unavailable" rather than inventing a figure.
+   *
+   * It replaces getStats().onlinePlayers, which was 20% of the member total,
+   * and unions.online_count, a column that does not exist.
+   */
+  async getOnlineCount(unionId: string): Promise<number> {
+    const { data, error } = await supabase.rpc('fn_union_online_count', {
+      p_union_id: unionId,
+    });
+    if (error) throw error;
+    const n = Number(data);
+    if (data == null || !Number.isFinite(n)) {
+      throw new Error('fn_union_online_count answered no number');
+    }
+    return n;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -760,7 +782,6 @@ class UnionServiceClass {
       avatarUrl: u.avatar_url,
       isPublic: u.is_public ?? true,
       memberCount: Math.max(u.member_count || 0, u.total_players || 0),
-      onlineCount: u.online_count || 0,
       clubCount: u.club_count || 0,
       totalRake: Number(u.total_rake) || 0,
       level: u.level || 1,

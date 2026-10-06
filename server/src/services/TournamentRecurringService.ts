@@ -2943,6 +2943,10 @@ export class TournamentRecurringService {
   private finalizedPoolTopUpsRefused = new Set<string>();
   /** Tournaments whose club fleet hold has already been reported. */
   private fleetHeldTopUpsRefused = new Set<string>();
+  /** Last refusal reason reported per Free Buy host, so a steady hold is
+      said once rather than every FREE_BUY_TICK_MS, and a CHANGE of reason
+      (held -> unreadable) is still said. */
+  private freeBuyHostPublishRefused = new Map<string, string>();
   /* Last counter/roster disagreement said per event, so a top-up that finds
      nothing to add because the field is already there says so once per
      distinct disagreement rather than every backoff. */
@@ -3259,6 +3263,54 @@ export class TournamentRecurringService {
       if (due.length === 0) return;
 
       for (const host of FREE_BUY_HOSTS) {
+        /**
+         * ─── A HELD CLUB IS NOT PUBLISHED FOR (2026-10-05) ───
+         *
+         * FREE_BUY_HOSTS is a module constant, so until now the ONLY way to
+         * stop this board for one club was to edit it and ship a release.
+         * Every other generator on the platform already has a database gate -
+         * the Spin and SNG boards read activatedSpinOwners(), and the
+         * tournament ramp reads this same fleet policy - and the Free Buy
+         * board's own header says it has "no such database gate". That cost a
+         * full governed delivery to hold one club on 2026-10-04, and a held
+         * club kept gaining an MTT per due slot in the meantime.
+         *
+         * It reads the club's effective fleet policy, which is the switch an
+         * operator already turns to hold a club's horses, and declines to
+         * PUBLISH for a held one. FREE_BUY_HELD_HOSTS stays exactly as it is:
+         * that list is the hard, deploy-level hold and cannot be undone by a
+         * database write, and this gate is a second, independent brake that
+         * needs no release. Neither weakens the other.
+         *
+         * THIS GATE FAILS CLOSED, unlike the ramp's. getFleetPolicy never
+         * throws; on an unreadable policy it returns the defaults marked
+         * `degraded`, which say "seating allowed". The ramp treats that as
+         * permission because refusing a seat strands a game that already
+         * exists and was paid for. Nothing is stranded by not creating an
+         * event that does not exist yet, while an event wrongly published onto
+         * a held club is seeded with horses within seconds and then has to be
+         * refunded one entry at a time. So a degraded read is a refusal here -
+         * the same reasoning, and the same words, as the unreadable-board read
+         * below: an unreadable board is not an empty board. The slot has 36
+         * more ticks to land, and FREE_BUY_PUBLISH_LEAD_MS is three hours.
+         */
+        const hostPolicy = await getFleetPolicy(host.clubId);
+        if (hostPolicy.degraded || !hostPolicy.enabled || hostPolicy.pauseNewSeatings) {
+          const why = hostPolicy.degraded
+            ? 'its fleet policy could not be read'
+            : `its fleet policy is held (enabled=${hostPolicy.enabled}, pauseNewSeatings=${hostPolicy.pauseNewSeatings})`;
+          if (this.freeBuyHostPublishRefused.get(host.hostId) !== why) {
+            this.freeBuyHostPublishRefused.set(host.hostId, why);
+            reportError(
+              new Error(
+                `[TournamentRecurring] Free Buy board not published for ${host.label}: ${why} - a held club is not published for`
+              ),
+              'TournamentRecurring.free_buy_publish_refused_fleet_held'
+            );
+          }
+          continue;
+        }
+        this.freeBuyHostPublishRefused.delete(host.hostId);
         for (const d of due) {
           if (isMaintenanceFrozen()) return;
           const cfg = FREE_BUY_TIERS[d.slot.tier];

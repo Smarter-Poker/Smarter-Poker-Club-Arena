@@ -302,3 +302,40 @@ describe('LAW: a person in the arena has the same heartbeat a horse has', () => 
     expect(page).not.toContain('union.onlineCount');
   });
 });
+
+describe('LAW: an online figure is counted by the database, never invented', () => {
+  it('a union is counted by fn_union_online_count, and a failed read says so', () => {
+    const svc = sliceMethod(read('src/services/UnionService.ts'), 'async getOnlineCount(');
+    expect(svc).toContain("supabase.rpc('fn_union_online_count', {");
+    expect(svc).toContain('if (error) throw error;');
+    for (const file of ['src/pages/UnionDetailPage.tsx', 'src/pages/UnionsPage.tsx']) {
+      const code = blankNonCode(read(file));
+      expect(code, file).toContain('unionService.getOnlineCount(');
+      expect(code, file).toContain('COUNT_UNKNOWN');
+      expect(code, file).not.toContain('presenceService');
+    }
+    // The detail page follows heartbeats going stale on the presence cadence.
+    expect(blankNonCode(read('src/pages/UnionDetailPage.tsx'))).toContain(
+      'setInterval(ask, PRESENCE_RECHECK_MS)'
+    );
+  });
+
+  it('nothing reads the union online column that does not exist', () => {
+    const union = read('src/services/UnionService.ts');
+    expect(blankNonCode(union)).not.toMatch(/\bonlineCount\b/);
+    expect(union).not.toMatch(/u\.online_count/);
+  });
+
+  it('no online figure is a fraction of a member count', () => {
+    // 2026-10-05: UnionService.getStats said 20% of members were online and
+    // MembershipService.getMemberCounts said 15%. Neither was measured.
+    const invented = FILES.filter(({ blank }) =>
+      /online\w*\s*[:=][^;\n]*\*\s*0?\.\d+/i.test(blank)
+    ).map((f) => f.file);
+    expect(invented).toEqual([]);
+    expect(blankNonCode(read('src/services/UnionService.ts'))).not.toContain('onlinePlayers');
+    expect(
+      blankNonCode(sliceMethod(read('src/services/MembershipService.ts'), 'async getMemberCounts('))
+    ).not.toMatch(/\bonline\b/);
+  });
+});

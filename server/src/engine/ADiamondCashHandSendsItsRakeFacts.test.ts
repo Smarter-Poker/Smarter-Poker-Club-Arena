@@ -44,6 +44,7 @@ vi.mock('../services/errorReporter.js', () => ({
 }));
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { supabase } from '../services/supabase/client.js';
+import { reportError } from '../services/errorReporter.js';
 import { HandController } from './HandController.js';
 import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
@@ -243,9 +244,20 @@ describe('the Diamond cash settlement payload carries the settler’s three fact
       ['b', true, 40],
       ['c', false, 0],
     ]);
+    // `hand_saw_flop` is a fact about the HAND. A seat that was not dealt in
+    // still carries it, and carries the same value: the settler counts the
+    // distinct values and refuses a payload with more than one, so making this
+    // per-seat would refuse every hand with an undealt seat at the table.
+    expect(stacks.map((row) => row.hand_saw_flop)).toEqual([true, true, true]);
   });
 
   it('refuses a fractional contribution by name rather than rounding it into the rake', async () => {
+    // Two guards stand here and this pin names the FIRST one, deliberately:
+    // assertDiamondAcceptedHand already holds every Diamond amount - the pot,
+    // the contributions, the returned uncalled bets and every stack - to a
+    // whole Diamond, and it runs before this payload is built. The builder's
+    // own refusal is pinned directly below, because a module that produces a
+    // money fact must not depend on a caller's guard to stay whole.
     const { engine, players } = engineAndPlayers({
       contributions: [
         ['a', 30.5],
@@ -253,8 +265,40 @@ describe('the Diamond cash settlement payload carries the settler’s three fact
         ['c', 10],
       ],
     });
-    await expect(engine.postHandTasks(players, 1)).rejects.toThrow();
+    // The pipeline turns a settlement refusal into its terminal gate rather
+    // than re-raising it, so the refusal is read off the report, and the pin
+    // that matters is that NOTHING was committed.
+    await expect(engine.postHandTasks(players, 1)).rejects.toThrow(
+      'authoritative hand commit was not proved'
+    );
     expect(mocks.commit).not.toHaveBeenCalled();
+    expect(
+      vi
+        .mocked(reportError)
+        .mock.calls.some(([error]) => String(error).includes('diamond_whole_amount_required'))
+    ).toBe(true);
+  });
+
+  it('refuses a fractional contribution at the builder itself, with its own name', () => {
+    expect(() =>
+      diamondCashRakeFactsFor({
+        userId: 'a',
+        contributions: new Map([['a', 30.5]]),
+        dealtStacks: new Map([['a', 100]]),
+        handSawFlop: true,
+      })
+    ).toThrow('diamond_whole_contribution_required');
+    // A Diamond is indivisible, so there is no "nearly whole" either.
+    for (const fraction of [0.01, 0.5, 0.99]) {
+      expect(() =>
+        diamondCashRakeFactsFor({
+          userId: 'a',
+          contributions: new Map([['a', 30 + fraction]]),
+          dealtStacks: new Map([['a', 100]]),
+          handSawFlop: true,
+        })
+      ).toThrow('diamond_whole_contribution_required');
+    }
   });
 
   it('refuses a contribution from a seat that was never dealt a hand', () => {
@@ -347,6 +391,35 @@ describe('handSawFlopForMoney is the same fact priceDeductions prices with', () 
     setSawFlopFlag(hc, true);
     expect(hc.handSawFlopForMoney()).toBe(false);
     expect(hc.priceDeductions(true, 500).rake).toBe(0);
+  });
+});
+
+/* ── THE FACT IS CAPTURED WHERE THE HAND ENDS, NOT INVENTED AT THE WRITE ── */
+describe('the hand\u2019s flop fact is captured from its own controller at WINNERS', () => {
+  async function winnersFired(board: 'flop' | 'none', flag: boolean) {
+    const { engine, players } = engineAndPlayers();
+    const hc = mkController();
+    if (board === 'flop') giveFlop(hc);
+    setSawFlopFlag(hc, flag);
+    engine.handController = hc;
+    engine.currentHandSawFlopForMoney = undefined;
+    engine.broadcastCurrentState = () => {};
+    engine.sleep = () => Promise.resolve();
+    engine.isMuckedAtShowdown = () => false;
+    await engine.handleHandEvent({ type: 'WINNERS', winners: [] } as any, players);
+    return engine.currentHandSawFlopForMoney;
+  }
+
+  it('records the controller\u2019s own answer for a hand that saw the flop', async () => {
+    await expect(winnersFired('flop', true)).resolves.toBe(true);
+  });
+
+  it('records false for a hand that ended before the flop', async () => {
+    await expect(winnersFired('none', false)).resolves.toBe(false);
+  });
+
+  it('records false when the flag is true over an empty board, as the pricer does', async () => {
+    await expect(winnersFired('none', true)).resolves.toBe(false);
   });
 });
 

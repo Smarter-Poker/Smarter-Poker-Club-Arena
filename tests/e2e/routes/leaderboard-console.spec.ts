@@ -370,8 +370,19 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   ).toBeGreaterThan(0);
   const firstRankedName = board.locator('.entry-name').first();
   await expect(firstRankedName).toBeVisible();
-  const coldRankedName = await firstRankedName.innerText();
-  expect(coldRankedName.trim()).not.toBe('');
+  const cachePaintMarker = 'Cache Paint Verification';
+  // A browser-only marker proves the rendered rows came from this cache,
+  // not from My Clubs data left on screen during the Global scope change.
+  await page.evaluate(
+    ({ key, marker }) => {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) throw new Error('Expected the cold leaderboard cache record');
+      const record = JSON.parse(raw) as { entries: { username: string }[] };
+      record.entries[0].username = marker;
+      sessionStorage.setItem(key, JSON.stringify(record));
+    },
+    { key: cacheKey, marker: cachePaintMarker }
+  );
 
   let releaseWarmRefresh!: () => void;
   let notifyWarmRequest!: () => void;
@@ -395,7 +406,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await warmRequestSeen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
-    await expect(firstRankedName).toHaveText(coldRankedName);
+    await expect(firstRankedName).toContainText(cachePaintMarker);
     warmCachedPaintMs = Date.now() - warmStartedAt;
     const sameCacheStillPresent = await page.evaluate(
       (key) => sessionStorage.getItem(key) !== null,
@@ -411,6 +422,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false', {
     timeout: 30000,
   });
+  await expect(firstRankedName).not.toContainText(cachePaintMarker);
 
   await page.evaluate(
     ({ key, ttlMs }) => {

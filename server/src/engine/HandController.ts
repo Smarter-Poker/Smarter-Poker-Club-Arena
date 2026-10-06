@@ -1358,7 +1358,9 @@ export class HandController {
         player.stack -= chipsAdded;
         this.state.pot += chipsAdded;
         player.bet = actualAmount;
-        this.state.currentBet = actualAmount;
+        // The level only ever rises. validateAction refuses a raise at or
+        // under the bet; this keeps the state true even if a caller skips it.
+        this.state.currentBet = Math.max(this.state.currentBet, actualAmount);
         // Bible V8 §4.21: Track last aggressor for showdown reveal order
         this.state.lastAggressorSeat = seat;
         if (player.stack === 0) player.is_all_in = true;

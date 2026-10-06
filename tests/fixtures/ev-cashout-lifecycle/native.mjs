@@ -26,7 +26,8 @@ const command = promisify(execFile),
   data = '/var/lib/postgresql/data';
 const database = 'club_arena_qualification',
   children = [],
-  connections = [];
+  connections = [],
+  outcomes = [];
 let stage = 'initialize',
   gateway,
   engineLoaded = false,
@@ -242,15 +243,14 @@ try {
   stopEquityWorkers = equity.stopEquityWorkerPool;
   const workerStatus = await equity.startEquityWorkerPool();
   assert.equal(workerStatus.acceptingWork, true, 'real pricing worker must be ready');
-  const outcomes = [];
   for (const river of ['3c', '3d']) {
     setStage(`fund-club-${river}`);
     const club = randomUUID(),
       table = randomUUID(),
       game = randomUUID();
     await db.query(
-      "INSERT INTO public.clubs(id,name,chip_treasury) VALUES($1,'Isolated EV acceptance',10000)",
-      [club]
+      'INSERT INTO public.clubs(id,club_id,name,chip_treasury) VALUES($1,$2,$3,10000)',
+      [club, river === '3c' ? 80001 : 80002, `Isolated EV acceptance ${river}`]
     );
     setStage(`fund-game-${river}`);
     await db.query(
@@ -377,6 +377,7 @@ try {
       provider_diagnostics: providerDiagnostics,
       database_activity: databaseActivity,
       database_error: databaseError,
+      completed_outcomes: outcomes,
       error_code: /^[A-Z0-9_]{3,50}$/.test(error.code || '')
         ? error.code
         : 'ASSERTION_OR_RUNTIME_FAILURE',

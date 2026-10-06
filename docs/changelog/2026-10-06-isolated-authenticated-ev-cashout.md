@@ -80,3 +80,9 @@ workers, so the isolated Node pricing test had no live process handle while
 awaiting readiness. That test now owns a bounded rejection deadline, disposed
 after pool shutdown, while retaining real pricing assertions. The native actor
 already owns its HTTP listener. No financial execution is claimed from this run.
+
+The corrected c3c native run completed the first actor and its cleanup, then
+failed 23505 while creating the second club: both cases reused a name under the
+captured unique lower-name index. Each case now has a distinct name and explicit
+numeric club identity instead of a random numeric default. Failed receipts retain
+any completed actor outcomes; both cases must still pass for qualification.

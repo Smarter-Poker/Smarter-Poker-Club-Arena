@@ -1,0 +1,18 @@
+{
+  "contract": "exact-weekly-recompute-split-v1",
+  "scope": "Native synthetic financial fixture, exact candidate and current observed stage dependencies; not production-scale or installation proof.",
+  "repository_files": {
+    "scripts/dev/test-union-weekly-basis.py": "3f151d0775837331fce21b2bbcba10da5f358ca192a9db00cb886cec1edfe2e3",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "a9388141873efdbee3863f0cbf183f05561af8e814439b5226175ab17396f846",
+    "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
+    "tests/fixtures/union-weekly-basis/raked-regression.sql": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d",
+    "tests/fixtures/weekly-recompute-split/current-stage-dependencies.json": "86c80627a994577a2b654ade9f2829f8f94e778de83450d12212b2f74f1c6b54",
+    "tests/fixtures/weekly-recompute-split/generate-original-hands.sql": "38f0228189051035e97cf0420a536de1504cc246e0ec0a5615791823cbc98ab1",
+    "tests/fixtures/weekly-recompute-split/qualify.py": "2effb3dc4f3d41e70b2e4c3d120e945c7625bf1e614986528376af7bda75986b",
+    "tests/fixtures/weekly-recompute-split/current-owners.json": "3370fb9a1155bc8ca6ec494955c8723abee3e5f6f903dd37494701f3e3fce6b4",
+    "supabase/migrations/20261003155132_the_first_close_of_a_long_week_waits_for_a_quiet_hour.sql": "43432f71d1108a0e77b13f3f03bd7a519c1e45222c2fdfc1c96ece1bf4f4770d",
+    "supabase/migrations/20261003140241_the_earned_plan_is_proved_two_hours_at_a_time.sql": "c690a798da3a82137cb5be04fec56d1370bba210b935a8a84309a95aa9f8765b",
+    "supabase/migrations/20261003162308_round_three_is_read_once_and_paid_in_batches.sql": "cbfdc1dfab72228dd2bdd6efbf752ff7367d3cc79bde6e2fac6119edbb1a4861",
+    "supabase/migrations/20261003232339_a_weekly_recompute_is_calculated_in_parts.sql": "ec61f6e295b147b2ccaf7a7504066056ef18a95a3737e91507fccb50f3cd4546"
+  }
+}

@@ -23,7 +23,7 @@
  *     while pools still paid in full. Roughly 27,000 to 30,000 chips a day.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { sliceStatement } from './helpers/sourceWindow';
 
@@ -130,10 +130,15 @@ describe('every dead write now names a column that exists', () => {
 describe('a profile shows the player, not the account state', () => {
   const src = read('src/services/PlayerStatusService.ts');
 
-  it('reads the real status_text column instead of aliasing status', () => {
+  it('never aliases status, and names no column the browser cannot read', () => {
     expect(code(src)).not.toContain('status_text:status');
+    /* 2026-10-05: `authenticated` holds no SELECT (or UPDATE) on
+       profiles.status_text, so naming it refused the WHOLE profile read and
+       the page lost its online dot too. No sanctioned reader exists yet, so
+       the service names it nowhere and the custom status is null. */
+    expect(code(src)).not.toMatch(/\bstatus_text\b/);
     // No last_seen: a player's last-seen time is theirs alone (ruling 25).
-    expect(code(src)).toContain("select('id, status_text')");
+    expect(code(src)).toContain("select('id')");
     // Online-now comes from the presence door, never the raw flag.
     expect(code(src)).not.toContain('is_online');
     expect(code(src)).toContain('readPresence(');
@@ -146,25 +151,15 @@ describe('a profile shows the player, not the account state', () => {
 });
 
 describe('the horse buy-in bypass stays switched off', () => {
-  const src = read('src/services/HorseOrchestrator.ts');
-
-  it('no longer inserts horses straight into tournament_players', () => {
+  it('the browser orchestrator that held it stays deleted', () => {
     /**
      * This is the one entry where fixing the column name would have made
-     * things WORSE. The rejected write was the only thing keeping the bypass
-     * off. Registration belongs to the engine, through
-     * fn_register_horse_for_tournament, which performs the same entry split,
-     * debit, rake row and pool updates as the human path.
+     * things WORSE: the rejected write was the only thing keeping a zero
+     * buy-in horse registration switched off (roughly 27,000 chips a day had
+     * it reopened). Registration belongs to the engine, through
+     * fn_register_horse_for_tournament. HorseOrchestrator, which held the
+     * dead insert, was deleted on 2026-10-05.
      */
-    expect(code(src)).not.toContain('buy_in_amount: 0');
-    // `tournaments.buy_in_amount` is a real column this file legitimately
-    // writes when it CREATES an event, so the ban is on the zero-buy-in
-    // registration shape, not on the name.
-    expect(code(src)).not.toMatch(/from\('tournament_players'\)\s*\.insert\(/);
-  });
-
-  it('says why, so nobody re-adds it as a convenience', () => {
-    expect(src).toContain('fn_register_horse_for_tournament');
-    expect(src).toContain('27,000');
+    expect(existsSync(resolve(__dirname, '..', 'src/services/HorseOrchestrator.ts'))).toBe(false);
   });
 });

@@ -10,7 +10,6 @@
 import { masterBus } from '../core/MasterBus';
 import { soundService } from './SoundService';
 import { OfflineQueueService } from './OfflineQueueService';
-import { FinancialCronService } from './FinancialCronService';
 
 export interface BootResult {
   offlineQueue: boolean;
@@ -97,18 +96,12 @@ export async function bootServices(_options?: {
     '[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)'
   );
 
-  // 4. Financial Cron — reconciliation, suspension checks, audit trail
-  try {
-    FinancialCronService.start({
-      reconciliationIntervalMs: 24 * 60 * 60 * 1000, // Daily
-      suspensionCheckIntervalMs: 6 * 60 * 60 * 1000, // Every 6h
-      autoSuspendEnabled: false, // Log-only by default
-    });
-    result.financialCron = true;
-    console.debug('[ServiceBootstrap] ✓ FinancialCronService started');
-  } catch (err: unknown) {
-    console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
-  }
+  // 4. No financial schedule runs in a browser (2026-10-05). The old
+  //    FinancialCronService.start() here ran a credit-suspension scan of
+  //    `agents` in every tab, signed out included, which is where the
+  //    "permission denied for table agents" errors came from. The admin runs
+  //    that check on demand from FinancialHealthPage; `financialCron` stays in
+  //    BootResult as a compatibility field and is always false.
 
   // 5. Warm only the auth-token cache. Opening /ws/multi here made every
   //    authenticated route depend on the game engine even when the player was
@@ -147,7 +140,6 @@ export async function bootServices(_options?: {
  */
 export function shutdownServices(): void {
   OfflineQueueService.dispose();
-  FinancialCronService.stop();
   bootResult = null;
   console.debug('[ServiceBootstrap] Services shut down');
 }

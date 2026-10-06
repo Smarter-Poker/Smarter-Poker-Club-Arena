@@ -54,3 +54,17 @@ on every Reel a horse published and readable by both browser roles; World Hub
 20261006004137 grants the browser roles every column but it. `horse_post_modes`
 had a SELECT policy of `true`; migration 20261006004222 closes it to every
 browser role. The law pins both and that no later migration re-opens them.
+
+2026-10-05: the bundle stops asking. The grants make the database refuse, but
+a browser query that NAMES a horse column still ships the question to every
+player, and fails closed into a feature that silently does nothing.
+HydraService (imported by TablePage and run on every buy-in and every 15s
+waitlist poll) and HorseOrchestrator (imported by UnionDetailPage) still
+selected and filtered `profiles.is_horse`, `horse_status` and `horse_profile`.
+Both were dead browser-side horse management - the engine owns horses, and the
+fleet releases a horse seat for queued humans itself - so both were deleted.
+The law now walks every `.from(...)` query chain under `src/` and fails on any
+that names `is_horse`, `horse_status`, `horse_profile`, `horse_id` or `is_bot`
+(the one exemption is `horse_bug_reports`, whose `horse_id` is a free-text
+reporter label, not the identity mark), and pins that both services stay
+deleted.

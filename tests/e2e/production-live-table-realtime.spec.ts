@@ -802,12 +802,12 @@ async function certifyReadOnlyTournamentFormat(
   const caseStartedAt = Date.now();
   const observationDeadline = caseStartedAt + testInfo.timeout;
   /* A heads-up Sit & Go can finish its last hand while the browser watches
-     it, and then it is COMPLETED, not broken. Only that format reads the rows
-     that prove it. Every other failure keeps its own message and evidence. */
-  const boardReader = gameFormat === 'sng' ? await createHudClockReader() : undefined;
+     it; an MTT board can close after balancing. Read durable facts for all
+     tournament formats. Every unproven failure retains its evidence. */
+  const boardReader = await createHudClockReader();
   /* The MTT alone needs a natural blind-level clock after recovery, so it alone
      qualifies its table by that clock at selection instead of by seat count. */
-  const hudReader = gameFormat === 'mtt' ? await createHudClockReader() : undefined;
+  const hudReader = gameFormat === 'mtt' ? boardReader : undefined;
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
@@ -853,7 +853,7 @@ async function certifyReadOnlyTournamentFormat(
         contentType: 'application/json',
       });
     if (boardReader) await boardReader.close().catch(() => {});
-    if (hudReader) await hudReader.close().catch(() => {});
+    if (hudReader && hudReader !== boardReader) await hudReader.close().catch(() => {});
   }
 }
 
@@ -1361,7 +1361,25 @@ async function observeTournamentBoard(
         atFailure = null;
       }
     }
+    if (boardReader && selected.boardFacts && atFailure) {
+      try {
+        atFailure = await boardReader.accountClosedBoard(selected.boardFacts, atFailure);
+      } catch {
+        // Missing custody evidence cannot excuse a continuity failure.
+        atFailure = null;
+      }
+    }
+    const lastGameplayAt = journal.gameplayEvents(candidate.id, navigationStartedAt).at(-1)?.at;
+    const restartFrames = journal.countReceivedEvents(
+      candidate.id,
+      'engine_restarting',
+      navigationStartedAt
+    );
     const outcome = classifyCaseFailure({
+      terminalTeardownOnly:
+        restartFrames === 1 &&
+        lastGameplayAt !== undefined &&
+        journal.countReceivedEvents(candidate.id, 'engine_restarting', lastGameplayAt) === 1,
       engineRestartFrames: journal.countReceivedEvents(
         candidate.id,
         'engine_restarting',

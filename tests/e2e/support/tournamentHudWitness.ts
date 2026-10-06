@@ -262,11 +262,11 @@ export async function createHudClockReader() {
             .from('tournaments')
             .select('id,status,current_players,ended_at,blind_level_state')
             .in('id', tournamentIds)
-        : { data: [], error: null };
+        : { data: [] as Row[], error: null };
       if (tournaments.error) throw tournaments.error;
       const seats = await client
         .from('table_seats')
-        .select('table_id,stack,left_at')
+        .select('table_id,user_id,stack,left_at')
         .in('table_id', tableIds)
         .is('left_at', null);
       if (seats.error) throw seats.error;
@@ -284,6 +284,9 @@ export async function createHudClockReader() {
           tableStatus: table.status ? String(table.status) : null,
           endedAt: tournament?.ended_at ? String(tournament.ended_at) : null,
           bigBlind: Number.isFinite(bigBlind) && bigBlind > 0 ? bigBlind : null,
+          seatedUserIds: (seats.data || [])
+            .filter((seat) => seat.table_id === table.id)
+            .map((seat) => String(seat.user_id)),
           seatStacks: (seats.data || [])
             .filter((seat) => seat.table_id === table.id)
             .map((seat) => Number(seat.stack))
@@ -291,6 +294,78 @@ export async function createHudClockReader() {
         });
       }
       return facts;
+    },
+    async accountClosedBoard(
+      start: TournamentBoardFacts,
+      end: TournamentBoardFacts
+    ): Promise<TournamentBoardFacts> {
+      const ids = start.seatedUserIds ?? [];
+      if (
+        !ids.length ||
+        ids.length > 10 ||
+        start.tableId !== end.tableId ||
+        !start.tournamentId ||
+        start.tournamentId !== end.tournamentId ||
+        end.tableStatus !== 'closed' ||
+        end.seatStacks.length ||
+        end.seatedUserIds?.length !== 0 ||
+        end.tournamentStatus !== 'RUNNING'
+      )
+        return end;
+      const players = await client
+        .from('tournament_players')
+        .select('user_id,table_id,status,position,eliminated_at,chip_count')
+        .eq('tournament_id', start.tournamentId)
+        .in('user_id', ids);
+      if (players.error) throw players.error;
+      const destinations = [
+        ...new Set(
+          (players.data ?? []).map((p) => p.table_id).filter((id) => id && id !== start.tableId)
+        ),
+      ];
+      const seats = destinations.length
+        ? await client
+            .from('table_seats')
+            .select('user_id,table_id,stack')
+            .in('table_id', destinations)
+            .in('user_id', ids)
+            .is('left_at', null)
+        : { data: [] as Row[], error: null };
+      if (seats.error) throw seats.error;
+      const tables = destinations.length
+        ? await client.from('tables').select('id,tournament_id,status').in('id', destinations)
+        : { data: [] as Row[], error: null };
+      if (tables.error) throw tables.error;
+      const relocatedUserIds: string[] = [];
+      const eliminatedUserIds: string[] = [];
+      for (const id of ids) {
+        const matches = (players.data ?? []).filter((p) => p.user_id === id);
+        if (matches.length !== 1) continue;
+        const p = matches[0]!;
+        if (
+          p.status === 'eliminated' &&
+          p.chip_count !== null &&
+          Number(p.chip_count) === 0 &&
+          Number(p.position) > 0 &&
+          Number.isFinite(Date.parse(String(p.eliminated_at ?? '')))
+        )
+          eliminatedUserIds.push(id);
+        else if (
+          p.status === 'playing' &&
+          p.table_id !== start.tableId &&
+          (tables.data ?? []).some(
+            (t) =>
+              t.id === p.table_id &&
+              t.tournament_id === start.tournamentId &&
+              t.status === 'running'
+          ) &&
+          (seats.data ?? []).filter(
+            (s) => s.user_id === id && s.table_id === p.table_id && Number(s.stack) > 0
+          ).length === 1
+        )
+          relocatedUserIds.push(id);
+      }
+      return { ...end, relocatedUserIds, eliminatedUserIds };
     },
     async close() {
       const result = await client.auth.signOut({ scope: 'local' });

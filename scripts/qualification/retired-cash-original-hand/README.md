@@ -1,0 +1,9 @@
+# Native original cash-hand qualification
+
+These files contain generated anonymous identities and independent synthetic balances, never copied production player/hand/transaction data. The system UUID in the maintained structural opening is a non-user financial FK constant. Run only against an empty disposable PG17 catalog with the actual current native financial functions, owners, grants, event guards, non-user registry and BBJ policy. No production endpoint or financial mutation is permitted.
+
+The actual tested order was: restore exact empty catalog; install the qualified tournament predecessor 20261006182937; install this cash successor 20261006184554; structural opening; four anonymous shapes; financial/postcommit refusal; final source/security/trigger pins. The terminal reports are archived in the launch evidence folder. This is native financial qualification, not a production release or load certificate.
+
+Six/six/six/nine players cover five missing occupancies, deleted and reused chairs, zero and negative original deltas, two nonzero rake cases and BBJ. Funding clubs differ from the table club. The four real owner transactions roll back, assert exact original funded wallet amounts and restitution mint, consumed timebanks, whole replacement-row equality, fee conservation and unchanged replay. The two-custody fault probes assert no surviving mint, custody, financial handoff or atomic commit on financial and postcommit refusal.
+
+The source guards and exact native postimages are exercised by `tests/retired-cash-original-hand.guard.test.ts`; retained native fixture assertions accompany the protected source. Requalification requires the actual empty native catalog, not financial stubs or a supplied readiness flag.

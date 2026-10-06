@@ -143,7 +143,9 @@ function coveringPlayers(hero: SeatPlayer, state: HorseGameStateV2) {
     .map((p) => p.user_id);
 }
 
-/** Round 1, unchanged: one response, then showdown. */
+/** Round 1: one response, then showdown. A jam raises to `hero.bet +
+ * investment`: the builder sets a fixed-limit jam's investment to the street
+ * ceiling the controller clamps it to. */
 function evaluateRoundOne(
   hero: SeatPlayer,
   state: HorseGameStateV2,
@@ -203,7 +205,7 @@ function evaluateRoundOne(
       const wager = ['bet', 'raise', 'jam'].includes(candidate.kind);
       const target = wager
         ? candidate.kind === 'jam'
-          ? hero.bet + hero.stack
+          ? hero.bet + candidate.investment
           : candidate.amount!
         : state.currentBet;
       const responseOrder = [

@@ -3,6 +3,7 @@ import type { HorseGameStateV2 } from '../HorseLogic.js';
 import type { HorseAuthorityReceipt, HorseAuthorityVerdict } from '../HorseQualifiedAuthority.js';
 import type { Plo4Selection } from '../plo4/Plo4LivePolicy.js';
 import { horseVariantRulesFor } from '../VariantRules.js';
+import { executedAllInTo } from '../HorseTournamentUtility.js';
 import type { JointRangeSamples } from './JointRangeSampler.js';
 import {
   acquireJointSamples,
@@ -190,7 +191,21 @@ export function jointLegalCandidates(
               amount: null,
               investment: hero.stack,
             }
-          : { id: 'jam', kind: 'jam', action: 'all_in', amount: null, investment: hero.stack };
+          : {
+              id: 'jam',
+              kind: 'jam',
+              action: 'all_in',
+              amount: null,
+              // The builder's rule: a fixed-limit all-in wagers only to the
+              // street ceiling (HandController.clampToStructure).
+              investment: Math.max(
+                0,
+                Math.min(
+                  hero.stack,
+                  executedAllInTo(hero, s.bettingStructure, s.maxRaiseTo) - hero.bet
+                )
+              ),
+            };
     else if ((d.action === 'bet' || d.action === 'raise') && Number.isFinite(d.amount))
       next = {
         id: `${d.action}:${d.amount}`,

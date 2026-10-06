@@ -280,6 +280,7 @@ import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
+import { bustPromptMustWait } from '../utils/bustPromptGate';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -9277,6 +9278,10 @@ function LiveTablePage({
     });
   }, [userId, tableId, readBustBalance, readBalanceRevision, setBalanceIfCurrent]);
 
+  /* The seat-taking for which a positive stack has been seen, and a tick that
+     re-runs the bust watch when a fresh seat's settling window closes. */
+  const chipsSeenForSeatAtRef = useRef<number | null>(null);
+  const [bustRecheckTick, setBustRecheckTick] = useState(0);
   // Watch for the hero's stack to drop to 0 AND the hand to complete; at
   // that moment, look up the wallet balance and pop the BuyInModal (reused
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
@@ -9299,11 +9304,28 @@ function LiveTablePage({
     // Also only once per bust — bustPromptFiredRef guards against repeat.
     if (stack > 0) {
       bustPromptFiredRef.current = false;
+      // Chips have been seen for this taking of the seat.
+      chipsSeenForSeatAtRef.current = seatAcquiredAtRef.current;
       return;
     }
     if (tableState.isHandInProgress) return;
     if (bustPromptFiredRef.current) return;
     if (bustRebuyOpen || showBuyInModal) return;
+    /* A SEAT JUST TAKEN IS NOT A BUST (see utils/bustPromptGate). A zero that
+       has never been preceded by chips, seconds after this tab bought in, is
+       a stack not yet reported, and offering a "rebuy" on it charged a
+       fully-funded seat a second buy-in. Look again when the window closes. */
+    const waitMs = bustPromptMustWait({
+      seatAcquiredAtMs: seatAcquiredAtRef.current,
+      chipsSeenSinceSeat:
+        seatAcquiredAtRef.current !== null &&
+        chipsSeenForSeatAtRef.current === seatAcquiredAtRef.current,
+      nowMs: Date.now(),
+    });
+    if (waitMs > 0) {
+      const recheck = setTimeout(() => setBustRecheckTick((n) => n + 1), waitMs + 50);
+      return () => clearTimeout(recheck);
+    }
     bustPromptFiredRef.current = true;
 
     (async () => {
@@ -9331,6 +9353,7 @@ function LiveTablePage({
     tableState.isTournament,
     bustRebuyOpen,
     showBuyInModal,
+    bustRecheckTick,
   ]);
 
   /* Post-or-wait dialog resolves itself when the question stops applying:

@@ -10,6 +10,7 @@
 
 import type { ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
+import { withoutSeatMix } from '../http/publicStranger.js';
 import {
   parsePublicTableLivenessQuery,
   type PublicTableLivenessQuery,
@@ -184,7 +185,11 @@ export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void 
  * Scraped by Prometheus → Grafana dashboards for engine observability.
  * NOT JSON — emits text/plain with the Prometheus exposition content-type.
  */
-export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
+export function handleMetrics(
+  res: ServerResponse,
+  deps: HealthDeps,
+  options: { withoutSeatMix?: boolean } = {}
+): void {
   let body = deps.gameServer.getPrometheusMetrics();
   // ADDITIVE (#5): when ENGINE_METRICS is enabled, append the shared engine
   // registry's exposition text. Default OFF keeps the response byte-for-byte
@@ -219,6 +224,9 @@ export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
       ).out;
     body += '\n' + gated.join('\n');
   }
+  /* Last, so it covers the always-on text and the gated registry alike. The
+     on-box scrape never sets this and reads every family as before. */
+  if (options.withoutSeatMix) body = withoutSeatMix(body);
   // Note: original index.ts does NOT attach CORS_HEADERS to /metrics — keep it
   // that way for byte-identical behavior. Prometheus scrapers don't need CORS.
   res.writeHead(200, {

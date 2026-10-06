@@ -63,7 +63,6 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 2],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
@@ -155,7 +154,6 @@ const BASELINE = new Map<string, number>([
   // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
   // seatHorse, the browser-side seat creator that minted a stack; it is gone
   // with its reads, and the server fleet is the one seat creator for horses.
-  ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 0],
   // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats

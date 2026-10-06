@@ -25,6 +25,7 @@ import { handleAdminKickOccupancy } from './handlers/admin.js';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { GameServer } from './GameServer.js';
 import { sendJSON, CORS_HEADERS } from './http/respond.js';
+import { arrivedThroughThePublicProxy } from './http/publicStranger.js';
 import { reportError } from './services/errorReporter.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleStableHand } from './handlers/stableHand.js';
@@ -493,12 +494,27 @@ export function createRouter(
       );
     // Operation Stable Hand Section 15. Read-only: it plans and reports, and
     // deliberately never executes what it plans.
-    if (url === '/stable-hand') return handleStableHand(res);
+    /* It names the fleet's size, its plan and house wallet ids, and runs
+       database reads per request. A stranger from the internet gets neither
+       (launch audit 2026-10-05); the box itself and anything holding the
+       internal key still do. */
+    if (url === '/stable-hand') {
+      if (arrivedThroughThePublicProxy(req) && !verifyInternalKey(req)) {
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      }
+      return handleStableHand(res);
+    }
     if (url === '/ws-metrics' && method === 'GET')
       // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
       // transport had zero metrics visibility before this.
       return handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
-    if (url === '/metrics' && method === 'GET') return handleMetrics(res, { gameServer });
+    if (url === '/metrics' && method === 'GET')
+      return handleMetrics(
+        res,
+        { gameServer },
+        // A stranger is not told how the seats divide between humans and horses.
+        { withoutSeatMix: arrivedThroughThePublicProxy(req) && !verifyInternalKey(req) }
+      );
 
     // ─────────────────────────────────────────────────────────────────────────
     // State-mutating routes — handlers/*.ts (Phase U3.2 + U3.3).

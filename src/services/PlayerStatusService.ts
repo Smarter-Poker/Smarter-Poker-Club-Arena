@@ -34,26 +34,11 @@ export interface PlayerStatus {
 class PlayerStatusServiceClass {
   private currentStatus: PlayerStatus | null = null;
 
-  /**
-   * Set the user's custom status text (e.g., "Taking a break 🌴")
-   */
-  async setStatusText(userId: string, text: string | null): Promise<void> {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ status_text: text })
-      .eq('id', userId);
-
-    if (error) {
-      reportError(error, 'PlayerStatusService.setStatusText');
-      return;
-    }
-
-    this.currentStatus = this.currentStatus ? { ...this.currentStatus, statusText: text } : null;
-    masterBus.emit('PROFILE_UPDATED', {
-      userId,
-      updates: { status_text: text } as Record<string, unknown>,
-    });
-  }
+  /* setStatusText is GONE (2026-10-05). It UPDATEd profiles.status_text
+     directly, and `authenticated` holds neither UPDATE nor SELECT on that
+     column - every call was a 42501 - and nothing in the app called it. A
+     custom status needs a sanctioned writer and reader (definer RPCs) first;
+     until then there is no status to set or show. */
 
   /**
    * Update the user's "playing at" table status
@@ -85,13 +70,15 @@ class PlayerStatusServiceClass {
     const { data, error } = await supabase
       .from('profiles')
       /**
-       * This used to read `status_text:status` - aliasing the ACCOUNT STATUS
-       * column into the custom-status field, because profiles.status_text did
-       * not exist. A profile therefore rendered "active" under the player's
-       * name as if they had written it. The column exists now
-       * (20260828034000_profiles_status_text.sql), so read the real one.
+       * `id` only. This read used to name `status_text`, and `authenticated`
+       * holds no SELECT on that column, so the WHOLE read was refused (42501)
+       * and the profile page lost its online dot along with the status. There
+       * is no sanctioned read path for status_text yet (no granted column, no
+       * RPC), so the custom status stays null rather than failing the read it
+       * rides on. It once read `status_text:status` instead - the ACCOUNT
+       * state shown as if the player had written it; that is not coming back.
        */
-      .select('id, status_text')
+      .select('id')
       .eq('id', userId)
       .maybeSingle();
 
@@ -110,7 +97,7 @@ class PlayerStatusServiceClass {
 
     return {
       userId: data.id,
-      statusText: data.status_text || null,
+      statusText: null,
       playingAt: null,
       playingAtTableId: null,
       isOnline,
@@ -156,17 +143,13 @@ class PlayerStatusServiceClass {
     const onlineIds = Array.from(friendIds).filter((id) => presence.get(id) === true);
     if (onlineIds.length === 0) return [];
 
-    // Step 3: their public status lines.
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, status_text')
-      .in('id', onlineIds);
-
-    if (error || !profiles) return [];
-
-    return profiles.map((p: any) => ({
-      userId: p.id,
-      statusText: p.status_text || null,
+    // No third read for "their public status lines": it selected
+    // profiles.status_text, which `authenticated` cannot read, so it refused
+    // and this returned nobody. There is no status to show until a sanctioned
+    // reader exists (see getPlayerStatus).
+    return onlineIds.map((id) => ({
+      userId: id,
+      statusText: null,
       playingAt: null,
       playingAtTableId: null,
       isOnline: true,

@@ -34,6 +34,13 @@
 -- World Hub change is migration 20261006001817 (fifteen home-game and
 -- messenger definers), World Hub PR #2148.
 --
+-- It replaces bodies through EXECUTE, which the liveness check cannot see, so
+-- it states its own proof:
+-- @live-proof: (SELECT position('AS full_name' in p.prosrc) > 0 AND position('p.full_name' in p.prosrc) = 0 FROM pg_proc p WHERE p.oid = 'public.ca_club_my_downline(uuid)'::regprocedure)
+-- @live-proof: (SELECT position('NULLIF(full_name' in p.prosrc) = 0 FROM pg_proc p WHERE p.oid = 'public.calculate_agent_settlement(uuid,uuid)'::regprocedure)
+-- @live-proof: (SELECT position('pr.full_name' in p.prosrc) = 0 FROM pg_proc p WHERE p.oid = 'public.calculate_agent_spread(uuid,uuid)'::regprocedure)
+-- @live-proof: (SELECT position('pf.username, pf.full_name)' in p.prosrc) = 0 AND position('pt.username, pt.full_name)' in p.prosrc) = 0 FROM pg_proc p WHERE p.oid = 'public.fn_club_bank_ledger(uuid,integer,integer,text[])'::regprocedure)
+--
 -- Never apply between :50 and :03 UTC.
 
 BEGIN;

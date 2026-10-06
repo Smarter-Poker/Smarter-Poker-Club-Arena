@@ -46,6 +46,8 @@ import {
 import type { OmahaVariant } from './OmahaReference.js';
 import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContract.js';
 import { remainingVariantIndependentHandChecks } from './RemainingVariantStrengthChecks.js';
+import { isJointHoldoutSeed, type JointStrengthVariant } from './JointStrengthContract.js';
+import { jointIndependentHandChecks } from './JointStrengthChecks.js';
 import type { Plo4PolicyMode } from './Plo4PolicyProgram.js';
 import { equityGovernor } from '../engine/EquityLoadGovernor.js';
 import { equitySampleSizeOfLastCall, variantInfo } from '../engine/HorseEval.js';
@@ -192,6 +194,8 @@ export interface Plo4HandChecks {
   lowHalfChecked?: boolean;
   /** P12.2: Pineapple discards in the trace (Phase 12 profiles only). */
   discards?: number;
+  /** P13.2: set when a joint showdown was settled on two or three boards. */
+  multiBoardChecked?: boolean;
 }
 export interface Plo4HandReceipt {
   checks?: Plo4HandChecks;
@@ -202,6 +206,8 @@ export interface Plo4HandReceipt {
     utilityUnavailable: number;
     boards: Record<string, number>;
     opponents: Record<string, number>;
+    /** P13.2: hero decisions the joint acquisition admitted, by board count. */
+    eligibleByBoards?: Record<string, number>;
   };
   complete: boolean;
   net: number[];
@@ -220,6 +226,9 @@ export interface Plo4HandReceipt {
   /** P12.2, Phase 12 profiles only: hero candidate proposals the HorseLogic
    * selection guard refused (`illegal_candidate`); the reference was played. */
   illegalCandidates?: number;
+  /** P13.2, joint profiles only: hero candidate proposals refused as
+   * `earlier_phase_applied` (a Phase 13 candidate on an applied earlier one). */
+  earlierPhaseRefusals?: number;
 }
 export async function playPlo4PolicyHand(
   profile: Plo4LeagueProfile,
@@ -260,6 +269,11 @@ export async function playPlo4PolicyHand(
     nodeCounts: {},
     reasons: {},
     ...(remainingVariant ? { illegalCandidates: 0 } : {}),
+    // P13.2: the joint guard counters ride the contract shard runner only, so
+    // the development joint league's receipts are unchanged.
+    ...(profile.jointPolicy && contractChecks
+      ? { illegalCandidates: 0, earlierPhaseRefusals: 0 }
+      : {}),
   };
   const players: SeatPlayer[] = Array.from({ length: profile.seats }, (_, index) => ({
     seat: index + 1,
@@ -531,11 +545,19 @@ export async function playPlo4PolicyHand(
           r.utilityUnavailable += Number(j.utilityOwner === 'phase7_unavailable');
           r.boards[j.boardCount] = (r.boards[j.boardCount] ?? 0) + 1;
           r.opponents[j.liveOpponents] = (r.opponents[j.liveOpponents] ?? 0) + 1;
+          if (j.eligible && contractChecks) {
+            r.eligibleByBoards ??= {};
+            r.eligibleByBoards[j.boardCount] = (r.eligibleByBoards[j.boardCount] ?? 0) + 1;
+          }
         }
         receipt.eligible += Number(policy.eligible);
         receipt.changed += Number(policy.applied);
-        if (remainingVariant && 'selectionRefusal' in policy)
-          receipt.illegalCandidates! += Number(policy.selectionRefusal === 'illegal_candidate');
+        if (receipt.illegalCandidates !== undefined && 'selectionRefusal' in policy)
+          receipt.illegalCandidates += Number(policy.selectionRefusal === 'illegal_candidate');
+        if (receipt.earlierPhaseRefusals !== undefined && 'selectionRefusal' in policy)
+          receipt.earlierPhaseRefusals += Number(
+            policy.selectionRefusal === 'earlier_phase_applied'
+          );
         const node = `${gs.gameMode}/${gs.stage}/${'role' in policy ? policy.role : profile.jointPolicy ? 'joint-board-' + gs.boardCount : 'outside_domain'}`;
         receipt.nodeCounts[node] = (receipt.nodeCounts[node] ?? 0) + 1;
         receipt.reasons[policy.reason] = (receipt.reasons[policy.reason] ?? 0) + 1;
@@ -577,8 +599,9 @@ export async function playPlo4PolicyHand(
       receipt.conservationErrors++;
     receipt.complete = !receipt.cardErrors && !receipt.conservationErrors;
     if (contractChecks)
-      receipt.checks = remainingVariant
-        ? remainingVariantIndependentHandChecks(variant, {
+      receipt.checks = profile.jointPolicy
+        ? // P13.2: every physical board, every variant (JointBoardReference).
+          jointIndependentHandChecks(variant as JointStrengthVariant, {
             end,
             startStack: profile.stackBB * BB,
             rake: receipt.rake,
@@ -586,11 +609,25 @@ export async function playPlo4PolicyHand(
             config,
             publishedRake: Boolean(profile.publishedRake),
             tableSeats: profile.tableSeats ?? profile.seats,
+            boardCount: controller.getActiveBoardCount(),
             knownDeadCards: end.players.flatMap((p) =>
               controller.getPineappleKnownDeadCards(p.seat)
             ),
           })
-        : plo4IndependentHandChecks(profile, end, receipt, config);
+        : remainingVariant
+          ? remainingVariantIndependentHandChecks(variant, {
+              end,
+              startStack: profile.stackBB * BB,
+              rake: receipt.rake,
+              bbj: receipt.bbj,
+              config,
+              publishedRake: Boolean(profile.publishedRake),
+              tableSeats: profile.tableSeats ?? profile.seats,
+              knownDeadCards: end.players.flatMap((p) =>
+                controller.getPineappleKnownDeadCards(p.seat)
+              ),
+            })
+          : plo4IndependentHandChecks(profile, end, receipt, config);
     return receipt;
   } finally {
     controller.cancelPineappleSettle();
@@ -623,6 +660,10 @@ export async function runOmahaPolicyLeague(
   if (isRemainingVariantHoldoutSeed(options.seed))
     throw new Error(
       'Held-out Phase 12 strength seeds run only through the P12.2 contract shard runner'
+    );
+  if (isJointHoldoutSeed(options.seed))
+    throw new Error(
+      'Held-out Phase 13 strength seeds run only through the P13.2 contract shard runner'
     );
   const profile = profiles.find((p) => p.id === options.profileId);
   if (
@@ -949,6 +990,8 @@ export async function runPlo4StrengthShard(
     throw new Error('A P10.2 shard never runs a held-out Phase 11 seed');
   if (isRemainingVariantHoldoutSeed(request.seed))
     throw new Error('A P10.2 shard never runs a held-out Phase 12 seed');
+  if (isJointHoldoutSeed(request.seed))
+    throw new Error('A P10.2 shard never runs a held-out Phase 13 seed');
   if (request.mode === 'contract' && !holdout)
     throw new Error('A contract shard runs only a held-out seed');
   if (request.mode === 'development' && holdout)

@@ -1,0 +1,55 @@
+# P13.2 seed check: every held-out seed searched for across the repository at the base commit 3cd956fa (git grep over all tracked files) before it was written into the contract. exit 1 = no match.
+$ git grep -c 13211143 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13212287 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13213391 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13221149 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13222293 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13223383 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13231151 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13232299 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13233373 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13241153 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13242309 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13243367 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13251157 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13252311 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13253359 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13261163 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13262317 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13263353 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13271167 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13272321 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13273349 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13281171 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13282327 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13283347 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13291177 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13292333 3cd956fa -- .
+exit 1 (1 = no match)
+$ git grep -c 13293341 3cd956fa -- .
+exit 1 (1 = no match)

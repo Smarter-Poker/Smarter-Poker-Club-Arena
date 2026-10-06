@@ -24,20 +24,20 @@
     },
     "0|preflop": {
       "n": 3401,
-      "s1": "-206860",
-      "s2": "24041534550",
-      "s3": "24042994646000",
-      "s4": "6982295111875668750"
+      "s1": "-216670",
+      "s2": "25626722250",
+      "s3": "10515213665000",
+      "s4": "7574670999122358750"
     },
     "1|flop": {
-      "n": 14,
-      "s1": "-5435",
-      "s2": "47015825",
-      "s3": "-25357295375",
-      "s4": "318471772690625"
+      "n": 16,
+      "s1": "-6340",
+      "s2": "65307200",
+      "s3": "-88089976000",
+      "s4": "669478134920000"
     },
     "1|none": {
-      "n": 3560,
+      "n": 3556,
       "s1": "0",
       "s2": "0",
       "s3": "0",
@@ -45,10 +45,10 @@
     },
     "1|preflop": {
       "n": 1597,
-      "s1": "-165750",
-      "s2": "27158236550",
-      "s3": "32049137927250",
-      "s4": "7792384143363008750"
+      "s1": "-178580",
+      "s2": "28269305100",
+      "s3": "29862632760250",
+      "s4": "8156000099915160000"
     },
     "1|river": {
       "n": 2,
@@ -58,20 +58,20 @@
       "s4": "6553600000000"
     },
     "1|turn": {
-      "n": 11,
-      "s1": "-11700",
-      "s2": "59444600",
-      "s3": "-377493660000",
-      "s4": "2697507003860000"
+      "n": 13,
+      "s1": "-18800",
+      "s2": "84774600",
+      "s3": "-468302660000",
+      "s4": "3024612703860000"
     }
   },
-  "pairDigest": "ccdfebc6b8de59836a2b2f8c83399f1f7fe8d85e4bf3cfeecf7a8f5f48ea3c30",
-  "candidateNetCents": -853980,
+  "pairDigest": "30188492326cea7cdb1e340342d39ed7a475b0cd24098486404a63991cdb2188",
+  "candidateNetCents": -884625,
   "referenceNetCents": -462635,
-  "changedPairs": 5025,
-  "decisions": 54322,
-  "eligible": 10323,
-  "changed": 5527,
+  "changedPairs": 5029,
+  "decisions": 54345,
+  "eligible": 10311,
+  "changed": 5730,
   "illegalActions": 0,
   "conservationErrors": 0,
   "cardErrors": 0,
@@ -79,47 +79,47 @@
   "settlementMismatches": 0,
   "deductionMismatches": 0,
   "pairedReplayMismatches": 0,
-  "showdownsChecked": 1631,
-  "foldWinsChecked": 19105,
+  "showdownsChecked": 1634,
+  "foldWinsChecked": 19102,
   "lowHalvesChecked": 0,
-  "totalRake": 4558.9,
+  "totalRake": 4604.7,
   "totalBbj": 0,
   "nodeCounts": {
     "cash/preflop/rfi": 5184,
     "cash/preflop/four_bet": 52,
     "cash/preflop/defense": 3450,
     "cash/flop/checked_to": 513,
-    "cash/turn/checked_to": 315,
-    "cash/river/checked_to": 307,
-    "cash/turn/facing_bet": 248,
-    "cash/flop/facing_bet": 101,
-    "cash/turn/call_off": 3,
-    "cash/river/facing_bet": 118,
-    "cash/river/call_off": 9,
-    "cash/flop/facing_raise": 6,
+    "cash/turn/checked_to": 321,
+    "cash/river/checked_to": 310,
+    "cash/turn/facing_bet": 238,
+    "cash/flop/facing_bet": 92,
+    "cash/turn/facing_raise": 13,
+    "cash/river/call_off": 7,
+    "cash/river/facing_raise": 5,
+    "cash/river/facing_bet": 109,
+    "cash/flop/facing_raise": 8,
     "cash/preflop/five_bet_plus": 2,
-    "cash/turn/facing_raise": 7,
+    "cash/turn/call_off": 2,
     "cash/preflop/isolation": 4,
-    "cash/river/facing_raise": 3,
     "cash/flop/call_off": 1
   },
   "reasons": {
     "preflop_entry": 880,
     "preflop_defense": 3447,
     "preflop_entry_declined": 4308,
-    "variant_protected_check": 846,
+    "variant_protected_check": 843,
     "variant_draw_pressure": 88,
     "variant_dominated_draw_fold": 27,
-    "variant_value_bet": 201,
+    "variant_value_bet": 213,
     "preflop_reraise": 57,
-    "variant_price_call": 356,
-    "variant_bluff_catcher_fold": 78,
+    "variant_price_call": 344,
+    "variant_bluff_catcher_fold": 77,
     "variant_price_fold": 13,
-    "variant_value_raise": 7,
-    "variant_scoop_raise": 15
+    "variant_scoop_raise": 8,
+    "variant_value_raise": 6
   },
   "equityWork": {
-    "120": 21775
+    "120": 21798
   },
   "fixedWork": {
     "governor": "off",
@@ -127,7 +127,7 @@
     "policyClock": "fixed_work_no_wall_clock_branch",
     "moodClock": "deal_seed_time_of_day"
   },
-  "durationMs": 67036,
+  "durationMs": 103801,
   "promotionEligible": false,
   "sourceUnchanged": true,
   "cancelled": false

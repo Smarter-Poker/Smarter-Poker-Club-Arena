@@ -90,6 +90,7 @@ import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 import { openInBrowser } from '../lib/openExternal';
 import { isNativePlatform } from '../lib/appBase';
+import { parseTileRaiseBounds, tileAllInTo, tilePotRaiseTo } from '../utils/tileRaiseSizing';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -149,6 +150,10 @@ interface TableInstance {
    *  undefined = no raise legal). Primitive string so updateTableInfo's
    *  shallow !== bail-out keeps working (P1-2). */
   raiseBounds?: string;
+  /** The bet the hero is facing this street, as a raise-TO level (hero's turn only). */
+  currentBet?: number;
+  /** Raise-TO that puts the hero's whole stack in: stack behind plus chips in front (hero's turn only). */
+  allInTo?: number;
   /** Hero's current stack at this table. */
   heroStack?: number;
   /**
@@ -5225,13 +5230,10 @@ export default function MultiTablePage() {
                   (() => {
                     const pending = !!tilePending[table.id];
                     const toCall = table.toCall ?? 0;
-                    const parts = (table.raiseBounds || '').split(':').map(Number);
-                    const hasBounds =
-                      parts.length === 3 &&
-                      parts.every((n) => Number.isFinite(n)) &&
-                      parts[1] >= parts[0] &&
-                      parts[0] > 0;
-                    const [minTo, maxTo, bb] = hasBounds ? parts : [0, 0, 1];
+                    const tileBounds = parseTileRaiseBounds(table.raiseBounds);
+                    const hasBounds = tileBounds !== null;
+                    const { minTo, maxTo, bb } = tileBounds ?? { minTo: 0, maxTo: 0, bb: 1 };
+                    const tileAllIn = tileAllInTo(table.allInTo, tileBounds);
                     const draft = tileRaiseDraft[table.id];
                     const sliderOpen = hasBounds && draft !== undefined;
                     const unit = sliderUnitFor(!!table.isTournament, bb, bb / 2 || 0.01);
@@ -5280,22 +5282,16 @@ export default function MultiTablePage() {
                               ['Pot', 1],
                             ] as const
                           ).map(([label, frac]) => {
-                            const pot = table.pot ?? 0;
-                            // Standard pot-raise size: call first, then raise
-                            // the pot that call creates (server re-validates).
-                            // TO THE CENT, not to the chip (2026-09-09).
-                            // `Math.round` here sent a real wager: at 0.05/0.10
-                            // an exact 0.65 pot raise went as 1 (a 2.2x-pot bet
-                            // the player never chose) and a 0.375 half-pot went
-                            // as 0, so `capped <= 0` silently removed the
-                            // button. The single-table definition
-                            // (ActionPanel.potSizedRaiseTo) is exact, and its
-                            // own comment claims to be the only one.
-                            const size =
-                              Math.round((toCall + (pot + toCall * 2) * frac) * 100) / 100;
-                            const stack = table.heroStack ?? 0;
-                            const capped = stack > 0 ? Math.min(size, stack) : size;
-                            if (capped <= 0) return null;
+                            // Raise-TO, to the cent, inside the bounds the
+                            // engine reported (src/utils/tileRaiseSizing.ts
+                            // says why this is no longer computed here). No
+                            // legal raise means no button.
+                            const capped = tilePotRaiseTo(
+                              frac,
+                              { pot: table.pot ?? 0, toCall, currentBet: table.currentBet ?? 0 },
+                              tileBounds
+                            );
+                            if (capped === null) return null;
                             return (
                               <button
                                 key={label}
@@ -5322,12 +5318,12 @@ export default function MultiTablePage() {
                               Raise
                             </button>
                           )}
-                          {(table.heroStack ?? 0) > 0 && (
+                          {tileAllIn !== null && (
                             <button
                               type="button"
                               className="multi-table-grid__raise multi-table-grid__raise--allin"
                               disabled={pending}
-                              onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
+                              onClick={() => handleTileAction(table.id, 'raise', tileAllIn)}
                             >
                               All In
                             </button>

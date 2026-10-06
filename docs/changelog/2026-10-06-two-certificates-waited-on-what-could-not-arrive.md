@@ -106,7 +106,15 @@ never began.") instead of spending 20 minutes; its unit tests
 
 ## Verification
 
-NEXT_RUN
+- Club Data: Post-Deploy E2E run `37488617678` (job `112367624106`) ran
+  `club-data-deep.spec.ts:208` at 17:30:10 UTC, ten minutes after `040022`
+  committed, and it **passed in 28.5 s**, as did all seven Club Data cases,
+  including the 60-second recovery heartbeat (79.8 s) and axe (9.7 s).
+- Gameplay customization: the same run still timed out, but it does not test
+  the fix. Its `LIVE_SHA` was `4c064de92`, and the job takes its specs from
+  the commit production is serving; `4c064de92` predates #6296 and its spec
+  still ends the broad route with `route.continue()` (line 424). The first run
+  whose serving commit contains `48877ce0d` is the one that certifies it.
 
 ## Open, owned elsewhere
 

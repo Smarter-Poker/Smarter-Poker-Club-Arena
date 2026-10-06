@@ -122,7 +122,6 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
-import { withClubContext } from '../utils/clubScopedPath';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -281,6 +280,7 @@ import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
+import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
@@ -27591,7 +27591,16 @@ function LiveTablePage({
         onTopUpAccount={() =>
           tableState.arenaAsset === 'diamonds'
             ? setShowDiamondWallet(true)
-            : navigate(withClubContext('/cashier', lobbyClubIdRef.current))
+            : /* TO THE CLUB'S CASHIER, WHERE CHIPS CAN BE ASKED FOR (launch audit
+                 2026-10-05). This went to `/cashier?club=...`, the classic
+                 cashier, which opens a plain player on its Buy-In tab and can
+                 only answer "No table selected for buy-in": a dead end for the
+                 one player this button exists for, the one without enough
+                 chips. The club's Trade cashier is the front door (Dan
+                 2026-08-21) and is where a chip request is made. With no club
+                 resolved yet, `/cashier` finds the player's club and redirects
+                 there itself. */
+              navigate(topUpCashierPath(lobbyClubIdRef.current))
         }
         // Insurance
         showInsurance={showInsurance}
